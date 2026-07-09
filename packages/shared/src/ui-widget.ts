@@ -15,7 +15,7 @@
  * @module shared/ui-widget
  */
 import { z } from 'zod';
-import { UiCommandSchema, type UiActionRequest } from './schemas.js';
+import { UiCommandSchema } from './schemas.js';
 
 /** Visual tone shared by `badge` nodes and list-item badges. */
 export const WidgetToneSchema = z.enum(['default', 'success', 'warning', 'error', 'info']);
@@ -76,6 +76,10 @@ export interface WidgetListItem {
   subtitle?: string;
   /** Lucide icon name, resolved against the client's icon registry. */
   icon?: string;
+  /** Leading thumbnail source (https or data URI only). */
+  image?: string;
+  /** Trailing metadata (e.g. a price or timestamp), right-aligned. */
+  meta?: string;
   badge?: { text: string; tone?: WidgetTone };
   actions?: WidgetAction[];
 }
@@ -114,6 +118,8 @@ export type WidgetNode =
       value: string | number;
       delta?: { value: string | number; direction: 'up' | 'down' | 'flat' };
       hint?: string;
+      /** Optional series (≤50 points) drawn as an inline sparkline beside the value. */
+      trend?: number[];
     }
   | { type: 'keyValue'; items: { key: string; value: string }[] }
   | { type: 'image'; src: string; alt: string; caption?: string }
@@ -145,7 +151,29 @@ export type WidgetNode =
       kind?: 'text' | 'number';
     }
   | { type: 'select'; name: string; label?: string; options: { label: string; value: string }[] }
-  | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: AgentWidgetAction } };
+  | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: AgentWidgetAction } }
+  | {
+      type: 'timeline';
+      items: {
+        time?: string;
+        title: string;
+        subtitle?: string;
+        icon?: string;
+        status?: 'done' | 'active' | 'upcoming';
+      }[];
+    }
+  | {
+      type: 'checklist';
+      items: { label: string; checked?: boolean; note?: string }[];
+      action?: AgentWidgetAction;
+      submitLabel?: string;
+    }
+  | {
+      type: 'compare';
+      options: { name: string; recommended?: boolean }[];
+      rows: { label: string; values: (string | number | boolean | null)[] }[];
+    }
+  | { type: 'rating'; value: number; count?: number; label?: string };
 
 /** Spacing tokens the renderer understands. */
 const GAP_TOKENS = ['sm', 'md', 'lg'] as const;
@@ -325,15 +353,18 @@ const deltaDirectionSchema = z.preprocess(
 );
 
 /** Heading level, tolerant of numeric strings; clamps to the 1-3 range. */
-const levelSchema = z.preprocess((value) => {
-  const n =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))
-        ? Number(value)
-        : null;
-  return n === null ? value : Math.min(3, Math.max(1, Math.round(n)));
-}, z.union([z.literal(1), z.literal(2), z.literal(3)]));
+const levelSchema = z.preprocess(
+  (value) => {
+    const n =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))
+          ? Number(value)
+          : null;
+    return n === null ? value : Math.min(3, Math.max(1, Math.round(n)));
+  },
+  z.union([z.literal(1), z.literal(2), z.literal(3)])
+);
 
 /**
  * stat `delta` — accepts the object shape and a bare string/number shorthand
@@ -359,6 +390,50 @@ const listBadgeSchema = z.preprocess(
   (value) => (typeof value === 'string' ? { text: value } : value),
   z.object({ text: z.string(), tone: toneSchema.optional() })
 );
+
+/** Timeline item status, tolerant of natural progress vocabulary. */
+const timelineStatusSchema = z.preprocess(
+  synonymCoercer({
+    done: 'done',
+    complete: 'done',
+    completed: 'done',
+    finished: 'done',
+    past: 'done',
+    active: 'active',
+    current: 'active',
+    now: 'active',
+    'in-progress': 'active',
+    in_progress: 'active',
+    inprogress: 'active',
+    ongoing: 'active',
+    upcoming: 'upcoming',
+    pending: 'upcoming',
+    next: 'upcoming',
+    todo: 'upcoming',
+    future: 'upcoming',
+    planned: 'upcoming',
+  }),
+  z.enum(['done', 'active', 'upcoming'])
+);
+
+/**
+ * A boolean, tolerant of the truthy/falsy strings and 0/1 that LLMs emit for
+ * flags like `checked` and `recommended` ("yes"/"checked"/1 → true,
+ * "no"/0 → false). Unrecognized values pass through for zod to reject.
+ */
+const flagSchema = z.preprocess((value) => {
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return value;
+  }
+  if (typeof value === 'string') {
+    const s = value.trim().toLowerCase();
+    if (s === 'true' || s === 'yes' || s === 'checked') return true;
+    if (s === 'false' || s === 'no' || s === 'unchecked') return false;
+  }
+  return value;
+}, z.boolean());
 
 /**
  * Recursive schema for a widget node — `z.discriminatedUnion('type', …)` over
@@ -398,6 +473,9 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
       value: z.union([z.string(), z.number()]),
       delta: deltaSchema.optional(),
       hint: z.string().optional(),
+      // Optional sparkline series; cap at 50 points so a runaway array can't
+      // bloat the SVG. Stringified numbers coerce; non-finite values reject.
+      trend: z.array(z.coerce.number().finite()).max(50).optional(),
     }),
     z.object({
       type: z.literal('keyValue'),
@@ -440,6 +518,14 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
           subtitle: z.string().optional(),
           /** Lucide icon name (validated against the registry at render time). */
           icon: z.string().optional(),
+          /** Leading thumbnail; https/data only, same posture as the image node. */
+          image: z
+            .string()
+            .refine((src) => src.startsWith('https://') || src.startsWith('data:'), {
+              message: 'Widget image sources must be https or data URIs',
+            })
+            .optional(),
+          meta: z.string().optional(),
           badge: listBadgeSchema.optional(),
           actions: z.array(WidgetActionSchema).optional(),
         })
@@ -481,6 +567,52 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
       children: z.array(WidgetNodeSchema),
       submit: z.object({ label: z.string(), action: AgentWidgetActionSchema }),
     }),
+    z.object({
+      type: z.literal('timeline'),
+      items: z
+        .array(
+          z.object({
+            time: z.string().optional(),
+            title: z.string(),
+            subtitle: z.string().optional(),
+            /** Lucide icon name; when present it fills the status dot slot. */
+            icon: z.string().optional(),
+            status: timelineStatusSchema.optional(),
+          })
+        )
+        .min(1),
+    }),
+    z.object({
+      type: z.literal('checklist'),
+      items: z.array(
+        z.object({
+          label: z.string(),
+          checked: flagSchema.optional(),
+          note: z.string().optional(),
+        })
+      ),
+      // When present, a submit button posts the checked/unchecked label sets
+      // back to the agent (merged into the action payload client-side).
+      action: AgentWidgetActionSchema.optional(),
+      submitLabel: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('compare'),
+      options: z.array(z.object({ name: z.string(), recommended: flagSchema.optional() })).min(1),
+      // Rows may be shorter than `options`; the renderer pads with null rather
+      // than failing the whole widget over a ragged matrix.
+      rows: z.array(z.object({ label: z.string(), values: z.array(WidgetCellSchema) })),
+    }),
+    z.object({
+      type: z.literal('rating'),
+      // Coerce stringified numbers and clamp to the 0-5 star range.
+      value: z.coerce
+        .number()
+        .finite()
+        .transform((v) => Math.min(5, Math.max(0, v))),
+      count: z.coerce.number().int().nonnegative().optional(),
+      label: z.string().optional(),
+    }),
   ])
 ) as z.ZodType<WidgetNode>;
 
@@ -498,85 +630,12 @@ export const WidgetDocumentSchema = z.object({
 /** A complete, versioned widget document. */
 export type WidgetDocument = z.infer<typeof WidgetDocumentSchema>;
 
-/**
- * Matches C0/C1 control characters (including newlines) — anything that could
- * reshape the line structure of a prompt-injected context block.
- */
-// eslint-disable-next-line no-control-regex -- matching control chars is the point
-const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]+/g;
-
-/**
- * Neutralize the closing-tag sequence of a prompt context block inside untrusted
- * text, so the text can never terminate the block early. `</tag`, with any
- * whitespace around the slash and any casing, becomes `<\/tag` — visibly the
- * same to the agent, but no longer the literal terminator.
- *
- * @param text - Untrusted text embedded inside a `<tag>…</tag>` context block
- * @param tag - The block's tag name (e.g. `ui_action`)
- */
-export function neutralizeContextClosingTag(text: string, tag: string): string {
-  const closing = new RegExp(`<\\s*/\\s*${tag}`, 'gi');
-  return text.replace(closing, `<\\/${tag}`);
-}
-
-/**
- * Sanitize an untrusted scalar for interpolation into a single line of a
- * prompt-injected context block: control characters (including newlines) are
- * flattened to spaces so the value cannot forge new lines or fake context tags,
- * and the block's closing-tag sequence is neutralized so the value cannot
- * terminate the block early.
- *
- * Untrusted means untrusted: widget action ids and titles come from agent
- * output and marketplace skill templates; form values are user-typed.
- *
- * @param value - Untrusted scalar destined for one line of the block
- * @param tag - The enclosing block's tag name (e.g. `ui_action`)
- */
-export function sanitizeContextScalar(value: string, tag: string): string {
-  return neutralizeContextClosingTag(value.replace(CONTROL_CHARS, ' ').trim(), tag);
-}
-
-/** The `<ui_action>` block's tag name, shared by the formatter and its callers. */
-const UI_ACTION_TAG = 'ui_action';
-
-/**
- * Render a widget `agent`-action interaction into the `<ui_action>` user-turn
- * block that triggers the agent's next turn (spec gen-ui-tier1 §3).
- *
- * Runtime-neutral by construction — the block is the plain message TEXT fed to
- * `sendMessage`, so every runtime receives it identically. Shared (not
- * server-only) so the HTTP path (server route) and the in-process
- * `DirectTransport` path (Obsidian) emit a byte-identical block. Includes the
- * action id, the widget title (when known), and the payload (form values already
- * merged in client-side) so the agent can respond to the specific control fired.
- *
- * Every interpolated field is untrusted (agent-authored widgets, marketplace
- * skill templates, user-typed form values) and is sanitized so it cannot break
- * out of the block: scalars are flattened via {@link sanitizeContextScalar}; the
- * serialized payload keeps its JSON formatting but has the closing-tag sequence
- * neutralized via {@link neutralizeContextClosingTag} (JSON.stringify already
- * escapes newlines inside string values).
- *
- * @param action - The ui-action request: actionId, optional payload, optional
- *   widget title/id
- */
-export function formatUiActionMessage(action: UiActionRequest): string {
-  const title = action.widgetTitle ? sanitizeContextScalar(action.widgetTitle, UI_ACTION_TAG) : '';
-  const lines: string[] = [
-    `<${UI_ACTION_TAG}>`,
-    'The user interacted with a widget you rendered.',
-    `Widget: ${title || '(untitled)'}`,
-    `Action: ${sanitizeContextScalar(action.actionId, UI_ACTION_TAG)}`,
-  ];
-  if (action.widgetId) {
-    lines.push(`Widget ID: ${sanitizeContextScalar(action.widgetId, UI_ACTION_TAG)}`);
-  }
-  const hasPayload = action.payload && Object.keys(action.payload).length > 0;
-  lines.push(
-    hasPayload
-      ? `Payload:\n${neutralizeContextClosingTag(JSON.stringify(action.payload, null, 2), UI_ACTION_TAG)}`
-      : 'Payload: (none)'
-  );
-  lines.push(`</${UI_ACTION_TAG}>`);
-  return lines.join('\n');
-}
+// The `<ui_action>` message formatter is a distinct concern (prompt-injection-
+// safe rendering of an interaction into a user turn), extracted to keep this
+// file focused on the widget catalog. Re-exported so the public
+// `@dorkos/shared/ui-widget` import surface is unchanged.
+export {
+  neutralizeContextClosingTag,
+  sanitizeContextScalar,
+  formatUiActionMessage,
+} from './ui-action-message.js';

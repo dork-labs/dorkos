@@ -26,6 +26,14 @@ export function ListNode({ node }: { node: ListNodeData }) {
             className="hover:bg-muted/40 -mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors first:pt-0 last:pb-0"
             variants={motionOn ? widgetEntrance : undefined}
           >
+            {item.image && (
+              <img
+                src={item.image}
+                alt=""
+                className="size-10 shrink-0 rounded-md border object-cover"
+                loading="lazy"
+              />
+            )}
             {item.icon && <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden />}
             <div className="min-w-0 flex-1">
               <p className="text-foreground truncate text-sm font-medium">{item.title}</p>
@@ -33,6 +41,11 @@ export function ListNode({ node }: { node: ListNodeData }) {
                 <p className="text-muted-foreground truncate text-xs">{item.subtitle}</p>
               )}
             </div>
+            {item.meta && (
+              <span className="text-muted-foreground shrink-0 text-sm tabular-nums">
+                {item.meta}
+              </span>
+            )}
             {item.badge && (
               <span
                 className={cn(

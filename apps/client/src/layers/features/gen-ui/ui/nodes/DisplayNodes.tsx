@@ -1,10 +1,17 @@
+import { useId } from 'react';
 import { motion } from 'motion/react';
 import type { WidgetNode } from '@dorkos/shared/ui-widget';
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
 import { MarkdownContent, Progress, Separator } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { toneBadgeClass } from '../../lib/widget-tone';
-import { useCountUp, useWidgetMotion, WIDGET_SPRING } from '../../lib/widget-motion';
+import {
+  useCountUp,
+  useWidgetMotion,
+  WIDGET_DRAW_DURATION,
+  WIDGET_EASE_OUT,
+  WIDGET_SPRING,
+} from '../../lib/widget-motion';
 import { formatStatValue, parseStatValue } from '../../lib/stat-format';
 
 type NodeOf<T extends WidgetNode['type']> = Extract<WidgetNode, { type: T }>;
@@ -74,25 +81,85 @@ export function StatNode({ node }: { node: NodeOf<'stat'> }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-muted-foreground text-xs font-medium">{node.label}</span>
-      <div className="flex items-baseline gap-2">
-        <span className="text-foreground text-2xl font-semibold tabular-nums">{display}</span>
-        {node.delta && DeltaIcon && (
-          <motion.span
-            className={cn(
-              'inline-flex items-center gap-0.5 text-xs font-medium',
-              DELTA_CLASS[node.delta.direction]
-            )}
-            initial={motionOn ? { opacity: 0, x: -4 } : false}
-            animate={motionOn ? { opacity: 1, x: 0 } : false}
-            transition={{ ...WIDGET_SPRING, delay: 0.25 }}
-          >
-            <DeltaIcon className="size-3" aria-hidden />
-            {node.delta.value}
-          </motion.span>
-        )}
+      <div className="flex items-center gap-3">
+        <div className="flex items-baseline gap-2">
+          <span className="text-foreground text-2xl font-semibold tabular-nums">{display}</span>
+          {node.delta && DeltaIcon && (
+            <motion.span
+              className={cn(
+                'inline-flex items-center gap-0.5 text-xs font-medium',
+                DELTA_CLASS[node.delta.direction]
+              )}
+              initial={motionOn ? { opacity: 0, x: -4 } : false}
+              animate={motionOn ? { opacity: 1, x: 0 } : false}
+              transition={{ ...WIDGET_SPRING, delay: 0.25 }}
+            >
+              <DeltaIcon className="size-3" aria-hidden />
+              {node.delta.value}
+            </motion.span>
+          )}
+        </div>
+        {node.trend && node.trend.length >= 2 && <StatSparkline values={node.trend} />}
       </div>
       {node.hint && <span className="text-muted-foreground text-xs">{node.hint}</span>}
     </div>
+  );
+}
+
+/**
+ * A compact inline sparkline for a `stat`'s `trend` series. Uses the same
+ * clip-path wipe reveal as {@link ChartNode} — a widening clip rect is immune to
+ * the non-uniform stretch from `preserveAspectRatio="none"` that would distort a
+ * stroke-dash draw.
+ */
+function StatSparkline({ values }: { values: number[] }) {
+  const motionOn = useWidgetMotion();
+  // useId emits colons, invalid inside a `url(#…)` reference.
+  const clipId = `spark-wipe-${useId().replace(/:/g, '')}`;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const points = values
+    .map((v, i) => {
+      const x = (i / (values.length - 1)) * 100;
+      const y = max === min ? 50 : 100 - ((v - min) / range) * 100;
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      className="h-5 w-16 shrink-0 overflow-visible"
+      aria-hidden
+    >
+      {motionOn && (
+        <defs>
+          <clipPath id={clipId}>
+            <motion.rect
+              x={-4}
+              y={-12}
+              height={124}
+              initial={{ width: 0 }}
+              animate={{ width: 108 }}
+              transition={{ duration: WIDGET_DRAW_DURATION, ease: WIDGET_EASE_OUT }}
+            />
+          </clipPath>
+        </defs>
+      )}
+      <g clipPath={motionOn ? `url(#${clipId})` : undefined}>
+        <polyline
+          points={points}
+          fill="none"
+          stroke="hsl(var(--chart-1))"
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </g>
+    </svg>
   );
 }
 

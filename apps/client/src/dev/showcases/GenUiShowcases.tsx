@@ -102,11 +102,22 @@ const CHART: WidgetDocument = {
   },
 };
 
+/** A tiny inline thumbnail so the List showcase renders offline (no network). */
+const THUMB =
+  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect width='40' height='40' rx='6' fill='%236366f1'/><circle cx='20' cy='16' r='7' fill='white' opacity='0.9'/><rect x='8' y='26' width='24' height='8' rx='4' fill='white' opacity='0.7'/></svg>";
+
 const LIST: WidgetDocument = {
   version: 1,
   root: {
     type: 'list',
     items: [
+      {
+        title: 'Mechanical keyboard',
+        subtitle: 'Tactile, hot-swappable',
+        image: THUMB,
+        meta: '$129.00',
+        badge: { text: 'in stock', tone: 'success' },
+      },
       {
         title: 'Deploy to production',
         subtitle: 'main → prod',
@@ -126,6 +137,65 @@ const LIST: WidgetDocument = {
         badge: { text: 'overdue', tone: 'error' },
       },
     ],
+  },
+};
+
+const TIMELINE: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'timeline',
+    items: [
+      { time: '08:15', title: 'Depart San Francisco', subtitle: 'SFO → JFK', status: 'done' },
+      { time: '16:40', title: 'Arrive New York', subtitle: 'Check in at hotel', status: 'done' },
+      { time: 'Now', title: 'Team dinner', subtitle: 'Little Italy', status: 'active' },
+      {
+        time: 'Tomorrow',
+        title: 'Conference keynote',
+        subtitle: 'Javits Center',
+        status: 'upcoming',
+      },
+    ],
+  },
+};
+
+const CHECKLIST: WidgetDocument = {
+  version: 1,
+  title: 'Packing list',
+  root: {
+    type: 'checklist',
+    items: [
+      { label: 'Passport', checked: true },
+      { label: 'Laptop + charger', checked: true, note: 'Plus a spare USB-C cable' },
+      { label: 'Noise-cancelling headphones' },
+      { label: 'Reusable water bottle', note: 'Empty it before security' },
+    ],
+    action: { kind: 'agent', id: 'confirm-packing' },
+    submitLabel: 'Confirm packed',
+  },
+};
+
+const COMPARE: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'compare',
+    options: [{ name: 'Air 13"' }, { name: 'Pro 14"', recommended: true }, { name: 'Pro 16"' }],
+    rows: [
+      { label: 'Price', values: ['$1,099', '$1,999', '$2,499'] },
+      { label: 'Memory (GB)', values: [16, 18, 36] },
+      { label: 'Battery (hrs)', values: [18, 22, 24] },
+      { label: 'ProMotion display', values: [false, true, true] },
+      { label: 'Ports', values: [2, 3, 3] },
+    ],
+  },
+};
+
+const RATING: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'rating',
+    value: 4.6,
+    count: 2384,
+    label: 'Average customer rating',
   },
 };
 
@@ -179,11 +249,55 @@ export function GenUiShowcases() {
 
       <PlaygroundSection
         title="Generative UI — List"
-        description="List items with icons and toned badges."
+        description="List items with thumbnails, icons, right-aligned meta, and toned badges."
       >
         <ShowcaseDemo>
           <div className="max-w-md">
             <WidgetRenderer document={LIST} />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Timeline"
+        description="A vertical rail of events with done / active / upcoming statuses; the active stop pulses."
+      >
+        <ShowcaseDemo>
+          <div className="max-w-sm">
+            <WidgetRenderer document={TIMELINE} />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Checklist"
+        description="Toggleable items seeded from the widget; the submit posts checked/unchecked labels back to the agent."
+      >
+        <ShowcaseDemo>
+          <div className="max-w-sm">
+            <WidgetRenderer document={CHECKLIST} />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Compare"
+        description="An option-comparison matrix with a recommended column, boolean check/cross cells, and numeric rows."
+      >
+        <ShowcaseDemo>
+          <div className="max-w-md">
+            <WidgetRenderer document={COMPARE} />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Rating"
+        description="Five stars with a fractional fill, the numeric value, and a review count."
+      >
+        <ShowcaseDemo>
+          <div className="max-w-sm">
+            <WidgetRenderer document={RATING} />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

@@ -8,7 +8,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Generative UI
 
-Agents don't have to describe data in prose — they can render it. DorkOS's generative UI system lets any agent emit a small, declarative JSON document that the client renders as a real, native widget: stat cards, tables, lists, charts, key/value pairs, badges, progress bars, images, and forms. There's no agent-authored code and no iframe — every widget is built from the same shadcn components the rest of DorkOS uses, so it looks and behaves like the surrounding UI.
+Agents don't have to describe data in prose — they can render it. DorkOS's generative UI system lets any agent emit a small, declarative JSON document that the client renders as a real, native widget: stat cards, tables, lists, charts, timelines, checklists, comparison matrices, star ratings, key/value pairs, badges, progress bars, images, and forms. There's no agent-authored code and no iframe — every widget is built from the same shadcn components the rest of DorkOS uses, so it looks and behaves like the surrounding UI.
 
 Widgets can also talk back: buttons, list actions, and form submits send a message to the agent so it can respond to what you clicked. And widgets can open in the canvas instead of (or in addition to) chat, alongside images and PDFs the agent points the canvas at.
 
@@ -68,14 +68,18 @@ A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fix
 
 **Data**
 
-| Type       | Fields                                                                                        | Renders as                                                                                           |
-| ---------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `stat`     | `label`, `value`, `delta?: { value, direction: "up" \| "down" \| "flat" }`, `hint?`           | A labelled metric with an optional trend arrow and hint                                              |
-| `keyValue` | `items: [{ key, value }]`                                                                     | A two-column key/value list                                                                          |
-| `progress` | `value: 0-100`, `label?`                                                                      | A labelled progress bar                                                                              |
-| `table`    | `columns: [{ key, label, align? }]`, `rows: [{ <key>: string \| number \| boolean \| null }]` | A data table                                                                                         |
-| `list`     | `items: [{ title, subtitle?, icon?, badge?, actions? }]`                                      | A vertical list of rows, each with an optional icon, badge, and action buttons                       |
-| `chart`    | `kind: "bar" \| "line" \| "area" \| "pie"`, `data: [{ label, value }]`, `height?`             | A minimal chart. Values must be non-negative — there's no zero-baseline handling for negative values |
+| Type        | Fields                                                                                                    | Renders as                                                                                             |
+| ----------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `stat`      | `label`, `value`, `delta?: { value, direction: "up" \| "down" \| "flat" }`, `hint?`, `trend?: number[]`   | A labelled metric with an optional trend arrow, hint, and inline sparkline (2+ trend points)           |
+| `keyValue`  | `items: [{ key, value }]`                                                                                 | A two-column key/value list                                                                            |
+| `progress`  | `value: 0-100`, `label?`                                                                                  | A labelled progress bar                                                                                |
+| `table`     | `columns: [{ key, label, align? }]`, `rows: [{ <key>: string \| number \| boolean \| null }]`             | A data table                                                                                           |
+| `list`      | `items: [{ title, subtitle?, icon?, image?, meta?, badge?, actions? }]`                                   | A vertical list of rows, each with an optional thumbnail, icon, right-aligned meta, badge, and actions |
+| `chart`     | `kind: "bar" \| "line" \| "area" \| "pie"`, `data: [{ label, value }]`, `height?`                         | A minimal chart. Values must be non-negative — there's no zero-baseline handling for negative values   |
+| `timeline`  | `items: [{ title, time?, subtitle?, icon?, status?: "done" \| "active" \| "upcoming" }]`                  | A vertical event rail; the `active` stop is emphasized and pulses                                      |
+| `checklist` | `items: [{ label, checked?, note? }]`, `action?`, `submitLabel?`                                          | Toggleable checkboxes; with an `action`, a submit posts the checked/unchecked labels back              |
+| `compare`   | `options: [{ name, recommended? }]`, `rows: [{ label, values: (string \| number \| boolean \| null)[] }]` | An option-comparison matrix; the recommended column is badged and highlighted                          |
+| `rating`    | `value: 0-5`, `count?`, `label?`                                                                          | Five stars with a fractional fill, plus the value and optional review count                            |
 
 **Media**
 
@@ -114,9 +118,10 @@ Any node can be the `root`, and containers (`stack`, `card`, `form`) nest recurs
 
 A couple of catalog-specific rules worth knowing before you emit one:
 
-- `image.src` must start with `https://` or `data:` — no bare paths, no `http://`.
+- `image.src` (and `list` item `image`) must start with `https://` or `data:` — no bare paths, no `http://`.
 - `chart.data[].value` must be `>= 0`.
-- `progress.value` must be `0-100`.
+- `progress.value` must be `0-100`; `rating.value` clamps to `0-5`.
+- `compare` rows may be shorter than `options` — missing cells pad to a blank rather than failing.
 
 Reach for a widget when the reply has structured data worth scanning — metrics, tables, lists, charts. Don't wrap plain prose in one.
 

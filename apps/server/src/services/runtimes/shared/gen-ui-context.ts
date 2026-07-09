@@ -29,11 +29,15 @@ A <node> is { "type": <type>, ...props }. Catalog:
           card { title?, description?, children: node[], footer?: node[] }, divider
   text:   heading { text, level?: 1|2|3 }, text { text (inline markdown) },
           badge { text, tone?: "default"|"success"|"warning"|"error"|"info" }
-  data:   stat { label, value, delta?: { value, direction: "up"|"down"|"flat" }, hint? },
+  data:   stat { label, value, delta?: { value, direction: "up"|"down"|"flat" }, hint?, trend?: number[] },
           keyValue { items: [{ key, value }] }, progress { value: 0-100, label? },
           table { columns: [{ key, label, align? }], rows: [{ <key>: string|number|boolean|null }] },
-          list { items: [{ title, subtitle?, icon?, badge?, actions? }] },
-          chart { kind: "bar"|"line"|"area"|"pie", data: [{ label, value }], height? } (values >= 0)
+          list { items: [{ title, subtitle?, icon?, image?, meta?, badge?, actions? }] },
+          chart { kind: "bar"|"line"|"area"|"pie", data: [{ label, value }], height? } (values >= 0),
+          timeline { items: [{ title, time?, subtitle?, icon?, status?: "done"|"active"|"upcoming" }] },
+          checklist { items: [{ label, checked?, note? }], action?, submitLabel? } (checked labels post back via action),
+          compare { options: [{ name, recommended? }], rows: [{ label, values: (string|number|boolean|null)[] }] },
+          rating { value: 0-5, count?, label? }
   media:  image { src (https/data only), alt, caption? }
   action: button { label, variant?, action }, form { children: node[], submit: { label, action } },
           input { name, label?, placeholder?, kind? }, select { name, label?, options: [{ label, value }] }
@@ -49,13 +53,6 @@ Example — a stat card:
 \`\`\`dorkos-ui
 { "version": 1, "root": { "type": "card", "title": "Weather", "children": [
   { "type": "stat", "label": "San Francisco", "value": "64°F", "delta": { "value": "+2°", "direction": "up" } } ] } }
-\`\`\`
-
-Example — a table:
-\`\`\`dorkos-ui
-{ "version": 1, "root": { "type": "table",
-  "columns": [{ "key": "id", "label": "Issue" }, { "key": "status", "label": "Status" }],
-  "rows": [{ "id": "DOR-1", "status": "open" }] } }
 \`\`\`
 
 Use widgets for structured data the user will scan (metrics, tables, lists, charts).
