@@ -13,6 +13,10 @@ export default function TermsOfServicePage() {
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Terms of Service</h1>
           <p className="text-warm-gray text-lg">Last updated: July 9, 2026</p>
+          <p className="text-warm-gray leading-relaxed">
+            DorkOS is made by Blaze Ventures, LLC. When these terms say &quot;we,&quot; that is who
+            you are agreeing with.
+          </p>
         </header>
 
         <section className="border-warm-gray-light/30 space-y-3 rounded-xl border p-6">

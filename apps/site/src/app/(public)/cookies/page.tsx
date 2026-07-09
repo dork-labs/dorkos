@@ -13,6 +13,10 @@ export default function CookiePolicyPage() {
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Cookie Policy</h1>
           <p className="text-warm-gray text-lg">Last updated: July 9, 2026</p>
+          <p className="text-warm-gray leading-relaxed">
+            This site is run by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
+            we mean.
+          </p>
         </header>
 
         <section className="border-warm-gray-light/30 space-y-3 rounded-xl border p-6">
