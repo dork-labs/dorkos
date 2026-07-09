@@ -20,6 +20,8 @@ import type {
   GitStatusError,
   UploadResult,
   UploadProgress,
+  WorkbenchSignRequest,
+  WorkbenchSignResponse,
 } from '@dorkos/shared/types';
 import type {
   UploadFile,
@@ -82,6 +84,29 @@ export function createSystemMethods(baseUrl: string) {
     mediaUrl(cwd: string, filePath: string): string | null {
       const params = new URLSearchParams({ cwd, path: filePath });
       return `${baseUrl}/files/raw?${params}`;
+    },
+
+    // ── Workbench embedded browser (signed serve/proxy URLs) ──────────────
+
+    /** Mint a signed static-serve URL for a local HTML file (DOR-216). */
+    async createServeUrl(cwd: string, filePath?: string): Promise<string | null> {
+      const body: WorkbenchSignRequest =
+        filePath !== undefined ? { kind: 'serve', cwd, path: filePath } : { kind: 'serve', cwd };
+      const res = await fetchJSON<WorkbenchSignResponse>(baseUrl, '/workbench/sign', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      return res.url;
+    },
+
+    /** Mint a signed localhost reverse-proxy URL for a dev server (DOR-216). */
+    async createProxyUrl(port: number): Promise<string | null> {
+      const body: WorkbenchSignRequest = { kind: 'proxy', port };
+      const res = await fetchJSON<WorkbenchSignResponse>(baseUrl, '/workbench/sign', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      return res.url;
     },
 
     // ── Workbench file service ────────────────────────────────────────────

@@ -26,6 +26,7 @@ const CONTENT_TYPE_ICONS = {
   file: FileCode,
   model3d: Box,
   csv: Table,
+  browser: Globe,
 } as const satisfies Record<UiCanvasContent['type'], unknown>;
 
 /** A single open document, as the header needs to render its tab. */

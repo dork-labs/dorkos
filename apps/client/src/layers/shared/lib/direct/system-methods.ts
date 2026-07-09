@@ -203,6 +203,16 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       return null;
     },
 
+    // The embedded browser's serve/proxy routes need an HTTP surface a webview
+    // can reach; the in-process host has none, so the browser canvas falls back
+    // to an "unavailable here" state (same web-only posture as `mediaUrl`).
+    async createServeUrl(_cwd: string, _filePath?: string): Promise<string | null> {
+      return null;
+    },
+    async createProxyUrl(_port: number): Promise<string | null> {
+      return null;
+    },
+
     // The embedded terminal is a web-only surface: it needs a server-side PTY
     // and a WebSocket byte channel the in-process host does not provide. The tab
     // is gated on `supportsTerminal`, so `openTerminal` should never be reached;

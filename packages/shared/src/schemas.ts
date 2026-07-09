@@ -1698,6 +1698,49 @@ export const FileMutationResponseSchema = z
 
 export type FileMutationResponse = z.infer<typeof FileMutationResponseSchema>;
 
+// === Workbench browser: local-HTML serving + localhost proxy (DOR-216) ===
+
+/**
+ * Request for `POST /api/workbench/sign` — mint a short-lived signed URL the
+ * embedded browser loads in an opaque-origin sandbox (ADR 260708-185519).
+ *
+ * Two scopes, discriminated on `kind`:
+ * - `serve`: static-serve local HTML from the session's working directory
+ *   (`cwd`), rooted at `path` so relative assets resolve. The signed URL — not
+ *   the API's cookie/header auth — authorizes the request, because a sandboxed
+ *   (no `allow-same-origin`) iframe carries no credentials by design.
+ * - `proxy`: reverse-proxy a localhost dev server bound to `port`. The host is
+ *   pinned to loopback server-side (no arbitrary-host SSRF); the token carries
+ *   only the port.
+ */
+export const WorkbenchSignRequestSchema = z
+  .discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('serve'),
+      cwd: z.string().min(1),
+      /** Initial file to open, relative to `cwd` (defaults to `index.html`). */
+      path: z.string().optional(),
+    }),
+    z.object({
+      kind: z.literal('proxy'),
+      /** Localhost dev-server port to proxy (1–65535). */
+      port: z.number().int().min(1).max(65535),
+    }),
+  ])
+  .openapi('WorkbenchSignRequest');
+
+export type WorkbenchSignRequest = z.infer<typeof WorkbenchSignRequestSchema>;
+
+/** Response for `POST /api/workbench/sign`: the signed, short-lived URL to load. */
+export const WorkbenchSignResponseSchema = z
+  .object({
+    /** Same-origin URL embedding the signed token; load directly as an iframe `src`. */
+    url: z.string(),
+  })
+  .openapi('WorkbenchSignResponse');
+
+export type WorkbenchSignResponse = z.infer<typeof WorkbenchSignResponseSchema>;
+
 // === Directory Browsing Types ===
 
 export const BrowseDirectoryQuerySchema = z
@@ -2386,6 +2429,24 @@ export const UiCanvasContentSchema = z
       src: CanvasMediaSrcSchema,
       title: z.string().optional(),
     }),
+    z.object({
+      type: z.literal('browser'),
+      /**
+       * The page to open in the embedded browser (DOR-216). One of:
+       * - an external `https://` / `http://` URL (rendered directly; falls back
+       *   to "open in system browser" when the site refuses framing),
+       * - a `localhost`/`127.0.0.1` dev-server URL (routed through the localhost
+       *   reverse-proxy so it can be framed), or
+       * - a local file path within the session cwd (routed through the signed
+       *   static-serve route so relative assets resolve).
+       *
+       * Local and dev-server content renders in an opaque-origin sandbox (no
+       * `allow-same-origin`) per ADR 260708-185519 — it can never call `/api/*`
+       * as the user.
+       */
+      url: z.string().min(1),
+      title: z.string().optional(),
+    }),
   ])
   .openapi('UiCanvasContent');
 
@@ -2522,6 +2583,7 @@ export const UiStateSchema = z
           'file',
           'model3d',
           'csv',
+          'browser',
         ])
         .nullable(),
     }),

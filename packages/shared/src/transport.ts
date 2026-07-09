@@ -497,6 +497,38 @@ export interface Transport {
    */
   mediaUrl(cwd: string, filePath: string): string | null;
 
+  // --- Workbench embedded browser (web-only; DOR-216, ADR 260708-185519) ---
+
+  /**
+   * Mint a short-lived signed URL that statically serves a local HTML file (and
+   * its relative assets) from a session's working directory, for the embedded
+   * browser to load in an opaque-origin sandbox. The token — not the API's
+   * cookie/header auth — authorizes the request, so a sandboxed (no
+   * `allow-same-origin`) frame that carries no credentials can still fetch the
+   * page, yet the page can never call `/api/*` as the user. The path is confined
+   * to `cwd` server-side; a `..`/symlink escape is rejected.
+   *
+   * Returns `null` when the transport cannot serve local files over a URL (the
+   * in-process Obsidian transport), so the browser falls back to an
+   * "unavailable here" state.
+   *
+   * @param cwd - Session working directory the served files are confined to.
+   * @param filePath - Initial file to open, relative to `cwd` (defaults to `index.html`).
+   */
+  createServeUrl(cwd: string, filePath?: string): Promise<string | null>;
+  /**
+   * Mint a short-lived signed URL that reverse-proxies a localhost dev server so
+   * the embedded browser can frame it (the proxy strips `X-Frame-Options` /
+   * `frame-ancestors`). The target host is pinned to loopback server-side — no
+   * arbitrary-host SSRF. Rendered in the same opaque-origin sandbox as served
+   * content.
+   *
+   * Returns `null` on the in-process Obsidian transport (web-only surface).
+   *
+   * @param port - Localhost port of the dev server to proxy (1–65535).
+   */
+  createProxyUrl(port: number): Promise<string | null>;
+
   // --- Workbench file service (explorer + viewers; DOR-217) ---
 
   /**

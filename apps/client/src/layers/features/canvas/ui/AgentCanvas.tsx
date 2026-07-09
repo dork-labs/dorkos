@@ -5,6 +5,7 @@ import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { CanvasHeader } from './CanvasHeader';
 import { CanvasUrlContent } from './CanvasUrlContent';
+import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
 import { CanvasImageContent } from './CanvasImageContent';
@@ -38,6 +39,8 @@ function CanvasRenderer({
   switch (content.type) {
     case 'url':
       return <CanvasUrlContent content={content} />;
+    case 'browser':
+      return <CanvasBrowserContent content={content} />;
     case 'markdown':
       // Key per source file so the editor + its save state remount fresh when
       // the document swaps (defense in depth).
