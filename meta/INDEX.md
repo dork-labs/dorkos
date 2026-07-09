@@ -53,8 +53,15 @@ throughout `AGENTS.md` as decision-making filters.
   Nakamura, the primary persona.
 - [`personas/the-knowledge-architect.md`](personas/the-knowledge-architect.md):
   Priya Sharma, the secondary persona.
+- [`personas/the-ai-native-founder.md`](personas/the-ai-native-founder.md): Ikechi,
+  secondary persona — non-developer founder shipping apps by directing agents
+  (grounded on a real user).
+- [`personas/the-private-professional.md`](personas/the-private-professional.md):
+  Lil, horizon persona — privacy-first non-technical professional (staged; not a
+  launch target).
 - [`personas/the-prompt-dabbler.md`](personas/the-prompt-dabbler.md): the
-  anti-persona (out of scope by design).
+  anti-persona (out of scope by design; boundary is operator mentality, not
+  technical skill).
 - [`personas/icp-ai-native-dev-shop.md`](personas/icp-ai-native-dev-shop.md): the
   ideal-customer profile.
 - `personas/manifest.json` and `personas/config.json`: persona registry and
