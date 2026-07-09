@@ -57,24 +57,24 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   // Coding & DevOps
   { module: 'agent', text: 'Agent committed 3 files to feature/auth-flow' },
   { module: 'tasks', text: 'Tasks finished task 4 of 12 on your to-do list' },
-  { module: 'agent', text: 'Agent reviewed code change #47 \u2014 approved with suggestions' },
+  { module: 'agent', text: 'Agent reviewed code change #47, approved with suggestions' },
   { module: 'mesh', text: 'Mesh routed the failing build to the agent that owns it' },
   { module: 'agent', text: 'Agent deployed v2.1.3 to staging' },
   { module: 'mesh', text: 'Mesh got 3 agents working together on billing cleanup' },
-  { module: 'agent', text: 'Agent wrote 14 tests \u2014 all passing' },
+  { module: 'agent', text: 'Agent wrote 14 tests, all passing' },
   { module: 'agent', text: 'Agent resolved 2 merge conflicts automatically' },
   {
     module: 'agent',
-    text: 'Agent cleaned up the login code \u2014 removed 340 lines of dead code',
+    text: 'Agent cleaned up the login code, removing 340 lines of dead code',
   },
   { module: 'tasks', text: 'Tasks sorted through 12 GitHub issues while you were asleep' },
   // Business & money
   { module: 'relay', text: 'Sent you a Telegram: \u201CDeploy finished, all good.\u201D' },
-  { module: 'agent', text: 'Agent drafted Q2 investor update \u2014 ready for review' },
-  { module: 'relay', text: 'Received a webhook from GitHub \u2014 routed to the right agent' },
-  { module: 'agent', text: 'Agent found $2,400/yr in unused AWS resources \u2014 cleanup ready' },
+  { module: 'agent', text: 'Agent drafted Q2 investor update, ready for review' },
+  { module: 'relay', text: 'Received a webhook from GitHub, routed it to the right agent' },
+  { module: 'agent', text: 'Agent found $2,400/yr in unused AWS resources, cleanup ready' },
   { module: 'agent', text: 'Agent pulled together a competitive analysis from 14 sources' },
-  { module: 'tasks', text: 'Tasks generated your monthly revenue report \u2014 MRR up 23%' },
+  { module: 'tasks', text: 'Tasks generated your monthly revenue report: MRR up 23%' },
   // Life automation
   { module: 'relay', text: 'Sent your support team a reply via Telegram' },
   { module: 'agent', text: 'Agent booked dentist appointment for Thursday 2pm' },
@@ -85,17 +85,17 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   },
   {
     module: 'agent',
-    text: 'Agent meal-prepped grocery list for the week \u2014 ordered via Instacart',
+    text: 'Agent meal-prepped grocery list for the week, ordered via Instacart',
   },
   { module: 'tasks', text: 'Tasks filed your quarterly taxes 3 days before the deadline' },
   // Coordination & connectivity
   { module: 'mesh', text: 'Mesh assembled 7 agents for Operation Birthday Surprise' },
   { module: 'tasks', text: 'Tasks kicked off the next round of tasks' },
-  { module: 'relay', text: 'Telegram adapter connected \u2014 listening for messages' },
-  { module: 'mesh', text: 'Mesh registered a new agent \u2014 8 now online' },
+  { module: 'relay', text: 'Telegram adapter connected, listening for messages' },
+  { module: 'mesh', text: 'Mesh registered a new agent: 8 now online' },
   // Follow-through
-  { module: 'agent', text: 'Agent spotted 8 things worth checking \u2014 3 look promising' },
-  { module: 'agent', text: 'Agent tested a fix \u2014 conversion up 2.1%' },
+  { module: 'agent', text: 'Agent spotted 8 things worth checking: 3 look promising' },
+  { module: 'agent', text: 'Agent tested a fix: conversion up 2.1%' },
   { module: 'tasks', text: 'Tasks queued the next priority run for tonight' },
 ];
 
@@ -371,8 +371,8 @@ export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedH
         {/* Tagline */}
         <motion.div variants={REVEAL} className="mb-12">
           <p className="text-charcoal mx-auto max-w-2xl text-lg font-medium tracking-[-0.01em] text-balance md:text-xl">
-            Every coding agent you run &mdash; Claude Code, Codex, OpenCode &mdash; in one cockpit.
-            Your fleet, scheduled, connected, and reporting back to you.
+            Every coding agent you run: Claude Code, Codex, OpenCode. One cockpit. Your fleet,
+            scheduled, connected, and reporting back to you.
           </p>
           <p className="text-warm-gray mx-auto mt-4 max-w-2xl text-base text-balance md:text-lg">
             You&apos;ve always had more ideas than hours. That ratio just changed.

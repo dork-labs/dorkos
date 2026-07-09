@@ -49,7 +49,7 @@ export const timelineEntries: TimelineEntry[] = [
     time: '7:00 AM',
     headline: 'You open your laptop to a full progress report.',
     paragraphs: [
-      'You open your laptop. [CONSOLE] shows the night at a glance: three changes ready for review, one fix already merged, the refactor at 80% \u2014 waiting on a design question it queued for you.',
+      'You open your laptop. [CONSOLE] shows the night at a glance: three changes ready for review, one fix already merged, the refactor at 80%, waiting on a design question it queued for you.',
     ],
   },
   {

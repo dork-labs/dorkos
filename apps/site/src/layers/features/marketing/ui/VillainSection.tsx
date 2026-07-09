@@ -34,7 +34,7 @@ function DeadTerminalArt() {
       className="text-warm-gray-light/50 mb-4 font-mono text-[10px] leading-[1.6] select-none"
       aria-hidden="true"
     >
-      <span className="text-warm-gray-light/40">$</span> claude &mdash;session refactor-auth
+      <span className="text-warm-gray-light/40">$</span> claude --session refactor-auth
       <br />
       <span className="text-warm-gray-light/40">&check;</span> 47 files changed, tests passing
       <br />
@@ -150,7 +150,7 @@ function ThreeAmBuildArt() {
         <circle cx="11" cy="11" r="1.2" fill="rgba(232, 93, 4, 0.4)" />
       </svg>
       <div className="text-warm-gray-light/50 font-mono text-[10px] leading-[1.6]">
-        <span style={{ color: 'rgba(232, 93, 4, 0.5)' }}>&cross;</span> Tests failed &mdash; 2:47am
+        <span style={{ color: 'rgba(232, 93, 4, 0.5)' }}>&cross;</span> Tests failed at 2:47am
         <br />
         <span className="text-warm-gray-light/30">
           fix: 3 lines &middot; agent: ready &middot; terminal: closed

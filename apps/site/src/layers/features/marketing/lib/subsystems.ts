@@ -30,7 +30,7 @@ export const subsystems: Subsystem[] = [
     id: 'relay',
     benefit: 'Your agents reach you wherever you are',
     name: 'Relay',
-    description: 'Telegram, Slack, webhooks — so your agents can reach you wherever you are.',
+    description: 'Telegram, Slack, webhooks: your agents can reach you wherever you are.',
     status: 'available',
     integrations: [
       { label: 'Telegram', icon: Send, status: 'live' },

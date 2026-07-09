@@ -56,7 +56,7 @@ export function PivotSection() {
         >
           That&apos;s the lesson of every team, every company, every civilization. The breakthroughs
           never came from smarter people. They came from giving smart people better
-          systems&nbsp;&mdash; schedules, communication, shared memory, ways to find each other.
+          systems: schedules, communication, shared memory, ways to find each other.
         </motion.p>
 
         {/* OS icons — visual bridge from thesis to product */}

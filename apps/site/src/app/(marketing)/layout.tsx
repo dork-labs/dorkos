@@ -3,7 +3,7 @@ import { siteConfig } from '@/config/site';
 import { MarketingShell } from './marketing-shell';
 
 const metaDescription =
-  'Mission control for every coding agent you run — Claude Code, Codex, and OpenCode in one cockpit. Schedule your fleet, get pinged when your agents finish, and keep everything on your machine. Open source, MIT.';
+  'Mission control for every coding agent you run: Claude Code, Codex, and OpenCode in one cockpit. Schedule your fleet, get pinged when your agents finish, and keep everything on your machine. Open source, MIT.';
 
 export const metadata: Metadata = {
   title: `${siteConfig.name} - ${siteConfig.description}`,
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'DorkOS — mission control for every coding agent you run',
+        alt: 'DorkOS: mission control for every coding agent you run',
       },
     ],
   },

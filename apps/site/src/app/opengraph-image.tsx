@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og';
 
 export const runtime = 'edge';
 
-export const alt = 'DorkOS — mission control for every coding agent you run';
+export const alt = 'DorkOS: mission control for every coding agent you run';
 export const size = {
   width: 1200,
   height: 630,

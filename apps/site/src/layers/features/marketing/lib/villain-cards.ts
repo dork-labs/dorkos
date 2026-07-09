@@ -9,7 +9,7 @@ export const villainCards: VillainCard[] = [
   {
     id: 'tab-graveyard',
     label: 'The Tab Graveyard',
-    body: 'Claude Code in one window. Codex in another. OpenCode in a third. Two projects, five terminals \u2014 and you\u2019re the only thing that knows what any of them are doing.\n\nYou didn\u2019t mean to become the router. It just happened.',
+    body: 'Claude Code in one window. Codex in another. OpenCode in a third. Two projects, five terminals, and you\u2019re the only thing that knows what any of them are doing.\n\nYou didn\u2019t mean to become the router. It just happened.',
     solution: 'What if one place knew about all of them?',
   },
   {
