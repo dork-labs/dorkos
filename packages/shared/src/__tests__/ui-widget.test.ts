@@ -562,3 +562,126 @@ describe('Tier-1 utility nodes', () => {
     });
   });
 });
+
+describe('Tier-2 delight nodes', () => {
+  const parse = (n: unknown) => WidgetNodeSchema.parse(n) as Record<string, unknown>;
+
+  describe('mood', () => {
+    it('round-trips every emotion, with and without a message', () => {
+      const node = { type: 'mood', emotion: 'happy', message: 'All tests pass!' };
+      expect(parse(node)).toEqual(node);
+      expect(parse({ type: 'mood', emotion: 'sad' })).toEqual({ type: 'mood', emotion: 'sad' });
+    });
+
+    it.each([
+      ['excited', 'celebrating'],
+      ['party', 'celebrating'],
+      ['hyped', 'celebrating'],
+      ['proud', 'happy'],
+      ['joy', 'happy'],
+      ['joyful', 'happy'],
+      ['glad', 'happy'],
+      ['confused', 'thinking'],
+      ['pondering', 'thinking'],
+      ['curious', 'thinking'],
+      ['hmm', 'thinking'],
+      ['embarrassed', 'sheepish'],
+      ['oops', 'sheepish'],
+      ['awkward', 'sheepish'],
+      ['shy', 'sheepish'],
+      ['focused', 'determined'],
+      ['serious', 'determined'],
+      ['resolute', 'determined'],
+      ['shocked', 'surprised'],
+      ['wow', 'surprised'],
+      ['amazed', 'surprised'],
+      ['mind-blown', 'surprised'],
+      ['unhappy', 'sad'],
+      ['disappointed', 'sad'],
+      ['down', 'sad'],
+      ['heart', 'love'],
+      ['hearts', 'love'],
+      ['adore', 'love'],
+    ])('coerces the emotion synonym %s -> %s', (synonym, canonical) => {
+      expect(parse({ type: 'mood', emotion: synonym })).toEqual({
+        type: 'mood',
+        emotion: canonical,
+      });
+    });
+
+    it('rejects an unrecognized emotion', () => {
+      expect(WidgetNodeSchema.safeParse({ type: 'mood', emotion: 'grumpy' }).success).toBe(false);
+    });
+  });
+
+  describe('board', () => {
+    it('round-trips a tic-tac-toe mid-game board with glyphs, tones, and an action', () => {
+      const node = {
+        type: 'board',
+        label: 'Tic-tac-toe',
+        rows: [
+          [{ glyph: 'X' }, { glyph: 'O' }, {}],
+          [{}, { glyph: 'X', tone: 'success' }, {}],
+          [{ action: { kind: 'agent', id: 'move-2-0' } }, {}, {}],
+        ],
+      };
+      expect(parse(node)).toEqual(node);
+    });
+
+    it('coerces a bare-string cell to { glyph } and an empty string to a blank cell', () => {
+      const parsed = parse({
+        type: 'board',
+        rows: [['X', 'O', '']],
+      });
+      expect(parsed.rows).toEqual([[{ glyph: 'X' }, { glyph: 'O' }, {}]]);
+    });
+
+    it('slices an oversized board to 12 rows and 12 columns instead of rejecting it', () => {
+      const oversizedRow = Array.from({ length: 20 }, () => 'X');
+      const rows = Array.from({ length: 20 }, () => oversizedRow);
+      const parsed = parse({ type: 'board', rows }) as { rows: unknown[][] };
+      expect(parsed.rows).toHaveLength(12);
+      for (const row of parsed.rows) {
+        expect(row).toHaveLength(12);
+      }
+    });
+  });
+
+  describe('reveal', () => {
+    it('round-trips a coin flip', () => {
+      const node = { type: 'reveal', kind: 'coin', result: 'heads', label: 'Coin flip' };
+      expect(parse(node)).toEqual(node);
+    });
+
+    it('coerces a numeric dice result to a string', () => {
+      expect(parse({ type: 'reveal', kind: 'd6', result: 4 })).toEqual({
+        type: 'reveal',
+        kind: 'd6',
+        result: '4',
+      });
+    });
+
+    it.each([
+      ['flip', 'coin'],
+      ['coinflip', 'coin'],
+      ['dice', 'd6'],
+      ['die', 'd6'],
+      ['magic8ball', '8ball'],
+      ['8-ball', '8ball'],
+      ['eightball', '8ball'],
+      ['magic-8-ball', '8ball'],
+    ])('coerces the kind synonym %s -> %s', (synonym, canonical) => {
+      expect(parse({ type: 'reveal', kind: synonym, result: 'x' })).toEqual({
+        type: 'reveal',
+        kind: canonical,
+        result: 'x',
+      });
+    });
+
+    it('rejects an unrecognized kind', () => {
+      expect(
+        WidgetNodeSchema.safeParse({ type: 'reveal', kind: 'coinflip3000', result: 'x' }).success
+      ).toBe(false);
+    });
+  });
+});

@@ -66,6 +66,27 @@ export const GEN_UI_SECTIONS: PlaygroundSection[] = [
     keywords: ['widget', 'gen-ui', 'dorkos-ui', 'rating', 'stars', 'reviews'],
   },
   {
+    id: 'generative-ui-mood',
+    title: 'Generative UI — Mood',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'mood', 'emotion', 'face', 'delight'],
+  },
+  {
+    id: 'generative-ui-board',
+    title: 'Generative UI — Board',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'board', 'grid', 'game', 'tic-tac-toe'],
+  },
+  {
+    id: 'generative-ui-reveal',
+    title: 'Generative UI — Reveal',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'reveal', 'coin', 'dice', '8ball', 'delight'],
+  },
+  {
     id: 'generative-ui-error-card-d5',
     title: 'Generative UI — Error Card (D5)',
     page: 'gen-ui',

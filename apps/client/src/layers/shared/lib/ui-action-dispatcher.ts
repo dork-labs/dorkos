@@ -1,6 +1,7 @@
 import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
 import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
+import { fireConfetti } from './celebrations/effects';
 
 /**
  * Minimal store interface the dispatcher requires.
@@ -202,6 +203,14 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
     // --- Command Palette ---
     case 'open_command_palette':
       store.setGlobalPaletteOpen(true);
+      break;
+
+    // --- Celebration ---
+    case 'celebrate':
+      // Fire-and-forget: fireConfetti lazy-loads canvas-confetti and honors
+      // prefers-reduced-motion itself (disableForReducedMotion), so no extra
+      // guard is needed here — matches the SystemRequirementsStep call site.
+      void fireConfetti();
       break;
 
     default: {
