@@ -9,6 +9,7 @@ import {
   useTransport,
 } from '@/layers/shared/model';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
+import { RightPanelHeader } from './RightPanelHeader';
 
 /** CSS transition for the Panel's flex-grow during programmatic open/close. */
 const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
@@ -82,7 +83,32 @@ export function RightPanelContainer() {
   // No contributions at all — remove panel from the DOM entirely
   if (visibleContributions.length === 0) return null;
 
-  const ActiveComponent = visibleContributions.find((c) => c.id === activeTab)?.component;
+  const activeContribution = visibleContributions.find((c) => c.id === activeTab);
+  const ActiveComponent = activeContribution?.component;
+  const ActiveHeaderActions = activeContribution?.headerActions;
+
+  // Header + active content — rendered identically on desktop and mobile. The
+  // container owns the shared header so the tab strip and close button can
+  // never be lost, regardless of which panel is active.
+  const panelInner = (
+    <>
+      <RightPanelHeader
+        contributions={visibleContributions}
+        actions={
+          ActiveHeaderActions ? (
+            <Suspense fallback={null}>
+              <ActiveHeaderActions />
+            </Suspense>
+          ) : undefined
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <PanelErrorBoundary tabId={activeTab}>
+          <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>
+        </PanelErrorBoundary>
+      </div>
+    </>
+  );
 
   // Mobile: render as Sheet (built-in slide animation)
   if (isMobile) {
@@ -98,9 +124,7 @@ export function RightPanelContainer() {
             <SheetTitle>Panel</SheetTitle>
             <SheetDescription>Right panel content.</SheetDescription>
           </SheetHeader>
-          <PanelErrorBoundary tabId={activeTab}>
-            <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>
-          </PanelErrorBoundary>
+          {panelInner}
         </SheetContent>
       </Sheet>
     );
@@ -144,11 +168,7 @@ export function RightPanelContainer() {
         style={animate ? { transition: PANEL_TRANSITION } : undefined}
       >
         <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden border-l">
-          <div className="flex-1 overflow-hidden">
-            <PanelErrorBoundary tabId={activeTab}>
-              <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>
-            </PanelErrorBoundary>
-          </div>
+          {panelInner}
         </div>
       </Panel>
     </>

@@ -40,7 +40,9 @@ vi.mock('react-resizable-panels', async () => {
   };
 });
 
-// Mock Sheet components for mobile rendering
+// Mock Sheet + Tooltip components. Sheet stubs enable mobile rendering; Tooltip
+// stubs let the container-owned RightPanelHeader render its tab strip without a
+// TooltipProvider/ResizeObserver in jsdom.
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   const Passthrough = ({ children }: React.PropsWithChildren) => <>{children}</>;
@@ -58,6 +60,10 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
       <span data-testid="sheet-title">{children}</span>
     ),
     SheetDescription: Passthrough,
+    Tooltip: Passthrough,
+    TooltipTrigger: Passthrough,
+    TooltipContent: () => null,
+    TooltipProvider: Passthrough,
   };
 });
 
@@ -69,6 +75,10 @@ let mockRightPanelOpen = false;
 let mockActiveRightPanelTab: string | null = null;
 let mockIsMobile = false;
 let mockContributions: RightPanelContribution[] = [];
+// The container gates capability-scoped tabs (e.g. the web-only terminal) on the
+// active transport; mutate per-test to exercise the transport-gated path.
+let mockTransport: { supportsTerminal: boolean } = { supportsTerminal: true };
+let mockPathname = '/session';
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -80,13 +90,12 @@ vi.mock('@/layers/shared/model', () => ({
     }),
   useIsMobile: () => mockIsMobile,
   useSlotContributions: () => mockContributions,
-  // RightPanelContainer reads the active transport to gate capability-scoped
-  // tabs (e.g. the web-only terminal); a minimal stub is enough here.
-  useTransport: () => ({ supportsTerminal: true }),
+  useTransport: () => mockTransport,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: () => '/session',
+  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
+    select({ location: { pathname: mockPathname } }),
 }));
 
 // Import after mocks are set up
@@ -119,6 +128,8 @@ describe('RightPanelContainer', () => {
     mockActiveRightPanelTab = null;
     mockIsMobile = false;
     mockContributions = [];
+    mockTransport = { supportsTerminal: true };
+    mockPathname = '/session';
   });
 
   it('renders collapsed panel in DOM when rightPanelOpen is false but contributions exist', () => {
@@ -161,14 +172,80 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
   });
 
-  it('does not render its own tab bar (tab switching is handled by content components)', () => {
+  // The container owns the shared header now — the tab strip and close button
+  // are structural, so no panel can lose them. Parametrized across the four
+  // built-in tab ids to prove it holds regardless of which tab is active.
+  it.each(['agent-hub', 'canvas', 'files', 'terminal'])(
+    'renders the shared tab strip and close button when %s is the active tab',
+    (activeId) => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = activeId;
+      mockContributions = [
+        makeContribution('agent-hub'),
+        makeContribution('canvas'),
+        makeContribution('files'),
+        makeContribution('terminal'),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
+    }
+  );
+
+  it("renders the active tab's headerActions in the shared header", () => {
     mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
-    mockContributions = [makeContribution('a'), makeContribution('b')];
+    mockActiveRightPanelTab = 'files';
+    mockContributions = [
+      makeContribution('agent-hub'),
+      makeContribution('files', {
+        headerActions: () => <button type="button">New File</button>,
+      }),
+    ];
 
     render(<RightPanelContainer />);
 
-    expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New File' })).toBeInTheDocument();
+  });
+
+  it('hides a transport-gated tab when the active transport lacks the capability', () => {
+    // PR #149 regression: transport gating now lives in the container, which
+    // forwards `transport` to each `visibleWhen`.
+    mockRightPanelOpen = true;
+    mockActiveRightPanelTab = 'agent-hub';
+    mockTransport = { supportsTerminal: false };
+    mockContributions = [
+      makeContribution('agent-hub', { title: 'Agent Profile' }),
+      makeContribution('canvas', { title: 'Canvas' }),
+      makeContribution('terminal', {
+        title: 'Terminal',
+        visibleWhen: ({ transport }) => transport?.supportsTerminal === true,
+      }),
+    ];
+
+    render(<RightPanelContainer />);
+
+    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
+  });
+
+  it('shows a transport-gated tab when the active transport has the capability', () => {
+    mockRightPanelOpen = true;
+    mockActiveRightPanelTab = 'agent-hub';
+    mockTransport = { supportsTerminal: true };
+    mockContributions = [
+      makeContribution('agent-hub', { title: 'Agent Profile' }),
+      makeContribution('terminal', {
+        title: 'Terminal',
+        visibleWhen: ({ transport }) => transport?.supportsTerminal === true,
+      }),
+    ];
+
+    render(<RightPanelContainer />);
+
+    expect(screen.getByRole('tab', { name: 'Terminal' })).toBeInTheDocument();
   });
 
   it('auto-selects first visible tab when active tab is not in visible contributions', () => {
@@ -250,7 +327,7 @@ describe('RightPanelContainer', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('mobile Sheet does not render its own tab bar', () => {
+  it('mobile Sheet also renders the shared header (tab strip + close)', () => {
     mockIsMobile = true;
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
@@ -258,6 +335,7 @@ describe('RightPanelContainer', () => {
 
     render(<RightPanelContainer />);
 
-    expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
   });
 });

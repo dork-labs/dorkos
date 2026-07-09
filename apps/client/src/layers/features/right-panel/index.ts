@@ -4,7 +4,6 @@
  * @module features/right-panel
  */
 export { RightPanelContainer } from './ui/RightPanelContainer';
-export { RightPanelHeader } from './ui/RightPanelHeader';
 export { RightPanelTabBar } from './ui/RightPanelTabBar';
 export { RightPanelToggle } from './ui/RightPanelToggle';
 export { useRightPanelPersistence } from './model/use-right-panel-persistence';

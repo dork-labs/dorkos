@@ -5,11 +5,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
-// Mock the shared right-panel header to avoid router dependency in canvas tests
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelHeader: () => <div data-testid="right-panel-header">PanelHeader</div>,
-}));
-
 // Mock react-resizable-panels before importing the component under test
 vi.mock('react-resizable-panels', () => ({
   // Strip Panel-specific props that are not valid HTML attributes to avoid
@@ -195,14 +190,6 @@ describe('AgentCanvas', () => {
     setActiveDoc({ type: 'json', data: {} });
     render(<AgentCanvas />);
     expect(screen.getByText('JSON Data')).toBeInTheDocument();
-  });
-
-  it('renders the shared right-panel header', () => {
-    mockState.canvasOpen = true;
-    setActiveDoc({ type: 'json', data: {}, title: 'My JSON' });
-    render(<AgentCanvas />);
-
-    expect(screen.getByTestId('right-panel-header')).toBeInTheDocument();
   });
 
   it('renders the URL fallback tab label when no title', () => {

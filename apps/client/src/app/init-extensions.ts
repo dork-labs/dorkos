@@ -91,6 +91,11 @@ export function initializeExtensions(): void {
     component: lazy(() =>
       import('@/layers/features/file-explorer').then((m) => ({ default: m.FileExplorer }))
     ),
+    // Toolbar (New File / New Folder / Show hidden / Refresh) rendered in the
+    // container-owned panel header, wired to the tree via the file-explorer store.
+    headerActions: lazy(() =>
+      import('@/layers/features/file-explorer').then((m) => ({ default: m.FileExplorerActions }))
+    ),
     visibleWhen: ({ pathname }) => pathname === '/session',
     priority: 15,
   });
