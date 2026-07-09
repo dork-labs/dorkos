@@ -127,4 +127,17 @@ describe('docs ProductShot embeds', () => {
       }
     }
   });
+
+  it("every embedded shot declares 'docs' in its consumers (the registry stays honest)", () => {
+    for (const { id, file } of usages) {
+      const shot = getProductShot(id);
+      if (!shot) continue; // registration itself is asserted above
+      expect(
+        shot.consumers.includes('docs'),
+        `${file} embeds <ProductShot id="${id}"> but the shot's consumers ` +
+          `(${shot.consumers.join(', ')}) lack 'docs' — add it in apps/e2e/capture/shots.ts ` +
+          `and regenerate the manifest`
+      ).toBe(true);
+    }
+  });
 });

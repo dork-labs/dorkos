@@ -79,7 +79,8 @@ export const SHOTS: readonly Shot[] = [
   { id: 'subagents', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   { id: 'multi-session', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   { id: 'personality', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
-  { id: 'canvas', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
+  // canvas is also embedded in the docs (docs/guides/generative-ui.mdx).
+  { id: 'canvas', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'canvas-editing', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   { id: 'agent-discovery', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   // --- Mobile stills (marketing) ---

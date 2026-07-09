@@ -32,4 +32,15 @@ describe('assertAspectMatches', () => {
       assertAspectMatches('topology', { width: 800, height: 1280 }, { width: 1280, height: 800 })
     ).toThrowError(/aspect ratio/);
   });
+
+  it('fails loudly on unreadable dimensions instead of silently passing (NaN guard)', () => {
+    // 0/0 and NaN ratios never compare > tolerance, so without the explicit
+    // guard these would PASS — the exact silent-approval hole this pins shut.
+    expect(() =>
+      assertAspectMatches('cockpit', { width: 0, height: 0 }, { width: 2560, height: 1600 })
+    ).toThrowError(/could not read the dimensions/);
+    expect(() =>
+      assertAspectMatches('cockpit', { width: NaN, height: NaN }, { width: 2560, height: 1600 })
+    ).toThrowError(/could not read the dimensions/);
+  });
 });

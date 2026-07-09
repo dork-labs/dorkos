@@ -161,9 +161,23 @@ const ASPECT_TOLERANCE = 0.01;
  * @param target - The shot's target pixel dimensions.
  */
 export function assertAspectMatches(label: string, actual: Dimensions, target: Dimensions): void {
+  if (
+    !Number.isFinite(actual.width) ||
+    !Number.isFinite(actual.height) ||
+    actual.width <= 0 ||
+    actual.height <= 0
+  ) {
+    throw new Error(
+      `could not read the dimensions of the override for "${label}" ` +
+        `(got ${actual.width}×${actual.height}) — the source file may be corrupt or an unsupported format. ` +
+        `Re-export it and try again; the aspect guard refuses to pass unverified media.`
+    );
+  }
   const actualRatio = actual.width / actual.height;
   const targetRatio = target.width / target.height;
   const drift = Math.abs(actualRatio - targetRatio) / targetRatio;
+  // NaN never compares true, so an unguarded NaN here would silently PASS the
+  // check — the explicit finite/positive assertion above exists to prevent that.
   if (drift > ASPECT_TOLERANCE) {
     throw new Error(
       `override for "${label}" has the wrong aspect ratio: got ${actual.width}×${actual.height} ` +
@@ -205,7 +219,14 @@ export async function writeStill(
   let pipeline = sharp(buffer);
   if (target) {
     const meta = await pipeline.metadata();
-    assertAspectMatches(surface, { width: meta.width ?? 0, height: meta.height ?? 0 }, target);
+    if (meta.width === undefined || meta.height === undefined) {
+      throw new Error(
+        `could not read the dimensions of the override still for "${surface}" — ` +
+          `expected a valid PNG scaled to ${target.width}×${target.height}. ` +
+          `Re-export the image and try again.`
+      );
+    }
+    assertAspectMatches(surface, { width: meta.width, height: meta.height }, target);
     pipeline = sharp(buffer).resize(target.width, target.height, { fit: 'fill' });
   }
   const optimized = await pipeline

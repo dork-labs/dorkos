@@ -70,7 +70,7 @@
       "id": "canvas",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "canvas-editing",

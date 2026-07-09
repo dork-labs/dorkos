@@ -36,14 +36,14 @@ interface PublishedManifest {
 }
 
 /** Parsed archive command arguments. */
-interface ArchiveArgs {
+export interface ArchiveArgs {
   label: string;
   /** When set, only these shot ids are archived; otherwise every published asset. */
   shots?: string[];
 }
 
 /** Parse `<label> [--shots a,b,c]` from argv, validating the label. */
-function parseArgs(argv: string[]): ArchiveArgs {
+export function parseArchiveArgs(argv: string[]): ArchiveArgs {
   const positional: string[] = [];
   let shots: string[] | undefined;
   for (let i = 0; i < argv.length; i++) {
@@ -71,9 +71,14 @@ function parseArgs(argv: string[]): ArchiveArgs {
   return { label, shots };
 }
 
-/** Archive the currently published set (or a subset of shots) under `<label>/`. */
-export async function runArchive(args: ArchiveArgs): Promise<void> {
-  const manifestPath = path.join(OUTPUT_DIR, 'manifest.json');
+/**
+ * Archive the currently published set (or a subset of shots) under `<label>/`.
+ * `outputDir` defaults to the real published dir; tests pass a fixture dir
+ * (the archive always lands in `<outputDir>/archive/`).
+ */
+export async function runArchive(args: ArchiveArgs, outputDir: string = OUTPUT_DIR): Promise<void> {
+  const archiveDir = outputDir === OUTPUT_DIR ? ARCHIVE_DIR : path.join(outputDir, 'archive');
+  const manifestPath = path.join(outputDir, 'manifest.json');
   let manifest: PublishedManifest;
   try {
     manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as PublishedManifest;
@@ -83,7 +88,7 @@ export async function runArchive(args: ArchiveArgs): Promise<void> {
     );
   }
 
-  const dest = path.join(ARCHIVE_DIR, args.label);
+  const dest = path.join(archiveDir, args.label);
   if (
     await fs
       .access(dest)
@@ -112,7 +117,7 @@ export async function runArchive(args: ArchiveArgs): Promise<void> {
 
   await fs.mkdir(dest, { recursive: true });
   for (const asset of assets) {
-    await fs.copyFile(path.join(OUTPUT_DIR, asset.file), path.join(dest, asset.file));
+    await fs.copyFile(path.join(outputDir, asset.file), path.join(dest, asset.file));
   }
 
   const archivedShotIds = new Set(assets.map((a) => a.surface));
@@ -146,7 +151,7 @@ export async function runArchive(args: ArchiveArgs): Promise<void> {
 const isMain =
   process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  runArchive(parseArgs(process.argv.slice(2))).catch((err) => {
+  runArchive(parseArchiveArgs(process.argv.slice(2))).catch((err) => {
     process.stderr.write(`Archive failed: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exitCode = 1;
   });
