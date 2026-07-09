@@ -13,6 +13,3 @@ export * from '@/components/ui/label';
 export * from '@/components/ui/select';
 export * from '@/components/ui/checkbox';
 export * from '@/components/ui/spinner';
-
-// Layout components
-export { PublicFooter } from './public-footer';
