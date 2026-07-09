@@ -96,7 +96,7 @@ export interface RunRecorder {
 }
 
 /** Mint a unique run id from the wall clock, suffixing on same-second collision. */
-async function mintRunId(): Promise<string> {
+export async function mintRunId(): Promise<string> {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const base =
@@ -151,16 +151,21 @@ async function updateLatestLink(runId: string): Promise<void> {
   await fs.symlink(runId, link);
 }
 
-/** Open a new run in the library and return its raw sink. */
-export async function createRunRecorder(): Promise<RunRecorder> {
-  const runId = await mintRunId();
-  const runDir = path.join(LIBRARY_ROOT, runId);
-  const rawDir = path.join(runDir, 'raw');
-  await fs.mkdir(rawDir, { recursive: true });
-  const assets: RawAsset[] = [];
+/** A raw sink writing into `rawDir` and accumulating its asset records. */
+interface RawSink {
+  readonly assets: RawAsset[];
+  saveStill(buffer: Buffer, surface: string, theme: Theme): Promise<void>;
+  saveLoop(
+    sourcePath: string,
+    options: { surface: string; width: number; height: number; headTrimMs: number }
+  ): Promise<void>;
+}
 
+/** Build a raw sink over `rawDir` — the shared write path for serial and shard recorders. */
+function makeRawSink(rawDir: string): RawSink {
+  const assets: RawAsset[] = [];
   return {
-    runId,
+    assets,
     async saveStill(buffer, surface, theme) {
       const file = `${surface}-${theme}.png`;
       await fs.writeFile(path.join(rawDir, file), buffer);
@@ -171,31 +176,113 @@ export async function createRunRecorder(): Promise<RunRecorder> {
       await fs.copyFile(sourcePath, path.join(rawDir, file));
       assets.push({ kind: 'loop', file, theme: 'dark', ...options });
     },
+  };
+}
+
+/** Write `run.json` for a completed run, point `latest` at it, and prune old runs. */
+async function writeRunManifest(runId: string, runDir: string, assets: RawAsset[]): Promise<void> {
+  const sources: Record<string, string> = {};
+  for (const rel of PROVENANCE_SOURCES) sources[rel] = await hashSource(rel);
+  const manifest: RunManifest = {
+    runId,
+    recordedAt: new Date().toISOString(),
+    appGitSha: execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    }).trim(),
+    sources,
+    settings: {
+      desktopViewport: DESKTOP_VIEWPORT,
+      deviceScaleFactor: DEVICE_SCALE_FACTOR,
+      mobileViewport: MOBILE_VIEWPORT,
+      mobileScaleFactor: MOBILE_SCALE_FACTOR,
+    },
+    assets,
+  };
+  await fs.writeFile(path.join(runDir, 'run.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  await updateLatestLink(runId);
+  await pruneOldRuns();
+  process.stdout.write(`  · library: run ${runId} recorded (${assets.length} raw assets)\n`);
+}
+
+/** Open a new run in the library and return its raw sink (the serial-record path). */
+export async function createRunRecorder(): Promise<RunRecorder> {
+  const runId = await mintRunId();
+  const runDir = path.join(LIBRARY_ROOT, runId);
+  const rawDir = path.join(runDir, 'raw');
+  await fs.mkdir(rawDir, { recursive: true });
+  const sink = makeRawSink(rawDir);
+  return {
+    runId,
+    saveStill: sink.saveStill,
+    saveLoop: sink.saveLoop,
+    finalize: () => writeRunManifest(runId, runDir, sink.assets),
+  };
+}
+
+/** Subdirectory under a run holding one partial-manifest file per shard. */
+const SHARDS_DIR = 'shards';
+
+/**
+ * Create the shared run directory for a parallel record and return its path.
+ * The orchestrator mints the run id once, then every shard worker writes its
+ * raws into `<runDir>/raw/` (their file names never collide — each shard owns a
+ * disjoint set of shots) and its partial manifest into `<runDir>/shards/`.
+ */
+export async function createRunDir(runId: string): Promise<string> {
+  const runDir = path.join(LIBRARY_ROOT, runId);
+  await fs.mkdir(path.join(runDir, SHARDS_DIR), { recursive: true });
+  await fs.mkdir(path.join(runDir, 'raw'), { recursive: true });
+  return runDir;
+}
+
+/**
+ * A raw sink for one shard of a parallel record. It writes raws into the shared
+ * run's `raw/` dir and, on `finalize`, drops just its asset records into
+ * `shards/<index>.json` — never touching `run.json`, `latest`, or retention,
+ * which the orchestrator owns once every shard has finished.
+ *
+ * @param runId - The shared run id minted by the orchestrator.
+ * @param runDir - The shared run directory (from {@link createRunDir}).
+ * @param shardIndex - This shard's index, naming its partial file.
+ */
+export async function createShardRecorder(
+  runId: string,
+  runDir: string,
+  shardIndex: number
+): Promise<RunRecorder> {
+  const sink = makeRawSink(path.join(runDir, 'raw'));
+  return {
+    runId,
+    saveStill: sink.saveStill,
+    saveLoop: sink.saveLoop,
     async finalize() {
-      const sources: Record<string, string> = {};
-      for (const rel of PROVENANCE_SOURCES) sources[rel] = await hashSource(rel);
-      const manifest: RunManifest = {
-        runId,
-        recordedAt: new Date().toISOString(),
-        appGitSha: execFileSync('git', ['rev-parse', 'HEAD'], {
-          cwd: REPO_ROOT,
-          encoding: 'utf8',
-        }).trim(),
-        sources,
-        settings: {
-          desktopViewport: DESKTOP_VIEWPORT,
-          deviceScaleFactor: DEVICE_SCALE_FACTOR,
-          mobileViewport: MOBILE_VIEWPORT,
-          mobileScaleFactor: MOBILE_SCALE_FACTOR,
-        },
-        assets,
-      };
-      await fs.writeFile(path.join(runDir, 'run.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-      await updateLatestLink(runId);
-      await pruneOldRuns();
-      process.stdout.write(`  · library: run ${runId} recorded (${assets.length} raw assets)\n`);
+      const partial = path.join(runDir, SHARDS_DIR, `${shardIndex}.json`);
+      await fs.writeFile(partial, `${JSON.stringify(sink.assets, null, 2)}\n`);
+      process.stdout.write(
+        `  · shard ${shardIndex}: recorded ${sink.assets.length} raw asset(s)\n`
+      );
     },
   };
+}
+
+/**
+ * Merge every shard's partial manifest into the run's single `run.json`, point
+ * `latest` at it, and prune old runs — the orchestrator's final step after all
+ * shard workers exit. Assets are sorted by file name so the merged manifest is
+ * deterministic regardless of shard timing.
+ */
+export async function finalizeShardedRun(runId: string, runDir: string): Promise<void> {
+  const shardsDir = path.join(runDir, SHARDS_DIR);
+  const partials = (await fs.readdir(shardsDir)).filter((f) => f.endsWith('.json'));
+  const assets: RawAsset[] = [];
+  for (const file of partials) {
+    const parsed = JSON.parse(await fs.readFile(path.join(shardsDir, file), 'utf8')) as RawAsset[];
+    assets.push(...parsed);
+  }
+  assets.sort((a, b) => a.file.localeCompare(b.file));
+  await writeRunManifest(runId, runDir, assets);
+  await fs.rm(shardsDir, { recursive: true, force: true });
 }
 
 /** A loaded run: its directory plus the parsed `run.json`. */

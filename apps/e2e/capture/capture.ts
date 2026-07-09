@@ -1,4 +1,4 @@
-import { runRecordPhase } from './record.js';
+import { parseShardCount, runRecordPhase } from './record.js';
 import { runProcessPhase } from './process.js';
 
 /**
@@ -9,14 +9,16 @@ import { runProcessPhase } from './process.js';
  * `capture:record` / `capture:process` — so editing changes are
  * re-process-only and never require a re-shoot.
  *
- * Run with: `pnpm --filter @dorkos/e2e capture`.
+ * Run with: `pnpm --filter @dorkos/e2e capture [--shards N]`. The process phase
+ * is shard-agnostic: it always reads one merged run, so `--shards` only affects
+ * how the record phase parallelizes.
  *
  * @module capture/capture
  */
 
-/** Record a fresh run, then process it into the published set. */
+/** Record a fresh run (optionally sharded), then process it into the published set. */
 async function main(): Promise<void> {
-  const runId = await runRecordPhase();
+  const runId = await runRecordPhase(parseShardCount(process.argv.slice(2)));
   await runProcessPhase(runId);
 }
 

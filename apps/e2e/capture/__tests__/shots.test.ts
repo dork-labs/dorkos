@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { SHOTS, getShot, isAutoSkipped, shotTargetDimensions, shotsManifest } from '../shots.js';
+import {
+  SHOTS,
+  getShot,
+  isAutoSkipped,
+  partitionShots,
+  PINNED_SHARD_0_SHOT,
+  shotTargetDimensions,
+  shotsManifest,
+} from '../shots.js';
 
 /**
  * Unit tests for the shot registry — the pipeline's source of truth. These pin
@@ -64,6 +72,43 @@ describe('shot registry', () => {
         width: 390,
         height: 844,
       });
+    });
+  });
+
+  describe('partitionShots', () => {
+    it('assigns every shot exactly once across shards', () => {
+      for (const shardCount of [1, 2, 3, 5]) {
+        const buckets = partitionShots(SHOTS, shardCount);
+        expect(buckets).toHaveLength(shardCount);
+        const all = buckets.flat();
+        expect(all).toHaveLength(SHOTS.length);
+        expect(new Set(all)).toEqual(new Set(SHOTS.map((s) => s.id)));
+      }
+    });
+
+    it('puts every shot on shard 0 when shardCount is 1', () => {
+      const [only] = partitionShots(SHOTS, 1);
+      expect(only).toEqual(SHOTS.map((s) => s.id));
+    });
+
+    it('always pins agent-discovery to shard 0', () => {
+      for (const shardCount of [2, 3, 4, 5]) {
+        const buckets = partitionShots(SHOTS, shardCount);
+        expect(buckets[0]).toContain(PINNED_SHARD_0_SHOT);
+        for (let i = 1; i < shardCount; i++) {
+          expect(buckets[i]).not.toContain(PINNED_SHARD_0_SHOT);
+        }
+      }
+    });
+
+    it('balances the remaining shots within one of each other (round-robin)', () => {
+      const buckets = partitionShots(SHOTS, 3);
+      const sizes = buckets.map((b) => b.length);
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    });
+
+    it('is deterministic for a given shard count', () => {
+      expect(partitionShots(SHOTS, 3)).toEqual(partitionShots(SHOTS, 3));
     });
   });
 });

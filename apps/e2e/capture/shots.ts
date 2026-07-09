@@ -136,6 +136,41 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
       };
 }
 
+/**
+ * The shot pinned to shard 0 in a parallel record. `agent-discovery` flips its
+ * stack's global onboarding state, which every other shot in the same stack
+ * needs left dismissed — so it is kept a singleton on shard 0, where the record
+ * phase drives it dead last (and restores the dismissed state after). Each shard
+ * has its own `DORK_HOME`, so the flip is already isolated; pinning it just
+ * makes the placement deterministic regardless of shard count.
+ */
+export const PINNED_SHARD_0_SHOT = 'agent-discovery';
+
+/**
+ * Partition shots across `shardCount` stacks for a parallel record. Assignment
+ * is round-robin by registry order (deterministic and roughly balanced across
+ * the loop-heavy tail), except {@link PINNED_SHARD_0_SHOT}, which is always
+ * placed on shard 0. Each returned bucket is the set of shot ids one worker
+ * process captures; the union is exactly `shots`.
+ *
+ * @param shots - The shots to capture (already filtered of `skipAuto` shots).
+ * @param shardCount - Number of parallel stacks (>= 1).
+ * @returns One shot-id array per shard, indexed by shard number.
+ */
+export function partitionShots(shots: readonly Shot[], shardCount: number): string[][] {
+  const buckets: string[][] = Array.from({ length: Math.max(1, shardCount) }, () => []);
+  let cursor = 0;
+  for (const shot of shots) {
+    if (shot.id === PINNED_SHARD_0_SHOT) {
+      buckets[0]!.push(shot.id);
+      continue;
+    }
+    buckets[cursor % buckets.length]!.push(shot.id);
+    cursor++;
+  }
+  return buckets;
+}
+
 /** The registry snapshot embedded in the published manifest (`manifest.shots`). */
 export interface ShotManifestEntry {
   readonly id: string;

@@ -55,6 +55,44 @@ override tweak never requires re-booting the app or re-recording — re-run
 `capture:process` against the existing raws. The library itself is gitignored
 (raws are heavy and regenerable); see `library/README.md` for the layout.
 
+## Parallel capture (`--shards N`)
+
+Recording is the slow phase (it boots a stack, drives ~16 surfaces, and holds
+each loop for its full duration). `--shards N` splits those shots across `N`
+**fully isolated stacks** and records them at the same time:
+
+```bash
+pnpm --filter @dorkos/e2e capture:record --shards 2   # record on 2 parallel stacks
+pnpm --filter @dorkos/e2e capture --shards 3          # record on 3, then process (once)
+```
+
+The safe parallel unit is a whole stack, so each shard gets its own:
+
+- **data directory** (`DORK_HOME`): shard 0 keeps the base `~/.dork-capture`; shard _i_ uses `~/.dork-capture-<i>`. Each has its own SQLite DB, config, and scan boundary, so global-state mutations (onboarding dismissal, scan roots) never cross shards.
+- **port pair**: `SERVER_PORT`/`VITE_PORT` = `4344`/`4343` + `i × 10` (shard 1 → 4354/4353, shard 2 → 4364/4363). All clear of the dev (`6xxx`), production (`4242`), and e2e-mock (`4243`/`4248`) ports.
+
+How a sharded record runs (`record.ts`):
+
+1. **Build once.** Server workspace deps are built a single time up front (`buildServerDeps`), then every shard boots from that output — no per-shard rebuild.
+2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`). `agent-discovery` is pinned to shard 0 and, like every shard, driven **last** in its stack — it flips global onboarding state, which every other shot in the same stack needs left dismissed (each shard's own `DORK_HOME` keeps that flip local).
+3. **Record in parallel.** One `record-shard.ts` worker process per shard prepares its filesystem, boots its stack, seeds it, and captures **only its assigned shots** into the shared run's `raw/` dir (file names never collide — shots are disjoint), writing a partial manifest to `library/<run-id>/shards/`.
+4. **Merge.** Once every shard exits, the orchestrator merges the partials into one `run.json` (assets sorted by file name), points `latest` at it, and prunes — producing exactly the run a serial record would.
+
+The **process** phase is shard-agnostic: it always reads one merged run, so a
+serial run and a sharded run yield the **same published asset set** (`manifest.json`
+`shots` + files + dimensions are identical; only VP9 bytes and per-loop head-trim
+timing vary run-to-run, as they already do serial-to-serial).
+
+Teardown is reliable: each worker tears its own stack down in a `finally` and on
+`SIGTERM`/`SIGINT` (`teardownAll`), and the orchestrator kills every shard's
+process group on failure or interrupt, so nothing is left holding a port.
+
+**Default is `--shards 1`** (the unchanged serial path). How much sharding helps
+is bound by cores and by the per-shard boot+seed cost, which is paid on every
+shard: 2 shards is a solid win; beyond that, returns fall off once the fixed
+boot+seed overhead and the `agent-discovery` long pole dominate the critical
+path. Pick `N` to fit the box.
+
 ## Human overrides
 
 A person can beat the automated capture for any shot: drop files in

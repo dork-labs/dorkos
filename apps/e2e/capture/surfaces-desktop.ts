@@ -322,9 +322,10 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
  * dismissed state for reproducibility.
  */
 export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder): Promise<void> {
-  // An override supplies this shot; do not flip global onboarding state for it.
+  // Skip when this shot is not ours to capture — a human override supplies it,
+  // or it belongs to another shard. Either way, don't flip global onboarding.
   if (isShotSkipped('agent-discovery')) {
-    process.stdout.write('  ⤿ agent-discovery skipped (override supplies it)\n');
+    process.stdout.write('  ⤿ agent-discovery skipped (captured elsewhere)\n');
     return;
   }
   const reopenOnboarding = () =>

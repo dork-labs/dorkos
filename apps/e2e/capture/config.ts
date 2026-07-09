@@ -17,8 +17,29 @@ const thisDir = path.dirname(fileURLToPath(import.meta.url));
 /** Repo root (four levels up from `apps/e2e/capture`). */
 export const REPO_ROOT = path.resolve(thisDir, '../../..');
 
-/** Isolated data directory for the capture server (the run's `DORK_HOME`). */
-export const CAPTURE_HOME = path.join(os.homedir(), '.dork-capture');
+/**
+ * This process's shard index. A serial capture (and every non-shard process,
+ * including the orchestrator itself) is shard 0; a parallel record spawns one
+ * worker process per shard, each with `CAPTURE_SHARD` set. Every port and data
+ * path below is derived from it, so a whole capture stack — server, Vite, and
+ * `DORK_HOME` — is isolated per shard with no shared mutable state.
+ */
+export const SHARD_INDEX = ((): number => {
+  // eslint-disable-next-line no-restricted-syntax -- the capture harness has no env.ts; the shard index is set per worker process
+  const raw = process.env.CAPTURE_SHARD;
+  const n = raw === undefined ? 0 : Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : 0;
+})();
+
+/**
+ * Isolated data directory for this shard's capture server (its `DORK_HOME`).
+ * Shard 0 keeps the historical base name (`~/.dork-capture`) so a serial run is
+ * byte-for-byte unchanged; higher shards get a suffixed sibling.
+ */
+export const CAPTURE_HOME = path.join(
+  os.homedir(),
+  SHARD_INDEX === 0 ? '.dork-capture' : `.dork-capture-${SHARD_INDEX}`
+);
 
 /**
  * The directory boundary for the capture server — everything sessions and
@@ -55,10 +76,21 @@ export const OVERRIDES_ROOT = path.join(REPO_ROOT, 'apps/e2e/capture/overrides')
  */
 export const LIBRARY_ROOT = path.join(REPO_ROOT, 'apps/e2e/capture/library');
 
-/** Ports chosen to avoid the dev (`6xxx`), production (`4242`), and e2e-mock (`4243/4248`) servers. */
-export const SERVER_PORT = 4344;
-/** Vite client port for the capture run. */
-export const VITE_PORT = 4343;
+/**
+ * Port stride between shards. Each shard claims a server/Vite pair `stride`
+ * apart from the next, so a pair never overlaps its neighbour. 10 is roomy and
+ * keeps even a dozen shards well under the `6xxx` dev range.
+ */
+export const SHARD_PORT_STRIDE = 10;
+
+/**
+ * This shard's API server port. The base pair (4344/4343) is chosen to avoid the
+ * dev (`6xxx`), production (`4242`), and e2e-mock (`4243/4248`) servers; each
+ * further shard offsets by {@link SHARD_PORT_STRIDE}, staying clear of all of them.
+ */
+export const SERVER_PORT = 4344 + SHARD_INDEX * SHARD_PORT_STRIDE;
+/** This shard's Vite client port. */
+export const VITE_PORT = 4343 + SHARD_INDEX * SHARD_PORT_STRIDE;
 
 /** Base URL of the capture client (Vite dev proxying `/api` to the server). */
 export const CLIENT_URL = `http://localhost:${VITE_PORT}`;
