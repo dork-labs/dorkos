@@ -9,13 +9,13 @@ export const faqItems: FaqItem[] = [
     id: 'what-is-agent',
     question: 'What do you mean by "agent"?',
     answer:
-      "An agent is an AI coding tool, like Claude Code, Codex, or OpenCode, that can read, write, and run code on your machine. DorkOS doesn't replace your agents. It gives them what they're missing to work when you're not watching: a schedule, a way to reach you, memory, and a way to coordinate with each other.",
+      "An agent is an AI coding tool, like Claude Code, Codex, or OpenCode, that can read, write, and run code on your machine. DorkOS doesn't replace your agents. It gives them what they're missing to work when you're not watching: a schedule, a way to reach you, a record of everything they did, and a way to find and message each other.",
   },
   {
     id: 'how-different-from-claude-code',
     question: 'How is this different from just using Claude Code?',
     answer:
-      'Claude Code is the agent: the tool that thinks and writes code. DorkOS is the system around it. Without DorkOS, your agent stops the moment you close the terminal. With it, your agents run on a schedule, message you when something breaks, coordinate with each other, and pick up right where they left off.',
+      'Claude Code is the agent: the tool that thinks and writes code. DorkOS is the system around it. Without DorkOS, your agent stops the moment you close the terminal. With it, your agents run on a schedule, message you when something breaks, message each other, and pick up right where they left off.',
   },
   {
     id: 'data-privacy',
