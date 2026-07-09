@@ -53,7 +53,7 @@ export function MarketingFooter({
 
         {/* Tagline - mission */}
         <p className="text-2xs text-cream-tertiary/60 mb-8 font-mono tracking-[0.12em] uppercase">
-          You slept. They shipped.
+          You, multiplied.
         </p>
 
         {/* Newsletter capture */}
