@@ -138,6 +138,9 @@ When creating GitHub releases, use this narrative format (different from the cha
 
 [1-2 sentence theme describing the focus of this release]
 
+![Shot alt text](https://dorkos.ai/product/archive/vX.Y.Z/<shot-id>-dark.png)
+_[One line caption. See it move → [docs page or /features section]]_
+
 ### Highlights
 
 🎨 **[Feature Name]** - [One sentence explaining the benefit and how to use it]
@@ -153,6 +156,8 @@ When creating GitHub releases, use this narrative format (different from the cha
 
 **Full Changelog**: https://github.com/[owner]/[repo]/compare/v[prev]...v[new]
 ```
+
+**Rule: every release with user-visible UI changes includes at least one visual.** Embed the shot's poster PNG from the version's frozen archive (`archive/vX.Y.Z/<shot-id>-<theme>.png` — never the live `/product/<file>` path, which repoints on the next capture and would change what an old release shows). GitHub renders PNG/GIF inline but does not play `.webm`, so link the caption to a docs page or `/features` section for the motion version instead of linking the webm directly. The `/system:release` media phase (Phase 6.6) selects and archives these shots before this step runs.
 
 ### Emoji Reference for Highlights
 
