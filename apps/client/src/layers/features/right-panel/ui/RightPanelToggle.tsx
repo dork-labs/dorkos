@@ -1,7 +1,7 @@
 import { PanelRight, PanelRightClose } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRouterState } from '@tanstack/react-router';
-import { useAppStore, useSlotContributions } from '@/layers/shared/model';
+import { useAppStore, useSlotContributions, useTransport } from '@/layers/shared/model';
 import { isMac } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { Kbd } from '@/layers/shared/ui/kbd';
@@ -17,9 +17,11 @@ export function RightPanelToggle() {
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
+  const transport = useTransport();
   const allContributions = useSlotContributions('right-panel');
   const visibleContributions = allContributions.filter(
-    (c) => !c.visibleWhen || c.visibleWhen({ pathname })
+    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })
   );
 
   // Hide when there is nothing to show on this route
