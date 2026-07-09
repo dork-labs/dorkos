@@ -5,6 +5,8 @@ import {
   type DispatcherStore,
 } from '../ui-action-dispatcher';
 
+vi.mock('../celebrations/effects', () => ({ fireConfetti: vi.fn().mockResolvedValue(vi.fn()) }));
+
 // --- Mock store factory ---
 
 function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStore {
@@ -365,5 +367,16 @@ describe('executeUiCommand — open_command_palette', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_command_palette' });
     expect(ctx.store.setGlobalPaletteOpen).toHaveBeenCalledWith(true);
+  });
+});
+
+// --- Celebration ---
+
+describe('executeUiCommand — celebrate', () => {
+  it('fires confetti', async () => {
+    const { fireConfetti } = await import('../celebrations/effects');
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'celebrate' });
+    expect(fireConfetti).toHaveBeenCalled();
   });
 });

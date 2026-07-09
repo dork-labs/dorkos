@@ -2475,9 +2475,9 @@ export type UiToastLevel = z.infer<typeof UiToastLevelSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 17 variants covering panels, sidebar, canvas,
+ * Discriminated on `action` — 18 variants covering panels, sidebar, canvas,
  * file/terminal/browser opening, notifications, theme, scroll, agent switching,
- * and command palette.
+ * command palette, and celebration.
  */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
@@ -2561,6 +2561,9 @@ export const UiCommandSchema = z
 
     // Command palette
     z.object({ action: z.literal('open_command_palette') }),
+
+    // Celebration
+    z.object({ action: z.literal('celebrate') }),
   ])
   .openapi('UiCommand');
 

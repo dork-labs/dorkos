@@ -9,6 +9,13 @@ import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
+// The `celebrating` mood fires confetti on mount; stub it so tests don't
+// exercise the real canvas-confetti dynamic import under jsdom.
+vi.mock('@/layers/shared/lib', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib');
+  return { ...actual, fireConfetti: vi.fn().mockResolvedValue(vi.fn()) };
+});
+
 afterEach(cleanup);
 import type { ReactNode } from 'react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
@@ -398,6 +405,87 @@ describe('Tier-1 utility nodes', () => {
       { wrapper: Wrapper }
     );
     expect(container.querySelector('polyline')).toBeNull();
+  });
+});
+
+describe('Tier-2 delight nodes', () => {
+  it.each([
+    ['happy', undefined],
+    ['thinking', undefined],
+    ['celebrating', undefined],
+    ['sheepish', undefined],
+    ['determined', undefined],
+    ['surprised', undefined],
+    ['sad', undefined],
+    ['love', 'Feeling good today!'],
+  ] as const)('renders the %s mood%s', (emotion, message) => {
+    renderDoc({ type: 'mood', emotion, message });
+    expect(screen.getByRole('img', { name: `Mood: ${emotion}` })).toBeInTheDocument();
+    if (message) expect(screen.getByText(message)).toBeInTheDocument();
+  });
+
+  it('fires confetti once for a celebrating mood', async () => {
+    const { fireConfetti } = await import('@/layers/shared/lib');
+    // Reset call count: an earlier parametrized case already rendered a
+    // celebrating mood, and the mock persists across tests in this file.
+    vi.mocked(fireConfetti).mockClear();
+    renderDoc({ type: 'mood', emotion: 'celebrating' });
+    expect(fireConfetti).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a board, dispatches an agent action on cell click, and disables unavailable cells', async () => {
+    const user = userEvent.setup();
+    mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });
+    render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          title: 'Tic-tac-toe',
+          root: {
+            type: 'board',
+            label: 'Tic-tac-toe',
+            rows: [
+              [{ glyph: 'X' }, { glyph: 'O' }, { action: { kind: 'agent', id: 'move-0-2' } }],
+              [{}, { glyph: 'X' }, {}],
+              [{}, {}, {}],
+            ],
+          },
+        }}
+        sessionId="sess-1"
+      />,
+      { wrapper: Wrapper }
+    );
+
+    expect(screen.getByRole('grid', { name: 'Tic-tac-toe' })).toBeInTheDocument();
+    const gridCells = screen.getAllByRole('gridcell');
+    expect(gridCells).toHaveLength(9);
+
+    const playable = screen.getByRole('button');
+    await user.click(playable);
+    expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
+      actionId: 'move-0-2',
+      payload: undefined,
+      widgetTitle: 'Tic-tac-toe',
+    });
+  });
+
+  it('disables a board cell action when no session is present', () => {
+    renderDoc({
+      type: 'board',
+      rows: [[{ glyph: 'X' }, { action: { kind: 'agent', id: 'move-0-1' } }]],
+    });
+    expect(screen.getByRole('button')).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('shows the reveal result (reduced-motion mock makes the animation instant)', () => {
+    renderDoc({ type: 'reveal', kind: 'coin', result: 'heads', label: 'Coin flip' });
+    expect(screen.getByText('Coin flip')).toBeInTheDocument();
+    expect(screen.getByText('heads')).toBeInTheDocument();
+  });
+
+  it('shows a numeric dice reveal result', () => {
+    renderDoc({ type: 'reveal', kind: 'd6', result: '4' });
+    expect(screen.getByText('4')).toBeInTheDocument();
   });
 });
 

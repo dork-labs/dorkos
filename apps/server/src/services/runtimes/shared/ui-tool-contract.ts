@@ -49,6 +49,7 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - scroll_to_message: { messageId?: string } (omit for bottom)
 - switch_agent: { cwd: string }
 - open_command_palette
+- celebrate — fire a brief confetti burst (skips automatically under reduced motion)
 
 Notes:
 - Delivery: UI commands only take visible effect when an interactive client is attached to this session. In headless or scheduled runs (no client) the command is accepted and queued but has no on-screen effect. A success result means "accepted", not "displayed".
