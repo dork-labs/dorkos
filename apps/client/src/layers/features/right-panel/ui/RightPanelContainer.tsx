@@ -30,7 +30,10 @@ export function RightPanelContainer() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
-  const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
+  // View-only setter: auto-selecting a fallback tab must not overwrite the
+  // per-agent stored preference (DOR-227). Explicit tab picks in the header use
+  // the persisting `setActiveRightPanelTab`.
+  const setActiveTabView = useAppStore((s) => s.setActiveRightPanelTabView);
   const isMobile = useIsMobile();
   const panelRef = useRef<ImperativePanelHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -59,15 +62,17 @@ export function RightPanelContainer() {
     [allContributions, pathname, transport]
   );
 
-  // Auto-select first visible tab if active tab is not visible
+  // Auto-select first visible tab if active tab is not visible. View-only: this
+  // must not persist over the per-agent stored preference (DOR-227), so a tab
+  // hidden by the current route/transport is restored once it returns.
   useEffect(() => {
     if (visibleContributions.length > 0) {
       const activeIsVisible = visibleContributions.some((c) => c.id === activeTab);
       if (!activeIsVisible) {
-        setActiveTab(visibleContributions[0].id);
+        setActiveTabView(visibleContributions[0].id);
       }
     }
-  }, [visibleContributions, activeTab, setActiveTab]);
+  }, [visibleContributions, activeTab, setActiveTabView]);
 
   const shouldShow = rightPanelOpen && visibleContributions.length > 0;
 

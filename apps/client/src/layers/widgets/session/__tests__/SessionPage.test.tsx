@@ -31,6 +31,10 @@ vi.mock('@/layers/features/canvas', () => ({
   useCanvasPersistence: () => {},
 }));
 
+vi.mock('@/layers/features/right-panel', () => ({
+  useRightPanelLayoutPersistence: () => {},
+}));
+
 const mockUseSessionSearch = vi.fn<() => { runtime?: string }>(() => ({}));
 vi.mock('@/layers/entities/session', () => ({
   useSessionId: () => ['session-abc', vi.fn()],

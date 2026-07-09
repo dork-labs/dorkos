@@ -70,6 +70,9 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
 // Mutable mock state — mutate per-test
 const mockSetRightPanelOpen = vi.fn();
 const mockSetActiveRightPanelTab = vi.fn();
+// View-only setter used by the container's auto-select fallback (DOR-227). It
+// must NOT be the persisting `setActiveRightPanelTab`.
+const mockSetActiveRightPanelTabView = vi.fn();
 
 let mockRightPanelOpen = false;
 let mockActiveRightPanelTab: string | null = null;
@@ -87,6 +90,7 @@ vi.mock('@/layers/shared/model', () => ({
       setRightPanelOpen: mockSetRightPanelOpen,
       activeRightPanelTab: mockActiveRightPanelTab,
       setActiveRightPanelTab: mockSetActiveRightPanelTab,
+      setActiveRightPanelTabView: mockSetActiveRightPanelTabView,
     }),
   useIsMobile: () => mockIsMobile,
   useSlotContributions: () => mockContributions,
@@ -248,7 +252,7 @@ describe('RightPanelContainer', () => {
     expect(screen.getByRole('tab', { name: 'Terminal' })).toBeInTheDocument();
   });
 
-  it('auto-selects first visible tab when active tab is not in visible contributions', () => {
+  it('auto-selects first visible tab (view-only) when active tab is not visible', () => {
     mockRightPanelOpen = true;
     // Active tab 'missing' is not in contributions
     mockActiveRightPanelTab = 'missing';
@@ -256,7 +260,10 @@ describe('RightPanelContainer', () => {
 
     render(<RightPanelContainer />);
 
-    expect(mockSetActiveRightPanelTab).toHaveBeenCalledWith('a');
+    // Auto-select uses the view-only setter so it never overwrites the per-agent
+    // stored preference (DOR-227) — the persisting setter must stay untouched.
+    expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('a');
+    expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
   });
 
   it('does not auto-select when active tab is already visible', () => {
@@ -266,7 +273,23 @@ describe('RightPanelContainer', () => {
 
     render(<RightPanelContainer />);
 
+    expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
     expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
+  });
+
+  it('an explicit tab click persists via setActiveRightPanelTab (not the view-only setter)', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    mockRightPanelOpen = true;
+    mockActiveRightPanelTab = 'a';
+    mockContributions = [makeContribution('a'), makeContribution('b')];
+
+    render(<RightPanelContainer />);
+
+    await user.click(screen.getByRole('tab', { name: 'Tab b' }));
+    // The user's explicit pick DOES update the stored preference.
+    expect(mockSetActiveRightPanelTab).toHaveBeenCalledWith('b');
+    expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('filters out contributions where visibleWhen returns false', () => {
