@@ -1,6 +1,6 @@
 ---
 title: Mesh
-description: How DorkOS discovers, registers, and connects AI agents across your filesystem
+description: How DorkOS finds your AI agents across your projects and connects them so they can reach each other
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,23 +8,83 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Mesh
 
-Mesh is the agent discovery and registry system in DorkOS. It scans your filesystem for AI agent projects, registers them into a central registry, and connects them to Relay so they can communicate. Mesh is always on — no environment variable required.
+Mesh finds the AI agents scattered across your projects and gathers them in one place. It scans your folders, shows you what it found, and lets you approve which agents to add. Once an agent is in, other agents can find it and reach it. Mesh is always on, with nothing to turn on first.
 
-## What Mesh Does
+## The problem it solves
 
-When you're running agents across multiple projects, they are invisible to each other by default. A Claude Code agent working on your backend has no awareness of the Cursor agent editing your frontend. You become the router — manually copying context between sessions.
+When you run agents in several projects, they cannot see each other. A Claude Code agent working on your backend has no idea a Cursor agent is editing your frontend. So you become the go-between, copying context from one session into the next.
 
-Mesh solves this. It scans your filesystem for agent-capable project directories, builds a registry of known agents, and wires them into Relay so they can reach each other. Discovery is intentional: Mesh finds candidates and presents them for your approval before anything is registered.
+Mesh removes that step. It finds your agent projects, keeps a list of them, and connects them so they can message each other. Nothing gets added without your approval.
 
-## Discovery
+## Finding your agents
 
-Discovery scans directories to find agent projects. Mesh uses pluggable **detection strategies** to recognize different agent types by their filesystem markers.
+When you run a scan, Mesh walks your folders and looks for the tell-tale signs of an agent project, like a `CLAUDE.md` file or a `.cursor/` folder. It knows the markers for ten popular agent tools. For anything it finds, it shows you the agent as a candidate and waits for your yes before adding it.
 
-### Built-in Strategies
+A few things happen on their own during a scan:
 
-DorkOS ships with ten detection strategies covering the major AI coding agents:
+- **Agents you already added come back for free.** If a folder already holds a DorkOS agent file (`.dork/agent.json`), Mesh adds it back on the next scan without asking again. You never re-approve the same agent twice.
+- **Known and skipped folders are left alone.** Agents already on your list, and folders you have said no to, are passed over.
 
-| Strategy        | Filesystem Markers                                                                                   | Runtime       |
+Mesh scans a few folders deep by default (five levels) so a normal scan finishes quickly.
+
+<Callout type="info">
+  A scan only reads your folders. It never changes anything in your projects until you approve an
+  agent.
+</Callout>
+
+## Adding an agent
+
+When you approve a candidate, Mesh turns it into a full agent. It gives the agent an ID that also records when it was created, so your lists stay in order. It writes a small `.dork/agent.json` file in the project, so the agent's identity travels with the code and you can commit it like any other file. It adds the agent to its list. And if messaging is on, it gives the agent a mailbox so other agents can reach it right away.
+
+You can also add an agent by pointing Mesh straight at a folder, which is handy when you already know the one you want.
+
+## Grouping agents
+
+Mesh groups agents by where they live on disk. An agent in `projects/backend/api-service`, scanned from `projects`, lands in the `backend` group. DorkOS calls each group a **namespace**.
+
+Groups do two jobs:
+
+- **They tidy the view.** The network map groups agents by their namespace.
+- **They keep messaging safe.** Agents in the same group can message each other freely. Messaging across groups is off until you allow it.
+
+To open a path between two groups, you add an allow rule. Rules go one way only: letting agent A message agent B does not let B message A.
+
+## Skipping folders you don't want
+
+If a folder keeps showing up as a candidate and you never want it, you can add it to the skip list. Mesh remembers your choice and passes that folder over on every future scan. You can take a folder off the skip list later to let it show up again.
+
+## Seeing the whole network
+
+The network map shows you your agents grouped by namespace, with the rules that connect them. It respects your messaging rules as walls: an agent only sees the agents it is allowed to reach, so agents cannot even tell that off-limits agents exist.
+
+<Callout type="info">
+  The DorkOS dashboard uses an admin view that sees past those walls, so it can draw the full map
+  for you.
+</Callout>
+
+## Knowing which agents are alive
+
+Mesh watches each agent through a heartbeat: a quick "still here" signal an agent sends as it works. From that, it sorts every agent into one of three states:
+
+- **Active**: seen just now
+- **Inactive**: quiet for a while, but probably fine
+- **Stale**: quiet for a long time, and may be offline
+
+When an agent's state changes, the dashboard updates the network map on the spot. You also get a running count of how many agents are active, inactive, and stale.
+
+## Where Mesh keeps its data
+
+Mesh keeps its list in a small database at `~/.dork/dork.db`. But the real source of truth is the `.dork/agent.json` file in each project, not the database (a design choice recorded in ADR-0043). If the database is ever lost, Mesh rebuilds it from those files on the next pass. Nothing you care about lives only in the database, so you cannot lose an agent by deleting `dork.db`.
+
+## Reference
+
+The rest of this page is for developers wiring up Mesh or reading its internals. If you just want to use Mesh, you can stop here.
+
+### Detection markers
+
+Mesh recognizes agent projects with pluggable **detection strategies**. Each strategy looks for one tool's filesystem markers and reports a suggested name, runtime type, inferred capabilities, and description. DorkOS ships ten:
+
+| Strategy        | Filesystem markers                                                                                   | Runtime       |
 | --------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
 | **claude-code** | `CLAUDE.md` or `AGENTS.md` at the project root. Extracts a description from the first paragraph.     | `claude-code` |
 | **cursor**      | `.cursor/` directory or `.cursorrules` file at the project root.                                     | `cursor`      |
@@ -37,46 +97,17 @@ DorkOS ships with ten detection strategies covering the major AI coding agents:
 | **amazon-q**    | `.amazonq/` directory at the project root.                                                           | `amazon-q`    |
 | **continue**    | `.continue/` directory at the project root.                                                          | `continue`    |
 
-The `AgentRuntime` enum also includes placeholder values for agents that do not yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
+The `AgentRuntime` enum also carries placeholder values for tools that do not have a strategy yet: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
 
-In addition, any directory that already contains a `.dork/agent.json` manifest is **auto-imported** by the scanner — the agent is silently added to the registry without appearing as a candidate. This is scanner behavior, not a detection strategy.
+Any directory that already contains a `.dork/agent.json` manifest is **auto-imported** by the scanner rather than surfaced as a candidate. This is scanner behavior, not a detection strategy. The scan yields `DiscoveryCandidate` objects only for directories that match a strategy and are not yet registered or denied.
 
-Each strategy checks whether a directory matches its markers and gathers information about the agent — suggested name, runtime type, inferred capabilities, and description.
-
-### Scan Process
-
-When you trigger a discovery scan, Mesh walks the specified root directories up to a configurable depth (default: 5 levels). For each directory, it runs every strategy's detection logic. Several behaviors happen automatically:
-
-- **Auto-import** — If a directory already has a `.dork/agent.json` manifest, the agent is silently imported into the registry without appearing as a candidate. Re-scanning picks up previously registered agents without requiring you to approve them again.
-- **Skip registered** — Directories already in the registry are skipped entirely.
-- **Skip denied** — Directories you have explicitly denied are also skipped.
-
-The scan yields `DiscoveryCandidate` objects for directories that match a strategy but are not yet registered or denied.
-
-<Callout type="info">
-  Discovery is non-destructive. It only reads filesystem markers — it never modifies your project
-  directories until you explicitly approve a registration.
-</Callout>
-
-## Registration
-
-When you approve a candidate, Mesh registers it as a full agent:
-
-1. **ID generation** — A ULID is assigned, providing a unique, time-ordered identifier.
-2. **Manifest creation** — An `AgentManifest` is assembled from discovery hints merged with any overrides you provide.
-3. **Manifest persistence** — A `.dork/agent.json` file is written to the agent's project directory. This file survives re-scans and can be committed to version control.
-4. **Registry insertion** — The agent is inserted into the SQLite-backed registry with its manifest, project path, namespace, and scan root.
-5. **Relay endpoint** — If Relay is enabled, a Relay endpoint is automatically registered for the agent, enabling it to receive messages from other agents.
-
-You can also register an agent directly by project path without running a discovery scan, which is useful when you know exactly which directory to target.
-
-### The Agent Manifest
+### The agent manifest
 
 Every registered agent has a manifest stored in `.dork/agent.json`:
 
 | Field                 | Description                                                                                                                                    |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **id**                | ULID assigned at registration                                                                                                                  |
+| **id**                | Time-ordered ID assigned at registration                                                                                                       |
 | **name**              | Human-readable name (e.g., "backend-api")                                                                                                      |
 | **description**       | What the agent does                                                                                                                            |
 | **runtime**           | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`) |
@@ -90,20 +121,9 @@ Every registered agent has a manifest stored in `.dork/agent.json`:
 | **icon**              | Emoji override for visual identity                                                                                                             |
 | **enabledToolGroups** | Per-domain MCP tool overrides (tasks, relay, mesh, adapter)                                                                                    |
 
-## Namespaces
+### Access rule priority
 
-Mesh groups agents into **namespaces** derived from their filesystem location — the project path relative to the scan root. An agent at `/home/user/projects/backend/api-service` with scan root `/home/user/projects` gets namespace `backend`.
-
-Namespaces serve two purposes:
-
-- **Topology grouping** — The UI groups agents by namespace in the topology view.
-- **Access control** — Agents within the same namespace can communicate freely through Relay. Cross-namespace communication requires explicit allow rules.
-
-### Cross-Namespace Access
-
-By default, agents in different namespaces cannot message each other. You add cross-namespace allow rules to open specific paths. Rules are unidirectional — allowing A to message B does not automatically allow B to message A.
-
-Under the hood, Mesh writes Relay access control rules with a priority scheme:
+Under the hood, Mesh writes Relay access-control rules with a priority scheme. Higher priority wins:
 
 | Priority | Rule                  | Effect                                             |
 | -------- | --------------------- | -------------------------------------------------- |
@@ -111,56 +131,15 @@ Under the hood, Mesh writes Relay access control rules with a priority scheme:
 | **50**   | Cross-namespace allow | Explicitly permitted cross-namespace communication |
 | **10**   | Cross-namespace deny  | Default deny for all other cross-namespace traffic |
 
-## Denial List
+### Storage tables and Relay integration
 
-The denial list lets you permanently skip specific directories so they do not appear as candidates in future scans. Denials persist in the database and are checked during every scan. You can remove a denial later to allow the directory to appear as a candidate again.
+Mesh stores its data in `~/.dork/dork.db`, managed by Drizzle ORM: the **agent registry** (`agents` table) holds every registered agent with its manifest, project path, namespace, and health fields, and the **denial list** (`agent_denials` table) holds the paths excluded from discovery. Because the `.dork/agent.json` files are the canonical source (ADR-0043), the database is a rebuildable cache: on a missing `dork.db`, the reconciler walks the managed agents home (`~/.dork/agents/`) and the scan roots of surviving agents, re-importing every `.dork/agent.json` it finds.
 
-## Topology
+When both Mesh and Relay are enabled, registering an agent in Mesh creates a Relay endpoint for it at `relay.agent.{namespace}.{agentId}`:
 
-The topology view provides a namespace-scoped picture of the agent network. It returns:
-
-- **Namespaces** — Each namespace with its agent count and member agents
-- **Access rules** — The cross-namespace allow/deny rules governing inter-namespace communication
-
-The view respects access rules as boundaries. An agent in namespace A only sees agents in namespaces it can communicate with — agents cannot discover the existence of agents they are not permitted to contact.
-
-<Callout type="info">
-  The admin view (`callerNamespace: '*'`) bypasses access restrictions and shows the complete
-  topology. This is what the DorkOS UI uses to render the full network graph.
-</Callout>
-
-## Health and Observability
-
-Mesh tracks every agent through a heartbeat mechanism. Each agent has a `lastSeenAt` timestamp and a `lastSeenEvent` description updated whenever it sends a heartbeat or performs an action.
-
-Health states:
-
-- **active** — Seen recently
-- **inactive** — Not seen for a while but within a reasonable window
-- **stale** — Not seen for an extended period, may be offline
-
-When an agent's health status changes, Mesh emits a lifecycle event through Relay's signal system. The DorkOS UI subscribes to these events to update the topology graph in real time.
-
-The aggregate mesh status gives a bird's-eye view: total agent count with breakdowns by health status, agents grouped by runtime, and agents grouped by project directory.
-
-## Storage
-
-Mesh stores its data in `~/.dork/dork.db`, managed by Drizzle ORM:
-
-- **Agent registry** (`agents` table) — All registered agents with manifests, project paths, namespaces, and health fields
-- **Denial list** (`agent_denials` table) — Paths explicitly excluded from discovery
-
-Each registered agent also has a `.dork/agent.json` file in its project directory. This file is the portable representation of the manifest and the canonical source of truth (ADR-0043); the database is a derived cache. Because of that, the database is fully rebuildable from disk: if you delete `dork.db`, the reconciler walks the managed agents home directory (`~/.dork/agents/`) and the scan roots of surviving agents on its next pass, re-importing every `.dork/agent.json` it finds. Deeper project trees can always be recovered with an explicit discovery scan.
-
-## Relay Integration
-
-When both Mesh and Relay are enabled, registering an agent in Mesh automatically creates a Relay endpoint for it at `relay.agent.{namespace}.{agentId}`. This means:
-
-- **Registration** creates a Relay endpoint and sets up intra-namespace access rules so agents in the same namespace can communicate immediately.
-- **Unregistration** cleans up the Relay endpoint. If it was the last agent in its namespace, the namespace-specific access rules are removed too.
-- **Lifecycle signals** broadcast health status changes on the `mesh.agent.lifecycle.*` subject pattern.
-
-Once registered, an agent is immediately reachable through Relay with no additional configuration.
+- **Registration** creates the endpoint and sets up intra-namespace access rules, so same-namespace agents can communicate immediately.
+- **Unregistration** removes the endpoint. If it was the last agent in its namespace, the namespace-specific access rules are removed too.
+- **Lifecycle signals** broadcast health-status changes on the `mesh.agent.lifecycle.*` subject pattern, which the dashboard subscribes to for real-time map updates.
 
 ## Next Steps
 
