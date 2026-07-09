@@ -7,7 +7,8 @@ vi.mock('../server-process', () => ({
   stopServer: vi.fn(async () => undefined),
   getServerPort: vi.fn(() => 4242),
 }));
-vi.mock('../menu', () => ({ setupMenu: vi.fn() }));
+vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
+vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test

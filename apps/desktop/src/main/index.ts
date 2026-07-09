@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { createWindow } from './window-manager';
 import { startServer, stopServer, getServerPort } from './server-process';
-import { setupMenu } from './menu';
+import { setupMenu, setupDockMenu } from './menu';
+import { setupAboutPanel } from './about';
 // import { setupAutoUpdater } from './auto-updater';
 
 let mainWindow: BrowserWindow | null = null;
@@ -20,6 +21,29 @@ function createTrackedWindow(): void {
   });
 }
 
+/**
+ * Point-in-time accessor for the tracked main window. Passed to the menu
+ * (rather than a captured `BrowserWindow`) so click handlers always see the
+ * current window, even after it has been recreated.
+ */
+function getMainWindow(): BrowserWindow | null {
+  return mainWindow;
+}
+
+/**
+ * Focus the existing main window (restoring it first if minimized), or
+ * create one if none exists yet. Shared by `second-instance` and the Dock
+ * menu's "Show DorkOS" item so there is one path for "bring the app forward".
+ */
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (serverPort) createTrackedWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+}
+
 // Only one instance of the app may run at a time — two copies would each
 // spawn their own server process against the same ~/.dork SQLite store.
 // This must run before any ready-work (IPC handlers, window creation).
@@ -32,12 +56,7 @@ if (!gotTheLock) {
   // existing window to the front instead of doing nothing. If the window
   // was closed (macOS keeps the app alive with zero windows), recreate it.
   app.on('second-instance', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      if (serverPort) createTrackedWindow();
-      return;
-    }
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    showMainWindow();
   });
 
   // Register IPC handlers for the preload bridge.
@@ -57,8 +76,10 @@ if (!gotTheLock) {
     // 2. Create the main window (the renderer fetches the server port via IPC)
     createTrackedWindow();
 
-    // 3. Set up the native macOS menu bar
-    setupMenu();
+    // 3. Set up the native macOS menu bar, About panel, and Dock menu
+    setupMenu(getMainWindow);
+    setupAboutPanel();
+    setupDockMenu(showMainWindow);
 
     // 4. Check for updates in the background (non-blocking)
     // Uncomment when code signing is configured (Phase 3).

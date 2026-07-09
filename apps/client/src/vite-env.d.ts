@@ -8,6 +8,14 @@ interface ElectronAPI {
   getAppVersion(): string;
   /** The current platform (darwin, win32, linux). */
   platform: NodeJS.Platform;
+  /**
+   * Subscribe to main-process navigation requests (menu items, dock menu,
+   * `dorkos://` deep links — ADR 260709-210223). `cb` receives the client
+   * route path to navigate to.
+   *
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onNavigate(cb: (path: string) => void): () => void;
 }
 
 declare global {
