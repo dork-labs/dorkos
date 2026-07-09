@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260709-205811",
+      "slug": "desktop-macos-polish",
+      "title": "Desktop app — native macOS polish & platform basics",
+      "created": "2026-07-09",
+      "status": "specified",
+      "project": "Desktop app — native macOS polish"
+    },
+    {
       "id": "260708-144354",
       "slug": "right-panel-workbench",
       "title": "Right-Panel Workbench — File Explorer, Viewers, Browser, Terminal",
