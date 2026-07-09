@@ -198,12 +198,12 @@
     },
     {
       "doc": "README.md",
-      "description": "Root repo README (published to GitHub) — plain-language, `writing-for-humans`",
+      "description": "Root repo README (published to GitHub); plain-language per `writing-for-humans`",
       "patterns": ["packages/cli/", "apps/site/src/layers/features/marketing/"]
     },
     {
       "doc": "packages/cli/README.md",
-      "description": "npm package README (dorkos on npm) — plain-language, `writing-for-humans`",
+      "description": "npm package README (dorkos on npm); plain-language per `writing-for-humans`",
       "patterns": ["packages/cli/src/", "packages/cli/package.json"]
     },
     {

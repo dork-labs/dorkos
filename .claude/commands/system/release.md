@@ -312,7 +312,7 @@ Update `docs/changelog.mdx` to match the retained `CHANGELOG.md` sections: keep 
 
 ### 6.6: Scaffold blog post
 
-Write this for readers, not for the engineering team — apply the `writing-for-humans` skill (9th-grade level, benefit before mechanism). The theme sentence must pass the **explain-back test**: a non-developer should be able to read it once and say what the release does. Each highlight is **one idea, ≤2 sentences** — never a single run-on carrying three or four claims.
+Write this for readers, not for the engineering team: apply the `writing-for-humans` skill (9th-grade level, benefit before mechanism). The theme sentence must pass the **explain-back test**: a non-developer should be able to read it once and say what the release does. Each highlight is **one idea, ≤2 sentences**, never a single run-on carrying three or four claims.
 
 Create `blog/dorkos-X-Y-Z.mdx` (dots → hyphens in the version):
 
@@ -400,9 +400,9 @@ If push fails: the commit and tag exist locally — report the error, retry with
 
 ### 6.10: GitHub Release notes
 
-Ask via AskUserQuestion (create a GitHub Release, or skip). If yes, generate **narrative release notes** — use the `writing-changelogs` skill for structure and the `writing-for-humans` skill for readability:
+Ask via AskUserQuestion (create a GitHub Release, or skip). If yes, generate **narrative release notes**, using the `writing-changelogs` skill for structure and the `writing-for-humans` skill for readability:
 
-- **Theme** (1-2 sentences) and **Highlights** (2-3 significant changes with benefit explanations) are written fresh. The theme sentence must pass the **explain-back test** (a non-developer can read it once and say what the release does). Each highlight is **one idea, ≤2 sentences** — never a single run-on carrying three or four claims.
+- **Theme** (1-2 sentences) and **Highlights** (2-3 significant changes with benefit explanations) are written fresh. The theme sentence must pass the **explain-back test** (a non-developer can read it once and say what the release does). Each highlight is **one idea, ≤2 sentences**, never a single run-on carrying three or four claims.
 - **All Changes** is copied **verbatim** from the just-created `## [X.Y.Z]` section of `CHANGELOG.md` — do NOT rewrite, regenerate, or summarize; those entries were already reviewed.
 - End with install/update instructions (`npm update -g dorkos`) and the compare link: `https://github.com/dork-labs/dorkos/compare/v[prev]...v[new]`.
 

@@ -38,7 +38,7 @@ The entry-quality guidance below applies identically to fragment bullets.
 
 ## Core Principles
 
-Changelog entries are user-facing prose, so the **`writing-for-humans`** skill sets the readability bar — 9th-grade level, one idea per sentence, benefit before mechanism, every acronym glossed. Read it first. The rules specific to changelogs:
+Changelog entries are user-facing prose, so the **`writing-for-humans`** skill sets the readability bar: 9th-grade level, one idea per sentence, benefit before mechanism, every acronym glossed. Read it first. The rules specific to changelogs:
 
 1. **Communicate impact, not implementation** - Focus on what users can DO, not what files changed
 2. **Use imperative verbs** - "Add", "Fix", "Remove" not "Added", "Fixed", "Removed"
@@ -174,8 +174,8 @@ Before publishing release notes, verify each entry:
 - [ ] Starts with imperative verb (Add, Fix, Change, Remove, Improve)
 - [ ] Describes user benefit, not just implementation detail
 - [ ] Reads at a ~9th-grade level (no unexplained jargon; every acronym glossed or cut)
-- [ ] No ticket ID carries the meaning — the sentence stands alone without `(DOR-123)` or `(#42)`
-- [ ] No internal batch/task/tracking entries — those are cut at curation, never shipped
+- [ ] No ticket ID carries the meaning: the sentence stands alone without `(DOR-123)` or `(#42)`
+- [ ] No internal batch/task/tracking entries: those are cut at curation, never shipped
 - [ ] Appropriate for someone who doesn't know the codebase
 
 For the overall release:

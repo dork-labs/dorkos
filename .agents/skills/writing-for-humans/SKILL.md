@@ -1,6 +1,6 @@
 ---
 name: writing-for-humans
-description: Writes user-facing DorkOS prose a non-developer can read — changelog fragments, release notes, READMEs, npm copy, docs guides and concept pages, blog posts, UI microcopy, and error messages. Use when writing or reviewing any copy a person (not a coding agent) will read.
+description: Writes user-facing DorkOS prose a non-developer can read: changelog fragments, release notes, READMEs, npm copy, docs guides and concept pages, blog posts, UI microcopy, and error messages. Use when writing or reviewing any copy a person (not a coding agent) will read.
 ---
 
 # Writing for Humans
@@ -12,16 +12,18 @@ Every word a user reads should be plain enough for a smart 9th grader who does n
 Hold every user-facing sentence to these five rules:
 
 1. **Aim for a 9th-grade reading level.** If a sentence needs a second read, rewrite it.
-2. **Keep sentences short.** Aim under 20 words. Never pack two big ideas into one sentence — split them.
+2. **Keep sentences short.** Aim under 20 words. Never pack two big ideas into one sentence. Split them.
 3. **Use active voice with a clear actor.** Say who does what: "DorkOS opens your browser," not "the browser is opened."
 4. **Lead with the benefit, then the mechanism (if at all).** Say what the user gets first. Most of the time you can drop the mechanism.
 5. **Define or drop every technical term.** Either avoid the jargon or gloss it in the same sentence. Prefer numbers and concrete scenarios over abstractions.
 
+House punctuation rule: no em dashes. They invite run-on sentences that smuggle in a second idea; use a comma, colon, parentheses, or a new sentence instead.
+
 ## What this governs (and what it does not)
 
-**Governs** — surfaces a user reads: changelog fragments, release notes, READMEs, npm package copy, the GitHub repo description, `docs/` guide and concept pages, blog posts, UI microcopy, and error messages.
+**Governs** every surface a user reads: changelog fragments, release notes, READMEs, npm package copy, the GitHub repo description, `docs/` guide and concept pages, blog posts, UI microcopy, and error messages.
 
-**Does not govern** — surfaces written for developers or coding agents, which stay precise and technical:
+**Does not govern** surfaces written for developers or coding agents, which stay precise and technical:
 
 - ADRs → `writing-adrs`
 - `contributing/` developer guides and API reference pages → `writing-developer-guides`
@@ -49,7 +51,7 @@ After: "Each agent gets an ID that also records when it was created, so lists st
 
 **4. Shipping a commit message to users.**
 Before: "SDK-native breakdown via held-open prompt (A1)."
-After: "Task breakdowns now stream in live as the agent thinks, instead of appearing all at once." Internal batch, task, and tracking notes never ship — cut them when you curate.
+Can you tell what the user got? Neither can we, and that is the lesson: when the commit message does not tell you, do not paraphrase it into the changelog. Dig into the PR or the code until you can say what changed for the user, then write that sentence. Internal batch, task, and tracking notes never ship: cut them when you curate.
 
 **5. One sentence carrying three or four ideas.**
 Before: a single 68-word highlight making four separate claims.
@@ -59,11 +61,11 @@ After: one idea per sentence. Break it into a short lead plus a bullet each.
 Before: a flags table dropped in with no lead-in.
 After: "Most people never change these. Here is the full list if you need it," then the table.
 
-**7. Tonal whiplash — warm opening, then man-page.**
+**7. Tonal whiplash: warm opening, then man-page.**
 A README that opens with a story ("It's 7am, CI has been red since 2:47am") and then jumps to bare command lists reads like two documents. Bridge the shift with a sentence, or keep the reference in its own section.
 
 **8. Describing a visual feature in text only.**
-"Glance at your browser tabs and know which are working" is telling, not showing. When a feature is visual, add a screenshot or short clip. (Media is a separate task — at minimum, flag the gap.)
+"Glance at your browser tabs and know which are working" is telling, not showing. When a feature is visual, add a screenshot or short clip. (Media is a separate task, so at minimum flag the gap.)
 
 **9. Developer reference mixed into a user page with no signal.**
 A concepts page that slides from "what you get" into file paths and type names loses the non-developer mid-page. Put the deep-dive under its own heading and say who it is for.
@@ -94,4 +96,4 @@ Gloss on first use only; after that the reader knows it.
 
 ## The honesty gate
 
-Plain language never means overclaiming. Follow the demo-claim gate in `AGENTS.md`: never say an unverified surface or feature works. Describe what a user can actually do today. No hype words ("powerful," "seamless," "effortless") — show the outcome instead.
+Plain language never means overclaiming. Follow the demo-claim gate in `AGENTS.md`: never say an unverified surface or feature works. Describe what a user can actually do today. No hype words ("powerful," "seamless," "effortless"): show the outcome instead.
