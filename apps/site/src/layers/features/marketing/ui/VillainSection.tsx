@@ -221,9 +221,11 @@ export function VillainSection() {
       >
         <motion.div variants={REVEAL} className="mb-16 text-center">
           <h2 className="text-charcoal mb-4 text-[28px] leading-[1.3] font-medium tracking-[-0.02em] md:text-[32px]">
-            What your agents do when you leave.
+            You became the integration layer.
           </h2>
-          <p className="text-warm-gray text-lg">Nothing.</p>
+          <p className="text-warm-gray text-lg">
+            Between every agent and every tool, the wiring is you.
+          </p>
         </motion.div>
 
         <motion.div variants={STAGGER} className="space-y-10">
@@ -259,10 +261,10 @@ export function VillainSection() {
             style={{ borderTop: '1px solid rgba(139, 90, 43, 0.1)' }}
           >
             <p className="text-charcoal pt-10 text-xl leading-[1.5] font-medium md:text-2xl">
-              You pay for the most powerful coding agent ever built.
+              You run the most capable agents ever built.
             </p>
             <p className="text-warm-gray text-xl leading-[1.5] font-medium md:text-2xl">
-              It stops the moment you look away.
+              And you&apos;re the one holding them together.
             </p>
           </div>
         </motion.div>

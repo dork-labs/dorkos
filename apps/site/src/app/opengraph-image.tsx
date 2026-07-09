@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og';
 
 export const runtime = 'edge';
 
-export const alt = 'DorkOS - The operating system for autonomous AI agents';
+export const alt = 'DorkOS — mission control for every coding agent you run';
 export const size = {
   width: 1200,
   height: 630,
@@ -63,37 +63,27 @@ export default async function Image() {
       >
         <span
           style={{
-            fontSize: '48px',
+            fontSize: '72px',
             fontWeight: 700,
             color: '#FFFFFF',
             letterSpacing: '-0.03em',
-            lineHeight: 1.2,
+            lineHeight: 1.1,
           }}
         >
-          Your agents are brilliant.
+          You, multiplied.
         </span>
         <span
           style={{
-            fontSize: '48px',
+            fontSize: '40px',
             fontWeight: 700,
             color: '#E86C3A',
             letterSpacing: '-0.03em',
             lineHeight: 1.2,
             textAlign: 'center',
+            marginTop: '8px',
           }}
         >
-          They just can&apos;t do anything
-        </span>
-        <span
-          style={{
-            fontSize: '48px',
-            fontWeight: 700,
-            color: '#E86C3A',
-            letterSpacing: '-0.03em',
-            lineHeight: 1.2,
-          }}
-        >
-          when you leave.
+          Every agent you run. One cockpit.
         </span>
       </div>
 
@@ -106,7 +96,7 @@ export default async function Image() {
           fontWeight: 300,
         }}
       >
-        You slept. They shipped.
+        Claude Code · Codex · OpenCode
       </span>
 
       {/* Bottom accent stripes */}

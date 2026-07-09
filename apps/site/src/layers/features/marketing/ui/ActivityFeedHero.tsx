@@ -317,7 +317,7 @@ function ActivityFeedPanel() {
           className="text-center font-mono text-[9px] tracking-[0.06em]"
           style={{ color: '#7A756A' }}
         >
-          This is what your morning looks like with DorkOS.
+          This is your fleet, reporting back.
         </p>
       </div>
     </div>
@@ -362,21 +362,22 @@ export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedH
         <motion.div variants={REVEAL} className="mb-6">
           <h1
             className="text-charcoal font-bold tracking-[-0.04em] text-balance"
-            style={{ fontSize: 'clamp(32px, 5.5vw, 64px)', lineHeight: 1.06 }}
+            style={{ fontSize: 'clamp(40px, 7vw, 84px)', lineHeight: 1.02 }}
           >
-            Your agents are brilliant.
-            <br />
-            They just can&apos;t do anything when you leave.
+            You, multiplied.
           </h1>
         </motion.div>
 
         {/* Tagline */}
-        <motion.p
-          variants={REVEAL}
-          className="text-charcoal mb-12 text-lg font-medium tracking-[-0.01em] md:text-xl"
-        >
-          You slept. They shipped.
-        </motion.p>
+        <motion.div variants={REVEAL} className="mb-12">
+          <p className="text-charcoal mx-auto max-w-2xl text-lg font-medium tracking-[-0.01em] text-balance md:text-xl">
+            Every coding agent you run &mdash; Claude Code, Codex, OpenCode &mdash; in one cockpit.
+            Your fleet, scheduled, connected, and reporting back to you.
+          </p>
+          <p className="text-warm-gray mx-auto mt-4 max-w-2xl text-base text-balance md:text-lg">
+            You&apos;ve always had more ideas than hours. That ratio just changed.
+          </p>
+        </motion.div>
 
         {/* Activity feed — full width, subordinate */}
         <motion.div

@@ -38,10 +38,10 @@ export const timelineEntries: TimelineEntry[] = [
   {
     id: '248am',
     time: '2:48 AM',
-    headline: 'Two agents almost step on each other. They sort it out.',
+    headline: 'Two agents work the same service. Neither one is flying blind.',
     paragraphs: [
-      'The agent that fixed the tests notices the other agent is working in the same service. [MESH] sends a heads-up \u2014 one waits for the other to merge first, avoiding a conflict.',
-      'Automatically. No terminal open.',
+      '[MESH] keeps a live map of which agents exist and where they\u2019re working. So when a second agent picks up a task in the same service, it can see the first one is already there.',
+      'Discovery you didn\u2019t have to wire up yourself.',
     ],
   },
   {
@@ -49,7 +49,7 @@ export const timelineEntries: TimelineEntry[] = [
     time: '7:00 AM',
     headline: 'You open your laptop to a full progress report.',
     paragraphs: [
-      'You open your laptop. [CONSOLE] shows the night at a glance: three changes ready for review, one fix already merged, the refactor at 80% \u2014 waiting on a design question it queued for you. The overnight cost: $4.20.',
+      'You open your laptop. [CONSOLE] shows the night at a glance: three changes ready for review, one fix already merged, the refactor at 80% \u2014 waiting on a design question it queued for you.',
     ],
   },
   {

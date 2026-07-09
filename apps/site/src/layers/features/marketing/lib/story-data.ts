@@ -122,7 +122,7 @@ export const futureCards: FutureCard[] = [
   {
     id: 'connected',
     label: 'Connected',
-    title: 'Agents that talk',
+    title: 'Agents that connect',
     description: 'Mesh. Agent-to-agent discovery and coordination across teams.',
     color: 'blue',
   },
