@@ -10,7 +10,18 @@
 [![license](https://img.shields.io/npm/l/dorkos)](https://github.com/dork-labs/dorkos/blob/main/LICENSE)
 [![newsletter](https://img.shields.io/badge/newsletter-subscribe-e8590c)](https://dorkos.ai/newsletter)
 
-The operating system for autonomous AI agents. Scheduling, messaging, agent discovery, and a browser-based command center. One person can ship like a team.
+The command center for the AI coding agents you already run. See every session, approve what your agents do, and let them work on a schedule. One place, on your own machine.
+
+## Who this is for
+
+You run AI coding agents like Claude Code, and you start them from a lot of places: your terminal, your editor, a script. DorkOS gathers all of those sessions into one dashboard in your browser, so you can see what each agent is doing and step in when it matters.
+
+## What you get
+
+- **Every session in one place.** See every Claude Code session across all your projects, no matter where you started it.
+- **Control from anywhere.** Approve or deny what an agent wants to do, from your laptop or your phone.
+- **Agents that run without you.** Put an agent on a schedule, then get a message when it finishes.
+- **Your machine, your data.** DorkOS runs on your computer. Sessions and data stay local, and the code is open source.
 
 ## Install
 
@@ -25,140 +36,59 @@ export ANTHROPIC_API_KEY=your-key-here
 dorkos
 ```
 
-Your browser opens. You're looking at every Claude Code session across all your projects: sessions you started from the CLI, from VS Code, from anywhere. One place. Every session. Already there.
+Your browser opens. You're looking at every Claude Code session across all your projects: sessions you started from your terminal, from VS Code, from anywhere. One place. Every session. Already there.
 
 ## What DorkOS Does
 
-It's 7am. CI has been red since 2:47am. A dependency update cascaded across three repos. Your agent could have caught this overnight, fixed it, and sent you a Telegram message. Instead, the terminal was closed. The agent wasn't running.
+It's 7am. CI has been red since 2:47am. A dependency update broke three repos. Your agent could have caught this overnight, fixed it, and sent you a message. Instead, the terminal was closed. The agent wasn't running.
 
-DorkOS gives your agents what they're missing: scheduling, communication, and coordination. The intelligence comes from the agents. Everything else comes from DorkOS.
+DorkOS gives your agents what they're missing: a schedule, a way to reach you, and a way to find each other. The intelligence comes from the agents. Everything else comes from DorkOS.
 
-### Tasks - Scheduling
+### Tasks: run agents on a schedule
 
-Cron-based and on-demand agent execution, independent of your IDE or terminal. Your agents ship code, triage issues, and run audits on schedule. You wake up to completed pull requests.
+Set an agent to run at a time you pick (like every morning at 9am) or on demand, without keeping a terminal open. Your agents ship code, triage issues, and run audits while you sleep. You wake up to finished work.
 
-- File-based task definitions alongside your code
-- Overrun protection prevents duplicate runs
-- Isolated sessions per run with full history
-- Configurable concurrency limits
+- Define tasks in files that live next to your code
+- Skip a run if the last one is still going, so you never get duplicates
+- Every run gets its own session with full history
 
-### Relay - Communication
+### Relay: let agents reach you
 
-Built-in messaging between your agents and the channels you already use. Telegram, webhooks, browser. Agents reach you where you are. Agents can also message each other across project boundaries.
+Your agents can message you on the channels you already use: Telegram, a webhook, or the browser. When an agent finishes or gets stuck, you hear about it where you are. Agents can also message each other across projects.
 
-- Telegram and webhook adapters built in
-- Add new channels with a plugin, no custom bots required
-- Messages persist when terminals close
-- Your research agent can notify your coding agent. No copy-paste required.
+- Telegram and webhook support built in
+- Add a new channel with a plugin, no custom bot required
+- Messages wait for you even after you close the terminal
 
-### Mesh - Agent Discovery
+### Mesh: find your agents
 
-Scans your projects and finds agent-capable directories. You approve which agents join the network. They coordinate through channels you define.
+DorkOS scans your projects and finds the folders that hold agents. You choose which ones to add. Each agent gets an identity you can recognize at a glance: a name, a color, an icon, and a purpose.
 
-- Finds Claude Code, Cursor, and Codex projects automatically
-- Each agent gets an identity: name, color, icon, purpose
-- Agents know about each other: what they can do and how to reach them
-- From solo agents to a coordinated team
+- Finds Claude Code, Codex, and other agent projects for you
+- You approve which agents join before anything connects
+- Each agent knows what the others can do and how to reach them
 
-### Console - Browser UI
+### Console: watch it all in your browser
 
-Your agents have names, colors, and status. Glance at your browser tabs and know which ones are working, which are done, and which need your attention.
+Your agents have names, colors, and a status. Glance at your browser and know which ones are working, which are done, and which need you.
 
-Start a session from the browser. Check on it from your phone. Resume it from inside Obsidian. Every session, regardless of which client started it, visible in one place.
+Start a session in the browser. Check on it from your phone. Every session shows up in one place, whichever tool started it.
 
-- Rich markdown rendering with full session history
-- Approve or deny tool calls from any device
-- Real-time sync across multiple clients
-- Available in any browser or embedded in Obsidian
+- Full session history with rich markdown
+- Approve or deny an agent's actions from any device
+- Live updates across every browser tab you have open
 
 ### Extensions
 
-Agents can build and install extensions that add new capabilities. Extensions define their own settings, secrets, and entry points — all managed through the UI.
+Agents can build and install extensions that add new features. Each extension brings its own settings and secrets, all managed from the dashboard.
 
-### MCP Server
+### Connect other AI tools (MCP)
 
-DorkOS exposes an MCP server at `/mcp` (Streamable HTTP transport) so external AI agents — Claude Code, Cursor, Windsurf — can use DorkOS tools directly. Optional API key auth via `MCP_API_KEY`.
+DorkOS speaks MCP (the open standard that lets AI tools share tools with each other), so other agents like Claude Code and Cursor can use the DorkOS tools directly. You can lock it behind a key with `MCP_API_KEY`.
 
 ```bash
 claude mcp add dorkos --transport http http://localhost:4242/mcp
 ```
-
-## CLI Reference
-
-```bash
-dorkos                        # Start the server
-dorkos --port 8080            # Custom port
-dorkos --dir ~/projects       # Custom working directory
-dorkos --tunnel               # Enable remote access via ngrok
-dorkos --tasks                # Enable Tasks scheduler
-dorkos --no-open              # Don't open browser on startup
-dorkos config                 # Show all settings
-dorkos config set <key> <val> # Update a setting
-dorkos init                   # Interactive setup wizard
-dorkos init --yes             # Accept all defaults
-dorkos cleanup                # Remove all DorkOS data
-```
-
-### Flags
-
-| Flag                      | Description                                                    |
-| ------------------------- | -------------------------------------------------------------- |
-| `-p, --port <port>`       | Port to listen on (default: 4242)                              |
-| `-d, --dir <path>`        | Working directory                                              |
-| `-b, --boundary <path>`   | Directory boundary (default: home directory)                   |
-| `-t, --tunnel`            | Enable ngrok tunnel for remote access                          |
-| `--tasks` / `--no-tasks`  | Enable or disable the Tasks scheduler                          |
-| `--no-open`               | Don't open browser on startup                                  |
-| `-l, --log-level <level>` | Log level (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
-| `--post-install-check`    | Verify installation and exit                                   |
-| `-h, --help`              | Show help message                                              |
-| `-v, --version`           | Show version number                                            |
-
-### Config Subcommands
-
-| Command                           | Description                 |
-| --------------------------------- | --------------------------- |
-| `dorkos config`                   | Show all effective settings |
-| `dorkos config get <key>`         | Get a single value          |
-| `dorkos config set <key> <value>` | Set a single value          |
-| `dorkos config list`              | Full JSON output            |
-| `dorkos config reset [key]`       | Reset to defaults           |
-| `dorkos config edit`              | Open in `$EDITOR`           |
-| `dorkos config path`              | Print config file location  |
-| `dorkos config validate`          | Check validity              |
-
-## Environment Variables
-
-### Required
-
-| Variable            | Description            |
-| ------------------- | ---------------------- |
-| `ANTHROPIC_API_KEY` | Your Anthropic API key |
-
-### Optional
-
-| Variable               | Default           | Description                            |
-| ---------------------- | ----------------- | -------------------------------------- |
-| `DORKOS_PORT`          | `4242`            | Server port                            |
-| `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker) |
-| `DORKOS_DEFAULT_CWD`   | Current directory | Default working directory for sessions |
-| `DORKOS_BOUNDARY`      | Home directory    | Directory boundary root                |
-| `DORK_HOME`            | `~/.dork`         | Override data directory location       |
-| `LOG_LEVEL`            | `info`            | Log verbosity                          |
-| `DORKOS_TASKS_ENABLED` | `true`            | Enable or disable the Tasks scheduler  |
-| `DORKOS_OPEN`          | `true`            | Open browser on startup                |
-| `DORKOS_RELAY_ENABLED` | `true`            | Enable the Relay message bus           |
-| `DORKOS_CORS_ORIGIN`   | `localhost`       | CORS allowed origin(s)                 |
-| `MCP_API_KEY`          | (none)            | API key for MCP server authentication  |
-
-### Remote Access
-
-| Variable          | Description                                 |
-| ----------------- | ------------------------------------------- |
-| `TUNNEL_ENABLED`  | Set to `true` to enable ngrok tunnel        |
-| `NGROK_AUTHTOKEN` | Your ngrok authentication token             |
-| `TUNNEL_DOMAIN`   | Custom tunnel domain (optional)             |
-| `TUNNEL_AUTH`     | Basic auth in `user:pass` format (optional) |
 
 ## Docker
 
@@ -172,7 +102,7 @@ docker run --rm -p 4242:4242 \
 
 ## Updating
 
-DorkOS checks for new versions on startup and displays an update notice when one is available. Check your current version:
+DorkOS checks for a new version each time it starts and tells you when one is ready. Check your version:
 
 ```bash
 dorkos --version
@@ -186,22 +116,111 @@ npm install -g dorkos@latest
 pnpm add -g dorkos@latest
 ```
 
-For Homebrew, Docker, and other update methods, see the [full upgrade guide](https://dorkos.ai/docs/getting-started/installation#updating).
-
-## API Documentation
-
-Interactive API docs at `/api/docs` (Scalar UI) and raw OpenAPI spec at `/api/openapi.json`.
+For Homebrew, Docker, and other ways to update, see the [full upgrade guide](https://dorkos.ai/docs/getting-started/installation#updating).
 
 ## Open Source
 
-MIT-licensed. Open source. Runs on your machine. Your agents, your data, your rules.
+MIT-licensed and open source. It runs on your machine: your agents, your data, your rules.
 
-Choose your permission mode, from approve-every-tool-call to fully autonomous. Every session is recorded locally. When your agent runs overnight, you'll see exactly what it did in the morning.
+Choose how much control you want, from approving every single action to letting an agent run on its own. Every session is saved on your computer, so when an agent works overnight you can see exactly what it did in the morning.
 
 - [Documentation](https://dorkos.ai/docs)
 - [Changelog](https://dorkos.ai/docs/changelog)
 - [GitHub](https://github.com/dork-labs/dorkos)
 - [Issues](https://github.com/dork-labs/dorkos/issues)
+
+## Reference
+
+Most people never need these. Here they are when you do.
+
+### Commands
+
+```bash
+dorkos                        # Start the server
+dorkos --port 8080            # Use a different port
+dorkos --dir ~/projects       # Start in a specific folder
+dorkos --tunnel               # Open a public URL so you can reach it remotely
+dorkos --tasks                # Turn on the Tasks scheduler
+dorkos --no-open              # Don't open the browser on startup
+dorkos config                 # Show all settings
+dorkos config set <key> <val> # Change a setting
+dorkos init                   # Walk through setup step by step
+dorkos init --yes             # Accept all the defaults
+dorkos cleanup                # Remove all DorkOS data
+```
+
+### Flags
+
+`--boundary` sets which folders on your computer DorkOS is allowed to touch (it defaults to your home folder). `--tunnel` opens a secure public web address (through ngrok) so you can reach DorkOS from another device.
+
+| Flag                      | What it does                                                         |
+| ------------------------- | -------------------------------------------------------------------- |
+| `-p, --port <port>`       | Port to listen on (default: 4242)                                    |
+| `-d, --dir <path>`        | Folder to start in                                                   |
+| `-b, --boundary <path>`   | Folders DorkOS may touch (default: your home folder)                 |
+| `-t, --tunnel`            | Open a public URL (ngrok) so you can reach DorkOS remotely           |
+| `--tasks` / `--no-tasks`  | Turn the Tasks scheduler on or off                                   |
+| `--no-open`               | Don't open the browser on startup                                    |
+| `-l, --log-level <level>` | How much to log (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
+| `--post-install-check`    | Check the install worked, then exit                                  |
+| `-h, --help`              | Show help                                                            |
+| `-v, --version`           | Show the version number                                              |
+
+### Config subcommands
+
+| Command                           | What it does                 |
+| --------------------------------- | ---------------------------- |
+| `dorkos config`                   | Show all active settings     |
+| `dorkos config get <key>`         | Show one setting             |
+| `dorkos config set <key> <value>` | Change one setting           |
+| `dorkos config list`              | Show everything as JSON      |
+| `dorkos config reset [key]`       | Reset to defaults            |
+| `dorkos config edit`              | Open the config in `$EDITOR` |
+| `dorkos config path`              | Show where the config lives  |
+| `dorkos config validate`          | Check the config is valid    |
+
+### Environment variables
+
+You need one variable to start. The rest are optional.
+
+**Required**
+
+| Variable            | What it is             |
+| ------------------- | ---------------------- |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key |
+
+**Optional**
+
+`DORKOS_BOUNDARY` limits which folders DorkOS may touch. `DORKOS_CORS_ORIGIN` sets which websites are allowed to call your server (an advanced setting; the default is safe for local use).
+
+| Variable               | Default           | What it does                                   |
+| ---------------------- | ----------------- | ---------------------------------------------- |
+| `DORKOS_PORT`          | `4242`            | Server port                                    |
+| `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker)         |
+| `DORKOS_DEFAULT_CWD`   | Current directory | Default folder for new sessions                |
+| `DORKOS_BOUNDARY`      | Home directory    | Folders DorkOS may touch                       |
+| `DORK_HOME`            | `~/.dork`         | Where DorkOS keeps its data                    |
+| `LOG_LEVEL`            | `info`            | How much to log                                |
+| `DORKOS_TASKS_ENABLED` | `true`            | Turn the Tasks scheduler on or off             |
+| `DORKOS_OPEN`          | `true`            | Open the browser on startup                    |
+| `DORKOS_RELAY_ENABLED` | `true`            | Turn agent messaging (Relay) on or off         |
+| `DORKOS_CORS_ORIGIN`   | `localhost`       | Which websites may call your server (advanced) |
+| `MCP_API_KEY`          | (none)            | Require a key to use the MCP server            |
+
+**Remote access**
+
+These let you reach DorkOS from another device through a secure public URL (ngrok).
+
+| Variable          | What it does                                  |
+| ----------------- | --------------------------------------------- |
+| `TUNNEL_ENABLED`  | Set to `true` to open a public URL            |
+| `NGROK_AUTHTOKEN` | Your ngrok token                              |
+| `TUNNEL_DOMAIN`   | A custom address for the URL (optional)       |
+| `TUNNEL_AUTH`     | Password protection as `user:pass` (optional) |
+
+### API documentation
+
+Interactive API docs are at `/api/docs`, and the raw spec is at `/api/openapi.json`.
 
 ## License
 

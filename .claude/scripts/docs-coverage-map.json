@@ -197,6 +197,16 @@
       "patterns": ["packages/cli/package.json"]
     },
     {
+      "doc": "README.md",
+      "description": "Root repo README (published to GitHub); plain-language per `writing-for-humans`",
+      "patterns": ["packages/cli/", "apps/site/src/layers/features/marketing/"]
+    },
+    {
+      "doc": "packages/cli/README.md",
+      "description": "npm package README (dorkos on npm); plain-language per `writing-for-humans`",
+      "patterns": ["packages/cli/src/", "packages/cli/package.json"]
+    },
+    {
       "doc": "docs/getting-started/installation.mdx",
       "description": "Install guide",
       "patterns": ["packages/cli/"]
@@ -350,6 +360,11 @@
       "doc": "docs/guides/building-relay-adapters.mdx",
       "description": "Relay adapter authoring guide",
       "patterns": ["packages/relay/src/adapters/", "adapter-manager"]
+    },
+    {
+      "doc": "docs/guides/a2a-integration.mdx",
+      "description": "Integrating external clients via the A2A gateway",
+      "patterns": ["packages/a2a-gateway/", "routes/a2a", "/.well-known/agent-card"]
     },
     {
       "doc": "docs/guides/obsidian-plugin.mdx",
