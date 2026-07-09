@@ -1,31 +1,48 @@
 ---
 name: capturing-product-media
-description: Regenerate the marketing site's product screenshots and video loops from the real DorkOS UI. Use when marketing assets are stale after UI changes, a new feature needs a money shot, or a release calls for a fresh capture — anything under apps/site/public/product/ or the apps/e2e/capture pipeline.
+description: Regenerate DorkOS product screenshots and video loops from the real UI, and manage the shot registry, human overrides, and version archives that feed the marketing site, docs, and changelogs. Use when marketing/docs media is stale after UI changes, a new feature or docs page needs a money shot, a person wants to override an automated capture, or a release calls for a fresh capture or archive — anything under apps/site/public/product/ or the apps/e2e/capture pipeline.
 ---
 
 # Capturing Product Media
 
-The marketing site shows the **real** DorkOS UI rendering **seeded** demo data — never mockups, never doctored screenshots. One command regenerates every asset. This skill is the map: when to run it, how it works, the honesty rules, the staging knobs, and how to add a new surface.
+DorkOS product media is a **general system**: one shot registry (`apps/e2e/capture/shots.ts`) feeding the marketing site, docs, and changelogs, from **real** UI rendering **seeded** demo data — never mockups, never doctored screenshots. Automated captures can be beaten by human overrides, and any published set can be frozen into a versioned archive. This skill is the map: the registry, the phases, overrides, archives, docs embeds, the honesty rules, and how to add a shot.
 
 ## When To Use
 
-- The UI changed and a screenshot or loop on the site now looks stale or wrong.
-- A new feature needs a "money shot" (hero still or animated loop) on `/features`.
-- A release-time refresh of all product media.
-- The media-guard test (`apps/site` `features.test.ts`) fails because an asset is missing.
+- The UI changed and a screenshot or loop on the site or docs now looks stale or wrong.
+- A new feature needs a "money shot" (hero still or animated loop) on `/features`, or a docs page needs an embedded `<ProductShot>`.
+- A person wants to override an automated capture with hand-captured media.
+- A release calls for a fresh capture or a frozen archive of the shots its notes embed.
+- A media-guard test (`features.test.ts` or `shots.test.ts`) fails because an asset or registry entry is missing.
 
-## The One Command
+## Commands
 
 ```bash
-pnpm --filter @dorkos/e2e capture
+pnpm --filter @dorkos/e2e capture                  # record + process (the full refresh)
+pnpm --filter @dorkos/e2e capture:record           # boot + drive + save raws to the library
+pnpm --filter @dorkos/e2e capture:process [run-id] # edit raws + apply overrides → product/ (default: latest)
+pnpm --filter @dorkos/e2e capture:archive <label>  # freeze the current published set under archive/<label>/
+pnpm --filter @dorkos/e2e test                     # unit tests: registry, aspect guard, override discovery
 ```
 
-That single command is fully reproducible. It runs both pipeline phases:
+`capture` is fully reproducible. It runs both pipeline phases:
 
-1. **Record**: wipes an isolated `~/.dork-capture` home + an offline marketplace cache, boots a **test-mode** DorkOS server + Vite client on isolated ports (4344/4343, no real Claude/Codex/OpenCode credentials), seeds a deterministic fleet + tasks + sessions through **real API/code paths**, drives the real UI through every money state, and saves RAW recordings/screenshots into the media library.
-2. **Process**: edits the raws (head-trim, end-seam crossfade, two-pass encode, poster extraction) into `apps/site/public/product/` + `manifest.json`, then tears down.
+1. **Record**: wipes an isolated `~/.dork-capture` home + an offline marketplace cache, boots a **test-mode** DorkOS server + Vite client on isolated ports (4344/4343, no real Claude/Codex/OpenCode credentials), seeds a deterministic fleet + tasks + sessions through **real API/code paths**, drives the real UI through every money state, and saves RAW recordings/screenshots into the media library. Shots flagged `skipAuto` (an override supplies them) are not driven.
+2. **Process**: edits the raws (head-trim, end-seam crossfade, two-pass encode, poster extraction), **applies human overrides on top**, and writes `apps/site/public/product/` + a v2 `manifest.json`, then tears down.
 
-Before running, confirm ports 4344/4343 are free. The run takes several minutes (it builds server deps, boots, drives ~15 surfaces, and two-pass-encodes the loops).
+Before running, confirm ports 4344/4343 are free, and that the workspace packages are built (`pnpm --filter "./packages/*" build`) — a stale/missing `@dorkos/shared` (or other) dist stops the capture client from booting. The run takes several minutes (it builds server deps, boots, drives ~16 shots, and two-pass-encodes the loops).
+
+## The shot registry
+
+`apps/e2e/capture/shots.ts` is the single source of truth. Each **shot** has an `id`, a `kind` (`still` or `loop`), a `frame` (`desktop`/`mobile`), and `consumers` (`marketing` / `docs` / `changelog`). The process phase writes the registry into `manifest.json` (`shots`); the site reads it (`apps/site/.../marketing/lib/shots.ts`) so the marketing `ProductSurface` union + `LOOP_SURFACES` and the docs `<ProductShot>` embeds stay consistent (guarded by `shots.test.ts`). Add a docs- or changelog-only shot by listing it with the right consumers — it never appears on `/features` unless tagged `marketing`. (`kind` is two-valued: every loop already ships a still, so there is no `both`.)
+
+## Human overrides
+
+Drop hand-captured media in `apps/e2e/capture/overrides/<shot-id>/` (`still-light.png` and/or `loop-dark.{mp4,mov,webm,mkv}`, optional `override.json` with `reason`/`capturedBy`/`date`/`skipAuto`) and it **beats** the automated capture. Overrides run through the **same** optimization path and are scaled to the shot's target dimensions; an aspect-ratio mismatch fails that shot loudly rather than cropping. Re-run `capture:process` to apply. Full workflow: `apps/e2e/capture/overrides/README.md`.
+
+## Archive (frozen versions)
+
+`capture:archive <label>` snapshots the published set under `archive/<label>/` (immutable). A docs/changelog embed of a **past** version points at `/product/archive/<label>/…`; current embeds use the live path. Archive **only the shots a release's notes embed** (`--shots a,b,c`) — archives are committed binaries, so keep them minimal.
 
 ## Media Library and Editing Workflow
 
@@ -39,22 +56,25 @@ The pipeline behaves like an organized video editor: **raws and deliverables nev
 
 ## Architecture (files in `apps/e2e/capture/`)
 
-- `config.ts` — ports, viewports, library/output paths, and **all** deterministic demo data (fleet, tasks, pinned runs, sessions, prompt pool, canvas doc, discovery projects, marketplace registry). Everything a shot shows is pinned here; nothing depends on `Date.now()`.
+- `shots.ts` — **the shot registry** (source of truth): ids, kinds, frames, consumers, target dimensions, and the manifest snapshot projection.
+- `config.ts` — ports, viewports, library/output/archive/overrides paths, and **all** deterministic demo data (fleet, tasks, pinned runs, sessions, prompt pool, canvas doc, discovery projects, marketplace registry). Everything a shot shows is pinned here; nothing depends on `Date.now()`.
 - `boot.ts` — spawns/tears down the test-mode server + Vite client, with an isolated `DORK_HOME` and a **directory boundary** confined to the capture world.
 - `seed.ts` — pre-boot filesystem prep + post-boot API/DB seeding, all through real code paths.
-- `record.ts` / `process.ts` / `capture.ts` — the phase entry points (record raws, process raws, both).
+- `record.ts` / `process.ts` / `capture.ts` / `archive.ts` — the entry points (record raws, process raws + overrides, both, freeze an archive).
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
-- `lib.ts` — shared Playwright plumbing: the theme init-script, the live-turn opener, and the raw loop recorder with its head-trim marker.
+- `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
+- `lib.ts` — shared Playwright plumbing: the theme init-script, the live-turn opener, the raw loop recorder with its head-trim marker, and the `attemptShot` skip guard.
 - `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives (one `drive*` shared between a still and its loop; one `shoot*`/`capture*` that waits for the money state).
-- `optimize.ts` — the editing stage: PNG recompression (sharp) and loop editing (bundled `ffmpeg-static`): head-trim, end-seam crossfade, two-pass VP9, poster extraction, then the manifest writer.
+- `optimize.ts` — the editing stage: PNG recompression + aspect-validated scaling (sharp) and loop editing (bundled `ffmpeg-static`): head-trim, end-seam crossfade, two-pass VP9, poster extraction, then the v2 manifest writer.
+- `overrides/` — committed human-override sources. `__tests__/` — unit tests for the pure logic.
 
 ### Test-mode seam
 
 Demo scenarios (paced streaming, tool approval, file-backed canvas, sub-agent fan-out) live in `apps/server/src/services/runtimes/test-mode/demo-scenarios.ts`, inside the test-mode runtime boundary, reachable only when `DORKOS_TEST_RUNTIME=true` and selectable only via `POST /api/test/scenario`. They emit standard stream events through the exact normalizer → projector → SSE path a production runtime uses, so the client renders **real components against real stream data**.
 
-### Manifest contract
+### Manifest contract (v2)
 
-The site consumes assets through `ProductFrame` (`apps/site/.../marketing/ui/ProductFrame.tsx`), which resolves files by convention: `<surface>-light.png` (still) and, for loop surfaces, `<surface>-dark.webm` + `<surface>-dark.png` (the poster). `manifest.json` records each asset's surface, theme, kind, dimensions, size, and (loops) duration. The media-guard test in `apps/site/.../marketing/lib/__tests__/features.test.ts` pins this: every referenced surface ships a light still; every loop surface ships a webm + dark poster + light still.
+The site consumes assets through `ProductFrame` (`apps/site/.../marketing/ui/ProductFrame.tsx`), which resolves files by convention: `<id>-light.png` (still) and, for loop shots, `<id>-dark.webm` + `<id>-dark.png` (the poster); loop-ness comes from the registry (`shotHasLoop`). Docs embed the same assets through `<ProductShot id="…" />`. `manifest.json` (schema v2) carries the registry (`shots`) and, per asset, its dimensions, size, (loops) duration, `source` (`auto`/`manual`), `capturedAt`, and either the source `runId` (auto) or `override` provenance (manual). Two guard tests pin it: `features.test.ts` (catalog media exists + framing) and `shots.test.ts` (registry ↔ `LOOP_SURFACES` consistency, manifest v2, and every docs `<ProductShot>` id resolves with its files present).
 
 ## Honesty Rules (non-negotiable)
 
@@ -82,13 +102,14 @@ Two hard-won ffmpeg rules live in this filter graph: the seam overlay MUST be wi
 
 Deterministic and idempotent: same raw + markers → same webm + poster.
 
-## Adding A New Surface (end-to-end)
+## Adding A New Shot (end-to-end)
 
-1. **Scenario (if needed).** If the surface needs scripted stream activity, add a demo scenario in `demo-scenarios.ts` (inside the test-mode boundary) and select it via `POST /api/test/scenario`. Any seeded content must byte-match its `config.ts` counterpart when an autosave/hydration path compares it.
-2. **Capture fn.** Add a `drive*` (shared by still and loop) + `shoot*`/`capture*` in `surfaces-desktop.ts` or `surfaces-mobile.ts`. Wait for a real money-state selector before shooting. For a loop, add a `LoopSpec` to `captureLoops`; call `mark()` in the drive only if the motion is in-drive.
-3. **Manifest.** It updates automatically — the drive records raw entries into `run.json`, and the process phase publishes them through `writeManifest`.
-4. **`ProductSurface` union + `LOOP_SURFACES`.** Add the surface name to `ProductSurface` in `apps/site/.../marketing/lib/features.ts`; add it to `LOOP_SURFACES` if it ships a loop. `ProductFrame` consumes surfaces purely by this convention — light still for cards/non-animated, dark webm + dark poster when `animate` and a loop exists.
-5. **Media guard.** Wire the surface into a feature's `media` in the features catalog; the guard test enforces that its files exist and that phone/desktop framing matches the capture's aspect.
+1. **Register it.** Add the shot to `SHOTS` in `apps/e2e/capture/shots.ts` with its `id`, `kind`, `frame`, and `consumers`. This is the source of truth; everything else follows.
+2. **Scenario (if needed).** If the shot needs scripted stream activity, add a demo scenario in `demo-scenarios.ts` (inside the test-mode boundary) and select it via `POST /api/test/scenario`. Any seeded content must byte-match its `config.ts` counterpart when an autosave/hydration path compares it.
+3. **Capture fn.** Add a `drive*` (shared by still and loop) + `shoot*`/`capture*` in `surfaces-desktop.ts` or `surfaces-mobile.ts`, wrapped in `attemptShot('<id>', …)`. Wait for a real money-state selector before shooting. For a loop, add a `LoopSpec` to `captureLoops`; call `mark()` in the drive only if the motion is in-drive. (Or supply the shot entirely via an override + `skipAuto` — no drive needed.)
+4. **Manifest.** It updates automatically — the drive records raw entries into `run.json`, the process phase publishes them, and `writeManifest` embeds the registry.
+5. **Consume it.** Marketing: add the id to `ProductSurface` + (if a loop) `LOOP_SURFACES` in `features.ts`, then bind it to a feature's `media`. Docs: embed `<ProductShot id="<id>" alt="…" />` in an `.mdx`. Changelog: reference `https://dorkos.ai/product/<id>-…`.
+6. **Guards.** `features.test.ts` and `shots.test.ts` enforce that the registry, catalog, docs embeds, and files all agree — run `pnpm --filter @dorkos/site test`.
 
 ## Verify After A Run
 
