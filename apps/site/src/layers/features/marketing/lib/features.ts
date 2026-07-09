@@ -572,7 +572,7 @@ export const features: Feature[] = [
       'Browse agents, plugins, skills, and connectors',
       'Install from the screen or straight from the command line',
       'Each install stays scoped to one project, so nothing leaks',
-      'Other AI tools can connect to DorkOS directly, not just yours',
+      'Tools like Claude Code and Cursor can browse and install from it too',
     ],
     moment:
       "You read about a code-review agent over coffee and install it before the cup is empty. One command later, it's running, with nothing to set up by hand.",
