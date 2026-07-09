@@ -3,7 +3,7 @@ import { createWindow } from './window-manager';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
-// import { setupAutoUpdater } from './auto-updater';
+import { setupAutoUpdater } from './auto-updater';
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
@@ -81,9 +81,9 @@ if (!gotTheLock) {
     setupAboutPanel();
     setupDockMenu(showMainWindow);
 
-    // 4. Check for updates in the background (non-blocking)
-    // Uncomment when code signing is configured (Phase 3).
-    // setupAutoUpdater();
+    // 4. Check for updates in the background (non-blocking). No-ops in dev
+    // (unpackaged builds can't apply updates) — see auto-updater.ts.
+    setupAutoUpdater(getMainWindow);
   });
 
   // macOS convention: closing all windows does NOT quit the app.

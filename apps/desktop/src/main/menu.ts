@@ -1,14 +1,15 @@
 import { app, Menu, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { sendNavigate, SETTINGS_ROUTE } from './navigation';
+import { checkForUpdatesInteractive } from './auto-updater';
 
 /**
  * Set up the native macOS application menu.
  *
- * App menu: About DorkOS, a (currently disabled) Check for Updates… item,
- * Settings… (`Cmd+,`), and the standard services/hide/quit roles. Also
- * provides the standard Edit/View/Window role menus and a custom Help menu
- * with external links.
+ * App menu: About DorkOS, a Check for Updates… item (enabled only in
+ * packaged builds — dev builds can't apply updates), Settings… (`Cmd+,`),
+ * and the standard services/hide/quit roles. Also provides the standard
+ * Edit/View/Window role menus and a custom Help menu with external links.
  *
  * @param getMainWindow - Accessor for the current main window, looked up at
  *   click-time rather than captured — the tracked window is recreated across
@@ -25,10 +26,9 @@ export function setupMenu(getMainWindow: () => BrowserWindow | null): void {
         { type: 'separator' },
         {
           label: 'Check for Updates…',
-          // Disabled until Chunk C wires `checkForUpdatesInteractive()`.
-          // Chunk C changes this to `enabled: app.isPackaged` (unsigned/dev
-          // builds can't apply updates) and adds the `click` handler.
-          enabled: false,
+          // Unsigned/unpackaged dev builds can't apply updates.
+          enabled: app.isPackaged,
+          click: () => checkForUpdatesInteractive(),
         },
         { type: 'separator' },
         {
