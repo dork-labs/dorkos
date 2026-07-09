@@ -124,5 +124,3 @@ For how the pieces fit together, start with the [architecture guide](contributin
 ## License
 
 [MIT](LICENSE)
-</content>
-</invoke>
