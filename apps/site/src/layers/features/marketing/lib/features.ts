@@ -674,15 +674,15 @@ export const features: Feature[] = [
     name: 'MCP Server',
     product: 'core',
     category: 'integration',
-    tagline: 'Any MCP tool can use DorkOS directly, no custom integration needed',
+    tagline: 'Connect Cursor, Claude Code, or any MCP tool to DorkOS in one step',
     description:
-      'Any MCP tool, like Cursor or Windsurf, can use DorkOS directly. MCP is the standard that lets AI tools talk to each other, so no custom code is needed.',
+      'DorkOS speaks MCP, the standard that lets AI tools talk to each other. Connect a tool once and it can run tasks, message agents, and check your mesh.',
     status: 'ga',
     benefits: [
-      'Any MCP tool can call DorkOS with no custom integration code',
-      'Works out of the box with Claude Code, Cursor, and Windsurf',
+      'Connect once, no custom integration code to write',
+      'Works with Claude Code, Cursor, Windsurf, and any MCP client',
+      'Full access to your Tasks, Relay, and Mesh tools',
       'Turn on an API key when you want extra protection',
-      'Reach your Tasks, Relay, and Mesh tools from any MCP client',
     ],
     moment:
       'You point Cursor at your DorkOS server once. From then on it can kick off a task or check the agent mesh without you ever opening the DorkOS console.',
