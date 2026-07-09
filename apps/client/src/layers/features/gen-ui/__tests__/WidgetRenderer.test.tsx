@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { toast } from 'sonner';
@@ -475,6 +475,20 @@ describe('Tier-2 delight nodes', () => {
       rows: [[{ glyph: 'X' }, { action: { kind: 'agent', id: 'move-0-1' } }]],
     });
     expect(screen.getByRole('button')).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('pads jagged board rows to the widest row so columns align', () => {
+    renderDoc({
+      type: 'board',
+      rows: [[{ glyph: 'X' }, { glyph: 'O' }, { glyph: 'X' }], [{ glyph: 'O' }]],
+    });
+    // Two role="row" wrappers, each containing exactly 3 gridcells — the short
+    // row is padded with blank cells rather than collapsing the grid flow.
+    const rows = screen.getAllByRole('row');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(within(row).getAllByRole('gridcell')).toHaveLength(3);
+    }
   });
 
   it('shows the reveal result (reduced-motion mock makes the animation instant)', () => {

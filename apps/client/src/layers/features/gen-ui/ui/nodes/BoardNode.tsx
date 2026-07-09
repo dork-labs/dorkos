@@ -26,6 +26,9 @@ const boardStaggerContainer: Variants = {
  * turn-based games like tic-tac-toe: the agent renders the board, the player
  * clicks a cell, and the agent's next turn re-renders it with the move applied.
  */
+/** A cell rendered where a jagged row falls short of the widest row. */
+const EMPTY_CELL: BoardCellData = {};
+
 export function BoardNode({ node }: { node: NodeOf<'board'> }) {
   const motionOn = useWidgetMotion();
   const columns = Math.max(1, ...node.rows.map((row) => row.length));
@@ -42,14 +45,20 @@ export function BoardNode({ node }: { node: NodeOf<'board'> }) {
         initial={motionOn ? 'hidden' : false}
         animate={motionOn ? 'visible' : false}
       >
-        {node.rows.map((row, r) =>
-          row.map((cell, c) => {
-            // Resolved here (not inside BoardCell) so the icon lookup isn't a
-            // component-during-render call in the cell's own component body.
-            const icon = !cell.glyph && cell.icon ? resolveWidgetIcon(cell.icon) : null;
-            return <BoardCell key={`${r}-${c}`} cell={cell} icon={icon} motionOn={motionOn} />;
-          })
-        )}
+        {/* `display: contents` row wrappers keep the single CSS grid layout while
+            giving the grid real row semantics; jagged rows are padded to the
+            widest row with blank cells so columns always align. */}
+        {node.rows.map((row, r) => (
+          <div key={r} role="row" className="contents">
+            {Array.from({ length: columns }, (_, c) => {
+              const cell = row[c] ?? EMPTY_CELL;
+              // Resolved here (not inside BoardCell) so the icon lookup isn't a
+              // component-during-render call in the cell's own component body.
+              const icon = !cell.glyph && cell.icon ? resolveWidgetIcon(cell.icon) : null;
+              return <BoardCell key={`${r}-${c}`} cell={cell} icon={icon} motionOn={motionOn} />;
+            })}
+          </div>
+        ))}
       </motion.div>
     </div>
   );
@@ -118,7 +127,7 @@ function BoardCell({ cell, icon: Icon, motionOn }: BoardCellProps) {
         onClick={unavailable ? undefined : handleClick}
         className={cn(
           cellClass,
-          'hover:bg-muted/60 w-full transition-colors',
+          'hover:bg-muted/60 focus-ring w-full transition-colors',
           unavailable && 'cursor-not-allowed opacity-50'
         )}
         whileHover={!unavailable ? { scale: 1.05 } : undefined}

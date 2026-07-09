@@ -102,7 +102,7 @@ export function RevealNode({ node }: { node: NodeOf<'reveal'> }) {
           setReplayKey((k) => k + 1);
         }}
         className={cn(
-          'flex size-16 shrink-0 items-center justify-center border-2 text-lg font-bold',
+          'focus-ring flex size-16 shrink-0 items-center justify-center border-2 text-lg font-bold',
           OBJECT_SHAPE_CLASS[node.kind]
         )}
       >
