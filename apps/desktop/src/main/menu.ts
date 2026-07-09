@@ -1,4 +1,4 @@
-import { app, Menu, shell, BrowserWindow } from 'electron';
+import { app, Menu, shell } from 'electron';
 
 /**
  * Set up the native macOS application menu.
@@ -6,7 +6,7 @@ import { app, Menu, shell, BrowserWindow } from 'electron';
  * Provides standard Edit (undo/redo/cut/copy/paste), View (reload, devtools, zoom),
  * Window (minimize, zoom, front), and Help (docs link) menus.
  */
-export function setupMenu(mainWindow: BrowserWindow): void {
+export function setupMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: app.name,

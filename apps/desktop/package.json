@@ -8,7 +8,10 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "pack": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
-    "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
+    "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@dorkos/db": "workspace:*",
@@ -20,6 +23,8 @@
   },
   "devDependencies": {
     "@dorkos/client": "workspace:*",
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
     "@electron/rebuild": "^4.0.3",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-react": "5.1.4",
@@ -27,6 +32,7 @@
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.2.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
   }
 }
