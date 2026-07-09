@@ -10,7 +10,7 @@ import {
 } from './config.js';
 import type { RunRecorder } from './library.js';
 import {
-  attempt,
+  attemptShot,
   mintVideoDir,
   openLiveTurn,
   post,
@@ -143,20 +143,20 @@ export async function captureMobile(browser: Browser, rec: RunRecorder): Promise
   const ctx = await newMobileContext(browser);
   await seedThemeOnContext(ctx, 'light');
   const page = await ctx.newPage();
-  await attempt('mobile-sessions-light', async () => {
+  await attemptShot('mobile-sessions', 'mobile-sessions-light', async () => {
     await driveMobileSessions(page);
     await shootMobile(page, 'mobile-sessions', 'light', rec);
   });
-  await attempt('mobile-approval-light', async () => {
+  await attemptShot('mobile-approval', 'mobile-approval-light', async () => {
     await driveMobileApproval(page);
     await shootMobile(page, 'mobile-approval', 'light', rec);
   });
   // Light still backs cards; the loop's own first frame is the dark poster.
-  await attempt('mobile-chat-light', async () => {
+  await attemptShot('mobile-chat', 'mobile-chat-light', async () => {
     await driveMobileChat(page);
     await shootMobile(page, 'mobile-chat', 'light', rec);
   });
   await ctx.close();
 
-  await attempt('mobile-chat-loop', () => recordMobileChatLoop(browser, rec));
+  await attemptShot('mobile-chat', 'mobile-chat-loop', () => recordMobileChatLoop(browser, rec));
 }

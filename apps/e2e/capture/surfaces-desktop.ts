@@ -11,7 +11,9 @@ import {
 import type { RunRecorder } from './library.js';
 import {
   attempt,
+  attemptShot,
   ensureDesktopSidebarExpanded,
+  isShotSkipped,
   openLiveTurn,
   patch,
   post,
@@ -320,6 +322,11 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
  * dismissed state for reproducibility.
  */
 export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder): Promise<void> {
+  // An override supplies this shot; do not flip global onboarding state for it.
+  if (isShotSkipped('agent-discovery')) {
+    process.stdout.write('  ⤿ agent-discovery skipped (override supplies it)\n');
+    return;
+  }
   const reopenOnboarding = () =>
     patch('/api/config', {
       onboarding: { dismissedAt: null, completedSteps: [], skippedSteps: [] },
@@ -372,20 +379,28 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   });
   await seedThemeOnContext(ctx, theme);
   const page = await ctx.newPage();
-  await attempt('cockpit-light', () => shootCockpit(page, theme, rec));
-  await attempt('agents-light', () => shootAgents(page, theme, rec));
-  await attempt('tasks-light', () => shootTasks(page, theme, rec));
-  await attempt('marketplace-light', () => shootMarketplace(page, theme, rec));
-  await attempt('tool-approval-light', () => shootToolApproval(page, theme, rec));
-  await attempt('topology-light', () => shootTopology(page, theme, rec));
-  await attempt('chat-streaming-light', () => shootChatStreaming(page, theme, rec));
-  await attempt('subagents-light', () => shootSubagents(page, theme, rec));
-  await attempt('multi-session-light', () => shootMultiSession(page, theme, rec));
-  await attempt('personality-light', () => shootPersonality(page, theme, rec));
+  await attemptShot('cockpit', 'cockpit-light', () => shootCockpit(page, theme, rec));
+  await attemptShot('agents', 'agents-light', () => shootAgents(page, theme, rec));
+  await attemptShot('tasks', 'tasks-light', () => shootTasks(page, theme, rec));
+  await attemptShot('marketplace', 'marketplace-light', () => shootMarketplace(page, theme, rec));
+  await attemptShot('tool-approval', 'tool-approval-light', () =>
+    shootToolApproval(page, theme, rec)
+  );
+  await attemptShot('topology', 'topology-light', () => shootTopology(page, theme, rec));
+  await attemptShot('chat-streaming', 'chat-streaming-light', () =>
+    shootChatStreaming(page, theme, rec)
+  );
+  await attemptShot('subagents', 'subagents-light', () => shootSubagents(page, theme, rec));
+  await attemptShot('multi-session', 'multi-session-light', () =>
+    shootMultiSession(page, theme, rec)
+  );
+  await attemptShot('personality', 'personality-light', () => shootPersonality(page, theme, rec));
   // Canvas surfaces run last: opening the canvas pins the panel open for the
   // rest of the context, which would bleed an empty panel into later shots.
-  await attempt('canvas-light', () => shootCanvas(page, theme, rec));
-  await attempt('canvas-editing-light', () => shootCanvasEditing(page, theme, rec));
+  await attemptShot('canvas', 'canvas-light', () => shootCanvas(page, theme, rec));
+  await attemptShot('canvas-editing', 'canvas-editing-light', () =>
+    shootCanvasEditing(page, theme, rec)
+  );
   await ctx.close();
 }
 
@@ -450,6 +465,6 @@ export async function captureLoops(browser: Browser, rec: RunRecorder): Promise<
     },
   ];
   for (const spec of specs) {
-    await attempt(`${spec.surface}-loop`, () => recordLoop(browser, spec, rec));
+    await attemptShot(spec.surface, `${spec.surface}-loop`, () => recordLoop(browser, spec, rec));
   }
 }

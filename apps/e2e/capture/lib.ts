@@ -95,6 +95,37 @@ export async function attempt(label: string, fn: () => Promise<void>): Promise<v
   }
 }
 
+/** Shot ids the record phase must not capture (a `skipAuto` override supplies them). */
+let autoSkip = new Set<string>();
+
+/** Set the shots the record phase skips; call once before capturing (see `record.ts`). */
+export function setAutoSkip(ids: Set<string>): void {
+  autoSkip = ids;
+}
+
+/** True when a shot is flagged to skip automated capture (an override supplies it). */
+export function isShotSkipped(shotId: string): boolean {
+  return autoSkip.has(shotId);
+}
+
+/**
+ * Like {@link attempt}, but keyed to a shot id: when that shot is flagged
+ * `skipAuto` (a human override is its sole source), the capture is skipped
+ * entirely and logged, so the record phase never wastes time driving a surface
+ * whose media a person supplies by hand.
+ */
+export async function attemptShot(
+  shotId: string,
+  label: string,
+  fn: () => Promise<void>
+): Promise<void> {
+  if (autoSkip.has(shotId)) {
+    process.stdout.write(`  ⤿ ${label} skipped (override supplies it)\n`);
+    return;
+  }
+  await attempt(label, fn);
+}
+
 /**
  * Open a fresh session page, then trigger a scenario turn via the API so the
  * already-subscribed page receives the live stream (required for transient

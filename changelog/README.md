@@ -75,6 +75,21 @@ references like `(DOR-123)` or `(#42)` where they exist.
 **A PR with user-facing changes should include a fragment.** Never edit `CHANGELOG.md`'s
 `[Unreleased]` section — it no longer holds entries.
 
+## Embedding product media
+
+A fragment or release note may embed real product media (the same seeded-from-the-real-UI
+screenshots and loops the marketing site and docs use) via an **absolute URL**:
+
+- **Current** (always the latest capture): `https://dorkos.ai/product/<file>` — e.g.
+  `https://dorkos.ai/product/topology-light.png` or `…/topology-dark.webm`.
+- **Frozen at a release** (immutable, safe for a note that must not drift): archive the
+  release's shots first (`pnpm --filter @dorkos/e2e capture:archive <version> --shots …`),
+  then link `https://dorkos.ai/product/archive/<version>/<file>`.
+
+The shot ids and file names are the ones in the shot registry (`apps/e2e/capture/shots.ts`,
+published in `apps/site/public/product/manifest.json`). See the
+`capturing-product-media` skill for the full media system.
+
 ## What happens at release
 
 `/system:release` compiles every fragment in `unreleased/` into the new version section:

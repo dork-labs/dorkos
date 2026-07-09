@@ -4,7 +4,8 @@ import { chromium, type Browser } from '@playwright/test';
 import { bootStack } from './boot.js';
 import { prepareFilesystem, seedData } from './seed.js';
 import { createRunRecorder } from './library.js';
-import { sleep } from './lib.js';
+import { autoSkippedShotIds } from './overrides.js';
+import { setAutoSkip, sleep } from './lib.js';
 import { captureAgentDiscovery, captureLightStills, captureLoops } from './surfaces-desktop.js';
 import { captureMobile } from './surfaces-mobile.js';
 
@@ -24,6 +25,15 @@ import { captureMobile } from './surfaces-mobile.js';
 export async function runRecordPhase(): Promise<string> {
   process.stdout.write('▸ Preparing filesystem…\n');
   await prepareFilesystem();
+
+  // Shots whose media a human override supplies (skipAuto) are never driven.
+  const skip = await autoSkippedShotIds();
+  setAutoSkip(skip);
+  if (skip.size > 0) {
+    process.stdout.write(
+      `▸ Skipping ${skip.size} shot(s) supplied by overrides: ${[...skip].join(', ')}\n`
+    );
+  }
 
   process.stdout.write('▸ Booting test-mode stack (building server deps)…\n');
   const stack = await bootStack();

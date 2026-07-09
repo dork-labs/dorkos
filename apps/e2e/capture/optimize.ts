@@ -5,6 +5,7 @@ import { execFileSync } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import sharp from 'sharp';
 import { OUTPUT_DIR } from './config.js';
+import { shotsManifest, type Dimensions } from './shots.js';
 
 /**
  * Asset post-processing and the manifest contract. Stills are recompressed with
@@ -13,10 +14,31 @@ import { OUTPUT_DIR } from './config.js';
  * crossfade so the restart is seamless, a two-pass VP9 encode inside the size
  * budget, and a poster extracted from the loop's own first post-trim frame (so
  * the poster→video handoff is invisible). The written `manifest.json` is the
- * contract the marketing-site agent consumes.
+ * contract the marketing site and docs consume.
+ *
+ * The same optimization path serves both automated captures and human-supplied
+ * overrides: a manual still or loop is validated for aspect, scaled to the
+ * shot's target dimensions, and encoded identically, so overrides are never a
+ * lower-quality second class.
  *
  * @module capture/optimize
  */
+
+/** The manifest schema version. Bump on any breaking shape change. */
+export const MANIFEST_SCHEMA_VERSION = 2;
+
+/** Where an asset came from: the automated harness or a human override. */
+export type AssetSource = 'auto' | 'manual';
+
+/** Provenance recorded on a human-supplied override asset. */
+export interface OverrideProvenance {
+  /** Why the human capture beats the automated one. */
+  reason?: string;
+  /** Who supplied it. */
+  capturedBy?: string;
+  /** ISO date the override was captured/committed. */
+  date?: string;
+}
 
 /** One captured asset described for downstream consumers. */
 export interface AssetEntry {
@@ -36,6 +58,14 @@ export interface AssetEntry {
   bytes: number;
   /** Loop duration in milliseconds (loops only). */
   durationMs?: number;
+  /** Automated capture or human override. Defaults to `auto` when unset. */
+  source?: AssetSource;
+  /** ISO timestamp the source material was produced. */
+  capturedAt?: string;
+  /** Source library run id (auto assets only). */
+  runId?: string;
+  /** Override provenance (manual assets only). */
+  override?: OverrideProvenance;
 }
 
 /** Loops must stay at or under this size. */
@@ -101,6 +131,63 @@ function probeDurationSec(ffmpeg: string, file: string): number {
 }
 
 /**
+ * Read a media file's pixel dimensions from ffmpeg's probe output (the
+ * `Stream ... , WxH` line). Used to validate a manual loop override's aspect
+ * ratio before it is scaled to the shot's target size.
+ */
+function probeDimensions(ffmpeg: string, file: string): Dimensions {
+  let stderr = '';
+  try {
+    execFileSync(ffmpeg, ['-hide_banner', '-i', file], { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (err) {
+    stderr = (err as { stderr?: Buffer }).stderr?.toString() ?? '';
+  }
+  const match = stderr.match(/,\s*(\d+)x(\d+)[\s,]/);
+  if (!match) throw new Error(`could not probe dimensions of ${file}`);
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
+/** Fractional aspect-ratio tolerance for override validation (1%). */
+const ASPECT_TOLERANCE = 0.01;
+
+/**
+ * Assert a source asset's aspect ratio matches the shot's target frame, so a
+ * human override is scaled — never silently cropped or stretched. Throws an
+ * actionable error (naming the shot, the expected ratio, and what was supplied)
+ * when the ratios diverge beyond {@link ASPECT_TOLERANCE}.
+ *
+ * @param label - The shot id, for the error message.
+ * @param actual - The override source's real pixel dimensions.
+ * @param target - The shot's target pixel dimensions.
+ */
+export function assertAspectMatches(label: string, actual: Dimensions, target: Dimensions): void {
+  if (
+    !Number.isFinite(actual.width) ||
+    !Number.isFinite(actual.height) ||
+    actual.width <= 0 ||
+    actual.height <= 0
+  ) {
+    throw new Error(
+      `could not read the dimensions of the override for "${label}" ` +
+        `(got ${actual.width}×${actual.height}) — the source file may be corrupt or an unsupported format. ` +
+        `Re-export it and try again; the aspect guard refuses to pass unverified media.`
+    );
+  }
+  const actualRatio = actual.width / actual.height;
+  const targetRatio = target.width / target.height;
+  const drift = Math.abs(actualRatio - targetRatio) / targetRatio;
+  // NaN never compares true, so an unguarded NaN here would silently PASS the
+  // check — the explicit finite/positive assertion above exists to prevent that.
+  if (drift > ASPECT_TOLERANCE) {
+    throw new Error(
+      `override for "${label}" has the wrong aspect ratio: got ${actual.width}×${actual.height} ` +
+        `(${actualRatio.toFixed(3)}:1), but the ${label} frame is ${target.width}×${target.height} ` +
+        `(${targetRatio.toFixed(3)}:1). Recapture at the correct aspect — the pipeline will not crop it.`
+    );
+  }
+}
+
+/**
  * Recompress a raw PNG buffer with palette quantization — crisp text and flat
  * UI at a fraction of the raw size. Shared by stills and loop posters.
  */
@@ -112,15 +199,39 @@ async function optimizePng(buffer: Buffer): Promise<Buffer> {
 
 /**
  * Recompress a raw PNG screenshot into the product dir and return its entry.
+ * When `target` is supplied (the override path), the source's aspect ratio is
+ * validated against it and the image is scaled to the exact target size;
+ * automated captures pass no target and are recompressed at native size.
+ *
+ * @param buffer - The raw PNG bytes.
+ * @param surface - The shot id (file becomes `<surface>-<theme>.png`).
+ * @param theme - Light or dark variant.
+ * @param options - Optional `kind` tag and `target` dimensions for scaling.
  */
 export async function writeStill(
   buffer: Buffer,
   surface: string,
   theme: 'light' | 'dark',
-  kind: 'still' | 'loop' = 'still'
+  options: { kind?: 'still' | 'loop'; target?: Dimensions } = {}
 ): Promise<AssetEntry> {
+  const { kind = 'still', target } = options;
   const file = `${surface}-${theme}.png`;
-  const optimized = await optimizePng(buffer);
+  let pipeline = sharp(buffer);
+  if (target) {
+    const meta = await pipeline.metadata();
+    if (meta.width === undefined || meta.height === undefined) {
+      throw new Error(
+        `could not read the dimensions of the override still for "${surface}" — ` +
+          `expected a valid PNG scaled to ${target.width}×${target.height}. ` +
+          `Re-export the image and try again.`
+      );
+    }
+    assertAspectMatches(surface, { width: meta.width, height: meta.height }, target);
+    pipeline = sharp(buffer).resize(target.width, target.height, { fit: 'fill' });
+  }
+  const optimized = await pipeline
+    .png({ palette: true, quality: 100, effort: 10, compressionLevel: 9 })
+    .toBuffer();
   const meta = await sharp(optimized).metadata();
   await fs.writeFile(path.join(OUTPUT_DIR, file), optimized);
   return {
@@ -150,6 +261,13 @@ export interface WriteLoopOptions {
    * here on is the money content.
    */
   headTrimMs: number;
+  /**
+   * Validate the source's aspect ratio against `width`/`height` before
+   * encoding. Set for human overrides (a mismatched source must fail loudly
+   * rather than be stretched); automated recordings already match, so they skip
+   * the extra probe.
+   */
+  validateSourceAspect?: boolean;
 }
 
 /** The filtergraph inputs for one loop's edit. */
@@ -249,9 +367,13 @@ async function extractPoster(
  * head-trim always yields the same two files.
  */
 export async function writeLoop(options: WriteLoopOptions): Promise<AssetEntry[]> {
-  const { sourcePath, surface, width, height, headTrimMs } = options;
+  const { sourcePath, surface, width, height, headTrimMs, validateSourceAspect } = options;
   const ffmpeg = resolveFfmpeg();
   const dest = path.join(OUTPUT_DIR, `${surface}-dark.webm`);
+
+  if (validateSourceAspect) {
+    assertAspectMatches(surface, probeDimensions(ffmpeg, sourcePath), { width, height });
+  }
 
   const srcDurSec = probeDurationSec(ffmpeg, sourcePath);
   const headTrimSec = clamp(headTrimMs / 1000, 0, Math.max(0, srcDurSec - MIN_OUTPUT_SEC));
@@ -320,17 +442,28 @@ export async function writeLoop(options: WriteLoopOptions): Promise<AssetEntry[]
   ];
 }
 
-/** Write the manifest describing every published asset, tied to its source run. */
+/**
+ * Write the manifest describing every published asset (v2). Carries the shot
+ * registry snapshot (`shots`) so the marketing site and docs stay consistent
+ * with the pipeline, and tags each asset with its `source` (`auto`/`manual`)
+ * and provenance. `runId` is the automated source run the auto assets came from.
+ */
 export async function writeManifest(assets: AssetEntry[], runId: string): Promise<void> {
-  const totalBytes = assets.reduce((sum, a) => sum + a.bytes, 0);
+  const sorted = assets
+    .map((a) => ({ source: 'auto' as AssetSource, ...a }))
+    .sort((a, b) => a.file.localeCompare(b.file));
+  const totalBytes = sorted.reduce((sum, a) => sum + a.bytes, 0);
   const manifest = {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     note: 'Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.',
-    /** The library run these assets were processed from (see capture/library/). */
+    /** The library run the automated assets were processed from (see capture/library/). */
     runId,
     totalBytes,
-    count: assets.length,
-    assets: assets.sort((a, b) => a.file.localeCompare(b.file)),
+    count: sorted.length,
+    /** The shot registry snapshot — the source of truth for downstream consumers. */
+    shots: shotsManifest(),
+    assets: sorted,
   };
   await fs.writeFile(
     path.join(OUTPUT_DIR, 'manifest.json'),
