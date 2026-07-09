@@ -102,6 +102,7 @@ export {
   executeUiCommand,
   type DispatcherContext,
   type DispatcherStore,
+  type UiCommandOrigin,
 } from './ui-action-dispatcher';
 export {
   buildUiStateSnapshot,

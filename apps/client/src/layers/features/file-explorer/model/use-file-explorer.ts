@@ -118,7 +118,9 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
         setTheme,
         supportsTerminal: transport.supportsTerminal,
       };
-      executeUiCommand(ctx, { action: 'open_file', sourcePath: entry.path });
+      // Origin 'user': the person clicked the file in the tree — an explicit
+      // pick, so the canvas tab switch persists the per-agent preference (DOR-227).
+      executeUiCommand(ctx, { action: 'open_file', sourcePath: entry.path }, 'user');
     },
     [setTheme, transport]
   );

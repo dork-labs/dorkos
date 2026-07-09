@@ -118,11 +118,19 @@ export const createRightPanelSlice: StateCreator<
   loadRightPanelForAgent: (agentKey) => {
     if (agentKey === null) {
       // Detach to global scope without re-hydrating — leaving a session must not
-      // flash the panel or clobber the just-shown layout.
+      // flash the panel or clobber the just-shown layout. Consequence (bounded,
+      // intentional): the first global write after leaving /session inherits the
+      // last agent's in-memory tab — the panel still shows that layout, so
+      // persisting what the user is looking at is the honest snapshot.
       set({ rightPanelLayoutKey: null });
       return;
     }
     const entry = readRightPanelLayout(agentKey);
+    if (entry) {
+      // Re-stamp accessedAt so eviction is least-recently-USED, not
+      // least-recently-written — revisiting an agent keeps its layout alive.
+      writeRightPanelLayout(agentKey, entry);
+    }
     set({
       rightPanelLayoutKey: agentKey,
       rightPanelOpen: entry?.open ?? false,

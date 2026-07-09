@@ -181,6 +181,28 @@ describe('RightPanelSlice', () => {
       expect(layouts['agent-0']).toBeUndefined();
       expect(layouts[`agent-${MAX_RIGHT_PANEL_LAYOUTS}`]).toBeDefined();
     });
+
+    it('revisiting an agent (read-hydrate) bumps its recency, so eviction is least-recently-USED', () => {
+      let now = 1_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => (now += 1));
+
+      // Fill exactly to the cap (agents 0..cap-1), oldest first.
+      for (let i = 0; i < MAX_RIGHT_PANEL_LAYOUTS; i++) {
+        useAppStore.getState().loadRightPanelForAgent(`agent-${i}`);
+        useAppStore.getState().setRightPanelOpen(true);
+      }
+      // Revisit agent-0 WITHOUT writing — the read-hydrate alone bumps recency.
+      useAppStore.getState().loadRightPanelForAgent('agent-0');
+
+      // One more agent pushes past the cap: agent-1 is now the true LRU.
+      useAppStore.getState().loadRightPanelForAgent('agent-new');
+      useAppStore.getState().setRightPanelOpen(true);
+
+      const layouts = readLayouts();
+      expect(layouts['agent-0']).toBeDefined();
+      expect(layouts['agent-1']).toBeUndefined();
+      expect(layouts['agent-new']).toBeDefined();
+    });
   });
 
   // -------------------------------------------------------------------------

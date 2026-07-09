@@ -124,14 +124,22 @@ export function createExtensionAPI(
     },
 
     executeCommand(command: UiCommand): void {
-      executeUiCommand(deps.dispatcherContext, command);
+      // Origin 'agent': extension code is programmatic — not an explicit human
+      // tab pick — so it must not persist over the user's per-agent right-panel
+      // tab preference (DOR-227).
+      executeUiCommand(deps.dispatcherContext, command, 'agent');
     },
 
     openCanvas(content: UiCanvasContent): void {
-      executeUiCommand(deps.dispatcherContext, {
-        action: 'open_canvas',
-        content,
-      });
+      // Origin 'agent': programmatic reveal, same reasoning as executeCommand.
+      executeUiCommand(
+        deps.dispatcherContext,
+        {
+          action: 'open_canvas',
+          content,
+        },
+        'agent'
+      );
     },
 
     navigate(path: string): void {

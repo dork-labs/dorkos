@@ -76,7 +76,10 @@ export function WidgetActionProvider({
             setTheme,
             supportsTerminal: transport.supportsTerminal,
           };
-          executeUiCommand(ctx, action.command);
+          // Origin 'user': widget actions only fire when the person clicks a
+          // widget button, so a resulting tab switch is an explicit pick and
+          // persists the per-agent preference (DOR-227).
+          executeUiCommand(ctx, action.command, 'user');
           return;
         }
         case 'url':

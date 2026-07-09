@@ -28,6 +28,7 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setCanvasPreferredWidth: vi.fn(),
     setRightPanelOpen: vi.fn(),
     setActiveRightPanelTab: vi.fn(),
+    setActiveRightPanelTabView: vi.fn(),
     ...overrides,
   };
 }
@@ -46,37 +47,37 @@ function makeMockCtx(storeOverrides: Partial<DispatcherStore> = {}): DispatcherC
 describe('executeUiCommand — panel commands', () => {
   it('open_panel calls the correct setter with true', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' });
+    executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' }, 'agent');
     expect(ctx.store.setTasksOpen).toHaveBeenCalledWith(true);
   });
 
   it('close_panel calls the correct setter with false', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' });
+    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
     expect(ctx.store.setSettingsOpen).toHaveBeenCalledWith(false);
   });
 
   it('toggle_panel opens a closed panel', () => {
     const ctx = makeMockCtx({ relayOpen: false });
-    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' });
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
     expect(ctx.store.setRelayOpen).toHaveBeenCalledWith(true);
   });
 
   it('toggle_panel closes an open panel', () => {
     const ctx = makeMockCtx({ relayOpen: true });
-    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' });
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
     expect(ctx.store.setRelayOpen).toHaveBeenCalledWith(false);
   });
 
   it('open_panel picker calls setPickerOpen', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_panel', panel: 'picker' });
+    executeUiCommand(ctx, { action: 'open_panel', panel: 'picker' }, 'agent');
     expect(ctx.store.setPickerOpen).toHaveBeenCalledWith(true);
   });
 
   it('close_panel settings calls setSettingsOpen with false', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' });
+    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
     expect(ctx.store.setSettingsOpen).toHaveBeenCalledWith(false);
   });
 });
@@ -86,26 +87,26 @@ describe('executeUiCommand — panel commands', () => {
 describe('executeUiCommand — sidebar commands', () => {
   it('open_sidebar calls setSidebarOpen(true)', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_sidebar' });
+    executeUiCommand(ctx, { action: 'open_sidebar' }, 'agent');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
   it('close_sidebar calls setSidebarOpen(false)', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_sidebar' });
+    executeUiCommand(ctx, { action: 'close_sidebar' }, 'agent');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(false);
   });
 
   it('switch_sidebar_tab sets the tab and opens the sidebar', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'sessions' });
+    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'sessions' }, 'agent');
     expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('sessions');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
   it('switch_sidebar_tab works with connections tab', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' });
+    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' }, 'agent');
     expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('connections');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
@@ -116,10 +117,14 @@ describe('executeUiCommand — sidebar commands', () => {
 describe('executeUiCommand — canvas commands', () => {
   it('open_canvas opens a document and reveals the canvas via the right panel', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, {
-      action: 'open_canvas',
-      content: { type: 'markdown', content: '# Hello' },
-    });
+    executeUiCommand(
+      ctx,
+      {
+        action: 'open_canvas',
+        content: { type: 'markdown', content: '# Hello' },
+      },
+      'agent'
+    );
     // Edit-protection is enforced inside openCanvasDocument (per-doc), so the
     // dispatcher unconditionally forwards the content.
     expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
@@ -127,37 +132,62 @@ describe('executeUiCommand — canvas commands', () => {
       content: '# Hello',
     });
     // Live render path (DOR-97): the canvas only shows when the right panel is
-    // open AND its active tab is 'canvas'.
+    // open AND its active tab is 'canvas'. Agent origin → the tab switch is
+    // view-only so it never persists over the user's preference (DOR-227).
     expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('open_canvas from a user origin persists the tab pick', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(
+      ctx,
+      { action: 'open_canvas', content: { type: 'markdown', content: '# Hello' } },
+      'user'
+    );
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('open_canvas with preferredWidth sets the width', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, {
-      action: 'open_canvas',
-      content: { type: 'markdown', content: '# Hi' },
-      preferredWidth: 60,
-    });
+    executeUiCommand(
+      ctx,
+      {
+        action: 'open_canvas',
+        content: { type: 'markdown', content: '# Hi' },
+        preferredWidth: 60,
+      },
+      'agent'
+    );
     expect(ctx.store.setCanvasPreferredWidth).toHaveBeenCalledWith(60);
   });
 
   it('open_canvas without preferredWidth does not call setCanvasPreferredWidth', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, {
-      action: 'open_canvas',
-      content: { type: 'markdown', content: '# Hi' },
-    });
+    executeUiCommand(
+      ctx,
+      {
+        action: 'open_canvas',
+        content: { type: 'markdown', content: '# Hi' },
+      },
+      'agent'
+    );
     expect(ctx.store.setCanvasPreferredWidth).not.toHaveBeenCalled();
   });
 
   it('update_canvas mutates the active document only', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, {
-      action: 'update_canvas',
-      content: { type: 'json', data: { key: 'value' } },
-    });
+    executeUiCommand(
+      ctx,
+      {
+        action: 'update_canvas',
+        content: { type: 'json', data: { key: 'value' } },
+      },
+      'agent'
+    );
     expect(ctx.store.updateActiveDocument).toHaveBeenCalledWith({
       type: 'json',
       data: { key: 'value' },
@@ -167,7 +197,7 @@ describe('executeUiCommand — canvas commands', () => {
 
   it('close_canvas closes the canvas and its right-panel host', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_canvas' });
+    executeUiCommand(ctx, { action: 'close_canvas' }, 'agent');
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(false);
     expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(false);
   });
@@ -176,15 +206,23 @@ describe('executeUiCommand — canvas commands', () => {
 // --- open_file (client seam for the explorer + agent tool) ---
 
 describe('executeUiCommand — open_file', () => {
-  it('resolves a code file to the file viewer and opens + reveals it', () => {
+  it('resolves a code file to the file viewer and opens + reveals it (agent origin: view-only)', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'src/index.ts' });
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'src/index.ts' }, 'agent');
     expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
       type: 'file',
       sourcePath: 'src/index.ts',
     });
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('open_file from the file tree (user origin) persists the tab pick', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'src/index.ts' }, 'user');
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('resolves media/3D/csv extensions to their viewers', () => {
@@ -197,7 +235,7 @@ describe('executeUiCommand — open_file', () => {
     ];
     for (const [path, expected] of cases) {
       const ctx = makeMockCtx();
-      executeUiCommand(ctx, { action: 'open_file', sourcePath: path });
+      executeUiCommand(ctx, { action: 'open_file', sourcePath: path }, 'agent');
       expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith(expected);
     }
   });
@@ -205,7 +243,7 @@ describe('executeUiCommand — open_file', () => {
   it('honors a config viewer override', () => {
     const ctx = makeMockCtx();
     ctx.workbenchViewerOverrides = { csv: 'file' };
-    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'data.csv' });
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'data.csv' }, 'agent');
     expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
       type: 'file',
       sourcePath: 'data.csv',
@@ -216,19 +254,30 @@ describe('executeUiCommand — open_file', () => {
 // --- open_terminal (agent tool → reveal/focus the Terminal tab) ---
 
 describe('executeUiCommand — open_terminal', () => {
-  it('opens the right panel and focuses the Terminal tab', () => {
+  it('agent origin: focuses the Terminal tab view-only, leaving the stored preference untouched', () => {
+    // DOR-227: an autonomous `open_terminal` switches what the user sees but
+    // must NOT rewrite their per-agent tab preference.
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_terminal' });
+    executeUiCommand(ctx, { action: 'open_terminal' }, 'agent');
+    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
+    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
+  });
+
+  it('user origin: focusing the Terminal tab persists the preference', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_terminal' }, 'user');
     expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
     expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('terminal');
+    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('ignores the advisory cwd hint (PTY spawns in the session worktree)', () => {
     // No agent-side PTY spawn: the command only reveals the tab, so cwd never
     // reaches the store.
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_terminal', cwd: '/somewhere/else' });
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('terminal');
+    executeUiCommand(ctx, { action: 'open_terminal', cwd: '/somewhere/else' }, 'agent');
+    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
   });
 
   it('degrades to a toast (no phantom tab) when the transport has no terminal', async () => {
@@ -238,8 +287,9 @@ describe('executeUiCommand — open_terminal', () => {
     vi.spyOn(toast, 'info');
     const ctx = makeMockCtx();
     ctx.supportsTerminal = false;
-    executeUiCommand(ctx, { action: 'open_terminal' });
+    executeUiCommand(ctx, { action: 'open_terminal' }, 'agent');
     expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
     expect(ctx.store.setRightPanelOpen).not.toHaveBeenCalled();
     expect(toast.info).toHaveBeenCalled();
   });
@@ -250,7 +300,7 @@ describe('executeUiCommand — open_terminal', () => {
 describe('executeUiCommand — browser_navigate', () => {
   it('appends a browser document and reveals the canvas', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'browser_navigate', url: 'http://localhost:5173' });
+    executeUiCommand(ctx, { action: 'browser_navigate', url: 'http://localhost:5173' }, 'agent');
     // Append-and-activate (dedup by URL inside the store) — never clobbers an
     // edited document.
     expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
@@ -258,7 +308,9 @@ describe('executeUiCommand — browser_navigate', () => {
       url: 'http://localhost:5173',
     });
     expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    // Agent origin → view-only tab switch (DOR-227).
+    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
   });
 });
@@ -270,7 +322,7 @@ describe('executeUiCommand — show_toast', () => {
     const { toast } = await import('sonner');
     vi.spyOn(toast, 'info');
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'show_toast', message: 'All done', level: 'info' });
+    executeUiCommand(ctx, { action: 'show_toast', message: 'All done', level: 'info' }, 'agent');
     expect(toast.info).toHaveBeenCalledWith('All done', { description: undefined });
   });
 
@@ -278,12 +330,16 @@ describe('executeUiCommand — show_toast', () => {
     const { toast } = await import('sonner');
     vi.spyOn(toast, 'error');
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, {
-      action: 'show_toast',
-      message: 'Something failed',
-      level: 'error',
-      description: 'Details here',
-    });
+    executeUiCommand(
+      ctx,
+      {
+        action: 'show_toast',
+        message: 'Something failed',
+        level: 'error',
+        description: 'Details here',
+      },
+      'agent'
+    );
     expect(toast.error).toHaveBeenCalledWith('Something failed', { description: 'Details here' });
   });
 
@@ -291,7 +347,7 @@ describe('executeUiCommand — show_toast', () => {
     const { toast } = await import('sonner');
     vi.spyOn(toast, 'success');
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'show_toast', message: 'Done!', level: 'success' });
+    executeUiCommand(ctx, { action: 'show_toast', message: 'Done!', level: 'success' }, 'agent');
     expect(toast.success).toHaveBeenCalledWith('Done!', { description: undefined });
   });
 
@@ -299,7 +355,11 @@ describe('executeUiCommand — show_toast', () => {
     const { toast } = await import('sonner');
     vi.spyOn(toast, 'warning');
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'show_toast', message: 'Watch out', level: 'warning' });
+    executeUiCommand(
+      ctx,
+      { action: 'show_toast', message: 'Watch out', level: 'warning' },
+      'agent'
+    );
     expect(toast.warning).toHaveBeenCalledWith('Watch out', { description: undefined });
   });
 });
@@ -309,13 +369,13 @@ describe('executeUiCommand — show_toast', () => {
 describe('executeUiCommand — set_theme', () => {
   it('calls ctx.setTheme with the specified theme', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'set_theme', theme: 'dark' });
+    executeUiCommand(ctx, { action: 'set_theme', theme: 'dark' }, 'agent');
     expect(ctx.setTheme).toHaveBeenCalledWith('dark');
   });
 
   it('calls ctx.setTheme with light', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'set_theme', theme: 'light' });
+    executeUiCommand(ctx, { action: 'set_theme', theme: 'light' }, 'agent');
     expect(ctx.setTheme).toHaveBeenCalledWith('light');
   });
 });
@@ -325,13 +385,13 @@ describe('executeUiCommand — set_theme', () => {
 describe('executeUiCommand — scroll_to_message', () => {
   it('calls scrollToMessage with messageId when provided', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'scroll_to_message', messageId: 'msg-42' });
+    executeUiCommand(ctx, { action: 'scroll_to_message', messageId: 'msg-42' }, 'agent');
     expect(ctx.scrollToMessage).toHaveBeenCalledWith('msg-42');
   });
 
   it('calls scrollToMessage with undefined when messageId is omitted', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'scroll_to_message' });
+    executeUiCommand(ctx, { action: 'scroll_to_message' }, 'agent');
     expect(ctx.scrollToMessage).toHaveBeenCalledWith(undefined);
   });
 
@@ -339,7 +399,7 @@ describe('executeUiCommand — scroll_to_message', () => {
     const ctx = makeMockCtx();
     ctx.scrollToMessage = undefined;
     expect(() =>
-      executeUiCommand(ctx, { action: 'scroll_to_message', messageId: 'x' })
+      executeUiCommand(ctx, { action: 'scroll_to_message', messageId: 'x' }, 'agent')
     ).not.toThrow();
   });
 });
@@ -349,14 +409,16 @@ describe('executeUiCommand — scroll_to_message', () => {
 describe('executeUiCommand — switch_agent', () => {
   it('calls switchAgent with the provided cwd', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'switch_agent', cwd: '/home/user/project' });
+    executeUiCommand(ctx, { action: 'switch_agent', cwd: '/home/user/project' }, 'agent');
     expect(ctx.switchAgent).toHaveBeenCalledWith('/home/user/project');
   });
 
   it('is a no-op when switchAgent is not provided', () => {
     const ctx = makeMockCtx();
     ctx.switchAgent = undefined;
-    expect(() => executeUiCommand(ctx, { action: 'switch_agent', cwd: '/tmp/x' })).not.toThrow();
+    expect(() =>
+      executeUiCommand(ctx, { action: 'switch_agent', cwd: '/tmp/x' }, 'agent')
+    ).not.toThrow();
   });
 });
 
@@ -365,7 +427,7 @@ describe('executeUiCommand — switch_agent', () => {
 describe('executeUiCommand — open_command_palette', () => {
   it('calls setGlobalPaletteOpen(true)', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_command_palette' });
+    executeUiCommand(ctx, { action: 'open_command_palette' }, 'agent');
     expect(ctx.store.setGlobalPaletteOpen).toHaveBeenCalledWith(true);
   });
 });
@@ -376,7 +438,7 @@ describe('executeUiCommand — celebrate', () => {
   it('fires confetti', async () => {
     const { fireConfetti } = await import('../celebrations/effects');
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'celebrate' });
+    executeUiCommand(ctx, { action: 'celebrate' }, 'agent');
     expect(fireConfetti).toHaveBeenCalled();
   });
 });

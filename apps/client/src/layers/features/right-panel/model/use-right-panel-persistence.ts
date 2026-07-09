@@ -20,6 +20,12 @@ export function useRightPanelPersistence(): void {
 }
 
 /**
+ * Sentinel for "the agent lookup is still in flight — do not bind yet".
+ * Distinct from `null`, which means "no agent context: detach to global".
+ */
+const KEY_PENDING = Symbol('right-panel-layout-key-pending');
+
+/**
  * Bind the right panel to the current agent and persist its layout per-agent.
  *
  * Resolves the active agent's stable identity — its registered agent id, or its
@@ -29,20 +35,37 @@ export function useRightPanelPersistence(): void {
  * under the same key (handled in the store actions), so returning to an agent
  * restores exactly how you left its panel.
  *
+ * The cwd fallback applies only once the agent lookup has SETTLED (resolved to
+ * "no agent registered here", or errored). While the per-cwd query is still in
+ * flight (a cold cache on first visit), binding is deferred entirely — keying by
+ * cwd and then flipping to the agent id would hydrate twice, visibly flapping
+ * the panel and discarding anything the user did in between.
+ *
  * Mounted on the session route only (its tabs are `/session`-scoped); on unmount
  * it detaches to the global layout so non-session routes keep the pre-DOR-227
  * global behavior.
  */
 export function useRightPanelLayoutPersistence(): void {
   const [cwd] = useDirectoryState();
-  const { data: agent } = useCurrentAgent(cwd);
+  const { data: agent, isPending } = useCurrentAgent(cwd);
   const loadRightPanelForAgent = useAppStore((s) => s.loadRightPanelForAgent);
 
-  // Identity chain: agent id when registered, else cwd. Null only before any
-  // directory resolves, in which case the global layout stays in effect.
-  const agentKey = agent?.id ?? cwd ?? null;
+  // Identity chain: agent id when registered, else cwd — but only once the
+  // lookup settled. (The query is disabled without a cwd, which TanStack
+  // reports as pending, so the no-cwd detach must be decided first.)
+  let agentKey: string | null | typeof KEY_PENDING;
+  if (!cwd) {
+    agentKey = null; // No agent context at all — stay on the global layout.
+  } else if (isPending) {
+    agentKey = KEY_PENDING; // Cold cache — defer, no bind and no key flap.
+  } else {
+    // Settled: registered agent id, else cwd (covers both "no agent here"
+    // and a failed lookup — the cwd is still a stable identity).
+    agentKey = agent?.id ?? cwd;
+  }
 
   useEffect(() => {
+    if (agentKey === KEY_PENDING) return;
     loadRightPanelForAgent(agentKey);
   }, [agentKey, loadRightPanelForAgent]);
 

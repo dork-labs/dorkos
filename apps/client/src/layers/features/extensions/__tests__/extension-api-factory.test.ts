@@ -262,26 +262,30 @@ describe('createExtensionAPI', () => {
   });
 
   // 6. executeCommand
-  it('executeCommand delegates to executeUiCommand with the dispatcher context', () => {
+  it('executeCommand delegates to executeUiCommand with agent origin (programmatic, never persists tab picks)', () => {
     const { api } = createExtensionAPI('my-ext', deps);
     const command = { action: 'open_command_palette' as const };
 
     api.executeCommand(command);
 
-    expect(executeUiCommand).toHaveBeenCalledWith(deps.dispatcherContext, command);
+    expect(executeUiCommand).toHaveBeenCalledWith(deps.dispatcherContext, command, 'agent');
   });
 
   // 7. openCanvas
-  it('openCanvas dispatches an open_canvas command with the provided content', () => {
+  it('openCanvas dispatches an open_canvas command with agent origin', () => {
     const { api } = createExtensionAPI('my-ext', deps);
     const content: UiCanvasContent = { type: 'markdown', content: '# Hello' };
 
     api.openCanvas(content);
 
-    expect(executeUiCommand).toHaveBeenCalledWith(deps.dispatcherContext, {
-      action: 'open_canvas',
-      content,
-    });
+    expect(executeUiCommand).toHaveBeenCalledWith(
+      deps.dispatcherContext,
+      {
+        action: 'open_canvas',
+        content,
+      },
+      'agent'
+    );
   });
 
   // 8. navigate
