@@ -311,6 +311,15 @@ Not corporate.
 
 Avoid hype language.
 
+### Two registers _(added 2026-07-09)_
+
+DorkOS writing speaks in two registers, and each surface belongs to exactly one. The tone pillars and vocabulary below define the **expert-technical register**; they are not a license to make plain-language surfaces harder to read.
+
+- **Expert-technical register** — API reference, `contributing/` guides, ADRs, and deep-dive docs. Written for Kai and Priya, who read source before adopting. Keep the pillars (Confident, Minimal, Technical, Sharp) and the vocabulary below.
+- **Plain-language register** — changelog, release notes, READMEs, npm copy, blog posts, onboarding, UI microcopy, and `docs/` guide and concept pages. Written for a smart 9th grader who does not code. This register routes to the **`writing-for-humans`** skill (`.agents/skills/writing-for-humans/`), which sets the readability bar.
+
+Brand vocabulary (Autonomous, Orchestration, Operator, Engine) is still allowed in the plain register, but only with an in-sentence gloss the first time it appears — "orchestration (letting one agent hand work to another)." Confident, Honest, and Not-corporate apply everywhere; Technical and Sharp belong to the expert register.
+
 Use language like:
 
 - Autonomous

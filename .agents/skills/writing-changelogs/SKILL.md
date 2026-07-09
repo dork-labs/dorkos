@@ -38,11 +38,12 @@ The entry-quality guidance below applies identically to fragment bullets.
 
 ## Core Principles
 
-1. **Changelogs are for humans, not machines** - Write for users, not developers
-2. **Communicate impact, not implementation** - Focus on what users can DO, not what files changed
-3. **Use imperative verbs** - "Add", "Fix", "Remove" not "Added", "Fixed", "Removed"
-4. **Include references** - Link to commits, PRs, or issues when available
-5. **Plain language over jargon** - Explain, don't assume knowledge
+Changelog entries are user-facing prose, so the **`writing-for-humans`** skill sets the readability bar — 9th-grade level, one idea per sentence, benefit before mechanism, every acronym glossed. Read it first. The rules specific to changelogs:
+
+1. **Communicate impact, not implementation** - Focus on what users can DO, not what files changed
+2. **Use imperative verbs** - "Add", "Fix", "Remove" not "Added", "Fixed", "Removed"
+3. **Include references, but never let them carry the meaning** - Link to commits, PRs, or issues where they exist; the sentence must stand alone without the `(DOR-123)` or `(#42)`
+4. **Internal notes never ship** - batch, task, and tracking entries ("Batch 9 — acceptance PASS") get cut at curation, not published
 
 ## Entry Format
 
@@ -172,8 +173,9 @@ Before publishing release notes, verify each entry:
 
 - [ ] Starts with imperative verb (Add, Fix, Change, Remove, Improve)
 - [ ] Describes user benefit, not just implementation detail
-- [ ] Uses plain language (no unexplained jargon)
-- [ ] Includes reference link when applicable
+- [ ] Reads at a ~9th-grade level (no unexplained jargon; every acronym glossed or cut)
+- [ ] No ticket ID carries the meaning — the sentence stands alone without `(DOR-123)` or `(#42)`
+- [ ] No internal batch/task/tracking entries — those are cut at curation, never shipped
 - [ ] Appropriate for someone who doesn't know the codebase
 
 For the overall release:
