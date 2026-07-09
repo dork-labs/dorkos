@@ -134,6 +134,73 @@ describe('FileExplorer', () => {
     expect(toastError).toHaveBeenCalledWith('That name already exists');
   });
 
+  it('leaves a colliding sibling intact when a rename conflicts', async () => {
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn(async () => ({ entries: [file('a.ts'), file('b.ts')] }));
+    transport.renameEntry = vi.fn(async () => {
+      throw Object.assign(new Error('exists'), { code: 'CONFLICT' });
+    });
+
+    renderExplorer(transport);
+    const target = await screen.findByRole('treeitem', { name: 'a.ts' });
+
+    // Select a.ts, then F2 to rename it → b.ts, a name a sibling already holds.
+    fireEvent.click(target);
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'F2' });
+    const input = screen.getByRole('textbox', { name: 'New name' });
+    fireEvent.change(input, { target: { value: 'b.ts' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.renameEntry).toHaveBeenCalledWith(CWD, 'a.ts', 'b.ts'));
+    // The tree is untouched: a.ts survives (not duplicated), b.ts is not destroyed.
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('That name already exists'));
+    expect(screen.getAllByRole('treeitem', { name: 'a.ts' })).toHaveLength(1);
+    expect(screen.getAllByRole('treeitem', { name: 'b.ts' })).toHaveLength(1);
+  });
+
+  it('leaves the destination sibling intact when a drag-move conflicts', async () => {
+    // Root shows a file x.ts and a directory dst that already contains an x.ts.
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn(async (_cwd, opts?: { path?: string }) =>
+      opts?.path === 'dst'
+        ? { entries: [file('dst/x.ts')] }
+        : { entries: [dir('dst'), file('x.ts')] }
+    );
+    transport.renameEntry = vi.fn(async () => {
+      throw Object.assign(new Error('exists'), { code: 'CONFLICT' });
+    });
+
+    renderExplorer(transport);
+
+    // Expand dst so its pre-existing x.ts is loaded — now two x.ts rows exist
+    // (DOM order: dst, dst/x.ts, root x.ts).
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'dst' }));
+    await waitFor(() => expect(screen.getAllByRole('treeitem', { name: 'x.ts' })).toHaveLength(2));
+
+    // Drag the root x.ts onto dst, which collides with dst/x.ts. One shared
+    // dataTransfer round-trips setData (dragStart) → getData (drop).
+    const dataTransfer = {
+      store: {} as Record<string, string>,
+      getData(k: string) {
+        return this.store[k];
+      },
+      setData(k: string, v: string) {
+        this.store[k] = v;
+      },
+    };
+    const rootX = screen.getAllByRole('treeitem', { name: 'x.ts' })[1];
+    const dstRow = screen.getByRole('treeitem', { name: 'dst' });
+    fireEvent.dragStart(rootX, { dataTransfer });
+    fireEvent.drop(dstRow, { dataTransfer });
+
+    await waitFor(() =>
+      expect(transport.renameEntry).toHaveBeenCalledWith(CWD, 'x.ts', 'dst/x.ts')
+    );
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('That name already exists'));
+    // Both survive: dst/x.ts was never touched, root x.ts snapped back.
+    expect(screen.getAllByRole('treeitem', { name: 'x.ts' })).toHaveLength(2);
+  });
+
   it('confirms before recursively deleting a non-empty directory', async () => {
     const transport = createMockTransport();
     transport.readFileTree = vi.fn(async (_cwd, opts?: { path?: string }) =>

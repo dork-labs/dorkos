@@ -79,18 +79,24 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
       if (newName === entry.name || newName.length === 0) return true;
       const parent = parentOf(entry.path);
       const newPath = joinPath(parent, newName);
+      // Only mutate optimistically when the target name is free. If a sibling
+      // already occupies `newPath`, the rename will conflict — and an optimistic
+      // replace + rollback (both keyed on the shared path) would corrupt that
+      // pre-existing sibling. Let the transport reject and just toast.
+      const collides = getChildren(parent).some((e) => e.path === newPath);
       const renamed: FileEntry = { ...entry, name: newName, path: newPath };
-      dispatch({ kind: 'replaceEntry', parent, fromPath: entry.path, entry: renamed });
+      if (!collides)
+        dispatch({ kind: 'replaceEntry', parent, fromPath: entry.path, entry: renamed });
       try {
         await transport.renameEntry(cwd, entry.path, newPath);
         return true;
       } catch (err) {
-        dispatch({ kind: 'replaceEntry', parent, fromPath: newPath, entry });
+        if (!collides) dispatch({ kind: 'replaceEntry', parent, fromPath: newPath, entry });
         toastCrudError(err, "Couldn't rename");
         return false;
       }
     },
-    [transport, cwd, dispatch]
+    [transport, cwd, dispatch, getChildren]
   );
 
   const deleteRecursive = useCallback(
@@ -156,15 +162,24 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
       const entry = getChildren(fromParent).find((e) => e.path === fromPath);
       if (!entry) return;
 
+      // Add to the destination optimistically only when the name is free there.
+      // A collision would make the move conflict, and an optimistic add + rollback
+      // removal (both keyed on the shared path) would destroy the destination's
+      // pre-existing sibling. When it collides we still remove from the source
+      // optimistically; on failure it snaps back.
+      const destShown = isLoaded(toDir);
+      const destCollides = destShown && getChildren(toDir).some((e) => e.path === newPath);
       const moved: FileEntry = { ...entry, name, path: newPath };
       dispatch({ kind: 'removeEntry', parent: fromParent, path: fromPath });
-      if (isLoaded(toDir)) dispatch({ kind: 'addEntry', parent: toDir, entry: moved });
+      if (destShown && !destCollides) dispatch({ kind: 'addEntry', parent: toDir, entry: moved });
       try {
         await transport.renameEntry(cwd, fromPath, newPath);
-        if (isLoaded(toDir)) await reloadDir(toDir);
+        if (destShown) await reloadDir(toDir);
       } catch (err) {
         dispatch({ kind: 'addEntry', parent: fromParent, entry });
-        if (isLoaded(toDir)) dispatch({ kind: 'removeEntry', parent: toDir, path: newPath });
+        if (destShown && !destCollides) {
+          dispatch({ kind: 'removeEntry', parent: toDir, path: newPath });
+        }
         toastCrudError(err, "Couldn't move");
       }
     },
