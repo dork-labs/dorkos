@@ -92,12 +92,17 @@ describe('WidgetTemplateSchema', () => {
   });
 
   it('keeps the raw schema error for non-placeholder failures', () => {
+    // A negative chart value is a genuine (non-placeholder) schema violation:
+    // the widget catalog rejects negatives honestly (the v1 renderer has no
+    // zero-baseline handling). The offending value is a real number, not a
+    // `{{placeholder}}` token, so the raw zod error must survive verbatim
+    // rather than being relabeled by the placeholder-tolerance layer.
     const result = WidgetTemplateSchema.safeParse({
-      name: 'bad-progress',
-      description: 'Progress value out of range.',
+      name: 'bad-chart',
+      description: 'Chart with a negative data value.',
       document: {
         version: 1,
-        root: { type: 'progress', value: 250 },
+        root: { type: 'chart', kind: 'bar', data: [{ label: 'Q1', value: -5 }] },
       },
     });
     expect(result.success).toBe(false);
