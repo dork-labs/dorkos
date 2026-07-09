@@ -2475,9 +2475,9 @@ export type UiToastLevel = z.infer<typeof UiToastLevelSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 15 variants covering panels, sidebar, canvas,
- * file opening, notifications, theme, scroll, agent switching, and command
- * palette.
+ * Discriminated on `action` — 17 variants covering panels, sidebar, canvas,
+ * file/terminal/browser opening, notifications, theme, scroll, agent switching,
+ * and command palette.
  */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
@@ -2511,6 +2511,26 @@ export const UiCommandSchema = z
        * mime→viewer registry and opens it as a new canvas document.
        */
       sourcePath: z.string().min(1),
+    }),
+    z.object({
+      action: z.literal('open_terminal'),
+      /**
+       * Optional working-directory hint. The terminal always spawns in the
+       * attached session's worktree (PTY creation is client-driven), so this is
+       * advisory only — the client opens/focuses the Terminal tab and does not
+       * spawn a second shell for a mismatching cwd.
+       */
+      cwd: z.string().optional(),
+    }),
+    z.object({
+      action: z.literal('browser_navigate'),
+      /**
+       * The page to open in the embedded browser: an external URL, a
+       * `localhost` dev-server URL, or a local (cwd-confined) file path. Opens
+       * as a new browser canvas document (dedup by URL); relative-asset
+       * resolution and origin isolation are handled by the browser renderer.
+       */
+      url: z.string().min(1),
     }),
 
     // Notification

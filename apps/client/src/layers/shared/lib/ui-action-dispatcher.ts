@@ -53,6 +53,9 @@ export interface DispatcherStore {
 /** Right-panel tab id the canvas contribution registers under (init-extensions). */
 const CANVAS_TAB_ID = 'canvas';
 
+/** Right-panel tab id the terminal contribution registers under (init-extensions). */
+const TERMINAL_TAB_ID = 'terminal';
+
 /** Dependencies injected by the caller. All are obtainable outside React. */
 export interface DispatcherContext {
   /** useAppStore.getState() — the raw Zustand state object */
@@ -69,6 +72,14 @@ export interface DispatcherContext {
    * the built-in registry defaults.
    */
   workbenchViewerOverrides?: Record<string, string>;
+  /**
+   * Whether the active transport can host a server-side terminal
+   * (`transport.supportsTerminal`). Consulted by `open_terminal`: when `false`
+   * the action surfaces a toast instead of revealing an unavailable tab (the
+   * Terminal contribution is hidden under DirectTransport/Obsidian). Omit to
+   * treat the terminal as available (the web default).
+   */
+  supportsTerminal?: boolean;
 }
 
 /**
@@ -137,6 +148,30 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
       revealCanvas(store);
       break;
     }
+    case 'open_terminal': {
+      // No agent-side PTY spawn (PTY creation is client-driven): reveal and
+      // focus the Terminal tab for the attached session, which spawns the shell
+      // in the session's own worktree — so the command's `cwd` hint is advisory
+      // and unused here. Web-only: under a transport without terminal support
+      // (DirectTransport/Obsidian) the tab does not exist, so degrade to a toast
+      // rather than focusing a phantom tab.
+      if (ctx.supportsTerminal === false) {
+        toast.info('Terminal is not available here', {
+          description: 'Open this session in the DorkOS web app to use the terminal.',
+        });
+        break;
+      }
+      store.setRightPanelOpen(true);
+      store.setActiveRightPanelTab(TERMINAL_TAB_ID);
+      break;
+    }
+    case 'browser_navigate':
+      // Append-and-activate a `browser` canvas document (dedup by URL inside the
+      // store), then reveal the canvas. Appending never clobbers a document the
+      // user is editing (edit-protection is per-doc; ADR-0292).
+      store.openCanvasDocument({ type: 'browser', url: command.url });
+      revealCanvas(store);
+      break;
     case 'close_canvas':
       store.setCanvasOpen(false);
       store.setRightPanelOpen(false);

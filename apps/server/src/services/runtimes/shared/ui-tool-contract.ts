@@ -40,6 +40,9 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
     { type: "widget", definition: <dorkos-ui widget document>, title?: string }  // render a Tier-1 generative-UI widget (see <gen_ui>) in the canvas
   When the markdown came from a file you read, pass sourcePath (the file's path) so the user can edit it in the canvas and have edits saved back to that file. Omit sourcePath for markdown you generated inline — it then renders read-only.
   For image/pdf, src may be an https URL, a data: URI, or a local file path (resolved within the session's working directory).
+- open_file: { sourcePath: string } — open a file from the session's working directory in the workbench. DorkOS picks the right viewer (code editor, image, PDF, 3D model, CSV table, or rich markdown) from the file's type and opens it as a new document, so the user can read or edit it in place. Use this instead of pasting a file's contents into the chat when you want the user to look at or edit a real file.
+- open_terminal: { cwd?: string } — reveal the workbench Terminal so the user has a shell in this session's worktree. Use it when you're about to suggest commands the user should run, or want them to watch a build/test as it happens. The terminal always runs in the session's own working directory; cwd is an optional hint. Terminals are web-only — in environments without one (e.g. the Obsidian plugin) this surfaces a brief notice that the terminal isn't available here instead of opening anything.
+- browser_navigate: { url: string } — open a page in the workbench's embedded browser: a running local dev server (localhost), a local HTML file in the working directory, or an external URL. Use it to show the user a live preview of something you built or a page relevant to the work. Opens as a new browser document; navigating to a URL that's already open just re-focuses it.
 - close_canvas
 - show_toast: { message: string, level?: "success"|"error"|"info"|"warning", description?: string }
 - set_theme: { theme: "light"|"dark" }
@@ -73,11 +76,19 @@ export const CONTROL_UI_INPUT = {
         '{ type:"pdf", src:"<https url | data: URI | local file path>", title?:string } (pdf goes in "src"); ' +
         '{ type:"widget", definition:<dorkos-ui widget document>, title?:string } (render a Tier-1 generative-UI widget in the canvas)'
     ),
+  sourcePath: z
+    .string()
+    .optional()
+    .describe('File path (cwd-confined) to open in the workbench for open_file'),
+  url: z.string().optional().describe('Page to open in the embedded browser for browser_navigate'),
   preferredWidth: z.number().optional().describe('Canvas width percentage (20-80) for open_canvas'),
   message: z.string().optional().describe('Toast message for show_toast'),
   level: z.string().optional().describe('Toast level for show_toast'),
   description: z.string().optional().describe('Toast description for show_toast'),
   theme: z.string().optional().describe('Theme for set_theme'),
   messageId: z.string().optional().describe('Message ID for scroll_to_message'),
-  cwd: z.string().optional().describe('Working directory for switch_agent'),
+  cwd: z
+    .string()
+    .optional()
+    .describe('Working directory for switch_agent, or optional cwd hint for open_terminal'),
 } as const;
