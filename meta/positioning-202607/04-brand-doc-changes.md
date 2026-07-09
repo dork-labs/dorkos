@@ -49,3 +49,13 @@ No changes. The method is sound and product-agnostic; it is the applied doc that
 ## 7. Sequencing note
 
 Do these edits _after_ the positioning direction in `02-positioning.md` is approved, in one sweep, so the meta corpus stays internally consistent (the Q1 docs' main hygiene win was consistency). The INDEX.md staleness banners can then come off the updated files.
+
+## 8. Addendum: hero reframe + persona expansion (2026-07-09, applied)
+
+Founder-approved changes applied directly to the meta corpus in one sweep:
+
+1. **Tagline/roof change**: primary tagline is now **"You, Multiplied."**; "Intelligence doesn't scale. Coordination does." demotes to **manifesto line** (essays, litepaper, 4C anti-positioning, launch-thread defense — not hero surfaces). Rationale: the thesis is a Layer 2 mechanism claim occupying the Layer 5 roof, violating both the framework's construction rules and the §8.1 guide-not-hero discipline; it is also attackable from both halves (scaling laws; Brooks's law) unless given room to argue. Applied to: `brand-foundation.md` (§1 banner, §4 Big Idea, §10 core line + hero test, §12, §13 hero), `value-architecture-applied.md` (v1.2: addendum roof, Headline Bank, 4A, 4C annotation, empowerment guideline, changelog), `02-positioning.md` (§2 What stays, §5 roof).
+2. **Framework hardening** (supersedes §4's "No changes"): the **hero test** added to `value-architecture.md` Phase 3A construction rules and the handbook's 3A step 5 — the roof's subject is the customer; a mechanism claim on the roof is a construction defect.
+3. **Personas**: added **Ikechi — The AI-Native Founder** (secondary, grounded on a real user) and **Lil — The Private Professional** (horizon, staged, grounded on a real user); both carry founder-adjacent validation caveats and explicit boundaries (Kai remains the beachhead; launch messaging unchanged). Anti-persona (`the-prompt-dabbler.md`) boundary redrawn: **operator mentality, not technical skill**. `manifest.json` updated. This satisfies §5.3's evidence rule — these are observed users, not imagined ones; the outstanding validation is _unassisted_ use.
+4. **customer-voice.md**: `[aspiration]` quote type added; **Theme 9: The Non-Developer Operator** opened (no quotes yet; interview Ikechi/Lil with founder-adjacent disclosure; milestone is the first organic quote).
+5. **Downstream surfaces owed** (not yet done, gate on founder go): site hero, README opener, GitHub description re-lead ("You, multiplied. Mission control for…"), OG image copy, and the `06-marketing-tactics.md` tactic-1 copy which the 2026-07-09 GitHub description used pre-reframe.
