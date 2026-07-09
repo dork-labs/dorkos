@@ -31,8 +31,22 @@ export const CAPTURE_WORLD = path.join(CAPTURE_HOME, 'code');
 /** Root under which seeded agent project directories are created. */
 export const FLEET_ROOT = path.join(CAPTURE_WORLD, 'fleet');
 
-/** Where finished assets are written (the contract with the marketing-site agent). */
+/** Where finished assets are written (the contract with the marketing site + docs). */
 export const OUTPUT_DIR = path.join(REPO_ROOT, 'apps/site/public/product');
+
+/**
+ * Committed, versioned snapshots of the published set. Each release archives the
+ * shots its notes embed under `archive/<label>/`, so a docs or changelog embed
+ * of a past version keeps resolving forever. Never wiped by the process phase.
+ */
+export const ARCHIVE_DIR = path.join(OUTPUT_DIR, 'archive');
+
+/**
+ * Human-supplied override sources (committed). A shot with files under
+ * `overrides/<shot-id>/` has them win over the automated capture at process
+ * time — the manual source runs through the same optimization path.
+ */
+export const OVERRIDES_ROOT = path.join(REPO_ROOT, 'apps/e2e/capture/overrides');
 
 /**
  * The media library: raw, untouched recordings per record run, kept separate

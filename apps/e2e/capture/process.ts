@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { loadRun } from './library.js';
+import { applyOverrides } from './overrides.js';
 import {
   resetOutputDir,
   writeLoop,
@@ -30,29 +31,41 @@ export async function runProcessPhase(runId?: string): Promise<void> {
   process.stdout.write(`▸ Processing run ${manifest.runId}…\n`);
   await resetOutputDir();
 
-  const published: AssetEntry[] = [];
+  /** Tag an auto-processed asset with its source run provenance. */
+  const asAuto = (entry: AssetEntry): AssetEntry => ({
+    ...entry,
+    source: 'auto',
+    runId: manifest.runId,
+    capturedAt: manifest.recordedAt,
+  });
+
+  const auto: AssetEntry[] = [];
   for (const raw of manifest.assets) {
     const source = path.join(runDir, 'raw', raw.file);
     if (raw.kind === 'still') {
-      published.push(await writeStill(await fs.readFile(source), raw.surface, raw.theme));
+      auto.push(asAuto(await writeStill(await fs.readFile(source), raw.surface, raw.theme)));
       process.stdout.write(`  ✓ ${raw.surface}-${raw.theme}.png\n`);
     } else {
-      published.push(
-        ...(await writeLoop({
-          sourcePath: source,
-          surface: raw.surface,
-          width: raw.width,
-          height: raw.height,
-          headTrimMs: raw.headTrimMs,
-        }))
-      );
+      const produced = await writeLoop({
+        sourcePath: source,
+        surface: raw.surface,
+        width: raw.width,
+        height: raw.height,
+        headTrimMs: raw.headTrimMs,
+      });
+      auto.push(...produced.map(asAuto));
       process.stdout.write(`  ✓ ${raw.surface}-dark.webm (+ poster)\n`);
     }
   }
 
+  // Human overrides win: applied on top of the auto set, re-encoded each run.
+  const published = await applyOverrides(auto, new Date().toISOString());
+
   await writeManifest(published, manifest.runId);
+  const manualCount = published.filter((a) => a.source === 'manual').length;
   const totalMb = (published.reduce((s, a) => s + a.bytes, 0) / 1e6).toFixed(2);
-  process.stdout.write(`▸ Done: ${published.length} assets, ${totalMb} MB total.\n`);
+  const overrideNote = manualCount > 0 ? `, ${manualCount} from overrides` : '';
+  process.stdout.write(`▸ Done: ${published.length} assets${overrideNote}, ${totalMb} MB total.\n`);
 }
 
 const isMain =

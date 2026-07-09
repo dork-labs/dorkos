@@ -1,8 +1,25 @@
-# Product capture pipeline
+# Product media pipeline
 
 Reproducible Playwright-driven capture of the real DorkOS UI, rendering seeded
-demo data, for the marketing site. Every asset is the actual app rendering
-actual (seeded) data — no DOM-doctoring, no mock components.
+demo data — one **shot registry** feeding the marketing site, docs, and
+changelogs. Every automated asset is the actual app rendering actual (seeded)
+data — no DOM-doctoring, no mock components — and a person can override any shot
+with hand-captured media that wins.
+
+## The shot registry
+
+`shots.ts` is the single source of truth. A **shot** is one logical surface (the
+cockpit, the topology graph, a streaming chat) with an `id`, a `kind`
+(`still` or `loop`), a `frame` (`desktop`/`mobile`), and its `consumers`
+(`marketing`, `docs`, `changelog`). The process phase writes a snapshot of the
+registry into `manifest.json` (`shots`), so the site and docs stay consistent
+with the pipeline without importing across the app boundary. Add a shot for docs
+or changelog by listing it here with the right consumers — it never shows up on
+`/features` unless tagged `marketing`.
+
+> A shot's `kind` is `still` or `loop`, not a three-way `still`/`loop`/`both`:
+> every loop already ships a light still (plus its dark poster), so "loop" _is_
+> "both". There is no loop-without-a-still, so two values stay exhaustive.
 
 ## Two-phase pipeline
 
@@ -10,9 +27,10 @@ Like an organized video editor, raw source material is kept strictly apart
 from processed deliverables:
 
 ```bash
-pnpm --filter @dorkos/e2e capture:record   # RECORD: boot + drive + save raws to the library
-pnpm --filter @dorkos/e2e capture:process  # PROCESS: edit raws → apps/site/public/product/
-pnpm --filter @dorkos/e2e capture          # both phases, in order
+pnpm --filter @dorkos/e2e capture:record          # RECORD: boot + drive + save raws to the library
+pnpm --filter @dorkos/e2e capture:process         # PROCESS: edit raws (+ overrides) → apps/site/public/product/
+pnpm --filter @dorkos/e2e capture                 # both phases, in order
+pnpm --filter @dorkos/e2e capture:archive <label> # freeze the current set under archive/<label>/
 ```
 
 **Record** (`record.ts`):
@@ -26,27 +44,73 @@ pnpm --filter @dorkos/e2e capture          # both phases, in order
 **Process** (`process.ts`, takes an optional run id, defaults to `latest`):
 reads the raws and runs the full editing stage — PNG optimization, head-trim to
 the run's markers, the end-seam crossfade, two-pass VP9, poster extraction —
-into `apps/site/public/product/` plus `manifest.json` (tagged with the source
-`runId`).
+then **applies human overrides on top**, into `apps/site/public/product/` plus
+`manifest.json`. Output order: wipe → write auto-processed → apply overrides, so
+wiping first stays safe (overrides are re-applied every run). The wipe only
+touches top-level `*.png`/`*.webm`/`manifest.json` — `archive/` is never
+disturbed.
 
-The payoff: **editing changes are re-process-only.** A trim, seam, or encode
-tweak never requires re-booting the app or re-recording — re-run
+The payoff: **editing changes are re-process-only.** A trim, seam, encode, or
+override tweak never requires re-booting the app or re-recording — re-run
 `capture:process` against the existing raws. The library itself is gitignored
 (raws are heavy and regenerable); see `library/README.md` for the layout.
 
+## Human overrides
+
+A person can beat the automated capture for any shot: drop files in
+`overrides/<shot-id>/` and they win. Manual sources run through the **same**
+optimization path (palette-quantized PNG for stills; fps-normalized, two-pass
+VP9 with an extracted poster for loops) and are scaled to the shot's target
+dimensions — an override is never a lower-quality second class. If a source's
+aspect ratio doesn't match the shot's frame, that shot **fails loudly** rather
+than being cropped. `skipAuto` (in `override.json` or `shots.ts`) tells the
+record phase not to bother capturing that shot at all. Full workflow:
+[`overrides/README.md`](overrides/README.md).
+
+## Archive (frozen past versions)
+
+`capture:archive <label>` copies the currently published assets + manifest into
+`apps/site/public/product/archive/<label>/` with an archive manifest. A docs page
+or changelog entry that embeds a **past** version points at
+`archive/<label>/…`, which is immutable and resolves forever; current embeds use
+the live path and always show the latest capture.
+
+```bash
+pnpm --filter @dorkos/e2e capture:archive v0.45.0                  # archive everything
+pnpm --filter @dorkos/e2e capture:archive v0.45.0 --shots canvas,topology  # only these shots
+```
+
+**Repo-size discipline:** archives are committed binaries. Archive **only the
+shots a release's notes actually embed** (release automation passes `--shots`);
+never snapshot the whole set "just in case". Old archives are never touched by
+the process phase.
+
+## Consuming media
+
+- **Marketing site** — `ProductFrame` resolves files by convention and gates
+  loop playback via the shot registry; features bind a shot through `media.surface`.
+- **Docs** — embed `<ProductShot id="canvas" alt="…" />` in any `.mdx`; it
+  renders the same assets in the shared frame. Registered in
+  `apps/site/src/components/mdx-components.tsx`.
+- **Changelog / release notes** — embed media via absolute URLs. Current:
+  `https://dorkos.ai/product/<file>`. Frozen at a release:
+  `https://dorkos.ai/product/archive/<version>/<file>` (archive that version's
+  shots first). See `changelog/README.md`.
+
+Guard tests keep it honest: `features.test.ts` (catalog media exists + framing),
+`shots.test.ts` (registry ↔ `LOOP_SURFACES` consistency + every docs
+`<ProductShot>` id resolves and its files exist).
+
 ## Output contract
-
-The site consumes these through `ProductFrame` (`apps/site/src/layers/features/marketing/ui/ProductFrame.tsx`)
-and pins them with the media-guard test in
-`apps/site/src/layers/features/marketing/lib/__tests__/features.test.ts`:
-
-- every referenced surface ships `<surface>-light.png`;
-- loop surfaces additionally ship `<surface>-dark.webm` + `<surface>-dark.png` (the poster).
 
 Desktop stills are 1280×800 @2x (tight enough that UI text reads at rendered
 size); mobile stills are 390×844 @3x. Loops are 1280×800 (desktop) / 390×844
-(mobile) VP9, no audio. `manifest.json` describes each asset (surface, theme,
-kind, dimensions, size, duration).
+(mobile) VP9, no audio. `manifest.json` (schema v2) carries the shot registry
+(`shots`) and, per asset, its `source` (`auto`/`manual`), `capturedAt`, and
+either the source `runId` (auto) or `override` provenance (manual):
+
+- every marketing shot ships `<id>-light.png`;
+- loop shots additionally ship `<id>-dark.webm` + `<id>-dark.png` (the poster).
 
 ## Theme (no light-mode flash)
 
@@ -122,14 +186,18 @@ Nothing rendered depends on `Date.now()`.
 
 ## Files
 
-- `config.ts` — ports, viewports, library/output paths, and all deterministic demo data (fleet, tasks, runs, sessions, prompts, canvas doc, discovery projects, marketplace).
+- `shots.ts` — **the shot registry** (source of truth): every shot's id, kind, frame, consumers, and target dimensions; plus the manifest snapshot projection.
+- `config.ts` — ports, viewports, library/output/archive/overrides paths, and all deterministic demo data (fleet, tasks, runs, sessions, prompts, canvas doc, discovery projects, marketplace).
 - `boot.ts` — spawns/teardowns the test-mode server + Vite client.
 - `seed.ts` — pre-boot filesystem prep + post-boot API/DB seeding.
-- `record.ts` / `process.ts` / `capture.ts` — the phase entry points (record raws, process raws, both).
+- `record.ts` / `process.ts` / `capture.ts` / `archive.ts` — the entry points (record raws, process raws + overrides, both, freeze an archive).
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
-- `lib.ts` — shared Playwright plumbing (theme init-script, live-turn opener, raw loop recorder + head-trim marker).
+- `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
+- `lib.ts` — shared Playwright plumbing (theme init-script, live-turn opener, raw loop recorder + head-trim marker, the `attemptShot` skip guard).
 - `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives.
-- `optimize.ts` — the editing stage: PNG recompression (sharp), loop editing (ffmpeg-static: head-trim, end-seam crossfade, two-pass VP9, poster extraction), and the manifest writer.
+- `optimize.ts` — the editing stage: PNG recompression + aspect-validated scaling (sharp), loop editing (ffmpeg-static: head-trim, end-seam crossfade, two-pass VP9, poster extraction), and the v2 manifest writer.
+- `overrides/` — committed human-override sources (see `overrides/README.md`).
+- `__tests__/` — unit tests for the registry, aspect validation, and override discovery (`pnpm --filter @dorkos/e2e test`).
 
 ## Test-mode seam
 
