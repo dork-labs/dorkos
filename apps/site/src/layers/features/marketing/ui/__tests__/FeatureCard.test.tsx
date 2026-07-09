@@ -178,7 +178,7 @@ describe('FeatureCard', () => {
 
     it('renders the category label for infrastructure', () => {
       render(<FeatureCard feature={comingSoonFeature} />);
-      expect(screen.getByText('Infrastructure')).toBeTruthy();
+      expect(screen.getByText('Foundation')).toBeTruthy();
     });
   });
 

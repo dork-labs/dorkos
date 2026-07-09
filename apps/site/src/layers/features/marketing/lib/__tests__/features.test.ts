@@ -66,14 +66,23 @@ describe('features catalog data integrity', () => {
 
   it('all taglines are ≤80 chars', () => {
     for (const feature of features) {
-      expect(feature.tagline.length).toBeLessThanOrEqual(80);
+      expect(
+        feature.tagline.length,
+        `${feature.slug} tagline is ${feature.tagline.length} chars (max 80): "${feature.tagline}"`
+      ).toBeLessThanOrEqual(80);
     }
   });
 
   it('all descriptions are 120-160 chars', () => {
     for (const feature of features) {
-      expect(feature.description.length).toBeGreaterThanOrEqual(120);
-      expect(feature.description.length).toBeLessThanOrEqual(160);
+      expect(
+        feature.description.length,
+        `${feature.slug} description is ${feature.description.length} chars (min 120): "${feature.description}"`
+      ).toBeGreaterThanOrEqual(120);
+      expect(
+        feature.description.length,
+        `${feature.slug} description is ${feature.description.length} chars (max 160): "${feature.description}"`
+      ).toBeLessThanOrEqual(160);
     }
   });
 

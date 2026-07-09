@@ -43,7 +43,7 @@ export async function generateMetadata(props: {
   if (!label) notFound();
 
   const categoryFeatures = features.filter((f) => f.category === category);
-  const description = `DorkOS ${label.toLowerCase()} capabilities: ${categoryFeatures.map((f) => f.name).join(', ')}.`;
+  const description = `DorkOS ${label} features: ${categoryFeatures.map((f) => f.name).join(', ')}.`;
 
   return {
     title: `${label} Features — DorkOS`,
@@ -70,7 +70,7 @@ export default async function FeatureCategoryPage(props: {
   if (!label) notFound();
 
   const categoryFeatures = features.filter((f) => f.category === category);
-  const description = `DorkOS ${label.toLowerCase()} capabilities: ${categoryFeatures.map((f) => f.name).join(', ')}.`;
+  const description = `DorkOS ${label} features: ${categoryFeatures.map((f) => f.name).join(', ')}.`;
 
   // BreadcrumbList JSON-LD
   const breadcrumbJsonLd = {
@@ -136,7 +136,7 @@ export default async function FeatureCategoryPage(props: {
             {label} Features
           </h1>
           <p className="text-warm-gray-light mt-3 font-mono text-sm">
-            All DorkOS {label.toLowerCase()} capabilities
+            Every {label} feature DorkOS ships
           </p>
         </div>
 
