@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
-import { useAppStore, useSlotContributions } from '@/layers/shared/model';
+import { useAppStore, useSlotContributions, useTransport } from '@/layers/shared/model';
 import { useRouterState } from '@tanstack/react-router';
 
 interface RightPanelHeaderProps {
@@ -23,9 +23,11 @@ export function RightPanelHeader({ actions }: RightPanelHeaderProps) {
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
+  const transport = useTransport();
   const allContributions = useSlotContributions('right-panel');
   const visibleContributions = allContributions.filter(
-    (c) => !c.visibleWhen || c.visibleWhen({ pathname })
+    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })
   );
 
   return (

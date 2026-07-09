@@ -12,6 +12,9 @@ import type { RightPanelContribution } from '@/layers/shared/model';
 let mockRightPanelOpen = false;
 let mockPathname = '/session';
 let mockContributions: RightPanelContribution[] = [];
+// The active transport gates capability-scoped tabs (e.g. the web-only
+// terminal); mutate per-test to exercise the transport-gated visibility path.
+let mockTransport: { supportsTerminal: boolean } = { supportsTerminal: true };
 const mockToggleRightPanel = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
@@ -21,6 +24,7 @@ vi.mock('@/layers/shared/model', () => ({
       toggleRightPanel: mockToggleRightPanel,
     }),
   useSlotContributions: () => mockContributions,
+  useTransport: () => mockTransport,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -103,6 +107,7 @@ describe('RightPanelToggle', () => {
     mockRightPanelOpen = false;
     mockPathname = '/session';
     mockContributions = [];
+    mockTransport = { supportsTerminal: true };
     mockToggleRightPanel.mockClear();
   });
 
@@ -161,6 +166,31 @@ describe('RightPanelToggle', () => {
 
   it('shows when contribution has no visibleWhen predicate', async () => {
     mockContributions = [makeContribution('a')];
+    await renderToggle();
+    expect(screen.getByRole('button')).toBeInTheDocument();
+  });
+
+  it('hides when the only contribution is transport-gated and the capability is absent', async () => {
+    // Regression (DOR-218): the toggle must forward `transport` to visibleWhen.
+    // When the sole contribution is capability-gated and the transport lacks it,
+    // no tab is visible → the toggle hides.
+    mockTransport = { supportsTerminal: false };
+    mockContributions = [
+      makeContribution('terminal', {
+        visibleWhen: ({ transport }) => transport?.supportsTerminal === true,
+      }),
+    ];
+    const { container } = await renderToggle();
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('shows when a transport-gated contribution matches the active transport capability', async () => {
+    mockTransport = { supportsTerminal: true };
+    mockContributions = [
+      makeContribution('terminal', {
+        visibleWhen: ({ transport }) => transport?.supportsTerminal === true,
+      }),
+    ];
     await renderToggle();
     expect(screen.getByRole('button')).toBeInTheDocument();
   });
