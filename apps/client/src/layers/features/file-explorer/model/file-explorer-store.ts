@@ -22,6 +22,8 @@ interface FileExplorerStore {
   /**
    * Whether dotfiles and gitignored entries are shown. Shared state so the
    * header's toggle and the tree's loader read a single source of truth.
+   * Deliberately module-scoped: the preference persists across sessions and
+   * workspaces for the app's lifetime — a view preference, not session state.
    */
   showHidden: boolean;
   setShowHidden: (value: boolean) => void;

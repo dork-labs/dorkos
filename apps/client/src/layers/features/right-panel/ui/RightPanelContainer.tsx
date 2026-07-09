@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Suspense } from 'react';
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { useRouterState } from '@tanstack/react-router';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
@@ -51,9 +51,12 @@ export function RightPanelContainer() {
   // Get all right-panel contributions, sorted by priority
   const allContributions = useSlotContributions('right-panel');
 
-  // Filter to only visible contributions, passing router + transport to each predicate
-  const visibleContributions = allContributions.filter(
-    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })
+  // Filter to only visible contributions, passing router + transport to each
+  // predicate. Memoized so the auto-select effect below only re-runs when the
+  // inputs actually change, not on every render.
+  const visibleContributions = useMemo(
+    () => allContributions.filter((c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })),
+    [allContributions, pathname, transport]
   );
 
   // Auto-select first visible tab if active tab is not visible
