@@ -7,7 +7,7 @@
 export const siteConfig = {
   name: 'DorkOS',
   description:
-    'The operating system for autonomous AI agents. Scheduling, communication, memory, and a command center. Open source. Self-hosted.',
+    'Mission control for every coding agent you run: Claude Code, Codex, and OpenCode in one cockpit. Open source, self-hosted.',
   url: 'https://dorkos.ai',
   contactEmail: 'hey@dorkos.ai',
   github: 'https://github.com/dork-labs/dorkos',

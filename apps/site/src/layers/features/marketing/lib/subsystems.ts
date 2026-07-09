@@ -21,16 +21,16 @@ export interface Subsystem {
 export const subsystems: Subsystem[] = [
   {
     id: 'tasks',
-    benefit: 'Makes agents work autonomously',
+    benefit: 'Hand off work; it runs on schedule',
     name: 'Tasks',
     description: "Tell your agents what to do and when to do it, and they'll handle the rest.",
     status: 'available',
   },
   {
     id: 'relay',
-    benefit: 'Delivers messages between agents and humans',
+    benefit: 'Your agents reach you wherever you are',
     name: 'Relay',
-    description: 'Telegram, Slack, email, etc. You can chat with your agents wherever you are.',
+    description: 'Telegram, Slack, webhooks: your agents can reach you wherever you are.',
     status: 'available',
     integrations: [
       { label: 'Telegram', icon: Send, status: 'live' },
@@ -40,9 +40,10 @@ export const subsystems: Subsystem[] = [
   },
   {
     id: 'mesh',
-    benefit: 'Connects agents to each other',
+    benefit: 'Your agents find each other',
     name: 'Mesh',
-    description: 'Your agents find each other and coordinate the work automatically.',
+    description:
+      "Your agents can discover each other, so you're not the one routing work between them.",
     status: 'available',
     integrations: [
       { label: 'Claude Code', icon: Terminal, status: 'live' },
@@ -51,7 +52,7 @@ export const subsystems: Subsystem[] = [
   },
   {
     id: 'console',
-    benefit: 'Dashboard to chat with and control all aspects of DorkOS',
+    benefit: 'See and steer every agent you run',
     name: 'Console',
     description: 'Chat with your agents, create new agents, manage schedules, and more.',
     status: 'available',

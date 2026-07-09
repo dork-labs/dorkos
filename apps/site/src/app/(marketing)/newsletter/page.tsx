@@ -6,12 +6,12 @@ import { MarketingChrome } from '@/layers/features/marketing';
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 
 export const metadata: Metadata = {
-  title: 'Newsletter — DorkOS',
+  title: 'Newsletter | DorkOS',
   description:
     'Release notes and fleet reports from DorkOS, about twice a month. Double opt-in, one-click unsubscribe, no spam.',
   alternates: { canonical: '/newsletter' },
   openGraph: {
-    title: 'Newsletter — DorkOS',
+    title: 'Newsletter | DorkOS',
     description: 'Release notes and fleet reports, about twice a month.',
     url: '/newsletter',
     siteName: siteConfig.name,
@@ -31,10 +31,10 @@ export default function NewsletterPage() {
           The DorkOS newsletter
         </p>
         <h1 className="text-charcoal font-mono text-3xl font-bold tracking-tight sm:text-4xl">
-          You slept. They shipped. Read the receipts.
+          One person. A fleet of agents. Read the receipts.
         </h1>
         <p className="text-warm-gray mt-4 text-lg">
-          Release notes and fleet reports, about twice a month: what shipped, what the agents did
+          Release notes and fleet reports, about twice a month: what shipped, what the fleet did
           overnight, and the numbers behind it. No hype, no more than we promised.
         </p>
 

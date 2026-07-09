@@ -3,7 +3,7 @@
 export { default } from './opengraph-image';
 
 export const runtime = 'edge';
-export const alt = 'DorkOS - The operating system for autonomous AI agents';
+export const alt = 'DorkOS: mission control for every coding agent you run';
 export const size = {
   width: 1200,
   height: 630,
