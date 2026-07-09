@@ -14,6 +14,7 @@ import {
   Table2,
   Settings as SettingsIcon,
   ShoppingBag,
+  WandSparkles,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -32,10 +33,11 @@ import {
   TABLES_SECTIONS,
   SETTINGS_SECTIONS,
   MARKETPLACE_SECTIONS,
+  GEN_UI_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
-export type PageGroup = 'design-system' | 'session' | 'agents' | 'app-shell';
+export type PageGroup = 'design-system' | 'gen-ui' | 'session' | 'agents' | 'app-shell';
 
 /** Centralized metadata for a single playground page. */
 export interface PageConfig {
@@ -92,6 +94,17 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'design-system',
     sections: COMPONENTS_SECTIONS,
     path: 'components',
+  },
+  // ── Generative UI ──
+  {
+    id: 'gen-ui',
+    label: 'Widgets',
+    description:
+      'Agent-authored widgets rendered from dorkos-ui fences — loading state, stat cards, tables, charts, lists, and error fallback.',
+    icon: WandSparkles,
+    group: 'gen-ui',
+    sections: GEN_UI_SECTIONS,
+    path: 'gen-ui',
   },
   // ── Session ──
   {
@@ -227,6 +240,9 @@ export const PAGE_ORDER: string[] = PAGE_CONFIGS.map((c) => c.id);
 
 /** Pages in the "Design System" sidebar group. */
 export const DESIGN_SYSTEM_NAV = PAGE_CONFIGS.filter((c) => c.group === 'design-system');
+
+/** Pages in the "Generative UI" sidebar group. */
+export const GEN_UI_NAV = PAGE_CONFIGS.filter((c) => c.group === 'gen-ui');
 
 /** Pages in the "Session" sidebar group. */
 export const SESSION_NAV = PAGE_CONFIGS.filter((c) => c.group === 'session');

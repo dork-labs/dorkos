@@ -1,0 +1,47 @@
+import type { PlaygroundSection } from '../playground-registry';
+
+/** Registry entries for the Generative UI page. */
+export const GEN_UI_SECTIONS: PlaygroundSection[] = [
+  {
+    id: 'generative-ui-loading-state',
+    title: 'Generative UI — Loading State',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'loading', 'skeleton', 'shimmer', 'streaming'],
+  },
+  {
+    id: 'generative-ui-stat-card',
+    title: 'Generative UI — Stat Card',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'stat', 'card', 'progress'],
+  },
+  {
+    id: 'generative-ui-table',
+    title: 'Generative UI — Table',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'table', 'columns', 'rows'],
+  },
+  {
+    id: 'generative-ui-charts',
+    title: 'Generative UI — Charts',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'chart', 'bar', 'pie', 'line', 'area'],
+  },
+  {
+    id: 'generative-ui-list',
+    title: 'Generative UI — List',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'list', 'badge', 'icon'],
+  },
+  {
+    id: 'generative-ui-error-card-d5',
+    title: 'Generative UI — Error Card (D5)',
+    page: 'gen-ui',
+    category: 'Generative UI',
+    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'error', 'invalid', 'fallback'],
+  },
+];

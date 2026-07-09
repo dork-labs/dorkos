@@ -1,5 +1,5 @@
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
-import { WidgetRenderer, WidgetErrorCard } from '@/layers/features/gen-ui';
+import { WidgetRenderer, WidgetErrorCard, WidgetSkeleton } from '@/layers/features/gen-ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -133,6 +133,18 @@ const LIST: WidgetDocument = {
 export function GenUiShowcases() {
   return (
     <>
+      <PlaygroundSection
+        title="Generative UI — Loading State"
+        description="Shown while a dorkos-ui fence is still streaming — a card silhouette with a soft shimmer sweep. Honors reduced motion."
+      >
+        <ShowcaseLabel>widget skeleton</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="max-w-sm">
+            <WidgetSkeleton />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
       <PlaygroundSection
         title="Generative UI — Stat Card"
         description="A card composing stat, divider, and progress nodes."
