@@ -5,9 +5,10 @@ import type { Display, Rectangle } from 'electron';
  * Test double for Electron's main-process module surface.
  *
  * Mounted via `vi.mock('electron', () => import('./electron-mock'))` in
- * test files. Faithful enough to `app`, `BrowserWindow`, `ipcMain`,
- * `screen`, `dialog`, `Menu`, and `shell` to drive the main-process code
- * under test without a real Electron runtime.
+ * test files. Faithful enough to `app` (including `app.dock` and
+ * `setAboutPanelOptions`), `BrowserWindow` (including `webContents.send`),
+ * `ipcMain`, `screen`, `dialog`, `Menu`, and `shell` to drive the
+ * main-process code under test without a real Electron runtime.
  */
 
 const DEFAULT_USER_DATA_PATH = '/tmp/dorkos-desktop-test/userData';
@@ -141,6 +142,8 @@ export const app = {
   quit: vi.fn(),
   getPath: vi.fn((): string => DEFAULT_USER_DATA_PATH),
   getVersion: vi.fn((): string => '0.1.0'),
+  setAboutPanelOptions: vi.fn(),
+  dock: { setMenu: vi.fn() },
   on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
     appBus.on(event, listener);
     return app;
@@ -187,6 +190,8 @@ export function resetElectronMock(): void {
   app.quit = vi.fn();
   app.getPath = vi.fn(() => DEFAULT_USER_DATA_PATH);
   app.getVersion = vi.fn(() => '0.1.0');
+  app.setAboutPanelOptions = vi.fn();
+  app.dock = { setMenu: vi.fn() };
 
   ipcMain.on = vi.fn();
   ipcMain.handle = vi.fn();

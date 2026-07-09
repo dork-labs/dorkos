@@ -13,4 +13,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: (): string => ipcRenderer.sendSync('get-app-version'),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
+  /**
+   * Subscribe to main-process navigation requests (menu items, the dock
+   * menu, and — Chunk D — `dorkos://` deep links), all funneled through the
+   * single `navigate` IPC channel (ADR 260709-210223). `cb` receives the
+   * client route path to navigate to.
+   *
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onNavigate: (cb: (path: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, path: string): void => cb(path);
+    ipcRenderer.on('navigate', listener);
+    return () => ipcRenderer.removeListener('navigate', listener);
+  },
 });

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model';
+import { useElectronNavigate } from './app/use-electron-navigate';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import {
   useSessionId,
@@ -189,6 +190,9 @@ export function AppShell() {
   useRightPanelShortcut();
   useAgentProfileShortcut();
   useRightPanelPersistence();
+  // Desktop shell → client navigation bridge (ADR 260709-210223). A no-op in
+  // the browser and Obsidian, where `window.electronAPI` is absent.
+  useElectronNavigate();
   // Bridge the global `/api/events` session-list stream into the shared
   // `['sessions', cwd]` query cache (sidebar/dashboard/loader go live; ADR-0265).
   useGlobalSessionStream();
