@@ -8,13 +8,15 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Generative UI
 
-Agents don't have to describe data in prose — they can render it. DorkOS's generative UI system lets any agent emit a small, declarative JSON document that the client renders as a real, native widget: stat cards, tables, lists, charts, timelines, checklists, comparison matrices, star ratings, key/value pairs, badges, progress bars, images, and forms. There's no agent-authored code and no iframe — every widget is built from the same shadcn components the rest of DorkOS uses, so it looks and behaves like the surrounding UI.
+Agents don't have to describe your data in a wall of text. In DorkOS, an agent can render it instead, as a real widget right inside the chat.
 
-Widgets can also talk back: buttons, list actions, and form submits send a message to the agent so it can respond to what you clicked. And widgets can open in the canvas instead of (or in addition to) chat, alongside images and PDFs the agent points the canvas at.
+Behind the scenes, the agent sends a small JSON document (a simple, structured text format) and DorkOS turns it into a native UI element: a stat card, a table, a list, a chart, a timeline, a checklist, a comparison matrix, a star rating, a key/value list, a badge, a progress bar, an image, or a form. There's no code the agent writes and no embedded webpage. Every widget uses the same building blocks as the rest of DorkOS, so it looks and feels like it belongs.
+
+Widgets can talk back too. Click a button, tap a list item, or submit a form, and DorkOS sends your click to the agent so it can respond. A widget can also open in the canvas, a bigger space beside the chat, alongside images and PDFs the agent shows you there.
 
 ## Widgets in Chat
 
-To render a widget, an agent emits a fenced code block with the language `dorkos-ui` whose body is a single JSON widget document:
+To show a widget, an agent writes a fenced code block labeled `dorkos-ui` with one JSON document inside it:
 
 ````
 ```dorkos-ui
@@ -24,19 +26,45 @@ To render a widget, an agent emits a fenced code block with the language `dorkos
 ```
 ````
 
-Instead of showing that as a code block, the client parses and validates the JSON and renders it as a real card with a stat inside. While the fence is still streaming, DorkOS shows a skeleton in its place; the widget itself only renders once the block is complete.
+DorkOS never shows you that raw code. It reads the JSON and renders a real card with a stat inside instead. While the agent is still typing, you see a loading skeleton in its place; the finished widget appears the moment the block completes.
 
 <Callout type="warn">
   If the JSON is malformed or doesn't match the widget schema, DorkOS never breaks the chat. It
-  shows a small error card instead — a short reason plus a collapsible "raw JSON" section — so you
+  shows a small error card instead, with a short reason and a collapsible "raw JSON" section, so you
   and the agent can both see what went wrong.
 </Callout>
 
-This is taught to every runtime — Claude Code, Codex, and OpenCode all receive the same `<gen_ui>` instructions and can emit widgets identically.
+Every runtime you can pick in DorkOS (Claude Code, Codex, or OpenCode) renders widgets the same way, so switching runtimes never changes what you see.
+
+## Widgets Talk Back
+
+Buttons, list items, and form submits aren't just for show. Click "Refresh" on a weather widget, and DorkOS sends the agent a note saying you asked for a refresh, ready for it to respond in your next turn.
+
+While DorkOS sends your click, the button shows a spinner and turns off, so you can't submit twice. If sending fails, most often because the agent is still busy on your last turn, a toast tells you to try again in a moment. There's no queue for these clicks, so you just retry once the agent is free.
+
+## Canvas
+
+<ProductShot
+  id="canvas"
+  alt="A DorkOS canvas document open beside the chat, rendering live beside a streaming session"
+/>
+
+Widgets aren't limited to chat. An agent can open the same widget in the canvas instead, or alongside chat, giving it more room to breathe. The canvas can also hold images and PDFs the agent points it at, not just widgets.
+
+<Callout type="warn">
+  Two things worth knowing. If you're not watching the session live (say, it's running on a
+  schedule), the agent's canvas update is accepted but nothing appears on screen until you open a
+  live view. And if you're already editing the canvas yourself, DorkOS holds the agent's update back
+  so it doesn't overwrite what you're typing.
+</Callout>
+
+## Reference
+
+The rest of this page is for developers and skill authors building or emitting widgets. If you just want to see generative UI in your own chats, you can stop here.
 
 ### The Document Shape
 
-A widget document has three fields:
+Every runtime (Claude Code, Codex, OpenCode) receives the same `<gen_ui>` instructions block, which teaches it the schema below. A widget document has three fields:
 
 ```ts
 {
@@ -87,7 +115,7 @@ A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fix
 | ------- | ------------------------------------------------- | --------------------------------- |
 | `image` | `src` (https or data URI only), `alt`, `caption?` | A bounded, object-contained image |
 
-**Action** — see [Interactive Widgets](#interactive-widgets-the-ui-action-channel) below
+**Action** — see [the ui-action channel](#the-ui-action-channel) below
 
 | Type     | Fields                                                                                | Renders as                                                                               |
 | -------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -98,7 +126,7 @@ A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fix
 
 List item icons and `list`/`chart` are the two places widgets reference something outside their own JSON: icon names (e.g. `check-circle`, `clock`, `rocket`) resolve against a curated Lucide icon allowlist and fall back to a neutral dot for anything unrecognized.
 
-### Skill Authors: Writing a Widget
+### Writing a Widget
 
 Any node can be the `root`, and containers (`stack`, `card`, `form`) nest recursively. A minimal table:
 
@@ -125,7 +153,7 @@ A couple of catalog-specific rules worth knowing before you emit one:
 
 Reach for a widget when the reply has structured data worth scanning — metrics, tables, lists, charts. Don't wrap plain prose in one.
 
-## Interactive Widgets (the ui-action Channel)
+### The ui-action Channel
 
 Buttons, list-item actions, and form submits are more than static UI — clicking them can start a new turn with the agent. Every interactive control fires a `WidgetAction`, one of three kinds:
 
@@ -154,38 +182,22 @@ The payload carries whatever the action was authored with, plus (for `form` subm
   buttons render disabled with a tooltip explaining why.
 </Callout>
 
-While the action is in flight, the button shows a spinner and disables to prevent a double-submit. If the POST fails — most commonly because the session is already busy running another turn — a toast tells you: _"Couldn't send the action — the agent may be busy right now, try again in a moment."_ There's no server-side queue for these; you just retry once the agent is free.
+### Canvas Content Types
 
-## Canvas
-
-<ProductShot
-  id="canvas"
-  alt="A DorkOS canvas document open beside the chat, rendering live beside a streaming session"
-/>
-
-Widgets aren't limited to chat. An agent can call `control_ui` with `open_canvas` (or `update_canvas`) and a `widget` content type to open the same rendered widget in the canvas pane, with more room to breathe:
+An agent can call `control_ui` with `open_canvas` (or `update_canvas`) and a `widget` content type to open a rendered widget in the canvas pane:
 
 ```json
 { "type": "widget", "definition": { "version": 1, "root": { "...": "..." } }, "title": "Weather" }
 ```
 
-The canvas also renders two other content types relevant here:
+The canvas also renders two other content types:
 
 - **`image`** — `{ type: "image", src, title?, alt? }`. Click the image to open it full size in a new tab (skipped for SVG data URIs, which are excluded from click-through as defense in depth against a scripting context).
 - **`pdf`** — `{ type: "pdf", src, title? }`. Renders through the browser's native PDF viewer; if the browser can't render it inline, a fallback link opens the PDF in a new tab.
 
 For both, `src` accepts an `https://`/`http://` URL, a `data:` URI (correctly typed — `data:image/*` for images, `data:application/pdf` for PDFs), or a local file path, which DorkOS resolves within the session's working directory. Any other scheme (`javascript:`, `file:`, `blob:`, and so on) is blocked outright.
 
-<Callout type="warn">
-  Two honest caveats, straight from the agent's own tool instructions: UI commands (including canvas
-  pushes) only take visible effect when an interactive client is attached to the session — in
-  headless or scheduled runs, the command is accepted and queued but nothing appears on screen. And
-  while you're actively editing the canvas yourself, an `open_canvas`/`update_canvas` push may be
-  deferred so your unsaved edits aren't clobbered — a success result from the agent's tool call
-  means "accepted," not "displayed."
-</Callout>
-
-## Skill Widget Templates
+### Skill Widget Templates
 
 Skills that render the same kind of widget turn after turn don't have to hand-roll the JSON every time. A skill can ship a `ui/` directory of `*.widget.json` templates — a named, described widget document whose string fields may contain `{{placeholder}}` tokens:
 
