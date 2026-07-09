@@ -112,11 +112,16 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
       if (entry.type !== 'file') return;
       // Same seam the agent's `open_file` tool drives: resolve the viewer via
       // the shared registry and open/activate a canvas document. `sourcePath` is
-      // already relative to cwd (the file-service contract).
-      const ctx: DispatcherContext = { store: useAppStore.getState(), setTheme };
+      // already relative to cwd (the file-service contract). `supportsTerminal`
+      // keeps the shared dispatch contract uniform (only `open_file` fires here).
+      const ctx: DispatcherContext = {
+        store: useAppStore.getState(),
+        setTheme,
+        supportsTerminal: transport.supportsTerminal,
+      };
       executeUiCommand(ctx, { action: 'open_file', sourcePath: entry.path });
     },
-    [setTheme]
+    [setTheme, transport]
   );
 
   const getChildren = useCallback(

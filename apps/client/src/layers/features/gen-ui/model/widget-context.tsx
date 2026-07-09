@@ -68,7 +68,14 @@ export function WidgetActionProvider({
       switch (action.kind) {
         case 'ui': {
           // getState() snapshot at call-time — the dispatcher is a pure side effect.
-          const ctx: DispatcherContext = { store: useAppStore.getState(), setTheme };
+          // `supportsTerminal` keeps `open_terminal` degrading gracefully on a
+          // transport with no terminal (DirectTransport/Obsidian), matching the
+          // agent-stream dispatch path.
+          const ctx: DispatcherContext = {
+            store: useAppStore.getState(),
+            setTheme,
+            supportsTerminal: transport.supportsTerminal,
+          };
           executeUiCommand(ctx, action.command);
           return;
         }

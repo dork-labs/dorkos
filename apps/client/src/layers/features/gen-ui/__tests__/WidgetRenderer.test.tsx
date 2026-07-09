@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { toast } from 'sonner';
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
 afterEach(cleanup);
 import type { ReactNode } from 'react';
@@ -153,6 +153,34 @@ describe('widget actions', () => {
     expect(open).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     open.mockRestore();
+  });
+
+  it('degrades a ui open_terminal action to a notice when the transport has no terminal', async () => {
+    // A widget firing `open_terminal` under a terminal-less transport
+    // (DirectTransport/Obsidian) must surface a notice, not focus a phantom
+    // Terminal tab — the same graceful-degradation contract the agent-stream
+    // dispatch path honors. Proves supportsTerminal is threaded into the
+    // widget's DispatcherContext, not just the agent path.
+    const user = userEvent.setup();
+    const noTerminalTransport = createMockTransport({ supportsTerminal: false });
+    render(
+      <TransportProvider transport={noTerminalTransport}>
+        <WidgetRenderer
+          document={{
+            version: 1,
+            title: 'Shell',
+            root: {
+              type: 'button',
+              label: 'Open terminal',
+              action: { kind: 'ui', command: { action: 'open_terminal' } },
+            },
+          }}
+        />
+      </TransportProvider>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open terminal' }));
+    expect(toast.info).toHaveBeenCalled();
   });
 
   it('disables agent actions when no target session is present (e.g. the playground)', () => {
