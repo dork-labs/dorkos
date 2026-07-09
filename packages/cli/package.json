@@ -1,7 +1,7 @@
 {
   "name": "dorkos",
   "version": "0.44.0",
-  "description": "The operating system for autonomous AI agents — scheduling, messaging, and agent coordination so one person can ship like a team.",
+  "description": "You, multiplied. Mission control for Claude Code, Codex, and OpenCode: scheduling, messaging, agent discovery. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {
