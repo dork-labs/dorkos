@@ -80,7 +80,7 @@ vi.mock('../../lib/features', () => ({
     integration: 'Integration',
     discovery: 'Discovery',
     visualization: 'Visualization',
-    infrastructure: 'Infrastructure',
+    infrastructure: 'Foundation',
   },
   BENTO_SPAN_CLASS: { wide: '', tall: '', standard: '', compact: '' },
   deriveFeatureSpan: (f: { media?: unknown }) => (f.media ? 'standard' : 'compact'),
@@ -99,7 +99,7 @@ describe('FeatureCatalogSection', () => {
 
   it('renders the section subtitle', () => {
     render(<FeatureCatalogSection />);
-    expect(screen.getByText('Every subsystem designed to get out of the way.')).toBeTruthy();
+    expect(screen.getByText('Every part is designed to get out of the way.')).toBeTruthy();
   });
 
   it('renders only featured features', () => {

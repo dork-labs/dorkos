@@ -6,7 +6,7 @@ import { FeatureCatalog, MarketingChrome, InstallMoment } from '@/layers/feature
 export const metadata: Metadata = {
   title: 'Features — DorkOS',
   description:
-    'The complete DorkOS feature catalog — scheduling, messaging, agent discovery, and more. Built for developers who ship.',
+    'The complete DorkOS feature catalog: scheduling, messaging, agent discovery, and more. Built for developers who ship.',
   alternates: { canonical: '/features' },
   openGraph: {
     title: 'Features — DorkOS',
@@ -39,7 +39,8 @@ export default async function FeaturesPage(props: {
         <header className="mb-12">
           <h1 className="text-charcoal font-mono text-4xl font-bold tracking-tight">Features</h1>
           <p className="text-warm-gray mt-3 max-w-2xl text-lg">
-            Mission control for every coding agent you run: the full catalog, grouped by subsystem.
+            Mission control for every coding agent you run: the full catalog, organized by what each
+            part does.
           </p>
         </header>
 
