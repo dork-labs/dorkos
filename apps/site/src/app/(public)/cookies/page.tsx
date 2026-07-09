@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Cookie Policy',
-  description: 'How we use cookies and similar technologies.',
+  description: 'The short list of cookies dorkos.ai actually sets.',
 };
 
 export default function CookiePolicyPage() {
@@ -12,159 +12,82 @@ export default function CookiePolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight">Cookie Policy</h1>
-          <p className="text-muted-foreground text-lg">
-            Last updated:{' '}
-            {new Date().toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </p>
+          <p className="text-muted-foreground text-lg">Last updated: July 9, 2026</p>
         </header>
 
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">What Are Cookies</h2>
+        <section className="bg-muted/30 space-y-3 rounded-lg border p-5">
+          <h2 className="text-base font-semibold">The short version</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Cookies are small text files that are stored on your device when you visit a website.
-            They help the website remember your preferences and understand how you interact with the
-            site. Cookies are widely used to make websites work efficiently and provide a better
-            user experience.
+            We keep cookies to a minimum. We set a login cookie if you sign in, and a small cookie
+            that remembers UI preferences. We do not use ad cookies, and we do not sell cookie data.
           </p>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold">How We Use Cookies</h2>
+          <h2 className="text-xl font-semibold">What is a cookie?</h2>
           <p className="text-muted-foreground leading-relaxed">
-            We use cookies and similar technologies for the following purposes:
+            A cookie is a small text file a website stores in your browser. It helps the site
+            remember things, like the fact that you are signed in.
           </p>
+        </section>
 
-          <div className="space-y-6">
-            <div className="space-y-3">
-              <h3 className="text-lg font-medium">Essential Cookies</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                These cookies are necessary for the website to function properly. They enable core
-                functionality such as security, session management, and accessibility. You cannot
-                opt out of these cookies as they are required for the site to work.
-              </p>
-              <ul className="text-muted-foreground ml-4 list-inside list-disc space-y-1">
-                <li>Authentication and session management</li>
-                <li>Security tokens and CSRF protection</li>
-                <li>Cookie consent preferences</li>
-              </ul>
-            </div>
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold">Which cookies we set</h2>
 
-            <div className="space-y-3">
-              <h3 className="text-lg font-medium">Functional Cookies</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                These cookies enable enhanced functionality and personalization, such as remembering
-                your preferences and settings.
-              </p>
-              <ul className="text-muted-foreground ml-4 list-inside list-disc space-y-1">
-                <li>Theme preferences (light/dark mode)</li>
-                <li>Language and region settings</li>
-                <li>UI customization preferences</li>
-              </ul>
-            </div>
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium">Login cookie</h3>
+            <p className="text-muted-foreground leading-relaxed">
+              If you sign in to a DorkOS account, we set a session cookie so you stay signed in. It
+              is required for signing in to work, and it goes away when your session ends.
+            </p>
+          </div>
 
-            <div className="space-y-3">
-              <h3 className="text-lg font-medium">Analytics Cookies</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                These cookies help us understand how visitors interact with our website by
-                collecting and reporting information anonymously.
-              </p>
-              <ul className="text-muted-foreground ml-4 list-inside list-disc space-y-1">
-                <li>Page visit statistics</li>
-                <li>Traffic sources and user journeys</li>
-                <li>Performance monitoring</li>
-              </ul>
-            </div>
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium">Preference cookie</h3>
+            <p className="text-muted-foreground leading-relaxed">
+              We store a small cookie that remembers UI choices, like whether a sidebar is open, so
+              the site looks the way you left it.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium">Analytics</h3>
+            <p className="text-muted-foreground leading-relaxed">
+              We do not run website analytics today, so we do not set analytics cookies. We have
+              wired up PostHog, a privacy-friendly analytics tool, but it is switched off by
+              default. If we turn it on, it would set its own cookie to remember your choice, and we
+              would update this page first.
+            </p>
           </div>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Managing Cookies</h2>
+          <h2 className="text-xl font-semibold">Managing cookies</h2>
           <p className="text-muted-foreground leading-relaxed">
-            When you first visit our website, you will be shown a cookie consent banner that allows
-            you to accept or customize your cookie preferences. You can change your preferences at
-            any time.
-          </p>
-          <p className="text-muted-foreground leading-relaxed">
-            You can also manage cookies through your browser settings. Most browsers allow you to:
-          </p>
-          <ul className="text-muted-foreground ml-4 list-inside list-disc space-y-1">
-            <li>View what cookies are stored and delete them individually</li>
-            <li>Block third-party cookies</li>
-            <li>Block cookies from specific sites</li>
-            <li>Block all cookies</li>
-            <li>Delete all cookies when you close your browser</li>
-          </ul>
-          <p className="text-muted-foreground leading-relaxed">
-            Please note that blocking or deleting cookies may affect your experience on our website
-            and limit certain functionality.
+            You can view, block, or delete cookies in your browser settings. If you block the login
+            cookie, signing in will not work, but the rest of the site will still load.
           </p>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Third-Party Cookies</h2>
+          <h2 className="text-xl font-semibold">When this changes</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Some cookies on our website are set by third-party services. These may include:
-          </p>
-          <ul className="text-muted-foreground ml-4 list-inside list-disc space-y-1">
-            <li>Analytics providers (e.g., Google Analytics)</li>
-            <li>Authentication services</li>
-            <li>Payment processors</li>
-          </ul>
-          <p className="text-muted-foreground leading-relaxed">
-            We do not control these third-party cookies. Please refer to the respective privacy
-            policies of these providers for more information.
+            When we change how we use cookies, we will update this page and the date at the top.
           </p>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Cookie Retention</h2>
+          <h2 className="text-xl font-semibold">More detail</h2>
           <p className="text-muted-foreground leading-relaxed">
-            The length of time a cookie remains on your device depends on its type:
-          </p>
-          <ul className="text-muted-foreground ml-4 list-inside list-disc space-y-1">
-            <li>
-              <strong>Session cookies</strong> are deleted when you close your browser
-            </li>
-            <li>
-              <strong>Persistent cookies</strong> remain until they expire or you delete them
-            </li>
-          </ul>
-          <p className="text-muted-foreground leading-relaxed">
-            Our consent preferences are stored for 12 months before we ask you to confirm them
-            again.
-          </p>
-        </section>
-
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Updates to This Policy</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            We may update this Cookie Policy from time to time to reflect changes in our practices
-            or for operational, legal, or regulatory reasons. We will notify you of any significant
-            changes by posting the new policy on this page.
-          </p>
-        </section>
-
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">More Information</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            For more information about how we handle your personal data, please see our{' '}
+            For the full picture of what we collect, see our{' '}
             <Link href="/privacy" className="text-primary hover:underline">
               Privacy Policy
             </Link>
-            .
-          </p>
-          <p className="text-muted-foreground leading-relaxed">
-            If you have any questions about our use of cookies, please contact us at:
-          </p>
-          <p className="text-muted-foreground">
-            Email:{' '}
+            . Questions? Email us at{' '}
             <a href="mailto:hey@dorkos.ai" className="text-primary hover:underline">
               hey@dorkos.ai
             </a>
+            .
           </p>
         </section>
       </article>
