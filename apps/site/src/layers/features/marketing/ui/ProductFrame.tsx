@@ -2,12 +2,8 @@
 
 import Image from 'next/image';
 import { useReducedMotion } from 'motion/react';
-import {
-  LOOP_SURFACES,
-  type ProductSurface,
-  type ProductCrop,
-  type ProductFrameVariant,
-} from '../lib/features';
+import { type ProductCrop, type ProductFrameVariant } from '../lib/features';
+import { shotHasLoop } from '../lib/shots';
 
 /** Directory (under /public) holding the seeded product captures. */
 const PRODUCT_BASE = '/product';
@@ -51,8 +47,11 @@ const FRAME_THEME = {
 const FRAME_SHADOW = '0 1px 3px rgba(26, 24, 20, 0.06), 0 10px 30px rgba(26, 24, 20, 0.08)';
 
 interface ProductFrameProps {
-  /** Capture surface to present. */
-  surface: ProductSurface;
+  /**
+   * Capture surface (a registered shot id) to present. Resolves to files under
+   * `/public/product/` by convention; loop-ness comes from the shot registry.
+   */
+  surface: string;
   /** Alt text for the still (also the accessible label for the loop). */
   alt: string;
   /**
@@ -100,7 +99,7 @@ export function ProductFrame({
   priority = false,
 }: ProductFrameProps) {
   const reducedMotion = useReducedMotion();
-  const hasLoop = (LOOP_SURFACES as readonly string[]).includes(surface);
+  const hasLoop = shotHasLoop(surface);
   const showLoop = animate && hasLoop && !reducedMotion;
 
   // Loops ship dark-only; stills that stand alone use the light capture.

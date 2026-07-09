@@ -1,9 +1,108 @@
 {
+  "schemaVersion": 2,
   "generatedAt": "2026-07-07T01:57:35.670Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
   "runId": "20260706-205008",
   "totalBytes": 9343793,
   "count": 34,
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "agents",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "tasks",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "marketplace",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "tool-approval",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "topology",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "chat-streaming",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "subagents",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "multi-session",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "personality",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "canvas",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "canvas-editing",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "agent-discovery",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "mobile-sessions",
+      "kind": "still",
+      "frame": "mobile",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "mobile-approval",
+      "kind": "still",
+      "frame": "mobile",
+      "consumers": ["marketing"]
+    },
+    {
+      "id": "mobile-chat",
+      "kind": "loop",
+      "frame": "mobile",
+      "consumers": ["marketing"]
+    }
+  ],
   "assets": [
     {
       "file": "agent-discovery-dark.png",
@@ -12,7 +111,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 84481
+      "bytes": 84481,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "agent-discovery-dark.webm",
@@ -22,7 +124,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 190039,
-      "durationMs": 3123
+      "durationMs": 3123,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "agent-discovery-light.png",
@@ -31,7 +136,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 68203
+      "bytes": 68203,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "agents-light.png",
@@ -40,7 +148,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84833
+      "bytes": 84833,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "canvas-dark.png",
@@ -49,7 +160,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 84074
+      "bytes": 84074,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "canvas-dark.webm",
@@ -59,7 +173,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 445619,
-      "durationMs": 7456
+      "durationMs": 7456,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "canvas-editing-dark.png",
@@ -68,7 +185,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 72069
+      "bytes": 72069,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "canvas-editing-dark.webm",
@@ -78,7 +198,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 700016,
-      "durationMs": 10536
+      "durationMs": 10536,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "canvas-editing-light.png",
@@ -87,7 +210,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 100939
+      "bytes": 100939,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "canvas-light.png",
@@ -96,7 +222,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 92915
+      "bytes": 92915,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "chat-streaming-dark.png",
@@ -105,7 +234,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 38838
+      "bytes": 38838,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "chat-streaming-dark.webm",
@@ -115,7 +247,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 761158,
-      "durationMs": 8631
+      "durationMs": 8631,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "chat-streaming-light.png",
@@ -124,7 +259,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 77455
+      "bytes": 77455,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "cockpit-light.png",
@@ -133,7 +271,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 80894
+      "bytes": 80894,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "marketplace-light.png",
@@ -142,7 +283,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 83427
+      "bytes": 83427,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "mobile-approval-light.png",
@@ -151,7 +295,10 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 66137
+      "bytes": 66137,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "mobile-chat-dark.png",
@@ -160,7 +307,10 @@
       "kind": "still",
       "width": 390,
       "height": 844,
-      "bytes": 44399
+      "bytes": 44399,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "mobile-chat-dark.webm",
@@ -170,7 +320,10 @@
       "width": 390,
       "height": 844,
       "bytes": 1235715,
-      "durationMs": 9618
+      "durationMs": 9618,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "mobile-chat-light.png",
@@ -179,7 +332,10 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 101163
+      "bytes": 101163,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "mobile-sessions-light.png",
@@ -188,7 +344,10 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 72479
+      "bytes": 72479,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "multi-session-dark.png",
@@ -197,7 +356,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 80614
+      "bytes": 80614,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "multi-session-dark.webm",
@@ -207,7 +369,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 1276280,
-      "durationMs": 11606
+      "durationMs": 11606,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "multi-session-light.png",
@@ -216,7 +381,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 100099
+      "bytes": 100099,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "personality-dark.png",
@@ -225,7 +393,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 137409
+      "bytes": 137409,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "personality-dark.webm",
@@ -235,7 +406,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 1068338,
-      "durationMs": 8023
+      "durationMs": 8023,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "personality-light.png",
@@ -244,7 +418,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 217461
+      "bytes": 217461,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "subagents-dark.png",
@@ -253,7 +430,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 56645
+      "bytes": 56645,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "subagents-dark.webm",
@@ -263,7 +443,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 663945,
-      "durationMs": 8632
+      "durationMs": 8632,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "subagents-light.png",
@@ -272,7 +455,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 50417
+      "bytes": 50417,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "tasks-light.png",
@@ -281,7 +467,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84444
+      "bytes": 84444,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "tool-approval-light.png",
@@ -290,7 +479,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 42029
+      "bytes": 42029,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "topology-dark.png",
@@ -299,7 +491,10 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 103877
+      "bytes": 103877,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "topology-dark.webm",
@@ -309,7 +504,10 @@
       "width": 1280,
       "height": 800,
       "bytes": 870438,
-      "durationMs": 6402
+      "durationMs": 6402,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     },
     {
       "file": "topology-light.png",
@@ -318,7 +516,10 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 106944
+      "bytes": 106944,
+      "source": "auto",
+      "runId": "20260706-205008",
+      "capturedAt": "2026-07-07T01:57:35.670Z"
     }
   ]
 }

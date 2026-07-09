@@ -32,6 +32,7 @@ export { FeatureCard } from './ui/FeatureCard';
 export { FeatureCatalog } from './ui/FeatureCatalog';
 export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
 export { ProductFrame } from './ui/ProductFrame';
+export { ProductShot } from './ui/ProductShot';
 export { ProductBadge } from './ui/ProductBadge';
 
 // Data — feature catalog
@@ -57,6 +58,10 @@ export type {
   ProductCrop,
   ProductFrameVariant,
 } from './lib/features';
+
+// Data — product-media shot registry (published in manifest.json)
+export { PRODUCT_SHOTS, PRODUCT_SHOT_IDS, getProductShot, shotHasLoop } from './lib/shots';
+export type { ProductShotMeta, ShotConsumer, ShotKind, ShotFrame } from './lib/shots';
 
 // Data
 export { systemModules } from './lib/modules';
