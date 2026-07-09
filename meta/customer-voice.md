@@ -2,7 +2,7 @@
 
 > Verbatim quotes and attributed paraphrases from developers across Hacker News, GitHub Issues, Reddit, and developer blogs. Organized by pain theme. Collected February 2026.
 >
-> **Status note (2026-07-06, positioning review):** Themes 1-2 (terminal isolation, background execution) predate Anthropic's Remote Control / Claude Code web / Cowork maturity; several quoted gaps are now partially solved by first parties _for Claude Code specifically_. They remain valid for non-Claude runtimes and self-hosted users, but copy built on them should be re-checked against mid-2026 reality. Two new themes are open for collection below (7: vendor sprawl, 8: agent security fear); they have structure but **no quotes yet — collect real ones, never paraphrase from memory**. See `positioning-202607/04-brand-doc-changes.md`.
+> **Status note (2026-07-06, positioning review):** Themes 1-2 (terminal isolation, background execution) predate Anthropic's Remote Control / Claude Code web / Cowork maturity; several quoted gaps are now partially solved by first parties _for Claude Code specifically_. They remain valid for non-Claude runtimes and self-hosted users, but copy built on them should be re-checked against mid-2026 reality. Three new themes are open for collection below (7: vendor sprawl, 8: agent security fear, 9: non-developer operators — added 2026-07-09); they have structure but **no quotes yet — collect real ones, never paraphrase from memory**. See `positioning-202607/04-brand-doc-changes.md`.
 
 ---
 
@@ -11,7 +11,7 @@
 Each quote is tagged with:
 
 - **Source** — platform, username (if public), date
-- **Type** — `[frustration]`, `[wish]`, or `[workaround]`
+- **Type** — `[frustration]`, `[wish]`, `[workaround]`, or `[aspiration]` _(added 2026-07-09: what the person wants to become, not just what blocks them — e.g. "one person shipping like a team of ten." Hero positioning needs aspiration quotes; a doc that is 100% pain can only inform villain copy.)_
 - **Theme** — the DorkOS pain theme it maps to
 
 Quotes marked with (paraphrase) are close summaries of longer discussions with the original URL. All others are verbatim or near-verbatim.
@@ -586,6 +586,16 @@ _(No quotes yet. Do not fabricate; collect verbatim with source + date, matching
 _Developer reactions to the OpenClaw security crisis (CVE-2026-25253, the 155k exposed instances scan): fear of exposed gateways, prompt-injection RCE, "should I even run a self-hosted agent" threads. This is the quote bank for the trust/security pillar. Sources: The Hacker News/Kaspersky/HiddenLayer comment sections, HN threads on the CVE, r/selfhosted reactions._
 
 _(No quotes yet. Do not fabricate; collect verbatim with source + date.)_
+
+---
+
+## Theme 9: The Non-Developer Operator _(opened 2026-07-09 — quotes to be collected)_
+
+_Non-developers who own and run their own AI systems: founders shipping apps by directing agents, privacy-sensitive professionals refusing to put work data into consumer chat apps, people choosing local-run over hosted for control. This theme is the evidentiary base for the Ikechi and Lil personas (`personas/the-ai-native-founder.md`, `personas/the-private-professional.md`) and for the anti-persona boundary redrawn 2026-07-09 (operator mentality, not technical skill). Especially wanted: `[aspiration]` quotes — what these users are trying to become._
+
+_Seed sources: interview Ikechi and Lil directly (real DorkOS users; **disclose as founder-adjacent** — he writes for the project, she is the founder's wife — and record what setup help they received). Then look for organic voices: vibe-coding/AI-builder communities, r/ArtificialIntelligence "I built an app without knowing how to code" threads, privacy-forward professional communities. The validation milestone is the first quote from someone we've never met._
+
+_(No quotes yet. Do not fabricate; collect verbatim with source + date, matching the format above.)_
 
 ---
 

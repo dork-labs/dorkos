@@ -1,7 +1,7 @@
 # The Value Architecture — Applied to DorkOS
 
-**Version**: 1.1
-**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`)
+**Version**: 1.2
+**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded)
 **Framework**: `meta/value-architecture.md` + `meta/value-architecture-handbook.md`
 **Personas**: `meta/personas/`
 **Brand Foundation**: `meta/brand-foundation.md`
@@ -12,9 +12,9 @@
 
 The July 2026 positioning review updates this document's outputs without rerunning the whole method. Where the addendum and the 1.0 body disagree, the addendum wins.
 
-**Message House v2** (supersedes Phase 3A's pillars; roof unchanged):
+**Message House v2** (supersedes Phase 3A's pillars; roof updated 2026-07-09):
 
-- **Roof:** Intelligence doesn't scale. Coordination does.
+- **Roof:** **You, multiplied.** — one person, shipping like a team. _(Changed 2026-07-09: the old roof, "Intelligence doesn't scale. Coordination does.", was a Layer 2 mechanism claim sitting where a Layer 5 identity claim belongs — a defect by this framework's own construction rules. It demotes to the manifesto line and anchors the 4C anti-positioning template, where naming the paradigm is the job. The customer is the subject of the roof.)_
 - **Pillar 1: One cockpit, any agent.** Claude Code, Codex, OpenCode; per-session choice; every device. _Proof:_ live runtime switcher, CLI sessions appearing instantly, conformance suite in CI.
 - **Pillar 2: A team, not tabs.** Schedules, messages, discovery; agents that ping your phone and find each other. _Proof:_ the 5-minute path, a real night-run receipt.
 - **Pillar 3: Yours, and safe to run.** Self-hosted, MIT, secure by default, honest data-flow; fully-local sessions via OpenCode local models. _Proof:_ threat model page, localhost defaults, an offline-session demo, readable source.
@@ -25,6 +25,8 @@ The July 2026 positioning review updates this document's outputs without rerunni
 - **VL-12 Marketplace + Ecosystem Judo.** Feature: marketplace is a strict superset of the Claude Code plugin format; harness sync projects installs to every harness; tasks are skills with metadata. Mechanism: one package format, three force multipliers. Functional: install any Claude Code plugin, it works in every tool you use, and any of its skills can run on a schedule. Emotional: your tools compound instead of fragmenting. Identity: "my capability library works everywhere and runs itself." Proof anchor: the 20-second install → sync → schedule demo. _(Verify the superset claim on real plugins before public use.)_
 
 **Status changes:** VL-08 (Wing/persistent memory) is **vision-stage**: activation templates must not draw on it. Autonomy ladders (VL-01) demote from hero to proof in discovery-stage messaging; VL-11 leads. Functional proof placeholders can now use: 3 runtimes / 1 interface, 44 public releases in 5 months, 4 client surfaces, marketplace live. Social-proof fields remain placeholders until launch.
+
+**Persona expansion (2026-07-09):** two grounded personas join the set — **Ikechi, The AI-Native Founder** (secondary: non-developer power user; validates VL-11/VL-12 and Pulse harder than Kai, since he has no tmux fallback) and **Lil, The Private Professional** (horizon: staged, not a launch target; her employee-reviews-stay-local use case is the sharpest proof yet for Pillar 3 / VL-10, and she is live evidence that the marketplace absorbed the Wing use case as a package). The anti-persona boundary is redrawn on **operator mentality, not technical skill** — update 1C `anti_identity` readings accordingly. Maintenance owed at the next full revision: re-score the Persona-Benefit Matrix for Ikechi (Lil stays unscored until she graduates from horizon) and re-check funnel-stage messaging against the plain-language register (`writing-for-humans`). Neither new persona moves launch messaging: Kai remains the beachhead.
 
 ---
 
@@ -129,7 +131,7 @@ identity_territory:
   worldview: "AI agents work like teammates — they can specialize, communicate, and coordinate. But right now, they're stuck working alone with no memory, no schedule, and no way to reach you. A team needs communication, delegation, shared memory, and structure. DorkOS is the layer that turns isolated agents into a coordinated team."
   tribe: "Developers who build AI teams, not just run AI sessions. People who think in architectures, not prompts. Builders who give their agents names, schedules, and communication channels — because that's how you build a team that works without you. The kind of people who have opinions about coordination, think in terms of delegation, and build tools they'd use themselves."
   signal: "I have an AI team, not a chatbot. My agents coordinate, communicate, and ship while I sleep. One person, ten agents — that's how I maintain five projects."
-  anti_identity: "People who see AI as a chat interface. Prompt dabblers who want hosted, no-code, visual builders. Anyone who calls this an 'AI wrapper.' The person who asks 'Can it write my emails?' instead of 'Can my team ship my roadmap overnight?'"
+  anti_identity: "People who won't operate their own system — hosted, zero-ownership, rented outcomes, however technical they are. Prompt dabblers who want hosted, no-code, visual builders. Anyone who calls this an 'AI wrapper.' NOT non-developers per se (redrawn 2026-07-09): the line is operator mentality, not technical skill — a non-developer who self-hosts for control is in the tribe (see personas: Ikechi, Lil); a developer who wants someone else to run it is not."
 ```
 
 ### 1D. Anti-Positioning
@@ -666,7 +668,7 @@ VL-10 Open Foundation          L5 Identity       L4 Emotional
 # --- PILLAR 1: AUTONOMY ---
 pillar: "Autonomy — Your Ideas Keep Moving Forward"
 headlines:
-  identity: "Intelligence Doesn't Scale. Coordination Does."
+  identity: "You, Multiplied." # (2026-07-09: replaced the coordination thesis, which is a Layer 2 mechanism claim — it now anchors 4C anti-positioning instead)
   emotional: "Wake up to progress, not a stale terminal"
   functional: "Scheduled agent execution that runs independently — not tied to your IDE or terminal"
   proof: "Pulse keeps running when you close the terminal. Cowork requires your Mac to stay awake. You do the math."
@@ -756,13 +758,13 @@ messages:
 
 ## Phase 4: Activation Templates
 
-### 4A. Homepage Hero
+### 4A. Homepage Hero _(reframed 2026-07-09 — customer as subject)_
 
 ```
-INTELLIGENCE DOESN'T SCALE. COORDINATION DOES.
+YOU, MULTIPLIED.
 
-DorkOS turns isolated AI agents into a coordinated team.
-Scheduling. Messaging. Agent discovery. A browser-based command center.
+Every coding agent you run — Claude Code, Codex, OpenCode — in one cockpit.
+Your fleet, scheduled, connected, and reporting back to you.
 You've always had more ideas than hours. That ratio just changed.
 
 npm install -g dorkos
@@ -808,6 +810,8 @@ npm install -g dorkos. Your machine. Your agents. Your rules.
 ```
 
 ### 4C. Comparison Section (Anti-Positioning)
+
+_(2026-07-09: this is now the manifesto line's home — anti-positioning is where the framework says to name the paradigm, so the thesis leads here by design. It no longer appears on hero surfaces.)_
 
 ```
 INTELLIGENCE DOESN'T SCALE. COORDINATION DOES.
@@ -863,7 +867,9 @@ community_signals:
 
 All copy generated from this Value Architecture must pass the **Apple test**: Would Apple say this about the Mac? If it frames the human as the problem, the limitation, or the bottleneck — reframe it.
 
-**Core thesis:** "Intelligence doesn't scale. Coordination does."
+It must also pass the **hero test** _(added 2026-07-09)_: hero-surface copy takes the customer as subject (explicit or implied "you"). Sentences about the world or about DorkOS support; they don't open.
+
+**Core line:** "You, multiplied." Model intelligence is abundant; the customer's judgment is the scarce thing; DorkOS scales _them_. (The former core thesis — "Intelligence doesn't scale. Coordination does." — is the manifesto line: essays, litepaper, 4C anti-positioning. Reframed 2026-07-09.)
 
 **Principles:**
 
@@ -928,4 +934,7 @@ changelog:
   - date: '2026-03-02'
     change: "Pro-human positioning shift. Removed anti-human framing: 'YOU'RE THE BOTTLENECK', 'better code than you at 3am', 'you are the scheduler/memory/messenger/router'. Replaced with empowerment framing: 'Intelligence doesn't scale. Coordination does.' Primary tagline changed from 'Your AI Never Sleeps' to coordination thesis. Added Human-Empowerment Positioning guideline section. Updated VL-01 identity, VL-03 identity, 1D anti-positioning, Headline Bank Pillar 1, 4B/4C activation templates."
     scope: '1D, VL-01, VL-03, Headline Bank, 4B, 4C, new Positioning Guideline section'
+  - date: '2026-07-09'
+    change: "Hero reframe (v1.2). Roof changed from the coordination thesis (a Layer 2 mechanism claim) to 'You, multiplied.' (Layer 5, customer as subject); thesis demoted to manifesto line anchoring 4C anti-positioning. Hero test added to the positioning guideline. Persona set expanded: Ikechi (The AI-Native Founder, secondary, grounded) and Lil (The Private Professional, horizon, grounded); anti-persona boundary redrawn on operator mentality, not technical skill (1C anti_identity updated). Persona-Benefit Matrix re-scoring for Ikechi owed at next full revision."
+    scope: 'Addendum Message House roof, 1C, Headline Bank Pillar 1, 4A, 4C annotation, Positioning Guideline, personas/'
 ```

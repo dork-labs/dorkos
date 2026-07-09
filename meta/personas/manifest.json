@@ -18,6 +18,25 @@
       "confidence": "proto-persona",
       "created": "2026-02-27",
       "reviewBy": "2026-08-27"
+    },
+    {
+      "slug": "the-ai-native-founder",
+      "name": "Ikechi",
+      "archetype": "The AI-Native Founder",
+      "role": "secondary",
+      "confidence": "grounded-founder-adjacent",
+      "created": "2026-07-09",
+      "reviewBy": "2027-01-09"
+    },
+    {
+      "slug": "the-private-professional",
+      "name": "Lil",
+      "archetype": "The Private Professional",
+      "role": "horizon",
+      "confidence": "grounded-founder-adjacent",
+      "created": "2026-07-09",
+      "reviewBy": "2027-01-09",
+      "notes": "Staged persona — not a launch target. Informs privacy defaults, plain-language copy, and the desktop surface. Graduation criteria in the persona file."
     }
   ],
   "antiPersonas": [
@@ -27,7 +46,8 @@
       "archetype": "The Prompt Dabbler",
       "confidence": "proto-persona",
       "created": "2026-02-27",
-      "reviewBy": "2026-08-27"
+      "reviewBy": "2027-01-09",
+      "notes": "Boundary redrawn 2026-07-09: the disqualifier is operator mentality (won't own their system), not technical skill."
     }
   ],
   "icp": {

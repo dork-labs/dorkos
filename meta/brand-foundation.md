@@ -1,6 +1,6 @@
 # DorkOS — Brand & Product Foundation
 
-> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house). Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, and the villain gained the vendor-silo pattern. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections).
+> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house) and 2026-07-09 by the hero reframe. Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, the villain gained the vendor-silo pattern, and — 2026-07-09 — the primary tagline is now **"You, Multiplied."** with the coordination thesis demoted to manifesto line (the customer is the hero; the roof speaks about them, not about our theory). Persona set expanded the same day: two grounded non-developer operators (Ikechi, Lil — see `personas/`) and an anti-persona boundary redrawn on operator mentality. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections).
 
 ## 1. Executive Summary
 
@@ -74,19 +74,25 @@ Post-OpenClaw, "self-hosted agents" reads as risk until proven otherwise. DorkOS
 
 - Technical operators
 - Productivity system enthusiasts
-- AI-native entrepreneurs
+- AI-native entrepreneurs — now embodied by a grounded persona: **Ikechi, The AI-Native Founder** (`personas/the-ai-native-founder.md`), a non-developer power user who ships apps by directing agents _(added 2026-07-09)_
 
-This is not built for casual users.
+**Horizon** _(added 2026-07-09)_:
+
+- Privacy-sensitive non-technical professionals — **Lil, The Private Professional** (`personas/the-private-professional.md`). Staged, not a launch target; informs privacy defaults, plain-language copy, and the desktop surface. Graduates only when the desktop app ships and an organic Lil-shaped user exists.
+
+This is not built for casual users. The line is **operator mentality, not technical skill** _(redrawn 2026-07-09)_: DorkOS serves people who own and run their system — including non-developers who do — and refuses people who want a rented, hosted, zero-ownership outcome, however technical they are.
 
 ---
 
 ## 4. Big Idea
 
-Intelligence doesn't scale. Coordination does.
+You, multiplied.
 
-You've always had more ideas than hours. AI agents are brilliant — they can specialize, write code, fix bugs, and create entire features. But right now, they're stuck working alone with no memory, no schedule, and no way to reach you. The missing piece isn't smarter agents. It's the coordination layer that lets your vision scale.
+Model intelligence is abundant — every quarter it gets smarter and cheaper, and every vendor sells it. Your intelligence is not. Your judgment, your taste, your intent: those don't scale by buying a better model. They scale when one person's vision can direct a coordinated fleet. You've always had more ideas than hours. The missing piece was never smarter agents — it's the layer that multiplies you.
 
 DorkOS is that layer. One person with the right system ships like a team — not because the agents replace what you do, but because they multiply what you can accomplish.
+
+_The underlying thesis — "intelligence doesn't scale; coordination does" — remains the brand's argument (manifesto, essays, anti-positioning surfaces; see §12). The Big Idea is what the thesis means for the customer: hero surfaces lead with who they become, not with our theory of the world. (Reframed 2026-07-09.)_
 
 DorkOS makes your agents:
 
@@ -391,8 +397,9 @@ DorkOS positions AI agents as tools for human creativity and empowerment — lik
 | "Outship everyone"                | "Ship what you've always imagined"         | Empower, don't compete                              |
 | "Your agent works when you don't" | "Your ideas keep moving forward"           | Center the human's vision, not the agent's labor    |
 
-**Core thesis:** "Intelligence doesn't scale. Coordination does."
+**Core line:** "You, multiplied." — the customer is the subject. The supporting argument: model intelligence is abundant; the customer's judgment is the scarce thing; DorkOS scales _them_. (The old core-thesis phrasing "Intelligence doesn't scale. Coordination does." survives as the manifesto line, §12 — it names the mechanism, so it belongs on argument surfaces, never as the hero's opening. Reframed 2026-07-09.)
 **The Apple test:** Would Apple say this about the Mac? If not, reframe.
+**The hero test** _(added 2026-07-09)_: taglines and hero copy take the customer as subject (explicit or implied "you"). A sentence about the world or about DorkOS can support the hero; it cannot open for them.
 
 ---
 
@@ -421,7 +428,9 @@ DorkOS should feel like:
 
 ## 12. Taglines
 
-**Primary:** Intelligence Doesn't Scale. Coordination Does.
+**Primary** _(changed 2026-07-09)_: **You, Multiplied.**
+
+**Manifesto line:** Intelligence Doesn't Scale. Coordination Does. _(Demoted from primary 2026-07-09 — not deleted. This is the argument we defend in essays, the litepaper, comparison/anti-positioning surfaces, and the Show HN comment thread. It names the mechanism; hero surfaces lead with the customer instead. Pre-launch, write the Brooks-law defense: agents changed the coordination-cost curve — machine-speed messaging, no ego, no meetings — which is why coordination now scales where Brooks said it couldn't.)_
 
 **Brand line:** Built by dorks. For dorks. Run by you.
 
@@ -452,12 +461,12 @@ DorkOS should feel like:
 
 ## 13. Website Structure Draft
 
-### Hero Section
+### Hero Section _(reframed 2026-07-09 — customer as subject, per the hero test in §10)_
 
-> **INTELLIGENCE DOESN'T SCALE. COORDINATION DOES.**
+> **YOU, MULTIPLIED.**
 >
-> DorkOS turns isolated AI agents into a coordinated team.
-> Scheduling. Messaging. Agent discovery. A browser-based command center.
+> Every coding agent you run — Claude Code, Codex, OpenCode — in one cockpit.
+> Your fleet, scheduled, connected, and reporting back to you.
 > You've always had more ideas than hours. That ratio just changed.
 >
 > `npm install -g dorkos`
