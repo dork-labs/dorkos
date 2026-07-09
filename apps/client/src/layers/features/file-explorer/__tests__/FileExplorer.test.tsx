@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { FileEntry } from '@dorkos/shared/types';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { useFileExplorerStore } from '../model/file-explorer-store';
 
 // Hoisted so the (hoisted) vi.mock factories below can reference them.
 const { executeUiCommand, toastError } = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ vi.mock('@/layers/shared/lib', async (importActual) => {
 vi.mock('sonner', () => ({ toast: { error: toastError, success: vi.fn(), message: vi.fn() } }));
 
 import { FileExplorer } from '../ui/FileExplorer';
+import { FileExplorerActions } from '../ui/FileExplorerActions';
 
 const CWD = '/repo';
 
@@ -57,16 +59,25 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   useAppStore.setState({ selectedCwd: CWD });
+  // The toolbar and tree share this store; reset it so per-test state (the
+  // show-hidden toggle, the published command bridge) never leaks.
+  useFileExplorerStore.setState({ showHidden: false, commands: null });
 });
 
 afterEach(() => cleanup());
 
-/** Render the explorer with a mock transport whose tree responds by requested path. */
+/**
+ * Render the tree alongside its toolbar, mirroring how the container mounts
+ * the Files panel: the toolbar (`FileExplorerActions`) lives in the shared
+ * header, the tree below it, both wired through the file-explorer store. The
+ * mock transport's tree responds by requested path.
+ */
 function renderExplorer(transport = createMockTransport()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
+        <FileExplorerActions />
         <FileExplorer />
       </TransportProvider>
     </QueryClientProvider>
@@ -74,6 +85,38 @@ function renderExplorer(transport = createMockTransport()) {
 }
 
 describe('FileExplorer', () => {
+  // The toolbar (rendered in the shared header) drives the separately-mounted
+  // tree through the file-explorer store — no prop drilling across the header
+  // boundary. These assert that bridge end-to-end.
+  it('refetches the tree when the header Refresh button is clicked', async () => {
+    const readFileTree = vi.fn(async () => ({ entries: [file('README.md')] }));
+    const transport = createMockTransport();
+    transport.readFileTree = readFileTree;
+
+    renderExplorer(transport);
+    await screen.findByRole('treeitem', { name: 'README.md' });
+
+    const callsBefore = readFileTree.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(readFileTree.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
+  it('reloads with hidden entries when the header toggle is flipped', async () => {
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn(async () => ({ entries: [file('README.md')] }));
+
+    renderExplorer(transport);
+    await screen.findByRole('treeitem', { name: 'README.md' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show hidden files' }));
+    await waitFor(() =>
+      expect(transport.readFileTree).toHaveBeenCalledWith(
+        CWD,
+        expect.objectContaining({ showHidden: true })
+      )
+    );
+  });
+
   it("lazily fetches and renders a directory's children when it is expanded", async () => {
     const transport = createMockTransport();
     transport.readFileTree = vi.fn(async (_cwd, opts?: { path?: string }) => {

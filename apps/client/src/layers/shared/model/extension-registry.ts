@@ -101,6 +101,15 @@ export interface RightPanelContribution extends BaseContribution {
   /** The panel content component rendered when this tab is active. */
   component: ComponentType;
   /**
+   * Optional actions rendered in the shared panel header (left of the close
+   * button) while this tab is active — e.g. the Files tab's New File / Refresh
+   * toolbar. The container mounts it inside the header it owns, so a
+   * contribution can surface header controls without ever rendering (or being
+   * able to break) the tab strip itself. Omit for panels with no header
+   * controls. Lazy components are supported; the container wraps it in Suspense.
+   */
+  headerActions?: ComponentType;
+  /**
    * Optional predicate evaluated against the current route pathname and the
    * active {@link Transport}. Return false to hide this contribution where it is
    * not relevant (e.g. a wrong route, or a transport that lacks a capability —

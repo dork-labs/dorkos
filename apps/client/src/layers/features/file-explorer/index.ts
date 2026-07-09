@@ -12,3 +12,4 @@
  * @module features/file-explorer
  */
 export { FileExplorer } from './ui/FileExplorer';
+export { FileExplorerActions } from './ui/FileExplorerActions';

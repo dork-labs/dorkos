@@ -263,11 +263,16 @@ function adaptToContribution(
         icon: undefined as unknown as import('lucide-react').LucideIcon,
       };
     case 'right-panel':
+      // Third-party right-panel tabs register only their content component. The
+      // container owns the shared header (tab strip + close), so an extension
+      // tab can never trap the user — no per-tab header wiring is required.
+      // `headerActions` is reserved for built-ins that need header controls.
       return {
         ...base,
         component,
         title: id,
         icon: undefined as unknown as import('lucide-react').LucideIcon,
+        headerActions: undefined,
         visibleWhen: undefined,
       };
     case 'settings.tabs':

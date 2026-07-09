@@ -5,11 +5,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
-// Mock the shared right-panel header to avoid router dependency in canvas tests
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelHeader: () => <div data-testid="right-panel-header">PanelHeader</div>,
-}));
-
 // Mock streamdown to avoid CSS import issues in jsdom
 vi.mock('streamdown', () => ({
   Streamdown: ({ children }: { children: string }) => (
@@ -113,12 +108,5 @@ describe('CanvasContent', () => {
     expect(container.querySelector('[data-testid="sheet-content"]')).toBeNull();
     expect(container.querySelector('[data-testid="resize-handle"]')).toBeNull();
     expect(screen.getByText('Test Doc')).toBeInTheDocument();
-  });
-
-  it('renders the shared right-panel header', () => {
-    setActiveDoc({ type: 'json', data: {}, title: 'My JSON' });
-    render(<CanvasContent />);
-
-    expect(screen.getByTestId('right-panel-header')).toBeInTheDocument();
   });
 });

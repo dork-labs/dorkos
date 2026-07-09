@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import type { FileEntry } from '@dorkos/shared/types';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { executeUiCommand, type DispatcherContext } from '@/layers/shared/lib';
 import { flattenTree, initialTreeState, ROOT_KEY, treeReducer } from './tree-reducer';
 import type { FlatRow } from './types';
 import { useFileCrud, type FileCrudApi } from './use-file-crud';
+import { useFileExplorerStore } from './file-explorer-store';
 
 /**
  * Orchestration hook for the file explorer (spec right-panel-workbench, Chunk
@@ -22,9 +23,6 @@ export interface FileExplorerApi extends FileCrudApi {
   rows: FlatRow[];
   /** True while the root level's first fetch is in flight. */
   rootLoading: boolean;
-  /** Whether dotfiles and gitignored entries are shown. */
-  showHidden: boolean;
-  setShowHidden: (value: boolean) => void;
   /** Expand or collapse a directory (fetching its children lazily on expand). */
   toggleExpand: (entry: FileEntry) => void;
   /** Ensure a directory is expanded (and its children loaded), e.g. before an inline create. */
@@ -45,7 +43,8 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
   const transport = useTransport();
   const { setTheme } = useTheme();
   const [state, dispatch] = useReducer(treeReducer, undefined, initialTreeState);
-  const [showHidden, setShowHidden] = useState(false);
+  // Shared with the header-mounted toolbar so its toggle and this loader agree.
+  const showHidden = useFileExplorerStore((s) => s.showHidden);
 
   // Live mirror of reducer state for async callbacks (expand/CRUD) that must
   // read the latest children without re-subscribing. Synced after commit; the
@@ -148,8 +147,6 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
   return {
     rows,
     rootLoading,
-    showHidden,
-    setShowHidden,
     toggleExpand,
     ensureExpanded,
     openFile,

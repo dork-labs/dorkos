@@ -9,7 +9,6 @@ import {
   PresetPill,
   useNebulaAlpha,
 } from '@/layers/entities/agent';
-import { RightPanelHeader } from '@/layers/features/right-panel';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { useAgentHubContext } from '../model/agent-hub-context';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
@@ -84,9 +83,9 @@ interface AgentHubHeroProps {
 /**
  * Immersive hero header for the Agent Hub panel.
  *
- * Top row uses the shared RightPanelHeader for panel tab switching and close.
- * Below: clickable avatar, inline-editable name, status, and clickable
- * personality badge.
+ * Sits below the container-owned right-panel header (tab strip + close). Renders
+ * the agent-management menu top-right, plus a clickable avatar, inline-editable
+ * name, status, and clickable personality badge.
  */
 export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHeroProps) {
   const { agent, onUpdate, previewColor, isPickerOpen } = useAgentHubContext();
@@ -158,12 +157,18 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
   return (
     <motion.div
       data-slot="agent-hub-hero"
-      className="relative flex flex-col items-center gap-1 border-b pb-0"
+      className="relative flex flex-col items-center gap-1 border-b pt-4 pb-0"
       style={{ overflow: 'hidden' }}
       variants={heroVariants}
       initial="hidden"
       animate="visible"
     >
+      {/* Agent management (block / unregister / delete) — the hero's own control,
+          top-right, above the nebula glow. */}
+      <div className="absolute top-1 right-1 z-20">
+        <AgentManagementMenu />
+      </div>
+
       {/* Nebula ambient glow — crossfades between agent colors */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         {/* Previous color as stable base layer */}
@@ -187,11 +192,6 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
             }}
           />
         </AnimatePresence>
-      </div>
-
-      {/* Shared panel header: segmented control + close */}
-      <div className="relative z-10 w-full">
-        <RightPanelHeader actions={<AgentManagementMenu />} />
       </div>
 
       {/* Avatar — clickable, opens appearance picker.

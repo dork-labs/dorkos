@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, File, FilePlus, Folder, FolderPlus, Loader2, RefreshCw } from 'lucide-react';
+import { File, Folder, Loader2 } from 'lucide-react';
 import type { FileEntry } from '@dorkos/shared/types';
 import {
   AlertDialog,
@@ -10,13 +10,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  Button,
 } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
 import { ROOT_KEY } from '../model/tree-reducer';
 import { useFileExplorer } from '../model/use-file-explorer';
+import { useFileExplorerStore } from '../model/file-explorer-store';
 import { FileTree } from './FileTree';
-import { WorkspaceBadge } from './WorkspaceBadge';
 
 /** In-progress inline create: the target parent directory and the entry type. */
 interface DraftCreate {
@@ -36,7 +35,8 @@ interface DraftCreate {
 export function FileExplorer() {
   const cwd = useAppStore((s) => s.selectedCwd);
   const explorer = useFileExplorer(cwd);
-  const { rows, rootLoading, showHidden, setShowHidden } = explorer;
+  const { rows, rootLoading } = explorer;
+  const setCommands = useFileExplorerStore((s) => s.setCommands);
 
   const [draft, setDraft] = useState<DraftCreate | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -50,6 +50,22 @@ export function FileExplorer() {
     },
     [explorer]
   );
+
+  // Publish toolbar commands for the header-mounted FileExplorerActions. Latest
+  // handlers are read through a ref so the published bridge stays stable (set
+  // once on mount, cleared on unmount) without re-registering each render.
+  const commandHandlersRef = useRef({ startCreate, reload: explorer.reload });
+  useEffect(() => {
+    commandHandlersRef.current = { startCreate, reload: explorer.reload };
+  });
+  useEffect(() => {
+    setCommands({
+      newFile: () => commandHandlersRef.current.startCreate(ROOT_KEY, 'file'),
+      newFolder: () => commandHandlersRef.current.startCreate(ROOT_KEY, 'dir'),
+      refresh: () => commandHandlersRef.current.reload(),
+    });
+    return () => setCommands(null);
+  }, [setCommands]);
 
   const submitDraft = useCallback(
     async (name: string) => {
@@ -79,53 +95,6 @@ export function FileExplorer() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-2 border-b px-3 py-2">
-        <Folder className="text-muted-foreground size-(--size-icon-sm) flex-shrink-0" />
-        <span className="text-sm font-medium">Files</span>
-        <WorkspaceBadge cwd={cwd} />
-        <div className="flex-1" />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="New File"
-          title="New File"
-          onClick={() => startCreate(ROOT_KEY, 'file')}
-        >
-          <FilePlus className="text-muted-foreground" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="New Folder"
-          title="New Folder"
-          onClick={() => startCreate(ROOT_KEY, 'dir')}
-        >
-          <FolderPlus className="text-muted-foreground" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={showHidden ? 'Hide hidden files' : 'Show hidden files'}
-          title={showHidden ? 'Hide hidden files' : 'Show hidden files'}
-          onClick={() => setShowHidden(!showHidden)}
-        >
-          {showHidden ? (
-            <Eye className="text-muted-foreground" />
-          ) : (
-            <EyeOff className="text-muted-foreground" />
-          )}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Refresh"
-          title="Refresh"
-          onClick={explorer.reload}
-        >
-          <RefreshCw className="text-muted-foreground" />
-        </Button>
-      </header>
-
       <div className="min-h-0 flex-1">
         {draft && (
           <DraftRow
