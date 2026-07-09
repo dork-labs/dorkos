@@ -147,10 +147,16 @@ describe('FileExplorer', () => {
     renderExplorer(transport);
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'README.md' }));
-    expect(executeUiCommand).toHaveBeenCalledWith(expect.anything(), {
-      action: 'open_file',
-      sourcePath: 'README.md',
-    });
+    // Origin 'user': a click in the tree is an explicit pick, so the resulting
+    // tab switch persists the per-agent preference (DOR-227).
+    expect(executeUiCommand).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        action: 'open_file',
+        sourcePath: 'README.md',
+      },
+      'user'
+    );
   });
 
   it('rolls the optimistic create back and toasts when the write conflicts', async () => {

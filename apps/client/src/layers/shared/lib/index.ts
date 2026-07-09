@@ -66,6 +66,7 @@ export {
   MAX_RECENT_CWDS,
   MAX_CANVAS_SESSIONS,
   MAX_CANVAS_DOCUMENTS,
+  MAX_RIGHT_PANEL_LAYOUTS,
   TIMING,
   QUERY_TIMING,
   CELEBRATIONS,
@@ -101,6 +102,7 @@ export {
   executeUiCommand,
   type DispatcherContext,
   type DispatcherStore,
+  type UiCommandOrigin,
 } from './ui-action-dispatcher';
 export {
   buildUiStateSnapshot,

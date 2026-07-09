@@ -9,10 +9,18 @@ export const STORAGE_KEYS = {
   CANVAS_SESSIONS: 'dorkos-canvas-sessions',
   PINNED_AGENTS: 'dorkos-pinned-agents',
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
+  RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
 } as const;
 
 /** Maximum number of per-session canvas entries stored in localStorage. */
 export const MAX_CANVAS_SESSIONS = 50;
+
+/**
+ * Maximum number of per-agent right-panel layout entries kept in localStorage
+ * before the least-recently-used one is evicted (DOR-227). Bounds the map so a
+ * user who visits hundreds of agents never grows the stored layout unbounded.
+ */
+export const MAX_RIGHT_PANEL_LAYOUTS = 50;
 
 /**
  * Maximum number of documents kept open in a single session's canvas before the

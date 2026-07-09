@@ -284,8 +284,10 @@ const extensionDeps: ExtensionAPIDeps = {
 // (DOR-97/DOR-104). The StreamManager gates these to the attached session, so a
 // background agent can't pop UI over the foreground one. App-lifetime
 // subscription (singleton → singleton); intentionally never torn down.
+// Origin 'agent': autonomous control_ui commands must never persist over the
+// user's per-agent right-panel tab preference (DOR-227).
 streamManager.subscribeUiCommand((command) =>
-  executeUiCommand(extensionDeps.dispatcherContext, command)
+  executeUiCommand(extensionDeps.dispatcherContext, command, 'agent')
 );
 
 // Register all built-in features into the extension registry
