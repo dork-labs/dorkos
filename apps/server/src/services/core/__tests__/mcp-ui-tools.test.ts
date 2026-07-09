@@ -176,6 +176,38 @@ describe('control_ui handler', () => {
 
     expect(session.uiState).toBeUndefined();
   });
+
+  it('projects open_file as an open canvas with the file viewer active', async () => {
+    // A file opens as a canvas document, so a same-turn get_ui_state must show
+    // the canvas open with contentType 'file'.
+    await createControlUiHandler(session)({ action: 'open_file', sourcePath: 'src/index.ts' });
+
+    expect(session.uiState?.canvas).toEqual({ open: true, contentType: 'file' });
+  });
+
+  it('projects browser_navigate as an open canvas with the browser viewer active', async () => {
+    // Opening a URL adds a browser canvas document and reveals the canvas.
+    await createControlUiHandler(session)({
+      action: 'browser_navigate',
+      url: 'http://localhost:3000',
+    });
+
+    expect(session.uiState?.canvas).toEqual({ open: true, contentType: 'browser' });
+  });
+
+  it('leaves canvas state untouched for open_terminal (terminal is a panel tab, not a canvas doc)', async () => {
+    // The terminal is a right-panel tab with no server-projected field, so the
+    // deterministic projection is a no-op — the canvas stays as it was.
+    const seeded = createMockSession({
+      canvas: { open: false, contentType: null },
+      panels: { settings: false, tasks: false, relay: false, picker: false },
+      sidebar: { open: true, activeTab: 'overview' },
+      agent: { id: null, cwd: null },
+    });
+    await createControlUiHandler(seeded)({ action: 'open_terminal' });
+
+    expect(seeded.uiState?.canvas).toEqual({ open: false, contentType: null });
+  });
 });
 
 describe('get_ui_state handler', () => {

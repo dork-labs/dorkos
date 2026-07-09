@@ -102,6 +102,31 @@ describe('UiCommandSchema', () => {
     expect(() => UiCommandSchema.parse({ action: 'open_file', sourcePath: '' })).toThrow();
   });
 
+  it('parses open_terminal with a cwd hint', () => {
+    expect(UiCommandSchema.parse({ action: 'open_terminal', cwd: '/repo' })).toEqual({
+      action: 'open_terminal',
+      cwd: '/repo',
+    });
+  });
+
+  it('parses open_terminal without a cwd (cwd is optional)', () => {
+    expect(UiCommandSchema.parse({ action: 'open_terminal' })).toEqual({ action: 'open_terminal' });
+  });
+
+  it('rejects open_terminal with a non-string cwd', () => {
+    expect(() => UiCommandSchema.parse({ action: 'open_terminal', cwd: 42 })).toThrow();
+  });
+
+  it('parses browser_navigate command', () => {
+    expect(
+      UiCommandSchema.parse({ action: 'browser_navigate', url: 'http://localhost:3000' })
+    ).toEqual({ action: 'browser_navigate', url: 'http://localhost:3000' });
+  });
+
+  it('rejects browser_navigate with an empty url', () => {
+    expect(() => UiCommandSchema.parse({ action: 'browser_navigate', url: '' })).toThrow();
+  });
+
   it('parses show_toast with defaults', () => {
     const result = UiCommandSchema.parse({ action: 'show_toast', message: 'Done!' });
     expect(result).toMatchObject({ action: 'show_toast', message: 'Done!', level: 'info' });

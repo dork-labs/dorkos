@@ -243,6 +243,9 @@ const extensionDeps: ExtensionAPIDeps = {
     setTheme: (theme: 'light' | 'dark') => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
     },
+    // Gates the agent's `open_terminal` command: HttpTransport supports a
+    // server-side PTY, so the Terminal tab exists and can be focused.
+    supportsTerminal: transport.supportsTerminal,
   },
   // navigate is provided as a no-op here. Extensions calling navigate() after
   // mount should use the router instance directly. The no-op prevents crashes

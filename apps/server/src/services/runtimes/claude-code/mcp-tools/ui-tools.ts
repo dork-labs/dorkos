@@ -84,6 +84,19 @@ function applyUiCommandToState(state: UiState, command: UiCommand): UiState {
       };
     case 'update_canvas':
       return { ...state, canvas: { ...state.canvas, contentType: command.content.type } };
+    case 'open_file':
+      // Opening a file surfaces it as a canvas document, so the canvas opens
+      // with a file viewer active — mirrors the client dispatcher's revealCanvas.
+      return { ...state, canvas: { open: true, contentType: 'file' } };
+    case 'open_terminal':
+      // The terminal is a right-panel tab, not a canvas document; it has no
+      // canvas contentType. There is no server-projected panel/tab field beyond
+      // canvas today, so the deterministic effect is a no-op on this snapshot —
+      // the client reveals and focuses the Terminal tab (best-effort, web-only).
+      return state;
+    case 'browser_navigate':
+      // Opening a URL adds a `browser` canvas document and reveals the canvas.
+      return { ...state, canvas: { open: true, contentType: 'browser' } };
     case 'close_canvas':
       return { ...state, canvas: { ...state.canvas, open: false } };
     case 'switch_agent':

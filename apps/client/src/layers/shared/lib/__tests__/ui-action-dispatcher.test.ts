@@ -211,6 +211,56 @@ describe('executeUiCommand — open_file', () => {
   });
 });
 
+// --- open_terminal (agent tool → reveal/focus the Terminal tab) ---
+
+describe('executeUiCommand — open_terminal', () => {
+  it('opens the right panel and focuses the Terminal tab', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_terminal' });
+    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('terminal');
+  });
+
+  it('ignores the advisory cwd hint (PTY spawns in the session worktree)', () => {
+    // No agent-side PTY spawn: the command only reveals the tab, so cwd never
+    // reaches the store.
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_terminal', cwd: '/somewhere/else' });
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('terminal');
+  });
+
+  it('degrades to a toast (no phantom tab) when the transport has no terminal', async () => {
+    // DirectTransport/Obsidian: the Terminal tab does not exist, so gate on
+    // supportsTerminal:false and surface a graceful toast instead of focusing it.
+    const { toast } = await import('sonner');
+    vi.spyOn(toast, 'info');
+    const ctx = makeMockCtx();
+    ctx.supportsTerminal = false;
+    executeUiCommand(ctx, { action: 'open_terminal' });
+    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.store.setRightPanelOpen).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalled();
+  });
+});
+
+// --- browser_navigate (agent tool → open a browser canvas document) ---
+
+describe('executeUiCommand — browser_navigate', () => {
+  it('appends a browser document and reveals the canvas', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'browser_navigate', url: 'http://localhost:5173' });
+    // Append-and-activate (dedup by URL inside the store) — never clobbers an
+    // edited document.
+    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+      type: 'browser',
+      url: 'http://localhost:5173',
+    });
+    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+  });
+});
+
 // --- Toast ---
 
 describe('executeUiCommand — show_toast', () => {
