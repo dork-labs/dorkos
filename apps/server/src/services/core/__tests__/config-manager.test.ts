@@ -9,6 +9,7 @@ import {
   backfillAuthDefaults,
   backfillCloudDefaults,
   backfillWorkbenchDefaults,
+  backfillWorkbenchTerminalGraceTtl,
   dropTunnelPasscodeAndSessionSecret,
   backfillProvidersDefaults,
 } from '../config-manager.js';
@@ -328,6 +329,31 @@ describe('backfillWorkbenchDefaults migration', () => {
     const store = createMockStore({ workbench: { defaultViewers: { csv: 'file' } } });
     backfillWorkbenchDefaults(store);
     expect(store.data.workbench).toEqual({ defaultViewers: { csv: 'file' } });
+  });
+});
+
+describe('backfillWorkbenchTerminalGraceTtl migration', () => {
+  it('adds the terminal grace TTL to an existing workbench block, preserving overrides', () => {
+    const store = createMockStore({ workbench: { defaultViewers: { csv: 'file' } } });
+    backfillWorkbenchTerminalGraceTtl(store);
+    expect(store.data.workbench).toEqual({
+      defaultViewers: { csv: 'file' },
+      terminalGraceTtlMinutes: 10,
+    });
+  });
+
+  it('is idempotent (leaves an already-set TTL untouched)', () => {
+    const store = createMockStore({
+      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 30 },
+    });
+    backfillWorkbenchTerminalGraceTtl(store);
+    expect(store.data.workbench).toEqual({ defaultViewers: {}, terminalGraceTtlMinutes: 30 });
+  });
+
+  it('is a no-op when the workbench section is absent (backfillWorkbenchDefaults owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillWorkbenchTerminalGraceTtl(store);
+    expect(store.data.workbench).toBeUndefined();
   });
 });
 

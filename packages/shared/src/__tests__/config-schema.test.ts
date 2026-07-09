@@ -45,7 +45,7 @@ describe('UserConfigSchema', () => {
         retentionCap: null,
       },
       harness: { autoSync: true },
-      workbench: { defaultViewers: {} },
+      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10 },
       runtimes: {
         default: 'claude-code',
         opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
@@ -257,7 +257,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         retentionCap: null,
       },
       harness: { autoSync: true },
-      workbench: { defaultViewers: {} },
+      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10 },
       runtimes: {
         default: 'claude-code',
         opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },

@@ -264,8 +264,16 @@ export const UserConfigSchema = z.object({
       defaultViewers: z
         .record(z.string(), z.enum(['file', 'markdown', 'image', 'pdf', 'model3d', 'csv']))
         .default(() => ({})),
+      /**
+       * Grace period, in minutes, that a detached embedded-terminal PTY is kept
+       * alive after its last socket disconnects, so a page refresh can re-attach
+       * to the live shell instead of orphaning it (DOR-225). Output produced
+       * while detached is buffered and replayed on the next attach; once the
+       * window lapses with no re-attach, the PTY is reclaimed. Default 10.
+       */
+      terminalGraceTtlMinutes: z.number().int().min(1).max(120).default(10),
     })
-    .default(() => ({ defaultViewers: {} })),
+    .default(() => ({ defaultViewers: {}, terminalGraceTtlMinutes: 10 })),
   runtimes: z
     .object({
       /** Runtime id the registry selects as its default at boot. */

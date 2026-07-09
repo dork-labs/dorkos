@@ -4,9 +4,16 @@
  *
  * `openTerminal` creates a server-side PTY over `POST /api/terminal`, then opens
  * the bidirectional WebSocket byte channel at `GET /api/terminal/:id/socket`.
- * Raw PTY output arrives as binary frames and is surfaced as an
+ * `attachTerminal` skips the create and re-attaches to an existing PTY by id (the
+ * page-refresh recovery path, DOR-225) — the server replays output buffered while
+ * detached. Raw PTY output arrives as binary frames and is surfaced as an
  * `AsyncIterable<Uint8Array>`; input and resize go up as JSON control frames via
  * `writeTerminal` / `resizeTerminal`, correlated to the socket by handle id.
+ *
+ * Socket teardown (abort / unmount) only DETACHES: it closes the client socket
+ * and lets the server's idle-grace window (`workbench.terminalGraceTtlMinutes`)
+ * own PTY reclamation, so the shell survives a reload and stays re-attachable. It
+ * does not eagerly destroy the PTY.
  *
  * @module shared/lib/transport/terminal-methods
  */
@@ -130,52 +137,80 @@ export function createTerminalMethods(baseUrl: string) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
   };
 
+  /**
+   * Open the WebSocket byte channel for an existing terminal id and adapt it to a
+   * {@link TerminalHandle}. Shared by {@link openTerminal} (after a create) and
+   * {@link attachTerminal} (re-attach by id). Rejects when the socket fails to
+   * open — for an unknown/expired id the server answers the upgrade with 404, so
+   * the handshake errors and the re-attach caller falls back to a fresh create.
+   *
+   * Teardown detaches, it does not destroy: closing the socket hands PTY
+   * reclamation to the server's idle-grace window so the shell stays
+   * re-attachable across a reload.
+   */
+  const attachSocket = async (id: string, signal?: AbortSignal): Promise<TerminalHandle> => {
+    const ws = new WebSocket(toWebSocketUrl(baseUrl, `/terminal/${id}/socket`));
+    ws.binaryType = 'arraybuffer';
+    sockets.set(id, ws);
+
+    let cleaned = false;
+    const cleanup = (): void => {
+      if (cleaned) return;
+      cleaned = true;
+      sockets.delete(id);
+      try {
+        ws.close();
+      } catch {
+        // Socket may already be closing/closed — ignore.
+      }
+      // Detach only: the server's idle-grace window reclaims the PTY, so the
+      // shell survives a reload and stays re-attachable (DOR-225). The shell's
+      // own exit still tears the PTY down server-side.
+    };
+
+    try {
+      await waitForOpen(ws);
+    } catch (err) {
+      cleanup();
+      throw err;
+    }
+
+    const output = createOutputStream(ws, cleanup, signal);
+    return { id, output };
+  };
+
   return {
     /** Whether this transport can attach an embedded terminal — always true over HTTP. */
     supportsTerminal: true as const,
 
     async openTerminal(cwd: string, signal?: AbortSignal): Promise<TerminalHandle> {
+      // The signal covers the create POST too: an unmount racing the create
+      // (fast cwd switch, StrictMode double-invoke) aborts the request before
+      // the server spawns a PTY — otherwise the orphan's id is never stored,
+      // it can't be re-attached, and it lingers the full grace TTL while
+      // counting against the live-terminal cap (DOR-225).
       const res = await fetch(`${baseUrl}/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ cwd }),
+        signal,
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(body.error || `Failed to open terminal (HTTP ${res.status})`);
+        // Carry the server's machine-readable code (e.g. TERMINAL_LIMIT → 429)
+        // so callers can map known failures to friendlier copy.
+        throw Object.assign(
+          new Error(body.error || `Failed to open terminal (HTTP ${res.status})`),
+          typeof body.code === 'string' ? { code: body.code } : {}
+        );
       }
       const { id } = CreateTerminalResponseSchema.parse(await res.json());
+      return attachSocket(id, signal);
+    },
 
-      const ws = new WebSocket(toWebSocketUrl(baseUrl, `/terminal/${id}/socket`));
-      ws.binaryType = 'arraybuffer';
-      sockets.set(id, ws);
-
-      let cleaned = false;
-      const cleanup = (): void => {
-        if (cleaned) return;
-        cleaned = true;
-        sockets.delete(id);
-        try {
-          ws.close();
-        } catch {
-          // Socket may already be closing/closed — ignore.
-        }
-        // Best-effort server-side teardown (idle/exit teardown also covers this).
-        void fetch(`${baseUrl}/terminal/${id}`, { method: 'DELETE', credentials: 'include' }).catch(
-          () => {}
-        );
-      };
-
-      try {
-        await waitForOpen(ws);
-      } catch (err) {
-        cleanup();
-        throw err;
-      }
-
-      const output = createOutputStream(ws, cleanup, signal);
-      return { id, output };
+    attachTerminal(id: string, signal?: AbortSignal): Promise<TerminalHandle> {
+      return attachSocket(id, signal);
     },
 
     writeTerminal(handle: TerminalHandle, data: string): void {

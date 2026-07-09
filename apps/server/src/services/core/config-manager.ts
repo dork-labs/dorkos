@@ -323,6 +323,32 @@ export function backfillProvidersDefaults(store: {
   if (changed) store.set('runtimes', r);
 }
 
+/**
+ * Migration body: backfill `workbench.terminalGraceTtlMinutes` (embedded-terminal
+ * re-attach grace window, DOR-225) onto an EXISTING `workbench` block. conf merges
+ * top-level defaults SHALLOWLY, so a `workbench` object already on disk never
+ * inherits the new nested default — this step supplies it. Additive + idempotent:
+ * only writes when the field is absent, never overwrites a set value. The
+ * whole-object-absent case is handled by {@link backfillWorkbenchDefaults} (which
+ * runs first) plus the schema default on read. Defaults to 10 minutes, matching
+ * the schema and the terminal manager's prior hardcoded grace period.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillWorkbenchTerminalGraceTtl(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const workbench = store.get('workbench');
+  if (workbench && typeof workbench === 'object' && !('terminalGraceTtlMinutes' in workbench)) {
+    store.set('workbench', {
+      ...(workbench as Record<string, unknown>),
+      terminalGraceTtlMinutes: 10,
+    });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -386,6 +412,12 @@ const CONFIG_MIGRATIONS = {
   // schema default also yields `{ defaultViewers: {} }` on read, so this just
   // writes the key through on the upgrade where it lands.
   '0.52.0': backfillWorkbenchDefaults,
+  // Backfill `workbench.terminalGraceTtlMinutes` (embedded-terminal re-attach
+  // grace window, DOR-225). Keyed to the next ascending release; /system:release
+  // reconciles the concrete version at tag time. Additive + idempotent; supplies
+  // the nested field conf's shallow defaults-merge won't add to an existing
+  // `workbench` block, defaulting to 10 minutes.
+  '0.53.0': backfillWorkbenchTerminalGraceTtl,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

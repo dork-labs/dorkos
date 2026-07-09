@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -128,6 +128,66 @@ describe('TerminalManager', () => {
     expect(Buffer.from(sink.send.mock.calls[0][0]).toString('utf8')).toBe('$ ');
   });
 
+  it('replays output buffered while detached to a re-attaching sink (refresh recovery)', async () => {
+    // Purpose (DOR-225): a page refresh detaches the old socket; output the shell
+    // produces during the gap must be buffered and replayed to the new socket.
+    const id = await manager.create({ cwd: boundary });
+    const first = makeSink();
+    manager.attach(id, first);
+
+    // Simulate the refresh: the old socket closes and detaches.
+    manager.detach(id, first);
+    // The PTY keeps running and emits while no socket is attached — buffered.
+    lastPty.emit('build complete\r\n');
+
+    const second = makeSink();
+    manager.attach(id, second);
+    expect(second.send).toHaveBeenCalledTimes(1);
+    expect(Buffer.from(second.send.mock.calls[0][0]).toString('utf8')).toBe('build complete\r\n');
+  });
+
+  it('closes the sink when attaching to an unknown id (clean failure)', () => {
+    // Purpose: a re-attach to an expired/killed PTY must fail cleanly so the
+    // client falls back to a fresh create; the manager closes the doomed sink.
+    const sink = makeSink();
+    manager.attach('does-not-exist', sink);
+    expect(sink.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces the current sink on a second attach and routes output to the newcomer', async () => {
+    // Multi-attach semantics (DOR-225): last-writer-wins. A second attach closes
+    // the incumbent sink and takes over — a stale-but-still-open socket can never
+    // wedge the new one.
+    const id = await manager.create({ cwd: boundary });
+    const stale = makeSink();
+    manager.attach(id, stale);
+
+    const fresh = makeSink();
+    manager.attach(id, fresh);
+    expect(stale.close).toHaveBeenCalledTimes(1);
+
+    lastPty.emit('$ ');
+    expect(stale.send).not.toHaveBeenCalled();
+    expect(Buffer.from(fresh.send.mock.calls[0][0]).toString('utf8')).toBe('$ ');
+  });
+
+  it('ignores a late detach of a superseded sink (does not detach the live one)', async () => {
+    // The refresh race: the old (dead) socket's close can fire AFTER the new
+    // socket has already attached. detach is identity-guarded, so the late close
+    // must not detach the live sink or arm idle teardown against it.
+    const id = await manager.create({ cwd: boundary });
+    const stale = makeSink();
+    manager.attach(id, stale);
+    const fresh = makeSink();
+    manager.attach(id, fresh); // supersedes `stale`
+
+    manager.detach(id, stale); // late close of the superseded socket — a no-op
+
+    lastPty.emit('still here\r\n');
+    expect(Buffer.from(fresh.send.mock.calls[0][0]).toString('utf8')).toBe('still here\r\n');
+    expect(manager.has(id)).toBe(true);
+  });
+
   it('rejects new terminals past the concurrency cap (DoS guard)', async () => {
     // Purpose: unbounded PTY creation is a local resource-exhaustion vector;
     // the cap must reject with TerminalLimitError (route → 429) once reached.
@@ -138,5 +198,37 @@ describe('TerminalManager', () => {
     // A slot frees up on teardown, so create succeeds again.
     capped.destroy(first);
     await expect(capped.create({ cwd: boundary })).resolves.toBeTypeOf('string');
+  });
+
+  describe('idle grace TTL (workbench.terminalGraceTtlMinutes)', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('reclaims a never-attached PTY after the injected idle timeout elapses', async () => {
+      // The configured grace window (idleTimeoutMs) governs teardown: a PTY with
+      // no socket is reclaimed once it lapses.
+      const graced = new TerminalManager({ spawn, boundary, idleTimeoutMs: 5_000 });
+      const id = await graced.create({ cwd: boundary });
+      expect(graced.has(id)).toBe(true);
+
+      vi.advanceTimersByTime(4_999);
+      expect(graced.has(id)).toBe(true); // still inside the grace window
+      vi.advanceTimersByTime(1);
+      expect(graced.has(id)).toBe(false); // reclaimed exactly at the TTL
+    });
+
+    it('keeps a PTY alive past the TTL while a socket is attached, then reclaims after detach', async () => {
+      const graced = new TerminalManager({ spawn, boundary, idleTimeoutMs: 5_000 });
+      const id = await graced.create({ cwd: boundary });
+      const sink = makeSink();
+      graced.attach(id, sink); // attaching clears the idle timer
+
+      vi.advanceTimersByTime(60_000);
+      expect(graced.has(id)).toBe(true); // an attached terminal never idles out
+
+      graced.detach(id, sink); // re-arms the grace window
+      vi.advanceTimersByTime(5_000);
+      expect(graced.has(id)).toBe(false);
+    });
   });
 });
