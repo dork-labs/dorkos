@@ -1,8 +1,11 @@
+import { motion } from 'motion/react';
 import type { WidgetNode } from '@dorkos/shared/ui-widget';
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
 import { MarkdownContent, Progress, Separator } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { toneBadgeClass } from '../../lib/widget-tone';
+import { useCountUp, useWidgetMotion, WIDGET_SPRING } from '../../lib/widget-motion';
+import { formatStatValue, parseStatValue } from '../../lib/stat-format';
 
 type NodeOf<T extends WidgetNode['type']> = Extract<WidgetNode, { type: T }>;
 
@@ -30,17 +33,21 @@ export function TextNode({ node }: { node: NodeOf<'text'> }) {
   return <MarkdownContent content={node.text} className="text-sm" linkSafety />;
 }
 
-/** `badge` node — a toned pill. */
+/** `badge` node — a toned pill that pops in on mount. */
 export function BadgeNode({ node }: { node: NodeOf<'badge'> }) {
+  const motionOn = useWidgetMotion();
   return (
-    <span
+    <motion.span
       className={cn(
         'inline-flex w-fit items-center rounded-md border px-2 py-0.5 text-xs font-medium',
         toneBadgeClass(node.tone)
       )}
+      initial={motionOn ? { opacity: 0, scale: 0.8 } : false}
+      animate={motionOn ? { opacity: 1, scale: 1 } : false}
+      transition={WIDGET_SPRING}
     >
       {node.text}
-    </span>
+    </motion.span>
   );
 }
 
@@ -56,24 +63,32 @@ const DELTA_CLASS = {
   flat: 'text-muted-foreground',
 } as const;
 
-/** `stat` node — a labelled metric with an optional delta and hint. */
+/** `stat` node — a labelled metric whose value counts up, with an optional delta and hint. */
 export function StatNode({ node }: { node: NodeOf<'stat'> }) {
+  const motionOn = useWidgetMotion();
+  const parsed = parseStatValue(node.value);
+  const counted = useCountUp(parsed?.value ?? 0, motionOn && parsed !== null);
+  const display = parsed ? formatStatValue(parsed, counted) : String(node.value);
+
   const DeltaIcon = node.delta ? DELTA_ICON[node.delta.direction] : null;
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-muted-foreground text-xs font-medium">{node.label}</span>
       <div className="flex items-baseline gap-2">
-        <span className="text-foreground text-2xl font-semibold tabular-nums">{node.value}</span>
+        <span className="text-foreground text-2xl font-semibold tabular-nums">{display}</span>
         {node.delta && DeltaIcon && (
-          <span
+          <motion.span
             className={cn(
               'inline-flex items-center gap-0.5 text-xs font-medium',
               DELTA_CLASS[node.delta.direction]
             )}
+            initial={motionOn ? { opacity: 0, x: -4 } : false}
+            animate={motionOn ? { opacity: 1, x: 0 } : false}
+            transition={{ ...WIDGET_SPRING, delay: 0.25 }}
           >
             <DeltaIcon className="size-3" aria-hidden />
             {node.delta.value}
-          </span>
+          </motion.span>
         )}
       </div>
       {node.hint && <span className="text-muted-foreground text-xs">{node.hint}</span>}
@@ -95,17 +110,19 @@ export function KeyValueNode({ node }: { node: NodeOf<'keyValue'> }) {
   );
 }
 
-/** `progress` node — a labelled determinate progress bar. */
+/** `progress` node — a labelled determinate bar whose fill (and %) counts up from zero. */
 export function ProgressNode({ node }: { node: NodeOf<'progress'> }) {
+  const motionOn = useWidgetMotion();
+  const value = useCountUp(node.value, motionOn);
   return (
     <div className="flex flex-col gap-1">
       {(node.label || node.label === '') && (
         <div className="text-muted-foreground flex items-center justify-between text-xs">
           <span>{node.label}</span>
-          <span className="tabular-nums">{Math.round(node.value)}%</span>
+          <span className="tabular-nums">{Math.round(value)}%</span>
         </div>
       )}
-      <Progress value={node.value} />
+      <Progress value={value} />
     </div>
   );
 }

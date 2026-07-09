@@ -39,6 +39,30 @@ describe('initializeExtensions — right-panel contributions', () => {
     }
   });
 
+  it('registers the Files contribution', () => {
+    expect(getRightPanelContribution('files')).toBeDefined();
+  });
+
+  it('scopes the Files tab to the session route', () => {
+    const files = getRightPanelContribution('files');
+    expect(files?.visibleWhen?.({ pathname: '/session' })).toBe(true);
+    for (const pathname of ['/', '/agents', '/tasks', '/marketplace']) {
+      expect(files?.visibleWhen?.({ pathname })).toBe(false);
+    }
+  });
+
+  it('shows the Files tab under both transports (not gated on a web-only capability)', () => {
+    const files = getRightPanelContribution('files');
+    // The file service works under DirectTransport too, so the tab must not be
+    // hidden the way the web-only terminal is.
+    const directTransport = createMockTransport({ supportsTerminal: false });
+    expect(files?.visibleWhen?.({ pathname: '/session', transport: directTransport })).toBe(true);
+  });
+
+  it('orders the Files tab (priority 15) between Agent Profile (10) and Canvas (20)', () => {
+    expect(getRightPanelContribution('files')?.priority).toBe(15);
+  });
+
   it('keeps the Canvas contribution scoped to the session route', () => {
     const canvas = getRightPanelContribution('canvas');
     expect(canvas?.visibleWhen?.({ pathname: '/session' })).toBe(true);
