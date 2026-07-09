@@ -19,6 +19,11 @@
  */
 declare module '@dorkos/server';
 
+// Mark this file as a module so the ambient declaration above and the
+// top-level helpers below stay file-scoped instead of leaking into the
+// global scope of the whole program.
+export {};
+
 /** Poll the health endpoint until the server is responding. */
 async function waitForServer(port: number, timeoutMs = 10_000): Promise<void> {
   const start = Date.now();

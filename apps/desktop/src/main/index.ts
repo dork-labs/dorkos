@@ -7,9 +7,17 @@ import { setupMenu } from './menu';
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
 
-/** The current main window instance, if one has been created. */
-export function getMainWindow(): BrowserWindow | null {
-  return mainWindow;
+/**
+ * Create the main window and track its lifecycle. On macOS the app keeps
+ * running after the window closes, so the reference is nulled on 'closed'
+ * to prevent later handlers (second-instance, activate) from touching a
+ * destroyed BrowserWindow.
+ */
+function createTrackedWindow(): void {
+  mainWindow = createWindow();
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
 // Only one instance of the app may run at a time — two copies would each
@@ -21,9 +29,13 @@ if (!gotTheLock) {
   app.quit();
 } else {
   // A second launch attempt was blocked by the lock above; bring the
-  // existing window to the front instead of doing nothing.
+  // existing window to the front instead of doing nothing. If the window
+  // was closed (macOS keeps the app alive with zero windows), recreate it.
   app.on('second-instance', () => {
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      if (serverPort) createTrackedWindow();
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
@@ -43,7 +55,7 @@ if (!gotTheLock) {
     serverPort = await startServer();
 
     // 2. Create the main window (the renderer fetches the server port via IPC)
-    mainWindow = createWindow();
+    createTrackedWindow();
 
     // 3. Set up the native macOS menu bar
     setupMenu();
@@ -76,7 +88,7 @@ if (!gotTheLock) {
   // if all windows have been closed.
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0 && serverPort) {
-      mainWindow = createWindow();
+      createTrackedWindow();
     }
   });
 }

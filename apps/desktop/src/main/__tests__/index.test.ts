@@ -77,4 +77,56 @@ describe('single-instance lock (A1)', () => {
     expect(mockWindow.restore).not.toHaveBeenCalled();
     expect(mockWindow.focus).toHaveBeenCalledTimes(1);
   });
+
+  it('recreates the window on second-instance after the window was closed', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const firstWindow = new BrowserWindow({ width: 1200, height: 800 });
+    const secondWindow = new BrowserWindow({ width: 1200, height: 800 });
+    // The window-manager mock is memoized across tests — reset call counts
+    // so the assertions below only see this test's calls.
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValueOnce(firstWindow as unknown as Electron.BrowserWindow)
+      .mockReturnValueOnce(secondWindow as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    // macOS: the window closes but the app keeps running.
+    await firstWindow.emit('closed');
+    await app.emit('second-instance');
+
+    expect(windowManager.createWindow).toHaveBeenCalledTimes(2);
+    // The stale reference must not be touched after close.
+    expect(firstWindow.isMinimized).not.toHaveBeenCalled();
+    expect(firstWindow.focus).not.toHaveBeenCalled();
+  });
+
+  it('recreates the window on second-instance when the tracked window is destroyed', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const destroyedWindow = new BrowserWindow({ width: 1200, height: 800 });
+    destroyedWindow.isDestroyed = vi.fn(() => true);
+    // The window-manager mock is memoized across tests — reset call counts
+    // so the assertions below only see this test's calls.
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(destroyedWindow as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+    await app.emit('second-instance');
+
+    // Destroyed window: never touched; a replacement is created instead.
+    expect(destroyedWindow.isMinimized).not.toHaveBeenCalled();
+    expect(destroyedWindow.focus).not.toHaveBeenCalled();
+    expect(windowManager.createWindow).toHaveBeenCalledTimes(2);
+  });
 });

@@ -108,6 +108,7 @@ class MockBrowserWindowImpl {
   emit = (event: string, ...args: unknown[]): Promise<void> => this.bus.emit(event, ...args);
 
   focus = vi.fn();
+  isDestroyed = vi.fn((): boolean => false);
   restore = vi.fn(() => {
     this.minimized = false;
   });
