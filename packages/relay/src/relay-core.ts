@@ -225,17 +225,18 @@ export class RelayCore {
     );
 
     // Settle a waiting caller (relay_send_and_wait, A2A executor) when a
-    // detached agent delivery dead-letters, instead of leaving it to time out.
-    adapterDelivery.setReplyFailureNotifier(
-      createReplyFailureNotifier({
-        publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
-        // A reply inbox may be a registered endpoint (relay_send_and_wait) or a
-        // pure subscription (the A2A executor subscribes with no endpoint).
-        hasConsumer: (subject) =>
-          endpointRegistry.hasEndpoint(subject) ||
-          this.subscriptionRegistry.getSubscribers(subject).length > 0,
-      })
-    );
+    // detached agent delivery dead-letters OR the publish pipeline's
+    // authoritative budget gate rejects, instead of leaving it to time out.
+    const replyFailureNotifier = createReplyFailureNotifier({
+      publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
+      // A reply inbox may be a registered endpoint (relay_send_and_wait) or a
+      // pure subscription (the A2A executor subscribes with no endpoint).
+      hasConsumer: (subject) =>
+        endpointRegistry.hasEndpoint(subject) ||
+        this.subscriptionRegistry.getSubscribers(subject).length > 0,
+    });
+    adapterDelivery.setReplyFailureNotifier(replyFailureNotifier);
+    this.publishPipeline.setReplyFailureNotifier(replyFailureNotifier);
 
     this.subscriptionDeps = {
       subscriptionRegistry: this.subscriptionRegistry,

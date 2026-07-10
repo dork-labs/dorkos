@@ -10,6 +10,12 @@
  * Publish therefore acknowledges acceptance immediately and the turn runs in
  * the background; genuine delivery failures are dead-lettered.
  *
+ * Budget enforcement does NOT happen here: every envelope arrives from the
+ * publish pipeline's authoritative budget gate (see `relay-publish.ts`,
+ * DOR-260) already checked and carrying the decremented budget. A
+ * budget-rejected message never reaches this module — that single upstream
+ * gate is what stops a live (paid) agent turn from dispatching.
+ *
  * @module relay/adapter-delivery
  */
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';

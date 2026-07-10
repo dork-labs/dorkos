@@ -73,7 +73,14 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
  * persisted on the manifest and surfaced in the API, but no component throttles
  * hops or hourly calls against them today (the former `BudgetMapper` and its
  * `rate_limit_buckets` table were removed as dead code). Treat them as advisory
- * metadata until runtime enforcement is wired back in.
+ * metadata until runtime enforcement is wired back in — DOR-265 tracks that
+ * work and the design constraints.
+ *
+ * This is distinct from the **per-message envelope budget**
+ * (`RelayBudget.callBudgetRemaining` / `maxHops` / TTL / cycle detection),
+ * which IS enforced: the relay publish pipeline's authoritative budget gate
+ * rejects an over-budget message before any delivery — including the live
+ * agent-turn dispatch (DOR-260).
  */
 export const AgentBudgetSchema = z
   .object({
