@@ -43,19 +43,26 @@ export function StreamingText({
   // Render ` ```dorkos-ui ` fences as native widgets instead of code blocks (ADR
   // 260708-111500). Streamdown passes `isIncomplete` so the widget renders a
   // skeleton while its fence streams (D3). The renderer is bound per-session so
-  // `agent` widget actions can post back to THIS session (gen-ui §3).
+  // `agent` widget actions can post back to THIS session (gen-ui §3), and it
+  // knows whether this text is still streaming so a truncated-at-a-chunk-boundary
+  // fence holds the skeleton instead of flashing the error card.
   const widgetPlugins = useMemo(
     () => ({
       renderers: [
         {
           language: 'dorkos-ui',
           component: (props: { code: string; isIncomplete: boolean }) => (
-            <WidgetFence {...props} sessionId={sessionId} isLatestMessage={isLatestMessage} />
+            <WidgetFence
+              {...props}
+              sessionId={sessionId}
+              isLatestMessage={isLatestMessage}
+              streaming={isStreaming}
+            />
           ),
         },
       ],
     }),
-    [sessionId, isLatestMessage]
+    [sessionId, isLatestMessage, isStreaming]
   );
 
   return (

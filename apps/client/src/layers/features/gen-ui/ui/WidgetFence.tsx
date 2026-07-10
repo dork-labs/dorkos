@@ -21,6 +21,15 @@ interface WidgetFenceProps {
    * Defaults to `true` (surfaces with no message context are always live).
    */
   isLatestMessage?: boolean;
+  /**
+   * Whether the hosting message is still STREAMING. While a turn streams, a
+   * chunk boundary can make the fence look complete (`isIncomplete: false`)
+   * with the JSON still truncated — a parse failure then must show the
+   * skeleton, never the error card (the flash of "This widget couldn't be
+   * rendered" mid-stream). Once settled (`false`, the default), an invalid
+   * fence is genuinely broken and the error card is correct.
+   */
+  streaming?: boolean;
 }
 
 /**
@@ -34,16 +43,27 @@ interface WidgetFenceProps {
  * fence has already closed once. We latch the last successfully-parsed document
  * so the widget never flickers back to a skeleton mid-conversation — it only ever
  * moves forward (skeleton → widget), updating in place when a newer parse succeeds.
+ * While the message streams, a parse failure holds the skeleton (or the latched
+ * doc) rather than flashing the error card at a chunk boundary.
  */
-export function WidgetFence({ code, isIncomplete, sessionId, isLatestMessage }: WidgetFenceProps) {
+export function WidgetFence({
+  code,
+  isIncomplete,
+  sessionId,
+  isLatestMessage,
+  streaming = false,
+}: WidgetFenceProps) {
   const lastDocRef = useRef<WidgetDocument | null>(null);
 
   if (!isIncomplete) {
     const result = parseWidget(code);
     if (result.ok) {
       lastDocRef.current = result.document;
-    } else if (lastDocRef.current === null) {
-      // Fence closed but never parsed into a valid document — show the error card.
+    } else if (lastDocRef.current === null && !streaming) {
+      // Fence closed in a SETTLED message but never parsed into a valid
+      // document — genuinely broken, show the error card. While streaming,
+      // fall through to the skeleton instead: the "complete" fence may just be
+      // a chunk boundary with the JSON still truncated.
       return (
         <div className="my-2">
           <WidgetErrorCard error={result.error} raw={result.raw} />
