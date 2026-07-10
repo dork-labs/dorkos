@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
+import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 
@@ -36,10 +37,15 @@ const mockFileSave = {
   save: vi.fn(),
   overwrite: vi.fn(),
   adoptDisk: vi.fn(),
+  getConfirmedBase: vi.fn(),
 };
 vi.mock('../model/use-canvas-file-save', () => ({
   useCanvasFileSave: () => mockFileSave,
 }));
+
+// Count CodeMirror instantiations so a test can prove an autosave does NOT
+// remount the editor (which would discard in-progress edit state).
+let codeMirrorMountCount = 0;
 
 // Stub the heavy CodeMirror wrapper: surface value/editable + a change button.
 vi.mock('../ui/CodeMirrorEditor', () => ({
@@ -51,14 +57,20 @@ vi.mock('../ui/CodeMirrorEditor', () => ({
     value: string;
     editable: boolean;
     onChange?: (v: string) => void;
-  }) => (
-    <div data-testid="codemirror" data-editable={String(editable)}>
-      <span data-testid="cm-value">{value}</span>
-      <button data-testid="cm-fire-change" onClick={() => onChange?.('edited body')}>
-        change
-      </button>
-    </div>
-  ),
+  }) => {
+    // useEffect(mount) fires once per mount; a remount bumps the count.
+    useEffect(() => {
+      codeMirrorMountCount += 1;
+    }, []);
+    return (
+      <div data-testid="codemirror" data-editable={String(editable)}>
+        <span data-testid="cm-value">{value}</span>
+        <button data-testid="cm-fire-change" onClick={() => onChange?.('edited body')}>
+          change
+        </button>
+      </div>
+    );
+  },
 }));
 
 import { CanvasFileContent } from '../ui/CanvasFileContent';
@@ -77,9 +89,13 @@ afterEach(cleanup);
 describe('CanvasFileContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    codeMirrorMountCount = 0;
     mockState.selectedCwd = '/work';
     mockFileSave.status = 'idle';
     mockFileSave.conflict = null;
+    // Default: a save lands cleanly and the confirmed base advances to the draft.
+    mockFileSave.save.mockResolvedValue('saved');
+    mockFileSave.getConfirmedBase.mockReturnValue({ hash: 'h1', content: 'const x = 1;' });
     readFileContent.mockResolvedValue({ content: 'const x = 1;', hash: 'h1', encoding: 'utf-8' });
   });
 
@@ -104,6 +120,124 @@ describe('CanvasFileContent', () => {
     await waitFor(() => expect(mockFileSave.save).toHaveBeenCalledWith('edited body'), {
       timeout: 2000,
     });
+  });
+
+  it('edit → change → checkmark shows the NEW content, not the pre-edit cache (DOR-232)', async () => {
+    // The exact repro: leaving edit mode must render what was just written.
+    mockFileSave.getConfirmedBase.mockReturnValue({ hash: 'h2', content: 'edited body' });
+    renderFile();
+    await screen.findByTestId('codemirror');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+
+    // Flush pending save must complete BEFORE the view settles on the new bytes.
+    await waitFor(() => expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body'));
+    expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body');
+    // Back in read-only view.
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'false');
+    expect(screen.getByRole('button', { name: 'Edit file' })).toBeInTheDocument();
+  });
+
+  it('an autosave mid-edit does NOT remount the editor (draft survives)', async () => {
+    renderFile();
+    await screen.findByTestId('codemirror');
+    expect(codeMirrorMountCount).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+    await waitFor(() => expect(mockFileSave.save).toHaveBeenCalledWith('edited body'));
+
+    // The debounced save fired, but the read cache is left untouched until exit,
+    // so the editor is never re-keyed: same instance, live draft, still editable.
+    expect(codeMirrorMountCount).toBe(1);
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+  });
+
+  it('stays in edit mode when the flush conflicts (409 owns reconciliation)', async () => {
+    mockFileSave.save.mockResolvedValue('conflict');
+    renderFile();
+    await screen.findByTestId('codemirror');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+
+    await waitFor(() => expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body'));
+    // A conflicting flush must not exit edit mode or clobber the draft.
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+  });
+
+  it('stays in edit mode when the flush errors, keeping the draft for retry', async () => {
+    // A failed write (network/disk/permission) must NOT silently drop the draft
+    // behind a stale view — the checkmark refuses and "Couldn't save" stays up.
+    mockFileSave.status = 'error';
+    mockFileSave.save.mockResolvedValue('error');
+    renderFile();
+    await screen.findByTestId('codemirror');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+
+    await waitFor(() => expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body'));
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+    expect(screen.getByText("Couldn't save")).toBeInTheDocument();
+  });
+
+  it('a refetch landing mid-edit does not remount the editor (refresh, then edit)', async () => {
+    // Race: Refresh starts a refetch → user enters edit and types → the refetch
+    // resolves with a NEW hash. The mount key must stay pinned to the hash the
+    // edit session opened with, or the editor remounts and the draft vanishes.
+    renderFile();
+    await screen.findByTestId('codemirror');
+    expect(codeMirrorMountCount).toBe(1);
+
+    let resolveRefetch!: (value: unknown) => void;
+    readFileContent.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefetch = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh from disk' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+
+    await act(async () => {
+      resolveRefetch({ content: 'agent rewrote it', hash: 'h9', encoding: 'utf-8' });
+    });
+
+    // Cache updated, editor untouched: same instance, draft intact, still editing.
+    expect(codeMirrorMountCount).toBe(1);
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+  });
+
+  it('refresh button refetches from disk and renders the updated content', async () => {
+    renderFile();
+    await screen.findByTestId('codemirror');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('const x = 1;');
+
+    // An agent rewrote the file on disk while we viewed it.
+    readFileContent.mockResolvedValue({ content: 'const x = 2;', hash: 'h9', encoding: 'utf-8' });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh from disk' }));
+
+    await waitFor(() => expect(screen.getByTestId('cm-value')).toHaveTextContent('const x = 2;'));
+  });
+
+  it('hides the refresh button while editing (the 409 flow owns mid-edit changes)', async () => {
+    renderFile();
+    await screen.findByTestId('codemirror');
+    expect(screen.getByRole('button', { name: 'Refresh from disk' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    expect(screen.queryByRole('button', { name: 'Refresh from disk' })).not.toBeInTheDocument();
   });
 
   it('releases this document edit-protection on unmount (tab switch / close mid-edit)', async () => {
