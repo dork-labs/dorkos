@@ -125,6 +125,7 @@ export type ProductSurface =
   | 'canvas-editing'
   | 'chat-streaming'
   | 'cockpit'
+  | 'gen-ui-widgets'
   | 'marketplace'
   | 'mobile-approval'
   | 'mobile-chat'
@@ -142,6 +143,7 @@ export const LOOP_SURFACES = [
   'canvas',
   'canvas-editing',
   'chat-streaming',
+  'gen-ui-widgets',
   'mobile-chat',
   'multi-session',
   'personality',
@@ -465,6 +467,32 @@ export const features: Feature[] = [
     relatedFeatures: ['chat-interface', 'multi-runtime-cockpit'],
     sortOrder: 8,
   },
+  {
+    slug: 'generative-ui',
+    name: 'Generative UI',
+    product: 'console',
+    category: 'visualization',
+    tagline: 'Your agent replies with charts and buttons you can click, not walls of text',
+    description:
+      'Long replies are slow to read. Generative UI lets your agent answer with a live card instead: stats, a chart, a timeline, and buttons you can click.',
+    status: 'ga',
+    benefits: [
+      'Compose widgets from a 24-piece catalog: stats, charts, tables, timelines',
+      'Buttons and forms send your choice straight back to the agent',
+      'Invalid widget JSON shows a friendly error card, never breaks chat',
+      'Claude Code, Codex, and OpenCode all render widgets the same way',
+    ],
+    moment:
+      'You ask how the fleet is doing, and the agent answers with a live card: stats, a bar chart, and a status timeline, not a paragraph to parse. You click "Pause fleet" right in the card, and the agent picks it up.',
+    media: {
+      surface: 'gen-ui-widgets',
+      alt: 'A DorkOS chat reply rendering a fleet-status widget with stats, a bar chart, a timeline, and action buttons',
+      loop: true,
+    },
+    docsUrl: '/docs/guides/generative-ui',
+    relatedFeatures: ['chat-interface', 'canvas'],
+    sortOrder: 9,
+  },
 
   // === TASKS ===
   {
@@ -687,6 +715,7 @@ export const features: Feature[] = [
     ],
     moment:
       'You point Cursor at your DorkOS server once. From then on it can kick off a task or check the agent mesh without you ever opening the DorkOS console.',
+    docsUrl: '/docs/integrations/mcp-server',
     relatedFeatures: ['marketplace', 'task-scheduler', 'relay-message-bus'],
     sortOrder: 1,
   },

@@ -1,4 +1,5 @@
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { WidgetDocument } from '@dorkos/shared/ui-widget';
 import type { ScenarioFn } from './scenario-store.js';
 
 /**
@@ -318,6 +319,120 @@ const demoSubagents: ScenarioFn = async function* () {
   yield { type: 'done', data: { sessionId: DEMO_SESSION_ID } } as StreamEvent;
 };
 
+/** Opening line, streamed before the widget fence opens. */
+const GEN_UI_INTRO = `Checking on the fleet now — here's where things stand.\n\n`;
+
+/**
+ * The fleet-status widget: three headline stats (one with a sparkline, two
+ * with deltas), a five-bar weekly chart, a three-stop deploy timeline, and two
+ * footer actions. Demonstrates the composed-card shape a real agent turn
+ * would emit — every field pinned so a capture run never churns, and sized so
+ * the whole card (stats → chart → timeline → buttons) fits one 1280×800
+ * capture viewport.
+ */
+const GEN_UI_WIDGET: WidgetDocument = {
+  version: 1,
+  title: 'Fleet status',
+  root: {
+    type: 'card',
+    title: 'Fleet status',
+    description: 'Live snapshot across the fleet',
+    children: [
+      {
+        type: 'stack',
+        direction: 'horizontal',
+        gap: 'lg',
+        children: [
+          {
+            type: 'stat',
+            label: 'Active agents',
+            value: 12,
+            trend: [7, 8, 8, 9, 10, 11, 12],
+            hint: 'of 14 registered',
+          },
+          {
+            type: 'stat',
+            label: 'Tasks done',
+            value: 47,
+            delta: { value: '+9', direction: 'up' },
+          },
+          {
+            type: 'stat',
+            label: 'Success rate',
+            value: '94%',
+            delta: { value: '+2%', direction: 'up' },
+          },
+        ],
+      },
+      { type: 'heading', text: 'Runs this week', level: 3 },
+      {
+        type: 'chart',
+        kind: 'bar',
+        data: [
+          { label: 'Mon', value: 18 },
+          { label: 'Tue', value: 24 },
+          { label: 'Wed', value: 31 },
+          { label: 'Thu', value: 22 },
+          { label: 'Fri', value: 29 },
+        ],
+        height: 110,
+      },
+      {
+        type: 'timeline',
+        items: [
+          { title: 'Run tests', status: 'done', time: '10:05' },
+          { title: 'Deploy to staging', status: 'active', time: '10:09' },
+          { title: 'Promote to prod', status: 'upcoming' },
+        ],
+      },
+    ],
+    footer: [
+      {
+        type: 'stack',
+        direction: 'horizontal',
+        gap: 'md',
+        children: [
+          {
+            type: 'button',
+            label: 'Pause fleet',
+            variant: 'outline',
+            action: { kind: 'agent', id: 'pause-fleet', label: 'Pause fleet' },
+          },
+          {
+            type: 'button',
+            label: 'View report',
+            variant: 'default',
+            action: { kind: 'agent', id: 'view-report', label: 'View report' },
+          },
+        ],
+      },
+    ],
+  },
+};
+
+/** The `dorkos-ui` fence body, streamed word-by-word so the skeleton shows mid-stream. */
+const GEN_UI_FENCE = '```dorkos-ui\n' + JSON.stringify(GEN_UI_WIDGET) + '\n```\n\n';
+
+/** Closing line, streamed after the fence closes and the widget has rendered. */
+const GEN_UI_OUTRO = `Say the word if you want me to pause anything or pull the full report.`;
+
+/**
+ * The generative-UI hero turn: a short intro sentence, a `dorkos-ui` fence
+ * that streams in (skeleton while open, widget draw-on once it closes), and a
+ * short outro. Demonstrates the fleet-status card end to end for the
+ * marketing capture and product screenshots.
+ */
+const demoGenUi: ScenarioFn = async function* () {
+  yield {
+    type: 'session_status',
+    data: { sessionId: DEMO_SESSION_ID, model: DEMO_MODEL },
+  } as StreamEvent;
+  yield* streamText(GEN_UI_INTRO);
+  yield* streamText(GEN_UI_FENCE);
+  yield* streamText(GEN_UI_OUTRO);
+  yield { type: 'done', data: { sessionId: DEMO_SESSION_ID } } as StreamEvent;
+};
+
 /**
  * Demo scenarios keyed by the name accepted at `POST /api/test/scenario`.
  * Merged into the test-mode scenario registry at import time.
@@ -327,4 +442,5 @@ export const DEMO_SCENARIOS: Record<string, ScenarioFn> = {
   'demo-approval': demoApproval,
   'demo-canvas': demoCanvas,
   'demo-subagents': demoSubagents,
+  'demo-gen-ui': demoGenUi,
 };
