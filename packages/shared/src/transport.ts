@@ -642,6 +642,19 @@ export interface Transport {
    */
   attachTerminal(id: string, signal?: AbortSignal): Promise<TerminalHandle>;
   /**
+   * Explicitly tear down a terminal by id — destroy the server-side PTY, not
+   * just detach from it. This is the user-initiated close (a tab's × button,
+   * DOR-226), distinct from an unmount/refresh, which only detaches so the shell
+   * stays re-attachable across a reload (DOR-225). Idempotent and best-effort:
+   * a closed/already-gone PTY resolves cleanly.
+   *
+   * `DirectTransport` throws `'unsupported'` — gate calls on
+   * {@link Transport.supportsTerminal}.
+   *
+   * @param id - A terminal id returned by a prior {@link openTerminal}.
+   */
+  closeTerminal(id: string): Promise<void>;
+  /**
    * Write user input (keystrokes / paste) to a terminal's PTY stdin.
    *
    * @param handle - The attachment returned by {@link openTerminal}.

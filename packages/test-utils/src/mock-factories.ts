@@ -197,6 +197,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       id,
       output: emptyAsyncIterable(),
     })),
+    closeTerminal: vi.fn(async () => {}),
     writeTerminal: vi.fn(),
     resizeTerminal: vi.fn(),
     readFileTree: vi.fn().mockResolvedValue({ entries: [] }),

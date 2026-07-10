@@ -1,24 +1,82 @@
-import { useEffect, useRef } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebglAddon } from '@xterm/addon-webgl';
-import '@xterm/xterm/css/xterm.css';
-import type { Transport, TerminalHandle } from '@dorkos/shared/transport';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { SquareTerminal } from 'lucide-react';
+import { Button } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
-import { readTerminalId, writeTerminalId, clearTerminalId } from '../lib/terminal-id-store';
+import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
+import { TerminalInstance } from './TerminalInstance';
+import { TerminalTabs } from './TerminalTabs';
+
+/** A live terminal tab in the panel's state. */
+interface TerminalTab {
+  /** Stable client key — the React key and active-tab identity, stable across the id-resolving create. */
+  key: string;
+  /** The server PTY id, or `null` while a freshly-created shell is still spawning. */
+  ptyId: string | null;
+  /** Monotonic display number; assigned once and never renumbered on close. */
+  label: number;
+}
+
+/** The panel's tab state: the open tabs and which one is active. */
+interface PanelState {
+  tabs: TerminalTab[];
+  activeKey: string | null;
+}
+
+/** Process-local monotonic source of stable tab keys (unique within a render). */
+let tabKeySeq = 0;
+function nextTabKey(): string {
+  return `t${(tabKeySeq += 1)}`;
+}
+
+/** Build the initial panel state for a (session, cwd) from persisted tabs. */
+function buildInitialState(sessionId: string | null, cwd: string): PanelState {
+  const { ids, activeIndex } = readTerminalTabs(sessionId, cwd);
+  if (ids.length === 0) {
+    // No stored terminals — seed one fresh shell so opening the panel lands you
+    // straight in a terminal (not an empty state). Explicitly closing every tab
+    // later shows the empty state; only a fresh mount re-seeds.
+    const key = nextTabKey();
+    return { tabs: [{ key, ptyId: null, label: 1 }], activeKey: key };
+  }
+  const tabs: TerminalTab[] = ids.map((id, i) => ({ key: nextTabKey(), ptyId: id, label: i + 1 }));
+  return { tabs, activeKey: tabs[activeIndex]?.key ?? tabs[0].key };
+}
+
+/** Drop the tab with `key`, activating a sensible neighbor if it was active. */
+function removeTab(state: PanelState, key: string): PanelState {
+  const index = state.tabs.findIndex((t) => t.key === key);
+  if (index === -1) return state;
+  const tabs = state.tabs.filter((t) => t.key !== key);
+  if (state.activeKey !== key) return { tabs, activeKey: state.activeKey };
+  // Prefer the tab that shifts into this slot, else the previous one, else none.
+  const neighbor = tabs[index] ?? tabs[index - 1] ?? null;
+  return { tabs, activeKey: neighbor?.key ?? null };
+}
+
+/** Derive the persisted `{ ids, activeIndex }` view from live panel state. */
+function toPersisted(state: PanelState): { ids: string[]; activeIndex: number } {
+  const withIds = state.tabs.filter((t): t is TerminalTab & { ptyId: string } => t.ptyId !== null);
+  const ids = withIds.map((t) => t.ptyId);
+  const activeTab = state.tabs.find((t) => t.key === state.activeKey);
+  // A pending (not-yet-spawned) active tab has no id to point at yet; aim at the
+  // last real id so a refresh in that sub-second window restores something sane.
+  const activeIndex =
+    activeTab?.ptyId != null ? ids.indexOf(activeTab.ptyId) : Math.max(0, ids.length - 1);
+  return { ids, activeIndex };
+}
 
 /**
- * Embedded terminal panel (spec right-panel-workbench, Chunk E). Renders an
- * `@xterm/xterm` terminal wired to a server-side PTY via the Transport byte
- * channel: output streams in, keystrokes and resize stream out. The WebGL
- * renderer is used when available, with a silent DOM fallback. Web-only — the tab
- * is gated on `transport.supportsTerminal`, so this never mounts under the
- * in-process transport.
+ * Embedded terminal panel (spec right-panel-workbench, Chunk E; multi-terminal
+ * tabs, DOR-226). Renders a tab strip over a stack of {@link TerminalInstance}s
+ * — one xterm + one server-side PTY per tab. Only the active instance is
+ * visible; the rest stay mounted (hidden), so switching tabs is instant and
+ * never tears a PTY down.
  *
- * On mount it re-attaches to the PTY it created before a page refresh, keyed by
- * (session, cwd) in `sessionStorage` (DOR-225): the server replays the output it
- * buffered while detached, so the shell survives a reload instead of being
- * orphaned. If the stored PTY is gone it falls back to a fresh create, seamlessly.
+ * Tabs and their active index persist per (session, cwd) in `sessionStorage`, so
+ * a page refresh re-attaches to every live shell with the same tab active;
+ * shells that lapsed past the server's idle grace window are silently pruned.
+ * Web-only — the whole feature is gated on `transport.supportsTerminal`, so this
+ * never mounts under the in-process transport.
  *
  * The whole feature module is lazy-loaded by the right-panel contribution
  * (`React.lazy`), so `@xterm/*` lands in its own async chunk.
@@ -26,90 +84,8 @@ import { readTerminalId, writeTerminalId, clearTerminalId } from '../lib/termina
  * @module features/terminal/ui/TerminalPanel
  */
 export function TerminalPanel() {
-  const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
   const sessionId = useAppStore((s) => s.sessionId);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !cwd) return;
-
-    const term = new Terminal({
-      cursorBlink: true,
-      fontFamily:
-        'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-      fontSize: 13,
-      theme: readTerminalTheme(container),
-      allowProposedApi: true,
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.open(container);
-    loadWebglRenderer(term);
-    fit.fit();
-
-    const controller = new AbortController();
-    let cancelled = false;
-    let handle: TerminalHandle | null = null;
-
-    void (async () => {
-      try {
-        const { handle: attached, reattached } = await openOrReattach(
-          transport,
-          sessionId,
-          cwd,
-          controller.signal
-        );
-        if (cancelled) return;
-        handle = attached;
-        // Remember the id so a refresh re-attaches to this same PTY next mount.
-        writeTerminalId(sessionId, cwd, handle.id);
-        term.onData((data) => handle && transport.writeTerminal(handle, data));
-        // Sync the PTY to the fitted viewport before output starts flowing.
-        transport.resizeTerminal(handle, { cols: term.cols, rows: term.rows });
-        // A subtle restoration cue, printed BEFORE the server's replayed
-        // scrollback so the user knows state was recovered, not lost.
-        if (reattached) term.write('\x1b[2m[reconnected]\x1b[0m\r\n');
-        for await (const chunk of handle.output) {
-          term.write(chunk);
-        }
-        // The stream ended without a client-initiated teardown (`cancelled` is
-        // still false), so the server closed it: the shell exited or the PTY was
-        // idle-reclaimed. Either way the stored id is stale — forget it so the
-        // next mount spawns a fresh shell instead of a doomed re-attach.
-        if (!cancelled) clearTerminalId(sessionId, cwd);
-      } catch (err) {
-        if (!cancelled) {
-          // The live-terminal cap (429, TERMINAL_LIMIT) is an expected
-          // operational state, not a fault — show human copy instead of the
-          // raw server error. Everything else keeps the raw message.
-          const message = isTerminalLimitError(err)
-            ? 'Too many terminals open — close some or wait a few minutes.'
-            : `Terminal error: ${errorMessage(err)}`;
-          term.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`);
-        }
-      }
-    })();
-
-    // Reflow the PTY whenever the panel resizes.
-    const observer = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {
-        // xterm throws if measured before layout — ignore; the next tick retries.
-      }
-      if (handle) transport.resizeTerminal(handle, { cols: term.cols, rows: term.rows });
-    });
-    observer.observe(container);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      observer.disconnect();
-      term.dispose();
-    };
-  }, [transport, cwd, sessionId]);
 
   if (!cwd) {
     return (
@@ -119,72 +95,105 @@ export function TerminalPanel() {
     );
   }
 
-  return <div ref={containerRef} className="bg-sidebar h-full w-full overflow-hidden p-2" />;
+  // Keyed on (session, cwd): a context change remounts the body, which re-seeds
+  // its tab state from storage in its useState initializer — no re-seed effect,
+  // and every TerminalInstance beneath is torn down and re-attached cleanly.
+  return <TerminalPanelBody key={`${sessionId ?? ''}:${cwd}`} sessionId={sessionId} cwd={cwd} />;
 }
 
 /**
- * Attach to the PTY stored for this (session, cwd) if one exists, else create a
- * fresh one (DOR-225). A stored id whose PTY is gone (expired/killed/unknown)
- * rejects; unless the mount was already aborted, we fall back to a create so the
- * recovery is seamless with no user-visible error.
- *
- * @returns The live handle and whether it came from a re-attach (drives the
- *   `[reconnected]` cue).
+ * The tab strip + instance stack for one fixed (session, cwd) context. Split
+ * from {@link TerminalPanel} so the context can be a remount key: `sessionId`
+ * and `cwd` are constant for this component's lifetime.
  */
-async function openOrReattach(
-  transport: Transport,
-  sessionId: string | null,
-  cwd: string,
-  signal: AbortSignal
-): Promise<{ handle: TerminalHandle; reattached: boolean }> {
-  const storedId = readTerminalId(sessionId, cwd);
-  if (storedId) {
-    try {
-      return { handle: await transport.attachTerminal(storedId, signal), reattached: true };
-    } catch (err) {
-      // Don't spawn a fresh PTY into an already-torn-down mount.
-      if (signal.aborted) throw err;
-      // Otherwise the stored PTY is gone — fall through to a fresh create.
-    }
-  }
-  return { handle: await transport.openTerminal(cwd, signal), reattached: false };
-}
+function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: string }) {
+  const transport = useTransport();
 
-/** Best-effort WebGL renderer; falls back silently to the DOM renderer. */
-function loadWebglRenderer(term: Terminal): void {
-  try {
-    const webgl = new WebglAddon();
-    // If the GL context is lost, drop the addon so xterm reverts to the DOM renderer.
-    webgl.onContextLoss(() => webgl.dispose());
-    term.loadAddon(webgl);
-  } catch {
-    // No WebGL (headless, blocked, or unsupported) — the DOM renderer is used.
-  }
-}
+  const [state, setState] = useState<PanelState>(() => buildInitialState(sessionId, cwd));
+  // Current state behind a ref so close handlers can read a tab's id for the
+  // teardown side effect without threading it through the pure state updater.
+  // Synced in an effect (react-hooks/refs forbids ref writes during render);
+  // handlers only fire after render, so the ref is always current when read.
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
 
-/**
- * Derive xterm's background/foreground from the panel's computed Tailwind
- * tokens, so the terminal matches the active (light/dark) theme. `rgb(...)`
- * strings from `getComputedStyle` are valid xterm theme colors.
- */
-function readTerminalTheme(container: HTMLElement): { background: string; foreground: string } {
-  const styles = getComputedStyle(container);
-  return {
-    background: styles.backgroundColor || '#1e1e1e',
-    foreground: styles.color || '#d4d4d4',
-  };
-}
+  // Persist the open ids + active index on every change, so a refresh restores
+  // the tabs. Never clears on unmount — that is what lets the shells survive a
+  // reload (the persisted ids stay until a shell exits or a tab is closed).
+  useEffect(() => {
+    writeTerminalTabs(sessionId, cwd, toPersisted(state));
+  }, [state, sessionId, cwd]);
 
-/** Extract a human-readable message from an unknown thrown value. */
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+  const createTab = useCallback(() => {
+    setState((s) => {
+      const label = s.tabs.reduce((max, t) => Math.max(max, t.label), 0) + 1;
+      const tab: TerminalTab = { key: nextTabKey(), ptyId: null, label };
+      return { tabs: [...s.tabs, tab], activeKey: tab.key };
+    });
+  }, []);
 
-/**
- * Whether a create failure is the server's live-terminal cap (HTTP 429,
- * `code: 'TERMINAL_LIMIT'`) — the transport carries the machine-readable code
- * on the thrown error so the panel can show friendlier copy.
- */
-function isTerminalLimitError(err: unknown): boolean {
-  return err instanceof Error && (err as Error & { code?: string }).code === 'TERMINAL_LIMIT';
+  const closeTab = useCallback(
+    (key: string) => {
+      const tab = stateRef.current.tabs.find((t) => t.key === key);
+      // Closing a tab is an explicit teardown — destroy the PTY server-side
+      // (best-effort) rather than detaching. Resolves the reviewer note that
+      // DELETE /api/terminal/:id had no client callers (DOR-225 → DOR-226).
+      if (tab?.ptyId) void transport.closeTerminal(tab.ptyId).catch(() => {});
+      setState((s) => removeTab(s, key));
+    },
+    [transport]
+  );
+
+  const activateTab = useCallback((key: string) => {
+    setState((s) => (s.activeKey === key ? s : { ...s, activeKey: key }));
+  }, []);
+
+  const handleCreated = useCallback((key: string, id: string) => {
+    setState((s) => ({
+      ...s,
+      tabs: s.tabs.map((t) => (t.key === key ? { ...t, ptyId: id } : t)),
+    }));
+  }, []);
+
+  const handleEnded = useCallback((key: string) => {
+    // Shell exited (or a re-attach target was gone) — prune the tab. Never calls
+    // closeTerminal: the PTY is already gone server-side.
+    setState((s) => removeTab(s, key));
+  }, []);
+
+  return (
+    <div className="flex h-full flex-col">
+      <TerminalTabs
+        tabs={state.tabs.map((t) => ({ key: t.key, label: `Terminal ${t.label}` }))}
+        activeKey={state.activeKey}
+        onActivate={activateTab}
+        onClose={closeTab}
+        onCreate={createTab}
+      />
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {state.tabs.length === 0 ? (
+          <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-6 text-sm">
+            <SquareTerminal className="size-6 opacity-60" />
+            <p>No terminals open.</p>
+            <Button variant="outline" size="sm" onClick={createTab}>
+              New terminal
+            </Button>
+          </div>
+        ) : (
+          state.tabs.map((tab) => (
+            <TerminalInstance
+              key={tab.key}
+              cwd={cwd}
+              initialPtyId={tab.ptyId}
+              active={tab.key === state.activeKey}
+              onCreated={(id) => handleCreated(tab.key, id)}
+              onEnded={() => handleEnded(tab.key)}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
