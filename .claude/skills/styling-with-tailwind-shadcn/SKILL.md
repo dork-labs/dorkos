@@ -269,6 +269,16 @@ Mobile-first with standard breakpoints: `sm` (640px), `md` (768px), `lg` (1024px
 
 Text and icon sizes below 768px scale automatically via the token dial — prefer the tokens over per-component `md:` font overrides.
 
+## Scrollbars
+
+Use Tailwind's first-party `scrollbar-*` utilities (v4.3+); never hand-roll `scrollbar-width` or `::-webkit-scrollbar` CSS:
+
+- `scrollbar-none` — hide the native scrollbar, keep scroll (status strip, containers with custom scroll overlays)
+- `scrollbar-thin` — thin visible scrollbar (the `index.css` base style already thins everything; rarely needed per-component)
+- `scrollbar-gutter-stable` — reserve gutter space so conditionally-scrolling dialog/panel bodies don't shift layout on classic-scrollbar platforms
+
+For a styled, fading thumb, use the Radix `ScrollArea` primitive from `shared/ui` instead.
+
 ## Best Practices
 
 - **Use semantic color names**: `bg-primary` not `bg-blue-500`; `text-status-error` not `text-red-500`
