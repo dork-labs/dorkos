@@ -8,7 +8,7 @@ DorkOS is a web-based interface and REST/SSE API for Claude Code, built with the
 
 Before you begin, ensure you have:
 
-- **Node.js 20+**
+- **Node.js 22+**
 - **pnpm 10+**
 - **A Claude API key** (ANTHROPIC_API_KEY) — Get one from [console.anthropic.com](https://console.anthropic.com/)
 
@@ -171,7 +171,7 @@ pnpm smoke:integration   # Full integration test (starts server, validates API +
 pnpm smoke:npm           # Integration test against published npm package
 ```
 
-The CI workflow (`.github/workflows/cli-smoke-test.yml`) runs on every push to main with bare Ubuntu runners (Node 20/22 matrix), an isolated Docker smoke test, and a full integration test that starts the server and validates API endpoints and client SPA serving.
+The CI workflow (`.github/workflows/cli-smoke-test.yml`) runs on every push to main with bare Ubuntu runners (Node 22/24 matrix), an isolated Docker smoke test, and a full integration test that starts the server and validates API endpoints and client SPA serving.
 
 ### Running DorkOS in Docker
 
