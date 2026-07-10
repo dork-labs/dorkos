@@ -1,9 +1,9 @@
 ### Fixed
 
-- When you click a button or square in a generative-UI widget (like the tic-tac-toe
-  `board`), the agent now always responds instead of sometimes saying "no response
-  requested" — the message it receives tells it to act.
-- Turn-based board games (tic-tac-toe and similar) stay honest turn to turn: the agent
-  is taught to carry the full board in every click, trust that over its own memory,
-  reject a stale or already-occupied move instead of silently corrupting the board, and
-  redraw the board exactly once per turn instead of drifting or double-moving.
+- When you click a button or square in a widget (like the tic-tac-toe board), the
+  agent now always responds. Before, it sometimes said "no response requested" and
+  ignored your click.
+- Board games like tic-tac-toe no longer lose track of the game. Each click now
+  carries the full board with it, so the agent stops trusting its own faulty memory.
+  It rejects moves on squares that are already taken. And it redraws the board
+  exactly once per turn, instead of drifting or playing two moves at once.
