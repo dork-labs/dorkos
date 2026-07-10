@@ -70,7 +70,7 @@ pnpm --filter @dorkos/server typecheck  # One package (~4s vs ~28s full)
 pnpm --filter @dorkos/server lint       # One package (~4s)
 ```
 
-Gotchas: after pulling, rebuild `@dorkos/shared` if imports resolve stale (`pnpm --filter @dorkos/shared build`) — stale dists cause false-red type errors. Ports: dev uses 6xxx (from `.env`), production defaults 4xxx, tests pin 4242/4241.
+Gotchas: after pulling, rebuild `@dorkos/shared` if imports resolve stale (`pnpm --filter @dorkos/shared build`) — stale dists cause false-red type errors. If a typecheck red starts with `TS6053` on a `@dorkos/typescript-config` extends, `node_modules` is stale — run `pnpm install` (tsc otherwise falls back to ES5/non-strict defaults and sprays phantom errors across dependency sources). Ports: dev uses 6xxx (from `.env`), production defaults 4xxx, tests pin 4242/4241.
 
 ## Architecture
 
