@@ -26,6 +26,18 @@ interface TerminalInstanceProps {
    * a re-attach target was already gone (dead id). The parent removes the tab.
    */
   onEnded: () => void;
+  /**
+   * Called when the attach resolves AFTER this instance was already torn down
+   * (tab closed or panel unmounted mid-spawn). The abort signal only cancels
+   * the create POST before the server spawns; once it resolves, this instance
+   * holds the only reference to a live PTY it will never wire up. The parent
+   * decides the PTY's fate: destroy it (the tab was explicitly closed) or
+   * persist its id (an unmount — the shell must survive for re-attach).
+   *
+   * @param id - The resolved PTY id.
+   * @param reattached - Whether the id came from a re-attach (already persisted).
+   */
+  onLateSpawn: (id: string, reattached: boolean) => void;
 }
 
 /**
@@ -53,6 +65,7 @@ export function TerminalInstance({
   active,
   onCreated,
   onEnded,
+  onLateSpawn,
 }: TerminalInstanceProps) {
   const transport = useTransport();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,9 +77,11 @@ export function TerminalInstance({
   // command-bridge pattern in FileExplorer.
   const onCreatedRef = useRef(onCreated);
   const onEndedRef = useRef(onEnded);
+  const onLateSpawnRef = useRef(onLateSpawn);
   useEffect(() => {
     onCreatedRef.current = onCreated;
     onEndedRef.current = onEnded;
+    onLateSpawnRef.current = onLateSpawn;
   });
 
   // The xterm + fit addon + live handle, shared between the mount effect and the
@@ -115,7 +130,17 @@ export function TerminalInstance({
           initialPtyId,
           controller.signal
         );
-        if (cancelled) return;
+        if (cancelled) {
+          // Resolved after teardown: this closure holds the only reference to a
+          // live PTY (the abort signal only cancels the create POST BEFORE the
+          // server spawns). A bare return here would leak it until the server's
+          // idle TTL — hand it to the parent instead, which destroys it (tab
+          // was explicitly closed) or persists its id (unmount — the shell must
+          // survive for re-attach). Never wire input/resize/output to a
+          // disposed xterm.
+          onLateSpawnRef.current(handle.id, reattached);
+          return;
+        }
         handleRef.current = handle;
         // A freshly-spawned shell reports its id up so the parent can persist it.
         if (!reattached) onCreatedRef.current(handle.id);
@@ -133,6 +158,10 @@ export function TerminalInstance({
         // idle-reclaimed. Tell the parent so it prunes this tab.
         if (!cancelled) onEndedRef.current();
       } catch (err) {
+        // If the abort raced the create AFTER the server spawned but before the
+        // response was read, the PTY's id is unknowable client-side — that
+        // narrow window is left to the server's idle TTL (bounded, unavoidable
+        // without idempotency keys on create).
         if (cancelled) return;
         if (isTerminalLimitError(err)) {
           // The live-terminal cap (429, TERMINAL_LIMIT) is an expected
