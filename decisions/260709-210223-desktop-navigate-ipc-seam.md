@@ -1,7 +1,7 @@
 ---
 id: 260709-210223
 title: Desktop shell drives the client through a single `navigate` IPC channel
-status: proposed
+status: accepted
 created: 2026-07-09
 spec: desktop-macos-polish
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

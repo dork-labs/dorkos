@@ -2410,7 +2410,7 @@
       "id": "260709-210223",
       "slug": "desktop-navigate-ipc-seam",
       "title": "Desktop shell drives the client through a single `navigate` IPC channel",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-09",
       "extractedFrom": "desktop-macos-polish",
       "specSlug": "desktop-macos-polish"
