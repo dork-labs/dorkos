@@ -178,7 +178,16 @@ Buttons, list-item actions, and form submits are more than static UI — clickin
 | `ui`    | `command` (a `control_ui` command) | Runs locally in the client — no agent involvement, no new turn                          |
 | `url`   | `href` (must be `https://`)        | Opens in a new tab, after you confirm through the same link-safety modal chat links use |
 
-A `ui`-kind action's `command` can be any `control_ui` command, including `{ "action": "celebrate" }` — a short confetti burst, the same one a `celebrating` mood plays on its own. Use it for a genuine milestone (tests passing, a deploy landing), not every small success.
+A `ui`-kind action's `command` can be any `control_ui` command, including `{ "action": "celebrate" }` — confetti that erupts from the button you clicked, not the middle of the screen. An optional `kind` picks the style, and `emoji` picks the glyph for the emoji style:
+
+- `burst` (the default) — a multi-stage confetti pop; the same one a `celebrating` mood plays from its own face
+- `fireworks` — a few seconds of aerial shells across the top of the screen
+- `cannons` — side cannons firing from the screen edges toward the center
+- `stars` — a golden star pop
+- `rain` — a calm confetti drizzle from the top edge
+- `emoji` — throws the glyph in `emoji` (default 🎉), e.g. `{ "action": "celebrate", "kind": "emoji", "emoji": "🏆" }`
+
+An unrecognized `kind` falls back to `burst`, and every style is skipped for people who prefer reduced motion. Use a celebration for a genuine milestone (tests passing, a deploy landing), not every small success.
 
 `agent` actions are the interesting one. When you click an `agent`-kind button, pick a `list` item action, or submit a `form`, DorkOS POSTs the action to the session and the agent receives a `<ui_action>` block as your next turn — before your literal next message:
 
