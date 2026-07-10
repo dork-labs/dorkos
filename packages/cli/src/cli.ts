@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { checkClaude } from './check-claude.js';
 import { checkCoreExtensions } from './check-core-extensions.js';
+import { checkExtensionCompilation } from './check-extension-compilation.js';
 import { checkForUpdate } from './update-check.js';
 import { maybeShowNewsletterTip } from './newsletter-tip.js';
 import { link } from './terminal-link.js';
@@ -386,14 +387,23 @@ if (values['post-install-check']) {
   // packed incorrectly (DOR-245) — unlike a missing Claude Code CLI, this
   // is never something the user can fix, so it always fails the check.
   const coreExtensionsFound = checkCoreExtensions();
+  // Files existing is necessary but not sufficient: server-capable extensions
+  // (marketplace is defaultEnabled) must actually COMPILE via the esbuild JS
+  // API at runtime. DOR-256 shipped a bundle where esbuild was inlined and
+  // could not spawn its native binary, so every such extension silently failed
+  // to compile. Prove compilation works, not just that the source is present.
+  const extensionsCompile = await checkExtensionCompilation();
   console.log(`dorkos ${__CLI_VERSION__}`);
   if (!coreExtensionsFound) {
     console.log('Installation incomplete — bundled core extensions are missing.');
   }
+  if (coreExtensionsFound && !extensionsCompile) {
+    console.log('Installation incomplete — extensions cannot be compiled (esbuild unavailable).');
+  }
   if (!claudeFound) {
     console.log('Installation incomplete — Claude Code CLI is missing.');
   }
-  if (!coreExtensionsFound || !claudeFound) {
+  if (!coreExtensionsFound || !extensionsCompile || !claudeFound) {
     process.exit(1);
   }
   console.log('Installation verified.');
