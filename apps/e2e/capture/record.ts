@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import { spawn, type ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { chromium, type Browser } from '@playwright/test';
-import { bootStack, buildServerDeps, teardownAll } from './boot.js';
+import { bootStack, buildServerDeps, preflightStack, teardownAllSync } from './boot.js';
 import { REPO_ROOT } from './config.js';
 import { prepareFilesystem, seedData } from './seed.js';
 import {
@@ -59,15 +59,15 @@ export async function driveCaptures(browser: Browser, rec: RunRecorder): Promise
  *
  * The spawned server/Vite live in their own process groups (see `boot.ts`), so
  * a terminal Ctrl-C no longer reaches them directly — SIGINT/SIGTERM handlers
- * installed for the duration of the boot-drive window tear everything down
- * (`teardownAll`) and exit non-zero, on the serial path and in shard workers
+ * installed for the duration of the boot-drive window force everything down
+ * (`teardownAllSync`) and exit non-zero, on the serial path and in shard workers
  * alike.
  */
 export async function bootSeedAndDrive(
   makeRecorder: () => Promise<RunRecorder>
 ): Promise<RunRecorder> {
   const onSignal = () => {
-    teardownAll();
+    teardownAllSync();
     process.exit(1);
   };
   process.once('SIGINT', onSignal);
@@ -84,19 +84,24 @@ export async function bootSeedAndDrive(
     return rec;
   } finally {
     if (browser) await browser.close();
-    stack.teardown();
+    // Await the full teardown: it SIGTERM→SIGKILL-escalates and waits for the
+    // groups to actually die, so no dangling server/Vite (or its stdio pipe) is
+    // left holding the event loop open after this returns.
+    await stack.teardown();
     // Only drop the signal handlers once the stack is down — detaching them
-    // before the browser close completes would reopen a window where a Ctrl-C
+    // before teardown completes would reopen a window where a Ctrl-C
     // default-kills this process with the detached server/Vite still up.
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
-    // Give child processes a moment to exit before the event loop drains.
-    await sleep(500);
   }
 }
 
 /** The single-stack record path (serial `--shards 1`, the historical behavior). */
 async function runSerialRecord(): Promise<string> {
+  // Reconcile any stack a crashed prior run orphaned and require the ports free,
+  // BEFORE the filesystem prep wipes the home the stale pidfile lives in.
+  await preflightStack();
+
   process.stdout.write('▸ Preparing filesystem…\n');
   await prepareFilesystem();
 
