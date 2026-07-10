@@ -51,7 +51,10 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
   const canSave = Boolean(sourcePath && cwd);
 
   const writeThrough = useCallback(
-    async (fullContent: string, expected: { expectedHash?: string; expectedContent?: string }) => {
+    async (
+      fullContent: string,
+      expected: { expectedHash?: string; expectedContent?: string }
+    ): Promise<CanvasSaveStatus> => {
       const result = await transport.writeFile(
         cwd as string,
         sourcePath as string,
@@ -63,25 +66,32 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
         baseContentRef.current = fullContent;
         setConflict(null);
         setStatus('saved');
-      } else {
-        setConflict(result.conflict);
-        setStatus('conflict');
+        return 'saved';
       }
+      setConflict(result.conflict);
+      setStatus('conflict');
+      return 'conflict';
     },
     [transport, cwd, sourcePath]
   );
 
-  /** Save the current document, conditional on the tracked disk base. */
+  /**
+   * Save the current document, conditional on the tracked disk base. Resolves
+   * with the settled outcome (`'saved'` | `'saved'` on a no-op | `'conflict'` |
+   * `'error'`) so a caller flushing before it renders — e.g. leaving edit mode —
+   * can react to the result without reading the (asynchronously-updated) status
+   * state.
+   */
   const save = useCallback(
-    (fullContent: string): Promise<void> => {
-      if (!canSave) return Promise.resolve();
+    (fullContent: string): Promise<CanvasSaveStatus> => {
+      if (!canSave) return Promise.resolve('idle');
       const next = inFlightRef.current
         .catch(() => {})
-        .then(async () => {
+        .then(async (): Promise<CanvasSaveStatus> => {
           // Re-checked after the prior write settled, so the base is current.
           if (fullContent === baseContentRef.current) {
             setStatus('saved');
-            return;
+            return 'saved';
           }
           setStatus('saving');
           try {
@@ -89,12 +99,14 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
               baseHashRef.current !== null
                 ? { expectedHash: baseHashRef.current }
                 : { expectedContent: baseContentRef.current };
-            await writeThrough(fullContent, expected);
+            return await writeThrough(fullContent, expected);
           } catch {
             setStatus('error');
+            return 'error';
           }
         });
-      inFlightRef.current = next;
+      // The serialization chain stays void; the outcome rides the returned promise.
+      inFlightRef.current = next.then(() => {});
       return next;
     },
     [canSave, writeThrough]
@@ -121,6 +133,20 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
     [conflict, writeThrough]
   );
 
+  /**
+   * Snapshot the confirmed on-disk base — the content and hash of the last write
+   * this hook is certain landed. Lets a caller reflect just-saved bytes into its
+   * own read cache without a refetch. `hash` is null until the first confirmed
+   * write; `content` equals the last saved (or the initially-loaded) document.
+   */
+  const getConfirmedBase = useCallback(
+    (): { hash: string | null; content: string } => ({
+      hash: baseHashRef.current,
+      content: baseContentRef.current,
+    }),
+    []
+  );
+
   /** Reconcile a conflict by adopting the on-disk version as the new base. */
   const adoptDisk = useCallback(() => {
     if (!conflict) return null;
@@ -132,5 +158,5 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
     return adopted;
   }, [conflict]);
 
-  return { status, conflict, canSave, save, overwrite, adoptDisk };
+  return { status, conflict, canSave, save, overwrite, adoptDisk, getConfirmedBase };
 }

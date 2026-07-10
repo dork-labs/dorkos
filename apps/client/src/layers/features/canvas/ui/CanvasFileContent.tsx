@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Pencil } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import type { UiCanvasContent } from '@dorkos/shared/types';
+import { Check, Pencil, RotateCw } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { FileContentResponse, UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
@@ -18,6 +18,15 @@ const BlintzCanvas = lazy(() =>
 
 /** Autosave debounce, matching the markdown canvas. */
 const AUTOSAVE_DELAY_MS = 500;
+
+/**
+ * React-query key for a file's loaded content + hash. Shared by the loader, the
+ * post-save cache sync (so leaving edit mode shows what was written), and the
+ * refresh-from-disk action — one key, one cache entry, no drift.
+ */
+function fileContentQueryKey(cwd: string, sourcePath: string) {
+  return ['canvas-file', cwd, sourcePath] as const;
+}
 
 interface CanvasFileContentProps {
   /** File canvas content variant. */
@@ -77,7 +86,7 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   const { theme } = useTheme();
 
   const { data, error, isLoading } = useQuery({
-    queryKey: ['canvas-file', cwd, content.sourcePath],
+    queryKey: fileContentQueryKey(cwd as string, content.sourcePath),
     enabled: cwd !== null,
     queryFn: () => transport.readFileContent(cwd as string, content.sourcePath),
     staleTime: 30_000,
@@ -129,6 +138,7 @@ function FileEditor({
 }: FileEditorProps) {
   const editable = content.readOnly !== true;
   const markdown = isMarkdown(content.sourcePath, content.language);
+  const queryClient = useQueryClient();
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(loaded);
@@ -161,14 +171,41 @@ function FileEditor({
     setIsEditing(true);
     setDocumentEditing(documentId, true);
   };
-  const exitEdit = () => {
+  const exitEdit = async () => {
+    // Cancel the debounce and flush the latest draft, AWAITING the write so the
+    // view renders exactly what was saved — no flash of pre-edit content. `save`
+    // is a no-op when the draft already matches the tracked base.
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
-      void saveRef.current(draftRef.current);
+    }
+    const outcome = await saveRef.current(draftRef.current);
+    // A conflict is owned by the banner's Reload / Overwrite — stay in edit mode
+    // so the draft and its reconciliation controls survive.
+    if (outcome === 'conflict') return;
+
+    // Reflect the just-saved bytes into the read cache so exiting shows them. We
+    // deferred every mid-edit sync to here on purpose: writing a new hash into
+    // the cache re-keys the editor (mounted by `${sourcePath}:${hash}`) and would
+    // remount it — fine now that we're leaving edit mode, unacceptable mid-edit.
+    const base = fileSave.getConfirmedBase();
+    if (base.hash !== null && base.content === draftRef.current) {
+      queryClient.setQueryData<FileContentResponse>(
+        fileContentQueryKey(cwd, content.sourcePath),
+        (prev) => (prev ? { ...prev, content: base.content, hash: base.hash as string } : prev)
+      );
     }
     setIsEditing(false);
     setDocumentEditing(documentId, false);
+  };
+
+  // Refetch the file from disk (covers an agent editing it while you view). Only
+  // offered outside edit mode — mid-edit, the 409 Reload / Overwrite flow owns
+  // the concurrent-change story, so a blind refetch there would fight the draft.
+  const handleRefresh = () => {
+    void queryClient.invalidateQueries({
+      queryKey: fileContentQueryKey(cwd, content.sourcePath),
+    });
   };
 
   // Flush a pending save AND release this document's edit-protection on unmount
@@ -205,13 +242,25 @@ function FileEditor({
             {statusLabel}
           </span>
         )}
+        {!isEditing && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground mt-2"
+            onClick={handleRefresh}
+            aria-label="Refresh from disk"
+          >
+            <RotateCw className="size-4" />
+          </Button>
+        )}
         {editable && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="text-muted-foreground hover:text-foreground mt-2"
-            onClick={isEditing ? exitEdit : enterEdit}
+            onClick={isEditing ? () => void exitEdit() : enterEdit}
             aria-label={isEditing ? 'Finish editing' : 'Edit file'}
           >
             {isEditing ? <Check className="size-4" /> : <Pencil className="size-4" />}
