@@ -83,6 +83,8 @@ export const SHOTS: readonly Shot[] = [
   { id: 'canvas', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'canvas-editing', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   { id: 'agent-discovery', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
+  // gen-ui-widgets is also embedded in the docs (docs/guides/generative-ui.mdx).
+  { id: 'gen-ui-widgets', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   // --- Mobile stills (marketing) ---
   { id: 'mobile-sessions', kind: 'still', frame: 'mobile', consumers: ['marketing'] },
   { id: 'mobile-approval', kind: 'still', frame: 'mobile', consumers: ['marketing'] },

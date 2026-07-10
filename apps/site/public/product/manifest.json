@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-07T01:57:35.670Z",
+  "generatedAt": "2026-07-10T00:58:23.464Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
-  "runId": "20260706-205008",
-  "totalBytes": 9343793,
-  "count": 34,
+  "runId": "20260709-195329",
+  "totalBytes": 10476260,
+  "count": 37,
   "shots": [
     {
       "id": "cockpit",
@@ -85,6 +85,12 @@
       "consumers": ["marketing"]
     },
     {
+      "id": "gen-ui-widgets",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
       "id": "mobile-sessions",
       "kind": "still",
       "frame": "mobile",
@@ -105,31 +111,32 @@
   ],
   "assets": [
     {
+      "source": "auto",
       "file": "agent-discovery-dark.png",
       "surface": "agent-discovery",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 84481,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 100087,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "agent-discovery-dark.webm",
       "surface": "agent-discovery",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 190039,
-      "durationMs": 3123,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 357433,
+      "durationMs": 3114,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "agent-discovery-light.png",
       "surface": "agent-discovery",
       "theme": "light",
@@ -137,146 +144,183 @@
       "width": 2560,
       "height": 1600,
       "bytes": 68203,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "agents-light.png",
       "surface": "agents",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84833,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 84133,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "canvas-dark.png",
       "surface": "canvas",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 84074,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 84342,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "canvas-dark.webm",
       "surface": "canvas",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 445619,
-      "durationMs": 7456,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 502839,
+      "durationMs": 7495,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "canvas-editing-dark.png",
       "surface": "canvas-editing",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 72069,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 72978,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "canvas-editing-dark.webm",
       "surface": "canvas-editing",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 700016,
-      "durationMs": 10536,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 623006,
+      "durationMs": 10545,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "canvas-editing-light.png",
       "surface": "canvas-editing",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 100939,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 100857,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "canvas-light.png",
       "surface": "canvas",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 92915,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 94568,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "chat-streaming-dark.png",
       "surface": "chat-streaming",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 38838,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 36953,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "chat-streaming-dark.webm",
       "surface": "chat-streaming",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 761158,
-      "durationMs": 8631,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 818642,
+      "durationMs": 8606,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "chat-streaming-light.png",
       "surface": "chat-streaming",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 77455,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 77389,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "cockpit-light.png",
       "surface": "cockpit",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 80894,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 80367,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
+      "file": "gen-ui-widgets-dark.png",
+      "surface": "gen-ui-widgets",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 33347,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
+    },
+    {
+      "source": "auto",
+      "file": "gen-ui-widgets-dark.webm",
+      "surface": "gen-ui-widgets",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 838490,
+      "durationMs": 7074,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
+    },
+    {
+      "source": "auto",
+      "file": "gen-ui-widgets-light.png",
+      "surface": "gen-ui-widgets",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 57709,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
+    },
+    {
+      "source": "auto",
       "file": "marketplace-light.png",
       "surface": "marketplace",
       "theme": "light",
@@ -284,11 +328,11 @@
       "width": 2560,
       "height": 1600,
       "bytes": 83427,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "mobile-approval-light.png",
       "surface": "mobile-approval",
       "theme": "light",
@@ -296,183 +340,183 @@
       "width": 1170,
       "height": 2532,
       "bytes": 66137,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "mobile-chat-dark.png",
       "surface": "mobile-chat",
       "theme": "dark",
       "kind": "still",
       "width": 390,
       "height": 844,
-      "bytes": 44399,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 40776,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "mobile-chat-dark.webm",
       "surface": "mobile-chat",
       "theme": "dark",
       "kind": "loop",
       "width": 390,
       "height": 844,
-      "bytes": 1235715,
-      "durationMs": 9618,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 1271546,
+      "durationMs": 9580,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "mobile-chat-light.png",
       "surface": "mobile-chat",
       "theme": "light",
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 101163,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 103286,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "mobile-sessions-light.png",
       "surface": "mobile-sessions",
       "theme": "light",
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 72479,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 72416,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "multi-session-dark.png",
       "surface": "multi-session",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 80614,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 81418,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "multi-session-dark.webm",
       "surface": "multi-session",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1276280,
-      "durationMs": 11606,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 1286300,
+      "durationMs": 11609,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "multi-session-light.png",
       "surface": "multi-session",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 100099,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 101493,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "personality-dark.png",
       "surface": "personality",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 137409,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 136250,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "personality-dark.webm",
       "surface": "personality",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1068338,
-      "durationMs": 8023,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 1119160,
+      "durationMs": 8040,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "personality-light.png",
       "surface": "personality",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 217461,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 205827,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "subagents-dark.png",
       "surface": "subagents",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 56645,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 57193,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "subagents-dark.webm",
       "surface": "subagents",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 663945,
-      "durationMs": 8632,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 731705,
+      "durationMs": 8625,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "subagents-light.png",
       "surface": "subagents",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 50417,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 50228,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "tasks-light.png",
       "surface": "tasks",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84444,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 83519,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "tool-approval-light.png",
       "surface": "tool-approval",
       "theme": "light",
@@ -480,46 +524,45 @@
       "width": 2560,
       "height": 1600,
       "bytes": 42029,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "topology-dark.png",
       "surface": "topology",
       "theme": "dark",
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 103877,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 138326,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "topology-dark.webm",
       "surface": "topology",
       "theme": "dark",
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 870438,
-      "durationMs": 6402,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 664186,
+      "durationMs": 6397,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     },
     {
+      "source": "auto",
       "file": "topology-light.png",
       "surface": "topology",
       "theme": "light",
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 106944,
-      "source": "auto",
-      "runId": "20260706-205008",
-      "capturedAt": "2026-07-07T01:57:35.670Z"
+      "bytes": 109695,
+      "runId": "20260709-195329",
+      "capturedAt": "2026-07-10T00:57:06.049Z"
     }
   ]
 }

@@ -100,6 +100,39 @@ async function shootChatStreaming(page: Page, theme: Theme, rec: RunRecorder): P
   await shoot(page, 'chat-streaming', theme, rec);
 }
 
+/**
+ * Drive the generative-UI hero turn: a short intro sentence streams in, then a
+ * `dorkos-ui` fence streams open (the skeleton shows while it's open), closes,
+ * and the fleet-status widget draws in. Once the outro lands, scrolls the
+ * transcript to the bottom so the whole card — stats, chart, timeline, action
+ * buttons — sits in frame with no "new messages" pill. Shared by the still and
+ * the loop.
+ */
+async function driveGenUiWidgets(page: Page, mark?: LoopMark): Promise<void> {
+  await openLiveTurn(page, 'demo-gen-ui', 'How is the fleet doing today?', 'atlas');
+  // The streaming intro is the money content — start the loop the moment it appears,
+  // so the recording carries streaming text → skeleton → widget draw-on.
+  await page
+    .getByText('Checking on the fleet', { exact: false })
+    .first()
+    .waitFor({ timeout: WAIT_MS });
+  mark?.();
+  await page.getByText('Fleet status', { exact: true }).first().waitFor({ timeout: WAIT_MS });
+  // The outro is the turn's final content; once it lands the widget is complete.
+  await page.getByText('Say the word', { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  // The turn anchors to its start, leaving the card's tail below the fold —
+  // wheel the transcript to the bottom to frame the full card and buttons.
+  await page.mouse.move(640, 400);
+  await page.mouse.wheel(0, 2000);
+  await sleep(1500); // let the scroll settle and the widget's motion finish
+}
+
+/** Capture the generative-UI fleet-status widget (card, stats, chart, timeline, actions). */
+async function shootGenUiWidgets(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
+  await driveGenUiWidgets(page);
+  await shoot(page, 'gen-ui-widgets', theme, rec);
+}
+
 /** Capture a tool-approval prompt. */
 async function shootToolApproval(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await openLiveTurn(page, 'demo-approval', 'Migrate the auth tokens table', 'atlas');
@@ -390,6 +423,9 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   await attemptShot('chat-streaming', 'chat-streaming-light', () =>
     shootChatStreaming(page, theme, rec)
   );
+  await attemptShot('gen-ui-widgets', 'gen-ui-widgets-light', () =>
+    shootGenUiWidgets(page, theme, rec)
+  );
   await attemptShot('subagents', 'subagents-light', () => shootSubagents(page, theme, rec));
   await attemptShot('multi-session', 'multi-session-light', () =>
     shootMultiSession(page, theme, rec)
@@ -435,6 +471,15 @@ export async function captureLoops(browser: Browser, rec: RunRecorder): Promise<
       surface: 'canvas',
       durationMs: 7000,
       drive: driveCanvasOpen,
+    },
+    // Intro text streaming into a `dorkos-ui` fence, skeleton, then the
+    // fleet-status widget drawing in (stats, chart, timeline, actions). The
+    // drive itself carries the motion (streaming → skeleton → draw-on →
+    // scroll-to-frame), so the post-drive hold is a short settled beat.
+    {
+      surface: 'gen-ui-widgets',
+      durationMs: 3000,
+      drive: driveGenUiWidgets,
     },
     // The fleet money shot: sidebar rows pulsing while four sessions stream.
     {
