@@ -1,5 +1,11 @@
-import { BrowserWindow, screen } from 'electron';
-import type { Display, Rectangle } from 'electron';
+import { BrowserWindow, screen, shell } from 'electron';
+import type {
+  Display,
+  Rectangle,
+  HandlerDetails,
+  Event,
+  WebContentsWillNavigateEventParams,
+} from 'electron';
 import { join } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { app } from 'electron';
@@ -134,6 +140,33 @@ export function shapeWindowState(win: BrowserWindow, previousState: WindowState)
 }
 
 /**
+ * Is `url` the app's own renderer origin — the dev server
+ * (`ELECTRON_RENDERER_URL`, set by electron-vite for HMR) or, once packaged,
+ * any `file://` URL (the built `index.html` and its assets)?
+ *
+ * Used by the `will-navigate` guard in {@link createWindow} to tell in-app
+ * routing apart from a stray link that should open in the system browser
+ * instead of hijacking the app window.
+ *
+ * @param url - The URL a `will-navigate` event is about to load.
+ */
+export function isOwnOrigin(url: string): boolean {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return false;
+  }
+  if (target.protocol === 'file:') return true;
+  if (!process.env.ELECTRON_RENDERER_URL) return false;
+  try {
+    return target.origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Create the main BrowserWindow with native macOS styling.
  *
  * @returns The created BrowserWindow instance.
@@ -155,6 +188,32 @@ export function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+
+  // `target="_blank"` (chat links, gen-ui widgets, marketplace cards, …) and
+  // `window.open()` would otherwise spawn a second, chromeless BrowserWindow
+  // with no navigation UI — a dead end the user can't get back out of. Hand
+  // http(s) targets to the system browser instead, and deny every other
+  // window-open request outright — there's no legitimate reason for this app
+  // to open a bare, chrome-free BrowserWindow.
+  win.webContents.setWindowOpenHandler(({ url }: HandlerDetails) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  // Guard in-window navigation the same way: an anchor without
+  // target="_blank" (or any other navigation-triggering surface) should not
+  // be able to steer the app window itself to a foreign origin. Anything
+  // that isn't the app's own renderer is blocked; http(s) URLs are handed off
+  // to the system browser instead so the link still goes somewhere useful.
+  win.webContents.on('will-navigate', (event: Event<WebContentsWillNavigateEventParams>) => {
+    if (isOwnOrigin(event.url)) return;
+    event.preventDefault();
+    if (event.url.startsWith('http://') || event.url.startsWith('https://')) {
+      void shell.openExternal(event.url);
+    }
   });
 
   if (state.isMaximized) win.maximize();

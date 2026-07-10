@@ -12,7 +12,12 @@ import { tv } from 'tailwind-variants';
 export const messageItem = tv({
   slots: {
     root: 'group relative flex gap-[var(--msg-gap)] transition-colors duration-150',
-    content: 'min-w-0 text-sm',
+    // desktop-darwin:select-text: the desktop shell defaults chrome to
+    // non-selectable (index.css), but message bodies — text, code blocks,
+    // command output — are exactly what a user copies out of a chat, so this
+    // single container re-enables selection for everything a message renders
+    // rather than scattering the re-enable across each content type (DOR-253).
+    content: 'min-w-0 text-sm desktop-darwin:select-text',
     timestamp: 'absolute top-1 right-4 hidden text-xs transition-colors duration-150 sm:inline',
     divider: 'absolute inset-x-0 top-0 h-px bg-[var(--msg-divider-color)]',
   },

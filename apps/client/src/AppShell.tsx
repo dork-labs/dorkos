@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
-import { getAgentDisplayName } from '@/layers/shared/lib';
+import { TitlebarDragStrip } from './app/TitlebarDragStrip';
+import { getAgentDisplayName, cn } from '@/layers/shared/lib';
 import {
   useSessionId,
   useDefaultCwd,
@@ -275,6 +276,7 @@ export function AppShell() {
                     style={{ '--sidebar-width': '20rem' } as React.CSSProperties}
                   >
                     <Sidebar variant="inset">
+                      <TitlebarDragStrip />
                       {/* ── Dynamic sidebar body with directional slide ── */}
                       <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
                         <motion.div
@@ -311,7 +313,15 @@ export function AppShell() {
                     </Sidebar>
                     <SidebarInset className="overflow-hidden">
                       <header
-                        className="relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
+                        className={cn(
+                          'relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300',
+                          'desktop-darwin:drag-region',
+                          // When the sidebar is collapsed, TitlebarDragStrip's
+                          // traffic-light clearance collapses with it — pad the
+                          // header itself so its content doesn't sit under the
+                          // native traffic lights (DOR-253).
+                          !sidebarOpen && 'desktop-darwin:pl-20'
+                        )}
                         style={headerSlot.borderStyle}
                       >
                         <SidebarTrigger className="-ml-0.5" />

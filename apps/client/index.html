@@ -13,6 +13,14 @@
         var dark =
           t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
         if (dark) document.documentElement.classList.add('dark');
+        // Desktop (Electron) shell detection, paint-safe: the preload script's
+        // contextBridge runs before this inline script, so window.electronAPI
+        // is already available here. Drives the `desktop-darwin` CSS variant
+        // (drag region, traffic-light inset, selection defaults) before first
+        // paint, avoiding a flash of un-adapted chrome.
+        if (window.electronAPI && window.electronAPI.platform === 'darwin') {
+          document.documentElement.classList.add('desktop-darwin');
+        }
       })();
     </script>
   </head>

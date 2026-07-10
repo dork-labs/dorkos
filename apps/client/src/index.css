@@ -2,6 +2,7 @@
 @import '@xyflow/react/dist/style.css';
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant desktop-darwin (&:is(.desktop-darwin *));
 @source '../node_modules/streamdown/dist/*.js';
 
 /* ============================================
@@ -407,6 +408,51 @@
     padding-left: 2rem;
     padding-right: 2rem;
   }
+}
+
+/* ============================================
+   Desktop shell (Electron/macOS) utilities
+   ============================================
+   Only meaningful under the `desktop-darwin` variant (see the custom variant
+   above) — a no-op everywhere else. */
+
+/* Marks a region as OS-level window-draggable (macOS's `-webkit-app-region`).
+   Used on the sidebar's top strip and the main header so the frameless
+   `titleBarStyle: 'hiddenInset'` window can still be dragged from those
+   areas (DOR-253). */
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+/* Blanket no-drag override for interactive elements nested inside a
+   `.drag-region`. `-webkit-app-region: drag` swallows mouse events on itself
+   AND every descendant, so buttons/links/inputs inside a drag region would
+   silently stop responding to clicks. Rather than requiring every future
+   interactive child of a drag region to remember to opt out individually,
+   this blanket rule covers the common interactive element shapes up front. */
+.drag-region button,
+.drag-region a,
+.drag-region input,
+.drag-region select,
+.drag-region textarea,
+.drag-region [role='button'],
+.drag-region [contenteditable='true'] {
+  -webkit-app-region: no-drag;
+}
+
+/* Desktop chrome defaults to non-selectable text (it reads like an app, not
+   a document) — content surfaces opt back in explicitly below. `user-select`
+   is inherited, so the re-enables must be as explicit as the disable. */
+.desktop-darwin body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.desktop-darwin input,
+.desktop-darwin textarea,
+.desktop-darwin [contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 *:where(:not(.copilot-view-content *)) {
