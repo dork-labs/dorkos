@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import type { BrowserHistoryState } from '@/layers/shared/model';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -14,12 +15,39 @@ import {
 
 interface CanvasBrowserContentProps {
   /**
+   * The owning canvas document's id. Keys this browser's navigation history in
+   * the app store so it survives the renderer remount a document-tab switch
+   * forces (DOR-252).
+   */
+  documentId: string;
+  /**
    * Browser or URL canvas content — both render here (DOR-233): every webpage
    * opened in the canvas gets navigation chrome and origin isolation. The two
    * variants differ only in the schema-level shape of `url`; the renderer reads
    * `url` and `title` and treats them identically.
    */
   content: Extract<UiCanvasContent, { type: 'browser' | 'url' }>;
+}
+
+/**
+ * Seed the in-component navigation stack on mount from stored history (DOR-252).
+ *
+ * Restores a stored stack + cursor only when it belongs to the SAME
+ * `content.url` — an agent-driven url change (`update_canvas` / reopen) leaves a
+ * stale entry whose `contentUrl` no longer matches, so the browser reseeds fresh
+ * from the new url. This reproduces the DOR-233 remount-resets-history semantic
+ * for agent-driven changes while preserving history across plain tab switches
+ * (same url, same document). Defensively clamps a stored cursor into bounds.
+ */
+function seedHistory(
+  stored: BrowserHistoryState | undefined,
+  contentUrl: string
+): { stack: string[]; cursor: number } {
+  if (stored && stored.contentUrl === contentUrl && stored.stack.length > 0) {
+    const cursor = Math.min(Math.max(stored.cursor, 0), stored.stack.length - 1);
+    return { stack: stored.stack, cursor };
+  }
+  return { stack: [contentUrl], cursor: 0 };
 }
 
 /** Why the frame has no resolvable source (served/proxied local content only). */
@@ -42,17 +70,34 @@ type ResolveError = 'no-session' | 'unsupported' | 'failed' | null;
  * traffic, and console/network capture will attach as an injected script on
  * served pages — no rework of this component is needed to add it.
  */
-export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
+export function CanvasBrowserContent({ documentId, content }: CanvasBrowserContentProps) {
   const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
+  const writeBrowserHistory = useAppStore((s) => s.writeBrowserHistory);
 
   // In-component navigation history: a stack of visited logical targets + a
   // cursor. The stack holds LOGICAL urls/paths (never the signed token URLs) so
   // the address bar can display them honestly and each navigation/reload re-mints
   // a fresh signed URL (tokens expire).
-  const [history, setHistory] = useState<string[]>([content.url]);
-  const [cursor, setCursor] = useState(0);
+  //
+  // Seeded from the store on mount (read non-reactively — this is a one-shot
+  // hydration, not a subscription) so a document-tab switch restores its stack
+  // instead of resetting to a single entry (DOR-252).
+  const [seed] = useState(() =>
+    seedHistory(useAppStore.getState().browserHistories[documentId], content.url)
+  );
+  const [history, setHistory] = useState<string[]>(seed.stack);
+  const [cursor, setCursor] = useState(seed.cursor);
   const [reloadNonce, setReloadNonce] = useState(0);
+
+  // Write-through: mirror every nav into the store so a later remount (tab
+  // switch) can restore it. Chosen over persist-on-unmount because an unmount-
+  // only write loses state if the component crashes, and the write is tiny.
+  // `content.url` is stable for this component's lifetime (the renderer keys on
+  // it, so a url change remounts), so this fires only on real navigation.
+  useEffect(() => {
+    writeBrowserHistory(documentId, { contentUrl: content.url, stack: history, cursor });
+  }, [documentId, content.url, history, cursor, writeBrowserHistory]);
 
   const currentUrl = history[cursor];
   const target = useMemo(() => classifyBrowserTarget(currentUrl), [currentUrl]);

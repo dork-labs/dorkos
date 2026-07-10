@@ -43,6 +43,36 @@ export interface CanvasDocument {
   editing: boolean;
 }
 
+/**
+ * A canvas web document's embedded-browser navigation history (DOR-252).
+ *
+ * Lifted out of {@link CanvasBrowserContent} so it survives the renderer remount
+ * that a document-tab switch forces (the browser is keyed on document + content
+ * identity, ADR DOR-233, so a plain tab switch remounts it and would otherwise
+ * reset in-page back/forward history). Keyed by `documentId` in
+ * {@link CanvasSlice.browserHistories}.
+ *
+ * Scope is deliberately in-memory only (never persisted): the stack holds
+ * LOGICAL targets, and each navigation re-mints a fresh signed serve/proxy URL
+ * whose token expires — persisting a stack across a full page reload would
+ * restore dead references. The canvas persistence layer stores documents, not
+ * transient nav state, so on reload each browser reseeds from its `content.url`.
+ */
+export interface BrowserHistoryState {
+  /**
+   * The document's `content.url` when this stack was seeded. A later
+   * agent-driven url change (`update_canvas` / reopen at a new url) leaves this
+   * mismatched, which the browser reads on remount as the signal to discard the
+   * stale stack and reseed — preserving the DOR-233 remount-resets-history
+   * semantic without coupling the store to the renderer key.
+   */
+  contentUrl: string;
+  /** Visited logical targets, oldest → newest (never signed token URLs). */
+  stack: string[];
+  /** Index into {@link stack} of the currently-shown page. */
+  cursor: number;
+}
+
 // ---------------------------------------------------------------------------
 // Slice interface
 // ---------------------------------------------------------------------------
@@ -86,6 +116,21 @@ export interface CanvasSlice {
    * leaving it stuck `true` and permanently dropping agent updates to it.
    */
   setDocumentEditing: (id: string, editing: boolean) => void;
+
+  /**
+   * Per-document embedded-browser navigation history, keyed by document id
+   * (DOR-252). In-memory only — never persisted (see {@link BrowserHistoryState}).
+   * Entries are pruned in every document-removal path so the map never outgrows
+   * the open-document set.
+   */
+  browserHistories: Record<string, BrowserHistoryState>;
+  /**
+   * Write a document's browser navigation history (write-through on every
+   * in-page nav). A no-op when the document is no longer open, so a nav that
+   * commits the same tick its document is closed can never resurrect a pruned
+   * entry.
+   */
+  writeBrowserHistory: (documentId: string, entry: BrowserHistoryState) => void;
 
   canvasPreferredWidth: number | null;
   setCanvasPreferredWidth: (width: number | null) => void;
@@ -198,6 +243,22 @@ function evictToCapacity(documents: CanvasDocument[], protectedId: string): Canv
   return documents.filter((d) => !dropIds.has(d.id));
 }
 
+/**
+ * Drop browser-history entries whose document is no longer open. Called from
+ * every document-removal path (explicit close, LRU eviction) so the history map
+ * stays bounded by the open-document set. Returns the SAME reference when
+ * nothing was pruned, so unrelated document mutations don't churn the map.
+ */
+function pruneBrowserHistories(
+  histories: Record<string, BrowserHistoryState>,
+  documents: CanvasDocument[]
+): Record<string, BrowserHistoryState> {
+  const liveIds = new Set(documents.map((d) => d.id));
+  const survivors = Object.entries(histories).filter(([id]) => liveIds.has(id));
+  if (survivors.length === Object.keys(histories).length) return histories;
+  return Object.fromEntries(survivors);
+}
+
 /** The durable projection of the in-memory documents (drops the transient `editing` flag). */
 function toPersisted(documents: CanvasDocument[]): PersistedCanvasDocument[] {
   return documents.map(({ id, content, openedAt, lastActiveAt, sourceLabel: label }) => ({
@@ -244,6 +305,16 @@ export const createCanvasSlice: StateCreator<
   openDocuments: [],
   activeDocumentId: null,
 
+  browserHistories: {},
+  writeBrowserHistory: (documentId, entry) =>
+    set((s) => {
+      // Guard against resurrecting a removed document's history: a late
+      // write-through (a nav committed the same tick the document closed) must
+      // not re-add an entry that a removal path already pruned.
+      if (!s.openDocuments.some((d) => d.id === documentId)) return {};
+      return { browserHistories: { ...s.browserHistories, [documentId]: entry } };
+    }),
+
   openCanvasDocument: (content) =>
     set((s) => {
       const key = sourceKey(content);
@@ -274,7 +345,9 @@ export const createCanvasSlice: StateCreator<
         documents = evictToCapacity([...s.openDocuments, doc], activeId);
       }
 
-      const next = { openDocuments: documents, activeDocumentId: activeId };
+      // LRU eviction may have dropped documents — prune their histories too.
+      const browserHistories = pruneBrowserHistories(s.browserHistories, documents);
+      const next = { openDocuments: documents, activeDocumentId: activeId, browserHistories };
       persist(s.canvasSessionId, { ...s, ...next });
       return next;
     }),
@@ -306,7 +379,8 @@ export const createCanvasSlice: StateCreator<
         const next = [...documents].sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0];
         activeId = next?.id ?? null;
       }
-      const nextState = { openDocuments: documents, activeDocumentId: activeId };
+      const browserHistories = pruneBrowserHistories(s.browserHistories, documents);
+      const nextState = { openDocuments: documents, activeDocumentId: activeId, browserHistories };
       persist(s.canvasSessionId, { ...s, ...nextState });
       return nextState;
     }),
@@ -351,6 +425,9 @@ export const createCanvasSlice: StateCreator<
         })),
         activeDocumentId: entry.activeDocumentId,
         canvasSessionId: sessionId,
+        // Browser history is in-memory only; a session switch starts fresh so it
+        // never carries the previous session's histories (and never unbounded).
+        browserHistories: {},
       });
     } else {
       set({
@@ -358,6 +435,7 @@ export const createCanvasSlice: StateCreator<
         openDocuments: [],
         activeDocumentId: null,
         canvasSessionId: sessionId,
+        browserHistories: {},
       });
     }
   },

@@ -177,3 +177,98 @@ describe('CanvasSlice — multi-document reducer', () => {
     expect(useAppStore.getState().canvasOpen).toBe(true);
   });
 });
+
+const browserDoc = (url: string): UiCanvasContent => ({ type: 'browser', url });
+
+describe('CanvasSlice — per-document browser history (DOR-252)', () => {
+  beforeEach(() => resetCanvas());
+
+  it('writeBrowserHistory round-trips an entry for an open document', () => {
+    const { openCanvasDocument, writeBrowserHistory } = useAppStore.getState();
+    openCanvasDocument(browserDoc('https://a.test/'));
+    const id = useAppStore.getState().activeDocumentId!;
+
+    writeBrowserHistory(id, {
+      contentUrl: 'https://a.test/',
+      stack: ['https://a.test/', 'https://b.test/'],
+      cursor: 1,
+    });
+
+    expect(useAppStore.getState().browserHistories[id]).toEqual({
+      contentUrl: 'https://a.test/',
+      stack: ['https://a.test/', 'https://b.test/'],
+      cursor: 1,
+    });
+  });
+
+  it('does NOT resurrect history for a document that is no longer open', () => {
+    const { writeBrowserHistory } = useAppStore.getState();
+    // No such document is open — a late write-through must be ignored.
+    writeBrowserHistory('ghost', {
+      contentUrl: 'https://x.test/',
+      stack: ['https://x.test/'],
+      cursor: 0,
+    });
+    expect(useAppStore.getState().browserHistories.ghost).toBeUndefined();
+  });
+
+  it('closeCanvasDocument prunes the closed document’s history', () => {
+    const { openCanvasDocument, writeBrowserHistory, closeCanvasDocument } = useAppStore.getState();
+    openCanvasDocument(browserDoc('https://a.test/'));
+    const docA = useAppStore.getState().activeDocumentId!;
+    openCanvasDocument(browserDoc('https://b.test/'));
+    const docB = useAppStore.getState().activeDocumentId!;
+
+    writeBrowserHistory(docA, {
+      contentUrl: 'https://a.test/',
+      stack: ['https://a.test/'],
+      cursor: 0,
+    });
+    writeBrowserHistory(docB, {
+      contentUrl: 'https://b.test/',
+      stack: ['https://b.test/'],
+      cursor: 0,
+    });
+
+    closeCanvasDocument(docB);
+    expect(useAppStore.getState().browserHistories[docB]).toBeUndefined();
+    // The surviving document keeps its history.
+    expect(useAppStore.getState().browserHistories[docA]).toBeDefined();
+  });
+
+  it('LRU eviction prunes the evicted document’s history', () => {
+    const { openCanvasDocument, writeBrowserHistory } = useAppStore.getState();
+    // Open the first browser doc and record history for it.
+    openCanvasDocument(browserDoc('https://first.test/'));
+    const first = useAppStore.getState().activeDocumentId!;
+    writeBrowserHistory(first, {
+      contentUrl: 'https://first.test/',
+      stack: ['https://first.test/'],
+      cursor: 0,
+    });
+
+    // Open enough more documents to push the first past the cap and evict it.
+    for (let i = 0; i < MAX_CANVAS_DOCUMENTS; i++) {
+      openCanvasDocument(fileDoc(`file-${i}.ts`));
+    }
+
+    const ids = new Set(useAppStore.getState().openDocuments.map((d) => d.id));
+    expect(ids.has(first)).toBe(false); // evicted
+    expect(useAppStore.getState().browserHistories[first]).toBeUndefined();
+  });
+
+  it('loadCanvasForSession clears browser histories (in-memory, per-session scope)', () => {
+    const { openCanvasDocument, writeBrowserHistory } = useAppStore.getState();
+    openCanvasDocument(browserDoc('https://a.test/'));
+    const id = useAppStore.getState().activeDocumentId!;
+    writeBrowserHistory(id, {
+      contentUrl: 'https://a.test/',
+      stack: ['https://a.test/'],
+      cursor: 0,
+    });
+    expect(Object.keys(useAppStore.getState().browserHistories)).toHaveLength(1);
+
+    useAppStore.getState().loadCanvasForSession('sess-2');
+    expect(useAppStore.getState().browserHistories).toEqual({});
+  });
+});
