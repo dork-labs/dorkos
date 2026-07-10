@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260710-024641",
+      "slug": "durable-session-event-store",
+      "title": "Durable SQLite session-event store for log-backed runtimes",
+      "status": "draft",
+      "created": "2026-07-09",
+      "extractedFrom": "durable-event-log",
+      "specSlug": "durable-event-log"
+    },
+    {
       "id": "260707-231641",
       "slug": "changelog-fragments",
       "title": "Changelog fragments \u2014 one file per change, compiled at release",
