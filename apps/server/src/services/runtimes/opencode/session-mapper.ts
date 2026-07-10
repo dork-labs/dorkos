@@ -4,13 +4,15 @@
  * the managed sidecar (ADR-0308: OpenCode's store is opaque, runtime-owned —
  * never scan its SQLite database).
  *
- * ID mapping is adapter-owned and in-memory: the OpenCode server is the source
- * of truth and can always be re-listed, so a lost map is recoverable, not data
- * loss. Sessions created through DorkOS bind the caller's session UUID to the
- * new OpenCode id; sessions discovered via list (created in the OpenCode TUI,
- * or re-surfaced after a DorkOS restart) get a deterministic name-based UUID
- * derived from their OpenCode id — the same OpenCode session therefore maps to
- * the same DorkOS id across calls, mapper instances, and process restarts.
+ * ID mapping is adapter-owned: sessions created through DorkOS bind the
+ * caller's session UUID to the new OpenCode id; sessions discovered via list
+ * (created in the OpenCode TUI) get a deterministic name-based UUID derived
+ * from their OpenCode id. Bindings write through to the durable
+ * {@link OpenCodeSessionMapStore} (`opencode_sessions`) and hydrate back at
+ * construction, so the DorkOS-facing id is STABLE across server restarts —
+ * before this, the in-memory-only map forgot DorkOS-created bindings on
+ * restart and the first re-list re-keyed the same OpenCode session under a
+ * new derived id, permanently 404ing the original (DOR-251).
  *
  * @module services/runtimes/opencode/session-mapper
  */
@@ -30,6 +32,25 @@ import type {
   TextPart,
   ToolCallPart,
 } from '@dorkos/shared/types';
+
+/**
+ * Narrow seam to the durable sessionId <-> OpenCode-session-id store
+ * (`OpenCodeSessionMap` over `opencode_sessions` in production, an in-memory
+ * fake in tests). The mapper hydrates its in-memory maps from it at
+ * construction and writes every binding through — which is what keeps the
+ * DorkOS-facing session id stable across server restarts (DOR-251).
+ *
+ * CONTRACT: neither method may throw. The mapper's import graph is
+ * filesystem-free by test guard (ADR-0308), so it cannot log — implementations
+ * own their resilience (warn-and-degrade), and a persistence failure must
+ * degrade to in-memory-only bindings, never break a live session or boot.
+ */
+export interface OpenCodeSessionMapStore {
+  /** Persist a binding, replacing any existing row on either key (strictly 1:1). */
+  bind(sessionId: string, ocSessionId: string): void;
+  /** All persisted bindings, for hydration at construction. */
+  listAll(): { sessionId: string; ocSessionId: string }[];
+}
 
 /**
  * Narrow seam to the sidecar server-manager (task 3.3). The mapper never
@@ -235,7 +256,22 @@ export class OpenCodeSessionMapper {
   /** OpenCode session id -> DorkOS session id. */
   private readonly openCodeToDorkos = new Map<string, string>();
 
-  constructor(private readonly provider: OpenCodeClientProvider) {}
+  /**
+   * @param provider - Sidecar client source
+   * @param store - Durable binding store; when provided, persisted bindings
+   *   hydrate the in-memory maps here so DorkOS-facing ids survive a server
+   *   restart (DOR-251). Omitted in tests that don't exercise persistence.
+   */
+  constructor(
+    private readonly provider: OpenCodeClientProvider,
+    private readonly store?: OpenCodeSessionMapStore
+  ) {
+    if (!store) return;
+    for (const { sessionId, ocSessionId } of store.listAll()) {
+      this.dorkosToOpenCode.set(sessionId, ocSessionId);
+      this.openCodeToDorkos.set(ocSessionId, sessionId);
+    }
+  }
 
   /**
    * Create or resolve the OpenCode session bound to a DorkOS session.
@@ -282,8 +318,14 @@ export class OpenCodeSessionMapper {
   /**
    * Resolve (or mint) the DorkOS id for an OpenCode session discovered outside
    * `ensureSession` — list results, SSE events (task 3.4). Returns the existing
-   * binding when known, otherwise records and returns the deterministic derived
-   * UUID.
+   * binding when known (including bindings hydrated from the durable store, so
+   * a DorkOS-created session keeps its ORIGINAL id across restarts — DOR-251),
+   * otherwise records and returns the deterministic derived UUID.
+   *
+   * Derived adoptions are deliberately NOT written to the durable store: the
+   * derivation is a pure function of the OpenCode id, so the same DorkOS id is
+   * re-minted after any restart — persisting would only add a write to the
+   * listing path for no added stability.
    *
    * @param openCodeSessionId - OpenCode session identifier (`ses_…`)
    */
@@ -422,7 +464,10 @@ export class OpenCodeSessionMapper {
   /**
    * Bind a DorkOS session to an OpenCode session, authoritatively: any stale
    * entry for either key (e.g. a derived adoption that raced the create) is
-   * removed so the mapping stays strictly 1:1.
+   * removed so the mapping stays strictly 1:1. The binding writes through to
+   * the durable store (same replace-on-either-key semantics) so it survives a
+   * server restart (DOR-251); the store contract guarantees the write never
+   * throws — a persistence failure degrades to in-memory-only.
    */
   private link(dorkosSessionId: string, openCodeSessionId: string): void {
     const staleOpenCode = this.dorkosToOpenCode.get(dorkosSessionId);
@@ -431,5 +476,6 @@ export class OpenCodeSessionMapper {
     if (staleDorkos) this.dorkosToOpenCode.delete(staleDorkos);
     this.dorkosToOpenCode.set(dorkosSessionId, openCodeSessionId);
     this.openCodeToDorkos.set(openCodeSessionId, dorkosSessionId);
+    this.store?.bind(dorkosSessionId, openCodeSessionId);
   }
 }

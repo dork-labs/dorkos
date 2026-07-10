@@ -69,7 +69,12 @@ import {
   matchesOpenCodeSession,
   type OpenCodeWireEvent,
 } from './event-mapper.js';
-import { OpenCodeSessionMapper, unwrap, type OpenCodeClientProvider } from './session-mapper.js';
+import {
+  OpenCodeSessionMapper,
+  unwrap,
+  type OpenCodeClientProvider,
+  type OpenCodeSessionMapStore,
+} from './session-mapper.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './global-event-hub.js';
 import { OpenCodeSessionRegistry } from './session-registry.js';
 import { PendingApprovalStore, resolveApprovalDecision } from './approvals.js';
@@ -84,6 +89,13 @@ export interface OpenCodeRuntimeOptions {
    * production, a mock in tests (the `opencode` binary is never required).
    */
   provider: OpenCodeClientProvider;
+  /**
+   * Durable sessionId <-> OpenCode-session-id store (`OpenCodeSessionMap`
+   * over the shared Drizzle handle in production). Keeps DorkOS-facing ids
+   * stable across server restarts (DOR-251); tests that don't exercise
+   * persistence may omit it.
+   */
+  sessionMap?: OpenCodeSessionMapStore;
 }
 
 /** One in-flight turn (identity-matched on teardown, like Codex's controllers). */
@@ -119,7 +131,7 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   constructor(options: OpenCodeRuntimeOptions) {
     this.provider = options.provider;
-    this.mapper = new OpenCodeSessionMapper(options.provider);
+    this.mapper = new OpenCodeSessionMapper(options.provider, options.sessionMap);
     this.hub = new OpenCodeGlobalEventHub(options.provider);
   }
 
