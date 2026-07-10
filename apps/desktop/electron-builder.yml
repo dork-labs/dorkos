@@ -1,5 +1,6 @@
 appId: com.dorkos.desktop
 productName: DorkOS
+copyright: © 2026 DorkOS
 directories:
   output: release
   buildResources: build
@@ -16,6 +17,27 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   icon: build/icon.icns
   notarize: true
+  # dorkos:// deep links (Chunk D). `protocols` is also valid at the
+  # top level of this file (Configuration extends the same
+  # PlatformSpecificBuildOptions mac does), but we're mac-only today, so
+  # scoping it here keeps the mac-specific config together.
+  protocols:
+    name: DorkOS
+    schemes:
+      - dorkos
+  # Electron's bundled Info.plist ships default usage-description strings
+  # for capabilities this app never requests (camera, microphone,
+  # Bluetooth, audio capture). electron-builder's extendInfo is
+  # Object.assign'd onto the packaged Info.plist, and any resulting null
+  # value is then deleted (app-builder-lib's macPackager.applyCommonInfo) —
+  # so setting these to `null` cleanly strips them rather than shipping
+  # unused privacy strings.
+  extendInfo:
+    NSCameraUsageDescription: null
+    NSMicrophoneUsageDescription: null
+    NSBluetoothAlwaysUsageDescription: null
+    NSBluetoothPeripheralUsageDescription: null
+    NSAudioCaptureUsageDescription: null
 
 dmg:
   sign: true

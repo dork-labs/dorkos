@@ -1,6 +1,6 @@
 import { app, Menu, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { sendNavigate, SETTINGS_ROUTE } from './navigation';
+import { requestNavigate, SETTINGS_ROUTE } from './navigation';
 import { checkForUpdatesInteractive } from './auto-updater';
 
 /**
@@ -16,8 +16,15 @@ import { checkForUpdatesInteractive } from './auto-updater';
  *   its lifetime (macOS close-then-reopen, `second-instance` focus), so a
  *   reference captured when the menu was built would go stale and silently
  *   stop delivering the `navigate` IPC.
+ * @param ensureWindow - Focuses the existing main window or creates one if
+ *   none exists (`index.ts`'s `showMainWindow`). Settings… can be clicked
+ *   with zero windows open on macOS, so it routes through
+ *   {@link requestNavigate} rather than sending directly.
  */
-export function setupMenu(getMainWindow: () => BrowserWindow | null): void {
+export function setupMenu(
+  getMainWindow: () => BrowserWindow | null,
+  ensureWindow: () => void
+): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: app.name,
@@ -34,7 +41,7 @@ export function setupMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Settings…',
           accelerator: 'Cmd+,',
-          click: () => sendNavigate(getMainWindow(), SETTINGS_ROUTE),
+          click: () => requestNavigate(getMainWindow, ensureWindow, SETTINGS_ROUTE),
         },
         { type: 'separator' },
         { role: 'services' },

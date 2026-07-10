@@ -5,10 +5,13 @@ import type { Display, Rectangle } from 'electron';
  * Test double for Electron's main-process module surface.
  *
  * Mounted via `vi.mock('electron', () => import('./electron-mock'))` in
- * test files. Faithful enough to `app` (including `app.dock` and
- * `setAboutPanelOptions`), `BrowserWindow` (including `webContents.send`),
- * `ipcMain`, `screen`, `dialog`, `Menu`, and `shell` to drive the
- * main-process code under test without a real Electron runtime.
+ * test files. Faithful enough to `app` (including `app.dock`,
+ * `setAboutPanelOptions`, and `setAsDefaultProtocolClient`), `BrowserWindow`
+ * (including `webContents` with `send`, a unique `id`, and an `on`/`emit`
+ * event bus), `ipcMain` (`on`/`handle` as inspectable `vi.fn()`s — tests
+ * invoke a registered handler directly from its mock call args), `screen`,
+ * `dialog`, `Menu`, and `shell` to drive the main-process code under test
+ * without a real Electron runtime.
  */
 
 const DEFAULT_USER_DATA_PATH = '/tmp/dorkos-desktop-test/userData';
@@ -74,6 +77,9 @@ export function makeDisplay(overrides: Partial<Display> = {}): Display {
 
 const PRIMARY_DISPLAY = makeDisplay();
 
+/** Monotonic counter backing each mock window's `webContents.id` — mirrors real Electron's uniqueness guarantee. */
+let nextWebContentsId = 1;
+
 class MockBrowserWindowImpl {
   static instances: MockBrowserWindowImpl[] = [];
   static getAllWindows = vi.fn((): MockBrowserWindowImpl[] => MockBrowserWindowImpl.instances);
@@ -82,10 +88,21 @@ class MockBrowserWindowImpl {
   );
 
   private readonly bus = createEventBus();
+  private readonly webContentsBus = createEventBus();
   private maximized = false;
   private minimized = false;
   bounds: Rectangle;
-  webContents = { send: vi.fn() };
+  webContents = {
+    id: nextWebContentsId++,
+    send: vi.fn(),
+    on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
+      this.webContentsBus.on(event, listener);
+      return this.webContents;
+    }),
+    /** Test helper — not part of the real WebContents API. */
+    emit: (event: string, ...args: unknown[]): Promise<void> =>
+      this.webContentsBus.emit(event, ...args),
+  };
 
   constructor(options: Record<string, unknown> = {}) {
     this.bounds = {
@@ -143,6 +160,7 @@ export const app = {
   getPath: vi.fn((): string => DEFAULT_USER_DATA_PATH),
   getVersion: vi.fn((): string => '0.1.0'),
   setAboutPanelOptions: vi.fn(),
+  setAsDefaultProtocolClient: vi.fn((): boolean => true),
   dock: { setMenu: vi.fn() },
   on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
     appBus.on(event, listener);
@@ -191,6 +209,7 @@ export function resetElectronMock(): void {
   app.getPath = vi.fn(() => DEFAULT_USER_DATA_PATH);
   app.getVersion = vi.fn(() => '0.1.0');
   app.setAboutPanelOptions = vi.fn();
+  app.setAsDefaultProtocolClient = vi.fn(() => true);
   app.dock = { setMenu: vi.fn() };
 
   ipcMain.on = vi.fn();

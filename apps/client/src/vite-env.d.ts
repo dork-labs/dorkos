@@ -16,6 +16,16 @@ interface ElectronAPI {
    * @returns An unsubscribe function that removes the listener.
    */
   onNavigate(cb: (path: string) => void): () => void;
+  /**
+   * Pending-navigation handoff: pulls a path that was requested (menu
+   * click, `dorkos://` deep link) before this window's renderer existed or
+   * had subscribed to `onNavigate` yet. Read-once — the main process clears
+   * it after this resolves, so call it exactly once, right after
+   * subscribing.
+   *
+   * @returns The queued path, or `null` if nothing is pending.
+   */
+  getPendingNavigate(): Promise<string | null>;
 }
 
 declare global {
