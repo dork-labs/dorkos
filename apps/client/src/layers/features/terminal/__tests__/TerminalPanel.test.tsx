@@ -2,20 +2,21 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TerminalHandle } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { readTerminalId, writeTerminalId } from '../lib/terminal-id-store';
+import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 
 // Shared, hoist-safe capture of everything written to the stubbed xterm, so
-// tests can assert the `[reconnected]` restoration cue.
+// tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy.
 const xterm = vi.hoisted(() => ({ writes: [] as string[] }));
 
 // xterm touches canvas/WebGL, which jsdom cannot provide — stub the terminal,
-// its fit addon, the WebGL renderer, and the CSS side-effect import so the
-// panel mounts headless. `write` records into the shared capture.
+// its fit addon, the WebGL renderer, and the CSS side-effect import so instances
+// mount headless. `write` records into the shared capture.
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80;
@@ -23,6 +24,7 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon() {}
     open() {}
     onData() {}
+    focus() {}
     write(data: string | Uint8Array) {
       xterm.writes.push(typeof data === 'string' ? data : new TextDecoder().decode(data));
     }
@@ -46,8 +48,24 @@ import { TerminalPanel } from '../ui/TerminalPanel';
 
 const CWD = '/repo';
 
+/**
+ * Live ResizeObserver callbacks, capture-ordered, so tests can drive resize
+ * notifications — e.g. the 0×0 entry the browser fires when a tab is hidden
+ * via `display:none` on switch.
+ */
+const resizeCallbacks: ResizeObserverCallback[] = [];
+
+/** Fire every live observer with a single entry of the given content size. */
+function fireResize(width: number, height: number): void {
+  const entry = { contentRect: { width, height } } as ResizeObserverEntry;
+  for (const cb of resizeCallbacks) cb([entry], undefined as unknown as ResizeObserver);
+}
+
 beforeAll(() => {
   global.ResizeObserver = class {
+    constructor(cb: ResizeObserverCallback) {
+      resizeCallbacks.push(cb);
+    }
     observe() {}
     unobserve() {}
     disconnect() {}
@@ -57,26 +75,46 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   xterm.writes.length = 0;
+  resizeCallbacks.length = 0;
   sessionStorage.clear();
   useAppStore.setState({ selectedCwd: CWD, sessionId: null });
 });
 
 afterEach(() => cleanup());
 
-/** An output stream that stays open until its `signal` aborts — models a live shell. */
+/**
+ * An output stream that emits nothing and stays open until its `signal` aborts —
+ * models a silent live shell. A manual iterator (not a generator) because it
+ * never yields.
+ */
 function liveOutput(signal: AbortSignal): AsyncIterable<Uint8Array> {
+  const done = (): IteratorResult<Uint8Array> => ({ done: true, value: undefined });
   return {
-    async *[Symbol.asyncIterator]() {
-      if (signal.aborted) return;
-      await new Promise<void>((resolve) =>
-        signal.addEventListener('abort', () => resolve(), { once: true })
-      );
-    },
+    [Symbol.asyncIterator]: () => ({
+      next: () =>
+        new Promise<IteratorResult<Uint8Array>>((resolve) => {
+          if (signal.aborted) return resolve(done());
+          signal.addEventListener('abort', () => resolve(done()), { once: true });
+        }),
+    }),
   };
 }
 
 /** An output stream that ends immediately — models the shell exiting / PTY closing. */
 async function* exitedOutput(): AsyncIterable<Uint8Array> {}
+
+/** A mock transport whose openTerminal spawns a live shell with a caller-chosen id. */
+function liveTransport() {
+  const transport = createMockTransport({ supportsTerminal: true });
+  let n = 0;
+  transport.openTerminal = vi.fn(
+    async (_cwd: string, signal?: AbortSignal): Promise<TerminalHandle> => ({
+      id: `pty-${(n += 1)}`,
+      output: liveOutput(signal!),
+    })
+  );
+  return transport;
+}
 
 function renderTerminal(transport = createMockTransport({ supportsTerminal: true })) {
   return render(
@@ -86,32 +124,122 @@ function renderTerminal(transport = createMockTransport({ supportsTerminal: true
   );
 }
 
+/** Count the mounted xterm instance containers (one per tab, hidden or visible). */
+function instanceCount(container: HTMLElement): number {
+  return container.querySelectorAll('.bg-sidebar.h-full').length;
+}
+
 describe('TerminalPanel', () => {
-  it('mounts a full-height xterm container as content only — the container owns the header', () => {
-    const transport = createMockTransport({ supportsTerminal: true });
-    const openTerminal = vi.fn(async () => ({ id: 't', output: (async function* () {})() }));
-    transport.openTerminal = openTerminal;
-
-    const { container } = renderTerminal(transport);
-
-    // The panel is a bare full-height xterm mount so the FitAddon can measure it
-    // (the container's flex-1 content slot gives it real height).
-    const mount = container.querySelector('.bg-sidebar.h-full');
-    expect(mount).toBeInTheDocument();
-    // The panel renders no header of its own — that is the container's job.
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  it('renders content + its own tab strip, but never the container-owned close button', () => {
+    renderTerminal(liveTransport());
+    // The panel owns an in-panel tab strip (mirrors the Canvas document tabs)…
+    expect(screen.getByRole('tablist', { name: 'Open terminals' })).toBeInTheDocument();
+    // …but never the container-owned header close button.
     expect(screen.queryByRole('button', { name: 'Close panel' })).not.toBeInTheDocument();
   });
 
   it('shows the empty state when no working directory is selected', () => {
     useAppStore.setState({ selectedCwd: null });
     renderTerminal();
-
     expect(screen.getByText('Select a working directory to open a terminal.')).toBeInTheDocument();
   });
 
-  it('re-attaches to a stored PTY, prints the reconnected cue, and keeps the id', async () => {
-    writeTerminalId(null, CWD, 'pty-1');
+  it('seeds one terminal on first open so the panel is never empty', async () => {
+    const transport = liveTransport();
+    const { container } = renderTerminal(transport);
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('tab', { name: /Terminal 1/ })).toBeInTheDocument();
+    expect(instanceCount(container)).toBe(1);
+  });
+
+  it('creates a new tab that is appended and activated on "+"', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    const { container } = renderTerminal(transport);
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'New terminal' }));
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('tab', { name: /Terminal 2/, selected: true })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Terminal 1/, selected: false })).toBeInTheDocument();
+    expect(instanceCount(container)).toBe(2);
+  });
+
+  it('switches tabs without re-creating PTYs and keeps both instances mounted', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    const { container } = renderTerminal(transport);
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'New terminal' }));
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
+
+    // Switch back to the first tab — no new PTY is created, both stay mounted.
+    await user.click(screen.getByRole('tab', { name: /Terminal 1/ }).querySelector('button')!);
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Terminal 1/, selected: true })).toBeInTheDocument()
+    );
+    expect(transport.openTerminal).toHaveBeenCalledTimes(2);
+    expect(instanceCount(container)).toBe(2);
+  });
+
+  it('ignores the zero-size observer entry a hidden tab fires — no bogus PTY resize', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    // Open a second tab, hiding the first (display:none fires its observer with 0×0).
+    await user.click(screen.getByRole('button', { name: 'New terminal' }));
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
+
+    const callsBefore = vi.mocked(transport.resizeTerminal).mock.calls.length;
+    // The hide-transition notification: zero-size, must NOT reach the PTY.
+    fireResize(0, 0);
+    expect(vi.mocked(transport.resizeTerminal).mock.calls.length).toBe(callsBefore);
+
+    // A real resize still flows through.
+    fireResize(640, 480);
+    expect(vi.mocked(transport.resizeTerminal).mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it('closes a tab: destroys its PTY via closeTerminal and removes it', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    // Wait until the seeded shell has an id persisted (created + flushed).
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['pty-1']));
+
+    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
+    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+
+    await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('pty-1'));
+    // Last tab closed → empty state, panel stays open.
+    expect(screen.getByText('No terminals open.')).toBeInTheDocument();
+    expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+  });
+
+  it('offers a create affordance from the empty state', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['pty-1']));
+    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
+    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    const emptyState = (await screen.findByText('No terminals open.')).parentElement!;
+
+    // The empty state carries its own create button (besides the strip's "+").
+    await user.click(within(emptyState).getByRole('button', { name: 'New terminal' }));
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('tab', { name: /Terminal/ })).toBeInTheDocument();
+  });
+
+  it('restores every live tab on refresh, re-attaching each with the stored active tab', async () => {
+    writeTerminalTabs(null, CWD, { ids: ['a', 'b'], activeIndex: 1 });
     const transport = createMockTransport({ supportsTerminal: true });
     const attachTerminal = vi.fn(
       async (id: string, signal?: AbortSignal): Promise<TerminalHandle> => ({
@@ -119,49 +247,58 @@ describe('TerminalPanel', () => {
         output: liveOutput(signal!),
       })
     );
+    transport.attachTerminal = attachTerminal;
     const openTerminal = vi.fn();
-    transport.attachTerminal = attachTerminal;
     transport.openTerminal = openTerminal;
 
-    renderTerminal(transport);
+    const { container } = renderTerminal(transport);
 
-    await waitFor(() =>
-      expect(attachTerminal).toHaveBeenCalledWith('pty-1', expect.any(AbortSignal))
-    );
-    // The re-attach path is used — no fresh PTY is created.
+    await waitFor(() => expect(attachTerminal).toHaveBeenCalledWith('a', expect.any(AbortSignal)));
+    expect(attachTerminal).toHaveBeenCalledWith('b', expect.any(AbortSignal));
+    // Re-attach only — no fresh PTYs spawned.
     expect(openTerminal).not.toHaveBeenCalled();
-    // The subtle restoration cue is written.
-    expect(xterm.writes.join('')).toContain('[reconnected]');
-    // The id is still persisted for the next refresh.
-    expect(readTerminalId(null, CWD)).toBe('pty-1');
+    expect(instanceCount(container)).toBe(2);
+    // The stored active index (1) restores the second tab as active.
+    expect(screen.getByRole('tab', { name: /Terminal 2/, selected: true })).toBeInTheDocument();
+    // The restoration cue is written for a re-attach.
+    await waitFor(() => expect(xterm.writes.join('')).toContain('[reconnected]'));
   });
 
-  it('falls back to a fresh create when the stored PTY is gone, without the cue', async () => {
-    writeTerminalId(null, CWD, 'gone');
+  it('prunes a dead tab whose stored PTY is gone on refresh', async () => {
+    writeTerminalTabs(null, CWD, { ids: ['a', 'gone'], activeIndex: 0 });
     const transport = createMockTransport({ supportsTerminal: true });
-    const attachTerminal = vi.fn(async () => {
-      throw new Error('terminal socket failed to open');
-    });
-    const openTerminal = vi.fn(
-      async (_cwd: string, signal?: AbortSignal): Promise<TerminalHandle> => ({
-        id: 'fresh-pty',
-        output: liveOutput(signal!),
-      })
+    transport.attachTerminal = vi.fn(
+      async (id: string, signal?: AbortSignal): Promise<TerminalHandle> => {
+        if (id === 'gone') throw new Error('terminal socket failed to open');
+        return { id, output: liveOutput(signal!) };
+      }
     );
-    transport.attachTerminal = attachTerminal;
+    const openTerminal = vi.fn();
     transport.openTerminal = openTerminal;
 
     renderTerminal(transport);
 
-    await waitFor(() => expect(openTerminal).toHaveBeenCalledWith(CWD, expect.any(AbortSignal)));
-    expect(attachTerminal).toHaveBeenCalledWith('gone', expect.any(AbortSignal));
-    // A fresh create shows no reconnected cue…
-    expect(xterm.writes.join('')).not.toContain('[reconnected]');
-    // …and the new id replaces the stale one.
-    await waitFor(() => expect(readTerminalId(null, CWD)).toBe('fresh-pty'));
+    // The dead id is silently pruned — never resurrected as a fresh shell.
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['a']));
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(screen.queryByRole('tab', { name: /Terminal 2/ })).not.toBeInTheDocument();
   });
 
-  it('shows human copy when the create hits the live-terminal cap (TERMINAL_LIMIT)', async () => {
+  it('clears an id from the list when its shell exits', async () => {
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.openTerminal = vi.fn(
+      async (): Promise<TerminalHandle> => ({ id: 'fresh-pty', output: exitedOutput() })
+    );
+
+    renderTerminal(transport);
+
+    // The stream ends on its own (shell exit) → the tab is pruned and the id
+    // must not linger in storage.
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
+    await screen.findByText('No terminals open.');
+  });
+
+  it('shows human copy when a create hits the live-terminal cap (TERMINAL_LIMIT)', async () => {
     const transport = createMockTransport({ supportsTerminal: true });
     transport.openTerminal = vi.fn(async () => {
       throw Object.assign(new Error('Terminal limit reached (24 live terminals)'), {
@@ -178,17 +315,5 @@ describe('TerminalPanel', () => {
     );
     // The raw server string is replaced, not appended.
     expect(xterm.writes.join('')).not.toContain('Terminal limit reached');
-  });
-
-  it('clears the stored id when the PTY exits (stream ends without teardown)', async () => {
-    const transport = createMockTransport({ supportsTerminal: true });
-    transport.openTerminal = vi.fn(
-      async (): Promise<TerminalHandle> => ({ id: 'fresh-pty', output: exitedOutput() })
-    );
-
-    renderTerminal(transport);
-
-    // The stream ends on its own (shell exit) → the id must not linger.
-    await waitFor(() => expect(readTerminalId(null, CWD)).toBeNull());
   });
 });

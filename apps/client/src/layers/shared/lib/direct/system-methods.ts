@@ -224,6 +224,9 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     attachTerminal(): Promise<never> {
       return Promise.reject(new Error('unsupported'));
     },
+    closeTerminal(): Promise<never> {
+      return Promise.reject(new Error('unsupported'));
+    },
     writeTerminal(): void {
       throw new Error('unsupported');
     },

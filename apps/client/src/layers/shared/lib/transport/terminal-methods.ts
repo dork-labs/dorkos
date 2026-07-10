@@ -213,6 +213,24 @@ export function createTerminalMethods(baseUrl: string) {
       return attachSocket(id, signal);
     },
 
+    async closeTerminal(id: string): Promise<void> {
+      // Explicit teardown (a tab's × button): unlike detach-on-unmount, this
+      // destroys the PTY server-side. Close our live socket first so its output
+      // stream ends locally, then DELETE the PTY. The route is idempotent (204
+      // even for an unknown id), so a best-effort call never rejects on a
+      // double-close; a network failure still rejects and the caller ignores it.
+      const ws = sockets.get(id);
+      if (ws) {
+        sockets.delete(id);
+        try {
+          ws.close();
+        } catch {
+          // Socket may already be closing/closed — ignore.
+        }
+      }
+      await fetch(`${baseUrl}/terminal/${id}`, { method: 'DELETE', credentials: 'include' });
+    },
+
     writeTerminal(handle: TerminalHandle, data: string): void {
       sendControl(handle, { type: 'input', data });
     },
