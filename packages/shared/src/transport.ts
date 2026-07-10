@@ -245,6 +245,15 @@ export interface TerminalHandle {
    * frames, not replay them.
    */
   readonly output: AsyncIterable<Uint8Array>;
+  /**
+   * Why the socket closed, readable once {@link output} has ended: the WebSocket
+   * close `code` and `reason`. `undefined` when the stream ended for another
+   * reason (an abort, or a transport that surfaces no close metadata). A `code`
+   * of `TERMINAL_CLOSE_SUPERSEDED` (see `@dorkos/shared/terminal-schemas`) means
+   * the server replaced this attachment with a newer one — a takeover — which
+   * the panel treats differently from the shell exiting.
+   */
+  readonly closeInfo?: { code: number; reason: string };
 }
 
 export interface Transport {

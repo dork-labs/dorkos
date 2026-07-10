@@ -6,6 +6,7 @@ import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TerminalHandle } from '@dorkos/shared/transport';
+import { TERMINAL_CLOSE_SUPERSEDED } from '@dorkos/shared/terminal-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
@@ -389,6 +390,64 @@ describe('TerminalPanel', () => {
     // must not linger in storage.
     await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
     await screen.findByText('No terminals open.');
+  });
+
+  it('keeps the tab and stored ids on a takeover close (session moved to another window)', async () => {
+    // A duplicated tab re-attaches to the same PTY id; the server closes THIS
+    // socket with TERMINAL_CLOSE_SUPERSEDED. The tab must survive with a notice —
+    // not be pruned like an exit — and the stored ids must stay untouched so the
+    // window that took over keeps restoring them.
+    writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: exitedOutput(),
+        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+      })
+    );
+    const openTerminal = vi.fn();
+    transport.openTerminal = openTerminal;
+
+    renderTerminal(transport);
+
+    await waitFor(() =>
+      expect(xterm.writes.join('')).toContain('[opened in another window — session moved]')
+    );
+    // Tab kept (dead but labeled), no fresh shell spawned to replace it.
+    expect(screen.getByRole('tab', { name: /Terminal 1/ })).toBeInTheDocument();
+    expect(openTerminal).not.toHaveBeenCalled();
+    // Stored ids left intact — the takeover window is the one that owns them now.
+    expect(readTerminalTabs(null, CWD).ids).toEqual(['stolen']);
+  });
+
+  it('renders the truncation cue in order: [reconnected] → cue → replay', async () => {
+    // The server leads a re-attach replay with the dim truncation cue (it alone
+    // knows the detached buffer overflowed), then the surviving scrollback. The
+    // client writes them straight through, after its own [reconnected] cue.
+    writeTerminalTabs(null, CWD, { ids: ['t1'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: (async function* () {
+          yield new TextEncoder().encode(
+            '\x1b[2m[some output was lost while disconnected]\x1b[0m\r\n'
+          );
+          yield new TextEncoder().encode('surviving scrollback\r\n');
+        })(),
+      })
+    );
+
+    renderTerminal(transport);
+
+    await waitFor(() => expect(xterm.writes.join('')).toContain('surviving scrollback'));
+    const joined = xterm.writes.join('');
+    expect(joined.indexOf('[reconnected]')).toBeGreaterThanOrEqual(0);
+    expect(joined.indexOf('[reconnected]')).toBeLessThan(joined.indexOf('some output was lost'));
+    expect(joined.indexOf('some output was lost')).toBeLessThan(
+      joined.indexOf('surviving scrollback')
+    );
   });
 
   it('shows human copy when a create hits the live-terminal cap (TERMINAL_LIMIT)', async () => {

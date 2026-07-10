@@ -1,6 +1,10 @@
 import { randomUUID } from 'crypto';
 import * as pty from 'node-pty';
-import type { TerminalSize } from '@dorkos/shared/terminal-schemas';
+import {
+  TERMINAL_CLOSE_SUPERSEDED,
+  TERMINAL_CLOSE_SUPERSEDED_REASON,
+  type TerminalSize,
+} from '@dorkos/shared/terminal-schemas';
 import { validateBoundary } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
 import { ensureSpawnHelperExecutable } from './spawn-helper-fix.js';
@@ -19,6 +23,14 @@ import { ensureSpawnHelperExecutable } from './spawn-helper-fix.js';
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 /** Cap on output buffered before a socket attaches, so a chatty shell can't grow unbounded. */
 const PENDING_MAX_BYTES = 1024 * 1024;
+/**
+ * Dim in-band notice prepended to a replay when the detached buffer overflowed
+ * and dropped output — an honest cue that the scrollback the client is about to
+ * receive is incomplete. Emitted by the server (the only party that knows the
+ * cap was hit) as the first replayed frame, so it lands after the client's own
+ * `[reconnected]` cue and before the surviving buffered output.
+ */
+const TRUNCATION_NOTICE = '\x1b[2m[some output was lost while disconnected]\x1b[0m\r\n';
 /** Fallback viewport when the client creates a terminal without an initial size. */
 const DEFAULT_SIZE: TerminalSize = { cols: 80, rows: 24 };
 /**
@@ -85,8 +97,13 @@ export type SpawnPty = (opts: SpawnPtyOptions) => PtyLike;
 export interface TerminalSink {
   /** Deliver an output frame to the client. */
   send(data: Uint8Array): void;
-  /** Close the underlying connection. */
-  close(): void;
+  /**
+   * Close the underlying connection. An optional WebSocket close `code` and
+   * `reason` are threaded through so a takeover (a superseding attach) can be
+   * distinguished from an ordinary teardown client-side — see
+   * {@link TERMINAL_CLOSE_SUPERSEDED}.
+   */
+  close(code?: number, reason?: string): void;
 }
 
 /** Live state for one terminal-session id. */
@@ -98,6 +115,12 @@ interface TerminalInstance {
   /** Output buffered while no sink is attached (bounded by PENDING_MAX_BYTES). */
   pending: Uint8Array[];
   pendingBytes: number;
+  /**
+   * Set when the detached buffer overflowed and dropped output, so the next
+   * attach can lead its replay with {@link TRUNCATION_NOTICE}; reset once the
+   * cue has been emitted.
+   */
+  truncated: boolean;
   idleTimer: ReturnType<typeof setTimeout> | null;
   disposed: boolean;
 }
@@ -128,6 +151,7 @@ export class TerminalManager {
   private readonly idleTimeoutMs: number;
   private readonly boundary: string | undefined;
   private readonly maxTerminals: number;
+  private readonly pendingMaxBytes: number;
 
   /**
    * Construct a terminal manager.
@@ -135,7 +159,9 @@ export class TerminalManager {
    * @param opts - `spawn` injects a mock PTY factory in tests; `idleTimeoutMs`
    *   overrides the idle-teardown grace period; `boundary` overrides the path
    *   boundary (defaults to the process-wide initialized boundary);
-   *   `maxTerminals` overrides the concurrent-PTY cap.
+   *   `maxTerminals` overrides the concurrent-PTY cap; `pendingMaxBytes`
+   *   overrides the detached-output buffer cap (tests shrink it to exercise
+   *   truncation without buffering a megabyte).
    */
   constructor(
     opts: {
@@ -143,12 +169,14 @@ export class TerminalManager {
       idleTimeoutMs?: number;
       boundary?: string;
       maxTerminals?: number;
+      pendingMaxBytes?: number;
     } = {}
   ) {
     this.spawn = opts.spawn ?? nodePtySpawn;
     this.idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.boundary = opts.boundary;
     this.maxTerminals = opts.maxTerminals ?? DEFAULT_MAX_TERMINALS;
+    this.pendingMaxBytes = opts.pendingMaxBytes ?? PENDING_MAX_BYTES;
   }
 
   /**
@@ -191,6 +219,7 @@ export class TerminalManager {
       sink: null,
       pending: [],
       pendingBytes: 0,
+      truncated: false,
       idleTimer: null,
       disposed: false,
     };
@@ -223,9 +252,21 @@ export class TerminalManager {
       sink.close();
       return;
     }
-    if (inst.sink && inst.sink !== sink) inst.sink.close();
+    // Replacing a live sink is a takeover (e.g. a duplicated tab re-attaching to
+    // the same id). Close the incumbent with a distinct app code so its client
+    // can tell "moved to another window" from "the shell exited" and keep the
+    // tab instead of pruning it.
+    if (inst.sink && inst.sink !== sink) {
+      inst.sink.close(TERMINAL_CLOSE_SUPERSEDED, TERMINAL_CLOSE_SUPERSEDED_REASON);
+    }
     inst.sink = sink;
     this.clearIdleTimer(inst);
+    // Lead the replay with the truncation cue if output was dropped while
+    // detached, then reset the flag — the cue is emitted exactly once per gap.
+    if (inst.truncated) {
+      sink.send(Buffer.from(TRUNCATION_NOTICE, 'utf8'));
+      inst.truncated = false;
+    }
     // Flush buffered output captured before the socket connected.
     for (const chunk of inst.pending) sink.send(chunk);
     inst.pending = [];
@@ -299,7 +340,12 @@ export class TerminalManager {
       inst.sink.send(bytes);
       return;
     }
-    if (inst.pendingBytes >= PENDING_MAX_BYTES) return; // Drop once the pre-attach buffer is full.
+    if (inst.pendingBytes >= this.pendingMaxBytes) {
+      // Buffer full: drop this (newest) chunk and flag the gap so the next attach
+      // tells the user their scrollback is incomplete.
+      inst.truncated = true;
+      return;
+    }
     inst.pending.push(bytes);
     inst.pendingBytes += bytes.byteLength;
   }

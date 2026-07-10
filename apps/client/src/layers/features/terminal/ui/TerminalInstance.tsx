@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { Transport, TerminalHandle } from '@dorkos/shared/transport';
+import { TERMINAL_CLOSE_SUPERSEDED } from '@dorkos/shared/terminal-schemas';
 import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
@@ -153,10 +154,21 @@ export function TerminalInstance({
         for await (const chunk of handle.output) {
           term.write(chunk);
         }
-        // The stream ended without a client-initiated teardown (`cancelled` is
-        // still false), so the server closed it: the shell exited or the PTY was
-        // idle-reclaimed. Tell the parent so it prunes this tab.
-        if (!cancelled) onEndedRef.current();
+        // Client-initiated teardown (unmount/abort) — the parent already owns
+        // this instance's fate; nothing to report.
+        if (cancelled) return;
+        // A takeover: the server replaced this sink with a newer attachment
+        // (e.g. this session was duplicated into another window). Keep the tab —
+        // dead but labeled — and DON'T prune or touch the stored ids, so the
+        // window that took over isn't disrupted. Re-attaching here would just
+        // steal the sink back and start a takeover war between the two windows.
+        if (handle.closeInfo?.code === TERMINAL_CLOSE_SUPERSEDED) {
+          term.write('\r\n\x1b[2m[opened in another window — session moved]\x1b[0m\r\n');
+          return;
+        }
+        // Otherwise the server closed it because the shell exited or the PTY was
+        // idle-reclaimed. Tell the parent so it prunes this tab and clears its id.
+        onEndedRef.current();
       } catch (err) {
         // If the abort raced the create AFTER the server spawned but before the
         // response was read, the PTY's id is unknowable client-side — that
