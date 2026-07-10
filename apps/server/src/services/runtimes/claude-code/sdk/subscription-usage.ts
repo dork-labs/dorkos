@@ -27,6 +27,7 @@ interface RateLimitWindow {
 const WINDOW_LABELS: Record<string, string> = {
   five_hour: '5-hour window',
   seven_day: '7-day window',
+  seven_day_oauth_apps: '7-day OAuth apps',
   seven_day_opus: '7-day Opus',
   seven_day_sonnet: '7-day Sonnet',
 };
