@@ -25,7 +25,15 @@
  *
  * @module features/gen-ui/model/widget-context
  */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { formatUiActionMessage, type WidgetAction } from '@dorkos/shared/ui-widget';
 import { executeUiCommand, TIMING, type DispatcherContext } from '@/layers/shared/lib';
 import { LinkSafetyModal } from '@/layers/shared/ui';
@@ -106,6 +114,13 @@ export function WidgetActionProvider({
   const transport = useTransport();
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [dispatch, setDispatch] = useState<DispatchRecord | null>(null);
+  // SYNCHRONOUS latch mirror. The React state above is for rendering only — it
+  // does not update between two same-tick dispatches (a fast double-click, or
+  // several clicks in one synchronous burst), so guarding on it alone let every
+  // click in the burst POST (observed: three moves fired back-to-back). This
+  // ref is checked-and-set inside `onAction` BEFORE any await, closing the
+  // window; the failure path clears it (the un-latch).
+  const dispatchedRef = useRef(false);
 
   const onAction = useCallback(
     async (action: WidgetAction): Promise<void> => {
@@ -133,6 +148,11 @@ export function WidgetActionProvider({
         case 'agent': {
           // Guarded by the node level; this is defensive.
           if (!sessionId) return;
+          // Re-entrancy gate: the node-level `interactive` check reads React
+          // state, which is stale within the same tick — this ref is the
+          // authoritative one-dispatch-per-widget-instance guard.
+          if (dispatchedRef.current) return;
+          dispatchedRef.current = true;
           const request = { actionId: action.id, payload: action.payload, widgetTitle };
           const streamStore = useSessionStreamStore.getState();
           // Render the interaction instantly and consistently: the optimistic
@@ -160,8 +180,10 @@ export function WidgetActionProvider({
               }
             }, TIMING.TRIGGER_PENDING_TIMEOUT_MS);
           } catch (err) {
-            // Failure — un-latch, drop the optimistic message and the trigger
-            // latch, and rethrow so the node reverts its optimistic mark and toasts.
+            // Failure — un-latch (ref AND render state), drop the optimistic
+            // message and the trigger latch, and rethrow so the node reverts
+            // its optimistic mark and toasts.
+            dispatchedRef.current = false;
             streamStore.setOptimisticUserMessage(sessionId, null);
             streamStore.setTriggerPending(sessionId, false);
             setDispatch(null);

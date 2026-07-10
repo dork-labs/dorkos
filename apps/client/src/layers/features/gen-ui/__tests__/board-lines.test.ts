@@ -94,6 +94,27 @@ describe('detectWinLine', () => {
     ).toBeNull();
   });
 
+  it('never reads whitespace-only glyphs as a winning line (an empty board is not a win)', () => {
+    // Models emit `glyph: " "` for empty squares; a row of identical spaces
+    // must not draw a victory stroke across an empty board.
+    expect(
+      detectWinLine([
+        [{ glyph: ' ' }, { glyph: ' ' }, { glyph: ' ' }],
+        [{ glyph: ' ' }, { glyph: 'X' }, { glyph: ' ' }],
+        [{ glyph: ' ' }, { glyph: ' ' }, { glyph: ' ' }],
+      ])
+    ).toBeNull();
+  });
+
+  it('compares glyphs trimmed, so padded marks still form a line', () => {
+    const win = detectWinLine([
+      [{ glyph: ' X ' }, { glyph: 'X' }, { glyph: 'X ' }],
+      [{ glyph: 'O' }, { glyph: 'O' }, {}],
+      [{}, {}, {}],
+    ]);
+    expect(win?.glyph).toBe('X');
+  });
+
   it('ignores non-square boards', () => {
     expect(
       detectWinLine(

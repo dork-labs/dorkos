@@ -647,6 +647,34 @@ describe('Tier-2 delight nodes', () => {
       expect(parsed.rows).toEqual([[{ glyph: 'X' }, { glyph: 'O' }, {}]]);
     });
 
+    it('strips a whitespace-only glyph to no glyph at all (models emit " " for empty cells)', () => {
+      const parsed = parse({
+        type: 'board',
+        rows: [[{ glyph: ' ' }, { glyph: '   ' }, { glyph: 'X' }]],
+      }) as { rows: { glyph?: string }[][] };
+      expect(parsed.rows[0][0].glyph).toBeUndefined();
+      expect(parsed.rows[0][1].glyph).toBeUndefined();
+      expect(parsed.rows[0][2].glyph).toBe('X');
+    });
+
+    it('trims surrounding whitespace from a real glyph', () => {
+      const parsed = parse({
+        type: 'board',
+        rows: [[{ glyph: ' X ' }]],
+      }) as { rows: { glyph?: string }[][] };
+      expect(parsed.rows[0][0].glyph).toBe('X');
+    });
+
+    it('keeps a whitespace-glyph cell’s tone and action intact', () => {
+      const parsed = parse({
+        type: 'board',
+        rows: [[{ glyph: ' ', tone: 'info', action: { kind: 'agent', id: 'move-0-0' } }]],
+      }) as { rows: { glyph?: string; tone?: string; action?: { id: string } }[][] };
+      expect(parsed.rows[0][0].glyph).toBeUndefined();
+      expect(parsed.rows[0][0].tone).toBe('info');
+      expect(parsed.rows[0][0].action?.id).toBe('move-0-0');
+    });
+
     it('slices an oversized board to 12 rows and 12 columns instead of rejecting it', () => {
       const oversizedRow = Array.from({ length: 20 }, () => 'X');
       const rows = Array.from({ length: 20 }, () => oversizedRow);

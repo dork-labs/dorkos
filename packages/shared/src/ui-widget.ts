@@ -534,10 +534,27 @@ function coerceBoardCell(value: unknown): unknown {
   return value.trim() === '' ? {} : { glyph: value };
 }
 
+/**
+ * A board cell's `glyph`, trimmed. Models routinely emit `glyph: " "` for an
+ * empty square; a whitespace-only glyph is truthy downstream, so it rendered a
+ * phantom mark, broke the cell's accessible name, and let the win-line detector
+ * see a "line" of identical spaces across an empty board. Whitespace-only →
+ * `undefined` (no glyph at all); the transform narrows the value without
+ * changing the declared `string | undefined` type.
+ */
+const boardGlyphSchema = z
+  .string()
+  .max(8)
+  .optional()
+  .transform((value) => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  });
+
 const boardCellSchema = z.preprocess(
   coerceBoardCell,
   z.object({
-    glyph: z.string().max(8).optional(),
+    glyph: boardGlyphSchema,
     icon: z.string().optional(),
     tone: toneSchema.optional(),
     action: WidgetActionSchema.optional(),

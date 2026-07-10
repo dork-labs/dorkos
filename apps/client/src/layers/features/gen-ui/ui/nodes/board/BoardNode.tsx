@@ -59,13 +59,18 @@ const CELL_UNIT_SMALL = 3.25;
 const CELL_UNIT_LARGE = 2.5;
 const GAP_UNIT = 0.25;
 
-/** Text-color token the winning stroke and cells inherit, keyed by the line's tone. */
+/**
+ * Text-color token the winning stroke inherits, keyed by the line's tone. Uses
+ * the vivid base status tokens (saturated in BOTH themes) — never `primary`,
+ * which is near-black in the light neutral theme and read as a black bar. A
+ * toneless win celebrates in success green.
+ */
 const WIN_TONE_TEXT: Record<WidgetTone, string> = {
-  default: 'text-primary',
-  success: 'text-status-success-fg',
-  warning: 'text-status-warning-fg',
-  error: 'text-status-error-fg',
-  info: 'text-status-info-fg',
+  default: 'text-status-success',
+  success: 'text-status-success',
+  warning: 'text-status-warning',
+  error: 'text-status-error',
+  info: 'text-status-info',
 };
 
 /**
