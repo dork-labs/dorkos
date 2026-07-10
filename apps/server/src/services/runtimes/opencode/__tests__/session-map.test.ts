@@ -4,6 +4,7 @@ import type { Db } from '@dorkos/db';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import { OpenCodeSessionMap } from '../session-map.js';
 import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../session-mapper.js';
+import { logger } from '../../../../lib/logger.js';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_SESSION_ID = '22222222-2222-4222-8222-222222222222';
@@ -41,6 +42,49 @@ describe('OpenCodeSessionMap', () => {
     map.bind(SESSION_ID, OC_ID);
     map.bind(OTHER_SESSION_ID, OTHER_OC_ID);
     expect(map.listAll()).toHaveLength(2);
+  });
+
+  describe('persistence failure (the never-throws contract)', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      // A real failure, not a mocked one: closing the underlying better-sqlite3
+      // connection makes every subsequent statement throw.
+      db.$client.close();
+      warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    it('bind() warns and returns normally instead of throwing', () => {
+      expect(() => map.bind(SESSION_ID, OC_ID)).not.toThrow();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('failed to persist session binding'),
+        expect.objectContaining({ sessionId: SESSION_ID, ocSessionId: OC_ID })
+      );
+    });
+
+    it('listAll() warns and degrades to an empty hydration set instead of throwing', () => {
+      expect(map.listAll()).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('failed to read persisted session bindings'),
+        expect.anything()
+      );
+    });
+
+    it('the mapper stays fully functional in-memory over a broken store', async () => {
+      const provider = createProvider();
+
+      // Construction hydrates via listAll() — must not crash boot.
+      const mapper = new OpenCodeSessionMapper(provider, map);
+
+      // Creating a session write-throughs via bind() — must not break the turn.
+      await expect(mapper.ensureSession(SESSION_ID, { cwd: PROJECT_DIR })).resolves.toBe(OC_ID);
+      expect(mapper.getOpenCodeSessionId(SESSION_ID)).toBe(OC_ID);
+
+      // The in-memory binding still serves listing under the original id —
+      // only restart durability degrades.
+      const sessions = await mapper.listSessions(PROJECT_DIR);
+      expect(sessions.map((s) => s.id)).toEqual([SESSION_ID]);
+    });
   });
 });
 
