@@ -1,4 +1,5 @@
 import { SHARD_INDEX } from './config.js';
+import { preflightStack } from './boot.js';
 import { prepareFilesystem } from './seed.js';
 import { createShardRecorder } from './library.js';
 import { autoSkippedShotIds } from './overrides.js';
@@ -39,6 +40,10 @@ async function main(): Promise<void> {
       .map((s) => s.trim())
       .filter(Boolean)
   );
+
+  // Reconcile any orphaned stack on this shard's ports and require them free,
+  // BEFORE the filesystem prep wipes the home the stale pidfile lives in.
+  await preflightStack();
 
   process.stdout.write('▸ Preparing filesystem…\n');
   await prepareFilesystem();
