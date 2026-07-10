@@ -40,14 +40,27 @@ function jsonlLine(cwd: string, text: string): string {
  */
 async function nextEvent(
   it: AsyncIterator<SessionListEvent>,
-  label: string
+  label: string,
+  options: { nudge?: () => Promise<void> } = {}
 ): Promise<SessionListEvent> {
+  // A write that lands in the same instant a directory is created can slip
+  // past the watcher while it is still registering the new dir (frequent under
+  // full-suite load). Re-touching the file every few seconds gives a WORKING
+  // watcher another change event to catch; a broken watcher (the glob
+  // regression this suite guards) never fires no matter how often we nudge.
+  const nudgeTimer = options.nudge
+    ? setInterval(() => void options.nudge?.().catch(() => undefined), 3_000)
+    : undefined;
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 15_000)
   );
-  const result = await Promise.race([it.next(), timeout]);
-  if (result.done) throw new Error(`stream ended while waiting for ${label}`);
-  return result.value;
+  try {
+    const result = await Promise.race([it.next(), timeout]);
+    if (result.done) throw new Error(`stream ended while waiting for ${label}`);
+    return result.value;
+  } finally {
+    if (nudgeTimer) clearInterval(nudgeTimer);
+  }
 }
 
 describe('watchSessionList (real chokidar integration)', () => {
@@ -83,8 +96,12 @@ describe('watchSessionList (real chokidar integration)', () => {
     // multi-project half of SRV-I4 and the glob regression in one assertion.
     const dirB = join(projectsRoot, '-work-beta');
     await mkdir(dirB);
-    await writeFile(join(dirB, 'session-b1.jsonl'), jsonlLine('/work/beta', 'Beta hello'));
-    const upserted = await nextEvent(iterator, 'live session_upserted in new dir');
+    const writeB1 = () =>
+      writeFile(join(dirB, 'session-b1.jsonl'), jsonlLine('/work/beta', 'Beta hello'));
+    await writeB1();
+    const upserted = await nextEvent(iterator, 'live session_upserted in new dir', {
+      nudge: writeB1,
+    });
     expect(upserted).toMatchObject({
       type: 'session_upserted',
       session: { id: 'session-b1', cwd: '/work/beta' },
