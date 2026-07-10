@@ -82,10 +82,12 @@
   },
   "devDependencies": {
     "@better-auth/api-key": "^1.6.23",
+    "@dorkos/client": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/harness": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
+    "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "better-auth": "^1.6",

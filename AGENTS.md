@@ -138,7 +138,7 @@ Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: R
 
 ## CI
 
-GitHub Actions on push to main: CLI smoke tests (Node 20/22) + integration tests. Locally: `pnpm smoke:docker` / `pnpm smoke:integration`.
+GitHub Actions on push to main: CLI smoke tests (Node 22/24) + integration tests. Locally: `pnpm smoke:docker` / `pnpm smoke:integration`.
 
 ## Research
 
