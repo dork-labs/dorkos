@@ -30,7 +30,7 @@ export const timelineEntries: TimelineEntry[] = [
     time: '2:47 AM',
     headline: 'Something breaks. An agent fixes it. You never wake up.',
     paragraphs: [
-      'Tests fail on the dependency upgrade. [TASKS] detects it. Dispatches an agent. The agent reads the error, traces the cause, opens a fix. Tests go green.',
+      'The dependency upgrade [TASKS] scheduled runs into failing tests. The agent reads the error, traces the cause, opens a fix. Tests go green.',
       'Your phone buzzes once. A Telegram message from [RELAY]: \u201CTests were failing. Fixed. Change #247 ready for your review.\u201D',
       'You do not see it until morning.',
     ],

@@ -27,7 +27,7 @@ export const faqItems: FaqItem[] = [
     id: 'getting-started',
     question: 'What do I need to get started?',
     answer:
-      "Node.js 18 or newer, and Claude Code. One command installs DorkOS. No accounts to create, no cloud services to configure. If you can run `npm install`, you're ready.",
+      "Node.js 18 or newer, and at least one supported coding agent: Claude Code, Codex, or OpenCode. Claude Code comes bundled with DorkOS, so it's the fastest way to start. One command installs DorkOS. No DorkOS account to create, no cloud services to configure. If you can run `npm install`, you're ready.",
   },
   {
     id: 'license',

@@ -4,7 +4,6 @@ description: How to completely remove DorkOS and its data from your system
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
 # Uninstall
 
@@ -25,10 +24,9 @@ This walks you through removing:
 
 After cleanup completes, remove the CLI itself:
 
-<Tabs items={['npm', 'Homebrew']}>
-  <Tab value="npm">```bash npm uninstall -g dorkos ```</Tab>
-  <Tab value="Homebrew">```bash brew uninstall dorkos ```</Tab>
-</Tabs>
+```bash
+npm uninstall -g dorkos
+```
 
 ## Docker
 
