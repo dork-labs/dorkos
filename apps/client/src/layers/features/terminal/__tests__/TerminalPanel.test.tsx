@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TerminalHandle } from '@dorkos/shared/transport';
@@ -102,6 +102,19 @@ function liveOutput(signal: AbortSignal): AsyncIterable<Uint8Array> {
 
 /** An output stream that ends immediately — models the shell exiting / PTY closing. */
 async function* exitedOutput(): AsyncIterable<Uint8Array> {}
+
+/**
+ * A create that stays in flight until the test resolves it — models the window
+ * where the server has spawned (or is spawning) a PTY but the client response
+ * hasn't landed yet (the late-spawn leak windows, #173 review).
+ */
+function deferredCreate() {
+  let resolve!: (handle: TerminalHandle) => void;
+  const promise = new Promise<TerminalHandle>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 /** A mock transport whose openTerminal spawns a live shell with a caller-chosen id. */
 function liveTransport() {
@@ -220,6 +233,86 @@ describe('TerminalPanel', () => {
     // Last tab closed → empty state, panel stays open.
     expect(screen.getByText('No terminals open.')).toBeInTheDocument();
     expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+  });
+
+  it('destroys a PTY whose create resolves after its tab was closed — never persisted, never leaked', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({ supportsTerminal: true });
+    const create = deferredCreate();
+    transport.openTerminal = vi.fn(() => create.promise);
+
+    renderTerminal(transport);
+
+    // The seeded tab is still spawning — close it. No id yet, so nothing to
+    // destroy at click time.
+    const tab = await screen.findByRole('tab', { name: /Terminal 1/ });
+    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    expect(transport.closeTerminal).not.toHaveBeenCalled();
+    await screen.findByText('No terminals open.');
+
+    // The in-flight create resolves, holding the only reference to a live PTY:
+    // the closed tab's key routes it straight to destruction.
+    create.resolve({ id: 'late-pty', output: exitedOutput() });
+    await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('late-pty'));
+    // Never persisted, no tab re-appears.
+    expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+  });
+
+  it('destroys a PTY whose create resolves in the same tick as the close click (commit gap)', async () => {
+    const transport = createMockTransport({ supportsTerminal: true });
+    const create = deferredCreate();
+    transport.openTerminal = vi.fn(() => create.promise);
+
+    renderTerminal(transport);
+    const tab = await screen.findByRole('tab', { name: /Terminal 1/ });
+
+    // Close and resolve back-to-back in the SAME tick — no interim flush. The
+    // create's continuation can then run in the gap where removeTab has
+    // committed but the instance's deferred effect cleanup hasn't flipped
+    // `cancelled` yet, so the id arrives via onCreated for a tab that no
+    // longer exists. closedPendingKeys (mutated synchronously in closeTab) is
+    // what routes it to destruction regardless of which path fires.
+    fireEvent.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    create.resolve({ id: 'late-pty', output: exitedOutput() });
+
+    await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('late-pty'));
+    // Never persisted, never adopted back into a tab.
+    expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+  });
+
+  it('persists a PTY whose create resolves after unmount, so remount re-attaches to it', async () => {
+    const transport = createMockTransport({ supportsTerminal: true });
+    const create = deferredCreate();
+    transport.openTerminal = vi.fn(() => create.promise);
+
+    const { unmount } = renderTerminal(transport);
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+
+    // Unmount mid-spawn (tab switch / leaving /session): shells must survive.
+    unmount();
+    expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+
+    // The create resolves post-unmount — the id is persisted (not destroyed) so
+    // the shell is re-attachable.
+    create.resolve({ id: 'late-pty', output: exitedOutput() });
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['late-pty']));
+    expect(transport.closeTerminal).not.toHaveBeenCalled();
+
+    // Remount: the persisted tab is restored and re-attached, not re-created.
+    const attachTerminal = vi.fn(
+      async (id: string, signal?: AbortSignal): Promise<TerminalHandle> => ({
+        id,
+        output: liveOutput(signal!),
+      })
+    );
+    transport.attachTerminal = attachTerminal;
+    renderTerminal(transport);
+    await waitFor(() =>
+      expect(attachTerminal).toHaveBeenCalledWith('late-pty', expect.any(AbortSignal))
+    );
+    expect(screen.getByRole('tab', { name: /Terminal 1/ })).toBeInTheDocument();
   });
 
   it('offers a create affordance from the empty state', async () => {

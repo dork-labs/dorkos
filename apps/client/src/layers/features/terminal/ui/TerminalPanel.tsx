@@ -134,13 +134,26 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     });
   }, []);
 
+  // Keys of tabs the user closed while their create was still in flight (no
+  // ptyId yet). When such a create resolves (late spawn), the PTY must be
+  // DESTROYED — the user discarded that tab — not persisted. Body-scoped and
+  // consumed on resolution; keys of creates that ultimately reject just expire
+  // with the body.
+  const closedPendingKeysRef = useRef(new Set<string>());
+
   const closeTab = useCallback(
     (key: string) => {
       const tab = stateRef.current.tabs.find((t) => t.key === key);
       // Closing a tab is an explicit teardown — destroy the PTY server-side
       // (best-effort) rather than detaching. Resolves the reviewer note that
       // DELETE /api/terminal/:id had no client callers (DOR-225 → DOR-226).
-      if (tab?.ptyId) void transport.closeTerminal(tab.ptyId).catch(() => {});
+      if (tab?.ptyId) {
+        void transport.closeTerminal(tab.ptyId).catch(() => {});
+      } else if (tab) {
+        // Still spawning: no id to destroy yet. Mark the key so the late-spawn
+        // handler destroys the PTY the moment the in-flight create resolves.
+        closedPendingKeysRef.current.add(key);
+      }
       setState((s) => removeTab(s, key));
     },
     [transport]
@@ -150,12 +163,64 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     setState((s) => (s.activeKey === key ? s : { ...s, activeKey: key }));
   }, []);
 
-  const handleCreated = useCallback((key: string, id: string) => {
-    setState((s) => ({
-      ...s,
-      tabs: s.tabs.map((t) => (t.key === key ? { ...t, ptyId: id } : t)),
-    }));
-  }, []);
+  /**
+   * A create (or re-attach) resolved after its instance was torn down — the
+   * resolved PTY has no owner and would otherwise leak until the server's idle
+   * TTL (#173 review finding). Two windows, opposite resolutions:
+   *
+   * - The tab was explicitly CLOSED while spawning → destroy the PTY.
+   * - The instance/panel UNMOUNTED while spawning (tab switch, leaving
+   *   /session) → the shell must survive: persist the id straight into the
+   *   sessionStorage tabs store so the next mount re-attaches to it. Safe
+   *   post-unmount — a pure write via the store module, no React state.
+   *
+   * A late RE-attach needs neither: its id is already persisted (or was
+   * explicitly destroyed by closeTab, which had the id).
+   */
+  const handleLateSpawn = useCallback(
+    (key: string, id: string, reattached: boolean) => {
+      if (closedPendingKeysRef.current.delete(key)) {
+        void transport.closeTerminal(id).catch(() => {});
+        return;
+      }
+      if (reattached) return;
+      const stored = readTerminalTabs(sessionId, cwd);
+      if (!stored.ids.includes(id)) {
+        writeTerminalTabs(sessionId, cwd, {
+          ids: [...stored.ids, id],
+          activeIndex: stored.activeIndex,
+        });
+      }
+    },
+    [transport, sessionId, cwd]
+  );
+
+  const handleCreated = useCallback(
+    (key: string, id: string) => {
+      // The tab can already be closed when the create resolves: closeTab
+      // committed removeTab, but the instance's teardown (which flips
+      // `cancelled`) runs in a deferred effect cleanup — so the instance still
+      // reports through onCreated, and the setState below would silently no-op
+      // and strand the PTY. `closedPendingKeysRef` is the authoritative signal
+      // for that window: closeTab mutates it SYNCHRONOUSLY at click time (a
+      // stateRef check would be useless here — stateRef syncs in a passive
+      // effect, the same deferred timing as `cancelled`, so it is exactly as
+      // stale). closeTab is the only tab-remover that can precede onCreated:
+      // handleEnded can't fire before the create resolves for the same
+      // instance (the output stream doesn't exist yet), and a body unmount
+      // flips `cancelled` in synchronous cleanup before this continuation
+      // runs, routing to onLateSpawn instead.
+      if (closedPendingKeysRef.current.has(key)) {
+        handleLateSpawn(key, id, false);
+        return;
+      }
+      setState((s) => ({
+        ...s,
+        tabs: s.tabs.map((t) => (t.key === key ? { ...t, ptyId: id } : t)),
+      }));
+    },
+    [handleLateSpawn]
+  );
 
   const handleEnded = useCallback((key: string) => {
     // Shell exited (or a re-attach target was gone) — prune the tab. Never calls
@@ -190,6 +255,7 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
               active={tab.key === state.activeKey}
               onCreated={(id) => handleCreated(tab.key, id)}
               onEnded={() => handleEnded(tab.key)}
+              onLateSpawn={(id, reattached) => handleLateSpawn(tab.key, id, reattached)}
             />
           ))
         )}
