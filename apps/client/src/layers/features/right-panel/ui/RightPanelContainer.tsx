@@ -9,7 +9,7 @@ import {
   useTransport,
 } from '@/layers/shared/model';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
-import { RightPanelHeader } from './RightPanelHeader';
+import { RightPanelHeader, RIGHT_PANEL_PANEL_ID, rightPanelTabDomId } from './RightPanelHeader';
 
 /** CSS transition for the Panel's flex-grow during programmatic open/close. */
 const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
@@ -110,7 +110,16 @@ export function RightPanelContainer() {
           ) : undefined
         }
       />
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div
+        className="min-h-0 flex-1 overflow-hidden"
+        {...(visibleContributions.length > 1 && activeTab
+          ? {
+              id: RIGHT_PANEL_PANEL_ID,
+              role: 'tabpanel',
+              'aria-labelledby': rightPanelTabDomId(activeTab),
+            }
+          : {})}
+      >
         <PanelErrorBoundary tabId={activeTab}>
           <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>
         </PanelErrorBoundary>

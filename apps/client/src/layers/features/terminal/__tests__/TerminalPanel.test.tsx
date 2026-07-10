@@ -191,7 +191,7 @@ describe('TerminalPanel', () => {
     await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
 
     // Switch back to the first tab — no new PTY is created, both stay mounted.
-    await user.click(screen.getByRole('tab', { name: /Terminal 1/ }).querySelector('button')!);
+    await user.click(screen.getByRole('tab', { name: /Terminal 1/ }));
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: /Terminal 1/, selected: true })).toBeInTheDocument()
     );
@@ -227,8 +227,9 @@ describe('TerminalPanel', () => {
     // Wait until the seeded shell has an id persisted (created + flushed).
     await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['pty-1']));
 
-    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
-    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    // The close control is a sibling of the tab (a non-tab-stop button), so it
+    // is queried at the strip level rather than within the tab element.
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
 
     await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('pty-1'));
     // Last tab closed → empty state, panel stays open.
@@ -246,8 +247,8 @@ describe('TerminalPanel', () => {
 
     // The seeded tab is still spawning — close it. No id yet, so nothing to
     // destroy at click time.
-    const tab = await screen.findByRole('tab', { name: /Terminal 1/ });
-    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    await screen.findByRole('tab', { name: /Terminal 1/ });
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
     expect(transport.closeTerminal).not.toHaveBeenCalled();
     await screen.findByText('No terminals open.');
 
@@ -266,7 +267,7 @@ describe('TerminalPanel', () => {
     transport.openTerminal = vi.fn(() => create.promise);
 
     renderTerminal(transport);
-    const tab = await screen.findByRole('tab', { name: /Terminal 1/ });
+    await screen.findByRole('tab', { name: /Terminal 1/ });
 
     // Close and resolve back-to-back in the SAME tick — no interim flush. The
     // create's continuation can then run in the gap where removeTab has
@@ -274,7 +275,7 @@ describe('TerminalPanel', () => {
     // `cancelled` yet, so the id arrives via onCreated for a tab that no
     // longer exists. closedPendingKeys (mutated synchronously in closeTab) is
     // what routes it to destruction regardless of which path fires.
-    fireEvent.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
     create.resolve({ id: 'late-pty', output: exitedOutput() });
 
     await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('late-pty'));
@@ -322,8 +323,9 @@ describe('TerminalPanel', () => {
     renderTerminal(transport);
 
     await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['pty-1']));
-    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
-    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    // The close control is a sibling of the tab (a non-tab-stop button), so it
+    // is queried at the strip level rather than within the tab element.
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
     const emptyState = (await screen.findByText('No terminals open.')).parentElement!;
 
     // The empty state carries its own create button (besides the strip's "+").

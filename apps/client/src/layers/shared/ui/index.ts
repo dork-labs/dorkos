@@ -191,6 +191,12 @@ export {
 export { DataTable } from './data-table';
 export type { DataTableProps } from './data-table';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
+export { useRovingTabList } from './use-roving-tab-list';
+export type {
+  RovingTabProps,
+  RovingTabListApi,
+  UseRovingTabListParams,
+} from './use-roving-tab-list';
 export type { TabsListProps } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';
 export { PathInput } from './path-input';

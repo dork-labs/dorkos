@@ -4,7 +4,7 @@ import { Button } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 import { TerminalInstance } from './TerminalInstance';
-import { TerminalTabs } from './TerminalTabs';
+import { TerminalTabs, TERMINAL_PANEL_ID, terminalTabDomId } from './TerminalTabs';
 
 /** A live terminal tab in the panel's state. */
 interface TerminalTab {
@@ -281,7 +281,16 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
         onClose={closeTab}
         onCreate={createTab}
       />
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div
+        className="relative min-h-0 flex-1 overflow-hidden"
+        {...(state.activeKey
+          ? {
+              id: TERMINAL_PANEL_ID,
+              role: 'tabpanel',
+              'aria-labelledby': terminalTabDomId(state.activeKey),
+            }
+          : {})}
+      >
         {state.tabs.length === 0 ? (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-6 text-sm">
             <SquareTerminal className="size-6 opacity-60" />

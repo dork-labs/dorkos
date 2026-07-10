@@ -3,7 +3,7 @@ import { Panel, PanelResizeHandle } from 'react-resizable-panels';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { CanvasHeader } from './CanvasHeader';
+import { CanvasHeader, CANVAS_PANEL_ID, canvasTabDomId } from './CanvasHeader';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
@@ -125,8 +125,14 @@ function CanvasBody() {
       />
       {/* Single scroll container for all content types. min-h-0 keeps the flex
           item from sizing to its content, which would clip instead of scroll
-          (DOR-96). */}
-      <div className="min-h-0 flex-1 overflow-auto">
+          (DOR-96). When a document is open it is the tab strip's panel, labelled
+          by the active tab (WAI-ARIA Tabs). */}
+      <div
+        className="min-h-0 flex-1 overflow-auto"
+        {...(active
+          ? { id: CANVAS_PANEL_ID, role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) }
+          : {})}
+      >
         {active ? (
           <CanvasRenderer
             documentId={active.id}
