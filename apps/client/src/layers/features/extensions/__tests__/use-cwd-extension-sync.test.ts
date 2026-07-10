@@ -164,28 +164,32 @@ describe('useCwdExtensionSync', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('resolves against the preload server port under Electron (DOR-243)', async () => {
-    window.electronAPI = {
-      getServerPort: vi.fn(() => 6242),
-    } as unknown as Window['electronAPI'];
-
-    mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
-
-    renderHook(() => useCwdExtensionSync());
-
-    act(() => {
-      useAppStore.getState().setSelectedCwd('/desktop/project');
+  describe('desktop (Electron) origin resolution', () => {
+    afterEach(() => {
+      delete (window as { electronAPI?: unknown }).electronAPI;
     });
 
-    await vi.waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:6242/api/extensions/cwd-changed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: '/desktop/project' }),
+    it('resolves against the preload server port under Electron (DOR-243)', async () => {
+      window.electronAPI = {
+        getServerPort: vi.fn(() => 6242),
+      } as unknown as Window['electronAPI'];
+
+      mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
+
+      renderHook(() => useCwdExtensionSync());
+
+      act(() => {
+        useAppStore.getState().setSelectedCwd('/desktop/project');
+      });
+
+      await vi.waitFor(() => {
+        expect(mockFetch).toHaveBeenCalledWith('http://localhost:6242/api/extensions/cwd-changed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cwd: '/desktop/project' }),
+        });
       });
     });
-
-    delete (window as { electronAPI?: unknown }).electronAPI;
   });
 
   it('handles fetch errors gracefully without crashing', async () => {
