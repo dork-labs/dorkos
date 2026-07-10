@@ -195,11 +195,11 @@ describe('TerminalManager', () => {
       return new TerminalManager({ spawn, boundary, idleTimeoutMs: 60_000, pendingMaxBytes: 8 });
     }
 
-    it('flags truncation when the detached buffer overflows and leads the replay with the cue once, then resets', async () => {
+    it('evicts the OLDEST chunks on overflow and leads the replay with the cue once, then resets', async () => {
       const mgr = tinyBufferManager();
       const id = await mgr.create({ cwd: boundary });
       lastPty.emit('12345678'); // fills the 8-byte buffer to the cap
-      lastPty.emit('dropped'); // buffer full → dropped, truncation flagged
+      lastPty.emit('newest'); // over the cap → the oldest chunk is evicted, truncation flagged
 
       const sink = makeSink();
       mgr.attach(id, sink);
@@ -207,7 +207,10 @@ describe('TerminalManager', () => {
       expect(Buffer.from(sink.send.mock.calls[0][0]).toString('utf8')).toContain(
         '[some output was lost while disconnected]'
       );
-      expect(Buffer.from(sink.send.mock.calls[1][0]).toString('utf8')).toBe('12345678');
+      // Ring-buffer semantics: the NEWEST output survives (it's what the user
+      // needs on reconnect); the stale head is what got dropped.
+      expect(Buffer.from(sink.send.mock.calls[1][0]).toString('utf8')).toBe('newest');
+      expect(sink.send).toHaveBeenCalledTimes(2);
 
       // Re-attach after a clean detach: the flag was reset, so no second cue.
       mgr.detach(id, sink);

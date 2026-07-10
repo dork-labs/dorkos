@@ -340,14 +340,18 @@ export class TerminalManager {
       inst.sink.send(bytes);
       return;
     }
-    if (inst.pendingBytes >= this.pendingMaxBytes) {
-      // Buffer full: drop this (newest) chunk and flag the gap so the next attach
-      // tells the user their scrollback is incomplete.
-      inst.truncated = true;
-      return;
-    }
     inst.pending.push(bytes);
     inst.pendingBytes += bytes.byteLength;
+    // Ring-buffer semantics: once over the cap, evict whole chunks from the
+    // HEAD so the newest output — what the user most needs on reconnect —
+    // survives as a contiguous suffix. Flag the gap so the next attach leads
+    // its replay with the truncation cue. The `length > 1` guard keeps a
+    // single over-cap chunk rather than emptying the buffer entirely
+    // (mirrors the client-side MAX_QUEUED_BYTES eviction).
+    while (inst.pendingBytes > this.pendingMaxBytes && inst.pending.length > 1) {
+      inst.pendingBytes -= inst.pending.shift()!.byteLength;
+      inst.truncated = true;
+    }
   }
 
   private armIdleTimer(inst: TerminalInstance): void {

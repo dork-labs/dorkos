@@ -14,6 +14,15 @@ interface TerminalTab {
   ptyId: string | null;
   /** Monotonic display number; assigned once and never renumbered on close. */
   label: number;
+  /**
+   * The server closed this tab's socket with `TERMINAL_CLOSE_SUPERSEDED` —
+   * another window took the PTY over. The tab stays visible for this app
+   * lifetime (dead, showing the in-terminal notice), but the PTY is no longer
+   * this window's: its id is excluded from persistence (so a refresh here never
+   * re-attaches and steals the session back) and closing the tab skips the
+   * server-side destroy (which would kill the other window's live shell).
+   */
+  superseded: boolean;
 }
 
 /** The panel's tab state: the open tabs and which one is active. */
@@ -36,9 +45,14 @@ function buildInitialState(sessionId: string | null, cwd: string): PanelState {
     // straight in a terminal (not an empty state). Explicitly closing every tab
     // later shows the empty state; only a fresh mount re-seeds.
     const key = nextTabKey();
-    return { tabs: [{ key, ptyId: null, label: 1 }], activeKey: key };
+    return { tabs: [{ key, ptyId: null, label: 1, superseded: false }], activeKey: key };
   }
-  const tabs: TerminalTab[] = ids.map((id, i) => ({ key: nextTabKey(), ptyId: id, label: i + 1 }));
+  const tabs: TerminalTab[] = ids.map((id, i) => ({
+    key: nextTabKey(),
+    ptyId: id,
+    label: i + 1,
+    superseded: false,
+  }));
   return { tabs, activeKey: tabs[activeIndex]?.key ?? tabs[0].key };
 }
 
@@ -53,15 +67,25 @@ function removeTab(state: PanelState, key: string): PanelState {
   return { tabs, activeKey: neighbor?.key ?? null };
 }
 
+/** Whether a tab's PTY id belongs in this window's persisted restore list. */
+function isPersistable(tab: TerminalTab): tab is TerminalTab & { ptyId: string } {
+  // A superseded tab's PTY belongs to the window that took it over — persisting
+  // its id would make a refresh HERE re-attach and steal the session back
+  // (ping-ponging it on every reload). The dead tab stays in UI state only.
+  return tab.ptyId !== null && !tab.superseded;
+}
+
 /** Derive the persisted `{ ids, activeIndex }` view from live panel state. */
 function toPersisted(state: PanelState): { ids: string[]; activeIndex: number } {
-  const withIds = state.tabs.filter((t): t is TerminalTab & { ptyId: string } => t.ptyId !== null);
-  const ids = withIds.map((t) => t.ptyId);
+  const ids = state.tabs.filter(isPersistable).map((t) => t.ptyId);
   const activeTab = state.tabs.find((t) => t.key === state.activeKey);
-  // A pending (not-yet-spawned) active tab has no id to point at yet; aim at the
-  // last real id so a refresh in that sub-second window restores something sane.
+  // An active tab with no persisted id (still spawning, or superseded) has
+  // nothing to point at; aim at the last real id so a refresh restores
+  // something sane.
   const activeIndex =
-    activeTab?.ptyId != null ? ids.indexOf(activeTab.ptyId) : Math.max(0, ids.length - 1);
+    activeTab && isPersistable(activeTab)
+      ? ids.indexOf(activeTab.ptyId)
+      : Math.max(0, ids.length - 1);
   return { ids, activeIndex };
 }
 
@@ -129,7 +153,7 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   const createTab = useCallback(() => {
     setState((s) => {
       const label = s.tabs.reduce((max, t) => Math.max(max, t.label), 0) + 1;
-      const tab: TerminalTab = { key: nextTabKey(), ptyId: null, label };
+      const tab: TerminalTab = { key: nextTabKey(), ptyId: null, label, superseded: false };
       return { tabs: [...s.tabs, tab], activeKey: tab.key };
     });
   }, []);
@@ -141,23 +165,15 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   // with the body.
   const closedPendingKeysRef = useRef(new Set<string>());
 
-  // Keys of tabs whose socket the server closed with TERMINAL_CLOSE_SUPERSEDED —
-  // another window took the PTY over. The tab stays open (dead, with its
-  // in-terminal notice), but the PTY is no longer this window's to destroy:
-  // closing such a tab must skip closeTerminal, or the DELETE would kill the
-  // live shell out from under the window that owns it now. A ref (not state),
-  // like closedPendingKeysRef: it only gates the close side effect, never
-  // rendering, and the instance reports the takeover outside a React event.
-  const supersededKeysRef = useRef(new Set<string>());
-
   const closeTab = useCallback(
     (key: string) => {
       const tab = stateRef.current.tabs.find((t) => t.key === key);
-      if (supersededKeysRef.current.delete(key)) {
-        // Superseded tab: its PTY id now belongs to the other window. Just drop
-        // the tab — the persist effect rewrites THIS window's stored ids without
-        // it (sessionStorage is per-browser-tab, so that never touches the other
-        // window's copy) — and never destroy the shell.
+      if (tab?.superseded) {
+        // Superseded tab: its PTY belongs to the other window now. Just drop the
+        // dead tab — never DELETE the shared shell out from under the live one.
+        // (Reading superseded off stateRef is safe here: the takeover committed
+        // via setState long before a human can click ×, unlike the same-tick
+        // create/close race that closedPendingKeysRef guards below.)
       } else if (tab?.ptyId) {
         // Closing a tab is an explicit teardown — destroy the PTY server-side
         // (best-effort) rather than detaching. Resolves the reviewer note that
@@ -173,9 +189,18 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     [transport]
   );
 
-  /** An instance's socket was superseded by another window — record the key. */
+  /**
+   * An instance's socket was superseded by another window. Mark the tab in
+   * state: the persist effect then rewrites THIS window's stored ids without it
+   * (sessionStorage is per-browser-tab, so the takeover window's copy is
+   * untouched) — a refresh here won't re-attach and steal the session back.
+   * The dead tab itself stays visible with its in-terminal notice.
+   */
   const handleSuperseded = useCallback((key: string) => {
-    supersededKeysRef.current.add(key);
+    setState((s) => ({
+      ...s,
+      tabs: s.tabs.map((t) => (t.key === key ? { ...t, superseded: true } : t)),
+    }));
   }, []);
 
   const activateTab = useCallback((key: string) => {

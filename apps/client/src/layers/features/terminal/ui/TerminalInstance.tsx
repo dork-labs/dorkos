@@ -31,8 +31,9 @@ interface TerminalInstanceProps {
    * Called when the server closed this socket with `TERMINAL_CLOSE_SUPERSEDED` —
    * another window took the PTY over. The tab is kept (dead, with the in-terminal
    * notice), but the parent must record the takeover: the PTY is no longer this
-   * window's to destroy, so a later close of this tab must skip `closeTerminal`
-   * (destroying it would kill the live terminal in the other window).
+   * window's, so its id is dropped from persisted storage (a refresh here must
+   * not re-attach and steal the session back) and a later close of this tab
+   * skips `closeTerminal` (destroying it would kill the other window's shell).
    */
   onSuperseded: () => void;
   /**
@@ -170,11 +171,12 @@ export function TerminalInstance({
         if (cancelled) return;
         // A takeover: the server replaced this sink with a newer attachment
         // (e.g. this session was duplicated into another window). Keep the tab —
-        // dead but labeled — and DON'T prune or touch the stored ids, so the
-        // window that took over isn't disrupted. Re-attaching here would just
+        // dead but labeled — and don't prune it. Re-attaching here would just
         // steal the sink back and start a takeover war between the two windows.
-        // The parent records the takeover so closing this tab later skips the
-        // PTY destroy — the shell belongs to the other window now.
+        // The parent records the takeover: it drops the id from THIS window's
+        // persisted storage (so a refresh doesn't re-attach and steal the
+        // session back either) and skips the PTY destroy when this tab is later
+        // closed — the shell belongs to the other window now.
         if (handle.closeInfo?.code === TERMINAL_CLOSE_SUPERSEDED) {
           term.write('\r\n\x1b[2m[opened in another window — session moved]\x1b[0m\r\n');
           onSupersededRef.current();

@@ -392,11 +392,12 @@ describe('TerminalPanel', () => {
     await screen.findByText('No terminals open.');
   });
 
-  it('keeps the tab and stored ids on a takeover close (session moved to another window)', async () => {
+  it('keeps the tab but drops the stored id on a takeover close (session moved to another window)', async () => {
     // A duplicated tab re-attaches to the same PTY id; the server closes THIS
     // socket with TERMINAL_CLOSE_SUPERSEDED. The tab must survive with a notice —
-    // not be pruned like an exit — and the stored ids must stay untouched so the
-    // window that took over keeps restoring them.
+    // not be pruned like an exit — but the id must leave THIS window's persisted
+    // list: otherwise a refresh here would re-attach and steal the session back
+    // from the takeover window, ping-ponging it on every reload.
     writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
     const transport = createMockTransport({ supportsTerminal: true });
     transport.attachTerminal = vi.fn(
@@ -417,15 +418,52 @@ describe('TerminalPanel', () => {
     // Tab kept (dead but labeled), no fresh shell spawned to replace it.
     expect(screen.getByRole('tab', { name: /Terminal 1/ })).toBeInTheDocument();
     expect(openTerminal).not.toHaveBeenCalled();
-    // Stored ids left intact — the takeover window is the one that owns them now.
-    expect(readTerminalTabs(null, CWD).ids).toEqual(['stolen']);
+    // The id is gone from THIS window's persisted list (sessionStorage is
+    // per-browser-tab, so the takeover window's own copy is untouched).
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
+  });
+
+  it('does not restore a superseded tab on refresh — no re-attach steal-back', async () => {
+    // The moved-away window reloads: its persisted list no longer holds the
+    // superseded id, so the remount must NOT attach to it (which would supersede
+    // the takeover window right back). With nothing stored, the panel seeds one
+    // fresh shell instead.
+    writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: exitedOutput(),
+        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+      })
+    );
+
+    const { unmount } = renderTerminal(transport);
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
+
+    // Simulated refresh: unmount, then remount from (now-empty) storage.
+    unmount();
+    const attachTerminal = vi.fn();
+    const openTerminal = vi.fn(
+      async (_cwd: string, signal?: AbortSignal): Promise<TerminalHandle> => ({
+        id: 'fresh',
+        output: liveOutput(signal!),
+      })
+    );
+    transport.attachTerminal = attachTerminal;
+    transport.openTerminal = openTerminal;
+    renderTerminal(transport);
+
+    await waitFor(() => expect(openTerminal).toHaveBeenCalledTimes(1));
+    // Never re-attached to the stolen id — the takeover window keeps the shell.
+    expect(attachTerminal).not.toHaveBeenCalled();
   });
 
   it('closing a superseded tab never destroys the PTY (the other window owns it now)', async () => {
     // After a takeover the dead tab and the live terminal in the other window
     // share ONE PTY id. Clicking × on the dead tab must NOT call closeTerminal
     // (the DELETE would kill the other window's live shell) — just remove the
-    // tab and drop the id from THIS window's stored list.
+    // tab; its id already left this window's stored list at supersede time.
     const user = userEvent.setup();
     writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
     const transport = createMockTransport({ supportsTerminal: true });
