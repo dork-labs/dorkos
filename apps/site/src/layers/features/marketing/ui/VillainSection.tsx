@@ -239,7 +239,7 @@ export function VillainSection() {
               variants={REVEAL}
               className="text-charcoal pt-10 text-xl leading-[1.5] font-medium md:text-2xl"
             >
-              You run the most capable agents ever built.
+              You run the smartest agents ever built.
             </motion.p>
             <motion.p
               variants={REVEAL}

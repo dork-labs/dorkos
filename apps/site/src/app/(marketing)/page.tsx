@@ -5,7 +5,6 @@ import {
   VillainSection,
   PivotSection,
   TimelineSection,
-  SubsystemsSection,
   FeatureCatalogSection,
   HonestySection,
   InstallMoment,
@@ -59,8 +58,6 @@ export default function HomePage() {
         <PivotSection />
 
         <TimelineSection />
-
-        <SubsystemsSection />
 
         <FeatureCatalogSection />
 
