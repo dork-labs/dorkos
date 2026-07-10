@@ -17,7 +17,7 @@
 export function TitlebarDragStrip() {
   return (
     <div
-      className="desktop-darwin:block desktop-darwin:h-11 desktop-darwin:drag-region hidden shrink-0"
+      className="desktop-darwin:block desktop-darwin:h-11 app-drag-region hidden shrink-0"
       aria-hidden="true"
     />
   );

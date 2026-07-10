@@ -419,28 +419,45 @@
 /* Marks a region as OS-level window-draggable (macOS's `-webkit-app-region`).
    Used on the sidebar's top strip and the main header so the frameless
    `titleBarStyle: 'hiddenInset'` window can still be dragged from those
-   areas (DOR-253). */
-@utility drag-region {
+   areas (DOR-253).
+
+   This is a plain, literal class — deliberately NOT a Tailwind `@utility`.
+   A `desktop-darwin:drag-region` utility compiles to the DOM class
+   `desktop-darwin:drag-region` (the variant prefix is part of the literal
+   class name, colon included), which the no-drag descendant selectors below
+   can never match against a plain `.drag-region` ancestor. That mismatch
+   shipped a bug where `-webkit-app-region: drag` covered the whole header
+   but none of the no-drag exceptions applied, leaving every interactive
+   child (sidebar toggle, right-panel toggle, command palette) unclickable.
+   Scoping under `.desktop-darwin` reproduces the variant gating without
+   relying on Tailwind to generate a targetable class name. */
+.desktop-darwin .app-drag-region {
   -webkit-app-region: drag;
 }
 
-/* Blanket no-drag override for interactive elements nested inside a
-   `.drag-region`. `-webkit-app-region: drag` swallows mouse events on itself
-   AND every descendant, so buttons/links/inputs inside a drag region would
-   silently stop responding to clicks. Rather than requiring every future
-   interactive child of a drag region to remember to opt out individually,
-   this blanket rule covers the common interactive element shapes up front. */
-.drag-region button,
-.drag-region a,
-.drag-region input,
-.drag-region select,
-.drag-region textarea,
-.drag-region [role='button'],
-.drag-region [contenteditable='true'],
-/* Tooltip triggers can be plain spans via asChild (e.g. SystemHealthDot);
-   drag would swallow their hover so the tooltip never opens. Scoped to the
-   shadcn data-slot — a bare `span` here would kill dragging on all text. */
-.drag-region [data-slot='tooltip-trigger'] {
+/* Blanket no-drag override for interactive elements nested inside an
+   `.app-drag-region`. `-webkit-app-region: drag` swallows mouse events on
+   itself AND every descendant, so buttons/links/inputs inside a drag region
+   would silently stop responding to clicks. Rather than requiring every
+   future interactive child of a drag region to remember to opt out
+   individually, this blanket rule covers the common interactive element
+   shapes up front. */
+.desktop-darwin
+  .app-drag-region
+  :is(
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    [role='button'],
+    [contenteditable='true'],
+    [data-slot='tooltip-trigger']
+  ) {
+  /* Tooltip triggers can be plain spans via asChild (e.g. SystemHealthDot);
+     drag would swallow their hover so the tooltip never opens. Scoped to
+     the shadcn data-slot — a bare `span` here would kill dragging on all
+     text. */
   -webkit-app-region: no-drag;
 }
 

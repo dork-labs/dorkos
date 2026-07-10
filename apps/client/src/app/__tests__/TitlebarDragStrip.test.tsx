@@ -26,7 +26,15 @@ describe('TitlebarDragStrip', () => {
     // `.desktop-darwin` rather than the resulting computed style.
     expect(strip).toHaveClass('desktop-darwin:block');
     expect(strip).toHaveClass('desktop-darwin:h-11');
-    expect(strip).toHaveClass('desktop-darwin:drag-region');
+    // Literal class, not a `desktop-darwin:` variant utility (DOR-253): a
+    // generated `desktop-darwin:drag-region` class can't be targeted by the
+    // plain `.drag-region` descendant selectors that opt interactive
+    // children out of the drag region, which is exactly the bug that shipped
+    // dead header controls. This assertion is the coupling test that would
+    // have caught it — it fails if the literal class name ever drifts from
+    // what index.css's no-drag selectors target.
+    expect(strip).toHaveClass('app-drag-region');
+    expect(strip).not.toHaveClass('desktop-darwin:drag-region');
   });
 
   it('is aria-hidden — decorative only, never a tab stop', () => {
