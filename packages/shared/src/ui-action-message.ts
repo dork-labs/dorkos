@@ -91,6 +91,11 @@ export function formatUiActionMessage(action: UiActionRequest): string {
       ? `Payload:\n${neutralizeContextClosingTag(JSON.stringify(action.payload, null, 2), UI_ACTION_TAG)}`
       : 'Payload: (none)'
   );
+  lines.push(
+    'Respond to this interaction now. If the widget represents ongoing state (a game, a ' +
+      'checklist), re-emit exactly ONE updated widget reflecting it — trust this payload over ' +
+      'your memory of prior turns.'
+  );
   lines.push(`</${UI_ACTION_TAG}>`);
   return lines.join('\n');
 }

@@ -185,6 +185,17 @@ describe('formatUiActionMessage', () => {
     expect(block).toContain('"city": "SF"');
   });
 
+  it('ends with a directive telling the model to respond now, before the closing tag', () => {
+    const block = formatUiActionMessage({ actionId: 'refresh' });
+    expect(block).toContain('Respond to this interaction now.');
+    expect(block).toContain('re-emit exactly ONE updated widget');
+    // The directive is the last line inside the block, immediately before the terminator.
+    const directiveIndex = block.indexOf('Respond to this interaction now.');
+    const closingIndex = block.indexOf('</ui_action>');
+    expect(directiveIndex).toBeGreaterThan(-1);
+    expect(directiveIndex).toBeLessThan(closingIndex);
+  });
+
   it('renders "(untitled)" and "(none)" when title and payload are absent', () => {
     const block = formatUiActionMessage({ actionId: 'ping' });
     expect(block).toContain('Widget: (untitled)');
