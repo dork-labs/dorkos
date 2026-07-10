@@ -485,6 +485,144 @@ describe('relay → CCA round-trip', () => {
     await shortRelay.close();
   });
 
+  it('budget-exhausted message never dispatches a live agent turn (DOR-260)', async () => {
+    // Regression: with callBudgetRemaining 0 the mailbox copy was correctly
+    // dead-lettered, but the adapter fan-out ran unconditionally and the
+    // target agent still executed a full (paid) turn. The authoritative
+    // budget gate must reject BEFORE any dispatch.
+    vi.mocked(agentManager.sendMessage).mockClear();
+    vi.mocked(agentManager.ensureSession).mockClear();
+
+    const result = await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'this must never trigger a turn' },
+      { from: 'relay.agent.sender-session', budget: { callBudgetRemaining: 0 } }
+    );
+
+    expect(result.deliveredTo).toBe(0);
+    expect(result.rejected).toEqual([
+      { endpointHash: 'relay.agent.lifeOS-session', reason: 'budget_exceeded' },
+    ]);
+    expect(result.adapterResult).toBeUndefined();
+
+    // Positive signal that the publish pipeline fully settled: the dead
+    // letter exists with the budget reason...
+    await vi.waitFor(async () => {
+      const dead = await relay.getDeadLetters();
+      expect(
+        dead.some(
+          (d) => d.messageId === result.messageId && d.reason.includes('call budget exhausted')
+        )
+      ).toBe(true);
+    });
+
+    // ...and NO live agent turn was started.
+    expect(agentManager.ensureSession).not.toHaveBeenCalled();
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('budget rejection settles a waiting send_and_wait caller via a reply-inbox failure notice', async () => {
+    const inboxSubject = 'relay.inbox.query.budget-reject';
+    await relay.registerEndpoint(inboxSubject);
+
+    const settled = new Promise<Record<string, unknown>>((resolve) => {
+      relay.subscribe(inboxSubject, (envelope) => {
+        const payload = envelope.payload as Record<string, unknown>;
+        if (payload?.type === 'progress' && payload?.done === false) return;
+        resolve(payload);
+      });
+    });
+
+    vi.mocked(agentManager.sendMessage).mockClear();
+
+    await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'hi' },
+      {
+        from: 'relay.agent.sender-session',
+        replyTo: inboxSubject,
+        budget: { callBudgetRemaining: 0 },
+      }
+    );
+
+    const payload = await settled;
+    expect(payload.type).toBe('error');
+    expect((payload.data as Record<string, unknown>)?.message).toContain('call budget exhausted');
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('max-hops rejection also settles a waiting caller — the notice must not inherit the exhausted budget', async () => {
+    // Regression (PR #210 review): the failure notice used to carry the
+    // rejected envelope's hopCount + 1, so a "max hops exceeded" rejection
+    // produced a notice that the budget gate rejected in turn — the waiting
+    // caller silently timed out. With default maxHops (5) < default call
+    // budget (10), max-hops is the realistic runaway-loop failure mode, so
+    // this path must settle callers too.
+    const inboxSubject = 'relay.inbox.query.hops-reject';
+    await relay.registerEndpoint(inboxSubject);
+
+    const settled = new Promise<Record<string, unknown>>((resolve) => {
+      relay.subscribe(inboxSubject, (envelope) => {
+        const payload = envelope.payload as Record<string, unknown>;
+        if (payload?.type === 'progress' && payload?.done === false) return;
+        resolve(payload);
+      });
+    });
+
+    vi.mocked(agentManager.sendMessage).mockClear();
+
+    const result = await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'hop-exhausted' },
+      {
+        from: 'relay.agent.sender-session',
+        replyTo: inboxSubject,
+        budget: { hopCount: 5, maxHops: 5 },
+      }
+    );
+
+    expect(result.deliveredTo).toBe(0);
+    expect(result.rejected).toEqual([
+      { endpointHash: 'relay.agent.lifeOS-session', reason: 'budget_exceeded' },
+    ]);
+
+    const payload = await settled;
+    expect(payload.type).toBe('error');
+    expect((payload.data as Record<string, unknown>)?.message).toContain('max hops exceeded');
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('adapter copy carries the gate-decremented budget (one unit per delivered copy)', async () => {
+    const deliverSpy = vi.spyOn(cca, 'deliver');
+
+    await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'count me' },
+      { from: 'relay.agent.sender-session', budget: { callBudgetRemaining: 3 } }
+    );
+
+    await vi.waitFor(() => expect(deliverSpy).toHaveBeenCalledTimes(1));
+    const envelope = deliverSpy.mock.calls[0][1];
+    expect(envelope.budget.callBudgetRemaining).toBe(2);
+    expect(envelope.budget.hopCount).toBe(1);
+    expect(envelope.budget.ancestorChain).toContain('relay.agent.lifeOS-session');
+  });
+
+  it('a message with the last remaining budget unit still runs a turn (boundary)', async () => {
+    vi.mocked(agentManager.sendMessage).mockClear();
+
+    const result = await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'last call' },
+      { from: 'relay.agent.sender-session', budget: { callBudgetRemaining: 1 } }
+    );
+
+    expect(result.rejected).toBeUndefined();
+    await vi.waitFor(() => {
+      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('relay_send_and_wait resolves with populated progress array for CCA progress streaming', async () => {
     // Purpose: end-to-end guard for relay_send_and_wait Phase 3 enhancement.
     // relay_send_and_wait must accumulate progress events from query inbox and return them
