@@ -613,24 +613,24 @@ button:hover .cursor-blink,
   animation: draw-pulse 3s ease-in-out infinite;
 }
 
-/* Villain card tab bar pulse — idle and urgent variants */
-@keyframes tab-pulse-idle {
+/* Villain card art — window attention dot + frozen prompt caret */
+@keyframes villain-dot-pulse {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.4;
+    opacity: 0.25;
   }
 }
 
-@keyframes tab-pulse-urgent {
+@keyframes villain-caret-blink {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.15;
+    opacity: 0;
   }
 }
 
@@ -642,25 +642,6 @@ button:hover .cursor-blink,
   }
   50% {
     opacity: 0.5;
-  }
-}
-
-/* Clock hand rotation for 3am build card */
-@keyframes clock-hour {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes clock-minute {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
   }
 }
 
@@ -680,8 +661,7 @@ button:hover .cursor-blink,
   }
 
   /* Villain card and star animations — disable in reduced motion */
-  [style*='tab-pulse'],
-  [style*='clock-'],
+  [style*='villain-'],
   [style*='star-twinkle'] {
     animation: none !important;
   }
