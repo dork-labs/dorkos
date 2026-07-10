@@ -9,11 +9,14 @@ import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 // jsdom does not implement ResizeObserver (required by cmdk CommandList)
-globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
+  // Vitest 4 spies honor `new` semantics; the implementation must be constructible.
+  return {
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+  };
+});
 
 // jsdom does not implement scrollIntoView (required by cmdk item selection)
 Element.prototype.scrollIntoView = vi.fn();

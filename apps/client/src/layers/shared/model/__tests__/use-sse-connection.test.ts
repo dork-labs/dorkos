@@ -18,7 +18,8 @@ const mockDestroy = vi.fn();
 const mockEnableVisibilityOptimization = vi.fn();
 
 vi.mock('@/layers/shared/lib/transport', () => ({
-  SSEConnection: vi.fn().mockImplementation((_url: string, options: SSEConnectionOptions) => {
+  // Vitest 4 spies honor `new` semantics; the implementation must be constructible.
+  SSEConnection: vi.fn().mockImplementation(function (_url: string, options: SSEConnectionOptions) {
     capturedOnStateChange = options.onStateChange ?? null;
     capturedEventHandlers = options.eventHandlers ?? {};
     return {

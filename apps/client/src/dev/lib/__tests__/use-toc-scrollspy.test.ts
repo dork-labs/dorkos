@@ -9,11 +9,11 @@ type IntersectionCallback = (entries: Partial<IntersectionObserverEntry>[]) => v
 
 let observerCallback: IntersectionCallback;
 let observedElements: Element[] = [];
-let disconnectSpy: ReturnType<typeof vi.fn>;
+let disconnectSpy: ReturnType<typeof vi.fn<() => void>>;
 
 beforeEach(() => {
   observedElements = [];
-  disconnectSpy = vi.fn();
+  disconnectSpy = vi.fn<() => void>();
 
   vi.stubGlobal(
     'IntersectionObserver',

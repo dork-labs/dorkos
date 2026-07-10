@@ -29,6 +29,6 @@
     "@dorkos/typescript-config": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/react": "^19.2.17",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

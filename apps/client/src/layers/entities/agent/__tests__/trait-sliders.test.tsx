@@ -7,11 +7,14 @@ import { TraitSliders } from '../ui/TraitSliders';
 
 // Mock ResizeObserver (required by Radix Slider)
 beforeEach(() => {
-  global.ResizeObserver = vi.fn().mockImplementation(() => ({
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-  }));
+  global.ResizeObserver = vi.fn().mockImplementation(function () {
+    // Vitest 4 spies honor `new` semantics; the implementation must be constructible.
+    return {
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+    };
+  });
 });
 
 afterEach(cleanup);

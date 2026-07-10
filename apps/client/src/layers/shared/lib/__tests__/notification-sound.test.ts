@@ -8,9 +8,12 @@ const mockAudioInstance = {
   currentTime: 0,
 };
 
+// Vitest 4 spies honor `new` semantics; the implementation must be constructible.
 vi.stubGlobal(
   'Audio',
-  vi.fn(() => mockAudioInstance)
+  vi.fn(function () {
+    return mockAudioInstance;
+  })
 );
 
 beforeEach(async () => {

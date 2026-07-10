@@ -56,8 +56,8 @@ function makeCatalogEntry(overrides: {
 
 interface RenderPickerOptions {
   catalog?: CatalogEntry[];
-  onSelectChannel?: ReturnType<typeof vi.fn>;
-  onRequestSetup?: ReturnType<typeof vi.fn>;
+  onSelectChannel?: ReturnType<typeof vi.fn<(adapterId: string) => void>>;
+  onRequestSetup?: ReturnType<typeof vi.fn<(manifest: CatalogEntry['manifest']) => void>>;
   boundAdapterIds?: Set<string>;
   disabled?: boolean;
 }
@@ -65,8 +65,8 @@ interface RenderPickerOptions {
 function renderPicker(options: RenderPickerOptions = {}) {
   const props = {
     catalog: options.catalog ?? [],
-    onSelectChannel: options.onSelectChannel ?? vi.fn(),
-    onRequestSetup: options.onRequestSetup ?? vi.fn(),
+    onSelectChannel: options.onSelectChannel ?? vi.fn<(adapterId: string) => void>(),
+    onRequestSetup: options.onRequestSetup ?? vi.fn<(manifest: CatalogEntry['manifest']) => void>(),
     boundAdapterIds: options.boundAdapterIds ?? new Set<string>(),
     disabled: options.disabled,
   };

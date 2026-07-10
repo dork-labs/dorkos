@@ -55,48 +55,54 @@ vi.mock('@dorkos/relay', async () => {
   const actual = await vi.importActual<object>('@dorkos/relay');
   return {
     ...actual,
-    TelegramAdapter: vi.fn().mockImplementation((id: string) => ({
-      id,
-      subjectPrefix: 'relay.human.telegram',
-      displayName: `Telegram (${id})`,
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn().mockResolvedValue(undefined),
-      deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-      getStatus: vi.fn().mockReturnValue({
-        state: 'connected',
-        messageCount: { inbound: 0, outbound: 0 },
-        errorCount: 0,
-      }),
-      testConnection: vi.fn().mockResolvedValue({ ok: true }),
-      setLogger: vi.fn(),
-    })),
-    WebhookAdapter: vi.fn().mockImplementation((id: string) => ({
-      id,
-      subjectPrefix: 'relay.webhook.test',
-      displayName: `Webhook (${id})`,
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn().mockResolvedValue(undefined),
-      deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-      getStatus: vi.fn().mockReturnValue({
-        state: 'connected',
-        messageCount: { inbound: 0, outbound: 0 },
-        errorCount: 0,
-      }),
-      handleInbound: vi.fn().mockResolvedValue({ ok: true }),
-    })),
-    ClaudeCodeAdapter: vi.fn().mockImplementation((id: string) => ({
-      id,
-      subjectPrefix: 'relay.agent.',
-      displayName: 'Claude Code',
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn().mockResolvedValue(undefined),
-      deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-      getStatus: vi.fn().mockReturnValue({
-        state: 'connected',
-        messageCount: { inbound: 0, outbound: 0 },
-        errorCount: 0,
-      }),
-    })),
+    TelegramAdapter: vi.fn().mockImplementation(function (id: string) {
+      return {
+        id,
+        subjectPrefix: 'relay.human.telegram',
+        displayName: `Telegram (${id})`,
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+        testConnection: vi.fn().mockResolvedValue({ ok: true }),
+        setLogger: vi.fn(),
+      };
+    }),
+    WebhookAdapter: vi.fn().mockImplementation(function (id: string) {
+      return {
+        id,
+        subjectPrefix: 'relay.webhook.test',
+        displayName: `Webhook (${id})`,
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+        handleInbound: vi.fn().mockResolvedValue({ ok: true }),
+      };
+    }),
+    ClaudeCodeAdapter: vi.fn().mockImplementation(function (id: string) {
+      return {
+        id,
+        subjectPrefix: 'relay.agent.',
+        displayName: 'Claude Code',
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+      };
+    }),
     loadAdapters: vi.fn().mockResolvedValue([]),
   };
 });
@@ -610,21 +616,23 @@ describe('AdapterManager', () => {
       const testFn = vi.fn().mockResolvedValue({ ok: true });
       const startFn = vi.fn().mockResolvedValue(undefined);
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
-      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
-        id,
-        subjectPrefix: 'relay.human.telegram',
-        displayName: `Telegram (${id})`,
-        start: startFn,
-        stop: vi.fn().mockResolvedValue(undefined),
-        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-        getStatus: vi.fn().mockReturnValue({
-          state: 'disconnected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        }),
-        testConnection: testFn,
-        setLogger: vi.fn(),
-      }));
+      vi.mocked(TgMock).mockImplementationOnce(function (id: string) {
+        return {
+          id,
+          subjectPrefix: 'relay.human.telegram',
+          displayName: `Telegram (${id})`,
+          start: startFn,
+          stop: vi.fn().mockResolvedValue(undefined),
+          deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+          getStatus: vi.fn().mockReturnValue({
+            state: 'disconnected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          }),
+          testConnection: testFn,
+          setLogger: vi.fn(),
+        };
+      });
 
       await manager.testConnection('telegram', { token: 't', mode: 'polling' });
 
@@ -637,21 +645,23 @@ describe('AdapterManager', () => {
       await manager.initialize();
 
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
-      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
-        id,
-        subjectPrefix: 'relay.human.telegram',
-        displayName: `Telegram (${id})`,
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-        getStatus: vi.fn().mockReturnValue({
-          state: 'disconnected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        }),
-        testConnection: vi.fn().mockResolvedValue({ ok: false, error: 'Unauthorized' }),
-        setLogger: vi.fn(),
-      }));
+      vi.mocked(TgMock).mockImplementationOnce(function (id: string) {
+        return {
+          id,
+          subjectPrefix: 'relay.human.telegram',
+          displayName: `Telegram (${id})`,
+          start: vi.fn().mockResolvedValue(undefined),
+          stop: vi.fn().mockResolvedValue(undefined),
+          deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+          getStatus: vi.fn().mockReturnValue({
+            state: 'disconnected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          }),
+          testConnection: vi.fn().mockResolvedValue({ ok: false, error: 'Unauthorized' }),
+          setLogger: vi.fn(),
+        };
+      });
 
       const result = await manager.testConnection('telegram', {
         token: 'bad-token',
@@ -668,21 +678,23 @@ describe('AdapterManager', () => {
       const startFn = vi.fn().mockResolvedValue(undefined);
       const stopFn = vi.fn().mockResolvedValue(undefined);
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
-      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
-        id,
-        subjectPrefix: 'relay.human.telegram',
-        displayName: `Telegram (${id})`,
-        start: startFn,
-        stop: stopFn,
-        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-        getStatus: vi.fn().mockReturnValue({
-          state: 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        }),
-        setLogger: vi.fn(),
-        // No testConnection — forces fallback to start/stop
-      }));
+      vi.mocked(TgMock).mockImplementationOnce(function (id: string) {
+        return {
+          id,
+          subjectPrefix: 'relay.human.telegram',
+          displayName: `Telegram (${id})`,
+          start: startFn,
+          stop: stopFn,
+          deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+          getStatus: vi.fn().mockReturnValue({
+            state: 'connected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          }),
+          setLogger: vi.fn(),
+          // No testConnection — forces fallback to start/stop
+        };
+      });
 
       const result = await manager.testConnection('telegram', { token: 't', mode: 'polling' });
 
@@ -706,21 +718,23 @@ describe('AdapterManager', () => {
 
       const stopFn = vi.fn().mockResolvedValue(undefined);
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
-      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
-        id,
-        subjectPrefix: 'relay.human.telegram',
-        displayName: `Telegram (${id})`,
-        start: vi.fn().mockRejectedValue(new Error('fail')),
-        stop: stopFn,
-        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-        getStatus: vi.fn().mockReturnValue({
-          state: 'disconnected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        }),
-        setLogger: vi.fn(),
-        // No testConnection — forces fallback
-      }));
+      vi.mocked(TgMock).mockImplementationOnce(function (id: string) {
+        return {
+          id,
+          subjectPrefix: 'relay.human.telegram',
+          displayName: `Telegram (${id})`,
+          start: vi.fn().mockRejectedValue(new Error('fail')),
+          stop: stopFn,
+          deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+          getStatus: vi.fn().mockReturnValue({
+            state: 'disconnected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          }),
+          setLogger: vi.fn(),
+          // No testConnection — forces fallback
+        };
+      });
 
       await manager.testConnection('telegram', { token: 't', mode: 'polling' });
 
@@ -744,21 +758,23 @@ describe('AdapterManager', () => {
 
       const stopFn = vi.fn().mockResolvedValue(undefined);
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
-      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
-        id,
-        subjectPrefix: 'relay.human.telegram',
-        displayName: `Telegram (${id})`,
-        start: vi.fn().mockReturnValue(new Promise(() => {})),
-        stop: stopFn,
-        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-        getStatus: vi.fn().mockReturnValue({
-          state: 'disconnected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        }),
-        testConnection: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
-        setLogger: vi.fn(),
-      }));
+      vi.mocked(TgMock).mockImplementationOnce(function (id: string) {
+        return {
+          id,
+          subjectPrefix: 'relay.human.telegram',
+          displayName: `Telegram (${id})`,
+          start: vi.fn().mockReturnValue(new Promise(() => {})),
+          stop: stopFn,
+          deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+          getStatus: vi.fn().mockReturnValue({
+            state: 'disconnected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          }),
+          testConnection: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
+          setLogger: vi.fn(),
+        };
+      });
 
       const resultPromise = manager.testConnection('telegram', {
         token: 't',
@@ -796,21 +812,23 @@ describe('AdapterManager', () => {
 
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
-      vi.mocked(TgMock).mockImplementationOnce((id: string) => ({
-        id,
-        subjectPrefix: 'relay.human.telegram',
-        displayName: `Telegram (${id})`,
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-        getStatus: vi.fn().mockReturnValue({
-          state: 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        }),
-        setLogger: vi.fn(),
-        // No testConnection — forces fallback
-      }));
+      vi.mocked(TgMock).mockImplementationOnce(function (id: string) {
+        return {
+          id,
+          subjectPrefix: 'relay.human.telegram',
+          displayName: `Telegram (${id})`,
+          start: vi.fn().mockResolvedValue(undefined),
+          stop: vi.fn().mockResolvedValue(undefined),
+          deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+          getStatus: vi.fn().mockReturnValue({
+            state: 'connected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          }),
+          setLogger: vi.fn(),
+          // No testConnection — forces fallback
+        };
+      });
 
       await manager.testConnection('telegram', { token: 't', mode: 'polling' });
 
@@ -1090,7 +1108,7 @@ describe('AdapterManager', () => {
 
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
       const capturedConfig: Record<string, unknown>[] = [];
-      vi.mocked(TgMock).mockImplementationOnce((id: string, cfg: Record<string, unknown>) => {
+      vi.mocked(TgMock).mockImplementationOnce(function (id: string, cfg: Record<string, unknown>) {
         capturedConfig.push(cfg);
         return {
           id,

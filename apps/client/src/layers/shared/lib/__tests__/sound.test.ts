@@ -33,9 +33,12 @@ const mockCtx = {
   createGain: vi.fn(createMockGain),
 };
 
+// Vitest 4 spies honor `new` semantics; the implementation must be constructible.
 vi.stubGlobal(
   'AudioContext',
-  vi.fn(() => mockCtx)
+  vi.fn(function () {
+    return mockCtx;
+  })
 );
 
 let playSliderTick: () => void;
@@ -50,7 +53,9 @@ beforeEach(async () => {
   mockCtx.createGain = vi.fn(createMockGain);
   vi.stubGlobal(
     'AudioContext',
-    vi.fn(() => mockCtx)
+    vi.fn(function () {
+      return mockCtx;
+    })
   );
 
   const mod = await import('../sound');
@@ -112,7 +117,7 @@ describe('error handling', () => {
     vi.resetModules();
     vi.stubGlobal(
       'AudioContext',
-      vi.fn(() => {
+      vi.fn(function () {
         throw new Error('AudioContext not supported');
       })
     );
@@ -125,7 +130,7 @@ describe('error handling', () => {
     vi.resetModules();
     vi.stubGlobal(
       'AudioContext',
-      vi.fn(() => {
+      vi.fn(function () {
         throw new Error('AudioContext not supported');
       })
     );

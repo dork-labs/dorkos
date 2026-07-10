@@ -34,7 +34,10 @@ describe('createChannel', () => {
     };
 
     const originalBC = globalThis.BroadcastChannel;
-    globalThis.BroadcastChannel = vi.fn(() => mockChannel) as unknown as typeof BroadcastChannel;
+    // Vitest 4 spies honor `new` semantics; the implementation must be constructible.
+    globalThis.BroadcastChannel = vi.fn(function () {
+      return mockChannel;
+    }) as unknown as typeof BroadcastChannel;
 
     const channel = createChannel<string>('test-channel');
 

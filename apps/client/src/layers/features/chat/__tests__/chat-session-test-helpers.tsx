@@ -55,7 +55,7 @@ globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
 // Mock crypto.randomUUID
 // ---------------------------------------------------------------------------
 
-export const mockUUID = vi.fn();
+export const mockUUID = vi.fn<() => string>();
 export let uuidCounter = 0;
 
 export function resetUuidCounter() {

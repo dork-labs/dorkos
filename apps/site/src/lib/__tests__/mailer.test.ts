@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // when the factory references them.
 const { sendMock, ResendMock } = vi.hoisted(() => {
   const send = vi.fn().mockResolvedValue({ data: { id: 'email_test' }, error: null });
-  const Resend = vi.fn().mockImplementation(() => ({ emails: { send } }));
+  // Vitest 4 spies honor `new` semantics, so the implementation must be
+  // constructible — an arrow function here throws "is not a constructor".
+  const Resend = vi.fn().mockImplementation(function () {
+    return { emails: { send } };
+  });
   return { sendMock: send, ResendMock: Resend };
 });
 vi.mock('resend', () => ({ Resend: ResendMock }));
