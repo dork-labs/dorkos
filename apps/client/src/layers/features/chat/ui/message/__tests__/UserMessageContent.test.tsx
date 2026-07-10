@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { UserMessageContent } from '../UserMessageContent';
 import type { ChatMessage } from '../../../model/use-chat-session';
 
@@ -54,5 +55,19 @@ describe('UserMessageContent', () => {
     render(<UserMessageContent message={makeMessage({ content: 'hello world' })} />);
     expect(screen.getByText('hello world')).toBeInTheDocument();
     expect(screen.queryByTestId('output-renderer')).not.toBeInTheDocument();
+  });
+
+  it('renders a widget interaction as a calm chip, not the raw <ui_action> XML', () => {
+    const content = formatUiActionMessage({
+      actionId: 'move-1-1',
+      widgetTitle: 'Tic-Tac-Toe',
+      payload: { glyph: 'X' },
+    });
+    render(<UserMessageContent message={makeMessage({ content })} />);
+
+    expect(screen.getByTestId('ui-action-chip')).toBeInTheDocument();
+    expect(screen.getByText('Tic-Tac-Toe')).toBeInTheDocument();
+    expect(screen.getByText('move 1 1')).toBeInTheDocument();
+    expect(screen.queryByText(/<ui_action>/)).not.toBeInTheDocument();
   });
 });

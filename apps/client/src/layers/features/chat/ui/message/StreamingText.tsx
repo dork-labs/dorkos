@@ -18,6 +18,11 @@ interface StreamingTextProps {
    * a session (agent widget actions then render disabled).
    */
   sessionId?: string;
+  /**
+   * Whether the hosting message is the latest in the conversation. Threaded into
+   * widget fences so a superseded board renders its `agent` actions inert.
+   */
+  isLatestMessage?: boolean;
 }
 
 const linkSafety = {
@@ -31,6 +36,7 @@ export function StreamingText({
   isStreaming = false,
   textEffect = DEFAULT_TEXT_EFFECT,
   sessionId,
+  isLatestMessage,
 }: StreamingTextProps) {
   const animatedConfig = resolveStreamdownAnimation(textEffect);
 
@@ -44,12 +50,12 @@ export function StreamingText({
         {
           language: 'dorkos-ui',
           component: (props: { code: string; isIncomplete: boolean }) => (
-            <WidgetFence {...props} sessionId={sessionId} />
+            <WidgetFence {...props} sessionId={sessionId} isLatestMessage={isLatestMessage} />
           ),
         },
       ],
     }),
-    [sessionId]
+    [sessionId, isLatestMessage]
   );
 
   return (

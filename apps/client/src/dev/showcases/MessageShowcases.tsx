@@ -24,6 +24,7 @@ import type { MessageGrouping } from '@/layers/features/chat/model/chat-types';
 const STANDALONE_CTX = {
   sessionId: MOCK_SESSION_ID,
   isStreaming: false,
+  isLatestMessage: true,
   activeToolCallId: null,
   onToolRef: undefined,
   focusedOptionIndex: -1,
