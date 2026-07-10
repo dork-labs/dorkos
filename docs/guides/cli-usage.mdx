@@ -1,6 +1,6 @@
 ---
 title: CLI Usage
-description: Command-line flags, subcommands, and configuration for the dorkos CLI
+description: Get running with the dorkos command, plus the full flag, subcommand, and config reference
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
@@ -8,7 +8,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # CLI Usage
 
-The `dorkos` CLI bundles the server and client into a single command. Install globally and run from any project directory.
+The `dorkos` command starts your cockpit: one line in a terminal, and a browser tab opens with your agents ready to go. No separate server to babysit, no client to configure.
 
 ```bash
 npm install -g dorkos
@@ -21,9 +21,13 @@ export ANTHROPIC_API_KEY=your-key-here
 dorkos
 ```
 
-The server starts on port 4242 and opens your browser automatically.
+DorkOS starts on port 4242 and opens your browser automatically. That's the whole workflow for most people, everything below is for when you want to customize it.
 
-## Command-Line Flags
+## Reference
+
+Most people never touch the flags, subcommands, and env vars below. They're here for when you need them, whether that's running on a shared server, scripting an install, or just being curious.
+
+### Command-line flags
 
 <TypeTable
   type={{
@@ -53,7 +57,7 @@ The server starts on port 4242 and opens your browser automatically.
   }}
 />
 
-### Examples
+The **boundary** is the fence around your files: DorkOS can read and write inside it, nothing outside. A **tunnel** (via ngrok) lets you reach your cockpit from another device, like your phone, without exposing your whole network.
 
 ```bash
 # Start on a custom port
@@ -75,11 +79,17 @@ dorkos --tasks
 dorkos --log-level debug
 ```
 
-## Subcommands
+### Subcommands
 
-### `dorkos config`
+<Callout type="info">
+  `install`, `uninstall`, `update`, `marketplace`, and `cache` all talk to a DorkOS server that's
+  already running. They don't start one for you, so run `dorkos` first in another terminal (or
+  make sure it's already running) before using them.
+</Callout>
 
-Manage persistent configuration stored at `~/.dork/config.json`.
+#### Configuration
+
+**`dorkos config`**: manage persistent configuration stored at `~/.dork/config.json`.
 
 ```bash
 dorkos config                        # Show all effective settings
@@ -87,62 +97,65 @@ dorkos config get <key>              # Get a single config value
 dorkos config set <key> <value>      # Set a single config value
 dorkos config list                   # Full JSON output
 dorkos config reset [key]            # Reset all or a specific key to defaults
-dorkos config edit                   # Open config in $EDITOR
+dorkos config edit                   # Open config in $EDITOR (your terminal's default text editor)
 dorkos config path                   # Print config file location
 dorkos config validate               # Check config validity
 ```
 
-### `dorkos init`
-
-Interactive setup wizard for first-time configuration. Walks through API key, default port, and working directory.
+**`dorkos init`**: an interactive setup wizard for first-time configuration. Walks through your API key, default port, and working directory.
 
 ```bash
 dorkos init
 dorkos init --yes    # Accept all defaults
 ```
 
-### `dorkos install` / `dorkos uninstall` / `dorkos update`
+#### Marketplace
 
-Install, remove, and update marketplace packages.
-
-```bash
-dorkos install <package>               # Install from any configured source
-dorkos install <package> --yes         # Skip confirmation prompt
-dorkos uninstall <package>             # Remove an installed package
-dorkos update                          # Check all installed packages for updates
-dorkos update <package> --apply        # Apply an available update
-```
-
-### `dorkos marketplace`
-
-Manage the marketplace sources that list available packages.
+**`dorkos install` / `dorkos uninstall` / `dorkos update`**: install, remove, and update marketplace packages.
 
 ```bash
-dorkos marketplace list [<source>]     # Browse available packages
-dorkos marketplace add <url-or-path>   # Register a new source
-dorkos marketplace remove <name>       # Remove a source
-dorkos marketplace refresh [<source>]  # Force-refresh source package listing
+dorkos install <package>                          # Install from any configured source
+dorkos install <package> --marketplace <name>     # Install from a specific marketplace
+dorkos install <package> --source <url>           # Install from an explicit Git or marketplace.json URL
+dorkos install <package> --force                  # Override warning-level conflicts
+dorkos install <package> --yes                    # Skip the confirmation prompt
+dorkos install <package> --project <path>         # Install into a specific project
+
+dorkos uninstall <package>                        # Remove an installed package
+dorkos uninstall <package> --purge                # Also remove preserved data and secrets
+dorkos uninstall <package> --project <path>        # Uninstall from a specific project
+
+dorkos update                                     # Check all installed packages for updates (advisory only)
+dorkos update <package> --apply                   # Apply an available update
+dorkos update <package> --project <path>          # Check or apply within a specific project
 ```
 
-### `dorkos package`
+**`dorkos marketplace`**: manage the marketplace sources that list available packages.
 
-Scaffold and validate marketplace packages for publishing.
+```bash
+dorkos marketplace add <url> [--name <name>]   # Register a new source
+dorkos marketplace remove <name>               # Remove a source
+dorkos marketplace list                        # List configured sources
+dorkos marketplace refresh [<name>]            # Re-fetch one or every source's listing
+dorkos marketplace validate <path-or-url>      # Validate a marketplace.json before publishing
+```
+
+**`dorkos package`**: scaffold and validate marketplace packages before publishing them. See [Publishing to the Marketplace](/docs/marketplace/publishing) for the full walkthrough.
 
 ```bash
 dorkos package init <name> --type plugin|agent|skill-pack|adapter
 dorkos package validate <path>
 ```
 
-### `dorkos cache`
-
-Manage the package clone cache at `~/.dork/cache/`.
+**`dorkos cache`**: manage the package clone cache at `~/.dork/cache/`.
 
 ```bash
-dorkos cache prune [--keep <N>]        # Remove old cached versions
+dorkos cache list                      # Show cache counts and total size
+dorkos cache prune [--keep-last-n <N>] # Remove older cached package versions (default: keep 1)
 dorkos cache clear                     # Wipe the entire cache
 ```
 
-## Config Directory
+### Config directory
 
 On first run, DorkOS creates `~/.dork/` for persistent storage:
 
@@ -152,7 +165,7 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
   </Folder>
 </Files>
 
-## Environment Variables
+### Environment variables
 
 <TypeTable
   type={{
@@ -173,7 +186,7 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
   }}
 />
 
-## Config Precedence
+### Config precedence
 
 Configuration is resolved in this order (highest priority first):
 
@@ -187,7 +200,7 @@ Configuration is resolved in this order (highest priority first):
   source.
 </Callout>
 
-## Docker
+### Docker
 
 Run DorkOS in a Docker container without a local Node.js install:
 
@@ -203,9 +216,9 @@ docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY=your-key dorkos:local
 
 The container binds to `0.0.0.0` automatically for Docker port forwarding.
 
-## Automatic Update Checks
+### Automatic update checks
 
-DorkOS checks the npm registry for new versions at startup. When a newer version is available, you'll see a notification in the terminal:
+DorkOS checks the npm registry for new versions each time it starts. When a newer version is available, you'll see a notification in the terminal:
 
 ```
 ┌───────────────────────────────────────┐
@@ -214,7 +227,7 @@ DorkOS checks the npm registry for new versions at startup. When a newer version
 └───────────────────────────────────────┘
 ```
 
-The check runs in the background with a 3-second timeout and caches results for 24 hours. To update:
+The check runs in the background with a 3-second timeout, so it never slows down your startup, and caches results for 24 hours. To update:
 
 ```bash tab="npm"
 npm install -g dorkos@latest

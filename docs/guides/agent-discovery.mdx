@@ -1,6 +1,6 @@
 ---
 title: Agent Discovery
-description: Discover, register, and coordinate agents across your network with Mesh
+description: Find your agent projects and coordinate them from one place with Mesh
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -10,64 +10,122 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Agent Discovery
 
-Mesh is the agent discovery and registry system in DorkOS. It scans your filesystem for AI agent projects, registers them with capability manifests, and connects them to [Relay](/docs/concepts/relay) for inter-agent communication. Mesh is always on — no feature flag or environment variable required. For a deeper look at the architecture, see the [Mesh concept page](/docs/concepts/mesh).
+Mesh is DorkOS's agent discovery system. It scans your computer for AI agent projects (Claude Code, Cursor, Codex, and others), registers each one with a short profile called a manifest, and shows them all in one place: the Mesh tab.
 
-## Two registries: installed vs discovered
+If you run more than one agent across more than one project, Mesh is how you stop losing track of them.
 
-DorkOS maintains **two independent agent registries**, populated by two different scanners, backing two different APIs. They answer different questions and shouldn't be conflated:
+## Try it
 
-| Registry                  | Where agents live                                                   | Who populates it                        | Scanner                                                     | API                                           |
-| ------------------------- | ------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------- | --------------------------------------------- |
-| **Marketplace-installed** | `~/.dork/plugins/*` and `~/.dork/agents/*`                          | The marketplace install pipeline        | `apps/server/src/services/marketplace/installed-scanner.ts` | `GET /api/marketplace/installed`              |
-| **Mesh-discovered**       | Any directory you scan — typically project folders anywhere on disk | You, via scan from UI / MCP / CLI / API | `packages/mesh/src/discovery/unified-scanner.ts`            | `GET /api/agents` (mesh registry, this guide) |
+<Steps>
+<Step>
 
-### When to use which
+**Open the Mesh tab.** You'll see a list of any agents already registered, plus a network view once you have a few.
 
-- **"What agents did I install from the marketplace?"** → installed-scanner / `GET /api/marketplace/installed`. This answers a narrow provenance question — packages that came through the managed marketplace pipeline with their `.dork/install-metadata.json` sidecar intact.
-- **"What agents does my system know about right now?"** → mesh registry / `GET /api/agents`. This is the full fleet — every directory with a `.dork/agent.json` manifest that Mesh has been pointed at, whether via the marketplace install pipeline, manual registration, or a discovery scan.
+</Step>
+<Step>
 
-Marketplace installs always land under `~/.dork/{plugins,agents}/` with provenance metadata, so they also show up in the mesh registry after the install hands off. Mesh-discovered agents do **not** necessarily appear in the installed-scanner's results — if an agent was registered from a directory the marketplace never touched, there is no install-metadata sidecar and the installed-scanner ignores it.
+**Click "Scan for Agents."** Mesh walks your project folders looking for markers like `CLAUDE.md`, `AGENTS.md`, or a `.cursor/` folder. It reads files, it doesn't touch anything, so scanning is safe to run as often as you like.
+
+</Step>
+<Step>
+
+**Approve or deny each candidate.** Every project Mesh finds shows up as a card with an approve and a deny button. Approve the ones you want tracked. Deny the rest, and Mesh won't ask about them again.
+
+</Step>
+<Step>
+
+**Check the topology graph.** Approved agents appear as nodes, grouped by project. This is the fastest way to see everything you're running at a glance.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  Scanning again later only shows new candidates. Agents you already approved or denied won't
+  reappear.
+</Callout>
+
+### What if a scan finds nothing?
+
+That usually means Mesh hasn't been pointed at the right folder yet. Check that your project has one of the marker files listed in [Discovering agents](#discovering-agents), or add the folder to your scan roots (see [Reference](#reference) below).
+
+### What if I scan the same project twice?
+
+Nothing bad happens. Mesh recognizes it's already registered and skips it silently.
+
+## Denying agents
+
+Not every project Mesh finds is one you want tracked, maybe it's an old experiment or a folder you keep around for reference. Click deny on its card, or give a reason if you want to remember why later. Denied projects won't show up in future scans. Changed your mind? You can remove a denial from the reference API below.
+
+## Health states
+
+Once an agent is registered, Mesh watches for signs of life:
+
+- **Active**: seen in the last 5 minutes.
+- **Inactive**: no signal for a while, but still within 24 hours.
+- **Stale**: hasn't checked in for over 24 hours. It might be offline, or it might just be heads-down on something long-running.
+
+## What "registering" actually does
+
+When you approve an agent, DorkOS writes a small manifest describing it (name, what it does, which runtime it uses) and, if you have [Relay](/docs/concepts/relay) set up, gives it a messaging address so other agents can reach it. This multi-agent coordination is newer territory for DorkOS, so treat it as something to try, not something to depend on for anything critical yet.
+
+## Reference
+
+The rest of this page is for scripting registration, building an integration, or understanding the internals. If you're just using the Mesh tab, you're done.
+
+### Two registries: installed vs. discovered
+
+DorkOS keeps two separate lists of agents. They answer different questions, so don't conflate them.
+
+| Registry                  | Where agents live                                                   | Who populates it                        | Scanner                                                     | API                               |
+| -------------------------- | ------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------ | ---------------------------------- |
+| **Marketplace-installed** | `~/.dork/plugins/*` and `~/.dork/agents/*`                          | The marketplace install pipeline         | `apps/server/src/services/marketplace/installed-scanner.ts` | `GET /api/marketplace/installed`  |
+| **Mesh-discovered**       | Any directory you scan, typically project folders anywhere on disk | You, via scan from UI / MCP / CLI / API | `packages/mesh/src/discovery/unified-scanner.ts`            | `GET /api/mesh/agents`            |
+
+- **"What did I install from the marketplace?"** → `GET /api/marketplace/installed`. Narrow provenance question: packages that came through the managed install pipeline with their `.dork/install-metadata.json` sidecar intact.
+- **"What agents does my system know about right now?"** → `GET /api/mesh/agents`. The full fleet: every directory with a `.dork/agent.json` manifest that Mesh has been pointed at, whether via marketplace install, manual registration, or a discovery scan.
+
+Marketplace installs always land under `~/.dork/{plugins,agents}/` with provenance metadata, so they also show up in the mesh registry once the install hands off. The reverse isn't true: a mesh-discovered agent registered from a directory the marketplace never touched has no install-metadata sidecar, so the installed-scanner ignores it.
 
 ### Where agents can live
 
-**Any directory with a `.dork/agent.json` file is a valid agent location.** You are not restricted to `~/.dork/agents/`. Common patterns:
+Any directory with a `.dork/agent.json` file is a valid agent location. You're not restricted to `~/.dork/agents/`:
 
-- **Marketplace installs** → `~/.dork/agents/<name>/.dork/agent.json` (managed by the install pipeline)
-- **Project-local agents** → `<your-project>/.dork/agent.json` (useful when an agent is version-controlled alongside the code it maintains)
-- **Arbitrary locations** → any absolute path in `mesh.scanRoots` in `~/.dork/config.json`, or passed explicitly to `mesh_discover`
+- **Marketplace installs** → `~/.dork/agents/<name>/.dork/agent.json`, managed by the install pipeline.
+- **Project-local agents** → `<your-project>/.dork/agent.json`, useful when an agent is version-controlled alongside the code it maintains.
+- **Arbitrary locations** → any absolute path in `mesh.scanRoots` in `~/.dork/config.json`, or passed explicitly to `mesh_discover`.
 
 ### Discovery is pull-based
 
-Mesh does **not** watch your filesystem for new `.dork/agent.json` files. Discovery runs when you trigger it:
+Mesh doesn't watch your filesystem for new `.dork/agent.json` files. Discovery only runs when triggered:
 
-- Clicking "Scan for Agents" in the UI
-- Calling `POST /api/mesh/discover` or the `mesh_discover` MCP tool
-- On startup, the background reconciler walks every path in `mesh.scanRoots` (configured in `config.json`) and picks up any new manifests since the last scan
+- Clicking "Scan for Agents" in the UI.
+- Calling `POST /api/mesh/discover` or the `mesh_discover` MCP tool.
+- On startup, a background reconciler walks every path in `mesh.scanRoots` (configured in `config.json`) and picks up any manifests added since the last scan.
 
-If you drop a new `.dork/agent.json` file into a directory Mesh has never walked, it is invisible until a scan hits that directory. This is intentional — filesystem watchers are expensive and noisy, and pull-based discovery gives you deterministic control over when the registry changes.
+If you drop a new `.dork/agent.json` file into a directory Mesh has never walked, it stays invisible until a scan reaches that directory. This is deliberate: filesystem watchers are expensive and noisy, and pull-based discovery gives you deterministic control over when the registry changes.
 
-Manifest write-through semantics (the file-on-disk is authoritative, the SQLite registry is a derived cache) are covered by the [`agent-storage` contributor rule](https://github.com/dork-labs/dorkos/blob/main/.claude/rules/agent-storage.md) and [ADR-0043](https://github.com/dork-labs/dorkos/blob/main/decisions/).
+Manifest write-through semantics (the file on disk is authoritative, the SQLite registry is a derived cache) are covered by the [`agent-storage` contributor rule](https://github.com/dork-labs/dorkos/blob/main/.claude/rules/agent-storage.md) and [ADR-0043](https://github.com/dork-labs/dorkos/blob/main/decisions/).
 
-## Discovering Agents
+### Discovering agents
 
-Discovery scans your filesystem for directories that contain recognized agent markers. Mesh ships with ten detection strategies covering the major AI coding agents:
+Mesh ships with ten detection strategies covering the major AI coding agents:
 
-| Strategy        | Filesystem Markers                                                                                   | Runtime       |
-| --------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
+| Strategy        | Filesystem markers                                                                                   | Runtime       |
+| ---------------- | ------------------------------------------------------------------------------------------------------ | ------------- |
 | **claude-code** | `CLAUDE.md` or `AGENTS.md` at the project root. Extracts a description from the first paragraph.     | `claude-code` |
-| **cursor**      | `.cursor/` directory or `.cursorrules` file at the project root.                                     | `cursor`      |
-| **codex**       | `.codex/` directory at the project root.                                                             | `codex`       |
-| **windsurf**    | `.windsurfrules` file or `.windsurf/` directory at the project root.                                 | `windsurf`    |
-| **gemini**      | `GEMINI.md` file or `.gemini/` directory at the project root.                                        | `gemini`      |
-| **cline**       | `.clinerules` file or directory at the project root.                                                 | `cline`       |
-| **roo-code**    | `.roo/` directory or `.roorules` file at the project root.                                           | `roo-code`    |
-| **copilot**     | Copilot-specific files within `.github/` (`copilot-instructions.md`, `instructions/`, or `agents/`). | `copilot`     |
-| **amazon-q**    | `.amazonq/` directory at the project root.                                                           | `amazon-q`    |
-| **continue**    | `.continue/` directory at the project root.                                                          | `continue`    |
+| **cursor**      | `.cursor/` directory or `.cursorrules` file at the project root.                                       | `cursor`      |
+| **codex**       | `.codex/` directory at the project root.                                                                | `codex`       |
+| **windsurf**    | `.windsurfrules` file or `.windsurf/` directory at the project root.                                   | `windsurf`    |
+| **gemini**      | `GEMINI.md` file or `.gemini/` directory at the project root.                                          | `gemini`      |
+| **cline**       | `.clinerules` file or directory at the project root.                                                    | `cline`       |
+| **roo-code**    | `.roo/` directory or `.roorules` file at the project root.                                              | `roo-code`    |
+| **copilot**     | Copilot-specific files within `.github/` (`copilot-instructions.md`, `instructions/`, or `agents/`).   | `copilot`     |
+| **amazon-q**    | `.amazonq/` directory at the project root.                                                              | `amazon-q`    |
+| **continue**    | `.continue/` directory at the project root.                                                             | `continue`    |
 
-The `AgentRuntime` enum also includes placeholder values for agents that do not yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
+The `AgentRuntime` enum also includes placeholder values for agents that don't yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
 
-In addition, any directory that already contains a `.dork/agent.json` manifest is **auto-imported** — the agent is silently added to the registry without requiring your approval again.
+Any directory that already contains a `.dork/agent.json` manifest is auto-imported: the agent is added to the registry without requiring approval again.
 
 Trigger a scan from the UI by opening the Mesh tab and clicking the discover button, or use the REST API:
 
@@ -77,7 +135,7 @@ curl -X POST http://localhost:4242/api/mesh/discover \
   -d '{ "roots": ["/home/user/projects"], "maxDepth": 5 }'
 ```
 
-The response is an array of `DiscoveryCandidate` objects, each containing the directory path, the strategy that matched, and hints about the agent's name and capabilities. In the UI, each candidate appears as a CandidateCard with approve and deny buttons.
+The response is an array of `DiscoveryCandidate` objects, each containing the directory path, the strategy that matched, and hints about the agent's name and capabilities. In the UI, each candidate appears as a card with approve and deny buttons.
 
 <Callout type="info">
   Discovery is non-destructive. It only reads filesystem markers and never modifies your project
@@ -86,14 +144,14 @@ The response is an array of `DiscoveryCandidate` objects, each containing the di
 
 Subsequent scans automatically skip directories that are already registered or denied, and silently re-import agents that have a `.dork/agent.json` manifest from a previous session.
 
-## Agent Manifests
+### Agent manifests
 
-Every registered agent has a manifest that describes its identity and configuration. The manifest is stored both in the Mesh SQLite database and as a `.dork/agent.json` file in the agent's project directory.
+Every registered agent has a manifest describing its identity and configuration. It's stored both in the Mesh SQLite database and as a `.dork/agent.json` file in the agent's project directory.
 
 ```json
 {
   "id": "01HXYZ...",
-  "name": "research-agent",
+  "name": "grep-whisperer",
   "description": "Handles web research and summarization tasks",
   "runtime": "claude-code",
   "capabilities": ["web-search", "summarization"],
@@ -145,17 +203,13 @@ Every registered agent has a manifest that describes its identity and configurat
 
 Discovery strategies automatically populate the manifest with hints extracted from the project (name from `package.json` or directory name, capabilities from detected tooling), but you can override any field during registration.
 
-## Registering Agents
+### Registering agents
 
 There are three ways to register an agent in Mesh.
 
-### MeshPanel UI
+**MeshPanel UI.** Open the Mesh tab and click "Register Agent." The form lets you enter the agent name, capabilities, project path, and optional metadata. You can also accept a discovery candidate directly from its card.
 
-Open the Mesh tab and click "Register Agent". The RegisterAgentDialog form lets you enter the agent name, capabilities, project path, and optional metadata. You can also accept a discovery candidate directly from the CandidateCard.
-
-### REST API
-
-Send a POST request with the agent manifest:
+**REST API.** Send a POST request with the agent manifest:
 
 ```bash
 curl -X POST http://localhost:4242/api/mesh/agents \
@@ -170,50 +224,49 @@ curl -X POST http://localhost:4242/api/mesh/agents \
   }'
 ```
 
-### MCP Tools
+**MCP tools.** Agents can discover and register other agents using the mesh MCP tools.
 
-Agents can discover and register other agents using the mesh MCP tools.
-
-**Scan for candidates:**
+Scan for candidates:
 
 ```
 mesh_discover({ roots: ["/home/user/projects"], maxDepth: 5 })
 ```
 
-By default this returns only **unregistered** candidates. Pass `includeRegistered: true` to also see agents that were auto-imported during the scan (directories with an existing `.dork/agent.json`):
+By default this returns only unregistered candidates. Pass `includeRegistered: true` to also see agents auto-imported during the scan (directories with an existing `.dork/agent.json`):
 
 ```
 mesh_discover({ roots: ["/home/user/projects"], includeRegistered: true })
 ```
 
-**Register an agent directly:**
+Register an agent directly:
 
 ```
 mesh_register({ path: "/home/user/projects/research", name: "research-agent", runtime: "claude-code", capabilities: ["web-search"] })
 ```
 
-When an agent creates a registration via MCP tools, the manifest is written to `.dork/agent.json` in the project directory and the agent is immediately available in the registry.
+When an agent creates a registration via MCP tools, the manifest is written to `.dork/agent.json` in the project directory and the agent becomes available in the registry right away.
 
 <Callout type="info">
-  When Relay is enabled, registering an agent automatically creates a Relay endpoint at
-  `relay.agent.{namespace}.{agentId}`, making it immediately reachable for inter-agent messaging.
+  When Relay is enabled, registering an agent also creates a messaging address for it at
+  `relay.agent.{namespace}.{agentId}`. Multi-agent messaging through Relay is still an early,
+  unverified path end-to-end, so test your setup before relying on it.
 </Callout>
 
-## Network Topology
+### Network topology
 
-The TopologyGraph visualization in the Mesh tab renders your agent network as a hierarchical graph using dagre layout. Agents appear as nodes grouped by namespace, with namespace hub nodes connecting related agents. Cross-namespace edges show permitted communication paths.
+The topology graph in the Mesh tab renders your agent network visually. Agents appear as nodes grouped by namespace, with namespace hub nodes connecting related agents. Cross-namespace edges show permitted communication paths.
 
 Live health data is overlaid on the graph:
 
-- **Active nodes** — the agent has been seen recently (within the last 5 minutes)
-- **Inactive nodes** — the agent has not been seen for a while but is within 24 hours
-- **Stale nodes** — the agent has not been seen for over 24 hours and may be offline
+- **Active nodes**: seen recently (within the last 5 minutes).
+- **Inactive nodes**: not seen for a while, but within 24 hours.
+- **Stale nodes**: not seen for over 24 hours, may be offline.
 
-The MeshStatsHeader above the graph shows aggregate counts: total agents, agents by health state, and agents by runtime type.
+The stats header above the graph shows aggregate counts: total agents, agents by health state, and agents by runtime type.
 
-## Health Monitoring
+### Health monitoring
 
-Mesh tracks agent health through a heartbeat protocol. Agents send periodic heartbeats to signal they are alive and working.
+Mesh tracks agent health through a heartbeat protocol. Agents send periodic heartbeats to signal they're alive and working.
 
 ```bash
 curl -X POST http://localhost:4242/api/mesh/agents/{agentId}/heartbeat \
@@ -232,15 +285,11 @@ curl -X POST http://localhost:4242/api/mesh/agents/{agentId}/heartbeat \
   }}
 />
 
-When an agent's health state changes, Mesh emits a lifecycle event through the Relay signal system. The AgentHealthDetail component provides a per-agent drill-down showing the current state, last seen timestamp, last event, and capabilities.
+When an agent's health state changes, Mesh emits a lifecycle event through the Relay signal system. The per-agent detail view shows the current state, last seen timestamp, last event, and capabilities.
 
-## Access Control
+### Denying agents (API)
 
-Not every discovered agent should be registered. The denial system lets you exclude directories from future discovery scans.
-
-### Denying Agents
-
-Deny a candidate via the UI (click the deny button on a CandidateCard) or the API:
+Deny a candidate via the UI (click the deny button on its card) or the API:
 
 ```bash
 curl -X POST http://localhost:4242/api/mesh/deny \
@@ -248,9 +297,7 @@ curl -X POST http://localhost:4242/api/mesh/deny \
   -d '{ "path": "/home/user/projects/legacy-bot", "reason": "Deprecated project" }'
 ```
 
-Denied paths are stored in the SQLite database and checked during every scan. The candidate will not appear in future discovery results.
-
-### Viewing and Removing Denials
+Denied paths are stored in the SQLite database and checked during every scan. The candidate won't appear in future discovery results.
 
 View the denial list and remove entries if you change your mind:
 
@@ -262,7 +309,7 @@ curl http://localhost:4242/api/mesh/denied
 curl -X DELETE "http://localhost:4242/api/mesh/denied/%2Fhome%2Fuser%2Fprojects%2Flegacy-bot"
 ```
 
-## Configuration Reference
+### Configuration
 
 <TypeTable
   type={{
@@ -280,7 +327,7 @@ curl -X DELETE "http://localhost:4242/api/mesh/denied/%2Fhome%2Fuser%2Fprojects%
 
 Mesh data is stored in the consolidated DorkOS database at `~/.dork/dork.db` (managed by Drizzle ORM). Agent manifests are also written to `.dork/agent.json` in each registered agent's project directory as a portable backup that survives database rebuilds.
 
-## Next Steps
+## Next steps
 
 <Cards>
   <Card title="Mesh Concepts" href="/docs/concepts/mesh">

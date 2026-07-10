@@ -29,7 +29,7 @@ Tests live alongside source code in `__tests__/` directories:
       <Folder name="services/session" defaultOpen>
         <Folder name="__tests__" defaultOpen>
           <File name="transcript-reader.test.ts" />
-          <File name="session-broadcaster.test.ts" />
+          <File name="session-list-broadcaster.test.ts" />
         </Folder>
       </Folder>
     </Folder>
@@ -198,11 +198,11 @@ beforeAll(() => {
 
 The `@dorkos/test-utils` package provides:
 
-- `createMockTransport()` — fully mocked Transport with all required methods
-- `FakeAgentRuntime` — full `AgentRuntime` implementation with `vi.fn()` spies and scenario queue
-- `collectSseEvents(app, sessionId, content)` — supertest helper for SSE integration tests
-- `TestScenario` — named scenario keys (`SimpleText`, `ToolCall`, `TodoWrite`, `Error`)
-- `testScenarios` — scenario builders that produce `StreamEvent` sequences
+- `createMockTransport()`: fully mocked Transport with all required methods
+- `FakeAgentRuntime`: full `AgentRuntime` implementation with `vi.fn()` spies and scenario queue
+- `collectDurableEvents(app, sessionId, opts?)`: opens the durable `GET /api/sessions/:id/events` stream against a real listening server and collects parsed SSE frames
+- `TestScenario`: named scenario keys (`SimpleText`, `ToolCall`, `TodoWrite`, `Error`)
+- `testScenarios`: scenario builders that produce `StreamEvent` sequences
 - Mock factories for sessions, messages, and other domain objects
 
 ### FakeAgentRuntime (Server Route Tests)

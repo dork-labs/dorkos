@@ -8,42 +8,44 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Agent Identity
 
-Agents give your project directories a first-class identity in DorkOS. Instead of seeing `/Users/me/projects/api` everywhere, you see a named agent with a color dot and emoji. Agent identity works independently of [Mesh](/docs/guides/agent-discovery) — no feature flags required.
+Instead of seeing `/Users/me/projects/api` everywhere, you can see a named agent with a color dot and an emoji. That's what an agent identity gives your project directory in DorkOS: a face, not just a path. It works on its own, with no setup required, and independently of [Mesh](/docs/guides/agent-discovery) (the system that helps agents discover and route to each other).
 
 ## What You Get
 
 When a directory has an agent registered:
 
-- **Sidebar** shows the agent name, color dot, emoji, and description instead of a raw path
-- **Tab title** displays the agent's emoji and name
-- **Favicon** reflects the agent's color
-- **Directory picker** recents show agent names for registered directories
-- **Task schedules** display agent identity instead of paths
-- **Claude sessions** receive agent identity context in the system prompt
+- **Sidebar**: shows the agent name, color dot, emoji, and description instead of a raw path
+- **Tab title**: displays the agent's emoji and name
+- **Favicon**: reflects the agent's color
+- **Directory picker**: recents show agent names for registered directories
+- **Task schedules**: display agent identity instead of paths
+- **Claude sessions**: receive agent identity context in the system prompt
 
-Unregistered directories work exactly as before with zero changes.
+Unregistered directories work exactly as before, with zero changes.
 
 ## Creating an Agent
 
 <Steps>
 <Step>
+
 ### Quick create from the sidebar
 
-Click the **+ Agent** button next to the directory path in the sidebar. This creates a `.dork/agent.json` file with sensible defaults (name derived from the directory, a deterministic color and emoji).
+Click the **+ Agent** button next to the directory path in the sidebar. This creates a `.dork/agent.json` file with sensible defaults: a name derived from the directory, plus a deterministic color and emoji.
 
 </Step>
 
 <Step>
-### Customize in the Agent Dialog
 
-The Agent Settings Dialog opens automatically after creation. Edit the name, description, pick a color and emoji, then close the dialog. Changes save automatically.
+### Customize in the Agent Hub
+
+The Agent Hub panel opens automatically after creation. Edit the name, description, pick a color and emoji, then close the panel. Changes save automatically.
 
 </Step>
 </Steps>
 
 ### Manual creation
 
-You can also create the file directly:
+You can also create the file directly. It's the source of truth (a database copy stays in sync automatically), so editing it by hand is safe:
 
 ```json title=".dork/agent.json"
 {
@@ -59,61 +61,62 @@ You can also create the file directly:
 }
 ```
 
-## Agent Settings Dialog
+## Customizing Your Agent
 
-Click the agent name or gear icon in the sidebar to open the settings dialog. It has four tabs:
+Click an agent in the sidebar to open the **Agent Hub** panel. The hero at the top has quick pickers for the avatar (color and emoji) and personality; below it, three tabs cover everything else.
 
-### Identity
+### Sessions
 
-Configure the agent's visual identity:
+Scheduled tasks for this agent (if any), followed by its sessions, grouped by time.
 
-- **Name** and **Description** — displayed in the sidebar and directory picker
-- **Color** — pick from a palette or enter a hex code; clears to a deterministic default
-- **Emoji** — pick from a curated grid; clears to a deterministic default
-- **Runtime** — `claude-code`, `cursor`, `codex`, or `other`
+### Config
 
-### Persona
+Edit the agent's description, runtime, and tags, and manage two collapsible sections:
 
-Configure how the agent shapes Claude's behavior. See the [Persona Injection](/docs/guides/persona) guide for details.
+- **Channels**: connect chat apps (like Slack or Discord) to this agent through Relay, the message bus DorkOS uses to route agent traffic. Relay is shipped, but multi-agent coordination through it is still unverified end to end, so treat any channel connection as an early feature and test it before relying on it.
+- **Advanced**: the agent's personality and any custom instruction files. See the [Persona Injection](/docs/guides/persona) guide for details.
 
-### Capabilities
+### Toolkit
 
-Per-agent tool group toggles and Mesh metadata:
+Two sections here:
 
-- **Tool Groups** — enable or disable MCP tool domains per agent (Relay tools, Mesh tools, Adapter tools, Tasks tools). Each toggle has three states: inherited (follows global config), enabled, or disabled. Changes take effect on the next session.
-- **Capabilities** — tag-style chips used by Mesh for discovery and routing (e.g., `api-design`, `frontend`)
-- **Namespace** — subject namespace for Relay routing
-- **Response Mode** and **Budget** — behavioral constraints
+- **Tools**: turn MCP (the protocol that lets Claude call DorkOS tools) tool groups on or off per agent: Tasks, Relay, Mesh, and Adapter. Each toggle has three states: inherited (follows global config), enabled, or disabled. Changes take effect on the next session. Disabling a group for one agent doesn't affect any other agent.
+- **Skill Packs**: marketplace skill packs installed for this agent's directory, with a link to browse more.
 
 <Callout type="info">
-  Tool group overrides layer on top of server-level feature flags. Disabling a tool group for an
-  agent removes those tools from that agent's sessions only — other agents are unaffected.
+  Mesh and Relay power discovery and cross-agent routing, but that coordination is still being
+  hardened. Tool toggles and channel connections work today; treat multi-agent handoffs as an early
+  capability, not a guarantee.
 </Callout>
 
-### Connections
+## Removing an Agent
 
-A read-only view linking to other subsystems:
+Open the kebab menu (the **⋮** icon) in the Agent Hub panel for three options:
 
-- **Task schedules** targeting this agent's directory
-- **Relay endpoints** registered for this agent
-- **Mesh health** status and heartbeat info
+- **Block**: hides the agent from future directory scans. Its files stay untouched, and you can unblock it later.
+- **Unregister**: removes the agent from your list without touching project files. Any scheduled tasks pause. DorkOS offers an undo right after, and re-scanning the directory brings the agent back.
+- **Delete Agent & Data**: permanently erases the agent's personality, settings, and custom rules (you have to type its name to confirm). Your project files are never touched, but this one can't be undone.
 
-Each section hides when its subsystem is disabled.
+System agents, like DorkBot, skip all three: they're managed automatically and can't be blocked, unregistered, or deleted.
 
 ## Visual Identity
 
-Every agent gets a deterministic color and emoji derived from its ID. You can override either in the Identity tab. The priority is:
+Every agent gets a deterministic color and emoji derived from its ID, so even a brand-new, unnamed agent looks intentional rather than broken. You can override either in the Config tab. The priority is:
 
-1. User-set override (stored in `.dork/agent.json` as `color`/`icon`)
-2. Deterministic hash from the agent's ID (stable across directory renames)
-3. For unregistered directories: deterministic hash from the path
+1. Your override, if you set one (stored in `.dork/agent.json` as `color`/`icon`)
+2. A deterministic hash from the agent's ID (stable across directory renames)
+3. For unregistered directories: a deterministic hash from the path
 
 <Callout type="info">
-  Clearing a color or emoji override reverts to the deterministic default — no visual identity is
+  Clearing a color or emoji override reverts to the deterministic default. No visual identity is
   ever lost.
 </Callout>
 
-## API
+## Reference
+
+The rest of this page is for people writing code against DorkOS. If you're just using the UI, you can stop here.
+
+### API
 
 Agent identity is available via REST endpoints at `/api/agents/`:
 
@@ -124,8 +127,8 @@ Agent identity is available via REST endpoints at `/api/agents/`:
 | PATCH  | `/api/agents/current?path=...` | Update agent fields                     |
 | POST   | `/api/agents/resolve`          | Batch resolve agents for multiple paths |
 
-These endpoints are always available — no feature flag needed. All paths are boundary-validated.
+These endpoints are always available, no feature flag needed, and all paths are boundary-validated (checked against the folders DorkOS is allowed to touch). This is the core set; the server exposes a few more routes for advanced flows like scaffolding a new agent from a template.
 
-## MCP Tool
+### MCP Tool
 
-Claude sessions can query an agent's identity via the `get_agent` MCP tool, providing either an `agent_id` (ULID) or `cwd` (working directory path). This is always available, regardless of whether Mesh is configured.
+Claude sessions can query an agent's identity via the `get_agent` MCP tool, providing either an `agent_id` (a ULID, an ID that also records when it was created) or `cwd` (working directory path). This is always available, regardless of whether Mesh is configured.

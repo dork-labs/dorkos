@@ -5,6 +5,8 @@ description: Subscribe to privacy-safe session activity events from a DorkOS ext
 
 # Extensions
 
+Extensions let you build custom UI and automation on top of DorkOS session activity, without ever seeing what was said in a session. This page documents the event-subscription surface, `api.events`, and assumes you already have an extension scaffold (a manifest and an `activate()` entry point) to build on.
+
 A DorkOS extension is a bundle of JavaScript that runs in the browser alongside the client UI. Its manifest (`extension.json`) declares identity, version, and capabilities; its entry point exports an `activate(api)` function that the host calls on load, handing it an `ExtensionAPI` object:
 
 ```typescript
@@ -20,9 +22,13 @@ export function activate(api: ExtensionAPI): () => void {
 
 `ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`), UI control (`executeCommand`, `openCanvas`, `navigate`), read-only host state (`getState`, `subscribe`), scoped storage (`loadData`/`saveData`), notifications (`notify`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`.
 
+## Testing locally
+
+The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
+
 ## Event subscription
 
-`api.events` is a small, typed push channel — deliberately **not** the raw session stream. Extensions run untrusted in the browser, so the host exposes only a curated set of lifecycle and activity _summaries_:
+`api.events` is a small, typed push channel. It is deliberately **not** the raw session stream. Extensions run untrusted in the browser, so the host exposes only a curated set of lifecycle and activity _summaries_:
 
 ```typescript
 interface ExtensionEventsAPI {
@@ -67,19 +73,19 @@ Call `api.events.subscribe` with the event kinds you want and a handler; it retu
     'tool.activity': {
       type: '{ kind: "tool.activity", sessionId: string, toolName: string, status: "started" | "completed" }',
       description:
-        "A tool started or finished. Carries the tool's name and a coarse status only — arguments and results are never included.",
+        "A tool started or finished. Carries the tool's name and a coarse status only. Arguments and results are never included.",
     },
     'relay.message': {
       type: '{ kind: "relay.message", messageId: string, from: string, subject: string }',
       description:
-        'A relay message was observed on the human console stream. Routing metadata only — the message body is never included.',
+        'A relay message was observed on the human console stream. Routing metadata only; the message body is never included.',
     },
   }}
 />
 
 ## Manifest declaration
 
-An extension must declare which events it wants to receive in the manifest's `capabilities.events` array before `api.events.subscribe` will deliver anything. Each entry is either a specific kind (`'turn.completed'`) or a whole category (`'session'`, `'turn'`, `'tool'`, `'relay'`) — declaring a category authorizes every kind under it:
+An extension must declare which events it wants to receive in the manifest's `capabilities.events` array before `api.events.subscribe` will deliver anything. Each entry is either a specific kind (`'turn.completed'`) or a whole category (`'session'`, `'turn'`, `'tool'`, `'relay'`): declaring a category authorizes every kind under it:
 
 ```json title="extension.json"
 {
@@ -92,22 +98,22 @@ An extension must declare which events it wants to receive in the manifest's `ca
 }
 ```
 
-A `subscribe` call for a kind the manifest didn't declare is rejected at runtime: the host logs a console warning naming the undeclared kind(s) and silently drops them from the subscription (the rest still deliver). If every requested kind is undeclared, the returned unsubscribe function is a no-op.
+A `subscribe` call for a kind the manifest didn't declare is rejected at runtime: the host logs a console warning naming the undeclared kind(s) and silently drops them from the subscription (the rest still deliver). If every requested kind is undeclared, the returned unsubscribe function is a no-op. Open your browser's devtools console while testing to catch these warnings.
 
 ## Event scoping
 
-Delivery scope differs by event category — this matters when you're deciding whether an event tells you about the whole host or just what the operator is currently looking at.
+Delivery scope differs by event category. This matters when you're deciding whether an event tells you about the whole host or just what the operator is currently looking at.
 
 <TypeTable
   type={{
     'session.started / session.ended': {
       type: 'GLOBAL',
       description:
-        'Fire for every session the host observes on its session list, not just the foreground session. "Started" means first observed, not created — every pre-existing session emits one when the session-list stream connects, so expect a burst at startup.',
+        'Fire for every session the host observes on its session list, not just the foreground session. "Started" means first observed, not created: every pre-existing session emits one when the session-list stream connects, so expect a burst at startup (your handler will think it is very popular for about a second).',
     },
     'session.switched': {
       type: 'FOREGROUND',
-      description: 'Describes the foreground itself — fires when the attached session changes.',
+      description: 'Describes the foreground itself: fires when the attached session changes.',
     },
     'turn.started / turn.completed': {
       type: 'FOREGROUND-GATED',
@@ -116,7 +122,7 @@ Delivery scope differs by event category — this matters when you're deciding w
     },
     'tool.activity': {
       type: 'FOREGROUND-GATED',
-      description: 'Same gating as turn.* — only the attached session.',
+      description: 'Same gating as turn.*: only the attached session.',
     },
     'relay.message': {
       type: 'GLOBAL',
@@ -128,8 +134,8 @@ Delivery scope differs by event category — this matters when you're deciding w
 
 <Callout type="warn">
   If you need turn or tool activity for a session that isn't in the foreground, there is no way to
-  get it through `api.events` today — those two categories are gated to whatever session the
-  operator has attached.
+  get it through `api.events` today; those two categories are gated to whatever session the operator
+  has attached.
 </Callout>
 
 ## Example

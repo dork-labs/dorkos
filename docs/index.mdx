@@ -1,143 +1,109 @@
 ---
 title: DorkOS Documentation
-description: The operating system for autonomous AI agents — scheduling, communication, and coordination.
+description: Mission control for every coding agent you run. One cockpit for Claude Code, Codex, and OpenCode.
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # DorkOS
 
-The operating system for autonomous AI agents. DorkOS gives your coding agents — Claude Code, Codex, and OpenCode — a scheduling engine, a messaging layer, and a discoverable agent network, so they can work independently, reach you when they need to, and coordinate across projects.
+DorkOS is mission control for the coding agents you run: Claude Code, Codex, and OpenCode. You get one cockpit where your agents work, report back, and coordinate across all your projects. One of you starts to feel like a whole team. That is the point.
 
-Open source. Runs on your machine.
+It is free and open source. It runs on your machine, your code stays on your machine, and you use the AI accounts you already have.
 
-## Get Started
+## Choose your path
 
 <Cards>
-  <Card title="Installation" href="/docs/getting-started/installation">
-    Install via npm, Obsidian plugin, or clone for self-hosting.
+  <Card title="I'm new. What is this?" href="/docs/getting-started/what-is-dorkos">
+    A plain-language tour of DorkOS. No coding background needed.
   </Card>
-  <Card title="Quickstart" href="/docs/getting-started/quickstart">
-    Launch DorkOS and open your first session in under two minutes.
+  <Card title="Get me running" href="/docs/getting-started/quickstart">
+    Install DorkOS and open your first session in about two minutes.
   </Card>
-  <Card title="Configuration" href="/docs/getting-started/configuration">
-    Environment variables, config file, and CLI flags.
+  <Card title="Something's not working" href="/docs/getting-started/troubleshooting">
+    Common problems and their fixes, starting with the most likely.
+  </Card>
+  <Card title="I want to build on it" href="/docs/integrations/building-integrations">
+    The API, extensions, and everything else for developers.
   </Card>
 </Cards>
 
-## Guides
+## Popular guides
 
-Task-oriented walkthroughs for common workflows.
+The sidebar has every guide, grouped by what you're doing. These are the ones people reach for first.
 
 <Cards>
-  <Card title="CLI Usage" href="/docs/guides/cli-usage">
-    Flags, subcommands, and config management from the terminal.
-  </Card>
-  <Card title="Obsidian Plugin" href="/docs/guides/obsidian-plugin">
-    Run DorkOS as an Obsidian sidebar panel — query agents without leaving your notes.
+  <Card title="Workbench" href="/docs/guides/workbench">
+    Files, a terminal, and a browser, right next to your chat.
   </Card>
   <Card title="Runtimes" href="/docs/guides/runtimes">
-    Run Claude Code, Codex, and OpenCode sessions side by side — including local models.
-  </Card>
-  <Card title="Tool Approval" href="/docs/guides/tool-approval">
-    Configure tool approval flows and permission modes.
-  </Card>
-  <Card title="Slash Commands" href="/docs/guides/slash-commands">
-    Discover and create custom slash commands from `.claude/commands/`.
-  </Card>
-  <Card title="Tunnel Setup" href="/docs/self-hosting/tunnel-setup">
-    Access DorkOS from any device via ngrok tunnel.
-  </Card>
-  <Card title="Keyboard Shortcuts" href="/docs/guides/keyboard-shortcuts">
-    Navigate the interface with hotkeys.
+    Run Claude Code, Codex, and OpenCode side by side, including local models.
   </Card>
   <Card title="Task Scheduler" href="/docs/guides/task-scheduler">
-    Schedule agents on a cron — independently, not tied to your terminal.
+    Put agents on a schedule. They work while you sleep.
   </Card>
-  <Card title="Relay Messaging" href="/docs/guides/relay-messaging">
-    Connect agents to Telegram, webhooks, and each other.
+  <Card title="Generative UI" href="/docs/guides/generative-ui">
+    Agents answer with charts, checklists, and buttons, not just text.
   </Card>
-  <Card title="Relay Observability" href="/docs/guides/relay-observability">
-    Track message delivery, inspect traces, and debug failures.
+  <Card title="Tool Approval" href="/docs/guides/tool-approval">
+    Decide what your agents may do without asking you first.
   </Card>
-  <Card title="Agent Discovery" href="/docs/guides/agent-discovery">
-    Register, discover, and monitor agents with Mesh.
-  </Card>
-  <Card title="Agent Coordination" href="/docs/guides/agent-coordination">
-    Patterns for coordinating multiple agents with Relay, Mesh, and Tasks.
-  </Card>
-  <Card title="Agent Identity" href="/docs/guides/agents">
-    Give your projects a name, color, and icon — think in agents, not file paths.
-  </Card>
-  <Card title="Persona Injection" href="/docs/guides/persona">
-    Shape Claude's behavior per-project with custom system prompt context.
-  </Card>
-  <Card title="Building Relay Adapters" href="/docs/integrations/building-relay-adapters">
-    Create custom adapters to connect agents to any external channel.
+  <Card title="The /flow workflow" href="/docs/guides/flow/what-flow-is">
+    A workflow engine that carries an idea from capture to done.
   </Card>
 </Cards>
 
-## Concepts
+## Understand the system
 
-How DorkOS works under the hood.
+Short concept pages that build the right mental model.
 
 <Cards>
   <Card title="Architecture" href="/docs/concepts/architecture">
-    How DorkOS connects to Claude Code via the Agent SDK.
+    How the cockpit, the server, and your agents fit together.
   </Card>
   <Card title="Sessions" href="/docs/concepts/sessions">
-    The session model, runtime-owned storage, and multi-client visibility.
-  </Card>
-  <Card title="Transport" href="/docs/concepts/transport">
-    The Transport abstraction that decouples UI from backend.
+    What a session is, where it lives, and why it survives restarts.
   </Card>
   <Card title="Relay" href="/docs/concepts/relay">
-    Subject-based messaging between agents and external channels.
+    How agents message you (and each other) through Telegram and webhooks.
   </Card>
   <Card title="Mesh" href="/docs/concepts/mesh">
-    Agent discovery, registry, and network topology.
+    How DorkOS finds and keeps track of your agents.
   </Card>
 </Cards>
 
-## Integrations
-
-Build custom clients or connect DorkOS to your workflow.
+## Build on DorkOS
 
 <Cards>
   <Card title="Building Integrations" href="/docs/integrations/building-integrations">
-    Use the Transport interface or REST API to build custom clients.
+    Use the REST API or Transport interface to build your own client.
   </Card>
-  <Card title="SSE Protocol" href="/docs/integrations/sse-protocol">
-    Wire format, event types, and connection lifecycle.
+  <Card title="MCP Server" href="/docs/integrations/mcp-server">
+    Give any MCP-compatible tool access to DorkOS.
   </Card>
   <Card title="API Reference" href="/docs/api">
-    Interactive OpenAPI documentation for all endpoints.
+    Every endpoint, with an interactive playground.
+  </Card>
+  <Card title="Publish to the Marketplace" href="/docs/marketplace/publishing">
+    Package your agents, plugins, and skills for others to install.
   </Card>
 </Cards>
 
-## Self-Hosting
-
-Run DorkOS on your own machine or server.
+## Run it anywhere
 
 <Cards>
   <Card title="Deployment" href="/docs/self-hosting/deployment">
-    Build, configure, and run DorkOS in production.
+    Run DorkOS in production on your own server.
   </Card>
-  <Card title="Reverse Proxy" href="/docs/self-hosting/reverse-proxy">
-    nginx and Caddy configs with SSE support.
+  <Card title="Docker" href="/docs/self-hosting/docker">
+    One container, batteries included.
+  </Card>
+  <Card title="Tunnel Setup" href="/docs/self-hosting/tunnel-setup">
+    Check on your agents from your phone via a secure tunnel.
+  </Card>
+  <Card title="Securing Your Instance" href="/docs/self-hosting/securing-your-instance">
+    Lock things down before you open things up.
   </Card>
 </Cards>
 
-## Contributing
-
-<Cards>
-  <Card title="Development Setup" href="/docs/contributing/development-setup">
-    Clone, install, and run the dev servers.
-  </Card>
-  <Card title="Architecture" href="/docs/contributing/architecture">
-    Hexagonal architecture, FSD layers, and service overview.
-  </Card>
-  <Card title="Testing" href="/docs/contributing/testing">
-    Vitest patterns, mock Transport, and test conventions.
-  </Card>
-</Cards>
+Contributing to DorkOS itself? Start with [Development Setup](/docs/contributing/development-setup). And if a word in these docs ever loses you, the [Glossary](/docs/glossary) defines all of them in plain language.

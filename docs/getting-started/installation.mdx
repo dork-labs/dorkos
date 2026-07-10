@@ -1,25 +1,30 @@
 ---
 title: Installation
-description: Install DorkOS via one-liner, npm, Docker, Obsidian plugin, or self-hosted
+description: Install DorkOS and open the cockpit where you run, schedule, and check on your coding agents
 ---
 
 # Installation
 
-DorkOS runs in several modes. Pick the install method that fits your workflow.
+DorkOS gives you a browser tab where you run, schedule, and check on your coding agents. Install it once, and it starts in seconds whenever you need it.
 
-## Prerequisites
+## Before you start
 
 <Callout type="info">
-  All installation methods require a Claude API key from the [Anthropic
-  Console](https://console.anthropic.com/). Non-Docker methods also require
-  [Node.js](https://nodejs.org/) 18 or later.
+  Every install method needs a Claude API key (a key from
+  [Anthropic](https://console.anthropic.com/) that lets DorkOS talk to Claude on your behalf). If you
+  don't have one yet, create it there first. Everything except Docker also needs
+  [Node.js](https://nodejs.org/) 18 or later, the JavaScript runtime DorkOS runs on.
 </Callout>
 
-## Choose Your Install Method
+## Pick your install method
+
+Most people should use the one-liner: it's one command and it checks your setup for you. Already comfortable with npm? Use the npm tab. Running on a server, or don't want Node.js on your machine at all? Use Docker. Contributing to DorkOS itself? Use Self-Hosted.
 
 <Tabs items={['One-liner (Recommended)', 'npm', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner (Recommended)">
+
+One command, no yak-shaving: it checks your Node.js version, installs DorkOS, and can walk you through setup.
 
 <Steps>
 <Step>
@@ -30,7 +35,7 @@ DorkOS runs in several modes. Pick the install method that fits your workflow.
 curl -fsSL https://dorkos.ai/install | bash
 ```
 
-Checks for Node.js 18+, installs DorkOS via npm, and optionally runs the setup wizard.
+This checks for Node.js 22+, installs DorkOS, and asks if you'd like to run the setup wizard. Say yes and it'll ask for your preferred port, a UI theme, and which folder you want DorkOS to work in by default. You can change any of these later.
 
 </Step>
 <Step>
@@ -41,7 +46,7 @@ Checks for Node.js 18+, installs DorkOS via npm, and optionally runs the setup w
 export ANTHROPIC_API_KEY="your-key-here"
 ```
 
-Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across sessions.
+An environment variable is a value your shell hands to programs when they start, in this case your API key. Add this line to your shell profile (`~/.bashrc`, `~/.zshrc`, or similar) so you don't have to retype it every time you open a terminal.
 
 </Step>
 <Step>
@@ -52,7 +57,7 @@ Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across sess
 dorkos
 ```
 
-The server starts on port 4242 and opens your browser automatically.
+DorkOS starts on port 4242 (the address your browser uses to reach it) and opens your browser automatically to the DorkOS cockpit.
 
 </Step>
 </Steps>
@@ -66,6 +71,8 @@ The server starts on port 4242 and opens your browser automatically.
 </Tab>
 
 <Tab value="npm">
+
+If you already have a package manager on hand, skip the one-liner and install DorkOS the way you install everything else.
 
 <Steps>
 <Step>
@@ -97,7 +104,7 @@ bun add -g dorkos
 export ANTHROPIC_API_KEY="your-key-here"
 ```
 
-Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across sessions.
+Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, or similar) to persist it across sessions.
 
 </Step>
 <Step>
@@ -117,7 +124,7 @@ dorkos --version
 dorkos
 ```
 
-The server starts on port 4242 and opens your browser automatically.
+DorkOS starts on port 4242 and opens your browser to the cockpit.
 
 </Step>
 </Steps>
@@ -131,7 +138,7 @@ The server starts on port 4242 and opens your browser automatically.
 
 <Tab value="Docker">
 
-Run DorkOS in a container. No Node.js installation required on the host — only [Docker](https://docs.docker.com/get-docker/).
+Run DorkOS in a container. No Node.js installation required on the host, only [Docker](https://docs.docker.com/get-docker/).
 
 <Steps>
 <Step>
@@ -146,12 +153,14 @@ docker run -d --name dorkos \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
+The `-v dorkos-data:/root/.dork` part creates a Docker volume, a small chunk of storage that survives even if you remove the container, so your sessions and settings stick around.
+
 </Step>
 <Step>
 
 ### Open the interface
 
-Navigate to [http://localhost:4242](http://localhost:4242) in your browser.
+Navigate to [http://localhost:4242](http://localhost:4242) in your browser. You'll land on the DorkOS cockpit.
 
 </Step>
 </Steps>
@@ -166,49 +175,57 @@ Navigate to [http://localhost:4242](http://localhost:4242) in your browser.
 
 <Tab value="Obsidian Plugin">
 
-Run DorkOS directly inside [Obsidian](https://obsidian.md/) as a sidebar panel. Query agents without leaving your notes.
+<Callout type="warn">
+  The Obsidian plugin (built as **DorkOS Copilot**) is early. It's not yet listed in Obsidian's
+  community plugin directory, and it's under active development, so expect rough edges. If you
+  want a dependable daily driver today, use the web cockpit above; come back here once it's further
+  along.
+</Callout>
+
+DorkOS Copilot embeds a chat sidebar for your agents directly inside [Obsidian](https://obsidian.md/), so you can talk to them without leaving your notes. Because it isn't published yet, the only way to try it is to build it from source, alongside the DorkOS repo:
 
 <Steps>
 <Step>
 
-### Open Obsidian settings
+### Build the plugin
 
-Go to **Settings** → **Community Plugins** and make sure community plugins are enabled.
-
-</Step>
-<Step>
-
-### Search for DorkOS
-
-Click **Browse** and search for **DorkOS** in the community plugin directory.
+Follow the Self-Hosted tab below to clone and install DorkOS, then build the plugin package from `apps/obsidian-plugin`.
 
 </Step>
 <Step>
 
-### Install and enable
+### Copy it into your vault
 
-Click **Install**, then toggle the plugin on. DorkOS appears as a sidebar view.
+Copy the built `manifest.json`, `main.js`, and `styles.css` into a new folder at `<your-vault>/.obsidian/plugins/dorkos-copilot/`.
+
+</Step>
+<Step>
+
+### Enable it
+
+In Obsidian, go to **Settings** → **Community Plugins**, make sure community plugins are enabled, then find and toggle on **DorkOS Copilot**.
 
 </Step>
 <Step>
 
 ### Configure your API key
 
-Open the DorkOS plugin settings and enter your Anthropic API key.
+Open the DorkOS Copilot settings and enter your Anthropic API key.
 
 </Step>
 </Steps>
 
-<Callout type="warn">
-  The Obsidian plugin requires Node.js 18+ installed on your system. It runs the same Claude Agent
-  SDK as the CLI but in-process via the DirectTransport adapter — no network hop.
+<Callout type="info">
+  For the curious: the plugin runs the same agent engine as the CLI, but in-process inside Obsidian
+  instead of talking to a separate server. In practice that means it's fast and nothing leaves your
+  machine, though it also means the plugin needs Node.js 22+ installed on your system.
 </Callout>
 
 </Tab>
 
 <Tab value="Self-Hosted">
 
-Clone the repository and run the full development stack. Useful for contributing or customizing DorkOS.
+For contributors and anyone customizing DorkOS: clone the repository and run the full development stack.
 
 <Steps>
 <Step>
@@ -253,7 +270,7 @@ ANTHROPIC_API_KEY=your-key-here
 pnpm dev
 ```
 
-Starts the Express API server and Vite dev server concurrently. The interface is available at [http://localhost:6241](http://localhost:6241) with hot module replacement.
+This starts the Express API server and Vite dev server together, with hot reload as you edit. The cockpit is available at [http://localhost:6241](http://localhost:6241).
 
 </Step>
 </Steps>
@@ -266,7 +283,14 @@ Starts the Express API server and Vite dev server concurrently. The interface is
 
 </Tabs>
 
+<Callout type="info">
+  **Port already taken?** If DorkOS won't start because something else is using the port, run
+  `dorkos --port 8081` (or any free port) to start on a different one.
+</Callout>
+
 ## Updating
+
+DorkOS checks for a newer version every time it starts. Here's how to update on each install method.
 
 <Tabs items={['One-liner / npm', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
@@ -294,7 +318,7 @@ yarn global add dorkos@latest
 bun add -g dorkos@latest
 ```
 
-DorkOS checks for updates on startup. Check your current version at any time:
+Check your current version at any time:
 
 ```bash
 dorkos --version
@@ -322,7 +346,7 @@ Data in the `dorkos-data` volume persists across updates.
 
 <Tab value="Obsidian Plugin">
 
-Obsidian handles plugin updates automatically. To check manually, go to **Settings** → **Community Plugins**, find DorkOS, and click **Update** if available.
+Rebuild the plugin from an updated copy of the repository, then copy the new files over the ones in `<your-vault>/.obsidian/plugins/dorkos-copilot/` and reload Obsidian.
 
 </Tab>
 
@@ -334,16 +358,21 @@ pnpm install
 pnpm build
 ```
 
-Restart the running server after rebuilding. Database migrations run automatically on startup. Check the [changelog](/docs/changelog) for breaking changes before upgrading — major releases may require configuration updates.
+Restart the running server after rebuilding. Database migrations run automatically on startup. Check the [changelog](/docs/changelog) for breaking changes before upgrading; major releases may require configuration updates.
 
 </Tab>
 
 </Tabs>
 
-## Rollback and Version Pinning
+## Reference
+
+Deeper detail for when things go sideways or you need an exact version.
+
+### Rollback and version pinning
+
+Something broke after an update? Roll back to the version that worked.
 
 <Callout type="info">
-  If an update causes issues, pin a specific version to roll back:
 
 ```bash tab="npm"
 npm install -g dorkos@0.11.0
@@ -357,6 +386,6 @@ Replace `0.11.0` with the version you want. Available versions are listed on [np
 
 </Callout>
 
-## Next Steps
+## Next steps
 
 Head to the [Quickstart](/docs/getting-started/quickstart) to open your first session, or [Configuration](/docs/getting-started/configuration) to customize your setup.

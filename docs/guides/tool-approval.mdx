@@ -13,13 +13,13 @@ DorkOS gives you control over what Claude does during a session. When tool appro
 
 ## How It Works
 
-When Claude wants to use a tool — writing a file, running a command, editing code — a tool approval card appears in the chat. The card shows:
+When Claude wants to use a tool (writing a file, running a command, editing code), a tool approval card appears in the chat. The card shows:
 
-- **Tool name** — a display name for the operation Claude wants to perform
-- **Risk indicator** — a color-coded shield icon showing the risk level (red for high, amber for medium, gray for low)
-- **Context details** — SDK-provided description, the decision reason, and the blocked file path (when applicable)
-- **Tool input** — parameters for the tool (file paths, command arguments, search terms)
-- **Action buttons** — Approve, Always Allow (when available), and Deny
+- **Tool name**: a display name for the operation Claude wants to perform
+- **Risk indicator**: a color-coded shield icon showing the risk level (red for high, amber for medium, gray for low)
+- **Context details**: SDK-provided description, the decision reason, and the blocked file path (when applicable)
+- **Tool input**: parameters for the tool (file paths, command arguments, search terms)
+- **Action buttons**: Approve, Always Allow (when available), and Deny
 
 <Steps>
   <Step>
@@ -75,26 +75,26 @@ When an approval card shows an **Always Allow** button, clicking it does two thi
 1. Approves the current tool call immediately
 2. Sends SDK permission updates back to Claude so that similar tool calls are auto-approved for the rest of the session
 
-Not every approval card shows this button — it only appears when the SDK provides permission suggestions for the tool. The keyboard shortcut is <kbd>Shift+Enter</kbd>.
+Not every approval card shows this button: it only appears when the SDK provides permission suggestions for the tool. The keyboard shortcut is <kbd>Shift+Enter</kbd>.
 
 ## Batch Approvals
 
 When Claude fires multiple tool calls concurrently, a **batch approval bar** appears above the active approval card. It shows the count of pending approvals and provides:
 
-- **Approve All** — approve every queued tool call at once
-- **Deny All** — deny every queued tool call at once
+- **Approve All**: approve every queued tool call at once
+- **Deny All**: deny every queued tool call at once
 
 This is useful during parallel operations (e.g., Claude editing several files at the same time).
 
 ## Approvals in Chat (Telegram and Slack)
 
-When an agent is connected to a Telegram chat or Slack channel through Relay, approval prompts appear there too — as Approve/Deny buttons under the message. Tapping a button resolves the tool call the same way clicking in the cockpit does.
+When an agent is connected to a Telegram chat or Slack channel through Relay, approval prompts appear there too, as Approve/Deny buttons under the message. Tapping a button resolves the tool call the same way clicking in the cockpit does.
 
 <Callout type="warn">
   **In group chats, anyone can respond.** Approval buttons are not restricted to the person who
-  started the conversation — any member of the bound group chat or channel can approve or deny a
-  tool execution. If that matters to you, bind agents with approval-gated permissions to private
-  chats or DMs instead of shared channels.
+  started the conversation: any member of the bound group chat or channel can approve or deny a tool
+  execution. If that matters to you, bind agents with approval-gated permissions to private chats or
+  DMs instead of shared channels.
 </Callout>
 
 ## Keyboard Shortcuts
@@ -113,13 +113,13 @@ Shortcuts are active whenever a pending tool approval or question prompt is visi
 
 ## Question Prompts
 
-Some tools need more than a yes/no — they need answers. When Claude uses the `AskUserQuestion` tool, you'll see an interactive question prompt instead of an approval card.
+Some tools need more than a yes/no: they need answers. When Claude uses the `AskUserQuestion` tool, you'll see an interactive question prompt instead of an approval card.
 
 Question prompts support three response types:
 
-- **Single-select** — choose one option from a list
-- **Multi-select** — choose multiple options
-- **Free-text ("Other")** — type a custom answer when none of the options fit
+- **Single-select**: choose one option from a list
+- **Multi-select**: choose multiple options
+- **Free-text ("Other")**: type a custom answer when none of the options fit
 
 <Steps>
   <Step>Read the question.</Step>
@@ -133,11 +133,11 @@ Your answers are injected into the tool's input. Claude continues with your sele
 
 Each session has a permission mode that sets how Claude handles tool approvals. You can change it at any time from the session's permission picker:
 
-- **Default** — Claude prompts on tool use and respects your project's permission settings. Read-only and agent tools are still auto-approved.
-- **Accept edits** — file edits are auto-accepted; Claude still prompts for other tools.
-- **Plan** — read-only planning mode. Claude can investigate and propose a plan but cannot execute tools.
-- **Bypass permissions** — all approval prompts are skipped. A persistent red warning banner appears at the top of the UI while this mode is active.
-- **Auto** — a safety classifier decides each tool call for you, approving routine work and pausing only for risky actions.
+- **Default**: Claude prompts on tool use and respects your project's permission settings. Read-only and agent tools are still auto-approved.
+- **Accept edits**: file edits are auto-accepted; Claude still prompts for other tools.
+- **Plan**: read-only planning mode. Claude can investigate and propose a plan but cannot execute tools.
+- **Bypass permissions**: all approval prompts are skipped. A persistent red warning banner appears at the top of the UI while this mode is active.
+- **Auto**: a safety classifier decides each tool call for you, approving routine work and pausing only for risky actions.
 
 <Callout type="warn">
   Bypass permissions mode disables all safety checks. Only use it in isolated environments where you
@@ -151,23 +151,23 @@ Each session has a permission mode that sets how Claude handles tool approvals. 
   experience may change as it evolves.
 </Callout>
 
-Auto mode trades constant approvals for autonomy on long-running work. Instead of pausing on every tool call, a safety classifier evaluates each one — auto-approving routine actions and stopping only for risky ones, like deleting files or running unfamiliar commands. It's designed for autonomous runs where approving each step yourself would slow Claude down.
+Auto mode trades constant approvals for autonomy on long-running work. Instead of pausing on every tool call, a safety classifier evaluates each one, auto-approving routine actions and stopping only for risky ones, like deleting files or running unfamiliar commands. It's designed for autonomous runs where approving each step yourself would slow Claude down.
 
-**Availability is model-gated.** Auto mode only appears in the permission picker when the model you've selected supports it. If you switch to a model that doesn't, the session falls back to Default automatically — Claude never enters auto mode on a model that can't run it.
+**Availability is model-gated.** Auto mode only appears in the permission picker when the model you've selected supports it. If you switch to a model that doesn't, the session falls back to Default automatically. Claude never enters auto mode on a model that can't run it.
 
 **A one-time confirmation.** The first time you turn on auto mode in a session, DorkOS asks you to confirm:
 
-> The agent runs on its own and only checks with you before risky actions — like deleting files or running unfamiliar commands. You can switch back anytime.
+> The agent runs on its own and only checks with you before risky actions, like deleting files or running unfamiliar commands. You can switch back anytime.
 
 After you confirm, the rest of that session switches to auto mode without asking again. You can leave auto mode whenever you want.
 
-**Denials are visible.** When the classifier blocks a tool call, a read-only "blocked" chip appears in the chat showing what was denied and why. It's a record, not a prompt — there's no action to take and no re-approval path. This keeps auto mode honest: Claude never silently swallows a denied action.
+**Denials are visible.** When the classifier blocks a tool call, a read-only "blocked" chip appears in the chat showing what was denied and why. It's a record, not a prompt: there's no action to take and no re-approval path. This keeps auto mode honest: Claude never silently swallows a denied action.
 
 ## Common Scenarios
 
 ### File Operations
 
-`Write` and `Edit` tool calls appear when Claude modifies your files. These are classified as **high risk** and always require approval in default mode. Check the file paths carefully — Claude should be working in the right location.
+`Write` and `Edit` tool calls appear when Claude modifies your files. These are classified as **high risk** and always require approval in default mode. Check the file paths carefully. Claude should be working in the right location.
 
 ### Command Execution
 

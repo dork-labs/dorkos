@@ -1,6 +1,6 @@
 ---
 title: Task Scheduler
-description: Cron-based agent jobs that keep running when you close the terminal
+description: Schedule agents to run on a timer, even with your laptop closed
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -10,125 +10,141 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Task Scheduler
 
-Tasks is DorkOS's cron scheduling engine for AI agents. Define schedules with cron expressions and prompts, and Tasks triggers autonomous agent sessions at the specified intervals — independent of your IDE or terminal. Agents run with their own working directory and prompt, producing results you can review in the run history.
+Tasks lets you schedule an agent to run automatically, on a timer, instead of you kicking it off by hand every time. Set it up once ("check for outdated dependencies every Monday at 10am") and DorkOS handles the rest, even after you close your laptop.
 
-## Enabling Tasks
+Tasks is on by default. Open the **Tasks** tab in the sidebar and you're ready to create your first schedule.
 
-Tasks is feature-flag-guarded. Enable it with the environment variable or CLI flag:
+<Callout type="info">
+  Don't see a Tasks tab? Someone turned it off. Run `dorkos --tasks`, or see [Enabling or disabling
+  Tasks](#enabling-or-disabling-tasks) below.
+</Callout>
+
+## Create your first schedule
 
 <Steps>
 <Step>
-### Set the environment variable
 
-Add `DORKOS_TASKS_ENABLED=true` to your `.env` file, or pass the flag to the CLI:
+### Open the Tasks tab
+
+It's in the sidebar. If you have no schedules yet, you'll see a gallery of ready-made templates, things like "Daily Health Check" (run lint, tests, and type checks every weekday morning) or "Weekly Dependency Audit" (check for outdated packages every Monday).
+
+</Step>
+<Step>
+
+### Pick a template or start from scratch
+
+Click a template card to pre-fill a schedule you can edit, or click "Start from scratch" to build your own. Either way, you land on a form with:
+
+- **Agent**: which agent runs the job, and in which project. This also decides the job's working directory.
+- **Name** and **Description**: what to call this schedule.
+- **Prompt**: the instruction the agent gets each time the job runs, e.g. "Check for outdated npm dependencies and summarize what needs updating."
+- **Cron Expression** and **Timezone** (under "Schedule"): when the job runs. A cron expression is just a compact way to say "every Monday at 10am" or "every weekday at 9am." The visual builder in the form writes it for you, so you don't need to memorize the syntax (though [the reference below](#cron-syntax) has the full pattern if you're curious).
+- **Permission Mode** and **Max Runtime** (under "Advanced settings"): how much autonomy the agent gets and how long it's allowed to run before DorkOS stops it.
+
+</Step>
+<Step>
+
+### Save it
+
+Your schedule shows up in the Tasks tab immediately, along with its next run time. Every run it makes lands in the run history, so you can check what happened without digging through logs.
+
+</Step>
+</Steps>
+
+## Will it actually run?
+
+Short answer: yes, once it's live in a real DorkOS install. Schedules always show up and you can always edit them, but a schedule only actually **fires** (starts an agent session) in a real production install of DorkOS, the one you get from the normal install, not a developer preview build. That's a deliberate safety rail: a scheduled job can edit files and run commands on its own, so DorkOS won't let a test or development build fire one by accident.
+
+If you're following this guide in a normal DorkOS install, you're already in the environment where schedules fire. Nothing extra to do.
+
+## Enabling or disabling Tasks
+
+Tasks ships on by default, so most people never need to touch this. If someone turned it off, or you want to force it on or off for a specific run:
 
 ```bash
 dorkos --tasks
 ```
 
-To explicitly disable Tasks:
-
 ```bash
 dorkos --no-tasks
-# or
-export DORKOS_TASKS_ENABLED=false
 ```
 
-</Step>
+You can also set `DORKOS_TASKS_ENABLED=true` (or `false`) as an environment variable; it takes the same effect as the flag. Whichever you set last wins.
 
-<Step>
-### Verify in the sidebar
+---
 
-The Tasks tab appears in the sidebar when Tasks is enabled. Open it to see your schedules and run history.
+## Reference
 
-</Step>
-</Steps>
-
-## Execution safety: when tasks actually fire
-
-Because a scheduled task can take **autonomous action** (it spins up an agent that may edit files, run commands, or post to connected services), DorkOS gates _firing_ carefully. Enabling Tasks makes schedules **visible and editable everywhere**, but a schedule only **fires** when this environment is authorized to.
-
-<Callout type="warn">
-  By default, scheduled tasks fire **only in a real production install** (the built CLI running
-  against your real `~/.dork`). A **development server never fires** unless you opt in — so running
-  `pnpm dev` (or any non-production server) can't trigger autonomous action by accident.
-</Callout>
-
-The firing decision resolves like this:
-
-| Environment                                | `DORKOS_TASKS_ENABLED` | Fires?                                                 |
-| ------------------------------------------ | ---------------------- | ------------------------------------------------------ |
-| Production install (`NODE_ENV=production`) | unset                  | **Yes** (when the scheduler is enabled in config)      |
-| Production install                         | `false`                | No (explicit opt-out)                                  |
-| Dev / test server                          | unset                  | **No** (the safe default)                              |
-| Dev / test server                          | `true`                 | Yes (explicit opt-in, e.g. to test a schedule locally) |
-
-In short: `DORKOS_TASKS_ENABLED` is an explicit override in **both** directions; when it is unset, firing requires a real production environment. (A future hosted preview/staging server defaults to **not** firing as well.) Either way, **display is never gated** — your schedules and their next-run times always show, even where firing is suppressed.
-
-Two further guarantees protect a setup where the same `~/.dork` is shared by more than one running server:
-
-- **Single firer (leader lock).** Only one process per `~/.dork` fires; the rest still display schedules but stay quiet. If the firing process exits, another takes over within a few seconds.
-- **Fire-once (idempotency).** A given scheduled occurrence dispatches **at most once**, even across processes — so a shared data directory can never double-run a job. Manual "Run now" triggers are exempt and always run.
-
-## Preset Gallery
-
-When you have no schedules yet, the Tasks panel shows a **Preset Gallery** instead of an empty state. Presets are curated schedule templates — common patterns like "Daily standup summary" or "Weekly dependency check" with pre-filled cron expressions and prompts.
-
-Click any preset card to open `CreateScheduleDialog` pre-populated with that preset's cron expression and prompt. You can edit any field before saving. Presets are read-only suggestions; the final schedule is always yours to customize.
-
-Presets are fetched from the server via `GET /api/tasks/presets` and cached client-side.
-
-## Creating Schedules
-
-### TasksPanel UI
-
-Open the Tasks tab and click "Create Schedule" (or select a preset from the gallery). Configure:
-
-- **Name** — A human-readable label (e.g., "Daily code review")
-- **Cron expression** — When the job runs. Choose from preset buttons or build with the visual editor.
-- **Prompt** — The instruction sent to the agent when the job triggers
-- **Working directory** — The directory the agent operates in
-- **Timezone** — The timezone for the cron expression (defaults to your system timezone)
-- **Permission mode** (Advanced) — `acceptEdits` requires approval for file changes. `bypassPermissions` lets the agent execute any tool without approval.
-- **Max runtime** (Advanced) — Maximum execution time in minutes (default: 10, max: 720)
+The rest of this page is for people who want the API, the exact data model, or the implementation details. If you just wanted to schedule an agent, you're done, go create something.
 
 ### REST API
 
+Create a schedule:
+
 ```bash
-curl -X POST http://localhost:4242/api/tasks/schedules \
+curl -X POST http://localhost:4242/api/tasks \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Daily dependency check",
-    "cron": "0 9 * * *",
+    "name": "weekly-dependency-check",
+    "description": "Check for outdated npm dependencies",
     "prompt": "Check for outdated npm dependencies and create a summary of what needs updating.",
-    "cwd": "/home/user/projects/my-app",
+    "target": "global",
+    "cron": "0 9 * * 1",
     "timezone": "America/New_York"
   }'
 ```
 
-The response includes the schedule ID and initial state (`active`).
+`target` is either an agent id (the schedule runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, and `permissionMode` are optional.
+
+Pause or resume a schedule:
+
+```bash
+curl -X PATCH http://localhost:4242/api/tasks/{id} \
+  -H "Content-Type: application/json" \
+  -d '{ "enabled": false }'
+```
+
+Trigger a schedule outside its cron timing:
+
+```bash
+curl -X POST http://localhost:4242/api/tasks/{id}/trigger
+```
+
+Cancel an active run:
+
+```bash
+curl -X POST http://localhost:4242/api/tasks/runs/{runId}/cancel
+```
+
+List available templates:
+
+```bash
+curl http://localhost:4242/api/tasks/templates
+```
 
 ### MCP Tools
 
-Agents can create schedules using the `tasks_create` MCP tool. Schedules created by agents enter the `pending_approval` state and require human approval before they start running.
+Agents can create schedules for themselves using the `tasks_create` MCP tool.
 
 ```
 tasks_create({
-  name: "Nightly test suite",
-  cron: "0 2 * * *",
+  name: "nightly-test-suite",
+  description: "Run the full test suite overnight",
   prompt: "Run the full test suite and report any failures.",
-  cwd: "/home/user/projects/my-app"
+  target: "global",
+  cron: "0 2 * * *"
 })
 ```
 
 <Callout type="warn">
-  Agent-created schedules require human approval. This prevents agents from autonomously scheduling
-  expensive or unintended recurring tasks. Approve pending schedules from the TasksPanel UI.
+  Schedules an agent creates for itself enter the `pending_approval` state and won't run until a
+  human approves them. This stops an agent from quietly scheduling recurring work you never asked
+  for.
 </Callout>
 
-## Cron Syntax
+### Cron Syntax
 
-Tasks uses standard five-field cron expressions. The TasksPanel includes a visual builder and common presets.
+Tasks uses standard five-field cron expressions:
 
 ```
 ┌───────────── minute (0-59)
@@ -139,8 +155,6 @@ Tasks uses standard five-field cron expressions. The TasksPanel includes a visua
 │ │ │ │ │
 * * * * *
 ```
-
-### Common Presets
 
 <TypeTable
   type={{
@@ -161,10 +175,6 @@ Tasks uses standard five-field cron expressions. The TasksPanel includes a visua
   reference [crontab.guru](https://crontab.guru) for syntax validation.
 </Callout>
 
-## Run History
-
-Every schedule execution creates a run record in SQLite. The RunHistoryPanel in the Tasks tab shows past runs with status and timing.
-
 ### Run States
 
 <TypeTable
@@ -176,65 +186,9 @@ Every schedule execution creates a run record in SQLite. The RunHistoryPanel in 
   }}
 />
 
-Click any run in the history to open the full agent conversation. This navigates to the session transcript — every tool call, response, and output the agent produced during the run.
+Click any run in the history to open the full agent conversation, every tool call, response, and output the agent produced during that run.
 
-### Managing Runs
-
-Cancel an active run:
-
-```bash
-curl -X POST http://localhost:4242/api/tasks/runs/{runId}/cancel
-```
-
-Trigger a schedule outside its cron timing:
-
-```bash
-curl -X POST http://localhost:4242/api/tasks/schedules/{scheduleId}/trigger
-```
-
-Tasks enforces a configurable concurrency cap on simultaneous runs. If the cap is reached, new triggers are skipped with a warning log. Overrun protection (via croner's `protect` option) prevents a schedule from starting a new run if its previous run is still active.
-
-## Tasks + Relay
-
-When both Tasks and [Relay](/docs/guides/relay-messaging) are enabled, schedule dispatch goes through Relay. Instead of calling the agent runtime directly, Tasks publishes to `relay.system.tasks.{scheduleId}`. The ClaudeCodeAdapter picks up the message and routes it to a new agent session.
-
-This integration provides:
-
-- **Message tracing** — Every scheduled run gets a Relay trace ID, so you can track the full delivery path from schedule trigger through agent execution.
-- **Unified metrics** — Scheduled run deliveries appear in the Relay delivery metrics dashboard alongside interactive session messages.
-- **Reliability** — Scheduled messages flow through the same pipeline as all other Relay messages — circuit breakers, backpressure, dead letter queue.
-
-<Callout type="info">
-  When Relay is disabled, Tasks falls back to direct in-process calls. Schedules work the same way —
-  you just lose the tracing and metrics integration.
-</Callout>
-
-## Configuration
-
-<TypeTable
-  type={{
-    DORKOS_TASKS_ENABLED: {
-      type: 'boolean',
-      description: 'Enable or disable the Task scheduler',
-      default: 'false',
-    },
-    'Max concurrent runs': {
-      type: 'number',
-      description: 'Maximum number of agent sessions running simultaneously from scheduled jobs',
-    },
-    'Overrun protection': {
-      type: 'boolean',
-      description:
-        'Prevent a schedule from starting a new run while the previous one is still active',
-      default: 'true',
-    },
-    'Retention pruning': {
-      type: 'boolean',
-      description: 'Automatically prune old run records to keep the database manageable',
-      default: 'true',
-    },
-  }}
-/>
+Tasks enforces a configurable concurrency cap on simultaneous runs (1 by default, configurable up to 10 in Settings). If the cap is reached, new triggers are skipped with a warning log. Overrun protection (via croner's `protect` option) stops a schedule from starting a new run while its previous run is still active.
 
 ### Schedule States
 
@@ -252,21 +206,26 @@ This integration provides:
   }}
 />
 
-Pause and resume schedules from the TasksPanel UI or via PATCH requests:
+### Tasks + Relay
 
-```bash
-# Pause a schedule
-curl -X PATCH http://localhost:4242/api/tasks/schedules/{scheduleId} \
-  -H "Content-Type: application/json" \
-  -d '{ "status": "paused" }'
+When both Tasks and [Relay](/docs/guides/relay-messaging) are enabled, a scheduled run gets dispatched as a Relay message (`relay.system.tasks.{scheduleId}`) instead of calling the agent runtime directly. Multi-agent coordination through Relay is shipped but still working toward full end-to-end verification, so treat this integration as functional, not battle-tested. In practice it means:
 
-# Resume a schedule
-curl -X PATCH http://localhost:4242/api/tasks/schedules/{scheduleId} \
-  -H "Content-Type: application/json" \
-  -d '{ "status": "active" }'
-```
+- Each scheduled run gets a Relay trace ID, so you can follow the delivery path from trigger to agent execution.
+- Scheduled runs share Relay's delivery machinery (retries, backpressure handling, a dead-letter queue for messages that can't be delivered) with every other message on the bus.
 
-Tasks data — schedule definitions and run history — is stored in SQLite at `~/.dork/dork.db` with WAL mode for concurrent read/write access.
+<Callout type="info">
+  When Relay is disabled, Tasks falls back to calling the agent runtime directly. Schedules still
+  work the same way, you just don't get the trace ID or shared delivery metrics.
+</Callout>
+
+### Storage
+
+Schedule definitions and run history live in SQLite at `~/.dork/dork.db`, using WAL mode so reads and writes don't block each other.
+
+Two guarantees hold even if more than one DorkOS server points at the same `~/.dork`:
+
+- **Single firer.** Only one process fires schedules at a time; others display schedules but stay quiet. If the firing process exits, another takes over within seconds.
+- **Fire-once.** A given scheduled occurrence dispatches at most once, even across processes, so a shared data directory can never double-run a job. Manual "trigger" calls are exempt and always run.
 
 ## Next Steps
 

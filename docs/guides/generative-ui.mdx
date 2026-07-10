@@ -15,9 +15,11 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Agents don't have to describe your data in a wall of text. In DorkOS, an agent can render it instead, as a real widget right inside the chat.
 
-Behind the scenes, the agent sends a small JSON document (a simple, structured text format) and DorkOS turns it into a native UI element: a stat card, a table, a list, a chart, a timeline, a checklist, a comparison matrix, a star rating, a key/value list, a badge, a progress bar, an image, or a form. There are playful ones too: an animated mood face, a game board, and a coin flip or dice roll. There's no code the agent writes and no embedded webpage. Every widget uses the same building blocks as the rest of DorkOS, so it looks and feels like it belongs.
+The agent decides when a widget helps. You never have to ask for a chart or a table, though you can always nudge it ("show me that as a table") if you want one.
 
-Widgets can talk back too. Click a button, tap a list item, or submit a form, and DorkOS sends your click to the agent so it can respond. A widget can also open in the canvas, a bigger space beside the chat, alongside images and PDFs the agent shows you there.
+Behind the scenes, the agent sends a small JSON document (a simple, structured text format) and DorkOS turns it into a native UI element. Data widgets cover a stat card, a table, a list, a chart, a timeline, a checklist, a comparison matrix, a star rating, a key/value list, a badge, and a progress bar. There are playful ones too: an animated mood face, a game board, and a coin flip or dice roll. Every widget uses the same building blocks as the rest of DorkOS, so it looks and feels like it belongs, not like a mini website stuffed into the chat.
+
+Widgets can talk back too. Click a button, tap a list item, or submit a form, and DorkOS sends your click to the agent so it can respond. A widget can also open in the canvas, a bigger space beside the chat, alongside the images, PDFs, files, and other documents the agent shows you there.
 
 ## Widgets in Chat
 
@@ -54,14 +56,17 @@ While DorkOS sends your click, the button shows a spinner and turns off, so you 
   alt="A DorkOS canvas document open beside the chat, rendering live beside a streaming session"
 />
 
-Widgets aren't limited to chat. An agent can open the same widget in the canvas instead, or alongside chat, giving it more room to breathe. The canvas can also hold images and PDFs the agent points it at, not just widgets.
+Widgets aren't limited to chat. An agent can open the same widget in the canvas instead, or alongside chat, giving it more room to breathe. The canvas can hold several documents at once, each in its own tab: widgets, images, PDFs, files, and more. When the agent opens something new, it adds a tab and switches to it rather than replacing what was already there.
 
 <Callout type="warn">
   Two things worth knowing. If you're not watching the session live (say, it's running on a
   schedule), the agent's canvas update is accepted but nothing appears on screen until you open a
-  live view. And if you're already editing the canvas yourself, DorkOS holds the agent's update back
-  so it doesn't overwrite what you're typing.
+  live view. And if you're editing a canvas document yourself, DorkOS holds the agent's update to
+  that document back so it doesn't overwrite what you're typing; the agent's other tabs still update
+  normally.
 </Callout>
+
+For the deeper tour of everything the canvas can hold, see the [Workbench guide](/docs/guides/workbench).
 
 ## Reference
 
@@ -74,12 +79,12 @@ Every runtime (Claude Code, Codex, OpenCode) receives the same `<gen_ui>` instru
 ```ts
 {
   version: 1,          // schema version, currently always 1
-  title?: string,       // optional — canvas tab title / accessibility label
+  title?: string,       // optional: canvas tab title / accessibility label
   root: <node>           // the widget tree, starting from one node
 }
 ```
 
-A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fixed catalog — an agent can't invent new ones, and an unrecognized `type` fails validation (surfacing the error card, not a crash).
+A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fixed catalog: an agent can't invent new ones, and an unrecognized `type` fails validation (surfacing the error card, not a crash).
 
 ### Node Catalog
 
@@ -108,7 +113,7 @@ A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fix
 | `progress`  | `value: 0-100`, `label?`                                                                                  | A labelled progress bar                                                                                |
 | `table`     | `columns: [{ key, label, align? }]`, `rows: [{ <key>: string \| number \| boolean \| null }]`             | A data table                                                                                           |
 | `list`      | `items: [{ title, subtitle?, icon?, image?, meta?, badge?, actions? }]`                                   | A vertical list of rows, each with an optional thumbnail, icon, right-aligned meta, badge, and actions |
-| `chart`     | `kind: "bar" \| "line" \| "area" \| "pie"`, `data: [{ label, value }]`, `height?`                         | A minimal chart. Values must be non-negative — there's no zero-baseline handling for negative values   |
+| `chart`     | `kind: "bar" \| "line" \| "area" \| "pie"`, `data: [{ label, value }]`, `height?`                         | A minimal chart. Values must be non-negative. There's no zero-baseline handling for negative values    |
 | `timeline`  | `items: [{ title, time?, subtitle?, icon?, status?: "done" \| "active" \| "upcoming" }]`                  | A vertical event rail; the `active` stop is emphasized and pulses                                      |
 | `checklist` | `items: [{ label, checked?, note? }]`, `action?`, `submitLabel?`                                          | Toggleable checkboxes; with an `action`, a submit posts the checked/unchecked labels back              |
 | `compare`   | `options: [{ name, recommended? }]`, `rows: [{ label, values: (string \| number \| boolean \| null)[] }]` | An option-comparison matrix; the recommended column is badged and highlighted                          |
@@ -119,8 +124,10 @@ A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fix
 | Type     | Fields                                                                                                                        | Renders as                                                                                                |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `mood`   | `emotion: "happy" \| "thinking" \| "celebrating" \| "sheepish" \| "determined" \| "surprised" \| "sad" \| "love"`, `message?` | A small animated face with a blink and a per-emotion idle tell; `celebrating` also fires a confetti burst |
-| `board`  | `rows: [[{ glyph?, icon?, tone?, action? }]]`, `label?`                                                                       | A grid of glyph/icon cells, optionally clickable — the basis for turn-based games like tic-tac-toe        |
+| `board`  | `rows: [[{ glyph?, icon?, tone?, action? }]]`, `label?`                                                                       | A grid of glyph/icon cells, optionally clickable (the basis for turn-based games like tic-tac-toe)        |
 | `reveal` | `kind: "coin" \| "d6" \| "d20" \| "8ball"`, `result`, `label?`                                                                | A short suspense animation (spin, roll, or wiggle) that settles on the agent-supplied result              |
+
+Each `mood` emotion has its own body language, not just a different face: a distinct idle animation and brow/mouth shape. Reduced-motion turns the animation off but keeps the pose, so the emotion still reads. `board` marks keep fixed, distinct colors per glyph (the classic `X`/`O` pair renders in a colorblind-safe blue/amber) so a game stays readable turn after turn, and the board self-heals: if the agent records a move but a re-render drops it, DorkOS draws the recorded move anyway rather than showing an empty cell.
 
 **Media**
 
@@ -128,7 +135,7 @@ A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fix
 | ------- | ------------------------------------------------- | --------------------------------- |
 | `image` | `src` (https or data URI only), `alt`, `caption?` | A bounded, object-contained image |
 
-**Action** — see [the ui-action channel](#the-ui-action-channel) below
+**Action**: see [the ui-action channel](#the-ui-action-channel) below
 
 | Type     | Fields                                                                                | Renders as                                                                               |
 | -------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -159,37 +166,37 @@ Any node can be the `root`, and containers (`stack`, `card`, `form`) nest recurs
 
 A couple of catalog-specific rules worth knowing before you emit one:
 
-- `image.src` (and `list` item `image`) must start with `https://` or `data:` — no bare paths, no `http://`.
+- `image.src` (and `list` item `image`) must start with `https://` or `data:` (no bare paths, no `http://`).
 - `chart.data[].value` must be `>= 0`.
 - `progress.value` must be `0-100`; `rating.value` clamps to `0-5`.
-- `compare` rows may be shorter than `options` — missing cells pad to a blank rather than failing.
+- `compare` rows may be shorter than `options`: missing cells pad to a blank rather than failing.
 - `board.rows` (and each row) longer than 12 are sliced to 12 rather than rejected; a bare string cell (`"X"`) is shorthand for `{ glyph: "X" }`, and an empty string is a blank cell.
 - `reveal.result` accepts a plain number (dice rolls arrive numeric) and stores it as a string.
 
-Reach for a widget when the reply has structured data worth scanning — metrics, tables, lists, charts. Don't wrap plain prose in one. `mood`, `board`, and `reveal` are the exception: reach for them for personality and games, not data — `board` paired with an `agent` action, re-emitted each turn with the latest state, is what makes a widget like tic-tac-toe playable.
+Reach for a widget when the reply has structured data worth scanning: metrics, tables, lists, charts. Don't wrap plain prose in one. `mood`, `board`, and `reveal` are the exception: reach for them for personality and games, not data. `board` paired with an `agent` action, re-emitted each turn with the latest state, is what makes a widget like tic-tac-toe playable.
 
 ### The ui-action Channel
 
-Buttons, list-item actions, and form submits are more than static UI — clicking them can start a new turn with the agent. Every interactive control fires a `WidgetAction`, one of three kinds:
+Buttons, list-item actions, and form submits are more than static UI. Clicking them can start a new turn with the agent. Every interactive control fires a `WidgetAction`, one of three kinds:
 
 | Kind    | Fields                             | What happens                                                                            |
 | ------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
 | `agent` | `id`, `label?`, `payload?`         | Sent back to the agent as a new turn (see below)                                        |
-| `ui`    | `command` (a `control_ui` command) | Runs locally in the client — no agent involvement, no new turn                          |
+| `ui`    | `command` (a `control_ui` command) | Runs locally in the client: no agent involvement, no new turn                           |
 | `url`   | `href` (must be `https://`)        | Opens in a new tab, after you confirm through the same link-safety modal chat links use |
 
-A `ui`-kind action's `command` can be any `control_ui` command, including `{ "action": "celebrate" }` — confetti that erupts from the button you clicked, not the middle of the screen. An optional `kind` picks the style, and `emoji` picks the glyph for the emoji style:
+A `ui`-kind action's `command` can be any `control_ui` command, including `{ "action": "celebrate" }` (confetti that erupts from the button you clicked, not the middle of the screen). An optional `kind` picks the style, and `emoji` picks the glyph for the emoji style:
 
-- `burst` (the default) — a multi-stage confetti pop; the same one a `celebrating` mood plays from its own face
-- `fireworks` — a few seconds of aerial shells across the top of the screen
-- `cannons` — side cannons firing from the screen edges toward the center
-- `stars` — a golden star pop
-- `rain` — a calm confetti drizzle from the top edge
-- `emoji` — throws the glyph in `emoji` (default 🎉), e.g. `{ "action": "celebrate", "kind": "emoji", "emoji": "🏆" }`
+- `burst` (the default): a multi-stage confetti pop; the same one a `celebrating` mood plays from its own face
+- `fireworks`: a few seconds of aerial shells across the top of the screen
+- `cannons`: side cannons firing from the screen edges toward the center
+- `stars`: a golden star pop
+- `rain`: a calm confetti drizzle from the top edge
+- `emoji`: throws the glyph in `emoji` (default 🎉), e.g. `{ "action": "celebrate", "kind": "emoji", "emoji": "🏆" }`
 
 An unrecognized `kind` falls back to `burst`, and every style is skipped for people who prefer reduced motion. Use a celebration for a genuine milestone (tests passing, a deploy landing), not every small success.
 
-`agent` actions are the interesting one. When you click an `agent`-kind button, pick a `list` item action, or submit a `form`, DorkOS POSTs the action to the session and the agent receives a `<ui_action>` block as your next turn — before your literal next message:
+`agent` actions are the interesting one. When you click an `agent`-kind button, pick a `list` item action, or submit a `form`, DorkOS POSTs the action to the session and the agent receives a `<ui_action>` block as your next turn, before your literal next message:
 
 ```
 <ui_action>
@@ -200,12 +207,12 @@ Payload: (none)
 </ui_action>
 ```
 
-The payload carries whatever the action was authored with, plus (for `form` submits) every field's current value merged in under its `name`. Give actions stable, descriptive ids — that's the only handle the agent has for "which control fired."
+The payload carries whatever the action was authored with, plus (for `form` submits) every field's current value merged in under its `name`. Give actions stable, descriptive ids: that's the only handle the agent has for "which control fired."
 
 <Callout type="info">
   `agent` actions need a session to send the POST to. Rendered in chat or the canvas, that's
-  automatic. Off a session — for example DorkOS's internal dev component playground — `agent`
-  buttons render disabled with a tooltip explaining why.
+  automatic. Off a session (for example DorkOS's internal dev component playground), `agent` buttons
+  render disabled with a tooltip explaining why.
 </Callout>
 
 ### Canvas Content Types
@@ -216,16 +223,18 @@ An agent can call `control_ui` with `open_canvas` (or `update_canvas`) and a `wi
 { "type": "widget", "definition": { "version": 1, "root": { "...": "..." } }, "title": "Weather" }
 ```
 
-The canvas also renders two other content types:
+The canvas is a tabbed, multi-document surface (each `open_canvas` call appends a tab and activates it, deduping by source so reopening the same file re-activates its existing tab instead of duplicating it), and `widget` is one of eleven content types it can render: `widget`, `image`, `pdf`, `file` (CodeMirror, for arbitrary text/code), `markdown` (the rich Blintz editor), `model3d` (glTF/GLB/STL/OBJ), `csv`, `browser` (an embedded, sandboxed page), `mcp_app` (a UI resource an MCP server hosts), `url`, and `json`. The two content-heavy ones worth knowing up front:
 
-- **`image`** — `{ type: "image", src, title?, alt? }`. Click the image to open it full size in a new tab (skipped for SVG data URIs, which are excluded from click-through as defense in depth against a scripting context).
-- **`pdf`** — `{ type: "pdf", src, title? }`. Renders through the browser's native PDF viewer; if the browser can't render it inline, a fallback link opens the PDF in a new tab.
+- **`image`**: `{ type: "image", src, title?, alt? }`. Click the image to open it full size in a new tab (skipped for SVG data URIs, which are excluded from click-through as defense in depth against a scripting context).
+- **`pdf`**: `{ type: "pdf", src, title? }`. Renders through the browser's native PDF viewer; if the browser can't render it inline, a fallback link opens the PDF in a new tab.
 
-For both, `src` accepts an `https://`/`http://` URL, a `data:` URI (correctly typed — `data:image/*` for images, `data:application/pdf` for PDFs), or a local file path, which DorkOS resolves within the session's working directory. Any other scheme (`javascript:`, `file:`, `blob:`, and so on) is blocked outright.
+For both, `src` accepts an `https://`/`http://` URL, a `data:` URI (correctly typed: `data:image/*` for images, `data:application/pdf` for PDFs), or a local file path, which DorkOS resolves within the session's working directory. Any other scheme (`javascript:`, `file:`, `blob:`, and so on) is blocked outright.
+
+For the file, markdown, 3D, CSV, and browser viewers, along with per-document edit protection, see the [Workbench guide](/docs/guides/workbench).
 
 ### Skill Widget Templates
 
-Skills that render the same kind of widget turn after turn don't have to hand-roll the JSON every time. A skill can ship a `ui/` directory of `*.widget.json` templates — a named, described widget document whose string fields may contain `{{placeholder}}` tokens:
+Skills that render the same kind of widget turn after turn don't have to hand-roll the JSON every time. A skill can ship a `ui/` directory of `*.widget.json` templates (a named, described widget document whose string fields may contain `{{placeholder}}` tokens):
 
 ```json
 {
@@ -243,20 +252,24 @@ Skills that render the same kind of widget turn after turn don't have to hand-ro
 }
 ```
 
-The `<gen_ui>` instructions every runtime receives tell the agent to check a skill's `ui/` directory for templates, fill their placeholders with real values, and emit the result as a `dorkos-ui` fence — the template itself is never renderable as-is.
+The `<gen_ui>` instructions every runtime receives tell the agent to check a skill's `ui/` directory for templates, fill their placeholders with real values, and emit the result as a `dorkos-ui` fence. The template itself is never renderable as-is.
 
-Placeholders are only allowed in free-form string fields (`text.text`, `card.title`, `stat.label`, and similarly-typed fields) and in the `string | number` fields like `stat.value`. They're rejected in number-only fields (`progress.value`, `chart.data[].value`), enum/literal fields (`badge.tone`, `stack.direction`, `button.variant`, every node's `type`, and so on), and array-shaped fields (`table.rows`, `chart.data`, a node's `children`) — those need a concrete value baked into the template. A placeholder must also fill the _entire_ string value — `"{{value}}"`, not `"Status: {{status}}"` — inside an https-refined field like `image.src`; mid-string placeholders only work in unconstrained text fields.
+Placeholders are only allowed in free-form string fields (`text.text`, `card.title`, `stat.label`, and similarly-typed fields) and in the `string | number` fields like `stat.value`. They're rejected in number-only fields (`progress.value`, `chart.data[].value`), enum/literal fields (`badge.tone`, `stack.direction`, `button.variant`, every node's `type`, and so on), and array-shaped fields (`table.rows`, `chart.data`, a node's `children`). Those need a concrete value baked into the template. A placeholder must also fill the _entire_ string value (`"{{value}}"`, not `"Status: {{status}}"`) inside an https-refined field like `image.src`; mid-string placeholders only work in unconstrained text fields.
 
 Skill validation catches a malformed `ui/*.widget.json` file as a structural error rather than silently ignoring it, so a broken template surfaces at authoring time, not at render time.
 
 ## Next Steps
 
 <Cards>
+  <Card title="Workbench" href="/docs/guides/workbench">
+    The full tour of the canvas: tabs, file and browser viewers, and editing an agent's document
+    yourself.
+  </Card>
   <Card title="Runtimes" href="/docs/guides/runtimes">
     See how Claude Code, Codex, and OpenCode share the same generative-UI teaching block.
   </Card>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
-    UI control tools (`control_ui`, `get_ui_state`) are auto-approved — no approval card interrupts
-    a widget or canvas push.
+    UI control tools (`control_ui`, `get_ui_state`) are auto-approved: no approval card interrupts a
+    widget or canvas push.
   </Card>
 </Cards>

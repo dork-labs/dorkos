@@ -10,19 +10,21 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
 # Runtimes
 
-A runtime is the coding agent that powers a session. DorkOS ships with three: chat with your Claude Code, Codex, and OpenCode agents from one cockpit — every session in the same list, streaming through the same chat, with the same tool approvals and status bar.
+A runtime is the coding agent that powers a session. DorkOS ships with three: Claude Code, Codex, and OpenCode. Chat with any of them from one cockpit. Every session lands in the same list, streams through the same chat, and uses the same tool approvals and status bar.
 
 | Runtime         | Ecosystem                        | Why you'd pick it                                                             |
 | --------------- | -------------------------------- | ----------------------------------------------------------------------------- |
 | **Claude Code** | Anthropic                        | The default. Deepest DorkOS integration: plugins, agent tools, cost tracking. |
 | **Codex**       | OpenAI                           | Runs GPT models via the `codex` CLI and your ChatGPT login.                   |
-| **OpenCode**    | Open source (any model provider) | Bring any provider — including local models via Ollama.                       |
+| **OpenCode**    | Open source (any model provider) | Bring any provider, including local models via Ollama.                        |
 
-With a single registered runtime, DorkOS looks exactly as it always has — the status-bar chip is a quiet identity mark, not a picker. Runtimes that are registered but not set up yet appear in the picker as guided "Needs setup" entries, never dead options.
+Only using Claude Code? Nothing changes for you, and you can stop reading here. The rest of this page is for anyone who wants to add Codex or OpenCode to the mix.
+
+With a single registered runtime, DorkOS looks exactly as it always has. The status-bar chip is a quiet identity mark, not a picker. Runtimes that are registered but not set up yet show up in the picker as "Needs setup" entries with a clear next step, never as dead options.
 
 ## Connect a Runtime
 
-Each runtime needs two things: its CLI on your `PATH`, and a login. DorkOS checks both and tells you exactly what's missing.
+Each runtime needs two things: its CLI installed somewhere your computer can find it, and a login. DorkOS checks both for you and tells you exactly what's missing.
 
 <Tabs items={['OpenCode', 'Codex']}>
 <Tab value="OpenCode">
@@ -31,7 +33,7 @@ Each runtime needs two things: its CLI on your `PATH`, and a login. DorkOS check
 npm i -g opencode-ai && opencode auth login
 ```
 
-`opencode auth login` connects a model provider (Anthropic, OpenAI, or any other provider OpenCode supports). Local providers like Ollama need no login at all — see [Local Models](#local-models-with-opencode) below. Full setup docs: [opencode.ai/docs/server](https://opencode.ai/docs/server).
+`opencode auth login` connects a model provider: Anthropic, OpenAI, or any other provider OpenCode supports. Local providers like Ollama need no login at all. See [Local Models](#local-models-with-opencode) below. Full setup docs: [opencode.ai/docs/server](https://opencode.ai/docs/server).
 
 </Tab>
 <Tab value="Codex">
@@ -40,7 +42,7 @@ npm i -g opencode-ai && opencode auth login
 npm i -g @openai/codex && codex login
 ```
 
-`codex login` signs in with your ChatGPT account. Alternatively, set `CODEX_API_KEY` in the environment DorkOS runs in. Full setup docs: [developers.openai.com/codex](https://developers.openai.com/codex).
+`codex login` signs in with your ChatGPT account. You can also set `CODEX_API_KEY` in the environment DorkOS runs in instead. Full setup docs: [developers.openai.com/codex](https://developers.openai.com/codex).
 
 </Tab>
 </Tabs>
@@ -48,22 +50,22 @@ npm i -g @openai/codex && codex login
 Run the commands in your terminal, then check the runtime picker in the chat status bar:
 
 - A runtime whose checks pass is **selectable** immediately.
-- A runtime that's installed but missing something shows a **"Needs setup"** entry — selecting it opens a panel listing each dependency check with a copyable install/auth command and a **Check again** button.
+- A runtime that's installed but missing something shows a **"Needs setup"** entry. Selecting it opens a panel listing each dependency check, with a copyable install or auth command and a **Check again** button. Think of it as DorkOS holding your hand instead of just failing quietly.
 - A known runtime that isn't installed at all appears under **"Add a runtime"** with the same guided setup.
 
 <Callout type="info">
-  There is nothing to configure on the DorkOS side — both runtimes are enabled by default and
-  detected from your `PATH`. If a binary lives somewhere unusual, point DorkOS at it with
+  There is nothing to configure on the DorkOS side. Both runtimes are enabled by default and
+  detected automatically. If a runtime's CLI lives somewhere unusual, point DorkOS at it with
   `runtimes.opencode.binaryPath` or `runtimes.codex.binaryPath` in `~/.dork/config.json`.
 </Callout>
 
 ## Choose a Runtime
 
-Runtime selection works at three levels, from most to least specific: an explicit per-session choice wins over the agent's runtime, which wins over the config default.
+Runtime selection works at three levels. An explicit per-session choice wins over the agent's runtime. The agent's runtime wins over the config default.
 
 ### For One Session
 
-Before the first message, the runtime chip in the status bar is a picker — click it and choose. Once the session starts, the runtime is fixed for that session's lifetime and the chip becomes a read-only mark.
+Before the first message, the runtime chip in the status bar is a picker. Click it and choose. Once the session starts, the runtime is fixed for that session's lifetime, and the chip becomes a read-only mark.
 
 You can also launch directly onto a runtime with the `?runtime=` URL parameter:
 
@@ -73,7 +75,7 @@ You can also launch directly onto a runtime with the `?runtime=` URL parameter:
 
 ### For an Agent
 
-Open the agent in the Agent Hub and set **Runtime** on the Config tab. This writes the `runtime` field into the agent's `.dork/agent.json`, and every new session launched from that agent inherits it. Existing sessions keep the runtime they started with.
+Open the agent in the Agent Hub and set **Runtime** on the Config tab. This writes the `runtime` field into the agent's `.dork/agent.json`. Every new session launched from that agent inherits it. Existing sessions keep the runtime they started with.
 
 ### As the Default
 
@@ -89,53 +91,55 @@ See the [Configuration reference](/docs/getting-started/configuration) for the f
 
 Every session wears its runtime openly:
 
-- **Session list** — rows carry a small runtime mark next to the title.
-- **Chat status bar** — the runtime chip names the active runtime.
-- **Agent Hub** — agent cards and detail views badge the agent's runtime.
+- **Session list**: rows carry a small runtime mark next to the title.
+- **Chat status bar**: the runtime chip names the active runtime.
+- **Agent Hub**: agent cards and detail views badge the agent's runtime.
 
 ## Local Models with OpenCode
 
-OpenCode reaches Ollama and any OpenAI-compatible endpoint through its own provider configuration — set it up once with `opencode auth login` or in OpenCode's config file, and the models appear in DorkOS automatically.
+OpenCode reaches Ollama and any OpenAI-compatible endpoint through its own provider configuration. Set it up once with `opencode auth login`, or in OpenCode's config file, and the models appear in DorkOS automatically.
 
 <Steps>
   <Step>
     Install [Ollama](https://ollama.com) and pull a model (e.g. `ollama pull qwen2.5-coder:32b`).
   </Step>
   <Step>
-    Configure the provider in OpenCode — see [opencode.ai/docs](https://opencode.ai/docs) for
+    Configure the provider in OpenCode. See [opencode.ai/docs](https://opencode.ai/docs) for
     provider setup.
   </Step>
   <Step>In DorkOS, pick the **OpenCode** runtime for your session.</Step>
   <Step>
     Open the model picker and choose your local model. OpenCode models are listed as
-    `provider/model` — e.g. `ollama/qwen2.5-coder:32b`.
+    `provider/model`, e.g. `ollama/qwen2.5-coder:32b`.
   </Step>
 </Steps>
 
 <Callout type="warn">
-  Local model quality is model-dependent. Small models struggle with agentic work — tool calling
-  below roughly the 14B-parameter class is unreliable. A 32B-class coding model (e.g.
-  `qwen2.5-coder:32b`) is a realistic floor for useful sessions.
+  Local model quality depends on the model. Small models try their best but struggle with agentic
+  work: tool calling below roughly the 14B-parameter class is unreliable. A 32B-class coding model
+  (e.g. `qwen2.5-coder:32b`) is a realistic floor for useful sessions.
 </Callout>
 
 ## What to Expect
 
-The runtimes are not identical, and DorkOS doesn't pretend they are. Capability-dependent surfaces (cost strip, permission modes, plugin commands) adapt to the active runtime rather than showing dead controls.
+Most people never hit the differences below. This section is the deep reference for anyone comparing runtimes closely, so it gets more technical than the rest of the page.
 
-| Capability                              | Claude Code | Codex          | OpenCode |
-| --------------------------------------- | ----------- | -------------- | -------- |
-| Interactive tool approvals              | Yes         | No — sandboxed | Yes      |
-| Cost tracking                           | Yes         | Tokens only    | Yes      |
-| Plugins and marketplace commands        | Yes         | No             | No       |
-| DorkOS agent tools (Relay, Mesh, Tasks) | Yes         | No             | No       |
-| Local / open-source models              | No          | No             | Yes      |
+The runtimes are not identical, and DorkOS doesn't pretend they are. Surfaces that depend on runtime capabilities, like the cost strip, permission modes, and plugin commands, adapt to the active runtime instead of showing controls that don't work.
+
+| Capability                              | Claude Code | Codex         | OpenCode |
+| --------------------------------------- | ----------- | ------------- | -------- |
+| Interactive tool approvals              | Yes         | No, sandboxed | Yes      |
+| Cost tracking                           | Yes         | Tokens only   | Yes      |
+| Plugins and marketplace commands        | Yes         | No            | No       |
+| DorkOS agent tools (Relay, Mesh, Tasks) | Yes         | No            | No       |
+| Local / open-source models              | No          | No            | Yes      |
 
 Known limitations, stated plainly:
 
 - **Runtime is fixed per session.** A session's runtime is chosen when it starts and never changes. To switch runtimes, start a new session.
-- **Codex has no interactive approvals.** Instead of pausing on each tool call, Codex gates everything upfront through its sandbox. The permission mode picker maps directly onto Codex's sandbox levels: **Read only** (default), **Workspace write**, and **Full access**. Choose the sandbox before the work, not the tool call during it.
-- **Codex sessions don't survive a server restart in the session list.** The Codex SDK has no way to enumerate past threads, so after a DorkOS server restart earlier Codex sessions no longer appear in the list. Resuming a known session (for example via its URL) still works — the session-to-thread mapping is durable.
-- **OpenCode starts lazily.** DorkOS manages an `opencode serve` sidecar and spawns it on first use, so the first OpenCode turn after a server start can take a couple of seconds. Subsequent turns are immediate.
+- **Codex has no interactive approvals.** Instead of pausing on each tool call, Codex gates everything upfront through a sandbox: a restricted environment that limits what the agent can touch. The permission mode picker maps directly onto Codex's sandbox levels: **Read only** (default), **Workspace write**, and **Full access**. You choose the sandbox before the work starts, not the tool call while it's running.
+- **Codex sessions don't survive a server restart in the session list.** Codex has no way to list its own past sessions. After a DorkOS server restart, earlier Codex sessions no longer show up in the list. Resuming a known session still works, for example by opening its URL directly.
+- **OpenCode starts lazily.** DorkOS manages a small local OpenCode server behind the scenes and starts it on first use. The first OpenCode turn after a server start can take a couple of seconds. Every turn after that is immediate.
 
 ## Next Steps
 
@@ -147,6 +151,6 @@ Known limitations, stated plainly:
     The full `runtimes.*` config reference: defaults, binary paths, sidecar port.
   </Card>
   <Card title="Agents" href="/docs/guides/agents">
-    Give agents an identity — including a preferred runtime — via .dork/agent.json.
+    Give agents an identity, including a preferred runtime, via .dork/agent.json.
   </Card>
 </Cards>

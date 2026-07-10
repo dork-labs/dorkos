@@ -1,70 +1,84 @@
 ---
 title: Uninstall
-description: How to completely remove DorkOS and its data from your system
+description: Remove DorkOS and its data completely, in one command or by hand.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 # Uninstall
 
-DorkOS stores persistent data on your filesystem. Follow these steps to remove everything cleanly.
+Ready to remove DorkOS? One command handles almost everything.
 
-## Quick Uninstall
+## Quick uninstall
 
-The `dorkos cleanup` command interactively removes all DorkOS data:
+Run `dorkos cleanup`. It walks you through removing:
 
 ```bash
 dorkos cleanup
 ```
 
-This walks you through removing:
+1. **Global data** (`~/.dork/`): your configuration, database, logs, and relay state.
+2. **Per-project data** (`.dork/` directories): agent manifests and uploads.
 
-1. **Global data** (`~/.dork/`) — configuration, database, logs, adapter state
-2. **Per-project data** (`.dork/` directories) — agent manifests and uploads
+You'll see each item listed before you confirm, so nothing disappears by surprise.
 
-After cleanup completes, remove the CLI itself:
+Once that's done, remove the CLI itself:
 
 ```bash
 npm uninstall -g dorkos
 ```
 
+Afterward, `dorkos` should no longer run, and `~/.dork` should be gone. DorkOS is fully off your machine.
+
 ## Docker
 
-If you run DorkOS in Docker, remove the container and any named volumes:
+If you run DorkOS in Docker, remove the container and its volume:
 
 ```bash
 docker rm -f dorkos
-docker volume rm dorkos_data  # if using a named volume
+docker volume rm dorkos-data  # if you used a named volume
 ```
 
-## Obsidian Plugin
+If you followed the Docker guide, your volume is named `dorkos-data` unless you changed it.
 
-Disable the DorkOS plugin in **Obsidian Settings > Community plugins**, then click **Uninstall**. The plugin does not write data outside the vault.
+## Obsidian plugin
 
-## Manual Cleanup
+The Obsidian plugin is early and still being tested, but uninstalling it is simple. In Obsidian, go to **Settings > Community plugins**, disable DorkOS, then click **Uninstall**. The plugin keeps its data inside your vault, so removing it doesn't touch anything outside Obsidian.
 
-If you prefer to remove data manually or no longer have the CLI installed:
+## Desktop app
+
+The desktop app shares the same `~/.dork` data and CLI as everything else. It doesn't keep a separate data folder, so running `dorkos cleanup` (or the manual steps below) removes its data too. To remove the app itself, drag it out of your Applications folder (macOS) or uninstall it the way you would any other app on your system.
+
+## Manual cleanup
+
+Prefer to remove things by hand, or don't have the CLI installed anymore? Start with your global data:
 
 ```bash
 # Remove global data
 rm -rf ~/.dork
+```
 
-# Find and remove per-project agent directories
+Then find any per-project folders. This command searches your home directory for `.dork` folders and only lists them, it deletes nothing on its own:
+
+```bash
+# Find per-project agent directories (lists matches, doesn't delete)
 find ~ -name ".dork" -type d -path "*/.dork" 2>/dev/null
 ```
 
-Review the results before deleting — the `.dork` name is common and may match unrelated directories.
+Read the list, then delete only the folders that are actually DorkOS's. `.dork` is a popular name for reasons that have nothing to do with us, so double-check before you run `rm -rf` on anything it finds.
 
-## What DorkOS Stores
+## What DorkOS stores
 
-| Location              | Contents                                         | Owned by    |
-| --------------------- | ------------------------------------------------ | ----------- |
-| `~/.dork/config.json` | User configuration                               | DorkOS      |
-| `~/.dork/dork.db`     | SQLite database (agents, schedules, relay state) | DorkOS      |
-| `~/.dork/logs/`       | Server log files                                 | DorkOS      |
-| `~/.dork/relay/`      | Adapter credentials and state                    | DorkOS      |
-| `<project>/.dork/`    | Agent manifest, uploads                          | DorkOS      |
-| `~/.claude/`          | Claude Code sessions and config                  | Claude Code |
+Curious exactly what gets removed? Here's the full inventory.
+
+| Location               | Contents                                                     | Owned by    |
+| ----------------------- | -------------------------------------------------------------- | ----------- |
+| `~/.dork/config.json`  | User configuration                                             | DorkOS      |
+| `~/.dork/dork.db`      | SQLite database (agents, schedules, relay state)                | DorkOS      |
+| `~/.dork/logs/`        | Server log files                                               | DorkOS      |
+| `~/.dork/relay/`       | Saved connections to relay and other tools (adapter state and credentials) | DorkOS      |
+| `<project>/.dork/`     | Agent manifest, uploads                                        | DorkOS      |
+| `~/.claude/`           | Claude Code sessions and config                                | Claude Code |
 
 <Callout type="info">
   DorkOS never modifies `~/.claude/`. That directory is managed by Claude Code and is unaffected by

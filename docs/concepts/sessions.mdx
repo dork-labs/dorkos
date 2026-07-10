@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: How DorkOS manages agent sessions and their lifecycle across every runtime
+description: What a DorkOS session is, how it stays in sync across tools, and how it works under the hood
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,114 +8,114 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Sessions
 
-A session is a single conversation with one of your agents. Every message you send, every tool the agent uses, and every response you receive belongs to a session. Sessions are the central unit of interaction in DorkOS. DorkOS runs them on three runtimes (Claude Code, Codex, and OpenCode) and shows them all in one list.
+## What a session is
 
-## Session Lifecycle
+A session is one conversation with one agent. Every message you send, every file the agent
+touches, and every reply you get belongs to that session.
 
-### Creating a Session
+DorkOS runs sessions on three different agent tools, Claude Code, Codex, and OpenCode, and shows
+them all in a single list. You stop hunting across terminals and windows to remember what you were
+doing.
 
-When you start a new conversation, a session is created with:
+Here's the quick win: start a chat in the DorkOS web app, and if it's a Claude Code session, you
+can also open that exact conversation from the `claude` CLI in the same folder. Same
+conversation, either window. DorkOS just gives every session an ID so it can find it again later.
 
-- A **unique ID** (UUID) that identifies the session across all clients
-- A **working directory** that tells the agent where to operate on your filesystem
-- A **permission mode** that controls whether tool calls require your approval
+## How to work with sessions day to day
 
-You can create sessions through the DorkOS UI, the REST API, or by starting a conversation with the Claude Code CLI directly.
+**Only one place can send a message at a time.** If you have a session open in two windows,
+DorkOS locks it to whoever's actively using it, and unlocks it again a few minutes after they
+stop, in case you wandered off mid-turn. Everyone can still watch the conversation; only sending
+a new message needs the lock.
 
-### Sending Messages
+**Approvals survive a refresh.** If an agent asks to approve running a command or editing a file,
+that prompt sticks around even if you reload the page, switch sessions, or open a second window.
+It picks up right where it left off.
 
-Sending a message triggers a turn: `POST /api/sessions/:id/messages` returns `202 Accepted` immediately, and the response streams over the session's durable event stream (`GET /api/sessions/:id/events`). On that stream you receive real-time events:
+**Sessions from other tools show up automatically.** Claude Code sessions are just files on your
+disk, so any tool that can read those files sees the same sessions. Start a task from the `claude`
+CLI and it appears in the DorkOS sidebar too, no import step, no sync button. The Obsidian plugin
+can read the same files as well, though it's still early and under active testing, so expect some
+rough edges there.
 
-- **Text deltas** — Incremental chunks of Claude's response
-- **Tool calls** — Actions Claude wants to take (reading files, running commands, etc.)
-- **Approval requests** — Prompts for you to approve or deny a tool call
-- **Task updates** — Progress on multi-step operations
-
-### Session Locking
-
-Only one client can write to a session at a time. When you send a message, DorkOS acquires an exclusive lock on that session using your client ID (sent via the `X-Client-Id` header). If another client tries to write to the same session, it receives a 409 conflict response with the lock holder's ID and acquisition time.
-
-The lock is held for the duration of the turn — it is released when the turn completes or errors, and auto-expires after **5 minutes** as a backstop.
+Codex and OpenCode sessions work the same way in spirit: each tool keeps its own session store,
+and DorkOS reads from all three to build one combined list. If DorkOS can't reach one of them, it
+still shows you the others and flags which one it missed.
 
 <Callout type="info">
-  Multiple clients can view the same session simultaneously — only sending messages requires an
-  exclusive lock.
+  Want a picture of this? A short clip of a session appearing in the DorkOS sidebar the instant
+  you start it from the CLI says more than the paragraph above ever could.
 </Callout>
 
-## Storage
+## Reference (for developers)
 
-DorkOS keeps no separate session database. Each runtime owns its own session storage, and DorkOS reads from every runtime to build one combined list.
+If you're calling the API directly or debugging DorkOS itself, here's the exact mechanics behind
+everything above.
 
-- **Claude Code** stores each session as a transcript file on your disk. That file is the single source of truth for Claude Code sessions.
-- **Codex** and **OpenCode** keep their own session stores, managed by their own tools.
+### Creating and messaging a session
 
-If DorkOS cannot reach one runtime, it still shows the others and tells you which one it missed.
+A session is created with a unique ID, a working directory, and a permission mode (whether tool
+calls need your approval). Sending a message triggers a turn: `POST /api/sessions/:id/messages`
+returns `202 Accepted` immediately, and the actual response streams over the session's durable
+event stream, `GET /api/sessions/:id/events`. That stream carries text deltas, tool calls,
+approval requests, and task-progress updates in real time.
 
-### Claude Code transcript files
+### Session locking
 
-Each Claude Code session has a file at:
+DorkOS acquires an exclusive lock on a session using the requesting client's ID, sent via the
+`X-Client-Id` header. If a second client tries to write to the same session, it gets back a `409`
+conflict response naming the current lock holder. The lock releases when the turn finishes or
+errors, and auto-expires after 5 minutes as a backstop.
 
-```
-~/.claude/projects/{project-slug}/{session-id}.jsonl
-```
+### Storage
 
-These files hold every interaction as newline-delimited JSON (JSON, one record per line). DorkOS reads them to extract:
+DorkOS keeps no separate session database of its own. Each runtime owns its storage:
 
-- **Session metadata**: ID, title (from the first user message), timestamps, and permission mode
-- **Message history**: the full conversation, including your messages, agent responses, and tool results
-- **Session list**: built by scanning the project directory for all `.jsonl` files
+- **Claude Code** writes each session as a transcript file at
+  `~/.claude/projects/{project-slug}/{session-id}.jsonl`, in JSONL (one JSON record per line).
+  That file is the single source of truth for the session.
+- **Codex** and **OpenCode** keep their own session stores, managed by their own tooling.
 
-Metadata is computed on every request, so it always reflects the current state of the file.
+DorkOS reads the Claude Code transcript to build the session list, plus per-session metadata and
+full message history. Metadata is computed fresh on every request, so it always reflects the
+current file on disk.
 
-### Cross-client visibility
+### Session sync
 
-Because Claude Code sessions are plain files on disk, any client that can read the same files sees the same sessions:
+Each connected client subscribes to `GET /api/sessions/:id/events`. On connect, the server sends a
+snapshot: completed history, the in-progress turn, session status, and any pending approvals. From
+there, every client receives the same live events with monotonic (always-increasing) sequence
+numbers, including turns triggered by another client or the CLI.
 
-- A session started in the **DorkOS web UI** appears in the **Claude Code CLI**
-- A session started from the **CLI** shows up when you open DorkOS
-- The **Obsidian plugin** reads from the same location
+On reconnect, the client resumes from its last sequence number via the `Last-Event-ID` header, and
+the server replays exactly what it missed. If that gap can't be served, the server falls back to
+sending a fresh snapshot instead.
 
-Start a task in one tool, pick it up in another.
+The sidebar list stays live the same way: a single global stream, `GET /api/events`, announces
+`session_upserted`, `session_removed`, and `session_status` events as sessions are created,
+deleted, or change state, across every client and the CLI.
 
-## Session Sync
+### Session metadata
 
-When multiple clients are open, DorkOS keeps them in sync through the session's durable event stream — no polling, no re-fetching.
-
-### How Sync Works
-
-1. Each client subscribes to `GET /api/sessions/:id/events`
-2. On connect, the server sends a **snapshot** — completed history, the in-progress turn, session status, and any pending approval prompts
-3. From there, every client receives the same live events with monotonic sequence numbers — including turns triggered by other clients or by the CLI
-4. On reconnect, the client resumes from its last sequence number (`Last-Event-ID`) and the server replays exactly what it missed; if the gap can't be served, a fresh snapshot is sent instead
-
-A pending approval prompt survives a refresh, a session switch, or a second window: it rides the snapshot, and its countdown resumes where it left off.
-
-### The Session List
-
-The sidebar stays live the same way: a single global stream (`GET /api/events`) announces `session_upserted`, `session_removed`, and `session_status` events as sessions are created, deleted, or change state — across every client and the CLI.
-
-## Session Metadata
-
-Every session shows the same core details in DorkOS: an ID, a title, timestamps, and a permission mode. For Claude Code sessions, DorkOS reads them from the transcript file:
+Most people never need this. Here's where each field on a Claude Code session comes from, if you
+do:
 
 | Field               | Source                                  |
-| ------------------- | --------------------------------------- |
-| **ID**              | UUID from the JSONL filename            |
-| **Title**           | First user message in the transcript    |
-| **Preview**         | Beginning of the last assistant message |
-| **Created**         | File creation timestamp                 |
-| **Updated**         | File modification timestamp             |
-| **Permission mode** | Extracted from the SDK init message     |
+| ------------------- | ---------------------------------------- |
+| **ID**              | The unique ID in the JSONL filename      |
+| **Title**           | First user message in the transcript     |
+| **Preview**         | Beginning of the last assistant message  |
+| **Created**         | File creation timestamp                  |
+| **Updated**         | File modification timestamp              |
+| **Permission mode** | Extracted from the SDK's init message    |
 
-## Working Directories
+### Working directories
 
-Each session operates within a working directory that determines where Claude can read and write files. The working directory is:
-
-- Set when the session is created
-- Persisted in the URL as the `?dir=` query parameter (in standalone mode)
-- Validated against a configurable boundary to prevent access outside allowed paths
-
-The directory picker in the DorkOS sidebar lets you browse and select a working directory before starting a session.
+Each session runs inside a working directory that determines where the agent can read and write
+files. It's set when the session is created, persisted in the URL as the `?dir=` query parameter
+in standalone mode, and validated against a configurable boundary so the agent can't wander outside
+allowed paths. The directory picker in the DorkOS sidebar lets you browse and choose one before you
+start a session.
 
 ## Next Steps
 
@@ -123,8 +123,8 @@ The directory picker in the DorkOS sidebar lets you browse and select a working 
   <Card title="Architecture" href="/docs/concepts/architecture">
     Understand how sessions fit into the overall DorkOS architecture.
   </Card>
-  <Card title="Transport" href="/docs/concepts/transport">
-    See how session operations are delivered through the Transport interface.
+  <Card title="Building Integrations" href="/docs/integrations/building-integrations">
+    See how session operations are delivered through the Transport interface, for extension and integration authors.
   </Card>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
     Learn how to review and approve tool calls during a session.

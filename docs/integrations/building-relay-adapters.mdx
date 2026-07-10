@@ -9,7 +9,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Building Relay Adapters
 
-Relay adapters bridge external communication platforms into DorkOS messaging. Whether you want to connect Slack, Discord, a custom webhook service, or any other channel, implement the `RelayAdapter` interface and register it with the adapter system.
+Relay adapters bridge external communication platforms into DorkOS messaging. DorkOS already ships built-in adapters for Telegram, Slack, generic webhooks, and Claude Code, so check `~/.dork/relay/adapters.json` and set `type` to one of those before writing anything (see [contributing/relay-adapters.md](https://github.com/dork-labs/dorkos/blob/main/contributing/relay-adapters.md) for how each one is configured). Write your own adapter when you need a platform that isn't on that list, or a private, internal integration nobody else needs.
+
+To build one, implement the `RelayAdapter` interface and register it with the adapter system.
 
 ## The RelayAdapter Interface
 
@@ -30,24 +32,24 @@ interface RelayAdapter {
   ): Promise<DeliveryResult>;
   getStatus(): AdapterStatus;
 
-  // Optional — lightweight credential check without the full start/stop cycle
+  // Optional: lightweight credential check without the full start/stop cycle
   testConnection?(): Promise<{ ok: boolean; error?: string; botUsername?: string }>;
 }
 ```
 
 The three properties identify the adapter:
 
-- **id** — A unique string that disambiguates this adapter instance. If you run two Telegram bots, each gets a different `id` (e.g., `telegram-support`, `telegram-alerts`).
-- **subjectPrefix** — Which Relay subjects this adapter handles. When a message is published to a subject starting with this prefix, Relay routes outbound delivery to your adapter. Can be a single string or an array for adapters that handle multiple prefixes.
-- **displayName** — What appears in the DorkOS UI when showing adapter status.
+- **id**: A unique string that disambiguates this adapter instance. If you run two Telegram bots, each gets a different `id` (e.g., `telegram-support`, `telegram-alerts`).
+- **subjectPrefix**: Which Relay subjects this adapter handles. When a message is published to a subject starting with this prefix, Relay routes outbound delivery to your adapter. Can be a single string or an array for adapters that handle multiple prefixes.
+- **displayName**: What appears in the DorkOS UI when showing adapter status.
 
 The four methods handle the adapter lifecycle:
 
-- **start()** — Connect to the external service, register endpoints, and subscribe to signals. Receives a `RelayPublisher` for publishing inbound messages into the bus.
-- **stop()** — Disconnect gracefully and clean up resources.
-- **deliver()** — Handle outbound messages. When any agent or user publishes to a subject matching your prefix, Relay calls this method with the envelope. Streaming to platforms that support progressive updates happens _inside_ `deliver()`: the adapter posts an initial message and edits it in place as more content arrives (see the Telegram reference adapter, which does this through its `PlatformClient.editMessage`).
-- **getStatus()** — Return a snapshot of your adapter's runtime state for the UI.
-- **testConnection()** — Optional. A lightweight credential check that validates configuration without running the full `start()`/`stop()` lifecycle (long-polling loops, webhook servers). When present, `AdapterManager.testConnection()` prefers it — avoiding side effects like Telegram's 409 Conflict when a polling session lingers.
+- **start()**: Connect to the external service, register endpoints, and subscribe to signals. Receives a `RelayPublisher` for publishing inbound messages into the bus.
+- **stop()**: Disconnect gracefully and clean up resources.
+- **deliver()**: Handle outbound messages. When any agent or user publishes to a subject matching your prefix, Relay calls this method with the envelope. Streaming to platforms that support progressive updates happens _inside_ `deliver()`: the adapter posts an initial message and edits it in place as more content arrives (see the Telegram reference adapter, which does this through its `PlatformClient.editMessage`).
+- **getStatus()**: Return a snapshot of your adapter's runtime state for the UI.
+- **testConnection()**: Optional. A lightweight credential check that validates configuration without running the full `start()`/`stop()` lifecycle (long-polling loops, webhook servers). When present, `AdapterManager.testConnection()` prefers it, which avoids side effects like Telegram's 409 Conflict when a polling session lingers.
 
 ## Adapter Lifecycle
 
@@ -85,7 +87,8 @@ On server shutdown, `stop()` is called on every running adapter. Drain in-flight
 <Callout type="warn">
   Both `start()` and `stop()` must be idempotent. The registry may call `start()` on an
   already-running adapter during hot-reload, or `stop()` on an already-stopped adapter during
-  cleanup. Guard against double-initialization by checking connection state before acting.
+  cleanup. Guard against double-initialization by checking connection state before acting, or you'll
+  double-subscribe and spend an afternoon wondering why every message arrives twice.
 </Callout>
 
 ## Inbound Messages
@@ -175,15 +178,14 @@ Adapter configurations live in `~/.dork/relay/adapters.json`:
 {
   "adapters": [
     {
-      "id": "my-slack-bot",
+      "id": "my-discord-bot",
       "type": "plugin",
       "enabled": true,
       "plugin": {
-        "package": "dorkos-slack-adapter"
+        "package": "your-org-discord-adapter"
       },
       "config": {
-        "token": "xoxb-...",
-        "signingSecret": "abc123..."
+        "token": "..."
       }
     }
   ]
@@ -194,14 +196,14 @@ Set `type` to `"plugin"` and provide a `plugin` block with either a `package` na
 
 ### Plugin Loading
 
-- **npm packages** — Set `plugin.package` to the package name. The package must export a default function or class implementing `RelayAdapter`.
-- **Local files** — Set `plugin.path` to an absolute or relative path (relative to `~/.dork/relay/`). The file must export a default function or class.
+- **npm packages**: Set `plugin.package` to the package name. The package must export a default function or class implementing `RelayAdapter`.
+- **Local files**: Set `plugin.path` to an absolute or relative path (relative to `~/.dork/relay/`). The file must export a default function or class.
 
 The adapter manager watches the config file and hot-reloads adapters when modified. Enable, disable, or reconfigure adapters without restarting the server.
 
-## Complete Example: Slack Adapter
+## Complete Example: Discord Adapter
 
-A complete adapter implementation bridging Slack into Relay — all four interface methods, error handling, status tracking, and idempotent lifecycle management.
+Discord isn't a built-in adapter type, so it's a realistic candidate for the plugin path. Here's a complete implementation bridging Discord into Relay: all four interface methods, error handling, status tracking, and idempotent lifecycle management.
 
 ```typescript
 import type {
@@ -213,21 +215,20 @@ import type {
 } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
-interface SlackConfig {
+interface DiscordConfig {
   token: string;
-  signingSecret: string;
   maxMessageLength?: number;
 }
 
-const SUBJECT_PREFIX = 'relay.human.slack';
-const DEFAULT_MAX_LENGTH = 4000;
+const SUBJECT_PREFIX = 'relay.human.discord';
+const DEFAULT_MAX_LENGTH = 2000;
 
-export class SlackAdapter implements RelayAdapter {
+export class DiscordAdapter implements RelayAdapter {
   readonly id: string;
   readonly subjectPrefix = SUBJECT_PREFIX;
   readonly displayName: string;
 
-  private readonly config: SlackConfig;
+  private readonly config: DiscordConfig;
   private relay: RelayPublisher | null = null;
   private client: any = null;
   private signalUnsub: (() => void) | null = null;
@@ -237,41 +238,40 @@ export class SlackAdapter implements RelayAdapter {
     errorCount: 0,
   };
 
-  constructor(id: string, config: SlackConfig) {
+  constructor(id: string, config: DiscordConfig) {
     this.id = id;
     this.config = config;
-    this.displayName = `Slack (${id})`;
+    this.displayName = `Discord (${id})`;
   }
 
   // ---- Lifecycle ----
 
   async start(relay: RelayPublisher): Promise<void> {
-    if (this.client !== null) return; // Already running — idempotent
+    if (this.client !== null) return; // Already running: idempotent
 
     this.relay = relay;
     this.status = { ...this.status, state: 'starting' };
 
-    // Dynamic import keeps Slack SDK optional
-    const { App } = await import('@slack/bolt');
-    this.client = new App({
-      token: this.config.token,
-      signingSecret: this.config.signingSecret,
+    // Dynamic import keeps the Discord SDK optional
+    const { Client, GatewayIntentBits } = await import('discord.js');
+    this.client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
     });
 
     // Handle inbound messages
-    this.client.message(async ({ message }: any) => {
-      if (!message.text || message.subtype) return;
+    this.client.on('messageCreate', async (message: any) => {
+      if (message.author.bot || !message.content) return;
       await this.handleInbound(message);
     });
 
     // Subscribe to Relay signals (typing indicators, etc.)
     this.signalUnsub = relay.onSignal(`${SUBJECT_PREFIX}.>`, (subject, signal) => {
       if (signal.type === 'typing') {
-        // Slack does not support typing indicators via API — no-op
+        // Wire up channel.sendTyping() here if you want the indicator.
       }
     });
 
-    await this.client.start();
+    await this.client.login(this.config.token);
 
     this.status = {
       ...this.status,
@@ -281,7 +281,7 @@ export class SlackAdapter implements RelayAdapter {
   }
 
   async stop(): Promise<void> {
-    if (this.client === null) return; // Already stopped — idempotent
+    if (this.client === null) return; // Already stopped: idempotent
 
     this.status = { ...this.status, state: 'stopping' };
 
@@ -291,7 +291,7 @@ export class SlackAdapter implements RelayAdapter {
     }
 
     try {
-      await this.client.stop();
+      await this.client.destroy();
     } catch (err) {
       this.recordError(err);
     } finally {
@@ -326,10 +326,8 @@ export class SlackAdapter implements RelayAdapter {
     const truncated = content.length > maxLen ? content.slice(0, maxLen - 3) + '...' : content;
 
     try {
-      await this.client.client.chat.postMessage({
-        channel: userId,
-        text: truncated,
-      });
+      const user = await this.client.users.fetch(userId);
+      await user.send(truncated);
       this.status.messageCount.outbound++;
       return { success: true, durationMs: Date.now() - start };
     } catch (err) {
@@ -350,21 +348,21 @@ export class SlackAdapter implements RelayAdapter {
   private async handleInbound(message: any): Promise<void> {
     if (!this.relay) return;
 
-    const subject = `${SUBJECT_PREFIX}.${message.user}`;
+    const subject = `${SUBJECT_PREFIX}.${message.author.id}`;
     const payload = {
-      content: message.text,
-      senderName: message.user,
+      content: message.content,
+      senderName: message.author.username,
       channelType: 'dm' as const,
       responseContext: {
-        platform: 'slack',
+        platform: 'discord',
         maxLength: this.config.maxMessageLength ?? DEFAULT_MAX_LENGTH,
         supportedFormats: ['text', 'markdown'],
-        instructions: 'Format responses as Slack mrkdwn syntax.',
+        instructions: 'Format responses as Discord markdown.',
       },
       platformData: {
-        channelId: message.channel,
-        messageTs: message.ts,
-        userId: message.user,
+        channelId: message.channel.id,
+        messageId: message.id,
+        userId: message.author.id,
       },
     };
 
@@ -414,26 +412,33 @@ To use this adapter, add it to `~/.dork/relay/adapters.json`:
 {
   "adapters": [
     {
-      "id": "slack-team",
+      "id": "discord-team",
       "type": "plugin",
       "enabled": true,
-      "plugin": { "package": "dorkos-slack-adapter" },
+      "plugin": { "package": "your-org-discord-adapter" },
       "config": {
-        "token": "xoxb-your-bot-token",
-        "signingSecret": "your-signing-secret"
+        "token": "your-bot-token"
       }
     }
   ]
 }
 ```
 
+<Callout type="info">
+  Before publishing a new adapter, run it against the [compliance test
+  suite](https://github.com/dork-labs/dorkos/blob/main/packages/relay/src/testing/compliance-suite.ts)
+  (`packages/relay/src/testing/compliance-suite.ts`). It checks the interface shape, the
+  `testConnection()` return shape, and start/stop idempotency against your real adapter code, so you
+  catch contract violations before they show up as double-sent messages in production.
+</Callout>
+
 ## Advanced Architecture
 
 Two abstractions help reduce boilerplate across adapters:
 
-- **PlatformClient** — Separates platform-specific communication (posting messages, editing in place for streaming, typing indicators) from relay orchestration (subject routing, envelope handling, status tracking). The adapter owns a `PlatformClient` and delegates platform API calls to it. The built-in Telegram and Slack adapters use `GrammyPlatformClient` and `SlackPlatformClient` respectively.
+- **PlatformClient**: Separates platform-specific communication (posting messages, editing in place for streaming, typing indicators) from relay orchestration (subject routing, envelope handling, status tracking). The adapter owns a `PlatformClient` and delegates platform API calls to it. The built-in Telegram and Slack adapters use `GrammyPlatformClient` and `SlackPlatformClient` respectively.
 
-- **ThreadIdCodec** — Standardizes how adapters encode and decode platform thread IDs to and from relay subjects. Each codec defines an `encode(platformId, channelType)` and `decode(subject)` method, replacing per-adapter `buildSubject()`/`extractId()` functions.
+- **ThreadIdCodec**: Standardizes how adapters encode and decode platform thread IDs to and from relay subjects. Each codec defines an `encode(platformId, channelType)` and `decode(subject)` method, replacing per-adapter `buildSubject()`/`extractId()` functions.
 
 For implementation details, see the [relay-adapters guide](https://github.com/dork-labs/dorkos/blob/main/contributing/relay-adapters.md) in the repository.
 

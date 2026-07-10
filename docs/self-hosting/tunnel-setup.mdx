@@ -1,6 +1,6 @@
 ---
 title: Tunnel Setup
-description: Configure ngrok tunnels for remote access to your DorkOS instance
+description: Open your DorkOS instance to your phone or another device with a temporary public URL
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -10,7 +10,16 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Tunnel Setup
 
-DorkOS includes optional ngrok tunnel support for accessing your instance from any device. The tunnel is non-blocking — if it fails to start, the server continues working locally.
+Want to check on your agents from your phone, or show a friend what you're building? A tunnel gives your local DorkOS instance a temporary public address, no domain or router setup required.
+
+DorkOS uses [ngrok](https://ngrok.com/) to do this: it's a service that opens a secure path from the internet to something running on your machine. Its free tier covers everything on this page.
+
+<Callout type="info">
+  Running DorkOS as the Obsidian plugin? The tunnel doesn't apply there, so this UI is hidden.
+  Tunnels only work with the CLI-hosted web cockpit.
+</Callout>
+
+Don't worry if it doesn't connect right away: DorkOS keeps running locally either way.
 
 ## Prerequisites
 
@@ -48,47 +57,81 @@ dorkos
 </Step>
 
 <Step>
-### Access the tunnel URL
+### Scan the QR code
 
-The tunnel URL appears in the terminal output with a QR code you can scan on mobile.
+The tunnel URL appears in your terminal with a QR code. Scan it with your phone's camera and DorkOS opens right there.
 
 </Step>
 </Steps>
 
 ## UI Toggle
 
-Start and stop the tunnel from the DorkOS interface without restarting the server:
+You can also start and stop the tunnel from the DorkOS interface, without restarting the server:
 
 1. Click the **Globe** icon in the status bar
 2. Toggle **Enable remote access** on
-3. The tunnel URL and QR code appear when connected
+3. The tunnel URL and a QR code appear once it connects
 
-The dialog also provides:
+The dialog also gives you:
 
-- **Custom domain** — Set a static ngrok domain so your URL stays consistent across restarts
-- **Connection quality indicator** — Green/yellow/red dot showing latency to the tunnel
-- **Copy URL** — Copy the tunnel URL to your clipboard
-- **Copy session link** — Copy a direct link to the current session
+- **Custom domain**: set a static ngrok domain so your URL stays the same across restarts
+- **Connection quality indicator**: a green, yellow, or red dot showing how fast the tunnel is responding
+- **Copy URL**: copy the tunnel URL to your clipboard
+- **Copy session link**: copy a direct link to the current session
 
-## Multi-Tab Sync
-
-When DorkOS is open in multiple browser tabs, all tabs stay in sync with tunnel status. Changes in one tab are reflected in all others within about 1 second via BroadcastChannel.
-
-Remote devices connected via the tunnel URL receive real-time status updates via SSE.
+If you have DorkOS open in several browser tabs, they all update together. Turn the tunnel on or off in one tab, and every other open tab reflects it within about a second.
 
 ## Custom Domains
 
-ngrok offers free static domains that persist across restarts:
+By default, your tunnel gets a new random URL every time it starts. ngrok also offers free static domains that stay the same across restarts:
 
 1. Go to [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains) and claim a free domain
 2. Enter it in the **Custom domain** field in the Remote Access dialog, or set `TUNNEL_DOMAIN`
 
-Benefits:
+That way, any QR code or bookmark you saved keeps working after you restart DorkOS.
 
-- Same URL across restarts
-- QR codes and bookmarks remain valid
+## Security
 
-## Configuration
+<Callout type="error">
+  A tunnel opens your machine to the internet, so DorkOS makes you lock the door first: it
+  **requires an owner login** before it will start a tunnel. There is no longer a tunnel passcode.
+</Callout>
+
+Starting a tunnel with login off routes you into owner-account creation first (_"Exposing DorkOS
+requires a login."_). Once the owner account exists and **Require login** is on, the tunnel starts and
+remote visitors get the sign-in screen. See [Securing Your Instance](/docs/self-hosting/securing-your-instance)
+for the full flow, per-user API keys, and CLI recovery.
+
+You can optionally add ngrok's own HTTP basic auth on top of the login, as a second gate at the edge:
+
+```bash
+export TUNNEL_AUTH=myuser:mypassword
+export NGROK_AUTHTOKEN=your-token-here
+dorkos --tunnel
+```
+
+With `TUNNEL_AUTH` set, anyone accessing the tunnel URL is prompted for those credentials by ngrok
+before reaching DorkOS's own sign-in screen.
+
+## Troubleshooting
+
+<Callout type="warn">
+  If the tunnel fails to start, check that your `NGROK_AUTHTOKEN` is valid and that you haven't hit
+  your ngrok account's limit on simultaneous tunnels (the free tier allows one at a time). DorkOS
+  keeps running locally either way.
+</Callout>
+
+Common issues:
+
+- **"Tunnel is already running"**: the server replies with a 409 status, its polite way of saying "one at a time." Stop the existing tunnel first.
+- **Auth token not found**: make sure `NGROK_AUTHTOKEN` is exported in your shell, or paste it into the Remote Access dialog.
+- **Custom domain errors**: verify your domain is claimed at dashboard.ngrok.com/domains.
+- **Connection quality red**: latency to the tunnel is over 500ms, usually because the nearest ngrok edge server is far from you geographically.
+- **Disconnected toast**: if the tunnel drops unexpectedly, you'll see a notification. DorkOS tries to reconnect automatically.
+
+## Reference: how the tunnel works under the hood
+
+Everything below is background for the curious. You don't need it to set up or use a tunnel.
 
 <TypeTable
   type={{
@@ -114,31 +157,6 @@ Benefits:
   }}
 />
 
-## Security
-
-<Callout type="error">
-  Tunnels expose your DorkOS instance to the public internet. DorkOS **requires an owner login**
-  before it will start a tunnel — there is no longer a tunnel passcode.
-</Callout>
-
-Starting a tunnel with login off routes you into owner-account creation first (_"Exposing DorkOS
-requires a login."_). Once the owner account exists and **Require login** is on, the tunnel starts and
-remote visitors get the sign-in screen. See [Securing Your Instance](/docs/self-hosting/securing-your-instance)
-for the full flow, per-user API keys, and CLI recovery.
-
-You can optionally add ngrok's own HTTP basic auth on top of the login, as a second gate at the edge:
-
-```bash
-export TUNNEL_AUTH=myuser:mypassword
-export NGROK_AUTHTOKEN=your-token-here
-dorkos --tunnel
-```
-
-With `TUNNEL_AUTH` set, anyone accessing the tunnel URL is prompted for those credentials by ngrok
-before reaching DorkOS's own sign-in screen.
-
-## How It Works
-
 <Steps>
 <Step>
 ### Server starts normally
@@ -150,33 +168,33 @@ DorkOS starts the Express server on the configured port (default 4242).
 <Step>
 ### Tunnel connects
 
-After the server binds, the tunnel manager dynamically imports the `@ngrok/ngrok` SDK and creates a tunnel. Dynamic import means zero overhead when tunneling is disabled.
+Once the server is up, DorkOS loads the ngrok SDK and opens a tunnel to it. That SDK is only loaded when tunneling is actually enabled, so it adds no overhead the rest of the time.
 
 </Step>
 
 <Step>
 ### URL is available
 
-The tunnel URL appears in the terminal with a QR code for mobile access. If tunnel creation fails, the server continues working locally.
+The tunnel URL appears in the terminal with a QR code for mobile access. If tunnel creation fails, the server keeps working locally.
 
 </Step>
 
 <Step>
 ### Real-time status sync
 
-The tunnel manager emits status events via EventEmitter. These are broadcast to all connected clients via SSE (`GET /api/tunnel/stream`) and across browser tabs via BroadcastChannel.
+Tunnel status changes are broadcast to every connected client over DorkOS's shared event stream (`GET /api/events`), and mirrored across your open browser tabs.
 
 </Step>
 
 <Step>
 ### Graceful shutdown
 
-When you stop the server (via SIGINT or SIGTERM), the tunnel closes automatically before the process exits.
+When you stop the server, the tunnel closes automatically before the process exits.
 
 </Step>
 </Steps>
 
-## API Endpoints
+### API Endpoints
 
 Control the tunnel programmatically:
 
@@ -191,7 +209,7 @@ curl -X POST http://localhost:4242/api/tunnel/stop
 curl http://localhost:4242/api/tunnel/status
 ```
 
-## Health Check
+### Health Check
 
 When a tunnel is active, the health endpoint includes tunnel status:
 
@@ -215,7 +233,7 @@ curl http://localhost:4242/api/health
   /api/tunnel/status` for full status including connection quality.
 </Callout>
 
-## CLI QR Code
+### CLI QR Code
 
 When a tunnel starts, the CLI prints a QR code:
 
@@ -229,33 +247,13 @@ When a tunnel starts, the CLI prints a QR code:
   [QR Code]
 ```
 
-## Development Mode
+### Development Mode
 
-For development with tunnels, the tunnel targets the Vite dev server port (4241 by default) so HMR and proxied API calls work correctly:
+Contributors working on DorkOS itself can run the tunnel against the dev server:
 
 ```bash
 pnpm --filter=@dorkos/server run dev:tunnel
 ```
-
-## Embedded Mode
-
-When running as an Obsidian plugin, the tunnel UI is automatically hidden since tunneling does not apply in that context.
-
-## Troubleshooting
-
-<Callout type="warn">
-  If the tunnel fails to start, verify your `NGROK_AUTHTOKEN` is valid and that you have not
-  exceeded your ngrok account's tunnel limit. The server continues running locally even if the
-  tunnel fails.
-</Callout>
-
-Common issues:
-
-- **"Tunnel is already running"** — The server returns 409. Stop the existing tunnel first.
-- **Auth token not found** — Ensure `NGROK_AUTHTOKEN` is exported in your shell, or paste it in the Remote Access dialog.
-- **Custom domain errors** — Verify your domain is claimed at dashboard.ngrok.com/domains.
-- **Connection quality red** — High latency (>500ms) to the tunnel, usually caused by geographic distance to the ngrok edge server.
-- **Disconnected toast** — If the tunnel drops unexpectedly, you will see a notification. The system attempts to reconnect automatically.
 
 ## Next Steps
 
@@ -263,10 +261,10 @@ Common issues:
   <Card title="CLI Usage" href="/docs/guides/cli-usage">
     All CLI flags and configuration options
   </Card>
-  <Card title="Keyboard Shortcuts" href="/docs/guides/keyboard-shortcuts">
-    Navigate DorkOS faster with keyboard shortcuts
+  <Card title="Securing Your Instance" href="/docs/self-hosting/securing-your-instance">
+    Set up login and per-user API keys before you expose DorkOS
   </Card>
-  <Card title="Slash Commands" href="/docs/guides/slash-commands">
-    Discover and create custom slash commands
+  <Card title="Reverse Proxy" href="/docs/self-hosting/reverse-proxy">
+    Prefer your own domain over a tunnel? Put DorkOS behind nginx or Caddy instead
   </Card>
 </Cards>

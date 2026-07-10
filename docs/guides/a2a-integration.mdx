@@ -9,7 +9,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Integrating via A2A
 
-The **A2A gateway** exposes your registered DorkOS agents to any external client that speaks Google's [Agent-to-Agent (A2A) protocol](https://github.com/google-a2a/A2A). A2A is a JSON-RPC surface — an external orchestrator discovers your agents through an **Agent Card**, then sends messages to them over a standard method set.
+The **A2A gateway** exposes your registered DorkOS agents to any external client that speaks Google's [Agent-to-Agent (A2A) protocol](https://github.com/google-a2a/A2A). A2A is a JSON-RPC surface. An external orchestrator discovers your agents through an **Agent Card**, then sends messages to them over a standard method set.
+
+This is developer reference: it assumes you're wiring up an external A2A client against a running DorkOS instance, not just using the cockpit day to day.
 
 <Callout type="warn">
   A2A is an **external, network-facing** surface. It is off by default and, when enabled, is guarded
@@ -34,7 +36,7 @@ On startup you'll see a log line confirming the mount point and auth mode:
 
 ## Discovery: the Agent Card
 
-A2A clients start by fetching an **Agent Card** — a JSON document describing what an agent is and where to reach it.
+A2A clients start by fetching an **Agent Card**: a JSON document describing what an agent is and where to reach it.
 
 <Steps>
 <Step>
@@ -62,7 +64,7 @@ There are two ways to target an agent:
 | `POST /a2a/agents/:id` | The agent is bound from the URL. No `metadata.agentId` needed (a conflicting one is rejected).     |
 | `POST /a2a`            | Fleet endpoint. Every message **must** carry `metadata.agentId` (or continue a task via `taskId`). |
 
-The fleet endpoint never routes an untargeted message to an arbitrary agent — a missing `agentId` returns an actionable JSON-RPC `-32602` (Invalid params) error.
+The fleet endpoint never routes an untargeted message to an arbitrary agent. A missing `agentId` returns an actionable JSON-RPC `-32602` (Invalid params) error.
 
 Supported methods: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`.
 
@@ -74,7 +76,7 @@ Auth mirrors the [MCP endpoint](/docs/getting-started/configuration): set `MCP_A
 Authorization: Bearer <MCP_API_KEY>
 ```
 
-A per-user [Better Auth](/docs/getting-started/configuration) API key also works when login is enabled. When nothing is configured, requests pass through unauthenticated — permitted **only** on a loopback bind (see [Deployment security](#deployment-security)). Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and only carry a `security` requirement when the server actually enforces auth.
+A per-user [Better Auth](/docs/getting-started/configuration) API key also works when login is enabled. When nothing is configured, requests pass through unauthenticated, permitted **only** on a loopback bind (see [Deployment security](#deployment-security)). Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and only carry a `security` requirement when the server actually enforces auth.
 
 ### `contextId`: grouping turns into a session
 
@@ -86,6 +88,33 @@ Set `message.contextId` to group related messages into one continuing agent sess
   session. Use unguessable values (UUIDs) and treat `contextId` as a secret shared between a caller
   and the gateway. Per-principal isolation is future work.
 </Callout>
+
+### Quick check with curl
+
+Before wiring up a client, confirm the gateway responds. Fetch the fleet card, grab an agent id from it, then send that agent a message:
+
+```bash
+# Fleet card: lists your registered agents
+curl http://localhost:6242/.well-known/agent-card.json
+
+# Send a message to one agent (swap in a real id and MCP_API_KEY)
+curl -X POST http://localhost:6242/a2a/agents/01HZB1AGENTULID0000001 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MCP_API_KEY" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "1",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "kind": "message",
+        "role": "user",
+        "messageId": "11111111-1111-1111-1111-111111111111",
+        "parts": [{ "kind": "text", "text": "ping" }]
+      }
+    }
+  }'
+```
 
 ## A copy-paste client (`@a2a-js/sdk`)
 
@@ -110,13 +139,13 @@ const authedFetch: typeof fetch = (input, init = {}) =>
 const fleetCard = await (await authedFetch(`${BASE}/.well-known/agent-card.json`)).json();
 console.log('Fleet card:', fleetCard.name);
 
-// 2. Build a client from a per-agent card — its `url` is that agent's RPC endpoint.
+// 2. Build a client from a per-agent card: its `url` is that agent's RPC endpoint.
 const agentId = '01HZB1AGENTULID0000001'; // a mesh ULID
 const client = await A2AClient.fromCardUrl(`${BASE}/a2a/agents/${agentId}/card`, {
   fetchImpl: authedFetch,
 });
 
-// 3. Send a message. `contextId` groups turns into one session — keep it secret.
+// 3. Send a message. `contextId` groups turns into one session: keep it secret.
 const contextId = randomUUID();
 const response: SendMessageResponse = await client.sendMessage({
   message: {
@@ -136,7 +165,7 @@ if ('error' in response) {
 console.log(response.result);
 ```
 
-To use the **fleet** endpoint instead, drop the per-agent card and set `metadata: { agentId }` on the `message` — the SDK will post to `/a2a`.
+To use the **fleet** endpoint instead, drop the per-agent card and set `metadata: { agentId }` on the `message`. The SDK will post to `/a2a`.
 
 ## Deployment security
 
@@ -144,10 +173,10 @@ The gateway is engineered to fail closed. Understand these before exposing it:
 
 - **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server **refuses to mount** the A2A gateway and its well-known card routes, and logs the fix: set `MCP_API_KEY` or enable login. The loopback cockpit stays usable. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
 - **Advertised URL.** Behind a proxy or tunnel, set `DORKOS_PUBLIC_URL` so cards advertise a routable URL instead of the non-routable `http://0.0.0.0:PORT` bind.
-- **Rate limiting assumes one trusted proxy.** JSON-RPC endpoints are limited to ~60 req/min/IP and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). The app trusts a single proxy hop (`X-Forwarded-For`), correct behind one reverse proxy or tunnel (e.g. ngrok). On a **direct** public bind a client can spoof `X-Forwarded-For` to spread requests across buckets, so the limiter is not a security boundary there — put a trusted proxy in front, or rely on auth.
-- **`contextId` is not a per-principal boundary** — see the caveat above.
+- **Rate limiting assumes one trusted proxy.** JSON-RPC endpoints are limited to ~60 req/min/IP and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). The app trusts a single proxy hop (`X-Forwarded-For`), correct behind one reverse proxy or tunnel (e.g. ngrok). On a **direct** public bind a client can spoof `X-Forwarded-For` to spread requests across buckets, so the limiter is not a security boundary there. Put a trusted proxy in front, or rely on auth.
+- **`contextId` is not a per-principal boundary**: see the caveat above.
 
-Request/response shapes follow the [A2A specification](https://github.com/google-a2a/A2A) — the gateway speaks standard JSON-RPC 2.0. Errors you'll actually see: `-32602` (Invalid params — e.g. an untargeted fleet message or a per-agent call with a conflicting `metadata.agentId`), `-32601` (unknown method), A2A task errors (`TaskNotFoundError`, `TaskNotCancelableError`) on the `tasks/*` methods, plus plain HTTP `401` when auth is enforced and the bearer token is missing or wrong, and `429` from the rate limiter.
+Request/response shapes follow the [A2A specification](https://github.com/google-a2a/A2A). The gateway speaks standard JSON-RPC 2.0. Errors you'll actually see: `-32602` (Invalid params, e.g. an untargeted fleet message or a per-agent call with a conflicting `metadata.agentId`), `-32601` (unknown method), A2A task errors (`TaskNotFoundError`, `TaskNotCancelableError`) on the `tasks/*` methods, plus plain HTTP `401` when auth is enforced and the bearer token is missing or wrong, and `429` from the rate limiter.
 
 ## Next Steps
 

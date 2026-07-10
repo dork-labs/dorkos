@@ -1,17 +1,92 @@
 ---
-title: Persona Injection
-description: Shape Claude's behavior per-project with custom system prompt text
+title: Shape How Your Agent Behaves
+description: Give an agent traits, custom instructions, and hard boundaries so it acts like the specialist you need
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-# Persona Injection
+# Shape How Your Agent Behaves
 
-Persona injection lets you append custom text to Claude's system prompt for every session in a directory. Use it to define an agent's expertise, constraints, tone, or domain knowledge.
+Every agent starts out as a capable generalist. You can turn it into a specialist: terse or chatty, cautious or bold, an API expert who never touches your frontend. DorkOS calls this an agent's personality, and you control it from one tab.
 
-## How It Works
+## Quick start
 
-When a directory has an agent with persona text configured and `personaEnabled` set to `true`, DorkOS injects two XML blocks into the system prompt:
+1. Open the agent from the Agents page (or click its name wherever you see it in the app) to bring up its Agent Hub panel.
+2. Go to the **Config** tab.
+3. Expand the **Advanced** section.
+4. Drag a trait slider, for example turn up **Autonomy** so the agent acts without asking, or turn down **Verbosity** so it stops narrating every step.
+5. Add a line or two to **Custom Instructions** for anything the sliders can't capture, like "always write a database migration when the schema changes."
+6. Check the injection preview at the bottom to see exactly what the agent will read.
+
+Changes save as you go. There's no separate save button to hunt for.
+
+## What you can shape
+
+### Traits
+
+Six sliders, each from 1 to 5, cover the big personality questions:
+
+- **Verbosity**: from a one-word "Mime" to a narrate-everything "Yapper"
+- **Autonomy**: from "Clingy" (asks before every step) to "Rogue" (ships without asking)
+- **Chaos**: how carefully the agent double-checks its work before acting
+- **Creativity**: how much it sticks to the obvious path versus tries something unusual
+- **Humor**: how dry or playful its responses read
+- **Spice**: how corporate or casual its language is
+
+Each slider comes with a short label so you always know what you're dialing in, and a reset button brings every trait back to its default.
+
+### Custom instructions
+
+Sliders cover tone. For anything more specific, like project conventions or an agent's domain of expertise, write it in **Custom Instructions**. This is free text, up to 4,000 characters, and it's the same idea as the old "persona" text if you've used DorkOS before: a few sentences that tell the agent what makes it different from a generic coding assistant.
+
+### Safety boundaries
+
+**Safety Boundaries** is where you write down what the agent should never do: "never modify frontend code," "never delete a database migration," that kind of thing. You get up to 2,000 characters.
+
+<Callout type="warn">
+  Think of these as house rules, not a lock on the door. The agent is instructed to follow them, but
+  nothing at the tool level enforces them. Write boundaries you'd tell a new hire, not ones you'd
+  bet the production database on.
+</Callout>
+
+## Writing effective instructions and boundaries
+
+**Good patterns:**
+
+- Define the agent's domain and what it should stay out of
+- Spell out project-specific conventions the agent should follow
+- Reference architectural decisions the agent needs to respect
+- Keep sentences short and direct, agents follow plain instructions better than long paragraphs
+
+**Example: an API specialist**
+
+```text title="Custom Instructions"
+You are backend-bot, the API specialist for this project.
+- Always use Zod schemas for request validation
+- Prefer service-layer functions over inline route logic
+- Run relevant tests before suggesting changes are complete
+```
+
+```text title="Safety Boundaries"
+Never modify client-side code without asking first.
+```
+
+**Example: a docs specialist** (because subtlety was never the point of naming it `docs-bot`)
+
+```text title="Custom Instructions"
+You are docs-bot, responsible for documentation quality.
+- Write in active voice, present tense
+- Keep guides under 500 words where possible
+- Include a code example for every concept
+```
+
+## Reference
+
+The rest of this page is for readers who want the mechanics: how personality text reaches the agent, the exact limits, and how DorkOS handles agents created before this settings tab existed.
+
+### How injection works
+
+DorkOS builds two blocks and adds them to the agent's system prompt (the instructions the underlying model reads before every response) at the start of each session:
 
 ```xml
 <agent_identity>
@@ -24,77 +99,20 @@ Capabilities: api-design, database
 <agent_persona>
 You are backend-bot, an expert in REST API design and PostgreSQL.
 Always suggest database migrations for schema changes.
-Prefer Express.js patterns consistent with the existing codebase.
 Never modify frontend code without asking first.
 </agent_persona>
 ```
 
-The `<agent_identity>` block is always included when an agent exists — it gives Claude basic awareness of which agent it is. The `<agent_persona>` block is only included when persona text exists **and** `personaEnabled` is `true`.
+The `<agent_identity>` block is always included when an agent exists, so the model always knows which agent it's acting as. The `<agent_persona>` block carries your traits and custom instructions; a separate `<agent_safety_boundaries>` block carries your safety boundaries, when either is turned on for that agent.
 
-## Configuring a Persona
+Building this adds one filesystem read at session start, done in parallel with the rest of the agent's context (environment details, git status), so it doesn't add noticeable delay.
 
-### Via the Agent Dialog
+### Limits
 
-1. Open the Agent Settings Dialog (click agent name or gear icon in sidebar)
-2. Go to the **Persona** tab
-3. Write your persona text in the textarea
-4. Ensure the **Enabled** toggle is on
-5. Check the live preview to see the exact XML that will be injected
+- Custom instructions (SOUL.md): up to **4,000 characters**, including the trait summary DorkOS generates for you
+- Safety boundaries (NOPE.md): up to **2,000 characters**
+- Both are injected as system prompt content, not as something the agent sees as a user message
 
-### Via JSON
+### Legacy persona field
 
-Edit `.dork/agent.json` directly:
-
-```json title=".dork/agent.json"
-{
-  "name": "backend-bot",
-  "persona": "You are backend-bot, an expert in REST API design...",
-  "personaEnabled": true
-}
-```
-
-Set `personaEnabled` to `false` to keep the text saved but stop injecting it.
-
-## Writing Effective Personas
-
-<Callout type="info">
-  Persona text is appended to Claude Code's existing system prompt. You don't need to repeat general
-  coding instructions — focus on what makes this agent unique.
-</Callout>
-
-**Good patterns:**
-
-- Define the agent's domain expertise and boundaries
-- Specify coding conventions specific to the project
-- Set constraints on what the agent should and shouldn't modify
-- Reference key architectural decisions or patterns
-
-**Example personas:**
-
-```text title="API agent"
-You are backend-bot, the API specialist for this project.
-- Always use Zod schemas for request validation
-- Prefer service-layer functions over inline route logic
-- Run relevant tests before suggesting changes are complete
-- Never modify client-side code without asking
-```
-
-```text title="Docs agent"
-You are docs-bot, responsible for documentation quality.
-- Write in active voice, present tense
-- Keep guides under 500 words where possible
-- Include code examples for every concept
-- Check that all internal links resolve
-```
-
-## Persona Toggle
-
-The `personaEnabled` field (default: `true`) controls whether the `<agent_persona>` block is injected. The `<agent_identity>` block is always injected when an agent exists, regardless of this toggle.
-
-Disabling the toggle is useful when you want to compare Claude's behavior with and without the persona — the text is preserved, injection stops.
-
-## Limits
-
-- Persona text is limited to **4,000 characters**
-- The text is injected as a system prompt append, not as user content
-- Persona injection adds one filesystem read to session creation, run in parallel with other context (env, git), so latency impact is negligible
+If your agent was created before this settings tab shipped, it may still carry the old raw `persona` string and a `personaEnabled` flag in `.dork/agent.json`, capped at 4,000 characters. DorkOS only falls back to that legacy field when the agent has no custom instructions file yet. Adjust a trait or add a line of custom text under Config > Advanced, and DorkOS moves the agent onto the current system automatically.

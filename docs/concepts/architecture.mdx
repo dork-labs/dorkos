@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How DorkOS connects your browser to your coding agents using a hexagonal architecture
+description: How DorkOS connects your browser to your coding agent, in plain language
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,123 +8,50 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Architecture
 
-DorkOS sits between you and your coding agents, providing a browser-based command center. It works with Claude Code, Codex, and OpenCode through one shared runtime interface. Understanding how the pieces fit together helps you troubleshoot issues, choose the right deployment mode, and build integrations.
+DorkOS looks the same whether it's running as a website or tucked inside Obsidian, and it works with Claude Code, Codex, or OpenCode without you changing a thing. That's the whole idea: one cockpit, any agent, any place you happen to be working.
 
-## The Big Picture
+## The big picture
 
-DorkOS uses a **hexagonal architecture** (also called ports and adapters) to keep the UI completely separate from how it communicates with your agent backend. The same React client works in two very different environments without any code changes.
+Three things talk to each other:
 
 ```
-You (browser)
-  |
-  v
-DorkOS Client (React SPA)
-  |
-  v
-Transport (interface)
-  |
-  +---> HttpTransport ---> DorkOS Server (Express) ---> AgentRuntime ---> Claude Code, Codex, or OpenCode
-  |
-  +---> DirectTransport ---> AgentRuntime ---> Claude Code (Obsidian plugin, no server)
+Your browser  ->  DorkOS  ->  Your coding agent
 ```
 
-Two abstractions make this work. The **Transport interface** decouples the React client from its backend — the client calls `transport.postMessage()` and subscribes to session events without knowing whether they came from an SSE stream or an in-process generator. The **AgentRuntime interface** decouples the server routes from specific agent backend implementations — routes call `runtimeRegistry.getDefault()` and never reference `ClaudeCodeRuntime` directly.
+You open DorkOS in a browser tab (or inside Obsidian). It shows you your sessions, lets you send messages, and streams back what your agent is doing in real time. Underneath, DorkOS swaps out which agent it's talking to (Claude Code, Codex, or OpenCode) without you having to reconfigure anything. That swap is the headline trick: pick a runtime per project, and the interface doesn't change under you.
 
-## Two Deployment Modes
+## Two ways to run it
 
-### Standalone Web
+**As a website.** This is the default, and the one most people should use. DorkOS runs a small server on your machine and you open it in any modern browser. Multiple browser tabs (or people) can watch the same session at once.
 
-The default mode. DorkOS runs as an Express server, and the React client communicates with it over HTTP and Server-Sent Events.
+**Inside Obsidian.** DorkOS also ships as an Obsidian plugin that runs in the same process as your notes, no separate server involved. This mode is early and still getting hardened, so treat it as a preview rather than a finished surface: expect rough edges, and prefer the web cockpit if you want the most polished experience.
 
-- The client sends REST requests and receives all session events on durable, resumable SSE streams
-- The server manages sessions and reads transcript files from disk
-- Works with any modern browser, no plugins required
-- Supports multiple simultaneous clients viewing the same session
+Both modes read the same sessions from disk, so a session you started from the terminal shows up in whichever one you open next.
 
-### Obsidian Plugin
+## Why this matters to you
 
-DorkOS also runs as an Obsidian plugin, embedded directly inside the note-taking app. There is no separate server process.
+Two things fall out of this design that are worth knowing:
 
-- **DirectTransport** calls service instances in the same Electron process
-- No HTTP, no port binding, no network traffic
-- Sessions are still stored as JSONL files in the same location, so CLI-started sessions are visible too
+- **You can change agents without losing your setup.** Switching a project from Claude Code to Codex (or back) doesn't mean starting over. DorkOS talks to each agent through the same interface, so your sessions and workflow carry over. Note that multi-agent coordination features (agents messaging each other, discovering one another across a project) are newer and still being proven out in real use.
+- **Your sessions live in ordinary files, not a hidden database.** Each coding agent keeps its own session history on disk in its own way. That means restarting DorkOS never loses a conversation, since DorkOS is just reading files that were already there. It also means you can't accidentally "delete" a session from inside DorkOS: it's gone only if the underlying files are gone.
 
 <Callout type="info">
-  Both modes read from the same session storage on disk. A session started with the Claude Code CLI
-  appears in DorkOS, and vice versa.
+  Because DorkOS reads sessions straight from disk, a session you start with the Claude Code CLI
+  shows up in DorkOS too, and vice versa.
 </Callout>
 
-## How a Message Flows
+## For the curious
 
-When you type a message and press Enter:
-
-1. **ChatPanel** captures your input and calls `transport.postMessage()`
-2. The **Transport adapter** delivers the trigger to the backend (via HTTP or directly), which acknowledges immediately with the canonical session id
-3. The server resolves the session's `AgentRuntime` via the `RuntimeRegistry`
-4. The **AgentRuntime** calls the chosen runtime (Claude Code, Codex, or OpenCode) and the turn runs server-side
-5. Events flow to every subscribed client over the session's durable event stream: text deltas, tool calls, approvals, and the final result
-6. The **React client** updates the UI in real time as each event arrives
-
-This flow is identical regardless of which transport adapter or runtime is active.
-
-## Key Components
-
-### AgentRuntime and RuntimeRegistry
-
-The `AgentRuntime` interface (`@dorkos/shared/agent-runtime`) is the contract that all agent backends implement. It covers session lifecycle, message streaming, tool approval, storage queries, session locking, and capability reporting. Every route obtains the active runtime through `runtimeRegistry.getDefault()` — never by referencing a specific implementation.
-
-The `RuntimeRegistry` holds all registered runtimes keyed by type string. The default is `ClaudeCodeRuntime`, which integrates the Claude Agent SDK. DorkOS also ships `CodexRuntime` and `OpenCodeRuntime`, and more can be registered without touching route code.
-
-### Server
-
-The Express server exposes route groups including sessions, commands, health, config, files, git, Tasks scheduling, Relay messaging, Mesh agent discovery, and extensions. Routes are thin HTTP handlers — all business logic delegates to services or the active runtime.
-
-Server-side services are organized by domain: `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/extensions/` (extension lifecycle, compilation, and discovery), `services/marketplace/` (package install/uninstall/update pipeline, transaction engine, cache), and `services/core-extensions/` (toggleable first-party extensions like Marketplace, staged at startup).
-
-### Client
-
-The React SPA uses Feature-Sliced Design with strict unidirectional layer imports. Key features:
-
-- **Chat** — Message list, streaming text, tool call cards, and the input area
-- **Session list** — Sidebar for browsing and creating sessions
-- **Canvas** — Agent-controlled UI panels rendered via the extension system
-- **Commands** — Palette for discovering and using slash commands
-- **Settings** — Theme, configuration, and preferences
-- **Tasks / Relay / Mesh** — Scheduling, messaging, and agent discovery panels
-
-### Agent UI Control
-
-Agents can observe and control the DorkOS client UI through MCP tools exposed by the server. The `controlUI` tool dispatches UI commands (open panels, navigate, show notifications), and `get_ui_state` returns the current UI state (active session, visible panels, sidebar state). This enables agents to build interactive workflows that coordinate with the user's view. UI state is passed to the agent via the `uiState` field on `postMessage`.
-
-### Shared Package
-
-Types, Zod schemas, the Transport interface, and the AgentRuntime interface all live in `@dorkos/shared`. Both client and server import from this package to stay in sync.
-
-## Session Storage
-
-All session data lives in SDK transcript files on disk at `~/.claude/projects/{project-slug}/`. DorkOS does not maintain a separate session database. The `TranscriptReader` scans JSONL files to build session lists, extract metadata, and replay message history.
-
-This means:
-
-- Sessions persist across DorkOS restarts
-- Sessions created by the CLI or other tools are automatically visible
-- There is no delete operation — sessions exist as long as their transcript files do
-
-<Callout type="warn">
-  Transcript files can grow large for long conversations. DorkOS reads them incrementally where
-  possible, but very long sessions may take a moment to load.
-</Callout>
-
-## Next Steps
+This page keeps things at the "how do I think about this" level. If you want the engineering detail, the docs below go deeper.
 
 <Cards>
   <Card title="Sessions" href="/docs/concepts/sessions">
-    Learn how sessions are created, stored, and synchronized across clients.
+    How sessions are created, stored, and kept in sync across clients.
   </Card>
-  <Card title="Transport" href="/docs/concepts/transport">
-    Dive deeper into the Transport interface and how the two adapters work.
+  <Card title="Architecture (developer reference)" href="/docs/contributing/architecture">
+    Interfaces, service layout, and message-flow internals, for anyone reading the source.
   </Card>
   <Card title="SSE Protocol" href="/docs/integrations/sse-protocol">
-    Understand the streaming event protocol used for real-time communication.
+    The streaming event protocol behind the real-time updates you see.
   </Card>
 </Cards>

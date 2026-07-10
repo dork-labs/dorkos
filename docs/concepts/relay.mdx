@@ -8,90 +8,115 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Relay
 
-Relay is the messaging layer built into DorkOS. It handles routing and delivery for messages flowing between agents, humans, and external platforms like Telegram. Relay runs by default — set `DORKOS_RELAY_ENABLED=false` to disable it.
+Relay is the messaging layer built into DorkOS. It routes and delivers messages between agents, humans, and external platforms like Telegram. Relay runs by default. Set `DORKOS_RELAY_ENABLED=false` to turn it off.
 
-## What Relay Does
+## What Relay does
 
-When you have agents working across different projects, they need a way to reach you and each other. An agent finishing a task should be able to message you on Telegram. An agent that finds a breaking API change should be able to notify the agent working on the frontend.
+When you have agents working across different projects, they need a way to reach you, and sometimes to reach each other. An agent finishing a task should be able to message you on Telegram. Relay makes that possible.
 
-Relay provides this. Agents publish messages to named subjects. Relay routes those messages to the right recipients — whether that is your phone, your browser console, or another agent. Agents do not need to know each other's internals: they only agree on subject naming.
+Agents publish messages to named addresses. Relay routes each one to the right place, whether that is your phone, your browser console, or another agent. Agents never need to know each other's internals; they just agree on where a message should go.
 
-## Subjects and Endpoints
+## See it work
 
-Relay organizes communication around **subjects** — hierarchical dot-separated names that describe where a message goes. Subjects follow a three-tier hierarchy: `relay.{audience}.{identifier}`.
+The easiest way to see Relay in action is the Telegram adapter:
+
+1. Create a bot with Telegram's [@BotFather](https://t.me/botfather) and copy its token.
+2. Add a Telegram adapter in DorkOS with that token.
+3. Message the bot. Your message shows up on the `relay.human.telegram.{chatId}` address, and any agent listening there can reply.
+
+You don't need Telegram to see Relay working, either: your own console session is already wired up. Send a session a message and watch the reply stream back through Relay under the hood, no setup required.
+
+<Callout type="info">
+  No screenshot yet: this is a good place for one showing a message arriving in a Telegram chat.
+</Callout>
+
+## Addresses, in plain terms
+
+Every message travels to a named address, like `relay.human.telegram.{chatId}` for one specific Telegram chat, or `relay.agent.{agentId}` for one specific agent (yes, that includes `relay.agent.dorkbot`, should you ever want to message the mascot directly). You rarely need to write these yourself. DorkOS and its adapters generate them for you; the pattern is here mostly so log lines make sense when you're troubleshooting.
+
+If you want to know how these addresses are matched, wildcarded, stored, and secured, the reference section below covers all of it.
+
+---
+
+## Reference
+
+Here's how Relay works under the hood. Useful if you're debugging delivery, tuning limits, or building an adapter. This section assumes a developer's background.
+
+### Subjects and endpoints
+
+Relay organizes communication around **subjects**: hierarchical, dot-separated names that describe where a message goes. Subjects follow a three-tier hierarchy: `relay.{audience}.{identifier}`.
 
 Common patterns:
 
-- `relay.agent.{agentId}` — Messages addressed to a specific agent
-- `relay.human.console.{clientId}` — Messages destined for a human's console
-- `relay.human.telegram.{chatId}` — Messages routed to a Telegram chat
-- `relay.system.tasks.{scheduleId}` — System messages from the Task scheduler
+- `relay.agent.{agentId}`: messages addressed to a specific agent
+- `relay.human.console.{clientId}`: messages destined for a human's console
+- `relay.human.telegram.{chatId}`: messages routed to a Telegram chat
+- `relay.system.tasks.{scheduleId}`: system messages from the Task scheduler
 
-### Endpoints
+#### Endpoints
 
-An **endpoint** is a registered destination on the bus. Registering an endpoint for a subject creates a Maildir directory structure on disk to receive messages. Messages arrive as JSON files in the endpoint's `new/` directory and are indexed in SQLite.
+An **endpoint** is a registered destination on the bus. Registering an endpoint for a subject creates a Maildir directory structure on disk to receive messages. Maildir is a mailbox format: each message becomes its own file, so writes are atomic and crash-safe. Messages arrive as JSON files in the endpoint's `new/` directory and are indexed in SQLite.
 
 Endpoints are durable. Even if no subscriber is actively listening, messages are delivered to the endpoint's Maildir and held for later pickup.
 
-### Wildcards
+#### Wildcards
 
 Relay supports two wildcard tokens:
 
 - `*` matches exactly one segment (`relay.agent.*` matches `relay.agent.backend`, not `relay.agent.backend.tasks`)
 - `>` matches one or more trailing segments (`relay.agent.>` matches both)
 
-## The Envelope
+### The envelope
 
 Every message is wrapped in an **envelope** that carries routing metadata alongside the payload:
 
-- **id** — A ULID that uniquely identifies the message and provides time-ordering
-- **subject** — The target subject for delivery
-- **from** — The sender's subject identifier
-- **replyTo** — Optional subject for response routing
-- **budget** — Resource constraints that prevent runaway message chains
-- **payload** — The actual message content (any JSON-serializable value)
+- **id**: a ULID (an ID format that also records creation order, so messages sort chronologically without a separate timestamp field)
+- **subject**: the target subject for delivery
+- **from**: the sender's subject identifier
+- **replyTo**: optional subject for response routing
+- **budget**: resource constraints that prevent runaway message chains
+- **payload**: the actual message content (any JSON-serializable value)
 
-## Budget Enforcement
+### Budget enforcement
 
 Every envelope carries a budget that constrains how far a message can travel:
 
-- **hopCount / maxHops** — How many times the message has been forwarded. Default maximum: 5 hops. Prevents infinite loops where agent A sends to agent B, which sends back to agent A.
-- **ttl** — A Unix timestamp after which the message expires. Default: 1 hour.
-- **callBudgetRemaining** — API calls an agent may make when processing this message.
+- **hopCount / maxHops**: how many times the message has been forwarded. Default maximum: 5 hops. Prevents infinite loops where agent A sends to agent B, which sends back to agent A.
+- **ttl**: a Unix timestamp after which the message expires. Default: 1 hour.
+- **callBudgetRemaining**: API calls an agent may make when processing this message.
 
-The budget also carries an **ancestor chain** — sender identifiers for every hop. If a message would be delivered to a sender that already appears in the chain, it is rejected as a cycle.
+The budget also carries an **ancestor chain**: the sender identifier for every hop the message has taken. If a message would be delivered to a sender that already appears in that chain, Relay rejects it as a cycle.
 
 <Callout type="warn">
-  Budget limits are enforced per-delivery, not per-publish. A message published to three endpoints
+  Budget limits are enforced per delivery, not per publish. A message published to three endpoints
   consumes one hop for each delivery.
 </Callout>
 
-## Access Control
+### Access control
 
-Relay enforces sender-to-subject rules that determine who can publish to what. Rules are `{from, to, action, priority}` tuples supporting subject wildcards. The first matching rule wins. If no rules match, the default is allow — you start open and add deny rules to restrict specific paths.
+Relay enforces sender-to-subject rules that determine who can publish to what. Rules are `{from, to, action, priority}` tuples supporting subject wildcards. The first matching rule wins. If no rules match, the default is allow: you start open and add deny rules to restrict specific paths.
 
 Access rules live in `access-rules.json` inside the Relay data directory and are watched for changes, so edits take effect without a restart.
 
-## Adapters
+### Adapters
 
-Relay connects to external platforms through **adapters** — plugins that bridge external channels into the Relay subject hierarchy. DorkOS ships with five built-in adapters:
+Relay connects to external platforms through **adapters**: plugins that bridge external channels into the Relay subject hierarchy. DorkOS ships with four built-in adapters:
 
-- **Claude Code adapter** — Routes messages to Claude sessions. When a message arrives on `relay.agent.*`, this adapter creates or resumes a Claude session and passes the message as a prompt. Response chunks flow back to the sender's reply-to subject.
-- **Telegram adapter** — Connects a Telegram bot to the bus via grammy. Inbound messages publish to `relay.human.telegram.{chatId}`. Outbound messages on matching subjects are delivered to the chat. Supports real-time streaming via `sendMessageDraft`.
-- **Telegram Chat SDK adapter** — An experimental alternative Telegram adapter backed by the Chat SDK. Same bot token, different integration path. Useful as a reference for building Chat SDK-backed adapters.
-- **Slack adapter** — Bridges Slack workspaces into Relay using Socket Mode. Supports streaming responses, threading, and typing indicators.
-- **Webhook adapter** — A generic HTTP webhook bridge with HMAC-SHA256 signature verification for both directions.
+- **Claude Code adapter**: routes messages to Claude sessions. When a message arrives on `relay.agent.*`, this adapter creates or resumes a Claude session and passes the message as a prompt. Response chunks flow back to the sender's reply-to subject.
+- **Telegram adapter**: connects a Telegram bot to the bus via the grammy library. Inbound messages publish to `relay.human.telegram.{chatId}`. Outbound messages on matching subjects are delivered to the chat. Supports real-time streaming via `sendMessageDraft`.
+- **Slack adapter**: bridges Slack workspaces into Relay using Socket Mode (Slack's WebSocket-based connection, which avoids exposing a public webhook URL). Supports streaming responses, threading, and typing indicators.
+- **Webhook adapter**: a generic HTTP webhook bridge with HMAC-SHA256 signature verification (a cryptographic check that confirms a webhook payload wasn't tampered with) for both directions.
 
-You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters.
+You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters. Multi-agent coordination through Relay is shipped, but we haven't verified every agent-to-agent path end to end yet, so test your specific setup before relying on it in production.
 
-## Storage
+### Storage
 
 Relay uses two storage systems:
 
-- **Maildir** — A filesystem-based message store. Each endpoint gets a directory with `new/`, `cur/`, and `failed/` subdirectories. Messages are delivered as atomic file writes, making the store resilient to crashes.
-- **SQLite** — `~/.dork/relay/index.db` provides fast querying by subject, sender, status, and time range. WAL mode enables concurrent read/write access. If the index becomes corrupted, it can be rebuilt from Maildir.
+- **Maildir**: a filesystem-based message store. Each endpoint gets a directory with `new/`, `cur/`, and `failed/` subdirectories. Messages are delivered as atomic file writes, making the store resilient to crashes.
+- **SQLite**: `~/.dork/relay/index.db` provides fast querying by subject, sender, status, and time range. It runs in WAL mode (write-ahead logging, a SQLite mode that lets one writer and multiple readers work at the same time). If the index becomes corrupted, it can be rebuilt from Maildir.
 
-## Tracing
+### Tracing
 
 Each published message gets a trace ID. Each delivery to an endpoint creates a span recording timing, budget consumption, and error details. The trace store lives in `~/.dork/relay/index.db` alongside the message index and provides:
 
@@ -99,25 +124,25 @@ Each published message gets a trace ID. Each delivery to an endpoint creates a s
 - Aggregate delivery metrics (success/failure counts, latency percentiles)
 - Budget rejection breakdowns
 
-## Reliability
+### Reliability
 
 Three mechanisms protect endpoints under load:
 
-- **Rate limiting** — Per-sender sliding window. Default: 100 messages per 60 seconds.
-- **Circuit breakers** — After 5 consecutive delivery failures, an endpoint's circuit opens and rejects further deliveries for 30 seconds before retrying.
-- **Backpressure** — When an endpoint's mailbox reaches capacity (default: 1000 messages), new deliveries are rejected.
+- **Rate limiting**: per-sender sliding window. Default: 100 messages per 60 seconds.
+- **Circuit breakers**: after 5 consecutive delivery failures, an endpoint's circuit opens and rejects further deliveries for 30 seconds before retrying.
+- **Backpressure**: when an endpoint's mailbox reaches capacity (default: 1000 messages), new deliveries are rejected.
 
 <Callout type="info">
   All reliability settings can be tuned in `~/.dork/relay/config.json`. Changes are hot-reloaded.
 </Callout>
 
-## Integration with Sessions
+### Integration with sessions
 
-When Relay is enabled, session messaging routes through Relay instead of calling the Agent SDK directly. A POST to `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}`. The Claude Code adapter picks it up and routes it to the SDK. Response chunks flow back through `relay.human.console.{clientId}` and into the client's SSE stream as `relay_message` events.
+When Relay is enabled, session messaging routes through Relay instead of calling the agent SDK directly. A `POST` to `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}`. The Claude Code adapter picks it up and routes it to the SDK. Response chunks flow back through `relay.human.console.{clientId}` and into the client's SSE (server-sent events) stream as `relay_message` events.
 
-Every session message is tracked in the Relay index with full delivery tracing, and the same access control and budget rules apply to interactive sessions as to agent-to-agent communication.
+Every session message is tracked in the Relay index with full delivery tracing. The same access control and budget rules apply here as everywhere else in Relay.
 
-## Next Steps
+## Next steps
 
 <Cards>
   <Card title="Mesh" href="/docs/concepts/mesh">
