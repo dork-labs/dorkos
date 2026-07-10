@@ -412,12 +412,18 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       chatId: string;
       sessionId: string;
       adapterId: string;
+      canInitiate: boolean;
     } | null = null;
     for (const binding of myBindings) {
       const sessions = deps.bindingRouter.getSessionsByBinding(binding.id);
       if (sessions.length > 0) {
         const latest = sessions[sessions.length - 1]!;
-        bestSession = { ...latest, bindingId: binding.id, adapterId: binding.adapterId };
+        bestSession = {
+          ...latest,
+          bindingId: binding.id,
+          adapterId: binding.adapterId,
+          canInitiate: binding.canInitiate,
+        };
       }
     }
 
@@ -429,6 +435,25 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
             'No active chat sessions found. The user must message the bot first to establish a chat.',
           availableAdapters: myBindings.map((b) => b.adapterId),
           code: 'NO_ACTIVE_SESSIONS',
+        },
+        true
+      );
+    }
+
+    // relay_notify_user always INITIATES a message — it is never how an agent
+    // replies to an inbound chat message (replies to a <relay_context> turn are
+    // forwarded automatically by the runtime adapter, see context-builder.ts).
+    // So a false canInitiate on the resolved binding unconditionally blocks
+    // this call; it never blocks the automatic reply-forwarding path.
+    if (!bestSession.canInitiate) {
+      return jsonContent(
+        {
+          sent: false,
+          error:
+            "This channel doesn't allow the agent to start conversations; reply routing still works.",
+          code: 'INITIATE_NOT_ALLOWED',
+          bindingId: bestSession.bindingId,
+          adapterId: bestSession.adapterId,
         },
         true
       );
@@ -610,7 +635,10 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
       'Send a message to the user on a bound external channel (Telegram, Slack, etc.). ' +
         'Automatically resolves the best active chat. If channel is omitted, sends to the ' +
         'most recently active chat across all bound adapters. Specify channel to target a ' +
-        'specific adapter type (e.g., "telegram") or adapter ID (e.g., "telegram-lifeos").',
+        'specific adapter type (e.g., "telegram") or adapter ID (e.g., "telegram-lifeos"). ' +
+        'This always INITIATES a message — replying to an inbound chat message happens ' +
+        'automatically and does not need this tool. Fails with code INITIATE_NOT_ALLOWED ' +
+        'when the resolved binding has "Agent can start conversations" turned off.',
       {
         message: z.string().describe('Message text to send to the user'),
         channel: z

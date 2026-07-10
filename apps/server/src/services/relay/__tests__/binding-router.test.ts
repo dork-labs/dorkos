@@ -917,6 +917,23 @@ describe('BindingRouter', () => {
       );
     });
 
+    it('canInitiate=false does not block inbound routing — replies keep flowing (DOR-239)', async () => {
+      // canInitiate gates only agent-initiated sends (relay_notify_user, see
+      // mcp-relay-notify-tools.test.ts). It must never block inbound delivery
+      // — that's what lets the runtime adapter's automatic reply-forwarding
+      // keep working on a binding where the human left "Agent can start
+      // conversations" unchecked.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ canInitiate: false }));
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.stringContaining('relay.agent.'),
+        expect.any(Object),
+        expect.any(Object)
+      );
+      expect(mockAgentManager.createSession).toHaveBeenCalled();
+    });
+
     it('does not attach __bindingPermissions to non-object payloads', async () => {
       vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
       await capturedHandler!({

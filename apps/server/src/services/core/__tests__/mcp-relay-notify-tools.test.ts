@@ -11,7 +11,13 @@ const NOTIFY: SenderIdentity = { subject: 'relay.agent.ns.agent-1', agentId: 'ag
 /** Identity for a session that is not a registered agent (no bindings to notify through). */
 const ANON: SenderIdentity = { subject: 'relay.session.scratch' };
 
-/** Minimal binding shape matching AdapterBinding fields used by the handler. */
+/**
+ * Minimal binding shape matching AdapterBinding fields used by the handler.
+ *
+ * Defaults `canInitiate: true` so the routing/channel-matching tests in this
+ * file (which predate the DOR-239 permission gate) don't need to opt in —
+ * the permission itself is covered by the dedicated `canInitiate` tests below.
+ */
 function makeBinding(overrides: Record<string, unknown> = {}) {
   return {
     id: 'b-1',
@@ -19,6 +25,9 @@ function makeBinding(overrides: Record<string, unknown> = {}) {
     agentId: 'agent-1',
     sessionStrategy: 'per-chat',
     label: 'Main Bot',
+    canInitiate: true,
+    canReply: true,
+    canReceive: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -268,4 +277,53 @@ describe('relay_notify_user', () => {
     expect(data.messageId).toBe('msg-42');
     expect(data.deliveredTo).toBe(1);
   });
+
+  describe('canInitiate enforcement (DOR-239)', () => {
+    it('blocks the send when the resolved binding has canInitiate=false', async () => {
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
+        }) as unknown as McpToolDeps['bindingStore'],
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Surprise!' });
+
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.sent).toBe(false);
+      expect(data.code).toBe('INITIATE_NOT_ALLOWED');
+      expect(data.error).toMatch(/doesn't allow the agent to start conversations/i);
+      expect(data.bindingId).toBe('b-1');
+      expect(data.adapterId).toBe('tg-main');
+      // Nothing should have been published to the channel.
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+
+    it('allows the send when the resolved binding has canInitiate=true', async () => {
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: true })]),
+        }) as unknown as McpToolDeps['bindingStore'],
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Heads up!' });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.sent).toBe(true);
+      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+        'relay.human.telegram.tg-main.chat-42',
+        'Heads up!',
+        { from: 'relay.agent.ns.agent-1' }
+      );
+    });
+  });
+
+  // Reply routing (an agent responding to an inbound <relay_context> turn) never
+  // calls relay_notify_user — the runtime adapter forwards replies automatically
+  // (see context-builder.ts <relay_tools> outbound rules) straight through
+  // BindingRouter's inbound subscription, a code path this handler never
+  // touches. That "replies still flow when canInitiate=false" regression is
+  // covered directly in binding-router.test.ts, see:
+  // "canInitiate=false does not block inbound routing — replies keep flowing (DOR-239)".
 });
