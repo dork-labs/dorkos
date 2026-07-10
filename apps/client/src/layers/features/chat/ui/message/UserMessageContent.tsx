@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { ChatMessage } from '../../model/use-chat-session';
 import { cn } from '@/layers/shared/lib';
+import { UiActionChip, parseUiActionMessage } from '@/layers/features/gen-ui';
 import { parseFilePrefix } from '../../lib/parse-file-prefix';
 import { formatCompactionLabel } from '../../lib/format-compaction';
 import { FileAttachmentList } from './FileAttachmentList';
@@ -15,6 +16,11 @@ import { OutputRenderer } from './OutputRenderer';
 export function UserMessageContent({ message }: { message: ChatMessage }) {
   const [compactionExpanded, setCompactionExpanded] = useState(false);
   const parsed = useMemo(() => parseFilePrefix(message.content), [message.content]);
+  // A widget interaction arrives as a `<ui_action>` block in a plain user turn
+  // (live optimistic copy and reloaded transcript alike) — render it as a calm
+  // interaction chip instead of the raw XML.
+  const uiAction = useMemo(() => parseUiActionMessage(message.content), [message.content]);
+  if (uiAction) return <UiActionChip action={uiAction} />;
 
   if (message.messageType === 'command') {
     return <div className="text-msg-command-fg truncate font-mono text-sm">{message.content}</div>;

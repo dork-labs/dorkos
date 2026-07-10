@@ -13,6 +13,12 @@ interface WidgetRendererProps {
    * session target (e.g. the dev playground), where `agent` actions stay disabled.
    */
   sessionId?: string;
+  /**
+   * Whether this widget is rendered in the LATEST message of the conversation.
+   * Defaults to `true`. `false` supersedes the widget: its `agent` actions
+   * render inert so a stale board can't accept a move.
+   */
+  isLatestMessage?: boolean;
 }
 
 /**
@@ -23,11 +29,16 @@ interface WidgetRendererProps {
  *
  * @param document - A validated {@link WidgetDocument}
  * @param sessionId - Session that rendered the widget (enables `agent` actions)
+ * @param isLatestMessage - Whether the widget is in the latest message (else superseded)
  */
-export function WidgetRenderer({ document, sessionId }: WidgetRendererProps) {
+export function WidgetRenderer({ document, sessionId, isLatestMessage }: WidgetRendererProps) {
   const motionOn = useWidgetMotion();
   return (
-    <WidgetActionProvider sessionId={sessionId} widgetTitle={document.title}>
+    <WidgetActionProvider
+      sessionId={sessionId}
+      widgetTitle={document.title}
+      isLatestMessage={isLatestMessage}
+    >
       <motion.section
         aria-label={document.title ?? 'Widget'}
         className="text-sm"

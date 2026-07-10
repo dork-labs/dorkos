@@ -9,6 +9,8 @@ import type { InteractiveToolHandle } from './types';
 interface MessageContextValue {
   sessionId: string;
   isStreaming: boolean;
+  /** Whether this message is the latest in the conversation (supersedes older widgets). */
+  isLatestMessage: boolean;
   activeToolCallId: string | null;
   onToolRef: ((handle: InteractiveToolHandle | null) => void) | undefined;
   focusedOptionIndex: number;
@@ -40,6 +42,7 @@ export function MessageProvider({
     [
       value.sessionId,
       value.isStreaming,
+      value.isLatestMessage,
       value.activeToolCallId,
       value.onToolRef,
       value.focusedOptionIndex,

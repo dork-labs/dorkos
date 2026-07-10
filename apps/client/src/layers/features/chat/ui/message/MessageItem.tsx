@@ -16,6 +16,8 @@ interface MessageItemProps {
   sessionId: string;
   isNew?: boolean;
   isStreaming?: boolean;
+  /** Whether this is the latest message in the conversation (supersedes older widgets). */
+  isLatestMessage?: boolean;
   /** The toolCallId of the currently active interactive tool (for keyboard shortcuts) */
   activeToolCallId?: string | null;
   /** Callback to register the active tool's imperative handle */
@@ -52,6 +54,7 @@ export function MessageItem({
   sessionId,
   isNew = false,
   isStreaming = false,
+  isLatestMessage = false,
   activeToolCallId = null,
   onToolRef,
   focusedOptionIndex = -1,
@@ -90,6 +93,7 @@ export function MessageItem({
       value={{
         sessionId,
         isStreaming,
+        isLatestMessage,
         activeToolCallId,
         onToolRef,
         focusedOptionIndex,

@@ -29,7 +29,7 @@ import { CompareNode } from './nodes/CompareNode';
 import { RatingNode } from './nodes/RatingNode';
 import { ButtonNode, InputField, SelectField, WidgetActionButton } from './nodes/ActionNodes';
 import { MoodNode } from './nodes/MoodNode';
-import { BoardNode } from './nodes/BoardNode';
+import { BoardNode } from './nodes/board';
 import { RevealNode } from './nodes/RevealNode';
 
 type NodeOf<T extends WidgetNode['type']> = Extract<WidgetNode, { type: T }>;

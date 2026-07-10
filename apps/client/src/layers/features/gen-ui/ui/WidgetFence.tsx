@@ -15,6 +15,12 @@ interface WidgetFenceProps {
    * actions can POST back to it. Supplied by the chat message pipeline.
    */
   sessionId?: string;
+  /**
+   * Whether the message hosting this fence is the latest in the conversation.
+   * Threaded down so a superseded widget renders its `agent` actions inert.
+   * Defaults to `true` (surfaces with no message context are always live).
+   */
+  isLatestMessage?: boolean;
 }
 
 /**
@@ -29,7 +35,7 @@ interface WidgetFenceProps {
  * so the widget never flickers back to a skeleton mid-conversation — it only ever
  * moves forward (skeleton → widget), updating in place when a newer parse succeeds.
  */
-export function WidgetFence({ code, isIncomplete, sessionId }: WidgetFenceProps) {
+export function WidgetFence({ code, isIncomplete, sessionId, isLatestMessage }: WidgetFenceProps) {
   const lastDocRef = useRef<WidgetDocument | null>(null);
 
   if (!isIncomplete) {
@@ -50,7 +56,11 @@ export function WidgetFence({ code, isIncomplete, sessionId }: WidgetFenceProps)
   if (lastDocRef.current) {
     return (
       <div className="my-2">
-        <WidgetRenderer document={lastDocRef.current} sessionId={sessionId} />
+        <WidgetRenderer
+          document={lastDocRef.current}
+          sessionId={sessionId}
+          isLatestMessage={isLatestMessage}
+        />
       </div>
     );
   }

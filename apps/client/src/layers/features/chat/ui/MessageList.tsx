@@ -150,8 +150,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const msg = messages[virtualRow.index];
             const isNew = historyCount !== null && virtualRow.index >= historyCount;
-            const isLastAssistant =
-              virtualRow.index === messages.length - 1 && msg.role === 'assistant';
+            const isLatestMessage = virtualRow.index === messages.length - 1;
+            const isLastAssistant = isLatestMessage && msg.role === 'assistant';
             const isStreaming = isLastAssistant && !!isTextStreaming;
 
             return (
@@ -173,6 +173,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   sessionId={sessionId}
                   isNew={isNew}
                   isStreaming={isStreaming}
+                  isLatestMessage={isLatestMessage}
                   activeToolCallId={activeToolCallId}
                   onToolRef={onToolRef}
                   focusedOptionIndex={focusedOptionIndex}
