@@ -20,7 +20,7 @@ vi.mock('@/layers/shared/model', () => ({
 
 vi.mock('@/layers/shared/lib', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
-  fireConfetti: vi.fn(),
+  fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
 }));
 
 const mockNavigate = vi.fn();
