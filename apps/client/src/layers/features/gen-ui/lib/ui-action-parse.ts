@@ -78,14 +78,19 @@ export function parseUiActionMessage(content: string): ParsedUiAction | null {
       if (inline && inline !== '(none)') {
         payload = tryParseJson(inline);
       } else if (!inline) {
-        // Multi-line JSON follows on the next lines (best-effort — the payload is
-        // never displayed, so a parse miss is harmless).
-        payload = tryParseJson(
-          lines
-            .slice(i + 1)
-            .join('\n')
-            .trim()
-        );
+        // Multi-line JSON follows on the next lines. Accumulate line by line and
+        // stop at the first complete JSON object, so a trailing directive line the
+        // formatter appends after the payload (added in the interaction-protocol
+        // fixes) is not swallowed into the parse.
+        let acc = '';
+        for (let j = i + 1; j < lines.length; j++) {
+          acc += (acc ? '\n' : '') + lines[j];
+          const candidate = tryParseJson(acc.trim());
+          if (candidate) {
+            payload = candidate;
+            break;
+          }
+        }
       }
       break;
     }
