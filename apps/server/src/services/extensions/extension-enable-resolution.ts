@@ -54,6 +54,11 @@ export function defaultsOn(id: string, core: Map<string, CoreExtensionInfo>): bo
  * core extension shipped on upgrade is absent from both lists and therefore
  * resolves to its declared default — no migration needed for the common case.
  *
+ * A LOCKED core extension (`canDisable: false`) is pinned to its default and
+ * ignores both lists: a deviation recorded before the lock shipped (e.g.
+ * Marketplace disabled while its toggle was still live, DOR-122) must not keep
+ * a required extension off.
+ *
  * @param id - Extension id.
  * @param config - The user's `{ enabled, disabled }` deviation lists.
  * @param core - Core-extension tier metadata keyed by id.
@@ -63,6 +68,8 @@ export function isEnabled(
   config: ExtensionsConfig,
   core: Map<string, CoreExtensionInfo>
 ): boolean {
+  const info = core.get(id);
+  if (info && !info.canDisable) return info.defaultEnabled;
   return defaultsOn(id, core) ? !config.disabled.includes(id) : config.enabled.includes(id);
 }
 

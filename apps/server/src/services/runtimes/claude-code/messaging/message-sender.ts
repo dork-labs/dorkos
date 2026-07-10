@@ -27,6 +27,7 @@ import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
+import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { resolveThinkingOptions, type ModelThinkingCapability } from './thinking-config.js';
 import { resolveEffectivePermissionMode } from './permission-mode-guard.js';
@@ -663,18 +664,28 @@ export async function* executeSdkQuery(
 
       // The `result` message marks turn completion. The subprocess is still alive
       // (the prompt stream is held open), so fetch the authoritative context-usage
-      // breakdown now — before this message maps to `done`, so the resulting
-      // `context_usage` event precedes `done` and survives the session-ID remap —
+      // breakdown AND the current subscription utilization now — before this
+      // message maps to `done`, so the resulting `context_usage` event precedes
+      // `done` and the terminal `session_status` carries `usage` (DOR-99) —
       // then release stdin so the process drains its trailing messages and exits.
       if (result.value.type === 'result' && session.activeQuery) {
-        try {
-          session.contextBreakdown = await fetchContextBreakdown(
-            session.activeQuery,
-            CONTEXT_USAGE_TIMEOUT_MS
-          );
-        } catch (err) {
-          logger.debug('[sendMessage] getContextUsage failed', { err });
-        }
+        const query = session.activeQuery;
+        const [breakdown, subscriptionUsage] = await Promise.all([
+          fetchContextBreakdown(query, CONTEXT_USAGE_TIMEOUT_MS).catch((err: unknown) => {
+            logger.debug('[sendMessage] getContextUsage failed', { err });
+            return undefined;
+          }),
+          fetchSubscriptionUsage(query, CONTEXT_USAGE_TIMEOUT_MS).catch((err: unknown) => {
+            logger.debug('[sendMessage] get_usage failed', { err });
+            return undefined;
+          }),
+        ]);
+        if (breakdown) session.contextBreakdown = breakdown;
+        // Hold the freshest utilization on the session so the result mapper
+        // stamps it onto the terminal session_status. `undefined` (API-key
+        // session, fetch failure) keeps the last known value — the item must
+        // never flicker back to cost-only between turns.
+        if (subscriptionUsage) session.lastSubscriptionUsage = subscriptionUsage;
         heldPrompt.close();
       }
 

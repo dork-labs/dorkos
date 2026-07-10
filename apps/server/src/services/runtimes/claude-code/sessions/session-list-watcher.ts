@@ -214,6 +214,17 @@ export function watchSessionList(
         await rescanDir(join(projectsRoot, entry.name));
       }
     } catch (err) {
+      // A missing projects root is the normal first-run state — Claude Code has
+      // never written a transcript on this machine, so there is nothing to list
+      // yet. The watch registered above stays armed and picks the directory up
+      // the moment the first session creates it; WARN is reserved for scans
+      // that fail on a root that exists (DOR-247).
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        logger.debug('[session-list-watcher] no sessions yet; projects directory not created', {
+          projectsRoot,
+        });
+        return;
+      }
       logger.warn('[session-list-watcher] initial scan failed', {
         projectsRoot,
         error: err instanceof Error ? err.message : String(err),

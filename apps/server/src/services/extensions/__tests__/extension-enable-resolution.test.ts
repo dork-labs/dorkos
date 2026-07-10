@@ -61,6 +61,24 @@ describe('isEnabled — deviations', () => {
   });
 });
 
+describe('isEnabled — locked core extensions (canDisable: false)', () => {
+  const LOCKED_ON: CoreExtensionInfo = {
+    id: 'marketplace',
+    defaultEnabled: true,
+    canDisable: false,
+  };
+
+  it('resolves on even with a stale entry in disabled (pre-lock deviation, DOR-122)', () => {
+    expect(
+      isEnabled('marketplace', { enabled: [], disabled: ['marketplace'] }, coreMap(LOCKED_ON))
+    ).toBe(true);
+  });
+
+  it('resolves to its default when absent from both lists', () => {
+    expect(isEnabled('marketplace', empty, coreMap(LOCKED_ON))).toBe(true);
+  });
+});
+
 describe('isEnabled — new core extension on upgrade (absent from both lists)', () => {
   it('newly-shipped default-on core resolves on', () => {
     const freshlyShipped: CoreExtensionInfo = {
