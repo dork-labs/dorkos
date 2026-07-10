@@ -20,10 +20,13 @@ DorkOS product media is a **general system**: one shot registry (`apps/e2e/captu
 ```bash
 pnpm --filter @dorkos/e2e capture                  # record + process (the full refresh)
 pnpm --filter @dorkos/e2e capture:record           # boot + drive + save raws to the library
+pnpm --filter @dorkos/e2e capture:record --shards N # same, but record on N parallel isolated stacks
 pnpm --filter @dorkos/e2e capture:process [run-id] # edit raws + apply overrides → product/ (default: latest)
 pnpm --filter @dorkos/e2e capture:archive <label>  # freeze the current published set under archive/<label>/
-pnpm --filter @dorkos/e2e test                     # unit tests: registry, aspect guard, override discovery
+pnpm --filter @dorkos/e2e test                     # unit tests: registry, partition, aspect guard, override discovery
 ```
+
+**`--shards N` (parallel record)** splits the shots across `N` fully isolated stacks — each its own `DORK_HOME` (`~/.dork-capture` for shard 0, `~/.dork-capture-<i>` after), server/Vite port pair (`4344`/`4343` + `i×10`), and browser — recorded at the same time, then merged into one run. The **process** phase is unchanged: a serial run and a sharded run produce the **same published asset set**. Default is `1` (the serial path). Reach for it to shorten a full re-record when the box has spare cores; 2 shards is the reliable win, and returns fall off past that once per-shard boot+seed overhead dominates. `--shards` also works on `capture` (only the record phase parallelizes). Details: `apps/e2e/capture/README.md` (Parallel capture).
 
 `capture` is fully reproducible. It runs both pipeline phases:
 
@@ -56,11 +59,12 @@ The pipeline behaves like an organized video editor: **raws and deliverables nev
 
 ## Architecture (files in `apps/e2e/capture/`)
 
-- `shots.ts` — **the shot registry** (source of truth): ids, kinds, frames, consumers, target dimensions, and the manifest snapshot projection.
+- `shots.ts` — **the shot registry** (source of truth): ids, kinds, frames, consumers, target dimensions, the manifest snapshot projection, and `partitionShots` (round-robin shot assignment for parallel records; the session-list shots `multi-session`/`mobile-sessions` and `agent-discovery` are pinned to shard 0 via `SHARD_0_PINNED_SHOTS`).
 - `config.ts` — ports, viewports, library/output/archive/overrides paths, and **all** deterministic demo data (fleet, tasks, pinned runs, sessions, prompt pool, canvas doc, discovery projects, marketplace registry). Everything a shot shows is pinned here; nothing depends on `Date.now()`.
-- `boot.ts` — spawns/tears down the test-mode server + Vite client, with an isolated `DORK_HOME` and a **directory boundary** confined to the capture world.
+- `boot.ts` — builds server deps once (`buildServerDeps`) and spawns/tears down the test-mode server + Vite client on this shard's ports, with an isolated `DORK_HOME` and a **directory boundary** confined to the capture world. Process-group teardown (`teardownAll`) leaves no orphaned ports.
 - `seed.ts` — pre-boot filesystem prep + post-boot API/DB seeding, all through real code paths.
-- `record.ts` / `process.ts` / `capture.ts` / `archive.ts` — the entry points (record raws, process raws + overrides, both, freeze an archive).
+- `record.ts` / `process.ts` / `capture.ts` / `archive.ts` — the entry points (record raws, process raws + overrides, both, freeze an archive). `record.ts` also orchestrates a `--shards N` parallel record: partition, spawn workers, merge.
+- `record-shard.ts` — one parallel-record worker: preps its isolated filesystem, boots its own stack, and captures only its assigned shots into the shared run (spawned by `record.ts`, never run by hand).
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
 - `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
 - `lib.ts` — shared Playwright plumbing: the theme init-script, the live-turn opener, the raw loop recorder with its head-trim marker, and the `attemptShot` skip guard.

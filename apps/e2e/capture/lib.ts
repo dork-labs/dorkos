@@ -98,21 +98,44 @@ export async function attempt(label: string, fn: () => Promise<void>): Promise<v
 /** Shot ids the record phase must not capture (a `skipAuto` override supplies them). */
 let autoSkip = new Set<string>();
 
+/**
+ * Shot ids this process is assigned to capture, or `null` for "capture
+ * everything". A serial record leaves it `null`; a parallel shard worker sets it
+ * to its partition so every other shot is skipped without driving its surface.
+ */
+let assignedShots: Set<string> | null = null;
+
 /** Set the shots the record phase skips; call once before capturing (see `record.ts`). */
 export function setAutoSkip(ids: Set<string>): void {
   autoSkip = ids;
 }
 
-/** True when a shot is flagged to skip automated capture (an override supplies it). */
-export function isShotSkipped(shotId: string): boolean {
-  return autoSkip.has(shotId);
+/**
+ * Restrict this process to a subset of shots (a parallel shard's partition).
+ * Pass `null` (the default) to capture every registered shot.
+ */
+export function setAssignedShots(ids: Set<string> | null): void {
+  assignedShots = ids;
+}
+
+/** True when this process is not assigned a shot (another shard captures it). */
+function isUnassigned(shotId: string): boolean {
+  return assignedShots !== null && !assignedShots.has(shotId);
 }
 
 /**
- * Like {@link attempt}, but keyed to a shot id: when that shot is flagged
- * `skipAuto` (a human override is its sole source), the capture is skipped
- * entirely and logged, so the record phase never wastes time driving a surface
- * whose media a person supplies by hand.
+ * True when a shot must not be captured by this process — either a human
+ * override supplies it (`skipAuto`) or it belongs to a different shard.
+ */
+export function isShotSkipped(shotId: string): boolean {
+  return autoSkip.has(shotId) || isUnassigned(shotId);
+}
+
+/**
+ * Like {@link attempt}, but keyed to a shot id: the capture is skipped entirely
+ * (and logged) when a human override supplies the shot (`skipAuto`), or when the
+ * shot belongs to another shard — so the record phase never wastes time driving
+ * a surface it is not responsible for.
  */
 export async function attemptShot(
   shotId: string,
@@ -123,6 +146,7 @@ export async function attemptShot(
     process.stdout.write(`  ⤿ ${label} skipped (override supplies it)\n`);
     return;
   }
+  if (isUnassigned(shotId)) return; // captured by another shard; stay quiet
   await attempt(label, fn);
 }
 

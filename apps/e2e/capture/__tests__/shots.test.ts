@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { SHOTS, getShot, isAutoSkipped, shotTargetDimensions, shotsManifest } from '../shots.js';
+import {
+  SHOTS,
+  getShot,
+  isAutoSkipped,
+  partitionShots,
+  SHARD_0_PINNED_SHOTS,
+  shotTargetDimensions,
+  shotsManifest,
+} from '../shots.js';
 
 /**
  * Unit tests for the shot registry — the pipeline's source of truth. These pin
@@ -64,6 +72,55 @@ describe('shot registry', () => {
         width: 390,
         height: 844,
       });
+    });
+  });
+
+  describe('partitionShots', () => {
+    it('assigns every shot exactly once across shards', () => {
+      for (const shardCount of [1, 2, 3, 5]) {
+        const buckets = partitionShots(SHOTS, shardCount);
+        expect(buckets).toHaveLength(shardCount);
+        const all = buckets.flat();
+        expect(all).toHaveLength(SHOTS.length);
+        expect(new Set(all)).toEqual(new Set(SHOTS.map((s) => s.id)));
+      }
+    });
+
+    it('puts every shot on shard 0 when shardCount is 1', () => {
+      const [only] = partitionShots(SHOTS, 1);
+      expect(only).toEqual(SHOTS.map((s) => s.id));
+    });
+
+    it('pins every SHARD_0_PINNED_SHOTS entry to shard 0 for any shard count', () => {
+      for (const shardCount of [2, 3, 4, 5]) {
+        const buckets = partitionShots(SHOTS, shardCount);
+        for (const pinned of SHARD_0_PINNED_SHOTS) {
+          expect(buckets[0]).toContain(pinned);
+          for (let i = 1; i < shardCount; i++) {
+            expect(buckets[i]).not.toContain(pinned);
+          }
+        }
+      }
+    });
+
+    it('pins the session-list surfaces and agent-discovery', () => {
+      // The density (multi-session, mobile-sessions) and onboarding
+      // (agent-discovery) shots must ride one stack's accumulated state.
+      expect(SHARD_0_PINNED_SHOTS).toEqual(['multi-session', 'mobile-sessions', 'agent-discovery']);
+      for (const id of SHARD_0_PINNED_SHOTS) expect(getShot(id)).toBeDefined();
+    });
+
+    it('spreads the unpinned shots round-robin within one of each other', () => {
+      const buckets = partitionShots(SHOTS, 3);
+      const pinned = new Set(SHARD_0_PINNED_SHOTS);
+      const sizes = buckets.map((b, i) =>
+        i === 0 ? b.filter((id) => !pinned.has(id)).length : b.length
+      );
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    });
+
+    it('is deterministic for a given shard count', () => {
+      expect(partitionShots(SHOTS, 3)).toEqual(partitionShots(SHOTS, 3));
     });
   });
 });

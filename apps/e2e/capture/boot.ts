@@ -68,23 +68,72 @@ interface Managed {
   stop(): void;
 }
 
+/**
+ * Every process this module has spawned and not yet stopped. Tracked so
+ * {@link teardownAll} can guarantee nothing is left running — including a stack
+ * still mid-boot when a shard worker is asked to abort.
+ */
+const active: Managed[] = [];
+
 function run(command: string, label: string): Managed {
+  // A new process group (`detached`) so `stop()` can signal the whole subtree.
+  // `sh -c 'a && b'` does not forward SIGTERM to the running child, so killing
+  // the sh PID alone would orphan the server/Vite process — a group kill won't.
   const child = spawn('sh', ['-c', command], {
     cwd: REPO_ROOT,
     env: baseEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   // Surface fatal output but stay quiet otherwise — capture logs are noisy.
   child.stderr?.on('data', (buf: Buffer) => {
     const line = buf.toString();
     if (/error|fatal|EADDRINUSE/i.test(line)) process.stderr.write(`[${label}] ${line}`);
   });
-  return {
+  const managed: Managed = {
     child,
     stop() {
-      if (!child.killed) child.kill('SIGTERM');
+      const idx = active.indexOf(managed);
+      if (idx >= 0) active.splice(idx, 1);
+      if (child.pid === undefined) return;
+      try {
+        // Negative pid → signal the whole process group (sh + server/Vite).
+        process.kill(-child.pid, 'SIGTERM');
+      } catch {
+        // Already gone.
+      }
     },
   };
+  active.push(managed);
+  return managed;
+}
+
+/**
+ * Stop every process this module has spawned, whatever state boot is in. Used by
+ * a shard worker's signal handler so an orchestrator-initiated abort can never
+ * leave an orphaned server or Vite holding a port.
+ */
+export function teardownAll(): void {
+  while (active.length > 0) active[active.length - 1]!.stop();
+}
+
+/**
+ * Build the server's workspace dependencies once. Split from {@link bootStack}
+ * so a parallel record builds a single time up front and then boots N stacks
+ * from the shared build output, instead of rebuilding per shard.
+ */
+export function buildServerDeps(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('sh', ['-c', 'turbo run build --filter=@dorkos/server'], {
+      cwd: REPO_ROOT,
+      env: baseEnv(),
+      stdio: ['ignore', 'ignore', 'inherit'],
+    });
+    child.on('error', reject);
+    child.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`server build failed (exit ${code})`))
+    );
+  });
 }
 
 /** Handles for a running capture stack. */
@@ -99,16 +148,13 @@ const SERVER_TIMEOUT_MS = 240_000;
 const CLIENT_TIMEOUT_MS = 120_000;
 
 /**
- * Boot the capture stack: build server deps, start the test-mode API server and
- * a Vite client, and resolve once both answer. The caller must `teardown()`.
+ * Boot the capture stack: start the test-mode API server and a Vite client on
+ * this shard's ports, and resolve once both answer. Server workspace deps must
+ * already be built ({@link buildServerDeps}); the server runs from source via
+ * tsx so scenario edits stay live. The caller must `teardown()`.
  */
 export async function bootStack(): Promise<Stack> {
-  // Build workspace dependencies once (server runs from source via tsx, so the
-  // scenario edits are live, but @dorkos/* deps must have fresh dists).
-  const server = run(
-    'turbo run build --filter=@dorkos/server && pnpm --filter @dorkos/server exec tsx src/index.ts',
-    'server'
-  );
+  const server = run('pnpm --filter @dorkos/server exec tsx src/index.ts', 'server');
   const client = run('pnpm --filter @dorkos/client exec vite', 'client');
 
   const stack: Stack = {
