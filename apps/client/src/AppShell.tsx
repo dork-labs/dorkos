@@ -315,7 +315,10 @@ export function AppShell() {
                       <header
                         className={cn(
                           'relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300',
-                          'desktop-darwin:drag-region',
+                          // Literal class, not a `desktop-darwin:` variant utility — see
+                          // the `.app-drag-region` comment in index.css. Inert without the
+                          // `.desktop-darwin` ancestor class, so it's safe unconditionally.
+                          'app-drag-region',
                           // When the sidebar is collapsed, TitlebarDragStrip's
                           // traffic-light clearance collapses with it — pad the
                           // header itself so its content doesn't sit under the
