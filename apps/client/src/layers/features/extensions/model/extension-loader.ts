@@ -8,6 +8,7 @@ import { createExtensionAPI } from './extension-api-factory';
 import type { ExtensionAPIDeps, LoadedExtension } from './types';
 import { createElement } from 'react';
 import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSettingsPanel';
+import { extensionApiUrl } from './extension-api-url';
 
 /**
  * Fetch the extension list from the server.
@@ -16,7 +17,7 @@ import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSetti
  * proceed safely without extensions.
  */
 async function fetchExtensions(): Promise<ExtensionRecordPublic[]> {
-  const res = await fetch('/api/extensions');
+  const res = await fetch(extensionApiUrl('/extensions'));
   if (!res.ok) {
     console.error('[extensions] Failed to fetch extension list:', res.status);
     return [];
@@ -31,7 +32,9 @@ async function fetchExtensions(): Promise<ExtensionRecordPublic[]> {
  */
 async function importBundle(id: string): Promise<ExtensionModule | null> {
   try {
-    return (await import(/* @vite-ignore */ `/api/extensions/${id}/bundle`)) as ExtensionModule;
+    return (await import(
+      /* @vite-ignore */ extensionApiUrl(`/extensions/${id}/bundle`)
+    )) as ExtensionModule;
   } catch (err) {
     console.error(`[extensions] Failed to import ${id}:`, err);
     return null;
@@ -48,7 +51,7 @@ async function initServerExtension(rec: ExtensionRecordPublic): Promise<void> {
   if (!rec.hasServerEntry && !rec.hasDataProxy) return;
 
   try {
-    const res = await fetch(`/api/extensions/${rec.id}/init-server`, {
+    const res = await fetch(extensionApiUrl(`/extensions/${rec.id}/init-server`), {
       method: 'POST',
     });
     if (!res.ok) {
@@ -257,7 +260,7 @@ export class ExtensionLoader {
         // The browser's module registry keys by URL, so a new query string
         // yields a new module instance distinct from the pre-reload one.
         const module = (await import(
-          /* @vite-ignore */ `/api/extensions/${id}/bundle?t=${Date.now()}`
+          /* @vite-ignore */ extensionApiUrl(`/extensions/${id}/bundle?t=${Date.now()}`)
         )) as ExtensionModule;
 
         const { api, cleanups } = createExtensionAPI(id, this.deps);

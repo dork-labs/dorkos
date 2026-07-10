@@ -10,6 +10,7 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/layers/shared/model';
+import { extensionApiUrl } from './extension-api-url';
 
 /** Delay between toast and page reload (ms). */
 const RELOAD_DELAY_MS = 1500;
@@ -30,7 +31,7 @@ interface CwdChangedResponse {
  */
 async function notifyCwdChanged(cwd: string | null): Promise<CwdChangedResponse | null> {
   try {
-    const res = await fetch('/api/extensions/cwd-changed', {
+    const res = await fetch(extensionApiUrl('/extensions/cwd-changed'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cwd }),
