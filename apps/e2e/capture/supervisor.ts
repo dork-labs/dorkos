@@ -2,6 +2,7 @@ import net from 'net';
 import fs from 'fs';
 import path from 'path';
 import { CAPTURE_HOME, SERVER_PORT, VITE_PORT } from './config.js';
+import { sleep } from './lib.js';
 
 /**
  * Crash-safe supervision state for a capture stack: a pidfile recording the live
@@ -31,11 +32,6 @@ const RECONCILE_TERM_WAIT_MS = 400;
 const RECONCILE_SETTLE_MS = 400;
 /** How long a port probe waits for a connection before calling the port free. */
 const PORT_PROBE_TIMEOUT_MS = 500;
-
-/** Sleep for `ms` milliseconds. */
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 /**
  * Append a line to the capture run log. Recreates the log directory first and
@@ -139,10 +135,12 @@ export function isPortInUse(port: number): Promise<boolean> {
 }
 
 /**
- * Terminate a capture stack a previous run left orphaned. Reads the pidfile
- * (proof the groups are ours), escalates SIGTERM→SIGKILL over its groups, then
- * clears the pidfile and lets the OS release the ports. A no-op when there is no
- * pidfile — i.e. after any clean run.
+ * Terminate a capture stack a previous run left orphaned. Reads the pidfile —
+ * the group pids the previous run recorded as its own; PID reuse between that
+ * run's crash and this reconcile is a small residual risk we accept — escalates
+ * SIGTERM→SIGKILL over those groups, then clears the pidfile and lets the OS
+ * release the ports. A no-op when there is no pidfile — i.e. after any clean
+ * run.
  *
  * MUST run before the record phase wipes `CAPTURE_HOME`, since that wipe removes
  * the very pidfile this reads.
