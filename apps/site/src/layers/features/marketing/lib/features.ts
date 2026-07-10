@@ -381,6 +381,27 @@ export const features: Feature[] = [
     sortOrder: 4,
   },
   {
+    slug: 'workbench',
+    name: 'Workbench',
+    product: 'console',
+    category: 'visualization',
+    tagline: 'A terminal, your files, and a browser, right beside the chat',
+    description:
+      'Stop alt-tabbing to check what your agent did. Open a real terminal, browse and edit project files, and preview pages without leaving DorkOS.',
+    status: 'ga',
+    benefits: [
+      "Run a real shell in your session's working directory",
+      'Open several terminals in tabs; they survive a page refresh',
+      'Browse, create, rename, and edit project files in place',
+      'Preview any URL, local page, or dev server in an embedded browser',
+      'Agents can open files, reveal the terminal, or drive the browser',
+    ],
+    moment:
+      'Your agent says the tests pass. You pop open the Terminal tab, run one command to double-check, and close it, without ever leaving the session.',
+    relatedFeatures: ['canvas', 'chat-interface'],
+    sortOrder: 5,
+  },
+  {
     slug: 'tool-approval',
     name: 'Tool Approval',
     product: 'console',
@@ -749,7 +770,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'Turn on a tunnel with one click in Settings',
-      'Get a secure web address, protected by a password if you want',
+      'Get a secure web address, gated by owner login',
       'Scan a QR code to open it on your phone instantly',
       'Works with Relay, so you can approve actions remotely too',
     ],
