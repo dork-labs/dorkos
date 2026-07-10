@@ -4,7 +4,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { CanvasHeader } from './CanvasHeader';
-import { CanvasUrlContent } from './CanvasUrlContent';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
@@ -37,8 +36,9 @@ function CanvasRenderer({
   onContentChange: (content: UiCanvasContent) => void;
 }) {
   switch (content.type) {
+    // `url` and `browser` share one renderer (DOR-233): every canvas webpage gets
+    // navigation chrome and origin isolation, whichever content type opened it.
     case 'url':
-      return <CanvasUrlContent content={content} />;
     case 'browser':
       return <CanvasBrowserContent content={content} />;
     case 'markdown':

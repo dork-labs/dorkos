@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyBrowserTarget,
+  describeAddress,
   normalizeAddressInput,
   WORKBENCH_SANDBOX_ISOLATED,
   WORKBENCH_SANDBOX_EXTERNAL,
@@ -70,5 +71,64 @@ describe('normalizeAddressInput', () => {
   it('leaves an explicit scheme or a local path untouched', () => {
     expect(normalizeAddressInput('https://a.test')).toBe('https://a.test');
     expect(normalizeAddressInput('./index.html')).toBe('./index.html');
+    expect(normalizeAddressInput('/abs/index.html')).toBe('/abs/index.html');
+  });
+
+  it('leaves a slash-bearing relative path (non-domain first segment) untouched', () => {
+    // `demo/index.html` is a local file, not the host `demo` — do not add a scheme.
+    expect(normalizeAddressInput('demo/index.html')).toBe('demo/index.html');
+  });
+
+  it('still schemes a slash-bearing public URL whose first segment is a domain', () => {
+    expect(normalizeAddressInput('example.com/docs')).toBe('https://example.com/docs');
+  });
+});
+
+describe('describeAddress', () => {
+  it('strips the scheme and splits host (emphasized) from path (dimmed)', () => {
+    expect(describeAddress('https://example.com/docs/guide?x=1')).toEqual({
+      kind: 'url',
+      host: 'example.com',
+      rest: '/docs/guide?x=1',
+    });
+  });
+
+  it('strips a leading www. from the host', () => {
+    expect(describeAddress('https://www.example.com/')).toEqual({
+      kind: 'url',
+      host: 'example.com',
+      rest: '',
+    });
+  });
+
+  it('keeps the port — it is the identity of a dev server', () => {
+    expect(describeAddress('http://localhost:5173/foo')).toEqual({
+      kind: 'url',
+      host: 'localhost:5173',
+      rest: '/foo',
+    });
+  });
+
+  it('renders a root path as empty rest (host only)', () => {
+    expect(describeAddress('https://example.com')).toEqual({
+      kind: 'url',
+      host: 'example.com',
+      rest: '',
+    });
+  });
+
+  it('shows a local file as its logical path (never a token URL)', () => {
+    expect(describeAddress('demo/index.html')).toEqual({ kind: 'local', path: 'demo/index.html' });
+    expect(describeAddress('file:///proj/dist/index.html')).toEqual({
+      kind: 'local',
+      path: '/proj/dist/index.html',
+    });
+  });
+
+  it('falls back to raw text for a blocked target', () => {
+    expect(describeAddress('javascript:alert(1)')).toEqual({
+      kind: 'raw',
+      text: 'javascript:alert(1)',
+    });
   });
 });

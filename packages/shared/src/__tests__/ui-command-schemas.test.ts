@@ -209,13 +209,17 @@ describe('UiCanvasContentSchema', () => {
     expect(() => UiCanvasContentSchema.parse({ type: 'url', url: 'not-a-url' })).toThrow();
   });
 
-  it('accepts valid URL with optional sandbox override', () => {
+  it('accepts a valid URL and drops the retired sandbox field (DOR-233)', () => {
+    // `url` now renders in the embedded browser (same renderer as `browser`),
+    // which derives its sandbox from target classification — an agent-supplied
+    // `sandbox` is no longer part of the contract and is stripped on parse.
     const result = UiCanvasContentSchema.parse({
       type: 'url',
       url: 'https://example.com',
       sandbox: 'allow-scripts',
     });
-    expect(result).toMatchObject({ type: 'url', sandbox: 'allow-scripts' });
+    expect(result).toEqual({ type: 'url', url: 'https://example.com' });
+    expect(result).not.toHaveProperty('sandbox');
   });
 
   it('accepts image content with an optional alt', () => {
