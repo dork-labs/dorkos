@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { getSessionInfo } from '@anthropic-ai/claude-agent-sdk';
 import type {
   Session,
@@ -13,6 +12,7 @@ import { parseTranscript, extractTextContent, stripSystemTags } from './transcri
 import type { TranscriptLine } from './transcript-parser.js';
 import { parseTasks } from './task-reader.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
+import { resolveClaudeConfigDir } from '../claude-config-dir.js';
 import { TRANSCRIPT } from '../../../../config/constants.js';
 import { validateBoundary } from '../../../../lib/boundary.js';
 import { logger } from '../../../../lib/logger.js';
@@ -21,7 +21,8 @@ export type { HistoryMessage, HistoryToolCall };
 
 /**
  * Single source of truth for session data — reads SDK JSONL transcript files
- * from `~/.claude/projects/{slug}/`.
+ * from `$CLAUDE_CONFIG_DIR/projects/{slug}/` (defaulting to
+ * `~/.claude/projects/{slug}/`; see {@link resolveClaudeConfigDir}).
  *
  * Provides session listing, metadata extraction, full message history parsing,
  * task state reconstruction, and incremental byte-offset reading for sync.
@@ -45,11 +46,12 @@ export class TranscriptReader {
   }
 
   /**
-   * The SDK projects root (`~/.claude/projects`) holding one slug directory per
-   * working directory. The fleet-wide session-list watcher watches this root.
+   * The SDK projects root (`$CLAUDE_CONFIG_DIR/projects`, defaulting to
+   * `~/.claude/projects`) holding one slug directory per working directory.
+   * The fleet-wide session-list watcher watches this root.
    */
   getProjectsRoot(): string {
-    return path.join(os.homedir(), '.claude', 'projects');
+    return path.join(resolveClaudeConfigDir(), 'projects');
   }
 
   /** Resolve the SDK transcripts directory for a given vault root. */
@@ -417,7 +419,7 @@ export class TranscriptReader {
 
   /** Resolve the SDK todo file path for a given session ID. */
   private getTodoFilePath(sessionId: string): string {
-    return path.join(os.homedir(), '.claude', 'todos', `${sessionId}.json`);
+    return path.join(resolveClaudeConfigDir(), 'todos', `${sessionId}.json`);
   }
 
   /**

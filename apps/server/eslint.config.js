@@ -68,6 +68,11 @@ export default defineConfig([
       'src/lib/dork-home.ts',
       'src/lib/logger.ts',
       'src/routes/tunnel.ts',
+      // CLAUDE_CONFIG_DIR is the Claude Agent SDK's own env var (not a DorkOS
+      // config value env.ts should model), read here to mirror the SDK
+      // subprocess's own config-dir resolution 1:1 (DOR-250). Same rationale
+      // as tunnel.ts's NGROK_AUTHTOKEN above.
+      'src/services/runtimes/claude-code/claude-config-dir.ts',
     ],
     rules: { 'no-restricted-syntax': 'off' },
   },
