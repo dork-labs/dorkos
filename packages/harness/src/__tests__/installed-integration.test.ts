@@ -176,6 +176,36 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     );
   });
 
+  it('skips a CC-native plugin whose plugin.json name is not a valid slug (no crash, no projection)', () => {
+    // `dorkos harness sync` scans `.dork/plugins/` independently of install-time
+    // validation, and the plugin name is interpolated into projector paths — an
+    // arbitrary string (path traversal, spaces, uppercase) must never get through.
+    repo = mkdtempSync(join(tmpdir(), 'harness-cc-badname-'));
+    mkdirSync(join(repo, '.agents'), { recursive: true });
+    writeFileSync(
+      join(repo, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
+    );
+
+    const plugin = join(repo, '.dork', 'plugins', 'evil');
+    mkdirSync(join(plugin, '.claude-plugin'), { recursive: true });
+    writeFileSync(
+      join(plugin, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: '../escape zone', version: '1.0.0' })
+    );
+    mkdirSync(join(plugin, 'skills', 'sneaky'), { recursive: true });
+    writeFileSync(join(plugin, 'skills', 'sneaky', 'SKILL.md'), '# sneaky\n');
+
+    const plan = project(repo);
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+
+    // The plugin is skipped entirely: nothing planned or applied from it.
+    const sources = [...plan.actions, ...plan.drops].map((a) => a.source ?? '');
+    expect(sources.some((s) => s.includes('.dork/plugins/evil'))).toBe(false);
+    expect(result.conflicts).toEqual([]);
+    expect(existsSync(join(repo, '.agents', 'skills'))).toBe(false);
+  });
+
   it('projects a project-scoped installed plugin with NO dorkHome (offline `dorkos harness sync`)', () => {
     // Regression for the wiring bug where `project()` gated ALL installed-plugin
     // scanning behind `opts.dorkHome`: an offline CLI run (no ~/.dork, so

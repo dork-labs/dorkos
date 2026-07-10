@@ -21,7 +21,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
+import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
 import { scanSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 
@@ -123,8 +123,12 @@ function readPluginManifest(pluginDir: string): PluginIdentity | undefined {
  * Derive a {@link PluginIdentity} from a Claude Code plugin manifest
  * (`.claude-plugin/plugin.json`). Mirrors the marketplace validator's
  * CC-manifest synthesis: a CC plugin maps to `type: 'plugin'` with no
- * declared layers. Only the `name` is required; anything unreadable or
- * nameless is skipped (`undefined`).
+ * declared layers. Only the `name` is required, and it must pass the same
+ * kebab-case {@link PackageNameSchema} a synthesized `.dork/manifest.json`
+ * would — the projector interpolates it into filesystem paths, and `dorkos
+ * harness sync` scans `.dork/plugins/` independently of install-time
+ * validation, so an arbitrary string must never get through. Anything
+ * unreadable, nameless, or slug-invalid is skipped (`undefined`).
  */
 function readCcPluginManifest(pluginDir: string): PluginIdentity | undefined {
   const ccManifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
@@ -136,9 +140,9 @@ function readCcPluginManifest(pluginDir: string): PluginIdentity | undefined {
     return undefined;
   }
   if (raw === null || typeof raw !== 'object') return undefined;
-  const name = (raw as { name?: unknown }).name;
-  if (typeof name !== 'string' || name.length === 0) return undefined;
-  return { name, type: 'plugin', layers: [] };
+  const name = PackageNameSchema.safeParse((raw as { name?: unknown }).name);
+  if (!name.success) return undefined;
+  return { name: name.data, type: 'plugin', layers: [] };
 }
 
 /**
