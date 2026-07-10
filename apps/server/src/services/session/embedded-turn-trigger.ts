@@ -47,7 +47,11 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
       // Mirror the HTTP route: the caller-chosen cwd is authoritative —
       // overwrite any earlier first-writer-wins stamp from a subscribe-path
       // default so liveness aggregates under the correct project.
-      const projector = getOrCreateProjector(sessionId, cwd);
+      // Persist completed turns for LOG-BACKED runtimes (DOR-189), mirroring
+      // the HTTP route; claude-code opts out.
+      const projector = getOrCreateProjector(sessionId, cwd, {
+        persist: runtime.getCapabilities().logBackedHistory === true,
+      });
       if (cwd !== undefined) projector.cwd = cwd;
 
       return triggerTurn({

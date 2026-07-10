@@ -6,7 +6,7 @@
       "slug": "durable-event-log",
       "title": "Durable EventLog: stateless-runtime transcripts survive server restart",
       "created": "2026-07-09",
-      "status": "specified",
+      "status": "implemented",
       "adr": "260710-024641",
       "linearIssue": "DOR-189"
     },

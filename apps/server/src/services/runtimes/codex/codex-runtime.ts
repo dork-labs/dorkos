@@ -58,8 +58,9 @@ import type {
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
+import { getOrCreateProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
+import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
@@ -551,25 +552,27 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   /**
-   * Completed messages reconstructed from the DorkOS-owned EventLog — the
-   * SDK has no thread-read API, so the projector is the only history source.
-   * `peekProjector` (not get-or-create): an id that never streamed has no
-   * history, and minting a projector for it would pin registry garbage.
+   * Completed messages reconstructed from the DorkOS-owned event stream, read
+   * DURABLY from the `session_events` store (DOR-189) so history survives a
+   * server restart — the SDK has no thread-read API. Needs no live projector:
+   * the store is the completed-history source whether or not a projector is up
+   * (each turn is flushed on `turn_end`), which fixes the post-restart
+   * empty-transcript bug (was `peekProjector` → `[]`).
    */
   async getMessageHistory(_projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    const projector = peekProjector(sessionId);
-    return projector ? reconstructHistoryFromEvents(projector.replayFrom(0)) : [];
+    return readLogBackedHistory(sessionId);
   }
 
   /**
    * @inheritdoc
    *
    * Built entirely from the DorkOS-owned projection: completed `messages` are
-   * reconstructed from the EventLog, and the live turn/status/pending/cursor
-   * come from the same projector — the exact test-mode pattern (ADR-0263).
+   * reconstructed from the EventLog (durably hydrated on projector creation via
+   * `{ persist: true }`), and the live turn/status/pending/cursor come from the
+   * same projector — the exact test-mode pattern (ADR-0263).
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd);
+    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: true });
     return projector.buildSnapshot(() =>
       Promise.resolve(reconstructHistoryFromEvents(projector.replayFrom(0)))
     );
@@ -588,7 +591,10 @@ export class CodexRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd).subscribe(sinceCursor, signal);
+    return getOrCreateProjector(sessionId, ctx.cwd, { persist: true }).subscribe(
+      sinceCursor,
+      signal
+    );
   }
 
   /**

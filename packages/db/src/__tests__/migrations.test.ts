@@ -47,6 +47,9 @@ describe('Database Migrations', () => {
       'relay_index',
       'relay_traces',
       'session',
+      // Durable completed-turn event stream for log-backed runtimes
+      // (DOR-189, migration 0026).
+      'session_events',
       'session_metadata',
       'user',
       'verification',

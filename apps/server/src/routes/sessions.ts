@@ -429,7 +429,14 @@ router.post(
     // earlier stamp from a subscribe-path default (an /events connect without
     // ?cwd falls back to the workspace root, which would otherwise pin this
     // session's liveness to the wrong agent first-writer-wins).
-    const projector = getOrCreateProjector(sessionId, effectiveCwd);
+    // Persist the completed-turn stream for LOG-BACKED runtimes (DOR-189) so
+    // their history survives a server restart; claude-code opts out (its
+    // transcript is SDK JSONL). Enabling here — before the turn is fed —
+    // guarantees the turn_end flush regardless of whether an /events subscribe
+    // has already minted (and persistence-enabled) the projector.
+    const projector = getOrCreateProjector(sessionId, effectiveCwd, {
+      persist: runtime.getCapabilities().logBackedHistory === true,
+    });
     if (effectiveCwd !== undefined) projector.cwd = effectiveCwd;
 
     // Trigger the detached turn. The projector is keyed by the client-facing id

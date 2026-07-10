@@ -9,6 +9,7 @@ export default defineConfig({
     './src/schema/mesh.ts',
     './src/schema/sessions.ts',
     './src/schema/codex.ts',
+    './src/schema/session-events.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
   ],

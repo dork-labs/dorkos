@@ -35,6 +35,9 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPlugins: false,
   // Test-mode injects nothing natively; the assembler bag is rendered verbatim.
   nativeContext: [],
+  // Stateless: completed history lives only in the DorkOS EventLog, so the
+  // platform persists it durably (DOR-189) — the conformance/e2e vehicle.
+  logBackedHistory: true,
   permissionModes: {
     supported: true,
     default: 'always-allow',

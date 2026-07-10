@@ -41,11 +41,25 @@ Two architectural decisions shape an adapter. Decide both before writing code.
 
 **Where does session history live?** (ADR-0310: storage is always runtime-owned; there is no unified DorkOS transcript store)
 
-| Backend storage               | `getMessageHistory` / `listSessions` strategy   | Worked example                            |
-| ----------------------------- | ----------------------------------------------- | ----------------------------------------- |
-| Native store the SDK can read | Serve from the SDK; EventLog as fallback        | `opencode/` (SDK reads its SQLite store)  |
-| No listing/reading API        | Stateless: serve from the DorkOS-owned EventLog | `codex/` (`reconstructHistoryFromEvents`) |
-| Native transcript files       | Parse them directly                             | `claude-code/` (JSONL)                    |
+| Backend storage               | `getMessageHistory` / `listSessions` strategy   | Worked example                           |
+| ----------------------------- | ----------------------------------------------- | ---------------------------------------- |
+| Native store the SDK can read | Serve from the SDK; EventLog as fallback        | `opencode/` (SDK reads its SQLite store) |
+| No listing/reading API        | Stateless: serve from the DorkOS-owned EventLog | `codex/` (`readLogBackedHistory`)        |
+| Native transcript files       | Parse them directly                             | `claude-code/` (JSONL)                   |
+
+**Log-backed history is durable** (ADR 260710-024641, DOR-189): a runtime whose
+history reconstructs from the DorkOS EventLog declares `logBackedHistory: true`
+in its capabilities. The platform then persists each completed turn to the
+SQLite `session_events` store on `turn_end` (turn-granular, never per delta),
+lazily rehydrates a fresh projector — restoring `seq` continuity — and
+`getMessageHistory` reads durably via `readLogBackedHistory`
+(`apps/server/src/services/session/log-backed-history.ts`), so transcripts
+survive a server restart with no live projector. Runtimes with their own native
+transcripts (claude-code JSONL) must NOT declare it — their EventLog is
+gap-replay overflow only, and persisting it would double-store. On the adapter's
+read paths, pass `{ persist: true }` to `getOrCreateProjector` (see
+`codex-runtime.ts`); the trigger path enables it automatically from the
+capability flag.
 
 ## The AgentRuntime Contract
 
@@ -154,6 +168,8 @@ runtimeConformance(() => new MyRuntime({ /* fresh isolated deps per test */ }), 
 ```
 
 `runtimeConformance(makeRuntime, opts)` registers a `describe` block asserting session lifecycle, StreamEvent well-formedness and the terminal `done`, interrupt semantics, history shape, `RuntimeCapabilities` structure (including the permission-modes contract), and `DependencyCheck` validity. The factory runs once per test; declare legitimate cross-runtime differences via `RuntimeConformanceOpts` (`name`, `projectDir`, `permissionMode`, `expectHistory`, `messageContent`) instead of weakening assertions. `test-mode/__tests__/conformance.test.ts` is the minimal wiring; `codex/__tests__/conformance.test.ts` is the full pattern.
+
+A runtime that declares `logBackedHistory: true` must also pass the `durableHistory` opt — wire it to `driveDurableTurn` (`apps/server/src/services/session/__tests__/durable-turn-harness.ts`), which runs one real turn through the projector → durable store path, drops the projector (the restart analog), and asserts history reconstructs from the store (DOR-189). All three log-backed suites show the wiring.
 
 **The mocking stance (non-negotiable): CI must never require the backend binary.** Mock the SDK with recorded fixture events and mock the dependency probe so nothing spawns. For local end-to-end verification, add an env-gated live smoke in the _same file_, the way Codex does: hoist a `LIVE` flag with `vi.hoisted(() => process.env.DORKOS_<NAME>_LIVE === '1')`, have each `vi.mock` factory return `importOriginal()` when live, switch `projectDir` to a real temp dir, and raise timeouts. The identical assertions then run against real turns:
 

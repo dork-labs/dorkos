@@ -41,6 +41,9 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsQuestionPrompt: false,
   supportsPlugins: false,
   nativeContext: [],
+  // The EventLog is the fallback history source when the native sidecar read
+  // fails/unbinds, so the platform persists it durably (DOR-189).
+  logBackedHistory: true,
   permissionModes: {
     supported: true,
     // Conservative: approval-required (matches the sidecar ask-ruleset).

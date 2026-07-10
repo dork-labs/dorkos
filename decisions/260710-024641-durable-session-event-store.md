@@ -73,3 +73,15 @@ resume stays a non-goal: `assertResumable` → cold-snapshot remains the guarant
   restart (no durable source to recover from).
 - Disk grows with active log-backed sessions (bounded per session by the trim);
   turns beyond the retention cap are dropped from durable history by design.
+
+## Relationships
+
+- **Amends ADR-0309 (Codex adapter):** its known limitation "history
+  reconstructs from the EventLog … past sessions are not rediscovered after a
+  DorkOS server restart" is now half-closed — completed-turn **history**
+  survives a restart via the durable `session_events` store. Only session
+  _rediscovery_ beyond the durable `codex_threads` map remains SDK-limited.
+- **Refines ADR-0310 (runtime-owned session storage):** the durable mechanism
+  is shared session-service infrastructure; the persist-or-not **policy** stays
+  per-runtime (`logBackedHistory` capability + `{ persist: true }` opt-in), so
+  no unified transcript store is introduced.

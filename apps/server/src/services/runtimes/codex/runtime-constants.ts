@@ -40,6 +40,9 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsQuestionPrompt: false,
   supportsPlugins: false,
   nativeContext: [],
+  // History reconstructs from the DorkOS EventLog (no thread-read API), so the
+  // platform persists it to the durable session-event store (DOR-189).
+  logBackedHistory: true,
   permissionModes: {
     supported: true,
     // Matches `codex exec`'s own default posture (read-only sandbox).

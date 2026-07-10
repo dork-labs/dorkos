@@ -30,6 +30,7 @@ import path from 'node:path';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { makeMockThread, codexFailedTurn, codexSimpleTurn } from './codex-scenarios.js';
+import { driveDurableTurn } from '../../../session/__tests__/durable-turn-harness.js';
 
 /** Hoisted so the (also hoisted) vi.mock factories can branch on it. */
 const LIVE = vi.hoisted(() => process.env.DORKOS_CODEX_LIVE === '1');
@@ -118,6 +119,9 @@ runtimeConformance(
     // (no feedProjector), so native history is [] by design — completed
     // history lives in the DorkOS-owned EventLog (ADR-0263).
     expectHistory: false,
+    // DOR-189: a completed turn must survive a restart via the durable store.
+    durableHistory: (runtime, sessionId, content) =>
+      driveDurableTurn(runtime, sessionId, content, projectDir),
     // A deterministic failed turn cannot be scripted against the live binary,
     // so the turn-failure gate runs only in mocked mode: the one-shot selector
     // makes the next minted thread stream `turn.failed`.

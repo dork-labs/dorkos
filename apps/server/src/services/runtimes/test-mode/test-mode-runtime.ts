@@ -22,12 +22,9 @@ import type {
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import type { RelayCore } from '@dorkos/relay';
-import {
-  disposeProjector,
-  getOrCreateProjector,
-  peekProjector,
-} from '../../session/session-state-projector.js';
+import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
+import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { scenarioStore } from './scenario-store.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
@@ -152,14 +149,13 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   /**
-   * Completed messages reconstructed from the DorkOS-owned EventLog — the
-   * stateless adapter's only history source (no JSONL, no native store).
-   * `peekProjector` (not get-or-create): an id that never streamed has no
-   * history, and minting a projector for it would pin registry garbage.
+   * Completed messages reconstructed from the DorkOS-owned event stream, read
+   * DURABLY from the `session_events` store (DOR-189) when wired so history
+   * survives a restart; falls back to the live projector's EventLog when no
+   * store is injected (bare unit tests). No JSONL, no native store.
    */
   async getMessageHistory(_projectDir: string, id: string): Promise<HistoryMessage[]> {
-    const projector = peekProjector(id);
-    return projector ? reconstructHistoryFromEvents(projector.replayFrom(0)) : [];
+    return readLogBackedHistory(id);
   }
 
   async getSessionTasks(_projectDir: string, _id: string): Promise<TaskItem[]> {
@@ -271,7 +267,7 @@ export class TestModeRuntime implements AgentRuntime {
    * from the same projector. No JSONL, no native transcript.
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd);
+    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: true });
     return projector.buildSnapshot(() =>
       Promise.resolve(reconstructHistoryFromEvents(projector.replayFrom(0)))
     );
@@ -292,7 +288,10 @@ export class TestModeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd).subscribe(sinceCursor, signal);
+    return getOrCreateProjector(sessionId, ctx.cwd, { persist: true }).subscribe(
+      sinceCursor,
+      signal
+    );
   }
 
   /**

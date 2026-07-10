@@ -104,6 +104,7 @@ import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
+import { SessionEventStore, setSessionEventStore } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
 
@@ -165,6 +166,12 @@ async function start() {
   const db = createDb(dbPath);
   runMigrations(db);
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
+
+  // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
+  // test-mode), injected once here so their completed-turn history survives a
+  // server restart (DOR-189). Wired before any runtime registers so the first
+  // turn/subscribe of a log-backed session persists and hydrates.
+  setSessionEventStore(new SessionEventStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read

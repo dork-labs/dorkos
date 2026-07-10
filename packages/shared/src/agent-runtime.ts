@@ -289,6 +289,18 @@ export interface RuntimeCapabilities {
   nativeContext: ContextKind[];
 
   /**
+   * Whether this runtime reconstructs message history from the DorkOS-owned
+   * `EventLog` rather than a native transcript (codex, opencode, test-mode).
+   * When `true`, the platform persists the runtime's completed-turn event
+   * stream to the durable `session_events` store so history survives a server
+   * restart (DOR-189). Claude-code omits it (`undefined`/`false`): its
+   * transcript is SDK JSONL, and its `EventLog` is only gap-replay overflow —
+   * persisting it would double-store and inflate the hot path. Optional so
+   * existing capability objects stay valid; absent means "not log-backed".
+   */
+  logBackedHistory?: boolean;
+
+  /**
    * Runtime-specific extension point for metadata that does not fit the
    * common shape. Consumers must validate what they read — see ADR 0256.
    */

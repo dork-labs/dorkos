@@ -20,7 +20,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { ErrorEventSchema, StreamEventSchema, UsageStatusSchema } from '@dorkos/shared/schemas';
-import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type { HistoryMessage, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
@@ -52,6 +52,21 @@ export interface RuntimeConformanceOpts {
    * env-gated live-binary smokes).
    */
   makeFailingRuntime?: () => AgentRuntime;
+  /**
+   * Provided ONLY by LOG-BACKED runtimes (codex, opencode, test-mode) that
+   * declare `logBackedHistory` and persist their completed turns to the durable
+   * session-event store (DOR-189). Given a runtime, a fresh session id, and the
+   * message content, it must drive ONE complete turn through the real
+   * projector → durable store path, drop the live projector (the server-restart
+   * analog), and return the history reconstructed FROM THE STORE. The suite
+   * asserts that history is non-empty and well-formed — the durability contract.
+   * Claude-code omits it (its transcript is SDK JSONL; it must NOT persist).
+   */
+  durableHistory?: (
+    runtime: AgentRuntime,
+    sessionId: string,
+    content: string
+  ) => Promise<HistoryMessage[]>;
 }
 
 /** The turn-terminating event type every sendMessage stream must end with. */
@@ -100,6 +115,7 @@ export function runtimeConformance(
     expectHistory = false,
     messageContent = 'conformance ping',
     makeFailingRuntime,
+    durableHistory,
   } = opts;
 
   /** SessionOpts shared by every ensureSession call in the suite. */
@@ -292,6 +308,36 @@ export function runtimeConformance(
         }
       });
     });
+
+    if (durableHistory) {
+      describe('durable history (log-backed, DOR-189)', () => {
+        it('a completed turn survives a server restart — reconstructable from the durable store', async () => {
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts());
+
+          // Drives one real turn through the projector → store, drops the live
+          // projector, and reads history back FROM THE STORE (the restart analog).
+          const history = await durableHistory(runtime, sessionId, messageContent);
+
+          expect(Array.isArray(history)).toBe(true);
+          expect(
+            history.length,
+            'a log-backed runtime must reconstruct history from the durable store after a restart'
+          ).toBeGreaterThan(0);
+          for (const message of history) {
+            expect(typeof message.id).toBe('string');
+            expect(message.id.length).toBeGreaterThan(0);
+            expect(typeof message.role).toBe('string');
+          }
+        });
+
+        it('declares logBackedHistory so the platform knows to persist it', () => {
+          const runtime = makeRuntime();
+          expect(runtime.getCapabilities().logBackedHistory).toBe(true);
+        });
+      });
+    }
 
     describe('capabilities', () => {
       it('getCapabilities returns a structurally valid RuntimeCapabilities', () => {

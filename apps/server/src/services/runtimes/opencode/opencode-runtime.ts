@@ -56,8 +56,8 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
-import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
+import { getOrCreateProjector } from '../../session/session-state-projector.js';
+import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
@@ -486,19 +486,19 @@ export class OpenCodeRuntime implements AgentRuntime {
    * OpenCode's store is durable — history comes from the sidecar through the
    * mapper (booting it when needed), so revisits survive both DorkOS and
    * sidecar restarts. When the sidecar is unreachable (or the session was
-   * never bound) this falls back to the DorkOS-owned EventLog so the contract
-   * ("array, never a throw") holds.
+   * never bound) this falls back to the DorkOS-owned event stream, read
+   * durably from the `session_events` store (DOR-189) so the fallback now
+   * survives a DorkOS restart too — the contract ("array, never a throw").
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     try {
       return await this.mapper.getMessageHistory(projectDir, sessionId);
     } catch (err) {
       logger.debug(
-        '[OpenCodeRuntime] native history read failed — serving EventLog fallback',
+        '[OpenCodeRuntime] native history read failed — serving durable EventLog fallback',
         logError(err)
       );
-      const projector = peekProjector(sessionId);
-      return projector ? reconstructHistoryFromEvents(projector.replayFrom(0)) : [];
+      return readLogBackedHistory(sessionId);
     }
   }
 
@@ -511,7 +511,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * ADR-0263 prescribes for adapters that own a real history source.
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd);
+    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: true });
     return projector.buildSnapshot(() => this.getMessageHistory(ctx.cwd ?? DEFAULT_CWD, sessionId));
   }
 
@@ -528,7 +528,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd).subscribe(sinceCursor, signal);
+    return getOrCreateProjector(sessionId, ctx.cwd, { persist: true }).subscribe(
+      sinceCursor,
+      signal
+    );
   }
 
   /**
