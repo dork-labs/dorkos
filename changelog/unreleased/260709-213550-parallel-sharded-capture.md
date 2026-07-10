@@ -1,3 +1,3 @@
 ### Changed
 
-- Product-capture record phase can now shard across parallel stacks: `capture:record --shards N` splits the shots over `N` isolated servers, each with its own data directory and ports, and merges them into one run, cutting a full re-record's wall-clock time. Serial (`--shards 1`) stays the default and is unchanged; a sharded run produces the same published asset set.
+- Product-media captures can now record in parallel: `capture:record --shards N` splits the shots across N isolated app stacks (each with its own ports and data directory) and merges the results into one run, cutting a full re-record's wall-clock time. A single serial run stays the default, and a sharded run publishes the same asset set.

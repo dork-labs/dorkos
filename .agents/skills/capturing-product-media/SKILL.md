@@ -59,7 +59,7 @@ The pipeline behaves like an organized video editor: **raws and deliverables nev
 
 ## Architecture (files in `apps/e2e/capture/`)
 
-- `shots.ts` — **the shot registry** (source of truth): ids, kinds, frames, consumers, target dimensions, the manifest snapshot projection, and `partitionShots` (round-robin shot assignment for parallel records).
+- `shots.ts` — **the shot registry** (source of truth): ids, kinds, frames, consumers, target dimensions, the manifest snapshot projection, and `partitionShots` (round-robin shot assignment for parallel records; the session-list shots `multi-session`/`mobile-sessions` and `agent-discovery` are pinned to shard 0 via `SHARD_0_PINNED_SHOTS`).
 - `config.ts` — ports, viewports, library/output/archive/overrides paths, and **all** deterministic demo data (fleet, tasks, pinned runs, sessions, prompt pool, canvas doc, discovery projects, marketplace registry). Everything a shot shows is pinned here; nothing depends on `Date.now()`.
 - `boot.ts` — builds server deps once (`buildServerDeps`) and spawns/tears down the test-mode server + Vite client on this shard's ports, with an isolated `DORK_HOME` and a **directory boundary** confined to the capture world. Process-group teardown (`teardownAll`) leaves no orphaned ports.
 - `seed.ts` — pre-boot filesystem prep + post-boot API/DB seeding, all through real code paths.

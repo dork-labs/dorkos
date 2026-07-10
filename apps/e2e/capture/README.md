@@ -74,18 +74,26 @@ The safe parallel unit is a whole stack, so each shard gets its own:
 How a sharded record runs (`record.ts`):
 
 1. **Build once.** Server workspace deps are built a single time up front (`buildServerDeps`), then every shard boots from that output — no per-shard rebuild.
-2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`). `agent-discovery` is pinned to shard 0 and, like every shard, driven **last** in its stack — it flips global onboarding state, which every other shot in the same stack needs left dismissed (each shard's own `DORK_HOME` keeps that flip local).
+2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the session-**list** surfaces `multi-session` and `mobile-sessions` (their sidebar density accumulates from every earlier session-creating drive in the same stack, so they must ride one stack's state) and `agent-discovery` (driven **last** in its stack — it flips global onboarding state, which every other shot in the same stack needs left dismissed; each shard's own `DORK_HOME` keeps that flip local).
 3. **Record in parallel.** One `record-shard.ts` worker process per shard prepares its filesystem, boots its stack, seeds it, and captures **only its assigned shots** into the shared run's `raw/` dir (file names never collide — shots are disjoint), writing a partial manifest to `library/<run-id>/shards/`.
-4. **Merge.** Once every shard exits, the orchestrator merges the partials into one `run.json` (assets sorted by file name), points `latest` at it, and prunes — producing exactly the run a serial record would.
+4. **Merge.** Once every shard exits, the orchestrator merges the partials into one `run.json` (assets sorted by file name), points `latest` at it, and prunes — producing exactly the run a serial record would. A failed sharded record removes its partial run dir instead of leaving a `run.json`-less husk in the library.
 
-The **process** phase is shard-agnostic: it always reads one merged run, so a
-serial run and a sharded run yield the **same published asset set** (`manifest.json`
-`shots` + files + dimensions are identical; only VP9 bytes and per-loop head-trim
-timing vary run-to-run, as they already do serial-to-serial).
+**Parity with a serial run.** The process phase is shard-agnostic — it always
+reads one merged run — so a serial run and a sharded run yield the same
+published asset set: identical files, `shots` snapshot, and dimensions. What
+_can_ vary is what already varies serial-to-serial (VP9 byte counts, per-loop
+head-trim timing) plus one sharding-specific nuance: a surface's incidental
+on-screen state reflects only its **own shard's** session history. Every shard
+seeds the same fleet and sessions, each density drive mints its own rows, and
+the session-list shots are pinned to shard 0, so in practice the money content
+reads the same — but a pixel-identical transcript history across shard counts is
+not a goal.
 
-Teardown is reliable: each worker tears its own stack down in a `finally` and on
-`SIGTERM`/`SIGINT` (`teardownAll`), and the orchestrator kills every shard's
-process group on failure or interrupt, so nothing is left holding a port.
+Teardown is reliable: `bootSeedAndDrive` tears its stack down in a `finally` and
+on `SIGTERM`/`SIGINT` (`teardownAll` — the server/Vite run in their own process
+groups, so a bare Ctrl-C would not otherwise reach them; this covers the serial
+path too), and the orchestrator kills every shard's process group on failure or
+interrupt, so nothing is left holding a port.
 
 **Default is `--shards 1`** (the unchanged serial path). How much sharding helps
 is bound by cores and by the per-shard boot+seed cost, which is paid on every

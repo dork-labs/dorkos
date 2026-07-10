@@ -1,4 +1,3 @@
-import { teardownAll } from './boot.js';
 import { SHARD_INDEX } from './config.js';
 import { prepareFilesystem } from './seed.js';
 import { createShardRecorder } from './library.js';
@@ -14,6 +13,10 @@ import { bootSeedAndDrive } from './record.js';
  * its own stack, captures only its assigned shots into the shared run's `raw/`
  * dir, and writes a partial manifest the orchestrator merges. Server deps are
  * built once by the orchestrator up front, so this worker never rebuilds.
+ *
+ * Signal safety: `bootSeedAndDrive` installs SIGINT/SIGTERM handlers for the
+ * whole boot-drive window, so an orchestrator-initiated abort tears the shard's
+ * stack down; nothing is spawned outside that window.
  *
  * @module capture/record-shard
  */
@@ -37,22 +40,13 @@ async function main(): Promise<void> {
       .filter(Boolean)
   );
 
-  // An orchestrator-initiated abort must never leave an orphaned server or Vite.
-  const onSignal = () => {
-    teardownAll();
-    process.exit(1);
-  };
-  process.on('SIGTERM', onSignal);
-  process.on('SIGINT', onSignal);
-
   process.stdout.write('▸ Preparing filesystem…\n');
   await prepareFilesystem();
   setAutoSkip(await autoSkippedShotIds());
   setAssignedShots(assigned);
   // Deps were built once by the orchestrator; skip straight to booting the stack.
   process.stdout.write('▸ Booting test-mode stack…\n');
-  const rec = await createShardRecorder(runId, runDir, SHARD_INDEX);
-  await bootSeedAndDrive(rec);
+  const rec = await bootSeedAndDrive(() => createShardRecorder(runId, runDir, SHARD_INDEX));
   await rec.finalize();
 }
 

@@ -4,7 +4,7 @@ import {
   getShot,
   isAutoSkipped,
   partitionShots,
-  PINNED_SHARD_0_SHOT,
+  SHARD_0_PINNED_SHOTS,
   shotTargetDimensions,
   shotsManifest,
 } from '../shots.js';
@@ -91,19 +91,31 @@ describe('shot registry', () => {
       expect(only).toEqual(SHOTS.map((s) => s.id));
     });
 
-    it('always pins agent-discovery to shard 0', () => {
+    it('pins every SHARD_0_PINNED_SHOTS entry to shard 0 for any shard count', () => {
       for (const shardCount of [2, 3, 4, 5]) {
         const buckets = partitionShots(SHOTS, shardCount);
-        expect(buckets[0]).toContain(PINNED_SHARD_0_SHOT);
-        for (let i = 1; i < shardCount; i++) {
-          expect(buckets[i]).not.toContain(PINNED_SHARD_0_SHOT);
+        for (const pinned of SHARD_0_PINNED_SHOTS) {
+          expect(buckets[0]).toContain(pinned);
+          for (let i = 1; i < shardCount; i++) {
+            expect(buckets[i]).not.toContain(pinned);
+          }
         }
       }
     });
 
-    it('balances the remaining shots within one of each other (round-robin)', () => {
+    it('pins the session-list surfaces and agent-discovery', () => {
+      // The density (multi-session, mobile-sessions) and onboarding
+      // (agent-discovery) shots must ride one stack's accumulated state.
+      expect(SHARD_0_PINNED_SHOTS).toEqual(['multi-session', 'mobile-sessions', 'agent-discovery']);
+      for (const id of SHARD_0_PINNED_SHOTS) expect(getShot(id)).toBeDefined();
+    });
+
+    it('spreads the unpinned shots round-robin within one of each other', () => {
       const buckets = partitionShots(SHOTS, 3);
-      const sizes = buckets.map((b) => b.length);
+      const pinned = new Set(SHARD_0_PINNED_SHOTS);
+      const sizes = buckets.map((b, i) =>
+        i === 0 ? b.filter((id) => !pinned.has(id)).length : b.length
+      );
       expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
     });
 

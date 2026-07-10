@@ -137,21 +137,35 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
 }
 
 /**
- * The shot pinned to shard 0 in a parallel record. `agent-discovery` flips its
- * stack's global onboarding state, which every other shot in the same stack
- * needs left dismissed — so it is kept a singleton on shard 0, where the record
- * phase drives it dead last (and restores the dismissed state after). Each shard
- * has its own `DORK_HOME`, so the flip is already isolated; pinning it just
- * makes the placement deterministic regardless of shard count.
+ * Shots always placed on shard 0 in a parallel record, in registry order:
+ *
+ * - `multi-session` and `mobile-sessions` are the session-LIST surfaces — their
+ *   money is an inhabited sidebar, whose rows accumulate from every earlier
+ *   session-creating drive in the same stack. Pinning them to shard 0 keeps
+ *   that accumulated density tied to one stack's state instead of letting it
+ *   vary with shard placement. (No other shot reads the session list: the
+ *   remaining chat surfaces are single-session views, and the cockpit's recent
+ *   activity comes from the seeded sessions present in every shard.)
+ * - `agent-discovery` flips its stack's global onboarding state, which every
+ *   other shot in the same stack needs left dismissed — it stays a singleton on
+ *   shard 0, where the record phase drives it dead last (and restores the
+ *   dismissed state after). Each shard has its own `DORK_HOME`, so the flip is
+ *   already isolated; pinning makes the placement deterministic for any N.
  */
-export const PINNED_SHARD_0_SHOT = 'agent-discovery';
+export const SHARD_0_PINNED_SHOTS: readonly string[] = [
+  'multi-session',
+  'mobile-sessions',
+  'agent-discovery',
+];
 
 /**
  * Partition shots across `shardCount` stacks for a parallel record. Assignment
  * is round-robin by registry order (deterministic and roughly balanced across
- * the loop-heavy tail), except {@link PINNED_SHARD_0_SHOT}, which is always
- * placed on shard 0. Each returned bucket is the set of shot ids one worker
- * process captures; the union is exactly `shots`.
+ * the loop-heavy tail), except {@link SHARD_0_PINNED_SHOTS}, which always land
+ * on shard 0 (within a shard, drives execute in the record phase's fixed
+ * sequence, so their relative order is preserved automatically). Each returned
+ * bucket is the set of shot ids one worker process captures; the union is
+ * exactly `shots`.
  *
  * @param shots - The shots to capture (already filtered of `skipAuto` shots).
  * @param shardCount - Number of parallel stacks (>= 1).
@@ -159,9 +173,10 @@ export const PINNED_SHARD_0_SHOT = 'agent-discovery';
  */
 export function partitionShots(shots: readonly Shot[], shardCount: number): string[][] {
   const buckets: string[][] = Array.from({ length: Math.max(1, shardCount) }, () => []);
+  const pinned = new Set(SHARD_0_PINNED_SHOTS);
   let cursor = 0;
   for (const shot of shots) {
-    if (shot.id === PINNED_SHARD_0_SHOT) {
+    if (pinned.has(shot.id)) {
       buckets[0]!.push(shot.id);
       continue;
     }

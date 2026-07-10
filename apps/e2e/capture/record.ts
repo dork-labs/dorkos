@@ -1,8 +1,9 @@
 import path from 'path';
+import fs from 'fs/promises';
 import { spawn, type ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { chromium, type Browser } from '@playwright/test';
-import { bootStack, buildServerDeps } from './boot.js';
+import { bootStack, buildServerDeps, teardownAll } from './boot.js';
 import { REPO_ROOT } from './config.js';
 import { prepareFilesystem, seedData } from './seed.js';
 import {
@@ -50,19 +51,40 @@ export async function driveCaptures(browser: Browser, rec: RunRecorder): Promise
 }
 
 /**
- * Boot one stack, seed it, and drive its assigned captures into `rec`, tearing
- * the stack down afterwards. Shared by the serial path and each shard worker;
- * the caller owns run-id minting and finalization.
+ * Boot one stack, seed it, open the run recorder, and drive the assigned
+ * captures into it, tearing the stack down afterwards. Shared by the serial
+ * path and each shard worker; the caller supplies the recorder factory (called
+ * only after boot + seed succeed, so a boot failure never leaves an empty run
+ * dir) and owns finalization of the returned recorder.
+ *
+ * The spawned server/Vite live in their own process groups (see `boot.ts`), so
+ * a terminal Ctrl-C no longer reaches them directly — SIGINT/SIGTERM handlers
+ * installed for the duration of the boot-drive window tear everything down
+ * (`teardownAll`) and exit non-zero, on the serial path and in shard workers
+ * alike.
  */
-export async function bootSeedAndDrive(rec: RunRecorder): Promise<void> {
+export async function bootSeedAndDrive(
+  makeRecorder: () => Promise<RunRecorder>
+): Promise<RunRecorder> {
+  const onSignal = () => {
+    teardownAll();
+    process.exit(1);
+  };
+  process.once('SIGINT', onSignal);
+  process.once('SIGTERM', onSignal);
   const stack = await bootStack();
   let browser: Browser | undefined;
   try {
     process.stdout.write('▸ Seeding demo data…\n');
     await seedData();
+    const rec = await makeRecorder();
+    process.stdout.write(`▸ Recording raws (run ${rec.runId})…\n`);
     browser = await chromium.launch();
     await driveCaptures(browser, rec);
+    return rec;
   } finally {
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
     if (browser) await browser.close();
     stack.teardown();
     // Give child processes a moment to exit before the event loop drains.
@@ -70,7 +92,7 @@ export async function bootSeedAndDrive(rec: RunRecorder): Promise<void> {
   }
 }
 
-/** The single-stack record path (serial `--shards 1`, unchanged behavior). */
+/** The single-stack record path (serial `--shards 1`, the historical behavior). */
 async function runSerialRecord(): Promise<string> {
   process.stdout.write('▸ Preparing filesystem…\n');
   await prepareFilesystem();
@@ -87,9 +109,7 @@ async function runSerialRecord(): Promise<string> {
   process.stdout.write('▸ Building server deps…\n');
   await buildServerDeps();
   process.stdout.write('▸ Booting test-mode stack…\n');
-  const rec = await createRunRecorder();
-  process.stdout.write(`▸ Recording raws (run ${rec.runId})…\n`);
-  await bootSeedAndDrive(rec);
+  const rec = await bootSeedAndDrive(createRunRecorder);
   await rec.finalize();
   return rec.runId;
 }
@@ -101,13 +121,7 @@ interface ShardProcess {
 }
 
 /** Spawn one shard worker (`record-shard.ts`) for `shotIds` on shard `index`. */
-function spawnShard(
-  index: number,
-  shardCount: number,
-  runId: string,
-  runDir: string,
-  shotIds: string[]
-): ShardProcess {
+function spawnShard(index: number, runId: string, runDir: string, shotIds: string[]): ShardProcess {
   const child: ChildProcess = spawn(
     'pnpm',
     ['--filter', '@dorkos/e2e', 'exec', 'tsx', 'capture/record-shard.ts'],
@@ -120,7 +134,6 @@ function spawnShard(
         // eslint-disable-next-line no-restricted-syntax -- the shard worker needs the inherited environment; the capture harness has no env.ts
         ...process.env,
         CAPTURE_SHARD: String(index),
-        CAPTURE_SHARD_COUNT: String(shardCount),
         CAPTURE_RUN_ID: runId,
         CAPTURE_RUN_DIR: runDir,
         CAPTURE_SHOTS: shotIds.join(','),
@@ -184,7 +197,7 @@ async function runShardedRecord(shardCount: number): Promise<string> {
   process.stdout.write('▸ Building server deps (once)…\n');
   await buildServerDeps();
 
-  const shards = partition.map((ids, i) => spawnShard(i, shardCount, runId, runDir, ids));
+  const shards = partition.map((ids, i) => spawnShard(i, runId, runDir, ids));
   const killAll = () => {
     for (const s of shards) s.kill();
   };
@@ -199,6 +212,14 @@ async function runShardedRecord(shardCount: number): Promise<string> {
   process.once('SIGTERM', onSignal);
   try {
     await Promise.all(shards.map((s) => s.done));
+  } catch (err) {
+    // A failed record must not leave a partial run (no run.json) in the
+    // library — it would shadow real runs in listings and confuse retention.
+    // Stop the surviving shards first so nothing is mid-write during the rm.
+    killAll();
+    await sleep(1000);
+    await fs.rm(runDir, { recursive: true, force: true });
+    throw err;
   } finally {
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
