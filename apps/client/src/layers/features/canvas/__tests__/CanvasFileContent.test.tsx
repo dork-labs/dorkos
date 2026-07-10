@@ -3,7 +3,7 @@
  */
 import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 
@@ -167,6 +167,54 @@ describe('CanvasFileContent', () => {
 
     await waitFor(() => expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body'));
     // A conflicting flush must not exit edit mode or clobber the draft.
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+  });
+
+  it('stays in edit mode when the flush errors, keeping the draft for retry', async () => {
+    // A failed write (network/disk/permission) must NOT silently drop the draft
+    // behind a stale view — the checkmark refuses and "Couldn't save" stays up.
+    mockFileSave.status = 'error';
+    mockFileSave.save.mockResolvedValue('error');
+    renderFile();
+    await screen.findByTestId('codemirror');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+
+    await waitFor(() => expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body'));
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+    expect(screen.getByText("Couldn't save")).toBeInTheDocument();
+  });
+
+  it('a refetch landing mid-edit does not remount the editor (refresh, then edit)', async () => {
+    // Race: Refresh starts a refetch → user enters edit and types → the refetch
+    // resolves with a NEW hash. The mount key must stay pinned to the hash the
+    // edit session opened with, or the editor remounts and the draft vanishes.
+    renderFile();
+    await screen.findByTestId('codemirror');
+    expect(codeMirrorMountCount).toBe(1);
+
+    let resolveRefetch!: (value: unknown) => void;
+    readFileContent.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefetch = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh from disk' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+
+    await act(async () => {
+      resolveRefetch({ content: 'agent rewrote it', hash: 'h9', encoding: 'utf-8' });
+    });
+
+    // Cache updated, editor untouched: same instance, draft intact, still editing.
+    expect(codeMirrorMountCount).toBe(1);
     expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
     expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
   });

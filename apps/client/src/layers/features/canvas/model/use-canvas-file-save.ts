@@ -77,10 +77,10 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
 
   /**
    * Save the current document, conditional on the tracked disk base. Resolves
-   * with the settled outcome (`'saved'` | `'saved'` on a no-op | `'conflict'` |
-   * `'error'`) so a caller flushing before it renders — e.g. leaving edit mode —
-   * can react to the result without reading the (asynchronously-updated) status
-   * state.
+   * with the settled outcome — `'saved'` (including a no-op save), `'conflict'`,
+   * `'error'`, or `'idle'` when the file isn't savable — so a caller flushing
+   * before it renders (e.g. leaving edit mode) can react to the result without
+   * reading the (asynchronously-updated) status state.
    */
   const save = useCallback(
     (fullContent: string): Promise<CanvasSaveStatus> => {

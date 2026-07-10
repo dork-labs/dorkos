@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Check, Pencil, RotateCw } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FileContentResponse, UiCanvasContent } from '@dorkos/shared/types';
+import { cn } from '@/layers/shared/lib';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
@@ -93,6 +94,18 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
     retry: false,
   });
 
+  // The edit session lives HERE (not in FileEditor) because it gates the
+  // editor's mount key: while a session is open, the key stays pinned to the
+  // hash the session opened with, so a refetch landing mid-edit (window
+  // refocus, or Refresh clicked just before the pencil) updates the cache
+  // WITHOUT remounting the editor and discarding the draft. Closing the
+  // session unpins, letting the exit-time cache resync re-key the editor with
+  // the just-saved bytes.
+  const [editSession, setEditSession] = useState<{ pinnedHash: string } | null>(null);
+  const handleEditingChange = (editing: boolean) => {
+    setEditSession(editing && data ? { pinnedHash: data.hash } : null);
+  };
+
   if (cwd === null) {
     return <FileMessage>Open a session to view files.</FileMessage>;
   }
@@ -104,15 +117,20 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   }
 
   // Remount the editor when the loaded document identity changes (path or the
-  // on-disk bytes) so edit state + save baseline never straddle two documents.
+  // on-disk bytes) so edit state + save baseline never straddle two documents —
+  // except mid-edit, where the pinned hash keeps the mounted editor stable.
+  const mountHash = editSession?.pinnedHash ?? data.hash;
+
   return (
     <FileEditor
-      key={`${content.sourcePath}:${data.hash}`}
+      key={`${content.sourcePath}:${mountHash}`}
       content={content}
       documentId={documentId}
       cwd={cwd}
       loaded={data.content}
       theme={theme === 'dark' ? 'dark' : 'light'}
+      isEditing={editSession !== null}
+      onEditingChange={handleEditingChange}
       setDocumentEditing={setDocumentEditing}
     />
   );
@@ -124,6 +142,10 @@ interface FileEditorProps {
   cwd: string;
   loaded: string;
   theme: 'light' | 'dark';
+  /** Edit mode, owned by the parent (it gates the editor's mount key). */
+  isEditing: boolean;
+  /** Reports edit-mode transitions up so the parent can pin/unpin the mount key. */
+  onEditingChange: (editing: boolean) => void;
   setDocumentEditing: (id: string, editing: boolean) => void;
 }
 
@@ -134,13 +156,14 @@ function FileEditor({
   cwd,
   loaded,
   theme,
+  isEditing,
+  onEditingChange,
   setDocumentEditing,
 }: FileEditorProps) {
   const editable = content.readOnly !== true;
   const markdown = isMarkdown(content.sourcePath, content.language);
   const queryClient = useQueryClient();
 
-  const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(loaded);
 
   const fileSave = useCanvasFileSave({
@@ -152,9 +175,11 @@ function FileEditor({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftRef = useRef(draft);
   const saveRef = useRef(fileSave.save);
+  const onEditingChangeRef = useRef(onEditingChange);
   useEffect(() => {
     draftRef.current = draft;
     saveRef.current = fileSave.save;
+    onEditingChangeRef.current = onEditingChange;
   });
 
   const handleChange = useCallback((next: string) => {
@@ -168,7 +193,7 @@ function FileEditor({
 
   const enterEdit = () => {
     setDraft(loaded);
-    setIsEditing(true);
+    onEditingChange(true);
     setDocumentEditing(documentId, true);
   };
   const exitEdit = async () => {
@@ -180,9 +205,10 @@ function FileEditor({
       timerRef.current = null;
     }
     const outcome = await saveRef.current(draftRef.current);
-    // A conflict is owned by the banner's Reload / Overwrite — stay in edit mode
-    // so the draft and its reconciliation controls survive.
-    if (outcome === 'conflict') return;
+    // The draft did NOT land on disk: leaving edit mode would silently discard
+    // it. A conflict is owned by the banner's Reload / Overwrite; an error keeps
+    // the "Couldn't save" label up next to the checkmark so the user can retry.
+    if (outcome === 'conflict' || outcome === 'error') return;
 
     // Reflect the just-saved bytes into the read cache so exiting shows them. We
     // deferred every mid-edit sync to here on purpose: writing a new hash into
@@ -195,7 +221,7 @@ function FileEditor({
         (prev) => (prev ? { ...prev, content: base.content, hash: base.hash as string } : prev)
       );
     }
-    setIsEditing(false);
+    onEditingChange(false);
     setDocumentEditing(documentId, false);
   };
 
@@ -219,9 +245,14 @@ function FileEditor({
         void saveRef.current(draftRef.current);
       }
       setDocumentEditing(documentId, false);
+      // Unpin the parent's mount key too — without this, an unmount that isn't
+      // exit-edit (e.g. the document's sourcePath changing mid-edit) would leave
+      // the parent editing=true and pinned to a hash no editor is showing.
+      onEditingChangeRef.current(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run only on unmount; documentId + setter are stable for this mounted editor
-  }, []);
+    // Both deps are stable for a mounted editor (documentId is fixed per canvas
+    // document; the setter is a stable zustand action), so this runs on unmount.
+  }, [documentId, setDocumentEditing]);
 
   const handleReload = () => {
     const adopted = fileSave.adoptDisk();
@@ -238,7 +269,15 @@ function FileEditor({
     <div className="relative flex h-full flex-col">
       <div className="sticky top-0 z-10 flex h-0 items-start justify-end gap-2 pr-2">
         {editable && statusLabel && (
-          <span className="text-muted-foreground mt-3 text-xs" aria-live="polite">
+          <span
+            className={cn(
+              'mt-3 text-xs',
+              // A failed save must not read as ambient status — it is the only
+              // signal that the checkmark refused to leave edit mode.
+              fileSave.status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+            )}
+            aria-live="polite"
+          >
             {statusLabel}
           </span>
         )}
