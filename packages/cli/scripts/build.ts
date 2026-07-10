@@ -185,6 +185,16 @@ async function buildCLI() {
       // CLI's node_modules, exactly like better-sqlite3. Pulled in via
       // services/terminal/ (the embedded workbench terminal, ADR 260708-185521).
       'node-pty',
+      // esbuild's JS API cannot be bundled: it spawns a per-platform native
+      // binary that it locates via a relative path from its OWN on-disk package
+      // location. Inlined into this single-file bundle, that path is wrong and
+      // esbuild throws ("The esbuild JavaScript API cannot be bundled..."), so
+      // every server-capable extension (marketplace is defaultEnabled) fails to
+      // compile at runtime (DOR-256). Keep it external — resolved at runtime
+      // from the CLI's node_modules — and ship it as a real dependency of
+      // packages/cli, exactly like better-sqlite3 and node-pty. Used by
+      // services/extensions/extension-compiler.ts to tsx-transpile extensions.
+      'esbuild',
       'express',
       'cors',
       'dotenv',
