@@ -1,7 +1,32 @@
-# Changelog archive: v0.1.0 – v0.36.0
+# Changelog archive: v0.1.0 – v0.37.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.37.0] - 2026-04-11
+
+> Mesh discovery and agent creation — pre-scan landing states, 7 new AI agent strategies, an instant-advance creation wizard, and a unified /agents page streamline onboarding and daily management.
+
+### Added
+
+- Enhance DiscoveryView with pre-scan state and illustration
+- Add discovery strategies for 7 new AI coding agents
+- Redesign dialog as instant-advance wizard
+- Consolidate mesh panel dialog into /agents page
+- Add marketplace-dev skill for package authoring
+- Redesign Marketplace with trust signals, animations, and progressive disclosure
+
+### Changed
+
+- Reconcile 8 guides with recent mesh, tool-approval, state, and API changes
+- Use ResponsiveDialog, extract sub-components, optimize for mobile
+
+### Fixed
+
+- Use actual emoji character instead of escaped surrogate pair
+- Accept template name in handleTemplateSelect, remove unused prop
+- Preserve search params when switching view tabs
+- Fix sidebar add-agent buttons not opening creation dialog
 
 ## [0.36.0] - 2026-04-11
 

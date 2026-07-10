@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.45.1] - 2026-07-09
+
+> A same-day fix for widget interactions: clicks and form submits with bigger payloads no longer lose their data.
+
+### Fixed
+
+- Fixed widget clicks and form submits losing their data when the payload spanned multiple lines, both live and when a session reloads. A protocol change in 0.45.0 left the payload parser behind. (#185)
+
 ## [0.45.0] - 2026-07-09
 
 > The right panel grows into a real workbench (terminal, file explorer, embedded browser), agents can answer with interactive widgets you can click, Codex and OpenCode join Claude Code in one cockpit, and DorkOS accounts replace tunnel passcodes with real login.
@@ -377,35 +385,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.37.0] - 2026-04-11
-
-> Mesh discovery and agent creation — pre-scan landing states, 7 new AI agent strategies, an instant-advance creation wizard, and a unified /agents page streamline onboarding and daily management.
-
-### Added
-
-- Enhance DiscoveryView with pre-scan state and illustration
-- Add discovery strategies for 7 new AI coding agents
-- Redesign dialog as instant-advance wizard
-- Consolidate mesh panel dialog into /agents page
-- Add marketplace-dev skill for package authoring
-- Redesign Marketplace with trust signals, animations, and progressive disclosure
-
-### Changed
-
-- Reconcile 8 guides with recent mesh, tool-approval, state, and API changes
-- Use ResponsiveDialog, extract sub-components, optimize for mobile
-
-### Fixed
-
-- Use actual emoji character instead of escaped surrogate pair
-- Accept template name in handleTemplateSelect, remove unused prop
-- Preserve search params when switching view tabs
-- Fix sidebar add-agent buttons not opening creation dialog
-
 ---
 
 ---
 
-Older releases (v0.1.0 – v0.36.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.36.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.36.0.md).
+Older releases (v0.1.0 – v0.37.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.37.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.37.0.md).
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.45.1...HEAD

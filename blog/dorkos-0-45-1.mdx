@@ -1,0 +1,22 @@
+---
+title: DorkOS 0.45.1
+description: A same-day fix so widget clicks and form submits never lose their data
+date: 2026-07-09
+author: DorkOS Team
+category: release
+tags: [release, generative-ui, bugfix]
+---
+
+A same-day patch for 0.45.0: widget interactions with bigger payloads (like a form submit or a game move) could lose their data on the way back to the agent. Fixed.
+
+## All Changes
+
+### Fixed
+
+- Fixed widget clicks and form submits losing their data when the payload spanned multiple lines, both live and when a session reloads. A protocol change in 0.45.0 left the payload parser behind. (#185)
+
+## Install / Update
+
+```
+npm install -g dorkos@0.45.1
+```
