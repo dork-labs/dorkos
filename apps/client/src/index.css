@@ -718,15 +718,6 @@ body {
   pointer-events: auto;
 }
 
-/* Hide native scrollbar while preserving scroll functionality.
-   Used on containers with a custom ScrollThumb overlay. */
-.hide-scrollbar {
-  scrollbar-width: none;
-}
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
 /* Command palette list: capped height, overflow delegated to Radix ScrollArea */
 [cmdk-list] {
   max-height: min(var(--cmdk-list-height), 60vh);
