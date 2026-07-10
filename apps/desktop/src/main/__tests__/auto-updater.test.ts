@@ -188,4 +188,55 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
 
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
   });
+
+  it('interactive check: checkForUpdates() rejecting shows an error dialog and clears the interactive flag', async () => {
+    const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+    autoUpdater.checkForUpdates = vi.fn(() => Promise.reject(new Error('offline')));
+
+    const { setupAutoUpdater, checkForUpdatesInteractive } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    checkForUpdatesInteractive();
+
+    await vi.waitFor(() => {
+      expect(dialog.showMessageBox).toHaveBeenCalledWith(
+        win,
+        expect.objectContaining({ type: 'error', detail: 'offline' })
+      );
+    });
+
+    // The catch handler clears `checkingInteractively` before returning, so a
+    // later background event must not dialog.
+    vi.mocked(dialog.showMessageBox).mockClear();
+    autoUpdater.emit('update-not-available', { version: '1.0.0' } as UpdateInfo);
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the options-only showMessageBox overload when no main window is tracked', async () => {
+    const { app, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const { setupAutoUpdater, checkForUpdatesInteractive } = await import('../auto-updater');
+    setupAutoUpdater(() => null);
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    checkForUpdatesInteractive();
+    autoUpdater.emit('update-not-available', { version: '1.0.0' } as UpdateInfo);
+
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "You're up to date" })
+    );
+    // Single-argument overload: no window as the first argument.
+    expect(vi.mocked(dialog.showMessageBox).mock.calls[0]).toHaveLength(1);
+  });
 });
