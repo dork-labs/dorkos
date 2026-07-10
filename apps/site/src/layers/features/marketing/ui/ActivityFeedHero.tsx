@@ -75,19 +75,13 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
   { module: 'agent', text: 'Agent found $2,400/yr in unused AWS resources, cleanup ready' },
   { module: 'agent', text: 'Agent pulled together a competitive analysis from 14 sources' },
   { module: 'tasks', text: 'Tasks generated your monthly revenue report: MRR up 23%' },
-  // Life automation
+  // Ops & messaging
   { module: 'relay', text: 'Sent your support team a reply via Telegram' },
-  { module: 'agent', text: 'Agent booked dentist appointment for Thursday 2pm' },
   { module: 'relay', text: 'Sent you a Telegram: \u201COrder confirmed.\u201D' },
-  {
-    module: 'agent',
-    text: 'Agent organized 2,847 photos by date, location, and who\u2019s in them',
-  },
-  {
-    module: 'agent',
-    text: 'Agent meal-prepped grocery list for the week, ordered via Instacart',
-  },
-  { module: 'tasks', text: 'Tasks filed your quarterly taxes 3 days before the deadline' },
+  { module: 'agent', text: 'Agent traced a flaky test to a race condition and fixed it' },
+  { module: 'agent', text: 'Agent swept the docs for drift, opened a PR with 5 fixes' },
+  { module: 'tasks', text: 'Tasks ran the nightly dependency check: 4 updates ready' },
+  { module: 'relay', text: 'Sent you a Telegram: \u201CPR #312 is ready for your review.\u201D' },
   // Coordination & connectivity
   { module: 'mesh', text: 'Mesh assembled 7 agents for Operation Birthday Surprise' },
   { module: 'tasks', text: 'Tasks kicked off the next round of tasks' },

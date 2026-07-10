@@ -53,9 +53,9 @@ export function HonestySection() {
           variants={REVEAL}
           className="text-cream-white mb-6 text-lg leading-[1.7] font-semibold"
         >
-          DorkOS is open source, MIT licensed, and runs wherever you put it &mdash; your laptop, a
-          VPS, a Raspberry Pi. Every line of code is readable. Every decision is documented. Nothing
-          phones home.
+          DorkOS is open source, MIT licensed, and runs wherever you put it: your laptop, a VPS, a
+          Raspberry Pi. Every line of code is readable. Every decision is documented. Nothing phones
+          home.
         </motion.p>
 
         <motion.p variants={REVEAL} className="text-cream-tertiary/70 text-lg leading-[1.7]">

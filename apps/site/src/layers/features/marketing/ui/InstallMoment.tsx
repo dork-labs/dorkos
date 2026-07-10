@@ -27,13 +27,8 @@ const INSTALL_METHODS = [
     description: 'Requires Node.js 18+.',
     recommended: false,
   },
-  {
-    id: 'brew',
-    label: 'Homebrew',
-    command: 'brew install dorkos-ai/tap/dorkos',
-    description: 'macOS and Linux. Updates via brew upgrade.',
-    recommended: false,
-  },
+  // Homebrew returns as a tab once the dorkos-ai/tap tap is published.
+  // Until then, listing it here would hand people a command that 404s.
 ] as const;
 
 /**

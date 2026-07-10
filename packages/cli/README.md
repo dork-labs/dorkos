@@ -118,7 +118,7 @@ npm install -g dorkos@latest
 pnpm add -g dorkos@latest
 ```
 
-For Homebrew, Docker, and other ways to update, see the [full upgrade guide](https://dorkos.ai/docs/getting-started/installation#updating).
+For Docker and other ways to update, see the [full upgrade guide](https://dorkos.ai/docs/getting-started/installation#updating).
 
 ## Open Source
 

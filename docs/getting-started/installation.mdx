@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install DorkOS via one-liner, npm, Homebrew, Docker, Obsidian plugin, or self-hosted
+description: Install DorkOS via one-liner, npm, Docker, Obsidian plugin, or self-hosted
 ---
 
 # Installation
@@ -17,7 +17,7 @@ DorkOS runs in several modes. Pick the install method that fits your workflow.
 
 ## Choose Your Install Method
 
-<Tabs items={['One-liner (Recommended)', 'npm', 'Homebrew', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner (Recommended)', 'npm', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner (Recommended)">
 
@@ -126,44 +126,6 @@ The server starts on port 4242 and opens your browser automatically.
   Pass flags to customize startup: `dorkos --port 8080 --dir ~/projects/my-app`. Run `dorkos --help`
   for all options.
 </Callout>
-
-</Tab>
-
-<Tab value="Homebrew">
-
-Install via Homebrew on macOS or Linux. Node.js is handled as a dependency.
-
-<Steps>
-<Step>
-
-### Install DorkOS
-
-```bash
-brew install dorkos-ai/tap/dorkos
-```
-
-</Step>
-<Step>
-
-### Set your API key
-
-```bash
-export ANTHROPIC_API_KEY="your-key-here"
-```
-
-</Step>
-<Step>
-
-### Start DorkOS
-
-```bash
-dorkos
-```
-
-</Step>
-</Steps>
-
-<Callout type="info">Update via `brew upgrade dorkos`.</Callout>
 
 </Tab>
 
@@ -306,7 +268,7 @@ Starts the Express API server and Vite dev server concurrently. The interface is
 
 ## Updating
 
-<Tabs items={['One-liner / npm', 'Homebrew', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner / npm', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner / npm">
 
@@ -336,14 +298,6 @@ DorkOS checks for updates on startup. Check your current version at any time:
 
 ```bash
 dorkos --version
-```
-
-</Tab>
-
-<Tab value="Homebrew">
-
-```bash
-brew upgrade dorkos
 ```
 
 </Tab>
@@ -393,10 +347,6 @@ Restart the running server after rebuilding. Database migrations run automatical
 
 ```bash tab="npm"
 npm install -g dorkos@0.11.0
-```
-
-```bash tab="Homebrew"
-brew install dorkos-ai/tap/dorkos@0.11.0
 ```
 
 ```bash tab="Docker"

@@ -86,7 +86,7 @@ export function IdentityClose({ email }: IdentityCloseProps) {
         >
           <div className="inline-flex flex-wrap items-center justify-center gap-2">
             <span className="text-warm-gray text-sm">
-              Questions, ideas, or just want to say hello &mdash;
+              Questions, ideas, or just want to say hello:
             </span>
             <AnimatePresence mode="wait">
               {revealed ? (
