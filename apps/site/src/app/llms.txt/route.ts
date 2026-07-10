@@ -98,8 +98,7 @@ function buildBlogSection(): string {
 }
 
 function buildCapabilitiesSection(): string {
-  const available = subsystems.filter((s) => s.status === 'available');
-  return available.map((s) => `- **${s.name}**: ${s.description}`).join('\n');
+  return subsystems.map((s) => `- **${s.name}**: ${s.benefit}`).join('\n');
 }
 
 function buildFeaturesSection(): string {

@@ -33,7 +33,7 @@ export function IdentityClose({ email }: IdentityCloseProps) {
           {/* Beat 1 — origin */}
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
             DorkOS started as the system we needed. One person, five projects, ten agents in ten
-            different windows. We built the coordination layer so we could build more, faster.
+            different windows. We built it so we could build more, faster.
           </motion.p>
           {/* Beat 2 — receipts, set as a quiet monospaced proof strip */}
           <motion.p
@@ -46,7 +46,7 @@ export function IdentityClose({ email }: IdentityCloseProps) {
           >
             It&rsquo;s how we ship everything else: one person and a fleet of agents,{' '}
             <span className="text-warm-gray">44 public releases in five months</span>, every
-            decision documented in the open.
+            decision out in the open.
           </motion.p>
           {/* Beat 3 — the name */}
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
