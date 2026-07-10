@@ -151,8 +151,15 @@ export function TerminalInstance({
       }
     })();
 
-    // Reflow the PTY whenever the (visible) panel resizes.
-    const observer = new ResizeObserver(() => {
+    // Reflow the PTY whenever the (visible) panel resizes. A tab being hidden
+    // (`display:none` on switch) also fires the observer — with a 0×0 rect —
+    // and FitAddon would then compute a bogus tiny grid from cached cell sizes
+    // and push it to the backgrounded PTY, reflowing a running TUI (vim/htop).
+    // Zero-size means hidden, never a real resize: skip it; the activation
+    // effect re-fits on reveal.
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.width === 0 || rect.height === 0) return;
       safeFit(fit);
       if (handleRef.current) {
         transport.resizeTerminal(handleRef.current, { cols: term.cols, rows: term.rows });

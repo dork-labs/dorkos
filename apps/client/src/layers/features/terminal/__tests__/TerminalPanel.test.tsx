@@ -48,8 +48,24 @@ import { TerminalPanel } from '../ui/TerminalPanel';
 
 const CWD = '/repo';
 
+/**
+ * Live ResizeObserver callbacks, capture-ordered, so tests can drive resize
+ * notifications — e.g. the 0×0 entry the browser fires when a tab is hidden
+ * via `display:none` on switch.
+ */
+const resizeCallbacks: ResizeObserverCallback[] = [];
+
+/** Fire every live observer with a single entry of the given content size. */
+function fireResize(width: number, height: number): void {
+  const entry = { contentRect: { width, height } } as ResizeObserverEntry;
+  for (const cb of resizeCallbacks) cb([entry], undefined as unknown as ResizeObserver);
+}
+
 beforeAll(() => {
   global.ResizeObserver = class {
+    constructor(cb: ResizeObserverCallback) {
+      resizeCallbacks.push(cb);
+    }
     observe() {}
     unobserve() {}
     disconnect() {}
@@ -59,6 +75,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   xterm.writes.length = 0;
+  resizeCallbacks.length = 0;
   sessionStorage.clear();
   useAppStore.setState({ selectedCwd: CWD, sessionId: null });
 });
@@ -166,6 +183,26 @@ describe('TerminalPanel', () => {
     );
     expect(transport.openTerminal).toHaveBeenCalledTimes(2);
     expect(instanceCount(container)).toBe(2);
+  });
+
+  it('ignores the zero-size observer entry a hidden tab fires — no bogus PTY resize', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    // Open a second tab, hiding the first (display:none fires its observer with 0×0).
+    await user.click(screen.getByRole('button', { name: 'New terminal' }));
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
+
+    const callsBefore = vi.mocked(transport.resizeTerminal).mock.calls.length;
+    // The hide-transition notification: zero-size, must NOT reach the PTY.
+    fireResize(0, 0);
+    expect(vi.mocked(transport.resizeTerminal).mock.calls.length).toBe(callsBefore);
+
+    // A real resize still flows through.
+    fireResize(640, 480);
+    expect(vi.mocked(transport.resizeTerminal).mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
   it('closes a tab: destroys its PTY via closeTerminal and removes it', async () => {

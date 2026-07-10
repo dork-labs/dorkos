@@ -18,7 +18,14 @@
  * @module features/terminal/lib/terminal-id-store
  */
 
-/** Namespace prefix for stored terminal tabs, so keys never collide with other state. */
+/**
+ * Namespace prefix for stored terminal tabs, so keys never collide with other
+ * state. Deliberately NOT the old single-id prefix (`dork.terminal.id`,
+ * DOR-225): pre-deploy entries are consciously orphaned — a one-time,
+ * per-browser-tab break that self-heals when the orphaned PTY lapses past the
+ * server's idle-grace TTL. A migration for one sessionStorage key isn't worth
+ * carrying.
+ */
 const KEY_PREFIX = 'dork.terminal.tabs';
 
 /**
