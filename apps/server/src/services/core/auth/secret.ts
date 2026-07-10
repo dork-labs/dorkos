@@ -13,7 +13,8 @@
  * secret, in this precedence order:
  *
  *   1. **`BETTER_AUTH_SECRET` from the environment** — an explicit operator
- *      override always wins (declared in `env.ts`, validated there).
+ *      override always wins (read directly from `process.env`; see
+ *      {@link readEnvSecret} for why it is not routed through `env.ts`).
  *   2. **A persisted secret file** under the dork home — read if it exists, so
  *      the secret is stable across restarts (rotating it would invalidate every
  *      live session).
@@ -48,10 +49,14 @@ const SECRET_BYTES = 32;
 /**
  * Read a non-empty environment override for the signing secret, if present.
  *
- * Read from `process.env` directly (rather than the parsed `env`) so this module
- * stays free of an import cycle with `env.ts`; `env.ts` is the schema-validation
- * surface, this is the resolution surface. Whitespace-only values are treated as
- * unset.
+ * Read from `process.env` directly, deliberately NOT via the server's parsed
+ * `env`: this module is a shared seam that the CLI bundle imports too (the
+ * `dorkos auth enable` path resolves the same secret), and `env.ts` is a
+ * server-boot concern — it snapshots the environment once at import and exits
+ * the process on a failed parse, neither of which this resolver should drag
+ * into the CLI. The var is therefore intentionally undeclared in `env.ts`
+ * (noted there); this is the same carve-out `routes/tunnel.ts` uses for
+ * `NGROK_AUTHTOKEN`. Whitespace-only values are treated as unset.
  */
 function readEnvSecret(): string | undefined {
   // eslint-disable-next-line no-restricted-syntax -- reading an env override, not a homedir path
