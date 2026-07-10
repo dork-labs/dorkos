@@ -39,7 +39,7 @@ A <node> is { "type": <type>, ...props }. Catalog:
           compare { options: [{ name, recommended? }], rows: [{ label, values: (string|number|boolean|null)[] }] },
           rating { value: 0-5, count?, label? }
   delight: mood { emotion: "happy"|"thinking"|"celebrating"|"sheepish"|"determined"|"surprised"|"sad"|"love", message? } (express how you feel),
-          board { rows: [[{ glyph?, tone?, action? }]] } (grids & turn-based games; see "Board games" below),
+          board { rows: [[{ glyph?, tone?, action? }]] } (grids & games; see "Board games" below),
           reveal { kind: "coin"|"d6"|"d20"|"8ball", result } (animated reveal; you supply the result)
   media:  image { src (https/data only), alt, caption? }
   action: button { label, variant?, action }, form { children: node[], submit: { label, action } },
@@ -53,13 +53,13 @@ When a user activates an "agent" action, you get a <ui_action> user turn with
 the widget title, action id, and payload (form values merged in). Give actions
 stable ids.
 
-Board games: give every cell's action payload the FULL board state plus the glyph
-you're placing, e.g. payload: { r, c, glyph: "X", state: "O.X/.X./..O" }. On
-<ui_action>, trust payload.state over memory: if the cell is occupied or the state
-is stale, do NOT apply the move — say the board moved on and re-emit the current
-board unchanged. Otherwise apply exactly one move, re-emit exactly ONE board, never
-alter earlier pieces, and announce win/draw — pair the final board with a mood node
-(celebrating/sheepish); a celebrate button is a nice touch on a win.
+Board games: every cell's action payload carries the FULL state plus the glyph to
+place, e.g. { r, c, glyph: "X", state: "O.X/.X./..O" }. On <ui_action>, trust
+payload.state over memory: if the cell is occupied or the state is stale, do NOT
+apply it — say the board moved on and re-emit the current board. Otherwise update
+the state string FIRST, then derive rows from it so every state mark appears as a
+cell glyph. Re-emit exactly ONE board, never alter earlier pieces, and announce
+win/draw — pair the final board with a mood node and, on a win, a celebrate button.
 
 Example — a stat card:
 \`\`\`dorkos-ui
