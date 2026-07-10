@@ -1,103 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useInView, useReducedMotion } from 'motion/react';
+import { useCallback, useRef } from 'react';
+import { motion } from 'motion/react';
 import { villainCards } from '../lib/villain-cards';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 // ─── Animated Card Art ───────────────────────────────────────────────────────
 
-/** "Connection closed." types in letter-by-letter on viewport entry. */
-function DeadTerminalArt() {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, amount: 0.5 });
-  const reducedMotion = useReducedMotion();
-  const [displayText, setDisplayText] = useState('');
-  const text = 'Connection closed.';
-  const hasAnimated = useRef(false);
-
-  useEffect(() => {
-    if (!isInView || hasAnimated.current || reducedMotion) return;
-    hasAnimated.current = true;
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setDisplayText(text.slice(0, i));
-      if (i >= text.length) clearInterval(interval);
-    }, 40);
-    return () => clearInterval(interval);
-  }, [isInView, reducedMotion]);
-
-  return (
-    <div
-      ref={ref}
-      className="text-warm-gray-light/50 mb-4 font-mono text-[10px] leading-[1.6] select-none"
-      aria-hidden="true"
-    >
-      <span className="text-warm-gray-light/40">$</span> claude --session refactor-auth
-      <br />
-      <span className="text-warm-gray-light/40">&check;</span> 47 files changed, tests passing
-      <br />
-      <span style={{ color: 'rgba(232, 93, 4, 0.5)' }}>
-        {reducedMotion ? text : displayText || '\u00A0'}
-      </span>
-      {!reducedMotion && displayText.length > 0 && displayText.length < text.length && (
-        <span className="cursor-blink" />
-      )}
-    </div>
-  );
-}
-
-/** Text types "context..." then clears and restarts, looping. */
-function GoldfishArt() {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, amount: 0.5 });
-  const reducedMotion = useReducedMotion();
-  const [displayText, setDisplayText] = useState('Let me give you some contex');
-  const text = 'Let me give you some context...';
-
-  useEffect(() => {
-    if (!isInView || reducedMotion) return;
-    let i = 0;
-    let clearing = false;
-
-    const interval = setInterval(() => {
-      if (clearing) {
-        setDisplayText((prev) => {
-          if (prev.length <= 0) {
-            clearing = false;
-            i = 0;
-            return '';
-          }
-          return prev.slice(0, -1);
-        });
-      } else {
-        i++;
-        setDisplayText(text.slice(0, i));
-        if (i >= text.length) {
-          setTimeout(() => {
-            clearing = true;
-          }, 800);
-        }
-      }
-    }, 50);
-
-    return () => clearInterval(interval);
-  }, [isInView, reducedMotion]);
-
-  return (
-    <div
-      ref={ref}
-      className="text-warm-gray-light/50 mb-4 font-mono text-[10px] leading-[1.6] select-none"
-      aria-hidden="true"
-    >
-      <span className="text-warm-gray-light/30">&gt;</span> {displayText}
-      <span className="cursor-blink" />
-    </div>
-  );
-}
-
-/** Bars randomly tasks opacity, one orange bar taskss urgently. */
+/** Bars pulse at random opacity; one orange bar pulses urgently. */
 function TabGraveyardArt() {
   return (
     <div className="mb-4 flex gap-1.5 select-none" aria-hidden="true">
@@ -120,7 +30,7 @@ function TabGraveyardArt() {
 }
 
 /** Small clock SVG with rotating hands. */
-function ThreeAmBuildArt() {
+function StuckWaitingArt() {
   return (
     <div className="mb-4 flex items-center gap-2.5 select-none" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none" className="shrink-0">
@@ -150,10 +60,11 @@ function ThreeAmBuildArt() {
         <circle cx="11" cy="11" r="1.2" fill="rgba(232, 93, 4, 0.4)" />
       </svg>
       <div className="text-warm-gray-light/50 font-mono text-[10px] leading-[1.6]">
-        <span style={{ color: 'rgba(232, 93, 4, 0.5)' }}>&cross;</span> Tests failed at 2:47am
+        <span style={{ color: 'rgba(232, 93, 4, 0.5)' }}>?</span> &ldquo;Can I edit this
+        file?&rdquo; asked at 12:10pm
         <br />
         <span className="text-warm-gray-light/30">
-          fix: 3 lines &middot; agent: ready &middot; terminal: closed
+          agent: waiting &middot; you: at lunch &middot; elapsed: 40m
         </span>
       </div>
     </div>
@@ -161,10 +72,8 @@ function ThreeAmBuildArt() {
 }
 
 const CARD_ART_COMPONENTS: Record<string, React.FC> = {
-  'dead-terminal': DeadTerminalArt,
-  goldfish: GoldfishArt,
   'tab-graveyard': TabGraveyardArt,
-  '3am-build': ThreeAmBuildArt,
+  'stuck-waiting': StuckWaitingArt,
 };
 
 // ─── SpotlightCard ───────────────────────────────────────────────────────────
@@ -208,7 +117,7 @@ function SpotlightCard({ children }: { children: React.ReactNode }) {
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
-/** Pain-point recognition section — four villain cards that name the problem. */
+/** Pain-point recognition section — three villain cards that name the problem plainly. */
 export function VillainSection() {
   return (
     <section className="bg-cream-primary px-8 py-16 md:py-28">
