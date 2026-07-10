@@ -14,14 +14,14 @@
 
 ### Product blockers (`09` §2.1)
 
-- [ ] **(GATE)** DOR-189: Codex/OpenCode transcripts survive server restart — Jul 12 · _spec + ADR landed 2026-07-10 (`specs/durable-event-log/`, ADR 260710-024641; DOR-189 → Todo); implementation awaiting founder go_
+- [x] 2026-07-10 **(GATE)** DOR-189: Codex/OpenCode transcripts survive server restart — Jul 12 · shipped in PR #202 (durable SQLite session-event store; spec `specs/durable-event-log/`, ADR 260710-024641); acceptance verified: turn → process kill → fresh boot → identical transcript; cross-process durability now protected in CI
 - [ ] DOR-188: Codex disk leak: upstream 0.143.0 adopted, or Codex gated behind a documented flag — decision by Aug 1
 - [ ] DOR-190 + clean-machine install verified (curl + npx, macOS VM + Linux, Node 20/22) — Jul 19
 
 ### Pillar smoke tests (`09` §2.2, one ticket each; failures pull the claim from launch messaging)
 
 - [x] 2026-07-10 Install + first run, on a machine that isn't the dev machine — Jul 12 · **PASS** (DOR-234; dorkos@0.44.0, clean node:20 + node:22 containers) — but found DOR-245: npm package ships without `core-extensions/`, so the Marketplace tab is missing for every npm install; fix before launch
-- [x] 2026-07-10 Schedule a task end-to-end (fires, history, survives restart) — Jul 12 · **FAIL** (DOR-235; scheduler fires within 6ms and definitions survive restart, but DOR-248 mislabels every successful run as `running` and DOR-249 converts the whole history to `failed` on restart; both fixes look small — re-run after they land)
+- [x] 2026-07-10 Schedule a task end-to-end (fires, history, survives restart) — Jul 12 · **FAIL → FIXED same day** (DOR-235; DOR-248 + DOR-249 shipped in PR #199 with the end-to-end scenario re-verified: fire → completed → restart → history intact + next fire clean). DOR-242 (PR #198), DOR-245 (PR #200), DOR-250 (PR #201) also fixed same day; still open: DOR-256 (marketplace extension fails to compile in the packaged CLI — esbuild runtime-dependency decision needed)
 - [ ] Telegram notification end-to-end (bind → notify → reply routes) — Jul 12 · _run 2026-07-10 (DOR-236): **BLOCKED on founder phone legs** (no bot token exists; ~10-min checklist on the ticket). Reply routing + approval buttons verified in code; DOR-240: "agent finishes → phone buzzes" is NOT automatic (agent must call `relay_notify_user`), DOR-239: `canInitiate` toggle unenforced_
 - [ ] Tunnel / mobile (QR → phone cockpit → approve from phone) — Jul 12 · _run 2026-07-10 (DOR-237): **BLOCKED on ngrok authtoken** (mandatory, no free fallback). Exposure guard + session gate verified correct; DOR-242 (High): `dorkos auth enable` → sign-in 500s on fresh prod installs (`BETTER_AUTH_SECRET` never generated) — breaks the whole mobile path; DOR-244: copy undersells setup friction_
 - [x] 2026-07-10 Runtime switching x3 + restart persistence — Jul 12 · **FAIL as worded** (DOR-238; codex closest to green, opencode session ids change across restart (DOR-251), claude-code split-brains when `CLAUDE_CONFIG_DIR` is set (DOR-250, root-caused to `transcript-reader.ts`), and codex/opencode transcripts open empty post-restart = DOR-189)
