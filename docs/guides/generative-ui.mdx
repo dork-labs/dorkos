@@ -168,6 +168,13 @@ A couple of catalog-specific rules worth knowing before you emit one:
 
 Reach for a widget when the reply has structured data worth scanning — metrics, tables, lists, charts. Don't wrap plain prose in one. `mood`, `board`, and `reveal` are the exception: reach for them for personality and games, not data — `board` paired with an `agent` action, re-emitted each turn with the latest state, is what makes a widget like tic-tac-toe playable.
 
+<ProductShot
+  id="gen-ui-tictactoe"
+  alt="A DorkOS chat session playing tic-tac-toe against the agent, with a drawn win-line and a celebrating mood face"
+/>
+
+Click an empty square and your mark draws itself instantly, before the agent even replies. Its next turn re-emits the same `board` widget with your move applied — trusting the `state` string in your click's payload over its own memory, so the board you see and the board it thinks it's playing never drift apart.
+
 ### The ui-action Channel
 
 Buttons, list-item actions, and form submits are more than static UI — clicking them can start a new turn with the agent. Every interactive control fires a `WidgetAction`, one of three kinds:
