@@ -279,18 +279,19 @@ The name is a filter: if it makes you hesitate, this isn't for you. If it makes 
 
 Dork isn't an insult reclaimed. It was never an insult to us. It's a description of a builder type: the person who runs agents at 3am, who has opinions about cron expressions, who names their AI team, who cares about coordination primitives most people have never heard of. The kind of person who builds the future while everyone else is still deciding what to call it.
 
-### The Line
+### The Line _(changed 2026-07-09)_
 
-**Built by dorks. For dorks. Run by you.**
+**We built it for ourselves. Now it's yours.**
 
-This is DorkOS's "Think Different." It doesn't apologize. It doesn't explain. It identifies the tribe and welcomes them.
+The origin is the identity: DorkOS started as the system its maker needed to build more, faster — and the receipts (one person, a fleet of agents, 44 public releases in five months, decisions documented in the open) are the authority. **"Dork" is the maker's mark, never the customer's label.** The customer is the hero (StoryBrand); we are the assistant — Alfred, not Robin. We answer to "dork"; they never have to. The name itself remains the filter (if it makes a visitor grin, they're home), but no customer-facing surface assigns the word to the reader.
 
-Alternate forms for different contexts:
+_Predecessor:_ "Built by dorks. For dorks. Run by you." — retired from customer-facing surfaces 2026-07-09 (it labeled the hero). Alternate forms that survive for maker-voice contexts (about page, merch, internal):
 
 - **Short**: Built by dorks.
 - **Personal**: We named it after ourselves.
 - **Defiant**: The ones who care too much build the things that matter most.
 - **Community**: Every great system was built by someone who couldn't stop thinking about it.
+- **Signature**: signed "— Dorian" (the founder's real name; the "Dorkian" pen name is retired, 2026-07-09).
 
 ---
 
@@ -432,7 +433,7 @@ DorkOS should feel like:
 
 **Manifesto line:** Intelligence Doesn't Scale. Coordination Does. _(Demoted from primary 2026-07-09 — not deleted. This is the argument we defend in essays, the litepaper, comparison/anti-positioning surfaces, and the Show HN comment thread. It names the mechanism; hero surfaces lead with the customer instead. Pre-launch, write the Brooks-law defense: agents changed the coordination-cost curve — machine-speed messaging, no ego, no meetings — which is why coordination now scales where Brooks said it couldn't.)_
 
-**Brand line:** Built by dorks. For dorks. Run by you.
+**Identity close:** We built it for ourselves. Now it's yours. _(Changed 2026-07-09 — the predecessor "Built by dorks. For dorks. Run by you." labeled the hero; see §8. "Built by dorks." survives as the short maker-voice form.)_
 
 **Fleet-era lines** (added 2026-07-06, for the mission-control entry point):
 

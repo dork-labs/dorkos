@@ -35,7 +35,7 @@ The core thesis survives fully intact ("intelligence doesn't scale; coordination
 ### What stays
 
 - **Thesis line**: "Intelligence doesn't scale. Coordination does." The market spent a year proving it — but it is no longer the roof _(amended 2026-07-09)_: it's a mechanism claim, and the roof now belongs to the customer ("**You, multiplied.**", see §5). The thesis stays as the **manifesto line** — essays, litepaper, anti-positioning/comparison surfaces, and the launch-thread defense (agents changed Brooks's coordination-cost curve). Demoted, not deleted.
-- **Identity close**: "Built by dorks. For dorks. Run by you." The tribe filter works; do not soften it.
+- **Identity close**: ~~"Built by dorks. For dorks. Run by you."~~ _Superseded 2026-07-09 (founder decision, extending the hero reframe):_ the customer is the hero and is never labeled — new close: **"We built it for ourselves. Now it's yours."** The filter lives in the product NAME, not in badging the reader; "dork" stays as the maker's mark. Signature changes from "Dorkian" to "— Dorian".
 - **Anti-persona discipline**: no hosted no-code anything.
 - **Pro-human framing** (Decision 16): agents multiply what you accomplish; the human is the point.
 
