@@ -1,36 +1,6 @@
 import React from 'react';
 
 /**
- * Trigger a confetti burst from canvas-confetti.
- * Lazy-loads the library on first call.
- * Returns a cleanup function to cancel the animation.
- */
-export async function fireConfetti(options?: {
-  origin?: { x: number; y: number };
-  particleCount?: number;
-  colors?: string[];
-}): Promise<() => void> {
-  const confetti = (await import('canvas-confetti')).default;
-
-  const defaults = {
-    particleCount: 40,
-    spread: 70,
-    origin: { x: 0.5, y: 0.6 },
-    colors: ['#FFD700', '#FFC107', '#F7B500'],
-    ticks: 120,
-    gravity: 1.2,
-    scalar: 0.9,
-    drift: 0,
-    disableForReducedMotion: true,
-  };
-
-  const merged = { ...defaults, ...options };
-  confetti(merged);
-
-  return () => confetti.reset();
-}
-
-/**
  * CSS style object for the radial glow effect.
  * Applied via motion.div style props.
  */

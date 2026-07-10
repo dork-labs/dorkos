@@ -8,7 +8,8 @@
  * heavy droop, celebratory bounce-squash, thoughtful tilt…) on an inner
  * wrapper — two elements so the one-shot and the loop never fight over the
  * same transform. Faces themselves live in `./faces` with per-element timing.
- * `celebrating` also fires a single confetti burst on mount.
+ * `celebrating` also fires a single confetti burst on mount, erupting from the
+ * face circle itself (origin-aware, via {@link rectToCelebrationOrigin}).
  *
  * Every animation gates on {@link useWidgetMotion}; under reduced motion the
  * static brow/mouth shapes still carry each emotion.
@@ -19,7 +20,7 @@ import { useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import type { TargetAndTransition, Transition } from 'motion/react';
 import type { WidgetNode } from '@dorkos/shared/ui-widget';
-import { fireConfetti } from '@/layers/shared/lib';
+import { fireCelebration, rectToCelebrationOrigin } from '@/layers/shared/lib';
 import { useWidgetMotion } from '../../../lib/widget-motion';
 import { Face } from './faces';
 
@@ -107,11 +108,14 @@ const IDLES: Partial<Record<MoodEmotion, IdleSpec>> = {
 export function MoodNode({ node }: { node: NodeOf<'mood'> }) {
   const motionOn = useWidgetMotion();
   const confettiFired = useRef(false);
+  const faceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (node.emotion !== 'celebrating' || !motionOn || confettiFired.current) return;
     confettiFired.current = true;
-    void fireConfetti();
+    // Erupt from the face itself, not screen-center (origin-aware confetti).
+    const rect = faceRef.current?.getBoundingClientRect();
+    void fireCelebration({ origin: rect ? rectToCelebrationOrigin(rect) : undefined });
   }, [node.emotion, motionOn]);
 
   const entrance = ENTRANCES[node.emotion] ?? POP_ENTRANCE;
@@ -129,6 +133,7 @@ export function MoodNode({ node }: { node: NodeOf<'mood'> }) {
           transition={motionOn ? entrance.transition : undefined}
         >
           <motion.div
+            ref={faceRef}
             className="bg-muted text-foreground relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full"
             animate={motionOn && idle ? idle.animate : undefined}
             transition={motionOn && idle ? idle.transition : undefined}

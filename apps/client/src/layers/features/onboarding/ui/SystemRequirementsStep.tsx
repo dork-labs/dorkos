@@ -5,7 +5,7 @@ import { DorkLogo } from '@dorkos/icons/logos';
 import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { DependencyInstallHint } from '@/layers/entities/runtime';
 import { useTransport } from '@/layers/shared/model';
-import { cn, fireConfetti } from '@/layers/shared/lib';
+import { cn, fireCelebration } from '@/layers/shared/lib';
 import { Button, HoverBorderGradient } from '@/layers/shared/ui';
 
 /**
@@ -149,7 +149,7 @@ export function SystemRequirementsStep({
       setPhase('done');
       if (allSatisfied && !confettiFired.current) {
         confettiFired.current = true;
-        fireConfetti();
+        void fireCelebration();
       }
     }, 400);
     return () => clearTimeout(timer);

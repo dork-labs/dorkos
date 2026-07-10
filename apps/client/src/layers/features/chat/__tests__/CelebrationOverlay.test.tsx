@@ -10,13 +10,13 @@ vi.mock('@/layers/shared/lib', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib');
   return {
     ...actual,
-    fireConfetti: vi.fn().mockResolvedValue(vi.fn()),
+    fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
     RADIAL_GLOW_STYLE: { background: 'radial-gradient(circle, gold, transparent)' },
   };
 });
 
 import { CelebrationOverlay } from '../ui/CelebrationOverlay';
-import { fireConfetti } from '@/layers/shared/lib';
+import { fireCelebration } from '@/layers/shared/lib';
 
 afterEach(() => {
   cleanup();
@@ -58,15 +58,15 @@ describe('CelebrationOverlay', () => {
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
-  it('fires confetti for major celebration', () => {
+  it('fires a burst celebration for major celebration', () => {
     const major: CelebrationEvent = { level: 'major', taskId: '1', timestamp: Date.now() };
     render(<CelebrationOverlay celebration={major} onComplete={vi.fn()} />);
-    expect(fireConfetti).toHaveBeenCalledWith(expect.objectContaining({ particleCount: 40 }));
+    expect(fireCelebration).toHaveBeenCalledWith(expect.objectContaining({ kind: 'burst' }));
   });
 
   it('cleans up confetti on unmount', async () => {
     const cleanupFn = vi.fn();
-    (fireConfetti as ReturnType<typeof vi.fn>).mockResolvedValue(cleanupFn);
+    (fireCelebration as ReturnType<typeof vi.fn>).mockResolvedValue(cleanupFn);
     const major: CelebrationEvent = { level: 'major', taskId: '1', timestamp: Date.now() };
     const { unmount } = render(<CelebrationOverlay celebration={major} onComplete={vi.fn()} />);
     await vi.advanceTimersByTimeAsync(0);

@@ -13,7 +13,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.f
 // exercise the real canvas-confetti dynamic import under jsdom.
 vi.mock('@/layers/shared/lib', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib');
-  return { ...actual, fireConfetti: vi.fn().mockResolvedValue(vi.fn()) };
+  return { ...actual, fireCelebration: vi.fn().mockResolvedValue(vi.fn()) };
 });
 
 afterEach(cleanup);
@@ -446,12 +446,12 @@ describe('Tier-2 delight nodes', () => {
   });
 
   it('fires confetti once for a celebrating mood', async () => {
-    const { fireConfetti } = await import('@/layers/shared/lib');
+    const { fireCelebration } = await import('@/layers/shared/lib');
     // Reset call count: an earlier parametrized case already rendered a
     // celebrating mood, and the mock persists across tests in this file.
-    vi.mocked(fireConfetti).mockClear();
+    vi.mocked(fireCelebration).mockClear();
     renderDoc({ type: 'mood', emotion: 'celebrating' });
-    expect(fireConfetti).toHaveBeenCalledTimes(1);
+    expect(fireCelebration).toHaveBeenCalledTimes(1);
   });
 
   it('renders a board, dispatches an agent action on cell click, and disables unavailable cells', async () => {

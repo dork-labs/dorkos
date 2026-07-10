@@ -2250,6 +2250,14 @@
                 "enum": [
                   "celebrate"
                 ]
+              },
+              "kind": {
+                "$ref": "#/components/schemas/CelebrationKind"
+              },
+              "emoji": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8
               }
             },
             "required": [
@@ -2538,6 +2546,17 @@
           "warning"
         ],
         "default": "info"
+      },
+      "CelebrationKind": {
+        "type": "string",
+        "enum": [
+          "burst",
+          "fireworks",
+          "cannons",
+          "emoji",
+          "rain",
+          "stars"
+        ]
       },
       "SessionStatus": {
         "type": "object",

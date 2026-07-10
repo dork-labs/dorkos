@@ -202,6 +202,50 @@ describe('UiCommandSchema', () => {
       UiCommandSchema.parse({ action: 'show_toast', message: 'x'.repeat(501) })
     ).toThrow();
   });
+
+  describe('celebrate command', () => {
+    it('parses a bare celebrate (no kind)', () => {
+      const result = UiCommandSchema.parse({ action: 'celebrate' });
+      expect(result).toEqual({ action: 'celebrate' });
+    });
+
+    it('parses each canonical celebration kind', () => {
+      for (const kind of ['burst', 'fireworks', 'cannons', 'emoji', 'rain', 'stars'] as const) {
+        expect(UiCommandSchema.parse({ action: 'celebrate', kind })).toMatchObject({
+          action: 'celebrate',
+          kind,
+        });
+      }
+    });
+
+    it('coerces synonyms to canonical kinds', () => {
+      expect(UiCommandSchema.parse({ action: 'celebrate', kind: 'FIREWORK' })).toMatchObject({
+        kind: 'fireworks',
+      });
+      expect(UiCommandSchema.parse({ action: 'celebrate', kind: 'sparkle' })).toMatchObject({
+        kind: 'stars',
+      });
+      expect(UiCommandSchema.parse({ action: 'celebrate', kind: 'party' })).toMatchObject({
+        kind: 'burst',
+      });
+    });
+
+    it('tolerates an unknown kind by falling back to burst (Postel)', () => {
+      expect(UiCommandSchema.parse({ action: 'celebrate', kind: 'kaboom' })).toMatchObject({
+        kind: 'burst',
+      });
+    });
+
+    it('carries the emoji glyph', () => {
+      expect(
+        UiCommandSchema.parse({ action: 'celebrate', kind: 'emoji', emoji: '🏆' })
+      ).toMatchObject({ kind: 'emoji', emoji: '🏆' });
+    });
+
+    it('rejects an over-long emoji string', () => {
+      expect(() => UiCommandSchema.parse({ action: 'celebrate', emoji: 'x'.repeat(9) })).toThrow();
+    });
+  });
 });
 
 describe('UiCanvasContentSchema', () => {

@@ -1,7 +1,7 @@
 import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
 import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
-import { fireConfetti } from './celebrations/effects';
+import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
 
 /**
  * Minimal store interface the dispatcher requires.
@@ -96,6 +96,14 @@ export interface DispatcherContext {
    * treat the terminal as available (the web default).
    */
   supportsTerminal?: boolean;
+  /**
+   * Normalized viewport point a `celebrate` command should erupt from — the
+   * center of the control the user clicked, so confetti bursts out of the
+   * button rather than screen-center. Omitted for agent/stream-initiated
+   * celebrates (there is no element), which fall back to a sensible default
+   * origin. Ignored by ambient celebration kinds (fireworks/cannons/rain).
+   */
+  celebrationOrigin?: CelebrationOrigin;
 }
 
 /**
@@ -230,10 +238,15 @@ export function executeUiCommand(
 
     // --- Celebration ---
     case 'celebrate':
-      // Fire-and-forget: fireConfetti lazy-loads canvas-confetti and honors
-      // prefers-reduced-motion itself (disableForReducedMotion), so no extra
-      // guard is needed here — matches the SystemRequirementsStep call site.
-      void fireConfetti();
+      // Fire-and-forget: fireCelebration lazy-loads canvas-confetti and no-ops
+      // under prefers-reduced-motion itself, so no extra guard is needed here.
+      // The origin (when present) makes the burst erupt from the clicked
+      // control; agent/stream celebrates omit it and fall back to a default.
+      void fireCelebration({
+        kind: command.kind,
+        emoji: command.emoji,
+        origin: ctx.celebrationOrigin,
+      });
       break;
 
     default: {

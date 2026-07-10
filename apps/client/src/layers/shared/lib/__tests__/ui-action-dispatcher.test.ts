@@ -5,7 +5,9 @@ import {
   type DispatcherStore,
 } from '../ui-action-dispatcher';
 
-vi.mock('../celebrations/effects', () => ({ fireConfetti: vi.fn().mockResolvedValue(vi.fn()) }));
+vi.mock('../celebrations/celebration-effects', () => ({
+  fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
+}));
 
 // --- Mock store factory ---
 
@@ -435,10 +437,35 @@ describe('executeUiCommand — open_command_palette', () => {
 // --- Celebration ---
 
 describe('executeUiCommand — celebrate', () => {
-  it('fires confetti', async () => {
-    const { fireConfetti } = await import('../celebrations/effects');
+  it('fires a celebration', async () => {
+    const { fireCelebration } = await import('../celebrations/celebration-effects');
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'celebrate' }, 'agent');
-    expect(fireConfetti).toHaveBeenCalled();
+    expect(fireCelebration).toHaveBeenCalled();
+  });
+
+  it('threads the command kind, emoji, and the context origin into the celebration', async () => {
+    const { fireCelebration } = await import('../celebrations/celebration-effects');
+    vi.mocked(fireCelebration).mockClear();
+    const ctx = makeMockCtx();
+    ctx.celebrationOrigin = { x: 0.25, y: 0.75 };
+    executeUiCommand(ctx, { action: 'celebrate', kind: 'emoji', emoji: '🏆' }, 'user');
+    expect(fireCelebration).toHaveBeenCalledWith({
+      kind: 'emoji',
+      emoji: '🏆',
+      origin: { x: 0.25, y: 0.75 },
+    });
+  });
+
+  it('falls back to no origin when the context omits one (agent/stream celebrate)', async () => {
+    const { fireCelebration } = await import('../celebrations/celebration-effects');
+    vi.mocked(fireCelebration).mockClear();
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'celebrate', kind: 'fireworks' }, 'agent');
+    expect(fireCelebration).toHaveBeenCalledWith({
+      kind: 'fireworks',
+      emoji: undefined,
+      origin: undefined,
+    });
   });
 });

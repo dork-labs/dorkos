@@ -129,6 +129,7 @@ export type {
   UiSidebarTab,
   UiToastLevel,
   UiCommandEvent,
+  CelebrationKind,
 } from './schemas.js';
 
 export type {
