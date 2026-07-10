@@ -27,6 +27,9 @@ describe('AgentSessionStore', () => {
   });
 
   afterEach(() => {
+    // Vitest 4: restoreAllMocks only touches vi.spyOn spies, so reset the
+    // fs/promises automocks (call history + implementations) explicitly.
+    vi.resetAllMocks();
     vi.restoreAllMocks();
   });
 

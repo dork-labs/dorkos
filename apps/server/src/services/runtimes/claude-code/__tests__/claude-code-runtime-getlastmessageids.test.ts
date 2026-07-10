@@ -5,12 +5,14 @@ const { mockReadTranscript, mockLoggerWarn, transcriptReaderFactory } = vi.hoist
   const mockReadTranscript = vi.fn();
   const mockLoggerWarn = vi.fn();
   const transcriptReaderFactory = () => ({
-    TranscriptReader: vi.fn().mockImplementation(() => ({
-      readTranscript: mockReadTranscript,
-      hasTranscript: vi.fn().mockResolvedValue(false),
-      getProjectSlug: vi.fn().mockReturnValue('mock-slug'),
-      getTranscriptsDir: vi.fn().mockReturnValue('/mock/.claude/projects/mock-slug'),
-    })),
+    TranscriptReader: vi.fn().mockImplementation(function () {
+      return {
+        readTranscript: mockReadTranscript,
+        hasTranscript: vi.fn().mockResolvedValue(false),
+        getProjectSlug: vi.fn().mockReturnValue('mock-slug'),
+        getTranscriptsDir: vi.fn().mockReturnValue('/mock/.claude/projects/mock-slug'),
+      };
+    }),
   });
   return { mockReadTranscript, mockLoggerWarn, transcriptReaderFactory };
 });

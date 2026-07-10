@@ -35,6 +35,6 @@
     "@dorkos/relay": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

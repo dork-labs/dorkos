@@ -6,10 +6,12 @@ import request from 'supertest';
 // before vi.mock factory runs (vi.mock is hoisted above all imports).
 const { mockHandleRequest, mockTransportConstructor } = vi.hoisted(() => {
   const mockHandleRequest = vi.fn();
-  const mockTransportConstructor = vi.fn().mockImplementation(() => ({
-    handleRequest: mockHandleRequest,
-    close: vi.fn().mockResolvedValue(undefined),
-  }));
+  const mockTransportConstructor = vi.fn().mockImplementation(function () {
+    return {
+      handleRequest: mockHandleRequest,
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+  });
   return { mockHandleRequest, mockTransportConstructor };
 });
 

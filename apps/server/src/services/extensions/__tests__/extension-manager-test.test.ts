@@ -16,20 +16,24 @@ vi.mock('../../../lib/logger.js', () => ({
 
 const mockDiscover = vi.fn<[], Promise<ExtensionRecord[]>>();
 vi.mock('../extension-discovery.js', () => ({
-  ExtensionDiscovery: vi.fn().mockImplementation(() => ({
-    discover: mockDiscover,
-  })),
+  ExtensionDiscovery: vi.fn().mockImplementation(function () {
+    return {
+      discover: mockDiscover,
+    };
+  }),
 }));
 
 const mockCompile = vi.fn();
 const mockReadBundle = vi.fn();
 const mockCleanStaleCache = vi.fn().mockResolvedValue(0);
 vi.mock('../extension-compiler.js', () => ({
-  ExtensionCompiler: vi.fn().mockImplementation(() => ({
-    compile: mockCompile,
-    readBundle: mockReadBundle,
-    cleanStaleCache: mockCleanStaleCache,
-  })),
+  ExtensionCompiler: vi.fn().mockImplementation(function () {
+    return {
+      compile: mockCompile,
+      readBundle: mockReadBundle,
+      cleanStaleCache: mockCleanStaleCache,
+    };
+  }),
 }));
 
 const mockConfigGet = vi.fn();

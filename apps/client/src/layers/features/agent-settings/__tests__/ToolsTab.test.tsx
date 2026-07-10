@@ -51,7 +51,10 @@ const baseAgent: AgentManifest = {
  * Helper to scope queries to the rendered container.
  * Wraps in TooltipProvider since ToolGroupRow uses Tooltip.
  */
-function renderTab(agent: AgentManifest, onUpdate: ReturnType<typeof vi.fn>) {
+function renderTab(
+  agent: AgentManifest,
+  onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>
+) {
   const { container } = render(
     <TooltipProvider>
       <ToolsTab agent={agent} projectPath="/projects/test" onUpdate={onUpdate} />
@@ -61,11 +64,11 @@ function renderTab(agent: AgentManifest, onUpdate: ReturnType<typeof vi.fn>) {
 }
 
 describe('ToolsTab', () => {
-  let onUpdate: ReturnType<typeof vi.fn>;
+  let onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    onUpdate = vi.fn();
+    onUpdate = vi.fn<(updates: Partial<AgentManifest>) => void>();
     vi.mocked(useRelayEnabled).mockReturnValue(true);
     vi.mocked(useTasksEnabled).mockReturnValue(true);
     vi.mocked(useCapabilitiesForRuntime).mockReturnValue({

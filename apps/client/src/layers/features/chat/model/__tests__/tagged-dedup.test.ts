@@ -19,7 +19,7 @@ function applySetMessages(
 
 describe('tagged-dedup in seed effect Branch 2', () => {
   let setMessagesCalls: Array<(prev: ChatMessage[]) => ChatMessage[]>;
-  let setMessages: ReturnType<typeof vi.fn>;
+  let setMessages: ReturnType<typeof vi.fn<(fn: (prev: ChatMessage[]) => ChatMessage[]) => void>>;
 
   beforeEach(() => {
     setMessagesCalls = [];

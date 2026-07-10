@@ -102,6 +102,9 @@ describe('ClaudeCodeRuntime interactive tools', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    // Vitest 4: restoreAllMocks only touches vi.spyOn spies, so reset
+    // vi.mock/vi.fn mocks (call history + queued implementations) explicitly.
+    vi.resetAllMocks();
     vi.restoreAllMocks();
   });
 
