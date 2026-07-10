@@ -69,7 +69,15 @@ export function createApp() {
   // Trust the first proxy (ngrok) for correct req.hostname, req.ip, req.protocol
   app.set('trust proxy', 1);
 
-  app.use(cors({ origin: buildCorsOrigin() }));
+  // `credentials: true` sends Access-Control-Allow-Credentials: true so the
+  // browser accepts cross-origin responses to the client's `credentials:
+  // 'include'` fetches (auth cookies) — the desktop dev renderer (a distinct
+  // Vite origin) is the sole cross-origin surface; the web cockpit is
+  // same-origin via the Vite proxy. Note: this doesn't affect the explicit
+  // `DORKOS_CORS_ORIGIN='*'` opt-in above — wildcard ACAO is invalid for
+  // credentialed requests per the fetch spec, so browsers reject it
+  // regardless of this flag; that path stays wildcard for non-credentialed use.
+  app.use(cors({ origin: buildCorsOrigin(), credentials: true }));
 
   // Better Auth handler — mounted BEFORE express.json because Better Auth parses
   // its own request body (mounting after express.json breaks it). Express 5
