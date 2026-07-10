@@ -32,6 +32,18 @@ export interface AgentSession {
   hasStarted: boolean;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
+  /**
+   * Wire `uuid` of the last MAIN-THREAD assistant message this session produced
+   * (SDK `SDKAssistantMessage.uuid`; subagent messages are excluded). Used to
+   * anchor the NEXT turn's resume via `options.resumeSessionAt` so the CLI's
+   * resume-interrupt classifier never sees a trailing bookkeeping attachment
+   * (e.g. a Stop-hook `hook_success` entry) as an interrupted turn and injects a
+   * synthetic "Continue from where you left off." turn before the real prompt.
+   * Undefined on a fresh session, a cold (post-restart) resume, or a turn that
+   * produced no assistant message — all of which fall back to a plain resume.
+   * See `message-sender.ts`.
+   */
+  lastAssistantUuid?: string;
   /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
   activeQuery?: Query;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */

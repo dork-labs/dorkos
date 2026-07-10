@@ -171,6 +171,18 @@ function isResumeFailure(err: unknown): boolean {
 }
 
 /**
+ * Detect the CLI's hard failure when a `resumeSessionAt` anchor uuid is not in
+ * the (possibly compacted or externally rewritten) transcript — it throws
+ * `No message found with message.uuid of: <uuid>`. Distinct from
+ * {@link isResumeFailure}: recovery drops the anchor and resumes plainly,
+ * preserving history, rather than restarting as a brand-new session.
+ */
+function isAnchorNotFound(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /no message found with message\.uuid/i.test(err.message);
+}
+
+/**
  * Map a resolved SDK MCP server config to the runtime-neutral connection the
  * DorkOS server uses to read MCP App `ui://` resources (ADR 260708-141143).
  * Returns null when config is absent or the transport cannot be independently
@@ -359,6 +371,22 @@ export async function* executeSdkQuery(
 
   if (session.hasStarted) {
     sdkOptions.resume = session.sdkSessionId;
+    // Anchor the resume at the last main-thread assistant message this session
+    // produced. Without this, the claude CLI's resume classifier treats a
+    // trailing bookkeeping attachment — a Stop-hook `hook_success` entry, a
+    // skill/agent listing — as an `interrupted_turn` and injects a synthetic
+    // "Continue from where you left off." prompt (`getResumePrompt()`), which the
+    // model answers "No response requested." BEFORE our real message runs, so the
+    // operator sees a junk turn between every interaction (DOR phantom-continue).
+    // Truncating the resume to the last assistant excludes those trailing
+    // attachments, so the classifier settles the turn cleanly and our message is
+    // the next turn's sole prompt. The anchor is undefined on a cold resume or a
+    // no-assistant turn — a plain resume, unchanged behavior. `resumeSessionAt`
+    // never rewrites the transcript file, so nothing is lost: only what THIS
+    // resume loads is truncated (the excluded attachments stay on disk).
+    if (session.lastAssistantUuid) {
+      sdkOptions.resumeSessionAt = session.lastAssistantUuid;
+    }
     if (session.sdkSessionId === sessionId) {
       logger.debug(
         '[sendMessage] resuming with sdkSessionId === sessionId (expected after server restart)',
@@ -579,6 +607,11 @@ export async function* executeSdkQuery(
   let eventCount = 0;
   let contentEventCount = 0;
   let wasInteractive = false;
+  // Anchor for the NEXT turn's resume: the last main-thread assistant uuid seen
+  // this turn (undefined until one arrives). Committed to the session in the
+  // `finally`, unless a recursion retry already set the authoritative value.
+  let lastMainAssistantUuid: string | undefined;
+  let retriedViaRecursion = false;
   const streamStart = Date.now();
   const toolState = createToolState();
 
@@ -614,6 +647,14 @@ export async function* executeSdkQuery(
       pendingSdkPromise = null;
       const { result } = winner;
       if (result.done) break;
+
+      // Track the last MAIN-THREAD assistant message uuid so the NEXT turn can
+      // anchor its resume at it (see the `resumeSessionAt` note above). Subagent
+      // assistant messages carry a `parent_tool_use_id` and live in a separate
+      // transcript, so they must never become the main-session anchor.
+      if (result.value.type === 'assistant' && result.value.parent_tool_use_id === null) {
+        lastMainAssistantUuid = result.value.uuid;
+      }
 
       // The `result` message marks turn completion. The subprocess is still alive
       // (the prompt stream is held open), so fetch the authoritative context-usage
@@ -705,6 +746,21 @@ export async function* executeSdkQuery(
       }
     }
   } catch (err) {
+    // A stale/absent `resumeSessionAt` anchor (transcript compacted or rewritten
+    // out from under us) makes the CLI hard-fail. Drop the anchor and resume
+    // plainly — this preserves history (unlike the resume-as-new path below) and
+    // at worst re-admits a single phantom continue this one turn.
+    if (sdkOptions.resumeSessionAt && isAnchorNotFound(err) && retryDepth < MAX_RESUME_RETRIES) {
+      logger.warn('[sendMessage] resumeSessionAt anchor not found, retrying without anchor', {
+        session: sessionId,
+        retryDepth,
+        anchor: sdkOptions.resumeSessionAt,
+      });
+      session.lastAssistantUuid = undefined;
+      retriedViaRecursion = true;
+      yield* executeSdkQuery(sessionId, content, session, opts, messageOpts, retryDepth + 1);
+      return;
+    }
     if (session.hasStarted && isResumeFailure(err) && retryDepth < MAX_RESUME_RETRIES) {
       logger.warn('[sendMessage] resume failed for stale session, retrying as new', {
         session: sessionId,
@@ -712,6 +768,7 @@ export async function* executeSdkQuery(
         error: err instanceof Error ? err.message : String(err),
       });
       session.hasStarted = false;
+      retriedViaRecursion = true;
       yield* executeSdkQuery(sessionId, content, session, opts, messageOpts, retryDepth + 1);
       return;
     }
@@ -741,6 +798,14 @@ export async function* executeSdkQuery(
     // Preserve the query reference for post-stream control methods (e.g. reloadPlugins)
     session.lastQuery = session.activeQuery;
     session.activeQuery = undefined;
+    // Commit this turn's resume anchor for the next turn: the last main-thread
+    // assistant uuid, or undefined when the turn produced none (empty/error) so
+    // the next resume stays plain and keeps this turn's user message in context.
+    // Skipped when a recursion retry ran — that inner call set the correct value
+    // and this outer frame's local would clobber it.
+    if (!retriedViaRecursion) {
+      session.lastAssistantUuid = lastMainAssistantUuid;
+    }
   }
 
   // Detect empty streams that also never produced a done — zero content
