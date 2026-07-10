@@ -1,10 +1,10 @@
 {
   "label": "v0.45.0",
-  "archivedAt": "2026-07-10T03:44:30.556Z",
+  "archivedAt": "2026-07-10T14:42:33.408Z",
   "source": {
     "schemaVersion": 2,
-    "generatedAt": "2026-07-10T03:39:21.763Z",
-    "runId": "20260709-223437"
+    "generatedAt": "2026-07-10T08:55:02.507Z",
+    "runId": "20260710-035134"
   },
   "shots": [
     {
@@ -21,7 +21,7 @@
     }
   ],
   "count": 6,
-  "totalBytes": 1438659,
+  "totalBytes": 1323852,
   "assets": [
     {
       "source": "auto",
@@ -31,9 +31,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 84034,
-      "runId": "20260709-223437",
-      "capturedAt": "2026-07-10T03:38:08.661Z"
+      "bytes": 106072,
+      "runId": "20260710-035134",
+      "capturedAt": "2026-07-10T08:53:32.523Z"
     },
     {
       "source": "auto",
@@ -43,10 +43,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 473124,
-      "durationMs": 7623,
-      "runId": "20260709-223437",
-      "capturedAt": "2026-07-10T03:38:08.661Z"
+      "bytes": 364571,
+      "durationMs": 7538,
+      "runId": "20260710-035134",
+      "capturedAt": "2026-07-10T08:53:32.523Z"
     },
     {
       "source": "auto",
@@ -56,9 +56,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 94568,
-      "runId": "20260709-223437",
-      "capturedAt": "2026-07-10T03:38:08.661Z"
+      "bytes": 94043,
+      "runId": "20260710-035134",
+      "capturedAt": "2026-07-10T08:53:32.523Z"
     },
     {
       "source": "auto",
@@ -68,9 +68,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 33693,
-      "runId": "20260709-223437",
-      "capturedAt": "2026-07-10T03:38:08.661Z"
+      "bytes": 33709,
+      "runId": "20260710-035134",
+      "capturedAt": "2026-07-10T08:53:32.523Z"
     },
     {
       "source": "auto",
@@ -80,10 +80,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 695531,
-      "durationMs": 7076,
-      "runId": "20260709-223437",
-      "capturedAt": "2026-07-10T03:38:08.661Z"
+      "bytes": 667748,
+      "durationMs": 7089,
+      "runId": "20260710-035134",
+      "capturedAt": "2026-07-10T08:53:32.523Z"
     },
     {
       "source": "auto",
@@ -94,8 +94,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 57709,
-      "runId": "20260709-223437",
-      "capturedAt": "2026-07-10T03:38:08.661Z"
+      "runId": "20260710-035134",
+      "capturedAt": "2026-07-10T08:53:32.523Z"
     }
   ]
 }
