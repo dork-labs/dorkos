@@ -51,6 +51,7 @@ import { createApp } from '../../app.js';
 
 // Import the mocked BoundaryError for instanceof checks
 import { BoundaryError } from '../../lib/boundary.js';
+import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 
 const app = createApp();
 const BOUNDARY = '/Users/testuser';
@@ -214,11 +215,11 @@ describe('Directory Routes', () => {
   });
 
   describe('GET /api/directory/default', () => {
-    it('returns the process cwd', async () => {
+    it('returns the boundary-resolved default cwd, not the raw process cwd', async () => {
       const res = await request(app).get('/api/directory/default');
 
       expect(res.status).toBe(200);
-      expect(res.body.path).toBe(process.cwd());
+      expect(res.body.path).toBe(DEFAULT_CWD);
     });
   });
 
