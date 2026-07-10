@@ -83,10 +83,13 @@ export async function bootSeedAndDrive(
     await driveCaptures(browser, rec);
     return rec;
   } finally {
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
     if (browser) await browser.close();
     stack.teardown();
+    // Only drop the signal handlers once the stack is down — detaching them
+    // before the browser close completes would reopen a window where a Ctrl-C
+    // default-kills this process with the detached server/Vite still up.
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
     // Give child processes a moment to exit before the event loop drains.
     await sleep(500);
   }
