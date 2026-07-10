@@ -70,6 +70,35 @@ describe('StreamingText dorkos-ui fence', () => {
     expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
   });
 
+  it('holds the skeleton for a closed-but-truncated fence while the message streams', async () => {
+    // The mid-stream flicker scenario: a chunk boundary closes the fence
+    // (Streamdown reports it complete) while the JSON is still truncated.
+    // Through the real pipeline, isStreaming must reach the fence and hold
+    // the skeleton — never flash the error card.
+    const truncatedClosed = [
+      'Your move:',
+      '',
+      '```dorkos-ui',
+      '{ "version": 1, "root": { "type": "board", "rows": [["X", "O"',
+      '```',
+    ].join('\n');
+    render(<StreamingText content={truncatedClosed} isStreaming />, { wrapper: Wrapper });
+    expect(await screen.findByLabelText('Loading widget')).toBeInTheDocument();
+    expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
+  });
+
+  it('settles a closed-but-truncated fence into the error card once streaming ends', async () => {
+    const truncatedClosed = ['```dorkos-ui', '{ "version": 1, "root": { "type"', '```'].join('\n');
+    const { rerender } = render(<StreamingText content={truncatedClosed} isStreaming />, {
+      wrapper: Wrapper,
+    });
+    expect(await screen.findByLabelText('Loading widget')).toBeInTheDocument();
+
+    // The turn ends; the JSON never completed — now it is genuinely broken.
+    rerender(<StreamingText content={truncatedClosed} isStreaming={false} />);
+    expect(await screen.findByText("This widget couldn't be rendered")).toBeInTheDocument();
+  });
+
   it('renders multiple dorkos-ui fences in one message independently', async () => {
     const twoFences = [
       'First:',
