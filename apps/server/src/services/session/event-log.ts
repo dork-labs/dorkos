@@ -38,6 +38,19 @@ export class EventLog {
   }
 
   /**
+   * Seed the log from a durable event stream on projector hydration (DOR-189).
+   * The events already carry their persisted `seq`, so they are appended as-is
+   * (never re-stamped) and the same cap/trim applies. Called only on a FRESH
+   * projector (empty log) whose persistence is enabled, so it never interleaves
+   * with live events.
+   *
+   * @param events - Persisted events in seq order (from `SessionEventStore.readAll`).
+   */
+  hydrate(events: SessionEvent[]): void {
+    for (const event of events) this.append(event);
+  }
+
+  /**
    * Return events with `seq` strictly greater than `sinceCursor`. Exclusive on
    * the cursor so replay and live delivery overlap without duplicates.
    *

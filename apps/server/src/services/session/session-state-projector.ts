@@ -40,6 +40,7 @@ import { listPendingInteractions } from './pending-interactions.js';
 import { logger } from '../../lib/logger.js';
 import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
+import type { SessionEventStore } from './session-event-store.js';
 
 /**
  * An event as produced by an adapter: a {@link SessionEvent} union member with
@@ -123,6 +124,23 @@ interface TrackedInteraction {
 
 /** A subscriber waiting for the next ingested event. */
 type Waiter = (event: SessionEvent) => void;
+
+/**
+ * The durable persistence collaborator attached to a projector for a
+ * LOG-BACKED session (DOR-189). Present only when the owning runtime opted the
+ * session in (`getOrCreateProjector(…, { persist: true })`) AND a store was
+ * injected at boot. Absent for claude-code and whenever no store is wired.
+ */
+interface ProjectorPersistence {
+  /** The shared durable store (injected once at boot). */
+  store: SessionEventStore;
+  /**
+   * The id durable rows are keyed by — captured when persistence is enabled.
+   * Log-backed runtimes never rekey (their DorkOS id IS canonical), so this
+   * stays equal to `sessionId` for the projector's life.
+   */
+  sessionId: string;
+}
 
 /**
  * A lifecycle-bearing status update fanned out to global listeners (the
@@ -209,6 +227,14 @@ export class SessionStateProjector {
   /** Events of the turn in progress, or `null` when idle (ADR-0264 contract). */
   private inProgressTurn: SessionEvent[] | null = null;
 
+  /**
+   * Durable persistence for LOG-BACKED sessions, or `undefined` when this
+   * projector does not persist (claude-code, or no store wired). Set once via
+   * {@link SessionStateProjector.enablePersistence}. When present, each
+   * completed turn is flushed to the store on `turn_end` (DOR-189).
+   */
+  private persistence: ProjectorPersistence | undefined;
+
   /** Live interactions keyed by id; mirrors the DOR-73 pendingInteractions map. */
   private readonly interactions = new Map<string, TrackedInteraction>();
 
@@ -261,14 +287,68 @@ export class SessionStateProjector {
     const event = { ...raw, seq: ++this.counter } as SessionEvent;
     // Capture before project(): applyStatusChange replaces the status object.
     const lifecycleBefore = this.status.lifecycle;
+    // Capture the completing turn BEFORE project() clears inProgressTurn, so a
+    // persistence-enabled projector can flush the whole turn (turn_start … the
+    // captured deltas … this turn_end) after the event has streamed. A turn_end
+    // with no open turn is degenerate and not history-bearing — skip it.
+    const turnToFlush =
+      event.type === 'turn_end' && this.persistence !== undefined && this.inProgressTurn !== null
+        ? [...this.inProgressTurn, event]
+        : null;
     this.project(event);
     this.log.append(event);
     this.ring.append(event);
     const waiters = this.waiters;
     this.waiters = [];
     for (const wake of waiters) wake(event);
+    // Flush AFTER waking subscribers: the turn already reached the client, so a
+    // persistence failure only forfeits cross-restart durability, never live
+    // streaming.
+    if (turnToFlush !== null) this.flushTurn(turnToFlush);
     if (this.status.lifecycle !== lifecycleBefore) notifyStatusChange(this);
     return event;
+  }
+
+  /**
+   * Attach durable persistence to this projector (idempotent, DOR-189). On the
+   * FIRST enable of a still-empty projector, hydrate the in-memory log from the
+   * store and restore `counter = maxSeq` so completed history and seq
+   * continuity survive a server restart. A projector that has already ingested
+   * live events (`counter > 0`) is not re-hydrated — its in-memory log is
+   * authoritative for this run and its completed turns are already flushed; a
+   * later restart mints a fresh projector that hydrates cleanly.
+   *
+   * @param store - The shared durable session-event store (injected at boot).
+   */
+  enablePersistence(store: SessionEventStore): void {
+    if (this.persistence !== undefined) return;
+    this.persistence = { store, sessionId: this.sessionId };
+    if (this.counter === 0) {
+      const events = store.readAll(this.sessionId);
+      if (events.length > 0) this.log.hydrate(events);
+      // Restore the counter to the durable max (past any unparseable-and-skipped
+      // rows) so the next ingest continues monotonically and cannot collide.
+      this.counter = store.maxSeq(this.sessionId);
+    }
+  }
+
+  /**
+   * Persist a just-completed turn to the durable store. Failure is
+   * warned-and-swallowed: the turn already streamed to subscribers, so a
+   * persistence error only forfeits cross-restart durability (degrading to the
+   * pre-DOR-189 in-memory behavior) and must never break live streaming.
+   */
+  private flushTurn(events: SessionEvent[]): void {
+    const persistence = this.persistence;
+    if (persistence === undefined) return;
+    try {
+      persistence.store.appendTurn(persistence.sessionId, events);
+    } catch (err) {
+      logger.warn('[SessionStateProjector] durable turn flush failed — history not persisted', {
+        sessionId: persistence.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /** Fold an event into the live projection. */
@@ -716,6 +796,30 @@ export class SessionStateProjector {
 const projectors = new Map<string, SessionStateProjector>();
 
 /**
+ * Durable session-event store for LOG-BACKED runtimes (DOR-189), injected once
+ * at boot. `undefined` until wired — and in unit tests / embedded hosts without
+ * a Db — in which case persistence is a no-op and history degrades to the
+ * in-memory EventLog (the pre-DOR-189 behavior).
+ */
+let sessionEventStore: SessionEventStore | undefined;
+
+/**
+ * Inject the durable session-event store, called once from the composition
+ * root (`apps/server/src/index.ts`) after `createDb()`. Passing `undefined`
+ * clears it (test isolation).
+ *
+ * @param store - The shared store, or `undefined` to disable persistence.
+ */
+export function setSessionEventStore(store: SessionEventStore | undefined): void {
+  sessionEventStore = store;
+}
+
+/** The injected durable session-event store, or `undefined` when none is wired. */
+export function getSessionEventStore(): SessionEventStore | undefined {
+  return sessionEventStore;
+}
+
+/**
  * Remove `sessionId`'s registry entry only if it still maps to `instance`.
  * Guards the self-dispose path: between a subscriber detaching and this call,
  * the id could (in principle) have been re-keyed or re-created — deleting an
@@ -733,14 +837,26 @@ function disposeProjectorIfCurrent(sessionId: string, instance: SessionStateProj
  * @param sessionId - DorkOS session id.
  * @param cwd - The session's working directory, when the caller knows it.
  *   Stamped once (first writer wins) and carried on status fan-outs.
+ * @param opts - `{ persist: true }` opts the session into durable
+ *   session-event storage (DOR-189) — set by the LOG-BACKED runtimes
+ *   (codex/opencode/test-mode) on their read/subscribe paths and by the turn
+ *   trigger for log-backed runtimes. A no-op when no store is wired, or on a
+ *   projector that already persists. claude-code passes nothing.
  */
-export function getOrCreateProjector(sessionId: string, cwd?: string): SessionStateProjector {
+export function getOrCreateProjector(
+  sessionId: string,
+  cwd?: string,
+  opts?: { persist?: boolean }
+): SessionStateProjector {
   let projector = projectors.get(sessionId);
   if (!projector) {
     projector = new SessionStateProjector(sessionId);
     projectors.set(sessionId, projector);
   }
   if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
+  if (opts?.persist === true && sessionEventStore !== undefined) {
+    projector.enablePersistence(sessionEventStore);
+  }
   return projector;
 }
 

@@ -2,7 +2,7 @@
 slug: durable-event-log
 id: 260710-025100
 created: 2026-07-09
-status: specified
+status: implemented
 linearIssue: DOR-189
 adr: 260710-024641
 ---

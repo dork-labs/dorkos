@@ -67,6 +67,7 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 });
 
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { driveDurableTurn } from '../../../session/__tests__/durable-turn-harness.js';
 import { TurnEventQueue } from '../global-event-hub.js';
 import type { OpenCodeWireEvent } from '../event-mapper.js';
 import type { OpenCodeClientProvider } from '../session-mapper.js';
@@ -188,6 +189,10 @@ runtimeConformance(
     // completed turn MUST surface real history: scripted session.messages in
     // mocked mode, the sidecar's actual store in live mode.
     expectHistory: true,
+    // DOR-189: the EventLog fallback is now persisted, so a completed turn is
+    // reconstructable from the durable store after a restart too.
+    durableHistory: (runtime, sessionId, content) =>
+      driveDurableTurn(runtime, sessionId, content, PROJECT_DIR),
     // A deterministic failure cannot be scripted against a live sidecar, so
     // the turn-failure gate runs only in mocked mode: `session.error`
     // (non-abort) followed by the `session.idle` terminal.
