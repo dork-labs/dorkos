@@ -29,12 +29,23 @@ interface GlyphCell {
   glyph?: string;
 }
 
+/**
+ * A cell's glyph normalized for line comparison: trimmed, whitespace-only →
+ * `null`. The schema layer already strips whitespace-only glyphs, but this
+ * module also runs on unvalidated shapes (belt and braces) — a board of
+ * `glyph: " "` cells must never read as a winning line of identical marks.
+ */
+function effectiveGlyph(cell: GlyphCell | undefined): string | null {
+  const trimmed = cell?.glyph?.trim();
+  return trimmed ? trimmed : null;
+}
+
 /** A line of coordinates wins when every cell holds the same non-empty glyph. */
 function lineGlyph(rows: GlyphCell[][], coords: BoardCoord[]): string | null {
-  const first = rows[coords[0].row]?.[coords[0].col]?.glyph;
+  const first = effectiveGlyph(rows[coords[0].row]?.[coords[0].col]);
   if (!first) return null;
   for (const { row, col } of coords) {
-    if (rows[row]?.[col]?.glyph !== first) return null;
+    if (effectiveGlyph(rows[row]?.[col]) !== first) return null;
   }
   return first;
 }

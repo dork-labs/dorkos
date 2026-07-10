@@ -77,7 +77,17 @@ export const GEN_UI_SECTIONS: PlaygroundSection[] = [
     title: 'Generative UI — Board',
     page: 'gen-ui',
     category: 'Generative UI',
-    keywords: ['widget', 'gen-ui', 'dorkos-ui', 'board', 'grid', 'game', 'tic-tac-toe'],
+    keywords: [
+      'widget',
+      'gen-ui',
+      'dorkos-ui',
+      'board',
+      'grid',
+      'game',
+      'tic-tac-toe',
+      'win',
+      'victory',
+    ],
   },
   {
     id: 'generative-ui-reveal',

@@ -2293,9 +2293,6 @@
               },
               "title": {
                 "type": "string"
-              },
-              "sandbox": {
-                "type": "string"
               }
             },
             "required": [

@@ -13,8 +13,17 @@ import { WIDGET_EASE_OUT } from '../../../lib/widget-motion';
 
 /** Seconds to wait before drawing, so the cells finish landing first. */
 const WIN_LINE_DELAY = 0.28;
-/** Seconds to draw the stroke across the board. */
-const WIN_LINE_DURATION = 0.32;
+/** Seconds to draw the stroke across the board (~300ms). */
+const WIN_LINE_DURATION = 0.3;
+/**
+ * Stroke thickness as a fraction of one cell's edge. The viewBox is in cell
+ * units (a cell is ~2.5–3.25 units), so an absolute `strokeWidth` would be a
+ * huge fraction of the board — a hardcoded 2.25 once rendered as a bar covering
+ * ~70% of a cell's height (the "giant pill" bug). ~12% reads as a pen stroke.
+ */
+const WIN_STROKE_CELL_FRACTION = 0.12;
+/** Slightly translucent so the marks underneath stay visible through the stroke. */
+const WIN_STROKE_OPACITY = 0.8;
 
 interface WinLineProps {
   win: WinLineData;
@@ -61,7 +70,8 @@ export function WinLine({ win, size, cellUnit, gapUnit, colorClass, motionOn }: 
         x2={x2}
         y2={y2}
         className="stroke-current"
-        strokeWidth={2.25}
+        strokeWidth={cellUnit * WIN_STROKE_CELL_FRACTION}
+        strokeOpacity={WIN_STROKE_OPACITY}
         strokeLinecap="round"
         initial={motionOn ? { pathLength: 0, opacity: 0 } : false}
         animate={motionOn ? { pathLength: 1, opacity: 1 } : false}

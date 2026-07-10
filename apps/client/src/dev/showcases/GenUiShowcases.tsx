@@ -224,7 +224,12 @@ const CELEBRATE_DEMO: WidgetDocument = {
   },
 };
 
-/** A tic-tac-toe board mid-game — empty cells carry an agent action (disabled here: no session). */
+/**
+ * A tic-tac-toe board mid-game — empty cells carry an agent action (disabled
+ * here: no session). Deliberately has NO completed line (X threatens the
+ * diagonal but (2,2) is open), so no victory stroke draws — the previous
+ * arrangement accidentally contained a finished X diagonal.
+ */
 const BOARD: WidgetDocument = {
   version: 1,
   title: 'Tic-tac-toe',
@@ -234,7 +239,46 @@ const BOARD: WidgetDocument = {
     rows: [
       [{ glyph: 'X' }, { glyph: 'O' }, { action: { kind: 'agent', id: 'move-0-2' } }],
       [{ action: { kind: 'agent', id: 'move-1-0' } }, { glyph: 'X' }, { glyph: 'O' }],
-      [{ glyph: 'O' }, { action: { kind: 'agent', id: 'move-2-1' } }, { glyph: 'X' }],
+      [
+        { glyph: 'O' },
+        { action: { kind: 'agent', id: 'move-2-1' } },
+        { action: { kind: 'agent', id: 'move-2-2' } },
+      ],
+    ],
+  },
+};
+
+/**
+ * A finished game — X completed the top row, so the victory stroke draws
+ * through it (toneless win → success green). Kept here so the win-line's
+ * geometry and color stay eyeballable in both themes forever (it once rendered
+ * as a giant black pill).
+ */
+const BOARD_WON: WidgetDocument = {
+  version: 1,
+  title: 'Tic-tac-toe',
+  root: {
+    type: 'board',
+    label: 'X wins — top row',
+    rows: [
+      [{ glyph: 'X' }, { glyph: 'X' }, { glyph: 'X' }],
+      [{ glyph: 'O' }, { glyph: 'O' }, {}],
+      [{}, {}, {}],
+    ],
+  },
+};
+
+/** A won game whose winning cells carry a tone — the stroke inherits it (info blue). */
+const BOARD_WON_TONED: WidgetDocument = {
+  version: 1,
+  title: 'Connect the line',
+  root: {
+    type: 'board',
+    label: 'Diagonal win, info tone',
+    rows: [
+      [{ glyph: 'O', tone: 'info' }, { glyph: 'X' }, {}],
+      [{ glyph: 'X' }, { glyph: 'O', tone: 'info' }, {}],
+      [{}, { glyph: 'X' }, { glyph: 'O', tone: 'info' }],
     ],
   },
 };
@@ -373,8 +417,17 @@ export function GenUiShowcases() {
         title="Generative UI — Board"
         description="A CSS grid of glyph cells, some clickable. Paired with an agent action re-emitted each turn, this is the primitive behind turn-based games like tic-tac-toe — the empty cells below carry an action but render disabled here (the playground has no session to send a move to)."
       >
+        <ShowcaseLabel>mid-game</ShowcaseLabel>
         <ShowcaseDemo>
           <WidgetRenderer document={BOARD} />
+        </ShowcaseDemo>
+        <ShowcaseLabel>won — victory stroke (toneless → success green)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <WidgetRenderer document={BOARD_WON} />
+        </ShowcaseDemo>
+        <ShowcaseLabel>won — stroke inherits the winning cells&apos; tone</ShowcaseLabel>
+        <ShowcaseDemo>
+          <WidgetRenderer document={BOARD_WON_TONED} />
         </ShowcaseDemo>
       </PlaygroundSection>
 
