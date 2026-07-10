@@ -6,7 +6,11 @@ import {
   CodexThreadMap,
   createCodexUiMcpServer,
 } from './services/runtimes/codex/index.js';
-import { OpenCodeRuntime, openCodeServerManager } from './services/runtimes/opencode/index.js';
+import {
+  OpenCodeRuntime,
+  OpenCodeSessionMap,
+  openCodeServerManager,
+} from './services/runtimes/opencode/index.js';
 import {
   runtimeRegistry,
   applyConfiguredDefaultRuntime,
@@ -328,7 +332,12 @@ async function start() {
     // lazily on first use; its shutdown is wired into shutdownServices().
     const openCodeConfig = configManager.get('runtimes').opencode;
     if (openCodeConfig.enabled) {
-      const openCodeRuntime = new OpenCodeRuntime({ provider: openCodeServerManager });
+      const openCodeRuntime = new OpenCodeRuntime({
+        provider: openCodeServerManager,
+        // Durable sessionId <-> OpenCode-session-id map on the shared Drizzle
+        // handle, so DorkOS-facing ids survive a server restart (DOR-251).
+        sessionMap: new OpenCodeSessionMap(db),
+      });
       // Durable per-session settings hydrate/write-through (ADR-0260), same
       // port the Claude adapter uses.
       openCodeRuntime.setSessionSettings(runtimeRegistry);

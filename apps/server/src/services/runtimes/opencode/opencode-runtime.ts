@@ -69,7 +69,12 @@ import {
   matchesOpenCodeSession,
   type OpenCodeWireEvent,
 } from './event-mapper.js';
-import { OpenCodeSessionMapper, unwrap, type OpenCodeClientProvider } from './session-mapper.js';
+import {
+  OpenCodeSessionMapper,
+  unwrap,
+  type OpenCodeClientProvider,
+  type OpenCodeSessionMapStore,
+} from './session-mapper.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './global-event-hub.js';
 import { OpenCodeSessionRegistry } from './session-registry.js';
 import { PendingApprovalStore, resolveApprovalDecision } from './approvals.js';
@@ -84,6 +89,13 @@ export interface OpenCodeRuntimeOptions {
    * production, a mock in tests (the `opencode` binary is never required).
    */
   provider: OpenCodeClientProvider;
+  /**
+   * Durable sessionId <-> OpenCode-session-id store (`OpenCodeSessionMap`
+   * over the shared Drizzle handle in production). Keeps DorkOS-facing ids
+   * stable across server restarts (DOR-251); tests that don't exercise
+   * persistence may omit it.
+   */
+  sessionMap?: OpenCodeSessionMapStore;
 }
 
 /** One in-flight turn (identity-matched on teardown, like Codex's controllers). */
@@ -119,7 +131,7 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   constructor(options: OpenCodeRuntimeOptions) {
     this.provider = options.provider;
-    this.mapper = new OpenCodeSessionMapper(options.provider);
+    this.mapper = new OpenCodeSessionMapper(options.provider, options.sessionMap);
     this.hub = new OpenCodeGlobalEventHub(options.provider);
   }
 
@@ -475,9 +487,22 @@ export class OpenCodeRuntime implements AgentRuntime {
     return sessions;
   }
 
+  /**
+   * @inheritdoc
+   *
+   * The cheap path reads the sidecar listing + tracked registry. On a miss
+   * with a KNOWN durable binding (post-restart, cold sidecar — `listSessions`
+   * never boots), falls through to the mapper's targeted single-session read,
+   * which boots the sidecar: a bookmarked id must resolve after a restart
+   * instead of 404ing until something else warms the sidecar (DOR-251).
+   */
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     const sessions = await this.listSessions(projectDir);
-    return sessions.find((session) => session.id === sessionId) ?? null;
+    const listed = sessions.find((session) => session.id === sessionId);
+    if (listed) return listed;
+    const session = await this.mapper.getSession(projectDir, sessionId);
+    if (session) this.overlayTrackedSettings(session);
+    return session;
   }
 
   /**

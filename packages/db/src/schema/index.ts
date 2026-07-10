@@ -14,6 +14,7 @@ export * from './relay.js';
 export * from './mesh.js';
 export * from './sessions.js';
 export * from './codex.js';
+export * from './opencode.js';
 export * from './session-events.js';
 export * from './workspace.js';
 export * from './auth.js';
