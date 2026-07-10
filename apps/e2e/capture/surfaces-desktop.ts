@@ -140,8 +140,37 @@ async function shootToolApproval(page: Page, theme: Theme, rec: RunRecorder): Pr
   await shoot(page, 'tool-approval', theme, rec);
 }
 
+/**
+ * Seed the right-panel split before navigation, so the panel mounts at the
+ * given width. Writes the exact JSON react-resizable-panels persists for
+ * `autoSaveId="app-shell-right-panel"`. An init script (not a post-navigation
+ * evaluate): a loop runs in a fresh context still on about:blank, where
+ * localStorage is an opaque origin and a direct evaluate throws — the init
+ * script lands the write before the panel mounts on the real navigation.
+ */
+async function seedRightPanelSplit(page: Page, rightPct: number): Promise<void> {
+  const layout = JSON.stringify({
+    'main-content,right-panel': { expandToSizes: {}, layout: [100 - rightPct, rightPct] },
+  });
+  await page.addInitScript((value) => {
+    try {
+      localStorage.setItem('react-resizable-panels:app-shell-right-panel', value);
+    } catch {
+      // about:blank opaque origin — the write lands on the real navigation.
+    }
+  }, layout);
+}
+
+/**
+ * Canvas right-panel split (founder art direction: the document needs a
+ * genuinely readable column, not a sliver — 45% ≈ 576px at the 1280px capture
+ * viewport).
+ */
+const CANVAS_PANEL_PCT = 45;
+
 /** Drive the canvas open beside chat (shared by the still and the loop). */
 async function driveCanvasOpen(page: Page): Promise<void> {
+  await seedRightPanelSplit(page, CANVAS_PANEL_PCT);
   await openLiveTurn(
     page,
     'demo-canvas',
@@ -275,14 +304,11 @@ async function shootMultiSession(page: Page, theme: Theme, rec: RunRecorder): Pr
 const PERSONALITY_MORPH_MS = 1600;
 
 /**
- * Right-panel split seeded before personality captures (founder art
- * direction: the radar reads far better with a generous right column —
- * 35% ≈ 448px at the 1280px capture viewport). This is the exact JSON
- * react-resizable-panels persists for `autoSaveId="app-shell-right-panel"`.
+ * Personality right-panel split (founder art direction: the radar reads far
+ * better with a generous right column — 35% ≈ 448px at the 1280px capture
+ * viewport).
  */
-const WIDE_RIGHT_PANEL_LAYOUT = JSON.stringify({
-  'main-content,right-panel': { expandToSizes: {}, layout: [65, 35] },
-});
+const PERSONALITY_PANEL_PCT = 35;
 
 /**
  * Drive the agent personality picker: seed a wide right-panel split, open
@@ -291,17 +317,7 @@ const WIDE_RIGHT_PANEL_LAYOUT = JSON.stringify({
  * and flashes in response. Ends on a vivid preset.
  */
 async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
-  // Seed the wide split via an init script (not a post-navigation evaluate):
-  // a loop runs in a fresh context still on about:blank, where localStorage is
-  // an opaque origin and a direct evaluate throws. The init script lands the
-  // write before the panel mounts on the real navigation.
-  await page.addInitScript((layout) => {
-    try {
-      localStorage.setItem('react-resizable-panels:app-shell-right-panel', layout);
-    } catch {
-      // about:blank opaque origin — the write lands on the real navigation.
-    }
-  }, WIDE_RIGHT_PANEL_LAYOUT);
+  await seedRightPanelSplit(page, PERSONALITY_PANEL_PCT);
   await page.goto(url('/agents?view=list'));
   // The agent-hub panel binds to the agent whose Manage control opened it —
   // a bare ?agent= URL param resolves against the default cwd instead.
