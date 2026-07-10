@@ -43,7 +43,14 @@ export async function buildAuthRuntime(dorkHome: string): Promise<AuthRuntime> {
   // Same on-disk database the server opens (`apps/server/src/index.ts`).
   const db = createDb(path.join(dorkHome, 'dork.db'));
   runMigrations(db);
-  const auth = createOwnerAuth(db) as unknown as OwnerAuth;
+
+  // Resolve the signing secret the SAME way the server does (env → persisted
+  // 0600 file → generate + persist), reusing the server module so both paths
+  // converge on one secret. Without it `signUpEmail` throws the production
+  // default-secret error and `auth enable` never creates the owner (DOR-242).
+  // The build maps `../../server/...` to the server source tree.
+  const { resolveBetterAuthSecret } = await import('../../server/services/core/auth/secret.js');
+  const auth = createOwnerAuth(db, resolveBetterAuthSecret(dorkHome)) as unknown as OwnerAuth;
 
   // Reuse the server's config manager (already the CLI's config path — see the
   // `config`/`init` subcommands in cli.ts); the build maps `../../server/...`

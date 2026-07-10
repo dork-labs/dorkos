@@ -31,10 +31,21 @@ import { user, session, account, verification, apikey, type Db } from '@dorkos/d
  * configured identically (for identity purposes) to the server's `createAuth`.
  *
  * @param db - The consolidated `@dorkos/db` database (from `createDb`).
+ * @param secret - The session-signing secret (resolved by the server's
+ *   `resolveBetterAuthSecret`). Required: `signUpEmail` mints a session during
+ *   owner creation, and in production Better Auth throws rather than sign with
+ *   its default secret — so without this, `dorkos auth enable` 500s before the
+ *   owner is ever created (DOR-242). Passing the same secret the server persists
+ *   also keeps CLI-minted and server-issued credentials mutually valid.
  */
-export function createOwnerAuth(db: Db) {
+export function createOwnerAuth(db: Db, secret: string) {
   return betterAuth({
     appName: 'DorkOS',
+    // The signing secret is the one identity-relevant option beyond the hash +
+    // table map: owner creation mints (and discards) a session, which must be
+    // signable. Env override → persisted file → generated, resolved by the
+    // caller so the CLI and server converge on the same secret.
+    secret,
     // No `baseURL`, `trustedOrigins`, or cookie config: the CLI calls
     // `auth.api.*` / `auth.$context` in-process, so there is no request origin
     // to check and no cookie to sign. Better Auth logs a one-time "Base URL is

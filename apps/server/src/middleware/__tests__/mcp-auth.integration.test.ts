@@ -72,7 +72,7 @@ describe('mcpApiKeyAuth — /mcp end-to-end (integration)', () => {
     initConfigManager(tmpDir);
     db = createDb(path.join(tmpDir, 'mcpauth-test.db'));
     runMigrations(db);
-    const auth = initAuth(db);
+    const auth = initAuth(db, tmpDir);
     app = buildApp();
 
     const signUp = await request(app)

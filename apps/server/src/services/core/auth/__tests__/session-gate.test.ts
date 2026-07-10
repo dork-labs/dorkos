@@ -62,7 +62,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
     initConfigManager(tmpDir);
     db = createDb(path.join(tmpDir, 'gate-test.db'));
     runMigrations(db);
-    const auth = initAuth(db);
+    const auth = initAuth(db, tmpDir);
     app = buildApp();
 
     // Create the owner and capture a real session cookie.

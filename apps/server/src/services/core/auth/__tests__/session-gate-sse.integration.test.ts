@@ -118,7 +118,7 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
     initConfigManager(tmpDir);
     db = createDb(path.join(tmpDir, 'gate-sse.db'));
     runMigrations(db);
-    initAuth(db);
+    initAuth(db, tmpDir);
     app = createApp();
     finalizeApp(app);
 

@@ -176,7 +176,10 @@ async function start() {
   // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
   // is a later task) so the enable-login flow can create the owner account
   // before the flag flips. See services/core/auth/.
-  initAuth(db);
+  // dorkHome is threaded through so the session-signing secret resolves from
+  // (and, on first boot, persists into) a 0600 file there — a fresh install
+  // signs in with zero manual `BETTER_AUTH_SECRET` setup (DOR-242).
+  initAuth(db, dorkHome);
 
   // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned
   // Better Auth API key so existing MCP clients keep working after the rewrite to
