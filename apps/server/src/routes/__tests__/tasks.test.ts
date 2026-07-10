@@ -131,6 +131,21 @@ describe('Tasks routes', () => {
 
       expect(scheduler.registerTask).toHaveBeenCalled();
     });
+
+    it('returns nextRun in the creation response, matching the list endpoint', async () => {
+      const res = await request(app).post('/api/tasks').send({
+        name: 'Next Run',
+        description: 'p',
+        prompt: 'p',
+        cron: '0 * * * *',
+        target: 'global',
+      });
+
+      expect(res.status).toBe(201);
+      // The mocked scheduler.getNextRun() always resolves to this fixed date —
+      // the create response must carry it, not the store's default null.
+      expect(res.body.nextRun).toBe('2026-03-01T00:00:00.000Z');
+    });
   });
 
   describe('PATCH /api/tasks/:id', () => {

@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import { pulseSchedules } from '@dorkos/db';
+import { pulseSchedules, pulseRuns } from '@dorkos/db';
+import { eq } from 'drizzle-orm';
 
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
 function taskInput(
@@ -228,6 +229,84 @@ describe('TaskStore', () => {
     });
   });
 
+  // === Terminal-status guard (DOR-248) ===
+
+  describe('updateRun terminal guard', () => {
+    function createTestTask() {
+      return store.createTask(
+        taskInput({ name: 'Terminal Guard', prompt: 'test', cron: '* * * * *' })
+      ).id;
+    }
+
+    it('does not let a post-terminal write downgrade status back to running', () => {
+      // Reproduces the DOR-248 race: the handler writes the terminal status
+      // first (synchronous in-process relay delivery), then a delayed caller
+      // (the scheduler's post-publish write) tries to stamp 'running' again.
+      const taskId = createTestTask();
+      const run = store.createRun(taskId, 'scheduled');
+
+      const completed = store.updateRun(run.id, {
+        status: 'completed',
+        finishedAt: '2026-07-10T02:44:10.310Z',
+        durationMs: 10_307,
+        outputSummary: 'ok',
+        sessionId: 'session-1',
+      });
+      expect(completed!.status).toBe('completed');
+
+      const stomped = store.updateRun(run.id, { status: 'running' });
+
+      expect(stomped!.status).toBe('completed');
+      expect(stomped!.finishedAt).toBe('2026-07-10T02:44:10.310Z');
+      expect(stomped!.durationMs).toBe(10_307);
+      expect(stomped!.outputSummary).toBe('ok');
+
+      // Persisted state matches the returned value — this isn't just an
+      // in-memory echo of the stale `existing` object.
+      const reread = store.getRun(run.id);
+      expect(reread!.status).toBe('completed');
+      expect(reread!.finishedAt).toBe('2026-07-10T02:44:10.310Z');
+    });
+
+    it('ignores any update once a run is failed', () => {
+      const taskId = createTestTask();
+      const run = store.createRun(taskId, 'scheduled');
+      store.updateRun(run.id, {
+        status: 'failed',
+        finishedAt: '2026-07-10T00:00:00.000Z',
+        error: 'boom',
+      });
+
+      store.updateRun(run.id, { status: 'running', error: 'clobbered?' });
+
+      const found = store.getRun(run.id);
+      expect(found!.status).toBe('failed');
+      expect(found!.error).toBe('boom');
+    });
+
+    it('ignores any update once a run is cancelled', () => {
+      const taskId = createTestTask();
+      const run = store.createRun(taskId, 'scheduled');
+      store.updateRun(run.id, { status: 'cancelled', finishedAt: '2026-07-10T00:00:00.000Z' });
+
+      store.updateRun(run.id, { status: 'completed', outputSummary: 'too late' });
+
+      const found = store.getRun(run.id);
+      expect(found!.status).toBe('cancelled');
+      expect(found!.outputSummary).toBeNull();
+    });
+
+    it('still allows updates while a run is running (non-terminal)', () => {
+      const taskId = createTestTask();
+      const run = store.createRun(taskId, 'scheduled');
+
+      const updated = store.updateRun(run.id, { sessionId: 'session-mid-run' });
+
+      expect(updated!.status).toBe('running');
+      expect(updated!.sessionId).toBe('session-mid-run');
+    });
+  });
+
   // === Retention pruning ===
 
   describe('pruneRuns', () => {
@@ -305,6 +384,53 @@ describe('TaskStore', () => {
 
       const found = store.getRun(run.id);
       expect(found!.status).toBe('completed');
+    });
+
+    it('DOR-249: does not clobber a finished run stuck in "running" status', () => {
+      // Simulates the DOR-248 failure mode directly at the row level (belt
+      // and suspenders — the sweep must not assume every writer already
+      // carries the updateRun terminal guard): a run genuinely finished
+      // (real finishedAt/durationMs/outputSummary) but its status column
+      // never advanced past 'running'. The restart sweep must recognize it
+      // as finished via `finishedAt` and leave it alone.
+      const taskId = createTestTask();
+      const run = store.createRun(taskId, 'scheduled');
+      db.update(pulseRuns)
+        .set({
+          status: 'running',
+          finishedAt: '2026-07-10T02:44:10.310Z',
+          durationMs: 10_307,
+          output: 'ok',
+        })
+        .where(eq(pulseRuns.id, run.id))
+        .run();
+
+      const changed = store.markRunningAsFailed();
+      expect(changed).toBe(0);
+
+      const found = store.getRun(run.id);
+      expect(found!.status).toBe('running');
+      expect(found!.finishedAt).toBe('2026-07-10T02:44:10.310Z');
+      expect(found!.durationMs).toBe(10_307);
+      expect(found!.error).toBeNull();
+    });
+
+    it('still sweeps genuinely unfinished running runs alongside finished ones', () => {
+      const taskId = createTestTask();
+      const crashed = store.createRun(taskId, 'scheduled'); // finishedAt stays null
+      const stuckButFinished = store.createRun(taskId, 'scheduled');
+      db.update(pulseRuns)
+        .set({ status: 'running', finishedAt: '2026-07-10T02:44:10.310Z', output: 'ok' })
+        .where(eq(pulseRuns.id, stuckButFinished.id))
+        .run();
+
+      const changed = store.markRunningAsFailed();
+      expect(changed).toBe(1);
+
+      expect(store.getRun(crashed.id)!.status).toBe('failed');
+      expect(store.getRun(crashed.id)!.error).toBe('Interrupted by server restart');
+      expect(store.getRun(stuckButFinished.id)!.status).toBe('running');
+      expect(store.getRun(stuckButFinished.id)!.finishedAt).toBe('2026-07-10T02:44:10.310Z');
     });
   });
 

@@ -416,6 +416,13 @@ export class TaskSchedulerService {
    * (deliveredTo === 0), the run is immediately marked as failed.
    * Otherwise it is marked as running — the receiver will update
    * status on completion via a separate response flow.
+   *
+   * DOR-248: in-process relay delivery is synchronous, so by the time
+   * `publish()` resolves here the receiving task handler may have already
+   * run the agent turn to completion and written a terminal status. The
+   * `status: 'running'` write below can therefore race a `completed` write
+   * that already happened — `TaskStore#updateRun`'s terminal-status guard is
+   * what makes that race harmless, not the ordering of these two calls.
    */
   private async executeRunViaRelay(task: Task, run: TaskRun): Promise<void> {
     let effectiveCwd: string;
