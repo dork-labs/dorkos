@@ -29,7 +29,7 @@ interface WidgetFenceProps {
    * rendered" mid-stream). Once settled (`false`, the default), an invalid
    * fence is genuinely broken and the error card is correct.
    */
-  streaming?: boolean;
+  isStreaming?: boolean;
 }
 
 /**
@@ -51,7 +51,7 @@ export function WidgetFence({
   isIncomplete,
   sessionId,
   isLatestMessage,
-  streaming = false,
+  isStreaming = false,
 }: WidgetFenceProps) {
   const lastDocRef = useRef<WidgetDocument | null>(null);
 
@@ -59,7 +59,7 @@ export function WidgetFence({
     const result = parseWidget(code);
     if (result.ok) {
       lastDocRef.current = result.document;
-    } else if (lastDocRef.current === null && !streaming) {
+    } else if (lastDocRef.current === null && !isStreaming) {
       // Fence closed in a SETTLED message but never parsed into a valid
       // document — genuinely broken, show the error card. While streaming,
       // fall through to the skeleton instead: the "complete" fence may just be

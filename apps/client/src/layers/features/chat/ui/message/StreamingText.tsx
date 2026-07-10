@@ -56,7 +56,7 @@ export function StreamingText({
               {...props}
               sessionId={sessionId}
               isLatestMessage={isLatestMessage}
-              streaming={isStreaming}
+              isStreaming={isStreaming}
             />
           ),
         },
