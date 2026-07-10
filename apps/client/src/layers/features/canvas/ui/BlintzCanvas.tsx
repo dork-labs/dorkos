@@ -1,5 +1,6 @@
 import { MarkdownEditor } from 'blintz';
 import 'blintz/styles.css';
+import { cn } from '@/layers/shared/lib';
 
 /** Props for {@link BlintzCanvas}. */
 export interface BlintzCanvasProps {
@@ -23,6 +24,16 @@ export interface BlintzCanvasProps {
  */
 export function BlintzCanvas({ value, editable, onChange, className }: BlintzCanvasProps) {
   return (
-    <MarkdownEditor value={value} editable={editable} onChange={onChange} className={className} />
+    // desktop-darwin:select-text — the desktop shell defaults chrome to
+    // non-selectable (index.css). Canvas documents are content, and in view
+    // mode (`editable={false}`) the ProseMirror surface is NOT contenteditable,
+    // so without this the body-level user-select:none would make the document
+    // unselectable (DOR-253).
+    <MarkdownEditor
+      value={value}
+      editable={editable}
+      onChange={onChange}
+      className={cn('desktop-darwin:select-text', className)}
+    />
   );
 }

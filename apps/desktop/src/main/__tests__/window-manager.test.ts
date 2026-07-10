@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('node:fs', () => ({
@@ -191,11 +193,29 @@ describe('isOwnOrigin', () => {
     vi.unstubAllEnvs();
   });
 
-  it("treats any file:// URL as the app's own origin (packaged build)", () => {
+  // The module under test resolves its renderer bundle relative to its own
+  // location (`resolve(__dirname, '../renderer')` — same layout as loadFile),
+  // so these tests build file:// URLs against that same directory.
+  const rendererDir = join(__dirname, '../../renderer');
+
+  it("treats the app's own renderer index.html as own origin (packaged build)", () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', '');
-    expect(
-      isOwnOrigin('file:///Applications/DorkOS.app/Contents/Resources/renderer/index.html')
-    ).toBe(true);
+    expect(isOwnOrigin(pathToFileURL(join(rendererDir, 'index.html')).href)).toBe(true);
+  });
+
+  it('treats renderer bundle assets (subdirectories) as own origin', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin(pathToFileURL(join(rendererDir, 'assets/index-abc123.js')).href)).toBe(true);
+  });
+
+  it('rejects a file:// URL outside the renderer bundle (packaged build)', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin('file:///etc/passwd')).toBe(false);
+  });
+
+  it('rejects a sibling directory that shares the renderer path as a string prefix', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin(pathToFileURL(`${rendererDir}-evil/index.html`).href)).toBe(false);
   });
 
   it("treats the dev server origin as the app's own origin", () => {

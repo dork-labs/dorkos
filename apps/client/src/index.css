@@ -436,7 +436,11 @@
 .drag-region select,
 .drag-region textarea,
 .drag-region [role='button'],
-.drag-region [contenteditable='true'] {
+.drag-region [contenteditable='true'],
+/* Tooltip triggers can be plain spans via asChild (e.g. SystemHealthDot);
+   drag would swallow their hover so the tooltip never opens. Scoped to the
+   shadcn data-slot — a bare `span` here would kill dragging on all text. */
+.drag-region [data-slot='tooltip-trigger'] {
   -webkit-app-region: no-drag;
 }
 
