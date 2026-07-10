@@ -46,6 +46,27 @@ describe('CORS with tunnel origin', () => {
     expect(res.headers['access-control-allow-origin']).toBe(origin);
   });
 
+  // Regression for DOR-241: the desktop dev renderer runs on a distinct Vite
+  // origin and the client always fetches with `credentials: 'include'`
+  // (auth cookies). Without Access-Control-Allow-Credentials: true, the
+  // browser rejects every response even when the origin itself is allowed.
+  it('sends Access-Control-Allow-Credentials: true for an allowed origin (trusted-origins callback path)', async () => {
+    const origin = `http://localhost:${env.DORKOS_PORT}`;
+    const res = await request(app).get('/api/health').set('Origin', origin);
+
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+  });
+
+  it('sends Access-Control-Allow-Credentials: true for an allowed origin (DORKOS_CORS_ORIGIN env path)', async () => {
+    process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173';
+    const envApp = createApp();
+
+    const res = await request(envApp).get('/api/health').set('Origin', 'http://localhost:5173');
+
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+  });
+
   it('rejects requests from unknown origins', async () => {
     const res = await request(app).get('/api/health').set('Origin', 'https://evil.example.com');
 
