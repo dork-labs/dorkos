@@ -203,10 +203,40 @@ async function buildCLI() {
   });
 
   // 2.5: Copy Drizzle migration files alongside bundled server.
-  // At runtime, runMigrations() resolves migrations via path.join(__dirname, '../../drizzle').
-  // In the CLI bundle, __dirname is dist/server/, so ../../drizzle resolves to dist/drizzle/.
+  // At runtime, runMigrations() resolves migrations via path.join(__dirname, '../drizzle').
+  // In the CLI bundle, __dirname is dist/server/, so ../drizzle resolves to dist/drizzle/.
   cpSync(path.join(ROOT, 'packages/db/drizzle'), path.join(OUT, 'drizzle'), { recursive: true });
   console.log('  ✓ Copied Drizzle migrations to dist/drizzle/');
+
+  // 2.6: Copy bundled core-extension source (hello-world, linear-issues,
+  // marketplace) alongside the CLI package — NOT inside dist/.
+  //
+  // ensure-core-extensions.ts resolves its source dir via
+  // `path.resolve(__dirname, '../../core-extensions')`, relative to the
+  // COMPILED module. In the esbuild-bundled server, every inlined module
+  // shares one `__dirname`: the bundle's own output location, dist/server/.
+  // Two `..` from dist/server lands at the CLI package root (sibling of
+  // dist/), not inside it — confirmed by the ENOENT path in DOR-245's
+  // evidence (`node_modules/dorkos/core-extensions`, not
+  // `node_modules/dorkos/dist/core-extensions`). Copy raw TypeScript source
+  // (not compiled — ExtensionCompiler tsx-transpiles it at stage time,
+  // mirroring apps/server's own `cpSync src/core-extensions dist/core-extensions`
+  // build step) to that exact location so the bundled server finds it.
+  const coreExtensionsSource = path.join(ROOT, 'apps/server/src/core-extensions');
+  const coreExtensionsDest = path.join(CLI_PKG, 'core-extensions');
+  await fs.rm(coreExtensionsDest, { recursive: true, force: true });
+  await fs.cp(coreExtensionsSource, coreExtensionsDest, { recursive: true });
+  const stagedExtensions = (await fs.readdir(coreExtensionsDest, { withFileTypes: true })).filter(
+    (entry) => entry.isDirectory()
+  );
+  if (stagedExtensions.length === 0) {
+    throw new Error(
+      `Core extensions copy produced an empty directory: ${coreExtensionsDest} ` +
+        `(source: ${coreExtensionsSource}). Refusing to ship a build with no ` +
+        'bundled core extensions — see DOR-245.'
+    );
+  }
+  console.log(`  ✓ Copied ${stagedExtensions.length} core extensions to ${coreExtensionsDest}`);
 
   // 3. Compile CLI entry
   // The CLI imports ../server/services/core/config-manager.js which doesn't exist
