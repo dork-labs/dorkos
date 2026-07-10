@@ -53,12 +53,14 @@ const mockState = {
   activeDocumentId: null as string | null,
   selectedCwd: null as string | null,
   canvasSessionId: null as string | null,
+  browserHistories: {} as Record<string, { contentUrl: string; stack: string[]; cursor: number }>,
   setCanvasOpen: vi.fn(),
   openCanvasDocument: vi.fn(),
   activateCanvasDocument: vi.fn(),
   closeCanvasDocument: vi.fn(),
   setActiveDocumentContent: vi.fn(),
   setDocumentEditing: vi.fn(),
+  writeBrowserHistory: vi.fn(),
 };
 
 /** Set a single active document from its content, deriving a tab label from the title. */

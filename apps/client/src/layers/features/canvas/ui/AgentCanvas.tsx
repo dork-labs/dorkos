@@ -45,7 +45,13 @@ function CanvasRenderer({
     // misses the in-place update; url alone conflates two docs at the same URL.
     case 'url':
     case 'browser':
-      return <CanvasBrowserContent key={`${documentId}:${content.url}`} content={content} />;
+      return (
+        <CanvasBrowserContent
+          key={`${documentId}:${content.url}`}
+          documentId={documentId}
+          content={content}
+        />
+      );
     case 'markdown':
       // Key per source file so the editor + its save state remount fresh when
       // the document swaps (defense in depth).
