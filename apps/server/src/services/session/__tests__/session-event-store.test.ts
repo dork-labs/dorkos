@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sql, type Db } from '@dorkos/db';
+import { createDb, runMigrations, sql, type Db } from '@dorkos/db';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { SessionEventStore } from '../session-event-store.js';
+import { SessionStateProjector } from '../session-state-projector.js';
+import { reconstructHistoryFromEvents } from '../event-log-history.js';
 import { EVENT_LOG_MAX_EVENTS } from '../event-log.js';
 
 /** A minimal seq'd turn: turn_start(user) → text_delta → turn_end. */
@@ -86,6 +91,46 @@ describe('SessionEventStore', () => {
 
     store.trim('s1', 2); // keep the newest 2
     expect(store.readAll('s1').map((e) => e.seq)).toEqual([4, 5]);
+  });
+
+  it('survives a NEW connection to the same on-disk file — the true restart bar (DOR-189)', () => {
+    // The other "restart" tests dispose the projector against a still-open
+    // :memory: db, which proves the read path but not durability across a
+    // process boundary. This is the CI form of the acceptance criterion: write
+    // through one better-sqlite3 connection to a real FILE, close it (process 1
+    // exits), then open a SECOND connection on the same path exactly as boot
+    // does (createDb + runMigrations) and prove the turn is still there.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dor189-store-'));
+    const dbPath = path.join(dir, 'dork.db');
+    try {
+      // "Process 1": boot, persist one turn, shut down.
+      const db1 = createDb(dbPath);
+      runMigrations(db1);
+      new SessionEventStore(db1).appendTurn('sess', turn(1, 'durable answer'));
+      db1.$client.close();
+
+      // "Process 2": fresh connection + boot-identical migration run.
+      const db2 = createDb(dbPath);
+      runMigrations(db2); // idempotent, exactly what index.ts does at startup
+      const store2 = new SessionEventStore(db2);
+
+      expect(store2.maxSeq('sess')).toBe(3);
+      expect(store2.readAll('sess').map((e) => e.seq)).toEqual([1, 2, 3]);
+
+      // A fresh projector hydrates from the reopened store and reconstructs
+      // the identical history with stable ids.
+      const revived = new SessionStateProjector('sess');
+      revived.enablePersistence(store2);
+      expect(revived.getCursor()).toBe(3);
+      const history = reconstructHistoryFromEvents(revived.replayFrom(0));
+      expect(history).toEqual([
+        { id: 'user-1', role: 'user', content: 'msg 1' },
+        { id: 'assistant-1', role: 'assistant', content: 'durable answer' },
+      ]);
+      db2.$client.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('skips an unparseable row rather than throwing the whole read', () => {

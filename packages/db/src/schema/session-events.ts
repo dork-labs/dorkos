@@ -6,8 +6,17 @@ import { sqliteTable, text, integer, primaryKey, index } from 'drizzle-orm/sqlit
 // One row per SessionEvent; `payload` is the full event as JSON (own the
 // boundary, not the bytes — ADR-0263). `(session_id, seq)` is the natural PK and
 // yields ordered range reads for free. Rows are written per completed turn and
-// trimmed to the newest EVENT_LOG_MAX_EVENTS per session, matching the in-memory
-// cap so reconstructable depth is identical before and after a restart.
+// trimmed to the newest EVENT_LOG_MAX_EVENTS per session, mirroring the
+// in-memory cap so reconstructable depth is approximately identical before and
+// after a restart (approximately: the in-memory log also counts events that are
+// never flushed here — see the sparseness note — so at the cap the store spans
+// slightly more turns than the live log).
+// The stored seq space is deliberately SPARSE: the projector stamps seq on
+// every ingested event, but only turn events (turn_start … turn_end) are
+// flushed — a non-turn event ingested outside a turn (e.g. a bare
+// status_change) gets a seq yet never lands here. Harmless by design:
+// `reconstructHistoryFromEvents` ignores such events anyway, and hydration
+// restores the counter from MAX(seq), past any gap.
 // `seq` is duplicated out of the payload for the PK / ordered reads / trim; the
 // fold in `reconstructHistoryFromEvents` already discriminates on `event.type`,
 // so no per-`type` column is needed. `created_at` is ISO 8601 text for parity

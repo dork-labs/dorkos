@@ -68,6 +68,13 @@ export class SessionEventStore {
    * projector-stamped `seq`; the whole {@link SessionEvent} is stored as JSON
    * (it embeds `seq`), with `seq` duplicated out for the PK and ordered reads.
    *
+   * The persisted seq space is deliberately SPARSE: only turn events are ever
+   * flushed, while non-turn events ingested outside a turn (e.g. a bare
+   * `status_change`) consume seqs in the projector but are never written.
+   * Harmless — they are not history-bearing (`reconstructHistoryFromEvents`
+   * ignores them) and {@link SessionEventStore.maxSeq} restores the counter
+   * past any gap.
+   *
    * @param sessionId - DorkOS session identifier
    * @param events - The completed turn's events (turn_start … turn_end), in seq order
    */

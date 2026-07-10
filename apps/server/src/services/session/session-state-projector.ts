@@ -130,16 +130,19 @@ type Waiter = (event: SessionEvent) => void;
  * LOG-BACKED session (DOR-189). Present only when the owning runtime opted the
  * session in (`getOrCreateProjector(…, { persist: true })`) AND a store was
  * injected at boot. Absent for claude-code and whenever no store is wired.
+ *
+ * Durable rows are always keyed by the LIVE {@link SessionStateProjector.sessionId}
+ * (read at flush time, never captured at enable time), so a
+ * {@link rekeyProjector} between enable and flush can never write rows under a
+ * retired id. In practice log-backed runtimes never rekey — their
+ * `getInternalSessionId` returns `undefined`, so the DorkOS id IS canonical —
+ * but the live read means that invariant is a nicety, not a correctness
+ * dependency. Note the hydrate-time id and a hypothetical post-rekey flush id
+ * could differ; that is the correct outcome (rows follow the canonical id).
  */
 interface ProjectorPersistence {
   /** The shared durable store (injected once at boot). */
   store: SessionEventStore;
-  /**
-   * The id durable rows are keyed by — captured when persistence is enabled.
-   * Log-backed runtimes never rekey (their DorkOS id IS canonical), so this
-   * stays equal to `sessionId` for the projector's life.
-   */
-  sessionId: string;
 }
 
 /**
@@ -322,7 +325,7 @@ export class SessionStateProjector {
    */
   enablePersistence(store: SessionEventStore): void {
     if (this.persistence !== undefined) return;
-    this.persistence = { store, sessionId: this.sessionId };
+    this.persistence = { store };
     if (this.counter === 0) {
       const events = store.readAll(this.sessionId);
       if (events.length > 0) this.log.hydrate(events);
@@ -337,15 +340,18 @@ export class SessionStateProjector {
    * warned-and-swallowed: the turn already streamed to subscribers, so a
    * persistence error only forfeits cross-restart durability (degrading to the
    * pre-DOR-189 in-memory behavior) and must never break live streaming.
+   *
+   * Rows key by the LIVE {@link sessionId} — see the {@link ProjectorPersistence}
+   * rekey note.
    */
   private flushTurn(events: SessionEvent[]): void {
     const persistence = this.persistence;
     if (persistence === undefined) return;
     try {
-      persistence.store.appendTurn(persistence.sessionId, events);
+      persistence.store.appendTurn(this.sessionId, events);
     } catch (err) {
       logger.warn('[SessionStateProjector] durable turn flush failed — history not persisted', {
-        sessionId: persistence.sessionId,
+        sessionId: this.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
