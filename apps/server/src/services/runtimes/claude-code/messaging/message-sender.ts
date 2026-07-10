@@ -157,7 +157,12 @@ const RESUME_FAILURE_PATTERNS = [
   'enoent',
 ];
 
-/** Max transparent retries for stale session recovery before surfacing error. */
+/**
+ * Max transparent retries before surfacing the error. A single budget shared by
+ * BOTH resume-recovery paths — stale-session-as-new ({@link isResumeFailure})
+ * and anchor-not-found ({@link isAnchorNotFound}) — so a turn that spends it on
+ * an anchor retry gets no second retry for a stale-session failure that follows.
+ */
 const MAX_RESUME_RETRIES = 1;
 
 /** Max time to wait for the post-turn `getContextUsage()` control response. */
