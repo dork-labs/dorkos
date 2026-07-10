@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('node:fs', () => ({
@@ -13,9 +15,11 @@ import {
   clampSizeToWorkArea,
   validateWindowState,
   createWindow,
+  isOwnOrigin,
   type WindowState,
 } from '../window-manager';
 import { makeDisplay, BrowserWindow, resetElectronMock } from './electron-mock';
+import { shell } from 'electron';
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedWriteFileSync = vi.mocked(writeFileSync);
@@ -181,5 +185,118 @@ describe('createWindow (A2 integration)', () => {
     // The debounced resize save must not fire again after close already saved.
     await vi.advanceTimersByTimeAsync(500);
     expect(mockedWriteFileSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isOwnOrigin', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // The module under test resolves its renderer bundle relative to its own
+  // location (`resolve(__dirname, '../renderer')` — same layout as loadFile),
+  // so these tests build file:// URLs against that same directory.
+  const rendererDir = join(__dirname, '../../renderer');
+
+  it("treats the app's own renderer index.html as own origin (packaged build)", () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin(pathToFileURL(join(rendererDir, 'index.html')).href)).toBe(true);
+  });
+
+  it('treats renderer bundle assets (subdirectories) as own origin', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin(pathToFileURL(join(rendererDir, 'assets/index-abc123.js')).href)).toBe(true);
+  });
+
+  it('rejects a file:// URL outside the renderer bundle (packaged build)', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin('file:///etc/passwd')).toBe(false);
+  });
+
+  it('rejects a sibling directory that shares the renderer path as a string prefix', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin(pathToFileURL(`${rendererDir}-evil/index.html`).href)).toBe(false);
+  });
+
+  it("treats the dev server origin as the app's own origin", () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+    expect(isOwnOrigin('http://localhost:5173/session?id=42')).toBe(true);
+  });
+
+  it('rejects a foreign http(s) origin even when a dev server URL is set', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+    expect(isOwnOrigin('https://example.com')).toBe(false);
+  });
+
+  it('rejects a foreign origin when no dev server URL is set (packaged build)', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin('https://example.com')).toBe(false);
+  });
+
+  it('rejects an unparseable URL', () => {
+    expect(isOwnOrigin('not a url')).toBe(false);
+  });
+});
+
+describe('createWindow — external links and navigation guard (P2a)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  describe('setWindowOpenHandler', () => {
+    it('opens an http(s) URL in the system browser and denies the in-app window', () => {
+      const win = createWindow();
+      const handler = win.webContents.setWindowOpenHandler.mock.calls[0][0] as (details: {
+        url: string;
+      }) => { action: string };
+
+      const result = handler({ url: 'https://example.com/docs' });
+
+      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/docs');
+      expect(result).toEqual({ action: 'deny' });
+    });
+
+    it('denies a non-http(s) scheme without opening it externally', () => {
+      const win = createWindow();
+      const handler = win.webContents.setWindowOpenHandler.mock.calls[0][0] as (details: {
+        url: string;
+      }) => { action: string };
+
+      const result = handler({ url: 'mailto:someone@example.com' });
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toEqual({ action: 'deny' });
+    });
+  });
+
+  describe('will-navigate guard', () => {
+    it('blocks navigation to a foreign origin and hands http(s) off to the system browser', async () => {
+      vi.stubEnv('ELECTRON_RENDERER_URL', '');
+      const win = createWindow();
+      const preventDefault = vi.fn();
+
+      await win.webContents.emit('will-navigate', {
+        url: 'https://example.com/evil',
+        preventDefault,
+      });
+
+      expect(preventDefault).toHaveBeenCalledTimes(1);
+      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/evil');
+    });
+
+    it("allows navigation to the app's own origin", async () => {
+      vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+      const win = createWindow();
+      const preventDefault = vi.fn();
+
+      await win.webContents.emit('will-navigate', {
+        url: 'http://localhost:5173/agents',
+        preventDefault,
+      });
+
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
   });
 });

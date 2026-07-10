@@ -1,6 +1,13 @@
-import { BrowserWindow, screen } from 'electron';
-import type { Display, Rectangle } from 'electron';
-import { join } from 'node:path';
+import { BrowserWindow, screen, shell } from 'electron';
+import type {
+  Display,
+  Rectangle,
+  HandlerDetails,
+  Event,
+  WebContentsWillNavigateEventParams,
+} from 'electron';
+import { join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { app } from 'electron';
 
@@ -134,6 +141,49 @@ export function shapeWindowState(win: BrowserWindow, previousState: WindowState)
 }
 
 /**
+ * Is `url` the app's own renderer entry — the dev server
+ * (`ELECTRON_RENDERER_URL`, set by electron-vite for HMR) or, once packaged,
+ * a `file://` URL inside the app's own `renderer/` bundle (the built
+ * `index.html` and its assets)?
+ *
+ * Only that bundle counts: an arbitrary `file://` link (e.g. from
+ * agent-generated markdown clicked without `target="_blank"`) must NOT pass —
+ * it would steer the app window itself onto a raw local file with no way
+ * back to the SPA.
+ *
+ * Used by the `will-navigate` guard in {@link createWindow} to tell in-app
+ * routing apart from a stray link that should open in the system browser
+ * instead of hijacking the app window.
+ *
+ * @param url - The URL a `will-navigate` event is about to load.
+ */
+export function isOwnOrigin(url: string): boolean {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return false;
+  }
+  if (target.protocol === 'file:') {
+    // Same layout as loadFile below: the built renderer lives in
+    // `../renderer` relative to the compiled main-process bundle.
+    const rendererDir = resolve(__dirname, '../renderer');
+    try {
+      const targetPath = resolve(fileURLToPath(target));
+      return targetPath === rendererDir || targetPath.startsWith(rendererDir + sep);
+    } catch {
+      return false;
+    }
+  }
+  if (!process.env.ELECTRON_RENDERER_URL) return false;
+  try {
+    return target.origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Create the main BrowserWindow with native macOS styling.
  *
  * @returns The created BrowserWindow instance.
@@ -155,6 +205,34 @@ export function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+
+  // Link policy for both guards below: http(s) goes to the system browser
+  // via shell.openExternal; everything else is denied, except the app's own
+  // renderer entry (isOwnOrigin), which only in-window navigation may load.
+  //
+  // `target="_blank"` (chat links, gen-ui widgets, marketplace cards, …) and
+  // `window.open()` would otherwise spawn a second, chromeless BrowserWindow
+  // with no navigation UI — a dead end the user can't get back out of.
+  win.webContents.setWindowOpenHandler(({ url }: HandlerDetails) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  // Same policy for in-window navigation: an anchor without target="_blank"
+  // (or any other navigation-triggering surface) should not be able to steer
+  // the app window itself off the SPA — to a foreign origin or to an
+  // arbitrary local file. Only the app's own renderer entry passes; http(s)
+  // is handed off to the system browser so the link still goes somewhere
+  // useful.
+  win.webContents.on('will-navigate', (event: Event<WebContentsWillNavigateEventParams>) => {
+    if (isOwnOrigin(event.url)) return;
+    event.preventDefault();
+    if (event.url.startsWith('http://') || event.url.startsWith('https://')) {
+      void shell.openExternal(event.url);
+    }
   });
 
   if (state.isMaximized) win.maximize();

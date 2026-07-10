@@ -15,7 +15,13 @@ export {
   subscribeOwnerSetupRequest,
   type OwnerSetupRequest,
 } from './auth-signal';
-export { getPlatform, setPlatformAdapter, isMac, type PlatformAdapter } from './platform';
+export {
+  getPlatform,
+  setPlatformAdapter,
+  isMac,
+  isDesktopDarwin,
+  type PlatformAdapter,
+} from './platform';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { HttpTransport, streamManager } from './transport';
 export { DirectTransport, type DirectTransportServices } from './direct-transport';

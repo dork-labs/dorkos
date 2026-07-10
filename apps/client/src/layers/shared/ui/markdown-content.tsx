@@ -32,7 +32,16 @@ const LINK_SAFETY_CONFIG = {
 /** Renders static markdown content using streamdown. */
 export function MarkdownContent({ content, className, linkSafety = false }: MarkdownContentProps) {
   return (
-    <div className={cn('prose prose-sm dark:prose-invert max-w-none', className)}>
+    // desktop-darwin:select-text — see message-variants.ts for why: the
+    // desktop shell defaults chrome to non-selectable, and static markdown
+    // (setup guides, canvas documents, help text) is genuinely copyable
+    // content, not chrome.
+    <div
+      className={cn(
+        'prose prose-sm dark:prose-invert desktop-darwin:select-text max-w-none',
+        className
+      )}
+    >
       <Streamdown linkSafety={linkSafety ? LINK_SAFETY_CONFIG : undefined}>{content}</Streamdown>
     </div>
   );
