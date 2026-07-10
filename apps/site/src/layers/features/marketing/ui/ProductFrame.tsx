@@ -141,10 +141,14 @@ export function ProductFrame({
     />
   );
 
+  // `not-prose` on both roots: inside docs pages (Fumadocs prose), typography
+  // styles add 2em margins to `img`/`video`, which shift the media down inside
+  // the fixed aspect box and stretch it past 16/10 — object-cover then crops
+  // the sides. `not-prose` is the typography plugin's own escape hatch.
   if (isPhone) {
     // Minimal phone shell: a thin charcoal bezel around a rounded portrait screen.
     return (
-      <div className="mx-auto w-full" style={{ maxWidth: PHONE_MAX_WIDTH[size] }}>
+      <div className="not-prose mx-auto w-full" style={{ maxWidth: PHONE_MAX_WIDTH[size] }}>
         <div
           className="bg-charcoal overflow-hidden rounded-[2rem] border border-white/10 p-2"
           style={{ boxShadow: FRAME_SHADOW }}
@@ -162,7 +166,7 @@ export function ProductFrame({
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-xl border ${theme.frame}`}
+      className={`not-prose flex flex-col overflow-hidden rounded-xl border ${theme.frame}`}
       style={{ boxShadow: FRAME_SHADOW }}
     >
       {/* Minimal browser-chrome bar */}
