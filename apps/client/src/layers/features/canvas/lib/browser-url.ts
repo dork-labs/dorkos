@@ -95,10 +95,22 @@ export function classifyBrowserTarget(raw: string): BrowserTarget {
 }
 
 /**
- * Normalize address-bar input into a navigable target. Bare host-like input
- * (`example.com`, `localhost:3000`) gets an `https://`/`http://` scheme so it
- * classifies as a URL rather than a local path; existing schemes and local
- * paths pass through untouched.
+ * Normalize address-bar input into a navigable target. The rules, in order:
+ * - empty → empty;
+ * - already a `scheme://…` URL (http/https/file) → untouched (requiring `//`
+ *   avoids misreading `localhost:3000` host:port as a scheme);
+ * - an explicit local path (`/…`, `./…`, `../…`) → untouched (routed to `serve`);
+ * - a slash-bearing value whose first segment isn't host-like — no dot, no port
+ *   (e.g. `demo/index.html`) → untouched, treated as a relative local path so it
+ *   re-mints a signed serve URL against the session cwd rather than becoming a
+ *   bogus `https://demo/…`;
+ * - otherwise host-like (`example.com`, `localhost:3000`) → gets a scheme: `http`
+ *   for a loopback host (dev servers are overwhelmingly plain http), `https`
+ *   otherwise.
+ *
+ * Known edge: a bare single-segment filename like `preview.html` reads as a host
+ * and becomes `https://preview.html` — re-navigating a lone local file by typing
+ * its name is inherently ambiguous, and links (not retyping) are the common path.
  *
  * @param input - Raw address-bar text.
  * @returns A URL or path string ready for {@link classifyBrowserTarget}.
@@ -106,15 +118,55 @@ export function classifyBrowserTarget(raw: string): BrowserTarget {
 export function normalizeAddressInput(input: string): string {
   const trimmed = input.trim();
   if (trimmed === '') return trimmed;
-  // Already a `scheme://…` URL (http/https/file) — leave it alone. Requiring the
-  // `//` avoids misreading `localhost:3000` (host:port) as a scheme.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('../')) {
     return trimmed;
   }
-  // Host-like (has a dot or a port) → default to http for a loopback host,
-  // https otherwise. Loopback dev servers are overwhelmingly plain http.
-  const host = trimmed.split('/')[0].split(':')[0];
+  const firstSegment = trimmed.split('/')[0];
+  const looksLikeRelativePath =
+    trimmed.includes('/') && !firstSegment.includes('.') && !firstSegment.includes(':');
+  if (looksLikeRelativePath) return trimmed;
+  const host = firstSegment.split(':')[0];
   const scheme = isLoopbackHost(host) ? 'http' : 'https';
   return `${scheme}://${trimmed}`;
+}
+
+/**
+ * How the address bar should render a logical URL at rest (Chrome/Safari-style
+ * simplification). The bar never displays the signed serve/proxy token URL — it
+ * shows the logical target the user navigated to.
+ */
+export type AddressDisplay =
+  | { kind: 'local'; path: string }
+  | { kind: 'url'; host: string; rest: string }
+  | { kind: 'raw'; text: string };
+
+/**
+ * Simplify a logical URL into display segments for the at-rest address bar:
+ * - a local `serve` target → `{ kind: 'local', path }` (shown with a "local"
+ *   chip; the path is the logical source, never the signed token URL);
+ * - an `http(s)` / loopback target → `{ kind: 'url', host, rest }` with the
+ *   scheme and a leading `www.` stripped, the host (including a non-default
+ *   port, which is the identity of a dev server) emphasized, and the path/query
+ *   de-emphasized;
+ * - anything else (blocked/unparsable) → `{ kind: 'raw', text }`.
+ *
+ * @param raw - The logical URL or path currently loaded in the browser.
+ * @returns The {@link AddressDisplay} segments to render.
+ */
+export function describeAddress(raw: string): AddressDisplay {
+  const target = classifyBrowserTarget(raw);
+  if (target.mode === 'serve') return { kind: 'local', path: target.path };
+  if (target.mode === 'blocked') return { kind: 'raw', text: raw };
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.host.replace(/^www\./, '');
+    const rest =
+      parsed.pathname === '/' && parsed.search === '' && parsed.hash === ''
+        ? ''
+        : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return { kind: 'url', host, rest };
+  } catch {
+    return { kind: 'raw', text: raw };
+  }
 }

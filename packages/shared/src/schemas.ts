@@ -2330,7 +2330,7 @@ const CanvasMediaSrcSchema = z.string().min(1);
  * Content that can be rendered in the agent-controlled canvas panel.
  * Discriminated on `type` — note each variant's payload key differs:
  * - `{ type: 'markdown', content: string, title?, sourcePath? }` — markdown text goes in `content`; `sourcePath` makes it an editable, file-backed surface
- * - `{ type: 'url', url: string, title?, sandbox? }`
+ * - `{ type: 'url', url: string, title? }` — renders in the embedded browser (same renderer as `browser`), with navigation chrome and origin isolation
  * - `{ type: 'json', data: unknown, title? }`
  * - `{ type: 'image', src: string, title?, alt? }` — `src` is an https URL, a `data:` URI, or a local file path
  * - `{ type: 'pdf', src: string, title? }` — `src` follows the same rules as `image`
@@ -2342,7 +2342,6 @@ export const UiCanvasContentSchema = z
       type: z.literal('url'),
       url: z.string().url(),
       title: z.string().optional(),
-      sandbox: z.string().optional(),
     }),
     z.object({
       type: z.literal('markdown'),

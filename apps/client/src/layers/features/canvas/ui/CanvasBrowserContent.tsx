@@ -6,14 +6,20 @@ import { Input } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
   classifyBrowserTarget,
+  describeAddress,
   normalizeAddressInput,
   WORKBENCH_SANDBOX_EXTERNAL,
   WORKBENCH_SANDBOX_ISOLATED,
 } from '../lib/browser-url';
 
 interface CanvasBrowserContentProps {
-  /** Browser canvas content variant. */
-  content: Extract<UiCanvasContent, { type: 'browser' }>;
+  /**
+   * Browser or URL canvas content — both render here (DOR-233): every webpage
+   * opened in the canvas gets navigation chrome and origin isolation. The two
+   * variants differ only in the schema-level shape of `url`; the renderer reads
+   * `url` and `title` and treats them identically.
+   */
+  content: Extract<UiCanvasContent, { type: 'browser' | 'url' }>;
 }
 
 /** Why the frame has no resolvable source (served/proxied local content only). */
@@ -40,10 +46,12 @@ export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
   const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
 
-  // In-component navigation history: a stack of visited targets + a cursor.
+  // In-component navigation history: a stack of visited logical targets + a
+  // cursor. The stack holds LOGICAL urls/paths (never the signed token URLs) so
+  // the address bar can display them honestly and each navigation/reload re-mints
+  // a fresh signed URL (tokens expire).
   const [history, setHistory] = useState<string[]>([content.url]);
   const [cursor, setCursor] = useState(0);
-  const [address, setAddress] = useState(content.url);
   const [reloadNonce, setReloadNonce] = useState(0);
 
   const currentUrl = history[cursor];
@@ -51,15 +59,6 @@ export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
 
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<ResolveError>(null);
-
-  // Sync the address bar to programmatic navigation (back/forward) without an
-  // effect: the render-phase reset pattern (React "storing info from previous
-  // renders"), keyed on the active URL.
-  const [addressFor, setAddressFor] = useState(currentUrl);
-  if (addressFor !== currentUrl) {
-    setAddressFor(currentUrl);
-    setAddress(currentUrl);
-  }
 
   // Resolve the frame source: mint a signed URL for served/proxied local
   // content, or use the external URL directly. Re-runs on navigation + reload.
@@ -85,6 +84,9 @@ export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
           const suffix = target.path.replace(/^\//, '');
           url = base && suffix ? base + suffix : base;
         } else {
+          // Relative paths resolve against the CURRENT session cwd. A persisted
+          // document restored into a session with a different cwd can fail the
+          // server's cwd-confinement check on re-mint (surfaced as 'failed').
           url = await transport.createServeUrl(cwd as string, target.path);
         }
         if (cancelled) return;
@@ -111,21 +113,22 @@ export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
   const canBack = cursor > 0;
   const canForward = cursor < history.length - 1;
 
-  const submitAddress = (e: React.FormEvent) => {
-    e.preventDefault();
-    const next = normalizeAddressInput(address);
-    if (next && next !== currentUrl) navigate(next);
-    else setReloadNonce((n) => n + 1);
-  };
+  // Commit an address-bar entry: navigate to a genuinely new target, else reload
+  // the current one (re-minting its signed URL).
+  const submitAddress = useCallback(
+    (value: string) => {
+      const next = normalizeAddressInput(value);
+      if (next && next !== currentUrl) navigate(next);
+      else setReloadNonce((n) => n + 1);
+    },
+    [currentUrl, navigate]
+  );
 
   const openExternally = () => window.open(currentUrl, '_blank', 'noopener,noreferrer');
 
   return (
     <div className="flex h-full flex-col">
-      <form
-        onSubmit={submitAddress}
-        className="border-border/60 flex items-center gap-1 border-b px-2 py-1.5"
-      >
+      <div className="border-border/60 flex h-9 items-center gap-1 border-b px-2">
         <ChromeButton label="Back" disabled={!canBack} onClick={() => setCursor((c) => c - 1)}>
           <ArrowLeft className="size-4" />
         </ChromeButton>
@@ -139,19 +142,11 @@ export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
         <ChromeButton label="Reload" onClick={() => setReloadNonce((n) => n + 1)}>
           <RotateCw className="size-4" />
         </ChromeButton>
-        <Input
-          aria-label="Address"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          className="h-8 flex-1 text-sm"
-        />
+        <AddressBar url={currentUrl} onSubmit={submitAddress} />
         <ChromeButton label="Open in system browser" onClick={openExternally}>
           <ExternalLink className="size-4" />
         </ChromeButton>
-      </form>
+      </div>
 
       <BrowserBody
         target={target}
@@ -162,6 +157,105 @@ export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
         onOpenExternally={openExternally}
       />
     </div>
+  );
+}
+
+/**
+ * Chrome/Safari-style address bar. At rest it shows a simplified, honest view of
+ * the logical URL (scheme + `www.` stripped, host emphasized, path dimmed; local
+ * files shown as their source path behind a "local" chip — never the signed
+ * token URL). Clicking or tab-focusing swaps to a text input pre-filled with the
+ * full logical URL and select-all, so typing replaces immediately.
+ *
+ * Enter commits (navigate or reload); Escape and blur revert without navigating,
+ * so an accidental focus never changes the page.
+ */
+function AddressBar({ url, onSubmit }: { url: string; onSubmit: (value: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(url);
+
+  if (!editing) {
+    return (
+      <AddressDisplay
+        url={url}
+        onActivate={() => {
+          setDraft(url);
+          setEditing(true);
+        }}
+      />
+    );
+  }
+
+  const commit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditing(false);
+    onSubmit(draft);
+  };
+
+  return (
+    <form onSubmit={commit} className="min-w-0 flex-1">
+      <Input
+        aria-label="Address"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        // Select-all on focus so typing replaces the current URL (browser behavior).
+        onFocus={(e) => e.currentTarget.select()}
+        // Revert on blur/Escape — focus alone must never navigate.
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            setEditing(false);
+          }
+        }}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        className="h-7 w-full text-sm"
+      />
+    </form>
+  );
+}
+
+/** The spoken location for an {@link AddressDisplay} accessible name. */
+function locationLabel(display: ReturnType<typeof describeAddress>): string {
+  if (display.kind === 'local') return display.path;
+  if (display.kind === 'url') return `${display.host}${display.rest}`;
+  return display.text;
+}
+
+/** At-rest address display: a focusable button rendering the simplified URL. */
+function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => void }) {
+  const display = useMemo(() => describeAddress(url), [url]);
+
+  return (
+    <button
+      type="button"
+      // The accessible name carries WHERE the user is, not just what the
+      // control is — a bare "Address" would override the visible location for
+      // screen readers. Local files announce their logical path, never the
+      // signed token URL.
+      aria-label={`Address: ${locationLabel(display)}`}
+      onClick={onActivate}
+      className="text-muted-foreground hover:bg-muted focus-ring flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors"
+    >
+      {display.kind === 'local' && (
+        <>
+          <span className="bg-muted-foreground/15 rounded px-1 py-0.5 text-[10px] font-medium tracking-wide uppercase">
+            local
+          </span>
+          <span className="text-foreground truncate">{display.path}</span>
+        </>
+      )}
+      {display.kind === 'url' && (
+        <span className="truncate">
+          <span className="text-foreground">{display.host}</span>
+          <span className="text-muted-foreground">{display.rest}</span>
+        </span>
+      )}
+      {display.kind === 'raw' && <span className="truncate">{display.text}</span>}
+    </button>
   );
 }
 
