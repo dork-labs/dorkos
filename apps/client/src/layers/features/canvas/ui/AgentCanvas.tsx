@@ -38,9 +38,14 @@ function CanvasRenderer({
   switch (content.type) {
     // `url` and `browser` share one renderer (DOR-233): every canvas webpage gets
     // navigation chrome and origin isolation, whichever content type opened it.
+    // Key on document identity AND content identity — the browser snapshots
+    // `content.url` into its history stack on mount, so an `update_canvas` that
+    // swaps the url in place (same document) and a tab switch between two web
+    // documents (same tree position) must both remount it. documentId alone
+    // misses the in-place update; url alone conflates two docs at the same URL.
     case 'url':
     case 'browser':
-      return <CanvasBrowserContent content={content} />;
+      return <CanvasBrowserContent key={`${documentId}:${content.url}`} content={content} />;
     case 'markdown':
       // Key per source file so the editor + its save state remount fresh when
       // the document swaps (defense in depth).

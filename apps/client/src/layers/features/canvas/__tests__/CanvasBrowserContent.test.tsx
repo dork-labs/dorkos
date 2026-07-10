@@ -45,7 +45,7 @@ describe('CanvasBrowserContent — history navigation', () => {
     await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
 
     // Navigate to B via the address bar (click to enter edit mode first).
-    fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
     const address = screen.getByLabelText('Address') as HTMLInputElement;
     fireEvent.change(address, { target: { value: 'https://b.test/' } });
     fireEvent.submit(address.closest('form') as HTMLFormElement);
@@ -87,7 +87,7 @@ describe('CanvasBrowserContent — url content type routes here (DOR-233)', () =
     expect(screen.getByLabelText('Back')).toBeInTheDocument();
     expect(screen.getByLabelText('Forward')).toBeInTheDocument();
     expect(screen.getByLabelText('Reload')).toBeInTheDocument();
-    expect(screen.getByLabelText('Address')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Address:/ })).toBeInTheDocument();
     await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
   });
 
@@ -105,33 +105,39 @@ describe('CanvasBrowserContent — address bar (at rest)', () => {
         content={{ type: 'browser', url: 'https://www.example.com/docs?x=1' }}
       />
     );
-    const bar = screen.getByRole('button', { name: 'Address' });
+    const bar = screen.getByRole('button', { name: /^Address:/ });
     // Scheme + leading www. stripped from the visible text.
     expect(bar.textContent).toBe('example.com/docs?x=1');
     const host = bar.querySelector('.text-foreground');
     const rest = bar.querySelector('.text-muted-foreground');
     expect(host?.textContent).toBe('example.com');
     expect(rest?.textContent).toBe('/docs?x=1');
+    // The accessible name carries the location, not just "Address".
+    expect(bar).toHaveAccessibleName('Address: example.com/docs?x=1');
   });
 
   it('shows a local file as its logical path behind a "local" chip — never the token URL', async () => {
     render(<CanvasBrowserContent content={{ type: 'browser', url: 'preview.html' }} />);
-    const bar = screen.getByRole('button', { name: 'Address' });
+    const bar = screen.getByRole('button', { name: /^Address:/ });
     expect(bar.textContent).toContain('local');
     expect(bar.textContent).toContain('preview.html');
+
+    // The accessible name announces the logical path, never the token URL.
+    expect(bar).toHaveAccessibleName('Address: preview.html');
 
     // The signed token URL is what the iframe loads — it must NEVER surface in
     // the address bar.
     await waitFor(() => expect(iframeSrc()).toContain('/api/workbench/serve/'));
     expect(bar.textContent).not.toContain('/api/workbench');
     expect(bar.textContent).not.toContain('tok');
+    expect(bar.getAttribute('aria-label')).not.toContain('/api/workbench');
   });
 });
 
 describe('CanvasBrowserContent — address bar (editing)', () => {
   it('focus reveals the full logical URL and selects all', () => {
     render(<CanvasBrowserContent content={{ type: 'browser', url: 'https://example.com/docs' }} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
     const input = screen.getByLabelText('Address') as HTMLInputElement;
     expect(input.value).toBe('https://example.com/docs');
     expect(input.selectionStart).toBe(0);
@@ -142,7 +148,7 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     render(<CanvasBrowserContent content={{ type: 'browser', url: 'https://a.test/' }} />);
     await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
     const input = screen.getByLabelText('Address') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'https://c.test/' } });
     fireEvent.submit(input.closest('form') as HTMLFormElement);
@@ -153,7 +159,7 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     render(<CanvasBrowserContent content={{ type: 'browser', url: 'https://a.test/' }} />);
     await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
     const input = screen.getByLabelText('Address') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'example.com' } });
     fireEvent.submit(input.closest('form') as HTMLFormElement);
@@ -164,13 +170,13 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     render(<CanvasBrowserContent content={{ type: 'browser', url: 'https://a.test/' }} />);
     await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
     const input = screen.getByLabelText('Address') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'https://evil.test/' } });
     fireEvent.keyDown(input, { key: 'Escape' });
 
     // Back to the at-rest display showing the original host; URL unchanged.
-    const bar = screen.getByRole('button', { name: 'Address' });
+    const bar = screen.getByRole('button', { name: /^Address:/ });
     expect(bar.textContent).toBe('a.test');
     expect(iframeSrc()).toBe('https://a.test/');
   });
@@ -179,12 +185,12 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     render(<CanvasBrowserContent content={{ type: 'browser', url: 'https://a.test/' }} />);
     await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Address' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
     const input = screen.getByLabelText('Address') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'https://evil.test/' } });
     fireEvent.blur(input);
 
-    expect(screen.getByRole('button', { name: 'Address' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Address:/ })).toBeInTheDocument();
     expect(iframeSrc()).toBe('https://a.test/');
   });
 });

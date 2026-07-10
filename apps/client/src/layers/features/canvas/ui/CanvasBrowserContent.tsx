@@ -84,6 +84,9 @@ export function CanvasBrowserContent({ content }: CanvasBrowserContentProps) {
           const suffix = target.path.replace(/^\//, '');
           url = base && suffix ? base + suffix : base;
         } else {
+          // Relative paths resolve against the CURRENT session cwd. A persisted
+          // document restored into a session with a different cwd can fail the
+          // server's cwd-confinement check on re-mint (surfaced as 'failed').
           url = await transport.createServeUrl(cwd as string, target.path);
         }
         if (cancelled) return;
@@ -215,6 +218,13 @@ function AddressBar({ url, onSubmit }: { url: string; onSubmit: (value: string) 
   );
 }
 
+/** The spoken location for an {@link AddressDisplay} accessible name. */
+function locationLabel(display: ReturnType<typeof describeAddress>): string {
+  if (display.kind === 'local') return display.path;
+  if (display.kind === 'url') return `${display.host}${display.rest}`;
+  return display.text;
+}
+
 /** At-rest address display: a focusable button rendering the simplified URL. */
 function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => void }) {
   const display = useMemo(() => describeAddress(url), [url]);
@@ -222,7 +232,11 @@ function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => vo
   return (
     <button
       type="button"
-      aria-label="Address"
+      // The accessible name carries WHERE the user is, not just what the
+      // control is — a bare "Address" would override the visible location for
+      // screen readers. Local files announce their logical path, never the
+      // signed token URL.
+      aria-label={`Address: ${locationLabel(display)}`}
       onClick={onActivate}
       className="text-muted-foreground hover:bg-muted focus-ring flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors"
     >

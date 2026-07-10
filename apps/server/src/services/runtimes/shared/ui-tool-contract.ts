@@ -33,7 +33,7 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - update_canvas: { content: <canvas> } — replace the current canvas content
   <canvas> is EXACTLY ONE of these shapes (note each type's payload key differs):
     { type: "markdown", content: "<markdown text>", title?: string, sourcePath?: string }  // markdown goes in "content", NOT "markdown"/"text"
-    { type: "url", url: "https://…", title?: string, sandbox?: string }
+    { type: "url", url: "https://…", title?: string }
     { type: "json", data: <json value>, title?: string }
     { type: "image", src: "<https url | data: URI | local file path>", title?: string, alt?: string }  // image goes in "src"
     { type: "pdf", src: "<https url | data: URI | local file path>", title?: string }  // pdf goes in "src"
@@ -71,7 +71,7 @@ export const CONTROL_UI_INPUT = {
     .describe(
       'Canvas content for open_canvas/update_canvas. One of: ' +
         '{ type:"markdown", content:"<md>", title?:string, sourcePath?:string } (markdown text goes in "content"; pass sourcePath when the markdown came from a file so the user can edit and save it back, omit for generated markdown to render read-only); ' +
-        '{ type:"url", url:"https://…", title?:string, sandbox?:string }; ' +
+        '{ type:"url", url:"https://…", title?:string }; ' +
         '{ type:"json", data:<json value>, title?:string }; ' +
         '{ type:"image", src:"<https url | data: URI | local file path>", title?:string, alt?:string } (image goes in "src"); ' +
         '{ type:"pdf", src:"<https url | data: URI | local file path>", title?:string } (pdf goes in "src"); ' +
