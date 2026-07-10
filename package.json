@@ -1,5 +1,5 @@
 {
-  "name": "dorkos",
+  "name": "@dorkos/monorepo",
   "private": true,
   "version": "0.45.1",
   "type": "module",

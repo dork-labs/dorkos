@@ -24,7 +24,7 @@ const INSTALL_METHODS = [
     id: 'npm',
     label: 'npm',
     command: 'npm install -g dorkos',
-    description: 'Requires Node.js 18+.',
+    description: 'Requires Node.js 22+.',
     recommended: false,
   },
   // Homebrew returns as a tab once the dorkos-ai/tap tap is published.

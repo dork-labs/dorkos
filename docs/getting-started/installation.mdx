@@ -12,7 +12,7 @@ DorkOS runs in several modes. Pick the install method that fits your workflow.
 <Callout type="info">
   All installation methods require a Claude API key from the [Anthropic
   Console](https://console.anthropic.com/). Non-Docker methods also require
-  [Node.js](https://nodejs.org/) 18 or later.
+  [Node.js](https://nodejs.org/) 22 or later.
 </Callout>
 
 ## Choose Your Install Method
@@ -30,7 +30,7 @@ DorkOS runs in several modes. Pick the install method that fits your workflow.
 curl -fsSL https://dorkos.ai/install | bash
 ```
 
-Checks for Node.js 18+, installs DorkOS via npm, and optionally runs the setup wizard.
+Checks for Node.js 22+, installs DorkOS via npm, and optionally runs the setup wizard.
 
 </Step>
 <Step>
@@ -200,7 +200,7 @@ Open the DorkOS plugin settings and enter your Anthropic API key.
 </Steps>
 
 <Callout type="warn">
-  The Obsidian plugin requires Node.js 18+ installed on your system. It runs the same Claude Agent
+  The Obsidian plugin requires Node.js 22+ installed on your system. It runs the same Claude Agent
   SDK as the CLI but in-process via the DirectTransport adapter — no network hop.
 </Callout>
 

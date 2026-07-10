@@ -16,7 +16,7 @@
 
 - [x] 2026-07-10 **(GATE)** DOR-189: Codex/OpenCode transcripts survive server restart — Jul 12 · shipped in PR #202 (durable SQLite session-event store; spec `specs/durable-event-log/`, ADR 260710-024641); acceptance verified: turn → process kill → fresh boot → identical transcript; cross-process durability now protected in CI
 - [ ] DOR-188: Codex disk leak: upstream 0.143.0 adopted, or Codex gated behind a documented flag — decision by Aug 1
-- [ ] DOR-190 + clean-machine install verified (curl + npx, macOS VM + Linux, Node 20/22) — Jul 19
+- [ ] DOR-190 + clean-machine install verified (curl + npx, macOS VM + Linux, Node 22/24) — Jul 19
 
 ### Pillar smoke tests (`09` §2.2, one ticket each; failures pull the claim from launch messaging)
 

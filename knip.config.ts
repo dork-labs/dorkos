@@ -84,6 +84,11 @@ const config: KnipConfig = {
       // the bundled server at runtime; the CLI's own source never imports these
       // directly, so static analysis cannot see the usage.
       ignoreDependencies: [
+        // Build-graph edges, not imports: scripts/build.ts copies the client's
+        // dist and esbuild-inlines the server's source, so turbo must build
+        // both (and their transitive deps) before the CLI (DOR-190).
+        '@dorkos/client',
+        '@dorkos/server',
         '@anthropic-ai/claude-agent-sdk',
         '@anthropic-ai/sdk',
         '@asteasolutions/zod-to-openapi',

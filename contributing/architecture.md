@@ -941,7 +941,7 @@ Standard Vite React build. Server compiled separately via `tsc`.
 
 `Dockerfile.integration` supports two install modes via `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to test the published npm package. Both integration and runnable images set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.
 
-The GitHub Actions workflow (`.github/workflows/cli-smoke-test.yml`) runs smoke tests on bare Ubuntu runners (Node 20/22 matrix), Docker smoke tests, and full integration tests on every push to main.
+The GitHub Actions workflow (`.github/workflows/cli-smoke-test.yml`) runs smoke tests on bare Ubuntu runners (Node 22/24 matrix), Docker smoke tests, and full integration tests on every push to main.
 
 ## A2A Gateway
 

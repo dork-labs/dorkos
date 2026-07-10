@@ -35,7 +35,7 @@ done
 if ! command -v node &>/dev/null; then
   echo "Error: Node.js is required but not installed."
   echo ""
-  echo "Install Node.js 18+ from https://nodejs.org"
+  echo "Install Node.js 22+ from https://nodejs.org"
   echo "Or use nvm:"
   echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"
   echo "  nvm install 22"
@@ -43,8 +43,8 @@ if ! command -v node &>/dev/null; then
 fi
 
 NODE_MAJOR=$(node -e "console.log(process.version.split('.')[0].slice(1))")
-if [ "$NODE_MAJOR" -lt 18 ]; then
-  echo "Error: Node.js 18+ is required. Current version: $(node --version)"
+if [ "$NODE_MAJOR" -lt 22 ]; then
+  echo "Error: Node.js 22+ is required. Current version: $(node --version)"
   echo ""
   echo "Upgrade Node.js: https://nodejs.org"
   exit 1
