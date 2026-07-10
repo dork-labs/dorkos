@@ -40,7 +40,8 @@ const AGENT_SUBJECT_PREFIX = 'relay.agent.';
  *
  * @param replyTo - The envelope's reply subject.
  * @param reason - The delivery-failure reason.
- * @param envelope - The dead-lettered envelope (for budget/hop context).
+ * @param envelope - The dead-lettered envelope (for context; the notice itself
+ *                   carries a fresh budget so it can never be gate-rejected).
  */
 export type ReplyFailureNotifier = (
   replyTo: string,
