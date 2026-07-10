@@ -131,6 +131,28 @@ describe('scanInstalledPackages', () => {
     expect(result[0].installedAt).toBeUndefined();
   });
 
+  it('sees a CC-NATIVE package (only .claude-plugin/plugin.json, no .dork/manifest.json) — DOR-264', async () => {
+    // The installer copies Claude Code packages verbatim, so a CC-native
+    // install has no `.dork/manifest.json`. It must still be visible to
+    // list/uninstall/update via the validator's CC-manifest synthesis.
+    const pluginDir = join(dorkHome, 'plugins', 'commit-commands');
+    await mkdir(join(pluginDir, '.claude-plugin'), { recursive: true });
+    await writeFile(
+      join(pluginDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'commit-commands', version: '2.0.0', description: 'CC native' }),
+      'utf-8'
+    );
+
+    const result = await scanInstalledPackages(dorkHome);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      name: 'commit-commands',
+      version: '2.0.0',
+      type: 'plugin',
+      installPath: pluginDir,
+    });
+  });
+
   it('skips package directories with missing or unreadable manifests', async () => {
     // Directory exists with no manifest at all.
     await mkdir(join(dorkHome, 'plugins', 'empty-dir'), { recursive: true });

@@ -489,9 +489,13 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         name: req.params.name,
         ...parsed.data,
       });
+      // Report the RESOLVED manifest name, never the raw `:name` route param.
+      // For `dorkos install ./local/path` or `github:user/repo` the param is
+      // an install identifier, not the package name, and consumers (Harness
+      // Sync auto-projection) look up `.dork/plugins/<packageName>` (DOR-264).
       onPluginsChanged?.({
         projectPath: parsed.data.projectPath,
-        packageName: req.params.name,
+        packageName: result.packageName,
         action: 'install',
       });
       return res.json(result);
@@ -522,9 +526,10 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         name: req.params.name,
         ...parsed.data,
       });
+      // Resolved name, not the raw route param — see the install route (DOR-264).
       onPluginsChanged?.({
         projectPath: parsed.data.projectPath,
-        packageName: req.params.name,
+        packageName: result.packageName,
         action: 'uninstall',
       });
       return res.json(result);
@@ -594,10 +599,13 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // commands may have changed: treat it like an install for projection +
       // command-cache refresh, matching the install/uninstall routes. Advisory
       // checks (no apply, empty `applied`) change nothing and stay silent.
-      if (result.applied.length > 0) {
+      // One event per applied result, each carrying its RESOLVED manifest name
+      // (never the raw route param, which may be empty or an identifier —
+      // DOR-264); a bulk `apply` can reinstall several packages.
+      for (const applied of result.applied) {
         onPluginsChanged?.({
           projectPath: parsed.data.projectPath,
-          packageName: req.params.name,
+          packageName: applied.packageName,
           action: 'install',
         });
       }

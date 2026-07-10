@@ -15,6 +15,7 @@
 // Package manifest schemas
 export {
   MarketplacePackageManifestSchema,
+  PackageNameSchema,
   type MarketplacePackageManifest,
   type PluginPackageManifest,
   type AgentPackageManifest,

@@ -225,6 +225,12 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
  * and structural failures from {@link validateSkillStructure} are surfaced
  * as `SKILL_INVALID` errors.
  *
+ * A frontmatter `name` that differs from the skill's directory name is a
+ * WARNING (`SKILL_NAME_MISMATCH`), not an error: Claude Code keys skills by
+ * directory name and tolerates the divergence — Anthropic's own `hookify`
+ * plugin ships one — so a validator claiming CC-superset compatibility must
+ * not reject what CC itself accepts (DOR-263).
+ *
  * @param fullDir - Absolute path to the directory to scan.
  * @param packagePath - Absolute path to the package root, used to compute
  *   relative paths for issue reporting.
@@ -237,6 +243,7 @@ async function validateSkillsInDirectory(
 ): Promise<void> {
   const scanResults = await scanSkillDirectory(fullDir, PermissiveSkillFrontmatterSchema, {
     includeMissing: false,
+    requireNameMatch: false,
   });
 
   for (const result of scanResults) {
@@ -250,7 +257,20 @@ async function validateSkillsInDirectory(
       continue;
     }
 
-    const { dirPath, filePath } = result.definition;
+    const { name, meta, dirPath, filePath } = result.definition;
+    const frontmatterName =
+      meta !== null && typeof meta === 'object' && 'name' in meta
+        ? (meta as { name: unknown }).name
+        : undefined;
+    if (typeof frontmatterName === 'string' && frontmatterName !== name) {
+      issues.push({
+        level: 'warning',
+        code: 'SKILL_NAME_MISMATCH',
+        message: `Frontmatter name "${frontmatterName}" does not match directory name "${name}" — harnesses that key skills by directory name will use "${name}"`,
+        path: path.relative(packagePath, filePath),
+      });
+    }
+
     const structureResult = await validateSkillStructure(dirPath);
     if (!structureResult.valid) {
       for (const err of structureResult.errors) {

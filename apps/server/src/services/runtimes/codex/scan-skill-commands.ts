@@ -34,7 +34,14 @@ export function scanSkillCommands(cwd: string): CommandEntry[] {
     const filePath = join(skillsRoot, skill.name, SKILL_FILENAME);
     try {
       const content = readFileSync(filePath, 'utf-8');
-      const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
+      // Consumption path: `.agents/skills` includes harness-projected plugin
+      // skills whose directories are namespaced `<pkg>__<name>`, so the
+      // frontmatter name can never match the directory — and third-party CC
+      // skills legitimately diverge anyway (DOR-263). The directory name is
+      // the command identity; the frontmatter only supplies the description.
+      const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
+        requireNameMatch: false,
+      });
       if (!parsed.ok) {
         logger.debug('[CodexRuntime] skipping unparseable skill', {
           skill: skill.name,

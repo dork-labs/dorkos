@@ -13,11 +13,7 @@ const VALID_FIXTURES = [
   'valid-adapter',
 ] as const;
 
-const BROKEN_FIXTURES = [
-  'invalid-manifest',
-  'missing-extension-code',
-  'conflicting-skill',
-] as const;
+const BROKEN_FIXTURES = ['invalid-manifest', 'missing-extension-code'] as const;
 
 describe('marketplace install fixtures', () => {
   describe('valid fixtures', () => {
@@ -37,6 +33,20 @@ describe('marketplace install fixtures', () => {
 
       expect(result.ok).toBe(false);
       expect(result.issues.some((i) => i.level === 'error')).toBe(true);
+    });
+  });
+
+  describe('warned fixtures (valid with warnings)', () => {
+    it('accepts a frontmatter/directory name mismatch with a warning: conflicting-skill (DOR-263)', async () => {
+      // Claude Code keys skills by directory name and tolerates a divergent
+      // frontmatter name (Anthropic's own hookify plugin ships one), so this
+      // fixture validates ok with a SKILL_NAME_MISMATCH warning instead of
+      // being hard-rejected.
+      const result = await validatePackage(path.join(FIXTURES_DIR, 'warned', 'conflicting-skill'));
+
+      expect(result.ok).toBe(true);
+      const mismatch = result.issues.find((i) => i.code === 'SKILL_NAME_MISMATCH');
+      expect(mismatch?.level).toBe('warning');
     });
   });
 });

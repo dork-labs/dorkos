@@ -54,6 +54,22 @@ describe('MarketplaceCache', () => {
       const result = await cache.readMarketplace('dorkos-community');
       expect(result).toBeNull();
     });
+
+    it('reads back a document that self-declares a RESERVED marketplace name (DOR-261)', async () => {
+      // The real Anthropic marketplace is literally named `claude-plugins-official`
+      // — a name on the RESERVED_MARKETPLACE_NAMES publishing list. The cache is
+      // a consumption surface: a strict read-back turned every successfully
+      // fetched official document into a permanent cache miss, making all of its
+      // packages uninstallable via `name@marketplace`.
+      const doc = buildMarketplaceJson('claude-plugins-official');
+      await cache.writeMarketplace('claude-plugins-official', doc);
+
+      const result = await cache.readMarketplace('claude-plugins-official');
+      expect(result).not.toBeNull();
+      expect(result?.json.name).toBe('claude-plugins-official');
+      expect(result?.json.plugins).toHaveLength(1);
+      expect(result?.stale).toBe(false);
+    });
   });
 
   describe('writeMarketplace + readMarketplace round-trip', () => {

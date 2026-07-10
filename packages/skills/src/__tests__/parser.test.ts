@@ -81,6 +81,20 @@ describe('parseSkillFile', () => {
     }
   });
 
+  it('accepts a name/directory mismatch when requireNameMatch is false (CC compatibility)', () => {
+    const content = '---\nname: other-name\ndescription: test\n---\nBody';
+    const result = parseSkillFile('/skills/my-skill/SKILL.md', content, SkillFrontmatterSchema, {
+      requireNameMatch: false,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The directory name is always the canonical identity.
+      expect(result.definition.name).toBe('my-skill');
+      expect(result.definition.meta.name).toBe('other-name');
+    }
+  });
+
   it('handles empty body gracefully', () => {
     const content = '---\nname: empty\ndescription: No body\n---\n';
     const result = parseSkillFile('/skills/empty/SKILL.md', content, SkillFrontmatterSchema);

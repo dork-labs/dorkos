@@ -157,6 +157,51 @@ describe('runAutoProjection', () => {
       expect(logger.debug).toHaveBeenCalled();
     });
 
+    it('warns when an install contributes NOTHING to the plan (silent zero-projection, DOR-264)', async () => {
+      // Plan has actions, but none sourced from the just-installed package —
+      // the package is invisible to projection (e.g. the scanner failed to
+      // recognize it). This must be loud, not an `applied: 0` info line.
+      projectSpy.mockReturnValue({
+        actions: [{ kind: 'symlink', source: '.dork/plugins/other-pkg/skills/x' }],
+        drops: [],
+        warnings: [],
+      } as never);
+
+      await runAutoProjection(
+        { projectPath: PROJECT, packageName: 'ghost-pkg', action: 'install' },
+        { dorkHome: DORK_HOME }
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[HarnessSync] Install projected no files for package',
+        expect.objectContaining({ packageName: 'ghost-pkg', projectPath: PROJECT })
+      );
+    });
+
+    it('does NOT warn when the installed package contributes to the plan', async () => {
+      projectSpy.mockReturnValue({
+        actions: [{ kind: 'symlink', source: '.dork/plugins/pkg/skills/helper' }],
+        drops: [],
+        warnings: [],
+      } as never);
+
+      await runAutoProjection(
+        { projectPath: PROJECT, packageName: 'pkg', action: 'install' },
+        { dorkHome: DORK_HOME }
+      );
+
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('does NOT emit the zero-projection warning for an uninstall (its package is GONE from the plan by design)', async () => {
+      await runAutoProjection(
+        { projectPath: PROJECT, packageName: 'pkg', action: 'uninstall' },
+        { dorkHome: DORK_HOME }
+      );
+
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
     it('warns when applyPlan reports a blocking conflict but still completes', async () => {
       applyPlanSpy.mockReturnValue({
         applied: [],
