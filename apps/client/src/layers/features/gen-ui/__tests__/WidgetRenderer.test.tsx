@@ -203,6 +203,27 @@ describe('widget actions', () => {
     );
   });
 
+  it('explains an earlier-message button in plain language (no "superseded")', async () => {
+    render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: { type: 'button', label: 'Confirm', action: { kind: 'agent', id: 'confirm' } },
+        }}
+        sessionId="sess-1"
+        isLatestMessage={false}
+      />,
+      { wrapper: Wrapper }
+    );
+    const button = screen.getByRole('button', { name: 'Confirm' });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    button.focus();
+    expect(
+      (await screen.findAllByText("This one's from an earlier message.")).length
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/superseded/i)).not.toBeInTheDocument();
+  });
+
   it('dispatches an agent action through the Transport when a session is present', async () => {
     const user = userEvent.setup();
     mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });

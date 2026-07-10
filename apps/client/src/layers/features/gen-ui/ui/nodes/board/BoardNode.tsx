@@ -24,6 +24,7 @@ import {
   isWinningCell,
   type WinLine as WinLineData,
 } from '../../../lib/board-lines';
+import { reconcileBoardState } from '../../../lib/reconcile-board-state';
 import { BoardCell, type WinRole } from './BoardCell';
 import { WinLine } from './WinLine';
 
@@ -83,12 +84,16 @@ const WIN_TONE_TEXT: Record<WidgetTone, string> = {
 export function BoardNode({ node }: { node: NodeOf<'board'> }) {
   const motionOn = useWidgetMotion();
   const { latched, superseded } = useWidgetActions();
-  const columns = Math.max(1, ...node.rows.map((row) => row.length));
+  // Heal cells the model rendered empty but recorded as occupied in its own
+  // payload `state` strings (fill-only — see the lib's module doc). Runs BEFORE
+  // win detection so a healed mark can complete a win line.
+  const rows = reconcileBoardState(node.rows);
+  const columns = Math.max(1, ...rows.map((row) => row.length));
   const cellUnit = columns <= SMALL_BOARD_MAX_COLUMNS ? CELL_UNIT_SMALL : CELL_UNIT_LARGE;
 
-  const win = detectWinLine(node.rows);
+  const win = detectWinLine(rows);
   const winTone: WidgetTone = win
-    ? (node.rows[win.cells[0].row]?.[win.cells[0].col]?.tone ?? 'default')
+    ? (rows[win.cells[0].row]?.[win.cells[0].col]?.tone ?? 'default')
     : 'default';
   const winColorClass = WIN_TONE_TEXT[winTone];
 
@@ -121,7 +126,7 @@ export function BoardNode({ node }: { node: NodeOf<'board'> }) {
           {/* `display: contents` row wrappers keep the single CSS grid layout while
               giving the grid real row semantics; jagged rows are padded to the
               widest row with blank cells so columns always align. */}
-          {node.rows.map((row, r) => (
+          {rows.map((row, r) => (
             <div key={r} role="row" className="contents">
               {Array.from({ length: columns }, (_, c) => {
                 const cell = row[c] ?? EMPTY_CELL;

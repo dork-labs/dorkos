@@ -15,7 +15,7 @@ import { cn } from '@/layers/shared/lib';
 import { toneBadgeClass } from '../../../lib/widget-tone';
 import { useAgentActionState, useWidgetActions } from '../../../model/widget-context';
 import { WIDGET_SPRING } from '../../../lib/widget-motion';
-import { DrawnMark } from './DrawnMark';
+import { defaultMarkColorClass, DrawnMark } from './DrawnMark';
 
 type NodeOf<T extends WidgetNode['type']> = Extract<WidgetNode, { type: T }>;
 type BoardCellData = NodeOf<'board'>['rows'][number][number];
@@ -59,6 +59,16 @@ function cellClassName(cell: BoardCellData): string {
   );
 }
 
+/**
+ * Color class for a mark in this cell. An explicit `tone` from the model wins
+ * (the cell frame's tone classes already color the mark via `currentColor`);
+ * otherwise the classic marks get their per-player default (X blue, O amber).
+ */
+function markColorClass(mark: string, cell: BoardCellData): string | undefined {
+  if (cell.tone) return undefined;
+  return defaultMarkColorClass(mark) ?? undefined;
+}
+
 /** A cell with no action: pure history. Full-contrast glyph, no affordance. */
 function StaticBoardCell({ cell, icon: Icon, motionOn, row, col, winRole }: BoardCellProps) {
   const hasContent = Boolean(cell.glyph || cell.icon);
@@ -76,7 +86,13 @@ function StaticBoardCell({ cell, icon: Icon, motionOn, row, col, winRole }: Boar
           : undefined
       }
     >
-      {cell.glyph && <DrawnMark mark={cell.glyph} motionOn={motionOn} />}
+      {cell.glyph && (
+        <DrawnMark
+          mark={cell.glyph}
+          motionOn={motionOn}
+          colorClass={markColorClass(cell.glyph, cell)}
+        />
+      )}
       {!cell.glyph && Icon && <Icon className="size-6" aria-hidden />}
     </motion.div>
   );
@@ -122,7 +138,8 @@ function ActionBoardCell({
   // "waiting", not silence. The dispatched cell itself needs no words: its
   // drawn mark IS the feedback.
   let tooltipText: string | null = null;
-  if (state.superseded) tooltipText = 'Superseded — use the latest widget';
+  if (state.superseded)
+    tooltipText = 'This board is from an earlier turn — play on the newest one.';
   else if (state.unavailable) tooltipText = "Interactions aren't available here";
   else if (state.latched) tooltipText = "Move sent — waiting for the agent's reply";
 
@@ -147,15 +164,14 @@ function ActionBoardCell({
           v4 gates `hover:` on hover-capable pointers), never on inert boards. */}
       {showGhost && (
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-2xl opacity-0 transition-opacity duration-150 group-hover:opacity-20">
-          <DrawnMark mark={optimisticMarkFor(cell.action)} motionOn={false} />
+          <DrawnMark
+            mark={optimisticMarkFor(cell.action)}
+            motionOn={false}
+            colorClass={markColorClass(optimisticMarkFor(cell.action), cell)}
+          />
         </span>
       )}
-      <CellMark
-        optimisticMark={optimisticMark}
-        glyph={cell.glyph}
-        icon={Icon}
-        motionOn={motionOn}
-      />
+      <CellMark cell={cell} optimisticMark={optimisticMark} icon={Icon} motionOn={motionOn} />
     </motion.button>
   );
 
@@ -189,18 +205,34 @@ function ActionBoardCell({
 
 /** The visible mark inside an action cell: optimistic placement, glyph, or icon. */
 function CellMark({
+  cell,
   optimisticMark,
-  glyph,
   icon: Icon,
   motionOn,
 }: {
+  cell: BoardCellData;
   optimisticMark: string | null;
-  glyph: string | undefined;
   icon: LucideIcon | null;
   motionOn: boolean;
 }) {
-  if (optimisticMark !== null) return <DrawnMark mark={optimisticMark} motionOn={motionOn} />;
-  if (glyph) return <DrawnMark mark={glyph} motionOn={motionOn} />;
+  if (optimisticMark !== null) {
+    return (
+      <DrawnMark
+        mark={optimisticMark}
+        motionOn={motionOn}
+        colorClass={markColorClass(optimisticMark, cell)}
+      />
+    );
+  }
+  if (cell.glyph) {
+    return (
+      <DrawnMark
+        mark={cell.glyph}
+        motionOn={motionOn}
+        colorClass={markColorClass(cell.glyph, cell)}
+      />
+    );
+  }
   if (Icon) return <Icon className="size-6" aria-hidden />;
   return null;
 }

@@ -125,9 +125,40 @@ describe('BoardNode superseded state', () => {
     // aria-disabled (not `disabled`) keeps the cell focusable, so the Radix
     // tooltip explanation is keyboard-reachable.
     cell.focus();
+    // Friendly, plain copy — never the word "superseded" in user-facing text.
     expect(
-      (await screen.findAllByText('Superseded — use the latest widget')).length
+      (await screen.findAllByText('This board is from an earlier turn — play on the newest one.'))
+        .length
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('BoardNode per-mark colors', () => {
+  it('colors X and O with distinct default tokens (case-insensitive), tone wins, other glyphs inherit', () => {
+    renderBoard({
+      type: 'board',
+      rows: [[{ glyph: 'X' }, { glyph: 'o' }, { glyph: 'X', tone: 'error' }, { glyph: '★' }]],
+    });
+    const cells = screen.getAllByRole('gridcell');
+    // X → info blue; lowercase o → warning amber.
+    expect(cells[0].querySelector('.text-status-info')).not.toBeNull();
+    expect(cells[1].querySelector('.text-status-warning')).not.toBeNull();
+    // An explicit tone from the model wins — no per-mark default underneath.
+    expect(cells[2].querySelector('.text-status-info')).toBeNull();
+    // Non-classic glyphs keep the cell's inherited color.
+    expect(cells[3].querySelector('.text-status-info, .text-status-warning')).toBeNull();
+  });
+
+  it('draws the optimistic mark in the player color on click', async () => {
+    const user = userEvent.setup();
+    mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });
+    renderBoard({
+      type: 'board',
+      rows: [[{ action: { kind: 'agent', id: 'm-0-0', payload: { glyph: 'X' } } }]],
+    });
+    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    const cell = screen.getByLabelText('Row 1, column 1: X');
+    expect(cell.querySelector('.text-status-info')).not.toBeNull();
   });
 });
 
@@ -154,6 +185,33 @@ describe('BoardNode sizing', () => {
     expect(screen.getByRole('grid')).toHaveStyle({
       gridTemplateColumns: 'repeat(5, minmax(0, 2.5rem))',
     });
+  });
+});
+
+describe('BoardNode state reconciliation', () => {
+  it('renders a mark the model recorded in payload state but forgot in rows, and it can complete a win', () => {
+    // The real-session shape: state says X at (2,2) completes the diagonal,
+    // but rows rendered that cell empty-with-action.
+    const state = 'X../.X./..X';
+    const withState = (id: string) => ({
+      action: { kind: 'agent' as const, id, payload: { glyph: 'O', state } },
+    });
+    const { container } = renderBoard({
+      type: 'board',
+      rows: [
+        [{ glyph: 'X' }, withState('m-0-1'), withState('m-0-2')],
+        [withState('m-1-0'), { glyph: 'X' }, withState('m-1-2')],
+        [withState('m-2-0'), withState('m-2-1'), withState('m-2-2')],
+      ],
+    });
+    // The healed cell renders as a filled X — labeled like any mark, not a button.
+    const healed = screen.getByLabelText('Row 3, column 3: X');
+    expect(healed).not.toHaveAttribute('role', 'button');
+    expect(healed.querySelector('button')).toBeNull();
+    // And the healed diagonal completes a win line.
+    expect(container.querySelector('svg line')).not.toBeNull();
+    // Genuinely empty cells stay playable.
+    expect(screen.getByLabelText('Row 1, column 2: empty — play here')).toBeInTheDocument();
   });
 });
 
