@@ -28,7 +28,7 @@ import { ChecklistNode } from './nodes/ChecklistNode';
 import { CompareNode } from './nodes/CompareNode';
 import { RatingNode } from './nodes/RatingNode';
 import { ButtonNode, InputField, SelectField, WidgetActionButton } from './nodes/ActionNodes';
-import { MoodNode } from './nodes/MoodNode';
+import { MoodNode } from './nodes/mood';
 import { BoardNode } from './nodes/board';
 import { RevealNode } from './nodes/RevealNode';
 
