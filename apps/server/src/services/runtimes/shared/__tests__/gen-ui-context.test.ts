@@ -47,9 +47,11 @@ describe('GEN_UI_CONTEXT', () => {
   });
 
   it('stays compact — it rides the cacheable prefix on every turn', () => {
-    // Budget ceiling: 3200 chars, deliberately bumped from 3000 to fit the
-    // Tier-2 delight pack (mood/board/reveal + celebrate); current usage is
-    // ~3140 (~98%). Any further addition requires trimming elsewhere first.
-    expect(GEN_UI_CONTEXT.length).toBeLessThanOrEqual(3200);
+    // Budget ceiling: 3700 chars, bumped from 3200 to fit the "Board games"
+    // discipline paragraph (full-state-in-payload + validate-before-apply +
+    // one-re-emit-per-turn + mood/celebrate on game end, needed to keep
+    // turn-based games like tic-tac-toe from drifting); current usage is
+    // ~3697 (~99.9%). Any further addition requires trimming elsewhere first.
+    expect(GEN_UI_CONTEXT.length).toBeLessThanOrEqual(3700);
   });
 });
