@@ -57,7 +57,7 @@ override tweak never requires re-booting the app or re-recording — re-run
 
 ## Parallel capture (`--shards N`)
 
-Recording is the slow phase (it boots a stack, drives ~16 surfaces, and holds
+Recording is the slow phase (it boots a stack, drives ~17 surfaces, and holds
 each loop for its full duration). `--shards N` splits those shots across `N`
 **fully isolated stacks** and records them at the same time:
 
