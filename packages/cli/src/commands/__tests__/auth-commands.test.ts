@@ -82,7 +82,8 @@ describe('auth-commands', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-auth-cli-'));
     db = createDb(path.join(tmpDir, 'dork.db'));
     runMigrations(db);
-    auth = createOwnerAuth(db) as unknown as OwnerAuth;
+    // A fixed test secret so owner creation can sign the (discarded) session.
+    auth = createOwnerAuth(db, 'test-signing-secret-test-signing-secret') as unknown as OwnerAuth;
   });
 
   afterEach(() => {

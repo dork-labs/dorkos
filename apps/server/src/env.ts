@@ -22,6 +22,13 @@ const serverEnvSchema = z.object({
   CLIENT_DIST_PATH: z.string().optional(),
   // MCP external server — optional API key for authenticated access
   MCP_API_KEY: z.string().optional(),
+  // Better Auth session-signing secret. Optional: when set it overrides the
+  // per-instance secret DorkOS otherwise generates and persists under the dork
+  // home (see services/core/auth/secret.ts). Set this to pin the secret across
+  // machines or to manage it out-of-band; leave it unset for a self-managing
+  // single-instance install. Read here only for validation + startup visibility;
+  // the auth layer resolves it via resolveBetterAuthSecret.
+  BETTER_AUTH_SECRET: z.string().optional(),
   // Marketplace MCP — when '1', auto-approves every install/uninstall/create
   // confirmation request without prompting the user. Used by CI and tests.
   MARKETPLACE_AUTO_APPROVE: z.string().optional(),

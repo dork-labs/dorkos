@@ -24,10 +24,14 @@
  *
  * ## Secret management
  *
- * Session cookies are signed by Better Auth's own secret management, which reads
- * `BETTER_AUTH_SECRET` (or `AUTH_SECRET`) from the environment. Production
- * deployments should set `BETTER_AUTH_SECRET` so sessions survive restarts;
- * without it Better Auth falls back to a development secret.
+ * Session cookies are signed with a secret {@link resolveBetterAuthSecret}
+ * resolves at init: an explicit `BETTER_AUTH_SECRET` env var wins, otherwise a
+ * per-instance secret is read from (or generated into) a `0600` file under the
+ * dork home. That means a fresh install signs in with zero manual env setup, and
+ * the secret survives restarts (rotating it would invalidate every live session).
+ * Passing `secret` explicitly also stops Better Auth from throwing its
+ * production "default secret" error, which previously 500'd the first sign-in
+ * (DOR-242).
  *
  * @module services/core/auth
  */
@@ -39,6 +43,7 @@ import { apiKey } from '@better-auth/api-key';
 import { user, session, account, verification, apikey, type Db } from '@dorkos/db';
 import { env } from '../../../env.js';
 import { resolveTrustedOrigins } from '../../../lib/trusted-origins.js';
+import { resolveBetterAuthSecret } from './secret.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 
 /** The configured Better Auth instance type (return of {@link createAuth}). */
@@ -53,10 +58,17 @@ const isProduction = env.NODE_ENV === 'production';
  * an instance over a throwaway temp database without booting the whole server.
  *
  * @param db - The server's Drizzle database (from `@dorkos/db` `createDb`).
+ * @param dorkHome - The resolved DorkOS data directory. Used to resolve (and, on
+ *   first boot, persist) the session-signing secret.
  */
-export function createAuth(db: Db) {
+export function createAuth(db: Db, dorkHome: string) {
   return betterAuth({
     appName: 'DorkOS',
+    // Resolve the signing secret up front: env override → persisted file →
+    // freshly generated + persisted. Supplying it explicitly (rather than
+    // letting Better Auth read the environment) is what makes login work on a
+    // fresh install with no `BETTER_AUTH_SECRET` set — see `secret.ts`.
+    secret: resolveBetterAuthSecret(dorkHome),
     // `baseURL` is intentionally omitted: this server is reachable on both a
     // loopback origin and a dynamic ngrok tunnel, so Better Auth must derive the
     // origin per request rather than from one fixed URL. Better Auth logs a
@@ -142,10 +154,12 @@ let activeDb: Db | undefined;
  * without a second db instance.
  *
  * @param db - The server's Drizzle database (from `@dorkos/db` `createDb`).
+ * @param dorkHome - The resolved DorkOS data directory (threaded to
+ *   {@link createAuth} for signing-secret resolution).
  */
-export function initAuth(db: Db): Auth {
+export function initAuth(db: Db, dorkHome: string): Auth {
   activeDb = db;
-  activeAuth = createAuth(db);
+  activeAuth = createAuth(db, dorkHome);
   return activeAuth;
 }
 

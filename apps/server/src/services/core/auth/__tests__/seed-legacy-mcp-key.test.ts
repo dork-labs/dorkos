@@ -45,7 +45,7 @@ describe('seedLegacyMcpApiKey — legacy MCP key migration (task 1.4)', () => {
     initConfigManager(tmpDir);
     db = createDb(path.join(tmpDir, 'seed-test.db'));
     runMigrations(db);
-    initAuth(db);
+    initAuth(db, tmpDir);
   });
 
   afterEach(() => {

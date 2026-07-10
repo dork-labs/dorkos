@@ -16,9 +16,9 @@ import { env } from '../../../../env.js';
  * Mounts the Better Auth handler over a throwaway temp SQLite database exactly
  * as `app.ts` does: `app.all('/api/auth/*splat', ...)` BEFORE `express.json()`.
  */
-function buildApp(db: Db): express.Express {
+function buildApp(db: Db, dorkHome: string): express.Express {
   const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(createAuth(db)));
+  app.all('/api/auth/*splat', toNodeHandler(createAuth(db, dorkHome)));
   app.use(express.json({ limit: '1mb' }));
   return app;
 }
@@ -47,7 +47,7 @@ describe('Better Auth — local identity core (integration)', () => {
     initConfigManager(tmpDir);
     db = createDb(path.join(tmpDir, 'auth-test.db'));
     runMigrations(db);
-    app = buildApp(db);
+    app = buildApp(db, tmpDir);
   });
 
   afterAll(() => {
