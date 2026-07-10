@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: How DorkOS manages Claude conversation sessions and their lifecycle
+description: How DorkOS manages agent sessions and their lifecycle across every runtime
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,7 +8,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Sessions
 
-A session is a single conversation with Claude. Every message you send, every tool Claude uses, and every response you receive belongs to a session. Sessions are the central unit of interaction in DorkOS.
+A session is a single conversation with one of your agents. Every message you send, every tool the agent uses, and every response you receive belongs to a session. Sessions are the central unit of interaction in DorkOS. DorkOS runs them on three runtimes (Claude Code, Codex, and OpenCode) and shows them all in one list.
 
 ## Session Lifecycle
 
@@ -17,7 +17,7 @@ A session is a single conversation with Claude. Every message you send, every to
 When you start a new conversation, a session is created with:
 
 - A **unique ID** (UUID) that identifies the session across all clients
-- A **working directory** that tells Claude where to operate on your filesystem
+- A **working directory** that tells the agent where to operate on your filesystem
 - A **permission mode** that controls whether tool calls require your approval
 
 You can create sessions through the DorkOS UI, the REST API, or by starting a conversation with the Claude Code CLI directly.
@@ -44,27 +44,32 @@ The lock is held for the duration of the turn — it is released when the turn c
 
 ## Storage
 
-DorkOS does not maintain a separate session database. All session data lives in **JSONL transcript files** managed by the Claude Agent SDK. This is the single source of truth.
+DorkOS keeps no separate session database. Each runtime owns its own session storage, and DorkOS reads from every runtime to build one combined list.
 
-### Transcript Files
+- **Claude Code** stores each session as a transcript file on your disk. That file is the single source of truth for Claude Code sessions.
+- **Codex** and **OpenCode** keep their own session stores, managed by their own tools.
 
-Each session has a corresponding file at:
+If DorkOS cannot reach one runtime, it still shows the others and tells you which one it missed.
+
+### Claude Code transcript files
+
+Each Claude Code session has a file at:
 
 ```
 ~/.claude/projects/{project-slug}/{session-id}.jsonl
 ```
 
-These files contain every interaction as newline-delimited JSON. The `TranscriptReader` service parses them to extract:
+These files hold every interaction as newline-delimited JSON (JSON, one record per line). DorkOS reads them to extract:
 
-- **Session metadata** — ID, title (from the first user message), timestamps, permission mode
-- **Message history** — The full conversation including user messages, assistant responses, and tool results
-- **Session list** — Built by scanning the project directory for all `.jsonl` files
+- **Session metadata**: ID, title (from the first user message), timestamps, and permission mode
+- **Message history**: the full conversation, including your messages, agent responses, and tool results
+- **Session list**: built by scanning the project directory for all `.jsonl` files
 
 Metadata is computed on every request, so it always reflects the current state of the file.
 
-### Cross-Client Visibility
+### Cross-client visibility
 
-Because sessions are plain files on disk, any client that can read the same filesystem sees the same sessions:
+Because Claude Code sessions are plain files on disk, any client that can read the same files sees the same sessions:
 
 - A session started in the **DorkOS web UI** appears in the **Claude Code CLI**
 - A session started from the **CLI** shows up when you open DorkOS
@@ -90,6 +95,8 @@ A pending approval prompt survives a refresh, a session switch, or a second wind
 The sidebar stays live the same way: a single global stream (`GET /api/events`) announces `session_upserted`, `session_removed`, and `session_status` events as sessions are created, deleted, or change state — across every client and the CLI.
 
 ## Session Metadata
+
+Every session shows the same core details in DorkOS: an ID, a title, timestamps, and a permission mode. For Claude Code sessions, DorkOS reads them from the transcript file:
 
 | Field               | Source                                  |
 | ------------------- | --------------------------------------- |

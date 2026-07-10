@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How DorkOS connects your browser to Claude Code using a hexagonal architecture
+description: How DorkOS connects your browser to your coding agents using a hexagonal architecture
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,7 +8,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Architecture
 
-DorkOS sits between you and Claude Code, providing a browser-based command center on top of the Claude Agent SDK. Understanding how the pieces fit together helps you troubleshoot issues, choose the right deployment mode, and build integrations.
+DorkOS sits between you and your coding agents, providing a browser-based command center. It works with Claude Code, Codex, and OpenCode through one shared runtime interface. Understanding how the pieces fit together helps you troubleshoot issues, choose the right deployment mode, and build integrations.
 
 ## The Big Picture
 
@@ -23,9 +23,9 @@ DorkOS Client (React SPA)
   v
 Transport (interface)
   |
-  +---> HttpTransport ---> DorkOS Server (Express) ---> AgentRuntime ---> Claude Agent SDK ---> Claude API
+  +---> HttpTransport ---> DorkOS Server (Express) ---> AgentRuntime ---> Claude Code, Codex, or OpenCode
   |
-  +---> DirectTransport ---> AgentRuntime ---> Claude Agent SDK ---> Claude API (Obsidian plugin, no server)
+  +---> DirectTransport ---> AgentRuntime ---> Claude Code (Obsidian plugin, no server)
 ```
 
 Two abstractions make this work. The **Transport interface** decouples the React client from its backend — the client calls `transport.postMessage()` and subscribes to session events without knowing whether they came from an SSE stream or an in-process generator. The **AgentRuntime interface** decouples the server routes from specific agent backend implementations — routes call `runtimeRegistry.getDefault()` and never reference `ClaudeCodeRuntime` directly.
@@ -61,7 +61,7 @@ When you type a message and press Enter:
 1. **ChatPanel** captures your input and calls `transport.postMessage()`
 2. The **Transport adapter** delivers the trigger to the backend (via HTTP or directly), which acknowledges immediately with the canonical session id
 3. The server resolves the session's `AgentRuntime` via the `RuntimeRegistry`
-4. The **AgentRuntime** calls the Claude Agent SDK and the turn runs server-side
+4. The **AgentRuntime** calls the chosen runtime (Claude Code, Codex, or OpenCode) and the turn runs server-side
 5. Events flow to every subscribed client over the session's durable event stream: text deltas, tool calls, approvals, and the final result
 6. The **React client** updates the UI in real time as each event arrives
 
@@ -73,7 +73,7 @@ This flow is identical regardless of which transport adapter or runtime is activ
 
 The `AgentRuntime` interface (`@dorkos/shared/agent-runtime`) is the contract that all agent backends implement. It covers session lifecycle, message streaming, tool approval, storage queries, session locking, and capability reporting. Every route obtains the active runtime through `runtimeRegistry.getDefault()` — never by referencing a specific implementation.
 
-The `RuntimeRegistry` holds all registered runtimes keyed by type string. The current default implementation is `ClaudeCodeRuntime`, which integrates the Claude Agent SDK. Future runtimes (OpenCode, Aider, etc.) can be registered without touching route code.
+The `RuntimeRegistry` holds all registered runtimes keyed by type string. The default is `ClaudeCodeRuntime`, which integrates the Claude Agent SDK. DorkOS also ships `CodexRuntime` and `OpenCodeRuntime`, and more can be registered without touching route code.
 
 ### Server
 
