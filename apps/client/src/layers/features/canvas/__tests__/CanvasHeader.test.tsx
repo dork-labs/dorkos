@@ -23,12 +23,14 @@ const DOCS: CanvasHeaderDocument[] = [
  */
 function Harness({
   initial = 'a',
+  initialDocs = DOCS,
   onCloseSpy,
 }: {
   initial?: string;
+  initialDocs?: CanvasHeaderDocument[];
   onCloseSpy?: (id: string) => void;
 }) {
-  const [docs, setDocs] = useState(DOCS);
+  const [docs, setDocs] = useState(initialDocs);
   const [active, setActive] = useState<string | null>(initial);
 
   return (
@@ -46,6 +48,9 @@ function Harness({
           if (active === id) setActive(next?.id ?? null);
         }}
       />
+      {/* Mirrors AgentCanvas's always-mounted content container — the strip's
+          Delete-last-tab fallback focus target (found by id). */}
+      <div id={CANVAS_PANEL_ID} tabIndex={-1} data-testid="canvas-panel" />
       <button type="button">after</button>
     </>
   );
@@ -126,6 +131,21 @@ describe('CanvasHeader — keyboard accessibility (WAI-ARIA Tabs)', () => {
     expect(screen.queryByRole('tab', { name: 'Doc B' })).not.toBeInTheDocument();
     // Neighbor (the tab that shifted into the slot) receives focus.
     expect(tab('Doc C')).toHaveFocus();
+  });
+
+  it('Delete on the only document lands focus on the canvas container, not the body', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        initial="a"
+        initialDocs={[{ id: 'a', sourceLabel: 'Doc A', contentType: 'markdown' }]}
+      />
+    );
+    tab('Doc A').focus();
+
+    await user.keyboard('{Delete}');
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.getByTestId('canvas-panel')).toHaveFocus();
   });
 
   it('advertises the Delete shortcut via aria-keyshortcuts on each tab', () => {

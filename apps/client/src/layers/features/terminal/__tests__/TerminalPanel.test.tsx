@@ -12,8 +12,9 @@ import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 
 // Shared, hoist-safe capture of everything written to the stubbed xterm, so
-// tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy.
-const xterm = vi.hoisted(() => ({ writes: [] as string[] }));
+// tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy — plus
+// a focus() call count for the keyboard-vs-pointer focus gate (DOR-229).
+const xterm = vi.hoisted(() => ({ writes: [] as string[], focusCalls: 0 }));
 
 // xterm touches canvas/WebGL, which jsdom cannot provide — stub the terminal,
 // its fit addon, the WebGL renderer, and the CSS side-effect import so instances
@@ -25,7 +26,9 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon() {}
     open() {}
     onData() {}
-    focus() {}
+    focus() {
+      xterm.focusCalls += 1;
+    }
     write(data: string | Uint8Array) {
       xterm.writes.push(typeof data === 'string' ? data : new TextDecoder().decode(data));
     }
@@ -76,6 +79,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   xterm.writes.length = 0;
+  xterm.focusCalls = 0;
   resizeCallbacks.length = 0;
   sessionStorage.clear();
   useAppStore.setState({ selectedCwd: CWD, sessionId: null });
@@ -197,6 +201,34 @@ describe('TerminalPanel', () => {
     );
     expect(transport.openTerminal).toHaveBeenCalledTimes(2);
     expect(instanceCount(container)).toBe(2);
+  });
+
+  it('keyboard tab activation never focuses the shell; pointer activation does (DOR-229)', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'New terminal' }));
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
+
+    // Keyboard traversal: focus the active tab and arrow across the strip.
+    // xterm's focus() would steal focus off the strip and swallow the next
+    // arrow key in the shell — it must NOT be called.
+    screen.getByRole('tab', { name: /Terminal 2/ }).focus();
+    const focusCallsBefore = xterm.focusCalls;
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('tab', { name: /Terminal 1/, selected: true })).toHaveFocus();
+    expect(xterm.focusCalls).toBe(focusCallsBefore);
+
+    // …and traversal keeps working past one tab (the strip retains focus).
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('tab', { name: /Terminal 2/, selected: true })).toHaveFocus();
+    expect(xterm.focusCalls).toBe(focusCallsBefore);
+
+    // Pointer activation: the user expects keystrokes in the revealed shell.
+    await user.click(screen.getByRole('tab', { name: /Terminal 1/ }));
+    await waitFor(() => expect(xterm.focusCalls).toBeGreaterThan(focusCallsBefore));
   });
 
   it('ignores the zero-size observer entry a hidden tab fires — no bogus PTY resize', async () => {
@@ -482,8 +514,9 @@ describe('TerminalPanel', () => {
       expect(xterm.writes.join('')).toContain('[opened in another window — session moved]')
     );
 
-    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
-    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    // The close control is a sibling of the tab (a non-tab-stop button), so it
+    // is queried at the strip level rather than within the tab element.
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
 
     // Tab removed, id dropped from this window's stored list — but the shared
     // PTY was never destroyed.

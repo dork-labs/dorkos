@@ -46,7 +46,9 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
   const { getTabProps } = useRovingTabList({
     orderedIds: contributions.map((c) => c.id),
     activeId: activeTab,
-    onActivate: setActiveTab,
+    // Source is irrelevant here (no content auto-focus) — drop it so the store
+    // setter keeps its single-argument contract.
+    onActivate: (id) => setActiveTab(id),
   });
 
   return (
@@ -74,7 +76,6 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
                     aria-label={contribution.title}
                     id={rightPanelTabDomId(contribution.id)}
                     aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
-                    onClick={() => setActiveTab(contribution.id)}
                     {...getTabProps(contribution.id)}
                     className={cn(
                       'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors',

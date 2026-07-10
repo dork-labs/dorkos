@@ -13,43 +13,55 @@ afterEach(cleanup);
 /** Minimal tablist driven by the hook, controlled so activation is real. */
 function Strip({
   closable = false,
+  initialIds = ['x', 'y', 'z'],
+  withFallback = false,
+  onActivateSpy,
   onCloseSpy,
 }: {
   closable?: boolean;
-  onCloseSpy?: (id: string) => void;
+  initialIds?: string[];
+  withFallback?: boolean;
+  onActivateSpy?: (id: string, source: string) => void;
+  onCloseSpy?: (id: string, source: string) => void;
 }) {
-  const [ids, setIds] = useState(['x', 'y', 'z']);
-  const [active, setActive] = useState<string | null>('x');
+  const [ids, setIds] = useState(initialIds);
+  const [active, setActive] = useState<string | null>(initialIds[0] ?? null);
   const { getTabProps } = useRovingTabList({
     orderedIds: ids,
     activeId: active,
-    onActivate: setActive,
+    onActivate: (id, source) => {
+      onActivateSpy?.(id, source);
+      setActive(id);
+    },
     onClose: closable
-      ? (id) => {
-          onCloseSpy?.(id);
+      ? (id, source) => {
+          onCloseSpy?.(id, source);
           const i = ids.findIndex((v) => v === id);
           const next = ids[i + 1] ?? ids[i - 1] ?? null;
           setIds((cur) => cur.filter((v) => v !== id));
           if (active === id) setActive(next);
         }
       : undefined,
+    getFallbackFocus: withFallback ? () => document.getElementById('fallback') : undefined,
   });
 
   return (
-    <div role="tablist" aria-label="strip">
-      {ids.map((id) => (
-        <button
-          key={id}
-          type="button"
-          role="tab"
-          aria-selected={id === active}
-          onClick={() => setActive(id)}
-          {...getTabProps(id)}
-        >
-          {id}
-        </button>
-      ))}
-    </div>
+    <>
+      <div role="tablist" aria-label="strip">
+        {ids.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={id === active}
+            {...getTabProps(id)}
+          >
+            {id}
+          </button>
+        ))}
+      </div>
+      {withFallback && <button id="fallback" type="button" />}
+    </>
   );
 }
 
@@ -95,7 +107,7 @@ describe('useRovingTabList', () => {
     y.focus();
 
     await user.keyboard('{Delete}');
-    expect(onClose).toHaveBeenCalledWith('y');
+    expect(onClose).toHaveBeenCalledWith('y', 'keyboard');
     expect(screen.queryByRole('tab', { name: 'y' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'z' })).toHaveFocus();
   });
@@ -109,5 +121,28 @@ describe('useRovingTabList', () => {
 
     await user.keyboard('{Delete}');
     expect(screen.getByRole('tab', { name: 'y' })).toBeInTheDocument();
+  });
+
+  it('Delete on the last tab focuses the getFallbackFocus element, not the body', async () => {
+    const user = userEvent.setup();
+    render(<Strip closable withFallback initialIds={['only']} />);
+    screen.getByRole('tab', { name: 'only' }).focus();
+
+    await user.keyboard('{Delete}');
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(document.getElementById('fallback')).toHaveFocus();
+  });
+
+  it('reports the activation source: pointer via onClick, keyboard via arrows', async () => {
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(<Strip onActivateSpy={onActivate} />);
+
+    await user.click(screen.getByRole('tab', { name: 'y' }));
+    expect(onActivate).toHaveBeenLastCalledWith('y', 'pointer');
+
+    screen.getByRole('tab', { name: 'y' }).focus();
+    await user.keyboard('{ArrowRight}');
+    expect(onActivate).toHaveBeenLastCalledWith('z', 'keyboard');
   });
 });

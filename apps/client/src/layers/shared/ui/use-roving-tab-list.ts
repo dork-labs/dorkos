@@ -1,11 +1,20 @@
 import { useCallback, useRef, type KeyboardEvent } from 'react';
 
+/**
+ * How a tab activation (or close) was triggered. Lets consumers vary focus
+ * side effects by input: e.g. the terminal focuses its PTY on a pointer click
+ * but must NOT steal focus from the strip during keyboard traversal.
+ */
+export type TabActivationSource = 'keyboard' | 'pointer';
+
 /** Props the hook produces for a single tab element (the one Tab stop). */
 export interface RovingTabProps {
   /** Ref callback that registers the tab element for programmatic focus. */
   ref: (element: HTMLElement | null) => void;
   /** `0` for the active (roving) tab, `-1` for every other — one Tab stop per strip. */
   tabIndex: 0 | -1;
+  /** Activates the tab with a `'pointer'` source. */
+  onClick: () => void;
   /** Arrow/Home/End/Delete handler implementing the WAI-ARIA Tabs keyboard model. */
   onKeyDown: (event: KeyboardEvent) => void;
   /** Present only when `onClose` is set — advertises the Delete-to-close shortcut. */
@@ -18,10 +27,27 @@ export interface UseRovingTabListParams {
   orderedIds: string[];
   /** Id of the active tab, or `null`. Falls back to the first tab for the roving stop. */
   activeId: string | null;
-  /** Activate a tab by id. Called on arrow/Home/End (automatic activation: focus selects). */
-  onActivate: (id: string) => void;
-  /** Close a tab by id. When provided, Delete closes the focused tab and focus moves to a neighbor. */
-  onClose?: (id: string) => void;
+  /**
+   * Activate a tab by id, with the triggering input source: `'pointer'` for
+   * clicks (via the returned `onClick`), `'keyboard'` for arrow/Home/End
+   * (automatic activation: focus selects). Consumers that don't vary behaviour
+   * by source can pass a single-parameter callback.
+   */
+  onActivate: (id: string, source: TabActivationSource) => void;
+  /**
+   * Close a tab by id. When provided, Delete closes the focused tab
+   * (`'keyboard'` source) and focus moves to a neighbour — or to
+   * {@link UseRovingTabListParams.getFallbackFocus} when none remains.
+   */
+  onClose?: (id: string, source: TabActivationSource) => void;
+  /**
+   * Focus target for Delete on the last remaining tab (no neighbour to move
+   * to). Must return an element that already exists at close time and survives
+   * the close's re-render — e.g. the strip's trailing "+" button or the panel
+   * container (given `tabIndex={-1}`). Without it, closing the only tab drops
+   * focus to the document body.
+   */
+  getFallbackFocus?: () => HTMLElement | null;
 }
 
 /** The public surface of {@link useRovingTabList}. */
@@ -38,22 +64,29 @@ export interface RovingTabListApi {
  * others `-1`. ArrowLeft/ArrowRight move focus between tabs (wrapping at the
  * ends) and activate as they go; Home/End jump to the first/last tab. When
  * `onClose` is supplied, Delete closes the focused tab and moves focus to an
- * adjacent tab so it is never lost to the document body — and each tab
+ * adjacent tab — or to the caller's `getFallbackFocus` element when the last
+ * tab closes — so focus is never lost to the document body; each tab also
  * advertises the shortcut via `aria-keyshortcuts`.
+ *
+ * Activation and close callbacks receive a {@link TabActivationSource} so
+ * consumers can vary focus side effects by input: pointer activation may focus
+ * the panel's content, keyboard traversal must keep focus on the strip.
  *
  * The hook owns focus and keyboard only. The caller supplies `role="tab"`,
  * `aria-selected`, ids, and any `aria-controls` wiring, and renders close
  * controls as non-tab-stop siblings (`tabIndex={-1}`) so the DOM stays valid.
  *
- * @param params - The tab order, active id, and activate/close callbacks.
- * @returns `getTabProps(id)` — the roving `ref`, `tabIndex`, `onKeyDown`, and
- *   optional `aria-keyshortcuts` to spread onto each tab element.
+ * @param params - The tab order, active id, activate/close callbacks, and
+ *   optional last-tab fallback focus target.
+ * @returns `getTabProps(id)` — the roving `ref`, `tabIndex`, `onClick`,
+ *   `onKeyDown`, and optional `aria-keyshortcuts` to spread onto each tab.
  */
 export function useRovingTabList({
   orderedIds,
   activeId,
   onActivate,
   onClose,
+  getFallbackFocus,
 }: UseRovingTabListParams): RovingTabListApi {
   const elements = useRef(new Map<string, HTMLElement>());
 
@@ -67,7 +100,7 @@ export function useRovingTabList({
 
   const move = useCallback(
     (id: string) => {
-      onActivate(id);
+      onActivate(id, 'keyboard');
       focus(id);
     },
     [onActivate, focus]
@@ -100,12 +133,14 @@ export function useRovingTabList({
           case 'Delete': {
             if (!onClose) return;
             event.preventDefault();
-            // Move focus to a neighbour BEFORE the tab unmounts, so it never
-            // falls back to the document body. The neighbour element persists
-            // (keyed by id), so focusing it synchronously survives the re-render.
+            // Move focus BEFORE React unmounts the tab, so it never falls back
+            // to the document body. The target pre-exists the close (neighbour
+            // tabs are keyed by id; the fallback lives outside the strip), so
+            // focusing it synchronously survives the re-render.
             const neighbour = orderedIds[index + 1] ?? orderedIds[index - 1] ?? null;
-            onClose(id);
-            focus(neighbour);
+            onClose(id, 'keyboard');
+            if (neighbour) focus(neighbour);
+            else getFallbackFocus?.()?.focus();
             break;
           }
         }
@@ -117,11 +152,12 @@ export function useRovingTabList({
           else elements.current.delete(id);
         },
         tabIndex: id === rovingId ? 0 : -1,
+        onClick: () => onActivate(id, 'pointer'),
         onKeyDown,
         ...(onClose ? { 'aria-keyshortcuts': 'Delete' } : {}),
       };
     },
-    [orderedIds, rovingId, onClose, move, focus]
+    [orderedIds, rovingId, onActivate, onClose, getFallbackFocus, move, focus]
   );
 
   return { getTabProps };

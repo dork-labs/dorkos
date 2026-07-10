@@ -112,7 +112,12 @@ export function RightPanelContainer() {
       />
       <div
         className="min-h-0 flex-1 overflow-hidden"
-        {...(visibleContributions.length > 1 && activeTab
+        {...(visibleContributions.length > 1 &&
+        activeTab &&
+        // A route/transport change can transiently leave activeTab pointing at
+        // a filtered-out contribution (until the auto-select effect corrects
+        // it) — never emit aria-labelledby for a tab that isn't rendered.
+        visibleContributions.some((c) => c.id === activeTab)
           ? {
               id: RIGHT_PANEL_PANEL_ID,
               role: 'tabpanel',

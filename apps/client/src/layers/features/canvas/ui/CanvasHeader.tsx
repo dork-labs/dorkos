@@ -75,8 +75,13 @@ export function CanvasHeader({
   const { getTabProps } = useRovingTabList({
     orderedIds: documents.map((doc) => doc.id),
     activeId: activeDocumentId,
-    onActivate,
-    onClose,
+    // Source is irrelevant here (no content auto-focus) — drop it so the
+    // callers' single-argument contracts stay honest.
+    onActivate: (id) => onActivate(id),
+    onClose: (id) => onClose(id),
+    // Delete on the last document: focus the (always-mounted, tabIndex=-1)
+    // canvas content container — it shows the splash next — never the body.
+    getFallbackFocus: () => document.getElementById(CANVAS_PANEL_ID),
   });
 
   if (documents.length === 0) return null;
@@ -91,6 +96,10 @@ export function CanvasHeader({
         const Icon = CONTENT_TYPE_ICONS[doc.contentType];
         const isActive = doc.id === activeDocumentId;
         return (
+          // role="presentation" wrapper: ARIA expects tabs as direct tablist
+          // children; this div exists only to anchor the absolutely-positioned
+          // close control as a SIBLING of the tab (a button inside a button is
+          // invalid HTML) — the same compromise VS Code ships.
           <div key={doc.id} role="presentation" className="group relative flex shrink-0">
             <button
               type="button"
@@ -98,7 +107,6 @@ export function CanvasHeader({
               aria-selected={isActive}
               id={canvasTabDomId(doc.id)}
               aria-controls={isActive ? CANVAS_PANEL_ID : undefined}
-              onClick={() => onActivate(doc.id)}
               {...getTabProps(doc.id)}
               className={cn(
                 'focus-ring flex items-center gap-1.5 rounded-md py-1 pr-7 pl-2 text-xs transition-colors',

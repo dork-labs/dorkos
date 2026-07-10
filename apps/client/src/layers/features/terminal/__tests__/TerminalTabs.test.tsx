@@ -19,14 +19,18 @@ const TABS: TerminalTabDescriptor[] = [
 /** Controlled harness with a focusable element before the strip and a live "+" after. */
 function Harness({
   initial = 't1',
+  initialTabs = TABS,
+  onActivateSpy,
   onCloseSpy,
   onCreateSpy,
 }: {
   initial?: string;
-  onCloseSpy?: (key: string) => void;
+  initialTabs?: TerminalTabDescriptor[];
+  onActivateSpy?: (key: string, source: string) => void;
+  onCloseSpy?: (key: string, source: string) => void;
   onCreateSpy?: () => void;
 }) {
-  const [tabs, setTabs] = useState(TABS);
+  const [tabs, setTabs] = useState(initialTabs);
   const [active, setActive] = useState<string | null>(initial);
 
   return (
@@ -35,9 +39,12 @@ function Harness({
       <TerminalTabs
         tabs={tabs}
         activeKey={active}
-        onActivate={setActive}
-        onClose={(key) => {
-          onCloseSpy?.(key);
+        onActivate={(key, source) => {
+          onActivateSpy?.(key, source);
+          setActive(key);
+        }}
+        onClose={(key, source) => {
+          onCloseSpy?.(key, source);
           const index = tabs.findIndex((t) => t.key === key);
           const next = tabs[index + 1] ?? tabs[index - 1] ?? null;
           setTabs((cur) => cur.filter((t) => t.key !== key));
@@ -117,10 +124,33 @@ describe('TerminalTabs — keyboard accessibility (WAI-ARIA Tabs)', () => {
     tab('Terminal 3').focus();
 
     await user.keyboard('{Delete}');
-    expect(onClose).toHaveBeenCalledWith('t3');
+    expect(onClose).toHaveBeenCalledWith('t3', 'keyboard');
     expect(screen.queryByRole('tab', { name: 'Terminal 3' })).not.toBeInTheDocument();
     // Closing the last tab falls back to the previous one.
     expect(tab('Terminal 2')).toHaveFocus();
+  });
+
+  it('Delete on the only tab lands focus on the "+" button, not the body', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="t1" initialTabs={[{ key: 't1', label: 'Terminal 1' }]} />);
+    tab('Terminal 1').focus();
+
+    await user.keyboard('{Delete}');
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New terminal' })).toHaveFocus();
+  });
+
+  it('reports the activation source: keyboard for arrows, pointer for clicks', async () => {
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(<Harness initial="t1" onActivateSpy={onActivate} />);
+
+    tab('Terminal 1').focus();
+    await user.keyboard('{ArrowRight}');
+    expect(onActivate).toHaveBeenLastCalledWith('t2', 'keyboard');
+
+    await user.click(tab('Terminal 3'));
+    expect(onActivate).toHaveBeenLastCalledWith('t3', 'pointer');
   });
 
   it('the × close control is not a Tab stop (tabIndex -1) but is clickable', async () => {
@@ -132,7 +162,7 @@ describe('TerminalTabs — keyboard accessibility (WAI-ARIA Tabs)', () => {
     expect(close).toHaveAttribute('tabindex', '-1');
 
     await user.click(close);
-    expect(onClose).toHaveBeenCalledWith('t1');
+    expect(onClose).toHaveBeenCalledWith('t1', 'pointer');
   });
 
   it('advertises the Delete shortcut and wires the active tab to the panel', () => {

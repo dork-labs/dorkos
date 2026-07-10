@@ -195,6 +195,7 @@ export { useRovingTabList } from './use-roving-tab-list';
 export type {
   RovingTabProps,
   RovingTabListApi,
+  TabActivationSource,
   UseRovingTabListParams,
 } from './use-roving-tab-list';
 export type { TabsListProps } from './tabs';

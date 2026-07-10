@@ -20,6 +20,13 @@ interface TerminalInstanceProps {
   initialPtyId: string | null;
   /** Whether this instance is the visible (active) tab. Hidden tabs stay mounted. */
   active: boolean;
+  /**
+   * Whether becoming active should focus the shell. True for pointer clicks,
+   * tab creation, and the initial mount (keystrokes belong in the terminal);
+   * false for keyboard strip traversal — focusing xterm mid-arrow-scrub would
+   * steal focus off the tab strip and feed the next arrow key to the shell.
+   */
+  focusOnActivate: boolean;
   /** Called with the server id once a fresh shell is spawned (create path only). */
   onCreated: (id: string) => void;
   /**
@@ -73,6 +80,7 @@ export function TerminalInstance({
   cwd,
   initialPtyId,
   active,
+  focusOnActivate,
   onCreated,
   onEnded,
   onSuperseded,
@@ -90,11 +98,17 @@ export function TerminalInstance({
   const onEndedRef = useRef(onEnded);
   const onSupersededRef = useRef(onSuperseded);
   const onLateSpawnRef = useRef(onLateSpawn);
+  // Same ref treatment for focusOnActivate: the activation effect must read the
+  // value belonging to the activation that flipped `active` without re-running
+  // when the flag alone changes. This sync effect is declared before the
+  // activation effect, so the ref is current when the latter runs.
+  const focusOnActivateRef = useRef(focusOnActivate);
   useEffect(() => {
     onCreatedRef.current = onCreated;
     onEndedRef.current = onEnded;
     onSupersededRef.current = onSuperseded;
     onLateSpawnRef.current = onLateSpawn;
+    focusOnActivateRef.current = focusOnActivate;
   });
 
   // The xterm + fit addon + live handle, shared between the mount effect and the
@@ -235,8 +249,13 @@ export function TerminalInstance({
     };
   }, []);
 
-  // On reveal, re-fit (a hidden instance measured zero) and resize the PTY, then
-  // focus so keystrokes land in the just-activated terminal.
+  // On reveal, re-fit (a hidden instance measured zero) and resize the PTY.
+  // Keyboard arrow-scrubbing across N tabs runs this once per reveal — N
+  // fire-and-forget refit/resize calls. Accepted deliberately: N is small, the
+  // POSTs are cheap, and gating them would complicate the reveal contract
+  // (DOR-229 review). Focus is gated, though: only pointer-driven activations
+  // (and creation/initial mount) put keystrokes in the shell — keyboard strip
+  // traversal must keep focus on the tab strip.
   useEffect(() => {
     if (!active) return;
     const term = termRef.current;
@@ -246,7 +265,7 @@ export function TerminalInstance({
     if (handleRef.current) {
       transport.resizeTerminal(handleRef.current, { cols: term.cols, rows: term.rows });
     }
-    term.focus();
+    if (focusOnActivateRef.current) term.focus();
   }, [active, transport]);
 
   return (

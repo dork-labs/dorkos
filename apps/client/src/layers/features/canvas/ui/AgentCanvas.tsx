@@ -126,12 +126,15 @@ function CanvasBody() {
       {/* Single scroll container for all content types. min-h-0 keeps the flex
           item from sizing to its content, which would clip instead of scroll
           (DOR-96). When a document is open it is the tab strip's panel, labelled
-          by the active tab (WAI-ARIA Tabs). */}
+          by the active tab (WAI-ARIA Tabs). The id + tabIndex are unconditional:
+          the strip's Delete-last-tab handling focuses this container by id
+          synchronously (before the splash re-render), so it must always be a
+          resolvable, focusable target. */}
       <div
-        className="min-h-0 flex-1 overflow-auto"
-        {...(active
-          ? { id: CANVAS_PANEL_ID, role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) }
-          : {})}
+        id={CANVAS_PANEL_ID}
+        tabIndex={-1}
+        className="min-h-0 flex-1 overflow-auto focus-visible:outline-none"
+        {...(active ? { role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) } : {})}
       >
         {active ? (
           <CanvasRenderer

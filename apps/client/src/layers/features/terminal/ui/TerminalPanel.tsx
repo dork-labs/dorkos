@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SquareTerminal } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Button, type TabActivationSource } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 import { TerminalInstance } from './TerminalInstance';
@@ -134,6 +134,12 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   const transport = useTransport();
 
   const [state, setState] = useState<PanelState>(() => buildInitialState(sessionId, cwd));
+  // Whether the instance revealed by the LAST activation should grab keyboard
+  // focus. True for pointer clicks, tab creation, and the initial mount (the
+  // user wants to type into the shell); false for keyboard strip traversal —
+  // an xterm `focus()` there would steal focus off the strip mid-arrow-scrub
+  // and feed the next arrow key to the shell (DOR-229 review).
+  const [focusOnActivate, setFocusOnActivate] = useState(true);
   // Current state behind a ref so close handlers can read a tab's id for the
   // teardown side effect without threading it through the pure state updater.
   // Synced in an effect (react-hooks/refs forbids ref writes during render);
@@ -151,6 +157,7 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   }, [state, sessionId, cwd]);
 
   const createTab = useCallback(() => {
+    setFocusOnActivate(true);
     setState((s) => {
       const label = s.tabs.reduce((max, t) => Math.max(max, t.label), 0) + 1;
       const tab: TerminalTab = { key: nextTabKey(), ptyId: null, label, superseded: false };
@@ -166,7 +173,10 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   const closedPendingKeysRef = useRef(new Set<string>());
 
   const closeTab = useCallback(
-    (key: string) => {
+    (key: string, source: TabActivationSource) => {
+      // Closing the active tab activates a neighbour; whether that neighbour's
+      // shell should take focus follows the same input rule as activation.
+      setFocusOnActivate(source === 'pointer');
       const tab = stateRef.current.tabs.find((t) => t.key === key);
       if (tab?.superseded) {
         // Superseded tab: its PTY belongs to the other window now. Just drop the
@@ -203,7 +213,8 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     }));
   }, []);
 
-  const activateTab = useCallback((key: string) => {
+  const activateTab = useCallback((key: string, source: TabActivationSource) => {
+    setFocusOnActivate(source === 'pointer');
     setState((s) => (s.activeKey === key ? s : { ...s, activeKey: key }));
   }, []);
 
@@ -306,6 +317,7 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
               cwd={cwd}
               initialPtyId={tab.ptyId}
               active={tab.key === state.activeKey}
+              focusOnActivate={focusOnActivate}
               onCreated={(id) => handleCreated(tab.key, id)}
               onEnded={() => handleEnded(tab.key)}
               onSuperseded={() => handleSuperseded(tab.key)}
