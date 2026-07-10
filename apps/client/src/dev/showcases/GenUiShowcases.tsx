@@ -415,7 +415,7 @@ export function GenUiShowcases() {
 
       <PlaygroundSection
         title="Generative UI — Board"
-        description="A CSS grid of glyph cells, some clickable. Paired with an agent action re-emitted each turn, this is the primitive behind turn-based games like tic-tac-toe — the empty cells below carry an action but render disabled here (the playground has no session to send a move to)."
+        description="A CSS grid of glyph cells, some clickable. Paired with an agent action re-emitted each turn, this is the primitive behind turn-based games like tic-tac-toe — the empty cells below carry an action but render disabled here (the playground has no session to send a move to). The classic marks carry per-player default colors (X info blue, O warning amber; an explicit cell tone wins)."
       >
         <ShowcaseLabel>mid-game</ShowcaseLabel>
         <ShowcaseDemo>

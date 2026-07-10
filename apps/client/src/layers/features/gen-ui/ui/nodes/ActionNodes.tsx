@@ -70,7 +70,7 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   // click while a dispatch is in flight gets "waiting", not silence. The
   // dispatched button itself already speaks through its spinner/check.
   let tooltipText: string | null = null;
-  if (state.superseded) tooltipText = 'Superseded — use the latest widget';
+  if (state.superseded) tooltipText = "This one's from an earlier message.";
   else if (state.unavailable) tooltipText = "Interactions aren't available here";
   else if (state.latched) tooltipText = "Sent — waiting for the agent's reply";
 
