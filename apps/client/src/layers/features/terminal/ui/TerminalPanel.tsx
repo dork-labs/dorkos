@@ -197,11 +197,20 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
 
   const handleCreated = useCallback(
     (key: string, id: string) => {
-      // The tab can be gone by the time the create resolves (closed in the
-      // commit gap before this instance's teardown flipped `cancelled`) — the
-      // setState below would silently no-op and strand the PTY. Route through
-      // the same late-spawn arbitration instead.
-      if (!stateRef.current.tabs.some((t) => t.key === key)) {
+      // The tab can already be closed when the create resolves: closeTab
+      // committed removeTab, but the instance's teardown (which flips
+      // `cancelled`) runs in a deferred effect cleanup — so the instance still
+      // reports through onCreated, and the setState below would silently no-op
+      // and strand the PTY. `closedPendingKeysRef` is the authoritative signal
+      // for that window: closeTab mutates it SYNCHRONOUSLY at click time (a
+      // stateRef check would be useless here — stateRef syncs in a passive
+      // effect, the same deferred timing as `cancelled`, so it is exactly as
+      // stale). closeTab is the only tab-remover that can precede onCreated:
+      // handleEnded can't fire before the create resolves for the same
+      // instance (the output stream doesn't exist yet), and a body unmount
+      // flips `cancelled` in synchronous cleanup before this continuation
+      // runs, routing to onLateSpawn instead.
+      if (closedPendingKeysRef.current.has(key)) {
         handleLateSpawn(key, id, false);
         return;
       }

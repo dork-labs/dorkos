@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TerminalHandle } from '@dorkos/shared/transport';
@@ -255,6 +255,29 @@ describe('TerminalPanel', () => {
     create.resolve({ id: 'late-pty', output: exitedOutput() });
     await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('late-pty'));
     // Never persisted, no tab re-appears.
+    expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+  });
+
+  it('destroys a PTY whose create resolves in the same tick as the close click (commit gap)', async () => {
+    const transport = createMockTransport({ supportsTerminal: true });
+    const create = deferredCreate();
+    transport.openTerminal = vi.fn(() => create.promise);
+
+    renderTerminal(transport);
+    const tab = await screen.findByRole('tab', { name: /Terminal 1/ });
+
+    // Close and resolve back-to-back in the SAME tick — no interim flush. The
+    // create's continuation can then run in the gap where removeTab has
+    // committed but the instance's deferred effect cleanup hasn't flipped
+    // `cancelled` yet, so the id arrives via onCreated for a tab that no
+    // longer exists. closedPendingKeys (mutated synchronously in closeTab) is
+    // what routes it to destruction regardless of which path fires.
+    fireEvent.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    create.resolve({ id: 'late-pty', output: exitedOutput() });
+
+    await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('late-pty'));
+    // Never persisted, never adopted back into a tab.
     expect(readTerminalTabs(null, CWD).ids).toEqual([]);
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
