@@ -28,6 +28,14 @@ interface TerminalInstanceProps {
    */
   onEnded: () => void;
   /**
+   * Called when the server closed this socket with `TERMINAL_CLOSE_SUPERSEDED` —
+   * another window took the PTY over. The tab is kept (dead, with the in-terminal
+   * notice), but the parent must record the takeover: the PTY is no longer this
+   * window's to destroy, so a later close of this tab must skip `closeTerminal`
+   * (destroying it would kill the live terminal in the other window).
+   */
+  onSuperseded: () => void;
+  /**
    * Called when the attach resolves AFTER this instance was already torn down
    * (tab closed or panel unmounted mid-spawn). The abort signal only cancels
    * the create POST before the server spawns; once it resolves, this instance
@@ -66,6 +74,7 @@ export function TerminalInstance({
   active,
   onCreated,
   onEnded,
+  onSuperseded,
   onLateSpawn,
 }: TerminalInstanceProps) {
   const transport = useTransport();
@@ -78,10 +87,12 @@ export function TerminalInstance({
   // command-bridge pattern in FileExplorer.
   const onCreatedRef = useRef(onCreated);
   const onEndedRef = useRef(onEnded);
+  const onSupersededRef = useRef(onSuperseded);
   const onLateSpawnRef = useRef(onLateSpawn);
   useEffect(() => {
     onCreatedRef.current = onCreated;
     onEndedRef.current = onEnded;
+    onSupersededRef.current = onSuperseded;
     onLateSpawnRef.current = onLateSpawn;
   });
 
@@ -162,8 +173,11 @@ export function TerminalInstance({
         // dead but labeled — and DON'T prune or touch the stored ids, so the
         // window that took over isn't disrupted. Re-attaching here would just
         // steal the sink back and start a takeover war between the two windows.
+        // The parent records the takeover so closing this tab later skips the
+        // PTY destroy — the shell belongs to the other window now.
         if (handle.closeInfo?.code === TERMINAL_CLOSE_SUPERSEDED) {
           term.write('\r\n\x1b[2m[opened in another window — session moved]\x1b[0m\r\n');
+          onSupersededRef.current();
           return;
         }
         // Otherwise the server closed it because the shell exited or the PTY was

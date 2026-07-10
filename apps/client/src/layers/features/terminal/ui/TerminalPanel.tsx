@@ -141,13 +141,27 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
   // with the body.
   const closedPendingKeysRef = useRef(new Set<string>());
 
+  // Keys of tabs whose socket the server closed with TERMINAL_CLOSE_SUPERSEDED —
+  // another window took the PTY over. The tab stays open (dead, with its
+  // in-terminal notice), but the PTY is no longer this window's to destroy:
+  // closing such a tab must skip closeTerminal, or the DELETE would kill the
+  // live shell out from under the window that owns it now. A ref (not state),
+  // like closedPendingKeysRef: it only gates the close side effect, never
+  // rendering, and the instance reports the takeover outside a React event.
+  const supersededKeysRef = useRef(new Set<string>());
+
   const closeTab = useCallback(
     (key: string) => {
       const tab = stateRef.current.tabs.find((t) => t.key === key);
-      // Closing a tab is an explicit teardown — destroy the PTY server-side
-      // (best-effort) rather than detaching. Resolves the reviewer note that
-      // DELETE /api/terminal/:id had no client callers (DOR-225 → DOR-226).
-      if (tab?.ptyId) {
+      if (supersededKeysRef.current.delete(key)) {
+        // Superseded tab: its PTY id now belongs to the other window. Just drop
+        // the tab — the persist effect rewrites THIS window's stored ids without
+        // it (sessionStorage is per-browser-tab, so that never touches the other
+        // window's copy) — and never destroy the shell.
+      } else if (tab?.ptyId) {
+        // Closing a tab is an explicit teardown — destroy the PTY server-side
+        // (best-effort) rather than detaching. Resolves the reviewer note that
+        // DELETE /api/terminal/:id had no client callers (DOR-225 → DOR-226).
         void transport.closeTerminal(tab.ptyId).catch(() => {});
       } else if (tab) {
         // Still spawning: no id to destroy yet. Mark the key so the late-spawn
@@ -158,6 +172,11 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
     },
     [transport]
   );
+
+  /** An instance's socket was superseded by another window — record the key. */
+  const handleSuperseded = useCallback((key: string) => {
+    supersededKeysRef.current.add(key);
+  }, []);
 
   const activateTab = useCallback((key: string) => {
     setState((s) => (s.activeKey === key ? s : { ...s, activeKey: key }));
@@ -255,6 +274,7 @@ function TerminalPanelBody({ sessionId, cwd }: { sessionId: string | null; cwd: 
               active={tab.key === state.activeKey}
               onCreated={(id) => handleCreated(tab.key, id)}
               onEnded={() => handleEnded(tab.key)}
+              onSuperseded={() => handleSuperseded(tab.key)}
               onLateSpawn={(id, reattached) => handleLateSpawn(tab.key, id, reattached)}
             />
           ))

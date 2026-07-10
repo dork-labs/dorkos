@@ -421,6 +421,37 @@ describe('TerminalPanel', () => {
     expect(readTerminalTabs(null, CWD).ids).toEqual(['stolen']);
   });
 
+  it('closing a superseded tab never destroys the PTY (the other window owns it now)', async () => {
+    // After a takeover the dead tab and the live terminal in the other window
+    // share ONE PTY id. Clicking × on the dead tab must NOT call closeTerminal
+    // (the DELETE would kill the other window's live shell) — just remove the
+    // tab and drop the id from THIS window's stored list.
+    const user = userEvent.setup();
+    writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: exitedOutput(),
+        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+      })
+    );
+
+    renderTerminal(transport);
+    await waitFor(() =>
+      expect(xterm.writes.join('')).toContain('[opened in another window — session moved]')
+    );
+
+    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
+    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+
+    // Tab removed, id dropped from this window's stored list — but the shared
+    // PTY was never destroyed.
+    await screen.findByText('No terminals open.');
+    expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+    expect(transport.closeTerminal).not.toHaveBeenCalled();
+  });
+
   it('renders the truncation cue in order: [reconnected] → cue → replay', async () => {
     // The server leads a re-attach replay with the dim truncation cue (it alone
     // knows the detached buffer overflowed), then the surviving scrollback. The
