@@ -1,7 +1,7 @@
 {
   "name": "dorkos",
   "version": "0.44.0",
-  "description": "You, multiplied. Mission control for Claude Code, Codex, and OpenCode: scheduling, messaging, agent discovery. Self-hosted, MIT.",
+  "description": "You, multiplied. Mission control for Claude Code, Codex, and OpenCode: see every session, approve what your agents do, and run them on a schedule. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {
@@ -20,7 +20,6 @@
     "ai-agent",
     "agent-sdk",
     "agent-scheduler",
-    "agent-scheduling",
     "agent-discovery",
     "agent-mesh",
     "cron",
@@ -29,7 +28,14 @@
     "obsidian",
     "relay",
     "mesh",
-    "rest-api"
+    "rest-api",
+    "codex",
+    "opencode",
+    "mcp",
+    "multi-agent",
+    "coding-agents",
+    "mission-control",
+    "self-hosted"
   ],
   "type": "module",
   "bin": {
