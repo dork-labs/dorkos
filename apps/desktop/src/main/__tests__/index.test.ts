@@ -218,6 +218,33 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
     expect(win.webContents.send).toHaveBeenCalledWith('navigate', '/session?id=42');
   });
 
+  it('ignores get-pending-navigate from a sender that is not the tracked main window', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    // Queue a path (the renderer hasn't marked readiness yet, so it queues).
+    await app.emit('open-url', { preventDefault: vi.fn() }, 'dorkos://agents');
+
+    const handler = await getHandler('get-pending-navigate');
+    // A stray webContents (devtools, a future auxiliary window) must not
+    // mark readiness or steal the pending path.
+    expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBeNull();
+    // The tracked window's renderer still drains the queued path.
+    expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
+      '/agents'
+    );
+  });
+
   it('a malformed/unknown deep link just focuses the existing window', async () => {
     const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
     resetElectronMock();

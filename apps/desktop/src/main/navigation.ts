@@ -80,13 +80,43 @@ let pendingPath: string | null = null;
  * The `webContents.id` of the renderer that most recently proved it's
  * subscribed and ready (by invoking `get-pending-navigate`). `id` is unique
  * per `WebContents` instance, so this naturally resets to "not ready" when
- * the tracked window is destroyed and recreated — no explicit reset needed.
+ * the tracked window is destroyed and recreated. It does NOT reset on a
+ * reload or renderer crash — the `WebContents` (and its id) survives those
+ * while the JS context dies — which is what {@link registerReadinessReset}
+ * exists to handle.
  */
 let readyWebContentsId: number | null = null;
 
 /** Has `win`'s renderer signaled it's subscribed and ready to receive `navigate` events? */
 function isRendererReady(win: BrowserWindow): boolean {
   return win.webContents.id === readyWebContentsId;
+}
+
+/**
+ * Attach listeners that clear the readiness mark when `win`'s renderer JS
+ * context is torn down without its `WebContents` being destroyed. Call once
+ * per tracked window, right after creation.
+ *
+ * A reload (`Cmd+R`) or a renderer crash keeps the same `webContents.id`
+ * but drops the `navigate` subscription — without this reset,
+ * {@link requestNavigate} would keep hot-path-sending into a listenerless
+ * renderer and the message would be lost instead of queued. Clearing on
+ * top-frame navigations (same-document ones keep the JS context, so those
+ * are excluded) and on `render-process-gone` makes such windows fall back
+ * to the pending slot, which the remounting client hook drains via
+ * `get-pending-navigate`.
+ *
+ * @param win - The freshly created tracked main window.
+ */
+export function registerReadinessReset(win: BrowserWindow): void {
+  const { webContents } = win;
+  const clear = (): void => {
+    if (readyWebContentsId === webContents.id) readyWebContentsId = null;
+  };
+  webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) clear();
+  });
+  webContents.on('render-process-gone', clear);
 }
 
 /**

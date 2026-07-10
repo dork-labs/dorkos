@@ -163,3 +163,90 @@ describe('requestNavigate / resolvePendingNavigate (pending-navigation handoff)'
     expect(win.webContents.send).toHaveBeenCalledWith('navigate', '/agents');
   });
 });
+
+describe('registerReadinessReset (renderer reload/crash)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('a top-frame navigation (reload) clears readiness: requestNavigate queues instead of sending', async () => {
+    const { BrowserWindow, resetElectronMock } = await import('./electron-mock');
+    resetElectronMock();
+    const { registerReadinessReset, requestNavigate, resolvePendingNavigate } =
+      await import('../navigation');
+
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    registerReadinessReset(win as unknown as Electron.BrowserWindow);
+    resolvePendingNavigate(win.webContents.id); // renderer subscribed → ready
+
+    // Cmd+R: same webContents.id, but the JS context (and the `navigate`
+    // listener with it) is being torn down.
+    await win.webContents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+    });
+
+    requestNavigate(() => win as unknown as Electron.BrowserWindow, vi.fn(), '/agents');
+    expect(win.webContents.send).not.toHaveBeenCalled();
+
+    // The remounting hook's pull drains the queued path.
+    expect(resolvePendingNavigate(win.webContents.id)).toBe('/agents');
+  });
+
+  it('same-document and subframe navigations do not clear readiness (JS context survives)', async () => {
+    const { BrowserWindow, resetElectronMock } = await import('./electron-mock');
+    resetElectronMock();
+    const { registerReadinessReset, requestNavigate, resolvePendingNavigate } =
+      await import('../navigation');
+
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    registerReadinessReset(win as unknown as Electron.BrowserWindow);
+    resolvePendingNavigate(win.webContents.id);
+
+    await win.webContents.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: true,
+    });
+    await win.webContents.emit('did-start-navigation', {
+      isMainFrame: false,
+      isSameDocument: false,
+    });
+
+    requestNavigate(() => win as unknown as Electron.BrowserWindow, vi.fn(), '/agents');
+    expect(win.webContents.send).toHaveBeenCalledWith('navigate', '/agents');
+  });
+
+  it('render-process-gone clears readiness: requestNavigate queues instead of sending', async () => {
+    const { BrowserWindow, resetElectronMock } = await import('./electron-mock');
+    resetElectronMock();
+    const { registerReadinessReset, requestNavigate, resolvePendingNavigate } =
+      await import('../navigation');
+
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    registerReadinessReset(win as unknown as Electron.BrowserWindow);
+    resolvePendingNavigate(win.webContents.id);
+
+    await win.webContents.emit('render-process-gone');
+
+    requestNavigate(() => win as unknown as Electron.BrowserWindow, vi.fn(), '/agents');
+    expect(win.webContents.send).not.toHaveBeenCalled();
+    expect(resolvePendingNavigate(win.webContents.id)).toBe('/agents');
+  });
+
+  it("another window's teardown does not clear a different ready renderer", async () => {
+    const { BrowserWindow, resetElectronMock } = await import('./electron-mock');
+    resetElectronMock();
+    const { registerReadinessReset, requestNavigate, resolvePendingNavigate } =
+      await import('../navigation');
+
+    const staleWin = new BrowserWindow({ width: 1200, height: 800 });
+    const readyWin = new BrowserWindow({ width: 1200, height: 800 });
+    registerReadinessReset(staleWin as unknown as Electron.BrowserWindow);
+    resolvePendingNavigate(readyWin.webContents.id);
+
+    await staleWin.webContents.emit('render-process-gone');
+
+    requestNavigate(() => readyWin as unknown as Electron.BrowserWindow, vi.fn(), '/agents');
+    expect(readyWin.webContents.send).toHaveBeenCalledWith('navigate', '/agents');
+  });
+});

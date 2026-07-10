@@ -4,7 +4,12 @@ import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
 import { setupAutoUpdater } from './auto-updater';
-import { parseDeepLink, requestNavigate, resolvePendingNavigate } from './navigation';
+import {
+  parseDeepLink,
+  registerReadinessReset,
+  requestNavigate,
+  resolvePendingNavigate,
+} from './navigation';
 
 /** The custom URL scheme `dorkos://` deep links arrive on. */
 const DEEP_LINK_PROTOCOL = 'dorkos';
@@ -23,6 +28,10 @@ function createTrackedWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  // A reload or renderer crash keeps this window's webContents.id but drops
+  // the renderer's `navigate` subscription — reset the deep-link readiness
+  // mark so requestNavigate queues instead of sending into the void.
+  registerReadinessReset(mainWindow);
 }
 
 /**
@@ -96,8 +105,15 @@ if (!gotTheLock) {
 
   // Renderer-readiness + pending-navigation pickup (see navigation.ts) —
   // called by the client's useElectronNavigate hook right after it
-  // subscribes to `onNavigate` on mount.
-  ipcMain.handle('get-pending-navigate', (event) => resolvePendingNavigate(event.sender.id));
+  // subscribes to `onNavigate` on mount. Only the tracked main window's
+  // renderer may mark readiness or drain the slot: a stray invoke (devtools,
+  // a future auxiliary window) must not steal the pending path or trick
+  // requestNavigate into hot-path-sending to the wrong webContents.
+  ipcMain.handle('get-pending-navigate', (event) => {
+    const win = getMainWindow();
+    if (!win || win.isDestroyed() || event.sender.id !== win.webContents.id) return null;
+    return resolvePendingNavigate(event.sender.id);
+  });
 
   app.on('ready', async () => {
     // 1. Start Express in a UtilityProcess on a free port
