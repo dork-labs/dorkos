@@ -1,4 +1,4 @@
-import { eq, desc, and, count, notInArray, like, lt } from 'drizzle-orm';
+import { eq, desc, and, count, notInArray, like, lt, isNull } from 'drizzle-orm';
 import { pulseSchedules, pulseRuns, pulseDispatchLog, type Db } from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type {
@@ -44,6 +44,26 @@ interface RunUpdate {
   outputSummary?: string;
   error?: string;
   sessionId?: string;
+}
+
+/**
+ * Statuses that end a run's lifecycle. Once a run reaches one of these, its
+ * outcome is immutable — no later write (a delayed dispatch acknowledgement,
+ * a duplicate handler callback, a restart sweep) may change it. This is the
+ * state-machine guard behind DOR-248: synchronous in-process relay delivery
+ * can let a handler record `completed` before the publisher's own
+ * post-publish `updateRun(..., { status: 'running' })` runs, so the guard
+ * has to live here — reordering the caller only fixes the one call site.
+ */
+const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
+/** Whether a run status is terminal (see {@link TERMINAL_RUN_STATUSES}). */
+function isTerminalRunStatus(status: TaskRunStatus): boolean {
+  return TERMINAL_RUN_STATUSES.has(status);
 }
 
 /**
@@ -160,10 +180,27 @@ export class TaskStore {
     return this.getRun(id)!;
   }
 
-  /** Update fields on an existing run. Returns the updated run or null. */
+  /**
+   * Update fields on an existing run. Returns the updated run or null.
+   *
+   * A run's outcome is immutable once terminal (`completed`/`failed`/
+   * `cancelled`, see {@link isTerminalRunStatus}): this is a no-op that
+   * returns the run unchanged. This is the durable fix for DOR-248 — the
+   * scheduler's post-publish `status: 'running'` write can lose a race with
+   * the handler's own terminal write on synchronous (in-process) relay
+   * delivery, and this guard makes that race harmless regardless of which
+   * caller loses it.
+   */
   updateRun(id: string, update: RunUpdate): TaskRun | null {
     const existing = this.getRun(id);
     if (!existing) return null;
+
+    if (isTerminalRunStatus(existing.status)) {
+      logger.debug(
+        `TaskStore: ignoring updateRun(${id}) — run is already terminal (${existing.status})`
+      );
+      return existing;
+    }
 
     this.db
       .update(pulseRuns)
@@ -298,7 +335,18 @@ export class TaskStore {
     return result.changes;
   }
 
-  /** Mark all currently running runs as failed (used on startup for crash recovery). */
+  /**
+   * Mark all currently running runs as failed (used on startup for crash
+   * recovery, DOR-249).
+   *
+   * Scoped to rows that are genuinely unfinished (`finishedAt IS NULL`) —
+   * a `running` row that already carries a real `finishedAt` was completed
+   * and is only sitting in `running` due to a status-write race (the
+   * `updateRun` terminal guard above closes that race going forward, but
+   * this sweep must not assume every writer is patched). Never overwrite an
+   * existing `finishedAt`: that timestamp is the only record of when the run
+   * actually finished.
+   */
   markRunningAsFailed(): number {
     const now = new Date().toISOString();
     const result = this.db
@@ -308,7 +356,7 @@ export class TaskStore {
         finishedAt: now,
         error: 'Interrupted by server restart',
       })
-      .where(eq(pulseRuns.status, 'running'))
+      .where(and(eq(pulseRuns.status, 'running'), isNull(pulseRuns.finishedAt)))
       .run();
     return result.changes;
   }

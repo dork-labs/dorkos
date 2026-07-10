@@ -564,6 +564,48 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    it('DOR-248: a terminal status the handler already wrote survives the post-publish "running" write', async () => {
+      // In-process relay delivery is synchronous: the task handler can run the
+      // agent turn to completion and write 'completed' to the store BEFORE
+      // relay.publish() resolves here. Simulate that by having the mocked
+      // publish() itself perform the handler's terminal write before
+      // resolving — reproducing the exact race from the DOR-235 smoke test.
+      mockRelay.publish.mockImplementation(
+        async (_subject: string, payload: TaskDispatchPayload) => {
+          store.updateRun(payload.runId, {
+            status: 'completed',
+            finishedAt: '2026-07-10T02:44:10.310Z',
+            durationMs: 10_307,
+            outputSummary: 'ok',
+            sessionId: payload.runId,
+          });
+          return { messageId: 'msg-race', deliveredTo: 1 };
+        }
+      );
+
+      const task = store.createTask(
+        taskInput({ name: 'Synchronous Race', prompt: 'reply with exactly: ok', cron: '0 * * * *' })
+      );
+
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      const run = await service.triggerManualRun(task.id);
+      await new Promise((r) => setTimeout(r, 100));
+
+      const updatedRun = store.getRun(run!.id);
+      expect(updatedRun?.status).toBe('completed');
+      expect(updatedRun?.finishedAt).toBe('2026-07-10T02:44:10.310Z');
+      expect(updatedRun?.durationMs).toBe(10_307);
+      expect(updatedRun?.outputSummary).toBe('ok');
+
+      await service.stop();
+    });
+
     it('sets budget TTL based on task.maxRuntime', async () => {
       const task = store.createTask(
         taskInput({

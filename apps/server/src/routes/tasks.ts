@@ -151,7 +151,13 @@ export function createTasksRouter(
       linkPath: '/',
     });
 
-    return res.status(201).json(schedule);
+    // nextRun is derived from the scheduler (not persisted on the schedule row),
+    // so it must be attached here the same way the list endpoint does below —
+    // otherwise a freshly created task reports nextRun: null until the next list fetch.
+    return res.status(201).json({
+      ...schedule,
+      nextRun: scheduler.getNextRun(schedule.id)?.toISOString() ?? null,
+    });
   });
 
   router.patch('/:id', async (req, res) => {
