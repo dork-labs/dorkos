@@ -18,6 +18,7 @@ import {
   SelectSettingRow,
   type SettingStatus,
 } from './SettingFieldRenderers';
+import { extensionApiUrl } from '../model/extension-api-url';
 
 /** Server response shape for a single secret's status. */
 interface SecretStatus {
@@ -98,10 +99,10 @@ export function ManifestSettingsPanel({
     try {
       const [secretsRes, settingsRes] = await Promise.all([
         secrets.length > 0
-          ? fetch(`/api/extensions/${extensionId}/secrets`)
+          ? fetch(extensionApiUrl(`/extensions/${extensionId}/secrets`))
           : Promise.resolve(null),
         settings.length > 0
-          ? fetch(`/api/extensions/${extensionId}/settings`)
+          ? fetch(extensionApiUrl(`/extensions/${extensionId}/settings`))
           : Promise.resolve(null),
       ]);
 
@@ -258,7 +259,7 @@ function SecretRow({
     if (!value.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/extensions/${extensionId}/secrets/${secret.key}`, {
+      const res = await fetch(extensionApiUrl(`/extensions/${extensionId}/secrets/${secret.key}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value }),
@@ -277,7 +278,7 @@ function SecretRow({
   const handleClear = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/extensions/${extensionId}/secrets/${secret.key}`, {
+      const res = await fetch(extensionApiUrl(`/extensions/${extensionId}/secrets/${secret.key}`), {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error(`${res.status}`);

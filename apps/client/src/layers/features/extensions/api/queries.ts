@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import { extensionApiUrl } from '../model/extension-api-url';
 
 /** Response shape from enable/disable endpoints. */
 interface ExtensionActionResponse {
@@ -29,7 +30,7 @@ export function useExtensions() {
   return useQuery<ExtensionRecordPublic[]>({
     queryKey: extensionKeys.lists(),
     queryFn: async () => {
-      const res = await fetch('/api/extensions');
+      const res = await fetch(extensionApiUrl('/extensions'));
       if (!res.ok) throw new Error(`Failed to fetch extensions: ${res.status}`);
       return res.json() as Promise<ExtensionRecordPublic[]>;
     },
@@ -50,7 +51,7 @@ export function useEnableExtension() {
 
   return useMutation<ExtensionActionResponse, Error, string>({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/extensions/${id}/enable`, { method: 'POST' });
+      const res = await fetch(extensionApiUrl(`/extensions/${id}/enable`), { method: 'POST' });
       if (!res.ok) throw new Error(`Failed to enable extension '${id}': ${res.status}`);
       return res.json() as Promise<ExtensionActionResponse>;
     },
@@ -71,7 +72,7 @@ export function useDisableExtension() {
 
   return useMutation<ExtensionActionResponse, Error, string>({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/extensions/${id}/disable`, { method: 'POST' });
+      const res = await fetch(extensionApiUrl(`/extensions/${id}/disable`), { method: 'POST' });
       if (!res.ok) throw new Error(`Failed to disable extension '${id}': ${res.status}`);
       return res.json() as Promise<ExtensionActionResponse>;
     },
@@ -91,7 +92,7 @@ export function useReloadExtensions() {
 
   return useMutation<ExtensionRecordPublic[], Error, void>({
     mutationFn: async () => {
-      const res = await fetch('/api/extensions/reload', { method: 'POST' });
+      const res = await fetch(extensionApiUrl('/extensions/reload'), { method: 'POST' });
       if (!res.ok) throw new Error(`Failed to reload extensions: ${res.status}`);
       return res.json() as Promise<ExtensionRecordPublic[]>;
     },

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock sonner (pulled in transitively by extension-api-factory)
 vi.mock('sonner', () => ({
@@ -420,6 +420,60 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     // Only the initial GET /api/extensions call should have been made
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledWith('/api/extensions');
+  });
+
+  // 15b. Desktop origin resolution (DOR-243): when the renderer runs under
+  // Electron (window.electronAPI present), extension requests must resolve
+  // against the preload-reported server port, not a bare relative path that
+  // would hit the renderer's own origin (electron-vite dev server or
+  // file://) and silently 404/return index.html.
+  describe('desktop (Electron) origin resolution', () => {
+    afterEach(() => {
+      delete (window as { electronAPI?: unknown }).electronAPI;
+    });
+
+    it('resolves the extension list fetch against the preload server port', async () => {
+      window.electronAPI = {
+        getServerPort: vi.fn(() => 6242),
+      } as unknown as Window['electronAPI'];
+
+      mockFetch([]);
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const loader = new ExtensionLoader(makeDeps());
+      await loader.initialize();
+
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost:6242/api/extensions');
+    });
+
+    it('resolves the init-server POST against the preload server port', async () => {
+      window.electronAPI = {
+        getServerPort: vi.fn(() => 6242),
+      } as unknown as Window['electronAPI'];
+
+      const rec = makeRecord({
+        id: 'server-ext',
+        status: 'compiled',
+        bundleReady: true,
+        hasServerEntry: true,
+      });
+      const fetchSpy = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([rec]) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ ok: true }) });
+      global.fetch = fetchSpy;
+
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const loader = new ExtensionLoader(makeDeps());
+      await loader.initialize();
+
+      // The bundle import fails in jsdom, so activation (and thus init-server)
+      // never fires — only the list fetch happens. This still proves the list
+      // fetch itself was resolved against the Electron origin, not a bare path.
+      expect(fetchSpy).toHaveBeenCalledWith('http://localhost:6242/api/extensions');
+    });
   });
 
   // 16. Server init for hasDataProxy extension

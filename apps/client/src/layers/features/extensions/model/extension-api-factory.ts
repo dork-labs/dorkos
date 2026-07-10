@@ -13,6 +13,7 @@ import type { CommandPaletteContribution } from '@/layers/shared/model';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
 import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
+import { extensionApiUrl } from './extension-api-url';
 
 /** Default priority for extension contributions (mid-range, after built-ins). */
 const DEFAULT_PRIORITY = 50;
@@ -186,14 +187,14 @@ export function createExtensionAPI(
     },
 
     async loadData<T>(): Promise<T | null> {
-      const res = await fetch(`/api/extensions/${extId}/data`);
+      const res = await fetch(extensionApiUrl(`/extensions/${extId}/data`));
       if (res.status === 204) return null;
       if (!res.ok) throw new Error(`loadData failed: ${res.status}`);
       return res.json() as Promise<T>;
     },
 
     async saveData<T>(data: T): Promise<void> {
-      const res = await fetch(`/api/extensions/${extId}/data`, {
+      const res = await fetch(extensionApiUrl(`/extensions/${extId}/data`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

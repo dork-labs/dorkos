@@ -19,6 +19,7 @@ import {
   SelectItem,
   SelectValue,
 } from '@/layers/shared/ui';
+import { extensionApiUrl } from '../model/extension-api-url';
 
 /** Server response shape for a single setting's current value. */
 export interface SettingStatus {
@@ -53,11 +54,14 @@ export function TextSettingRow({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/extensions/${extensionId}/settings/${status.key}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value }),
-      });
+      const res = await fetch(
+        extensionApiUrl(`/extensions/${extensionId}/settings/${status.key}`),
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value }),
+        }
+      );
       if (!res.ok) throw new Error(`${res.status}`);
       toast.success(`${status.label} saved`);
     } catch {
@@ -107,11 +111,14 @@ export function NumberSettingRow({
     if (Number.isNaN(numValue)) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/extensions/${extensionId}/settings/${status.key}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: numValue }),
-      });
+      const res = await fetch(
+        extensionApiUrl(`/extensions/${extensionId}/settings/${status.key}`),
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: numValue }),
+        }
+      );
       if (!res.ok) throw new Error(`${res.status}`);
       toast.success(`${status.label} saved`);
     } catch {
@@ -164,11 +171,14 @@ export function BooleanSettingRow({
   const handleToggle = async (newValue: boolean) => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/extensions/${extensionId}/settings/${status.key}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: newValue }),
-      });
+      const res = await fetch(
+        extensionApiUrl(`/extensions/${extensionId}/settings/${status.key}`),
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: newValue }),
+        }
+      );
       if (!res.ok) throw new Error(`${res.status}`);
       toast.success(`${status.label} ${newValue ? 'enabled' : 'disabled'}`);
       await onChanged();
@@ -209,11 +219,14 @@ export function SelectSettingRow({
       const numericOptions = status.options?.every((o) => typeof o.value === 'number');
       const parsedValue = numericOptions ? Number(newValue) : newValue;
 
-      const res = await fetch(`/api/extensions/${extensionId}/settings/${status.key}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: parsedValue }),
-      });
+      const res = await fetch(
+        extensionApiUrl(`/extensions/${extensionId}/settings/${status.key}`),
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: parsedValue }),
+        }
+      );
       if (!res.ok) throw new Error(`${res.status}`);
       toast.success(`${status.label} updated`);
       await onChanged();
