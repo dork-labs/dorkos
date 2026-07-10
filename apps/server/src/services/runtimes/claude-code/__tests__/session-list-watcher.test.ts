@@ -28,6 +28,7 @@ const { mockWatcher, mockChokidar } = vi.hoisted(() => {
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
 import { watchSessionList } from '../sessions/session-list-watcher.js';
+import { logger } from '../../../../lib/logger.js';
 
 function makeSession(id: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -253,6 +254,23 @@ describe('watchSessionList', () => {
     handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
     await vi.advanceTimersByTimeAsync(300);
     expect(((await pending).value as SessionListEvent).type).toBe('session_upserted');
+    await it.return?.();
+  });
+
+  // A missing projects root is the normal first-run state (Claude Code never
+  // ran on this machine) — it must boot quietly, not as a WARN-level "failed"
+  // scan (DOR-247). Real scan failures on an existing root still WARN.
+  it('logs at debug, not warn, when the projects root does not exist yet', async () => {
+    const missingRoot = join(projectsRoot, 'does-not-exist');
+    (reader.getProjectsRoot as ReturnType<typeof vi.fn>).mockReturnValue(missingRoot);
+    const it = start();
+    await flushIo();
+
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[session-list-watcher] no sessions yet; projects directory not created',
+      { projectsRoot: missingRoot }
+    );
     await it.return?.();
   });
 
