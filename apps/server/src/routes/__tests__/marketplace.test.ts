@@ -732,6 +732,26 @@ describe('Marketplace Routes', () => {
       expect(onPluginsChanged).not.toHaveBeenCalled();
     });
 
+    it('fires onPluginsChanged with the RESOLVED manifest name, not the raw :name param (DOR-264)', async () => {
+      // `dorkos install ./local/path --project <dir>` sends the raw path as the
+      // URL param; the installer resolves it to the real manifest name. Passing
+      // the raw param made Harness Sync look under `.dork/plugins/<raw-path>`
+      // and silently project zero files for every such install.
+      installer.install.mockResolvedValue(buildSampleInstallResult());
+      const rawParam = encodeURIComponent('./local/clones/sample-plugin');
+
+      await request(app)
+        .post(`/api/marketplace/packages/${rawParam}/install`)
+        .send({ projectPath: '/some/project' });
+
+      expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+      expect(onPluginsChanged.mock.calls[0][0]).toEqual({
+        projectPath: '/some/project',
+        packageName: 'sample-plugin',
+        action: 'install',
+      });
+    });
+
     it('returns 409 when installer.install throws ConflictError', async () => {
       const conflicts = [
         {
@@ -797,6 +817,27 @@ describe('Marketplace Routes', () => {
         .send({ projectPath: '/some/project' });
 
       expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+      expect(onPluginsChanged.mock.calls[0][0]).toEqual({
+        projectPath: '/some/project',
+        packageName: 'sample-plugin',
+        action: 'uninstall',
+      });
+    });
+
+    it('fires onPluginsChanged with the RESOLVED name, not the raw :name param (DOR-264)', async () => {
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'sample-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      await request(app)
+        .post(
+          `/api/marketplace/packages/${encodeURIComponent('./local/clones/sample-plugin')}/uninstall`
+        )
+        .send({ projectPath: '/some/project' });
+
       expect(onPluginsChanged.mock.calls[0][0]).toEqual({
         projectPath: '/some/project',
         packageName: 'sample-plugin',
@@ -893,6 +934,24 @@ describe('Marketplace Routes', () => {
       await request(app).post('/api/marketplace/packages/sample-plugin/update').send({});
 
       expect(onPluginsChanged).not.toHaveBeenCalled();
+    });
+
+    it('fires one onPluginsChanged per applied result, each with its RESOLVED name (DOR-264)', async () => {
+      const second = { ...buildSampleInstallResult(), packageName: 'other-plugin' };
+      updateFlow.run.mockResolvedValue({
+        checks: [],
+        applied: [buildSampleInstallResult(), second],
+      });
+
+      await request(app)
+        .post('/api/marketplace/packages/sample-plugin/update')
+        .send({ apply: true, projectPath: '/some/project' });
+
+      expect(onPluginsChanged).toHaveBeenCalledTimes(2);
+      expect(onPluginsChanged.mock.calls.map((c) => c[0].packageName)).toEqual([
+        'sample-plugin',
+        'other-plugin',
+      ]);
     });
   });
 

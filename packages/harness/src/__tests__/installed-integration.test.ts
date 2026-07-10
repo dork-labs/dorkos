@@ -129,6 +129,53 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(existsSync(projected)).toBe(false);
   });
 
+  it('projects a CC-NATIVE plugin (only .claude-plugin/plugin.json, no .dork/manifest.json) — DOR-264', () => {
+    // The marketplace installer copies Claude Code packages verbatim, so a
+    // CC-native install never gains a `.dork/manifest.json`. Before the CC
+    // fallback in `readPluginManifest`, the scanner skipped these entirely and
+    // Harness Sync auto-projection silently applied ZERO files for every
+    // project-scoped install of a real CC plugin.
+    repo = mkdtempSync(join(tmpdir(), 'harness-cc-native-'));
+    mkdirSync(join(repo, '.agents'), { recursive: true });
+    writeFileSync(
+      join(repo, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
+    );
+
+    // Mirrors anthropics/claude-plugins-public layout: CC manifest + commands + skills.
+    const plugin = join(repo, '.dork', 'plugins', 'commit-commands');
+    mkdirSync(join(plugin, '.claude-plugin'), { recursive: true });
+    writeFileSync(
+      join(plugin, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'commit-commands', version: '1.0.0', description: 'CC native' })
+    );
+    mkdirSync(join(plugin, 'commands'), { recursive: true });
+    writeFileSync(join(plugin, 'commands', 'commit.md'), '# /commit\nCommit the work.\n');
+    mkdirSync(join(plugin, 'skills', 'committing'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'committing', 'SKILL.md'),
+      '---\nname: committing\ndescription: commit helper\n---\nBody\n'
+    );
+
+    const plan = project(repo);
+
+    // The plugin's assets are IN the plan — the exact opposite of the bug.
+    const sources = [...plan.actions, ...plan.drops].map((a) => a.source ?? '');
+    expect(sources.some((s) => s.startsWith('.dork/plugins/commit-commands/'))).toBe(true);
+
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+    expect(result.conflicts).toEqual([]);
+    expect(result.applied.length).toBeGreaterThan(0);
+
+    // Skill symlinked into the Codex skills dir, namespaced by package.
+    const projectedSkill = join(repo, '.agents', 'skills', 'commit-commands__committing');
+    expect(lstatSync(projectedSkill).isSymbolicLink()).toBe(true);
+    // Command wrapper generated for the external Claude Code CLI.
+    expect(existsSync(join(repo, '.claude', 'commands', 'commit-commands', 'commit.md'))).toBe(
+      true
+    );
+  });
+
   it('projects a project-scoped installed plugin with NO dorkHome (offline `dorkos harness sync`)', () => {
     // Regression for the wiring bug where `project()` gated ALL installed-plugin
     // scanning behind `opts.dorkHome`: an offline CLI run (no ~/.dork, so

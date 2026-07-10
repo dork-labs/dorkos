@@ -96,10 +96,18 @@ interface PluginIdentity {
   layers: string[];
 }
 
-/** Read + validate a plugin's `.dork/manifest.json`; `undefined` if absent or invalid. */
+/**
+ * Read + validate a plugin's identity: `.dork/manifest.json` first, falling
+ * back to the Claude Code plugin manifest (`.claude-plugin/plugin.json`) for
+ * CC-native packages installed without a DorkOS manifest — the marketplace
+ * installer copies such packages verbatim, so nothing on disk ever gains a
+ * `.dork/manifest.json`. Without this fallback every CC-native plugin was
+ * invisible to projection and Harness Sync silently applied zero files
+ * (DOR-264). Returns `undefined` when neither manifest is present or valid.
+ */
 function readPluginManifest(pluginDir: string): PluginIdentity | undefined {
   const manifestPath = join(pluginDir, '.dork', 'manifest.json');
-  if (!existsSync(manifestPath)) return undefined;
+  if (!existsSync(manifestPath)) return readCcPluginManifest(pluginDir);
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -109,6 +117,28 @@ function readPluginManifest(pluginDir: string): PluginIdentity | undefined {
   const parsed = MarketplacePackageManifestSchema.safeParse(raw);
   if (!parsed.success) return undefined;
   return { name: parsed.data.name, type: parsed.data.type, layers: parsed.data.layers };
+}
+
+/**
+ * Derive a {@link PluginIdentity} from a Claude Code plugin manifest
+ * (`.claude-plugin/plugin.json`). Mirrors the marketplace validator's
+ * CC-manifest synthesis: a CC plugin maps to `type: 'plugin'` with no
+ * declared layers. Only the `name` is required; anything unreadable or
+ * nameless is skipped (`undefined`).
+ */
+function readCcPluginManifest(pluginDir: string): PluginIdentity | undefined {
+  const ccManifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
+  if (!existsSync(ccManifestPath)) return undefined;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(ccManifestPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
+  if (raw === null || typeof raw !== 'object') return undefined;
+  const name = (raw as { name?: unknown }).name;
+  if (typeof name !== 'string' || name.length === 0) return undefined;
+  return { name, type: 'plugin', layers: [] };
 }
 
 /**
