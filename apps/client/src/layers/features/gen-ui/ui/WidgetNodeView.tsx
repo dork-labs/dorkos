@@ -28,6 +28,9 @@ import { ChecklistNode } from './nodes/ChecklistNode';
 import { CompareNode } from './nodes/CompareNode';
 import { RatingNode } from './nodes/RatingNode';
 import { ButtonNode, InputField, SelectField, WidgetActionButton } from './nodes/ActionNodes';
+import { MoodNode } from './nodes/MoodNode';
+import { BoardNode } from './nodes/BoardNode';
+import { RevealNode } from './nodes/RevealNode';
 
 type NodeOf<T extends WidgetNode['type']> = Extract<WidgetNode, { type: T }>;
 
@@ -76,6 +79,12 @@ export function WidgetNodeView({ node }: { node: WidgetNode }) {
       return <CompareNode node={node} />;
     case 'rating':
       return <RatingNode node={node} />;
+    case 'mood':
+      return <MoodNode node={node} />;
+    case 'board':
+      return <BoardNode node={node} />;
+    case 'reveal':
+      return <RevealNode node={node} />;
     case 'button':
       return <ButtonNode node={node} />;
     case 'input':

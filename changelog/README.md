@@ -90,6 +90,15 @@ The shot ids and file names are the ones in the shot registry (`apps/e2e/capture
 published in `apps/site/public/product/manifest.json`). See the
 `capturing-product-media` skill for the full media system.
 
+**GitHub renders PNG/GIF inline but not `.webm`.** A GitHub Release or any markdown that
+GitHub renders should embed a shot's poster PNG (`<shot-id>-dark.png` for a loop's poster, or
+`<shot-id>-light.png` for a still-only shot) and link the caption to a docs page or `/features`
+section for the motion version — never link a bare `.webm` URL as the "see it move" affordance.
+
+`/system:release` automates the archive-at-release step (its media phase, Phase 6.6): it checks
+manifest freshness against recent UI-affecting commits, selects the shots a release's notes
+embed, and runs `capture:archive` for exactly those before the release commit.
+
 ## What happens at release
 
 `/system:release` compiles every fragment in `unreleased/` into the new version section:

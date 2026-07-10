@@ -1,10 +1,9 @@
-import { PublicFooter } from '@/layers/shared/ui';
+import { MarketingChrome } from '@/layers/features/marketing';
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className="flex-1">{children}</main>
-      <PublicFooter />
+    <div className="bg-cream-primary min-h-screen">
+      <MarketingChrome>{children}</MarketingChrome>
     </div>
   );
 }

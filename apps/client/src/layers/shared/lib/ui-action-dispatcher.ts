@@ -1,6 +1,7 @@
 import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
 import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
+import { fireConfetti } from './celebrations/effects';
 
 /**
  * Minimal store interface the dispatcher requires.
@@ -47,8 +48,23 @@ export interface DispatcherStore {
   // (RightPanelContainer), so agent-driven open/close must drive this state,
   // not just the legacy `canvasOpen` flag (DOR-97).
   setRightPanelOpen: (open: boolean) => void;
+  /** Persisting tab setter — rewrites the per-agent stored preference (DOR-227). */
   setActiveRightPanelTab: (tabId: string | null) => void;
+  /** View-only tab setter — switches the visible tab WITHOUT persisting (DOR-227). */
+  setActiveRightPanelTabView: (tabId: string | null) => void;
 }
+
+/**
+ * Who initiated a UI command — decides whether a tab switch persists.
+ *
+ * The right panel's active tab is a per-agent stored preference (DOR-227) that
+ * only an explicit human pick may rewrite. `'user'` dispatches (a click in the
+ * file tree, a widget action button) route tab switches through the persisting
+ * setter; `'agent'` dispatches (the `control_ui` stream, programmatic extension
+ * calls) switch the visible tab view-only, so an agent opening a terminal or
+ * canvas never overwrites what the user chose.
+ */
+export type UiCommandOrigin = 'user' | 'agent';
 
 /** Right-panel tab id the canvas contribution registers under (init-extensions). */
 const CANVAS_TAB_ID = 'canvas';
@@ -91,8 +107,16 @@ export interface DispatcherContext {
  *
  * @param ctx - Injected dependencies (store snapshot, theme setter, optional handlers)
  * @param command - Validated `UiCommand` discriminated union value
+ * @param origin - Who initiated the command ({@link UiCommandOrigin}); `'user'`
+ *   tab switches persist the per-agent preference, `'agent'` ones are view-only.
+ *   Required so every call site declares who is asking — silently defaulting is
+ *   how an agent overwrites a user preference.
  */
-export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): void {
+export function executeUiCommand(
+  ctx: DispatcherContext,
+  command: UiCommand,
+  origin: UiCommandOrigin
+): void {
   const { store } = ctx;
 
   switch (command.action) {
@@ -130,7 +154,7 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
       if (command.preferredWidth != null) {
         store.setCanvasPreferredWidth(command.preferredWidth);
       }
-      revealCanvas(store);
+      revealCanvas(store, origin);
       break;
     case 'update_canvas':
       // `updateActiveDocument` ignores the push while the active document is
@@ -145,7 +169,7 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
       // `open_file` tool both drive.
       const viewer = resolveViewerForPath(command.sourcePath, ctx.workbenchViewerOverrides);
       store.openCanvasDocument(buildOpenFileContent(viewer, command.sourcePath));
-      revealCanvas(store);
+      revealCanvas(store, origin);
       break;
     }
     case 'open_terminal': {
@@ -162,7 +186,7 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
         break;
       }
       store.setRightPanelOpen(true);
-      store.setActiveRightPanelTab(TERMINAL_TAB_ID);
+      tabSetterFor(store, origin)(TERMINAL_TAB_ID);
       break;
     }
     case 'browser_navigate':
@@ -170,7 +194,7 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
       // store), then reveal the canvas. Appending never clobbers a document the
       // user is editing (edit-protection is per-doc; ADR-0292).
       store.openCanvasDocument({ type: 'browser', url: command.url });
-      revealCanvas(store);
+      revealCanvas(store, origin);
       break;
     case 'close_canvas':
       store.setCanvasOpen(false);
@@ -204,6 +228,14 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
       store.setGlobalPaletteOpen(true);
       break;
 
+    // --- Celebration ---
+    case 'celebrate':
+      // Fire-and-forget: fireConfetti lazy-loads canvas-confetti and honors
+      // prefers-reduced-motion itself (disableForReducedMotion), so no extra
+      // guard is needed here — matches the SystemRequirementsStep call site.
+      void fireConfetti();
+      break;
+
     default: {
       // Exhaustive check — TypeScript errors here if a UiCommand variant is unhandled
       const _exhaustive: never = command;
@@ -214,19 +246,29 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
 
 // --- Internal helpers ---
 
+/** Tab setter for an origin: user picks persist the per-agent preference, agent switches are view-only (DOR-227). */
+function tabSetterFor(
+  store: DispatcherStore,
+  origin: UiCommandOrigin
+): (tabId: string | null) => void {
+  return origin === 'user' ? store.setActiveRightPanelTab : store.setActiveRightPanelTabView;
+}
+
 /**
  * Reveal the canvas via its live host: open the right panel and select the
  * canvas tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface.
+ * The tab switch respects `origin` — agent-driven reveals do not persist over
+ * the user's per-agent tab preference (DOR-227).
  *
  * NOTE: the canvas contribution is only `visibleWhen` pathname === '/session'
  * (init-extensions), so off that route RightPanelContainer's auto-select falls
  * back to the first visible tab — the command still lands (the document is
  * persisted per session) and shows on return to /session.
  */
-function revealCanvas(store: DispatcherStore): void {
+function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): void {
   store.setCanvasOpen(true);
   store.setRightPanelOpen(true);
-  store.setActiveRightPanelTab(CANVAS_TAB_ID);
+  tabSetterFor(store, origin)(CANVAS_TAB_ID);
 }
 
 /** Build the canvas content for an `open_file` command from its resolved viewer. */

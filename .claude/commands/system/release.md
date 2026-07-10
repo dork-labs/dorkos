@@ -232,7 +232,7 @@ Include the current version (from VERSION) and last tag in the prompt. Parse the
 
 ## Phase 4: Present and Confirm
 
-Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
+Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
 
 If `--dry-run`, **STOP** here.
 
@@ -310,9 +310,81 @@ Compile every fragment in `changelog/unreleased/` into a new version section (se
 
 Update `docs/changelog.mdx` to match the retained `CHANGELOG.md` sections: keep the frontmatter (`title: Changelog`, description) and intro line, replace the version sections with the 10 most recent, keep the "Changelog archive" pointer line, and never include link-reference definitions. Append any section that aged past the 10-version cap to `docs/changelog-archive.mdx` (keep its sections newest-first, mirroring `changelog.mdx`).
 
-### 6.6: Scaffold blog post
+### 6.6: Media — freshness check, shot selection, and archive
 
-Write this for readers, not for the engineering team: apply the `writing-for-humans` skill (9th-grade level, benefit before mechanism). The theme sentence must pass the **explain-back test**: a non-developer should be able to read it once and say what the release does. Each highlight is **one idea, ≤2 sentences**, never a single run-on carrying three or four claims.
+Product media (screenshots and loops) gets embedded in this release's notes and blog post. This step catches a stale capture before it ships an out-of-date screenshot, picks the shots worth embedding, and freezes exactly those under the version label so the URLs written in 6.7 and 6.11 resolve forever. Read `apps/e2e/capture/README.md` and `changelog/README.md` (media section) if unfamiliar with the pipeline.
+
+#### a. Freshness check
+
+Read the currently published manifest's provenance:
+
+```bash
+GENERATED_AT=$(jq -r '.generatedAt' apps/site/public/product/manifest.json)
+RUN_ID=$(jq -r '.runId' apps/site/public/product/manifest.json)
+```
+
+List UI-affecting commits since that capture ran:
+
+```bash
+git log --since="$GENERATED_AT" --oneline -- apps/client
+```
+
+List shots exempt from staleness nagging — human overrides (`source: "manual"` in the manifest) are curated on purpose and don't go stale the way an automated capture does:
+
+```bash
+jq -r '.assets[] | select(.source == "manual") | .surface' apps/site/public/product/manifest.json | sort -u
+```
+
+If the commit list is non-empty **and** this release's compiled changelog (the `## [X.Y.Z]` section from Phase 6.4) contains a user-visible UI change, the manifest is stale for that change's surface — unless that surface appears in the manual-override list above, in which case skip the nag for it.
+
+**If a stale, non-exempt surface exists**, stop and re-capture before continuing:
+
+```bash
+pnpm --filter @dorkos/e2e capture
+```
+
+Then re-read the manifest (`generatedAt`, `runId`) and re-run this check before moving to shot selection.
+
+#### b. Shot selection
+
+From the compiled changelog section (Phase 6.4) and the underlying feature work, pick the shots worth embedding, matching each candidate to a `shots[].id` in `apps/site/public/product/manifest.json` (or `apps/e2e/capture/shots.ts`):
+
+- **GitHub release notes** (Phase 6.11): 1-3 hero shots — the release's most significant, most visual changes.
+- **Blog post** (Phase 6.7): more may be embedded, one per highlight where it helps show rather than just tell.
+
+If a shipped feature has no shot yet, do not invent a placeholder or link a nonexistent file — note it in the Phase 7 report as a follow-up (e.g. "add a shot for X") and leave that highlight text-only.
+
+#### c. Archive
+
+Freeze exactly the shots selected in (b) — and only those — under the version label, so the URLs embedded in (d) keep resolving after the next capture run overwrites the live assets:
+
+```bash
+pnpm --filter @dorkos/e2e capture:archive vX.Y.Z --shots <comma-separated-shot-ids-from-step-b>
+```
+
+This writes `apps/site/public/product/archive/vX.Y.Z/` (the shot files plus an archive manifest). Add that directory to the release commit's `git add` list (Phase 6.8, below). **Repo-size discipline**: never omit `--shots` to archive the full set "just in case" — archive only what a note actually embeds.
+
+#### d. Embedding rules
+
+GitHub renders PNG/GIF inline in release-note markdown but does **not** play `.webm` inline — a bare webm link renders as a dead link in most markdown viewers. So, for every shot embedded in release notes or the blog post:
+
+- Embed the shot's **poster PNG**, never the loop file: `archive/vX.Y.Z/<shot-id>-dark.png` for a loop shot (its poster) or `archive/vX.Y.Z/<shot-id>-light.png` for a still-only shot.
+- Link the image (or a line beneath it) to the motion version: the docs page that embeds `<ProductShot id="<shot-id>" />` if one exists, otherwise the matching `/features/<slug>` section on dorkos.ai. Never link directly to a bare `.webm` URL as the "see it move" affordance — always route through a page that renders it in the shared frame.
+- Use the **archived** absolute URL, `https://dorkos.ai/product/archive/vX.Y.Z/<shot-id>-<theme>.png` — never the live `/product/<file>` path in a release note. The live path repoints to the next capture run and would silently change what an old release note shows.
+
+#### e. Feature catalog prompt
+
+Checklist — answer before continuing:
+
+- Does this release ship a feature that belongs in the marketing catalog (`apps/site/src/layers/features/marketing/lib/features.ts`)?
+  - **New feature**: add a `Feature` entry. Write `tagline`/`description`/`benefits` benefit-led, not feature-led, per the file's schema TSDoc and the `writing-for-humans` skill — the tagline alone must answer "so what".
+  - **Existing feature changed materially**: update its `tagline`/`description`/`benefits` to match the new behavior.
+  - **Needs a `media.surface` binding and no shot exists**: add the shot to `apps/e2e/capture/shots.ts` (with `marketing` in its `consumers`) and capture it (`pnpm --filter @dorkos/e2e capture`) before wiring `media.surface` — never bind to a surface id with no published asset (the `features.test.ts` guard fails on this).
+  - **No catalog-worthy change**: note "no catalog changes" in the Phase 7 report and continue.
+
+### 6.7: Scaffold blog post
+
+Write this for readers, not for the engineering team: apply the `writing-for-humans` skill (9th-grade level, benefit before mechanism). The theme sentence must pass the **explain-back test**: a non-developer should be able to read it once and say what the release does. Each highlight is **one idea, ≤2 sentences**, never a single run-on carrying three or four claims. Embed the shots selected in 6.6b using the rules in 6.6d.
 
 Create `blog/dorkos-X-Y-Z.mdx` (dots → hyphens in the version):
 
@@ -330,7 +402,7 @@ tags: [release, plus 2-3 relevant tags from the changes]
 
 ## Highlights
 
-[2-3 most significant changes with brief explanations]
+[2-3 most significant changes with brief explanations, each backed by an embedded poster image per 6.6d where a shot exists]
 
 ## All Changes
 
@@ -345,13 +417,13 @@ npm install -g dorkos@X.Y.Z
 
 The user can edit this post before the release commit.
 
-### 6.7: Commit and tag
+### 6.8: Commit and tag
 
 ```bash
 # Stage all version-related changes. If Check 6 scaffolded a config migration,
 # also stage apps/server/src/services/core/config-manager.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
-git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json package.json blog/
+git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json package.json blog/ apps/site/public/product/archive/vX.Y.Z/
 
 git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z
@@ -361,7 +433,7 @@ EOF
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 ```
 
-### 6.8: Publish to npm
+### 6.9: Publish to npm
 
 Ask via AskUserQuestion (publish to npm now, or skip). If yes:
 
@@ -390,7 +462,7 @@ The durable fix (lasts up to ~90 days, no per-publish OTP):
 
 When the token expires (~every couple months), the publish 403s again — repeat step 1 to mint a fresh one. To check auth state without printing the secret: `grep -c "_authToken" ~/.npmrc`.
 
-### 6.9: Push to origin
+### 6.10: Push to origin
 
 ```bash
 git push origin main && git push origin vX.Y.Z
@@ -398,11 +470,12 @@ git push origin main && git push origin vX.Y.Z
 
 If push fails: the commit and tag exist locally — report the error, retry with the same commands, or undo with `git reset --hard HEAD~1 && git tag -d vX.Y.Z`.
 
-### 6.10: GitHub Release notes
+### 6.11: GitHub Release notes
 
 Ask via AskUserQuestion (create a GitHub Release, or skip). If yes, generate **narrative release notes**, using the `writing-changelogs` skill for structure and the `writing-for-humans` skill for readability:
 
 - **Theme** (1-2 sentences) and **Highlights** (2-3 significant changes with benefit explanations) are written fresh. The theme sentence must pass the **explain-back test** (a non-developer can read it once and say what the release does). Each highlight is **one idea, ≤2 sentences**, never a single run-on carrying three or four claims.
+- Embed the 1-3 hero shots selected in 6.6b, following the poster-PNG-plus-motion-link rules in 6.6d. A release with user-visible UI changes always includes at least one visual — do not skip this for a UI-affecting release.
 - **All Changes** is copied **verbatim** from the just-created `## [X.Y.Z]` section of `CHANGELOG.md` — do NOT rewrite, regenerate, or summarize; those entries were already reviewed.
 - End with install/update instructions (`npm update -g dorkos`) and the compare link: `https://github.com/dork-labs/dorkos/compare/v[prev]...v[new]`.
 
@@ -416,7 +489,7 @@ If `gh` is unavailable: `brew install gh && gh auth login`, or create the releas
 
 ## Phase 7: Report
 
-Summarize: version, tag, commit SHA, npm package link (`https://www.npmjs.com/package/dorkos`), GitHub tag/compare links, harness-maintenance outcomes (ADRs progressed, docs reconciled, deferred items), and any Check 6 migration notes. Mention that the Docker image publishes automatically to `ghcr.io/dork-labs/dorkos:{version}` on the tag push (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml`).
+Summarize: version, tag, commit SHA, npm package link (`https://www.npmjs.com/package/dorkos`), GitHub tag/compare links, harness-maintenance outcomes (ADRs progressed, docs reconciled, deferred items), any Check 6 migration notes, and the media outcome from Phase 6.6 (whether a re-capture was required, which shots were archived under `archive/vX.Y.Z/`, any shipped feature noted as missing a shot, and the features.ts catalog decision). Mention that the Docker image publishes automatically to `ghcr.io/dork-labs/dorkos:{version}` on the tag push (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml`).
 
 If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; check auth with `npm whoami` (see the token section above).
 

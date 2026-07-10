@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import { useAppStore } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
-import { RightPanelHeader } from '@/layers/features/right-panel';
 import { AgentHubProvider } from '../model/agent-hub-context';
 import { useAgentHubStore } from '../model/agent-hub-store';
 import { useAgentHubDeepLink, useAgentDialogRedirect } from '../model/use-agent-hub-deep-link';
@@ -23,10 +22,7 @@ type HeroPanel = 'avatar' | 'personality' | null;
 function AgentHubSkeleton() {
   return (
     <div data-slot="agent-hub" className="flex h-full flex-col overflow-hidden">
-      <div className="relative flex flex-col items-center gap-1 border-b pb-0">
-        <div className="relative z-10 w-full">
-          <RightPanelHeader />
-        </div>
+      <div className="relative flex flex-col items-center gap-1 border-b pt-4 pb-0">
         <Skeleton className="size-14 rounded-full" />
         <Skeleton className="mt-1 h-4 w-24 rounded" />
         <Skeleton className="h-3 w-12 rounded" />

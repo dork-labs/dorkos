@@ -187,6 +187,7 @@ Actions:
   scroll_to_message: { messageId? } (omit for bottom)
   switch_agent: { cwd: string }
   open_command_palette
+  celebrate -- fire a brief confetti burst
 
 Use get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.
 UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and canvas content pushes may be deferred while the user is editing the canvas — a success result means "accepted", not "displayed".

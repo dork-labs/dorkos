@@ -623,6 +623,25 @@ export interface Transport {
    */
   openTerminal(cwd: string, signal?: AbortSignal): Promise<TerminalHandle>;
   /**
+   * Re-attach to an existing server-side PTY by id — the page-refresh recovery
+   * path (DOR-225). Opens a fresh byte channel to a terminal created earlier by
+   * {@link openTerminal}; the server replays the output it buffered while
+   * detached, so the shell session survives a reload instead of being orphaned
+   * and silently replaced.
+   *
+   * Rejects when the id is unknown — the PTY exited, was torn down, or lapsed
+   * past its idle grace window (`workbench.terminalGraceTtlMinutes`). Callers
+   * treat a rejection as "gone" and fall back to {@link openTerminal} to spawn a
+   * fresh shell, seamlessly and with no user-visible error.
+   *
+   * `DirectTransport` throws `'unsupported'` — gate calls on
+   * {@link Transport.supportsTerminal}.
+   *
+   * @param id - A terminal id returned by a prior {@link openTerminal}.
+   * @param signal - Aborts the attachment and closes the underlying socket.
+   */
+  attachTerminal(id: string, signal?: AbortSignal): Promise<TerminalHandle>;
+  /**
    * Write user input (keystrokes / paste) to a terminal's PTY stdin.
    *
    * @param handle - The attachment returned by {@link openTerminal}.

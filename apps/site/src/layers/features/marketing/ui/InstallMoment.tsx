@@ -130,7 +130,7 @@ export function InstallMoment() {
           variants={REVEAL}
           className="text-warm-gray mb-6 text-lg leading-[1.5] md:text-xl"
         >
-          Your agents are ready. Give them the night.
+          Your fleet is one command away.
         </motion.p>
 
         <motion.p

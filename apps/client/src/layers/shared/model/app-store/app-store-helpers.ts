@@ -4,7 +4,7 @@
  * @module shared/model/app-store-helpers
  */
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { STORAGE_KEYS, MAX_CANVAS_SESSIONS } from '@/layers/shared/lib';
+import { STORAGE_KEYS, MAX_CANVAS_SESSIONS, MAX_RIGHT_PANEL_LAYOUTS } from '@/layers/shared/lib';
 
 /** Read a boolean from localStorage with try/catch safety. */
 export function readBool(key: string, defaultValue: boolean): boolean {
@@ -213,8 +213,18 @@ export function writeCanvasSession(sessionId: string, entry: CanvasSessionEntry)
 }
 
 // ---------------------------------------------------------------------------
-// Right panel persistence (global, not per-session)
+// Right panel persistence
 // ---------------------------------------------------------------------------
+//
+// Two localStorage surfaces, by design (DOR-227):
+//   - `RIGHT_PANEL_STATE` (global): the layout used when no agent is in scope —
+//     the initial mount and non-session routes. Preserves the pre-DOR-227 global
+//     behavior so navigating outside `/session` never changes agent layouts.
+//   - `RIGHT_PANEL_LAYOUTS` (per-agent map): `agentKey → { open, activeTab }`,
+//     LRU-capped, so returning to an agent restores how you left its panel.
+//
+// The store's `rightPanelLayoutKey` selects which surface a write-through
+// targets; see `writeRightPanelLayout`.
 
 /** Persisted right panel structural state. */
 export interface RightPanelStateEntry {
@@ -222,7 +232,7 @@ export interface RightPanelStateEntry {
   activeTab: string | null;
 }
 
-/** Read right panel state from localStorage. Returns null if missing or corrupt. */
+/** Read the global right panel state from localStorage. Returns null if missing or corrupt. */
 export function readRightPanelState(): RightPanelStateEntry | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
@@ -233,9 +243,73 @@ export function readRightPanelState(): RightPanelStateEntry | null {
   }
 }
 
-/** Write right panel state to localStorage. Silently fails on quota errors. */
+/** Write the global right panel state to localStorage. Silently fails on quota errors. */
 export function writeRightPanelState(entry: RightPanelStateEntry): void {
   try {
     localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_STATE, JSON.stringify(entry));
+  } catch {}
+}
+
+/** A per-agent right panel layout entry (the durable state plus its LRU recency stamp). */
+interface RightPanelLayoutEntry extends RightPanelStateEntry {
+  accessedAt: number;
+}
+
+type RightPanelLayoutMap = Record<string, RightPanelLayoutEntry>;
+
+/**
+ * Read a single agent's persisted right panel layout from the per-agent map.
+ *
+ * @param agentKey - Stable agent identity (agent id, or cwd fallback — see the
+ *   right-panel slice). Returns null when the key has no stored layout or the
+ *   map is missing/corrupt, so a first visit falls back to defaults.
+ */
+export function readRightPanelLayout(agentKey: string): RightPanelStateEntry | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
+    if (!raw) return null;
+    const map: Record<string, unknown> = JSON.parse(raw);
+    const entry = map[agentKey];
+    if (entry == null || typeof entry !== 'object') return null;
+    const { open, activeTab } = entry as Record<string, unknown>;
+    return {
+      open: open === true,
+      activeTab: typeof activeTab === 'string' ? activeTab : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write a right panel layout to the correct surface, enforcing LRU eviction.
+ *
+ * When `agentKey` is set, the layout is stored in the per-agent map (evicting
+ * the least-recently-used entry past {@link MAX_RIGHT_PANEL_LAYOUTS}). When it is
+ * null (initial mount / non-session routes), the layout is written to the global
+ * state instead, preserving the pre-DOR-227 behavior.
+ *
+ * @param agentKey - Stable agent identity, or null for the global surface.
+ * @param entry - The open/active-tab layout to persist.
+ */
+export function writeRightPanelLayout(agentKey: string | null, entry: RightPanelStateEntry): void {
+  if (agentKey === null) {
+    writeRightPanelState(entry);
+    return;
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
+    const map: RightPanelLayoutMap = raw ? JSON.parse(raw) : {};
+    map[agentKey] = { ...entry, accessedAt: Date.now() };
+
+    // LRU eviction: keep only the newest MAX_RIGHT_PANEL_LAYOUTS entries.
+    const entries = Object.entries(map);
+    if (entries.length > MAX_RIGHT_PANEL_LAYOUTS) {
+      entries.sort((a, b) => b[1].accessedAt - a[1].accessedAt);
+      const trimmed = Object.fromEntries(entries.slice(0, MAX_RIGHT_PANEL_LAYOUTS));
+      localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS, JSON.stringify(trimmed));
+    } else {
+      localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS, JSON.stringify(map));
+    }
   } catch {}
 }

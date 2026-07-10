@@ -336,7 +336,7 @@ Define what you oppose — the villain, the paradigm, the status quo. From Story
 
 4. **Attach proof points.** Pull from each Value Ladder's proof anchor within that Pillar. 2-3 proof points per Pillar.
 
-5. **Write the Primary Message (the roof).** This is the intersection of your strongest Pillars' Layer 5 benefits. One sentence. Must be: differentiated, defensible, memorable. Test: can a journalist use this as their headline?
+5. **Write the Primary Message (the roof).** This is the intersection of your strongest Pillars' Layer 5 benefits. One sentence. Must be: differentiated, defensible, memorable. Test: can a journalist use this as their headline? Second test _(added 2026-07-09)_, **the hero test**: is the customer the subject? A mechanism claim or world-thesis on the roof — however quotable — is a Layer 2 statement doing a Layer 5 job; move it to the anti-positioning section and re-derive the roof from identity benefits.
 
 6. **State the Foundation.** Brand values, identity territory, anti-positioning — pulled directly from Phase 1C and 1D.
 

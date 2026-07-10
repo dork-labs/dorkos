@@ -199,6 +199,59 @@ const RATING: WidgetDocument = {
   },
 };
 
+/** Four moods (no `celebrating` — its confetti burst isn't a static-showcase citizen) plus a celebrate command demo. */
+const MOOD: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'stack',
+    direction: 'horizontal',
+    gap: 'lg',
+    children: [
+      { type: 'mood', emotion: 'happy' },
+      { type: 'mood', emotion: 'thinking' },
+      { type: 'mood', emotion: 'sheepish', message: "Oops, that wasn't quite right." },
+      { type: 'mood', emotion: 'determined' },
+    ],
+  },
+};
+
+const CELEBRATE_DEMO: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'button',
+    label: 'Celebrate',
+    action: { kind: 'ui', command: { action: 'celebrate' } },
+  },
+};
+
+/** A tic-tac-toe board mid-game — empty cells carry an agent action (disabled here: no session). */
+const BOARD: WidgetDocument = {
+  version: 1,
+  title: 'Tic-tac-toe',
+  root: {
+    type: 'board',
+    label: 'Your move — X to play',
+    rows: [
+      [{ glyph: 'X' }, { glyph: 'O' }, { action: { kind: 'agent', id: 'move-0-2' } }],
+      [{ action: { kind: 'agent', id: 'move-1-0' } }, { glyph: 'X' }, { glyph: 'O' }],
+      [{ glyph: 'O' }, { action: { kind: 'agent', id: 'move-2-1' } }, { glyph: 'X' }],
+    ],
+  },
+};
+
+const REVEAL: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'stack',
+    direction: 'horizontal',
+    gap: 'lg',
+    children: [
+      { type: 'reveal', kind: 'coin', result: 'Heads', label: 'Coin flip' },
+      { type: 'reveal', kind: '8ball', result: 'Outlook good', label: 'Magic 8-ball' },
+    ],
+  },
+};
+
 /** Showcases for the Tier-1 generative-UI widget renderer. */
 export function GenUiShowcases() {
   return (
@@ -299,6 +352,38 @@ export function GenUiShowcases() {
           <div className="max-w-sm">
             <WidgetRenderer document={RATING} />
           </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Mood"
+        description="A compact SVG face that blinks on a calm cadence, plus a per-emotion idle tell. The celebrate command (below) fires the same confetti burst a celebrating mood plays on mount."
+      >
+        <ShowcaseLabel>four emotions, one with a message</ShowcaseLabel>
+        <ShowcaseDemo>
+          <WidgetRenderer document={MOOD} />
+        </ShowcaseDemo>
+        <ShowcaseLabel>{'{ kind: "ui", command: { action: "celebrate" } }'}</ShowcaseLabel>
+        <ShowcaseDemo>
+          <WidgetRenderer document={CELEBRATE_DEMO} />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Board"
+        description="A CSS grid of glyph cells, some clickable. Paired with an agent action re-emitted each turn, this is the primitive behind turn-based games like tic-tac-toe — the empty cells below carry an action but render disabled here (the playground has no session to send a move to)."
+      >
+        <ShowcaseDemo>
+          <WidgetRenderer document={BOARD} />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Reveal"
+        description="An animated coin flip and magic-8-ball reveal. The agent supplies the result; the client just performs the suspense animation. Click the object to replay it."
+      >
+        <ShowcaseDemo>
+          <WidgetRenderer document={REVEAL} />
         </ShowcaseDemo>
       </PlaygroundSection>
 

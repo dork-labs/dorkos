@@ -173,7 +173,26 @@ export type WidgetNode =
       options: { name: string; recommended?: boolean }[];
       rows: { label: string; values: (string | number | boolean | null)[] }[];
     }
-  | { type: 'rating'; value: number; count?: number; label?: string };
+  | { type: 'rating'; value: number; count?: number; label?: string }
+  | {
+      type: 'mood';
+      emotion:
+        | 'happy'
+        | 'thinking'
+        | 'celebrating'
+        | 'sheepish'
+        | 'determined'
+        | 'surprised'
+        | 'sad'
+        | 'love';
+      message?: string;
+    }
+  | {
+      type: 'board';
+      rows: { glyph?: string; icon?: string; tone?: WidgetTone; action?: WidgetAction }[][];
+      label?: string;
+    }
+  | { type: 'reveal'; kind: 'coin' | 'd6' | 'd20' | '8ball'; result: string; label?: string };
 
 /** Spacing tokens the renderer understands. */
 const GAP_TOKENS = ['sm', 'md', 'lg'] as const;
@@ -435,6 +454,111 @@ const flagSchema = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+/** `mood` emotion, tolerant of natural synonyms ("excited"→celebrating, "proud"→happy). */
+const moodEmotionSchema = z.preprocess(
+  synonymCoercer({
+    happy: 'happy',
+    proud: 'happy',
+    joy: 'happy',
+    joyful: 'happy',
+    glad: 'happy',
+    thinking: 'thinking',
+    confused: 'thinking',
+    pondering: 'thinking',
+    curious: 'thinking',
+    hmm: 'thinking',
+    celebrating: 'celebrating',
+    excited: 'celebrating',
+    party: 'celebrating',
+    hyped: 'celebrating',
+    sheepish: 'sheepish',
+    embarrassed: 'sheepish',
+    oops: 'sheepish',
+    awkward: 'sheepish',
+    shy: 'sheepish',
+    determined: 'determined',
+    focused: 'determined',
+    serious: 'determined',
+    resolute: 'determined',
+    surprised: 'surprised',
+    shocked: 'surprised',
+    wow: 'surprised',
+    amazed: 'surprised',
+    'mind-blown': 'surprised',
+    sad: 'sad',
+    unhappy: 'sad',
+    disappointed: 'sad',
+    down: 'sad',
+    love: 'love',
+    heart: 'love',
+    hearts: 'love',
+    adore: 'love',
+  }),
+  z.enum(['happy', 'thinking', 'celebrating', 'sheepish', 'determined', 'surprised', 'sad', 'love'])
+);
+
+/** `reveal` kind, tolerant of synonyms ("flip"/"coinflip"→coin, "dice"/"die"→d6, magic-8-ball spellings→8ball). */
+const revealKindSchema = z.preprocess(
+  synonymCoercer({
+    coin: 'coin',
+    flip: 'coin',
+    coinflip: 'coin',
+    d6: 'd6',
+    dice: 'd6',
+    die: 'd6',
+    d20: 'd20',
+    '8ball': '8ball',
+    magic8ball: '8ball',
+    '8-ball': '8ball',
+    eightball: '8ball',
+    'magic-8-ball': '8ball',
+  }),
+  z.enum(['coin', 'd6', 'd20', '8ball'])
+);
+
+/** `reveal.result`, tolerant of a bare number (dice/coin results often arrive numeric). */
+const revealResultSchema = z.preprocess(
+  (value) => (typeof value === 'number' ? String(value) : value),
+  z.string()
+);
+
+/** Grid dimension cap for `board` — LLMs occasionally emit an oversized grid; slice rather than reject. */
+const MAX_BOARD_DIM = 12;
+
+/**
+ * A `board` cell, tolerant of a bare string shorthand (`"X"`, `"O"`) — an empty
+ * string coerces to a blank cell (`{}`) rather than a glyph of `""`.
+ */
+function coerceBoardCell(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  return value.trim() === '' ? {} : { glyph: value };
+}
+
+const boardCellSchema = z.preprocess(
+  coerceBoardCell,
+  z.object({
+    glyph: z.string().max(8).optional(),
+    icon: z.string().optional(),
+    tone: toneSchema.optional(),
+    action: WidgetActionSchema.optional(),
+  })
+);
+
+/**
+ * `board.rows` — slices both dimensions to {@link MAX_BOARD_DIM} instead of
+ * rejecting an oversized grid, so a chatty agent's 20x20 board still renders
+ * (clipped) rather than failing the whole widget.
+ */
+const boardRowsSchema = z.preprocess(
+  (value) => {
+    if (!Array.isArray(value)) return value;
+    return value
+      .slice(0, MAX_BOARD_DIM)
+      .map((row) => (Array.isArray(row) ? row.slice(0, MAX_BOARD_DIM) : row));
+  },
+  z.array(z.array(boardCellSchema))
+);
+
 /**
  * Recursive schema for a widget node — `z.discriminatedUnion('type', …)` over
  * the v1 catalog, declared via `z.lazy` so container nodes (`stack`, `card`,
@@ -611,6 +735,22 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
         .finite()
         .transform((v) => Math.min(5, Math.max(0, v))),
       count: z.coerce.number().int().nonnegative().optional(),
+      label: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('mood'),
+      emotion: moodEmotionSchema,
+      message: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('board'),
+      rows: boardRowsSchema,
+      label: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('reveal'),
+      kind: revealKindSchema,
+      result: revealResultSchema,
       label: z.string().optional(),
     }),
   ])

@@ -33,6 +33,11 @@ async function getFreePort(): Promise<number> {
 /**
  * Wrap an Electron UtilityProcess to conform to the ServerChild interface.
  * UtilityProcess uses postMessage/on('message') with MessageEvent.
+ *
+ * `ServerChild`'s `on`/`off` are overloaded per event name so callers get a
+ * precisely-typed handler; a single-signature object literal can't satisfy
+ * an overloaded interface member structurally, so the whole object is cast
+ * once at the boundary instead of per-call.
  */
 function wrapUtilityProcess(proc: Electron.UtilityProcess): ServerChild {
   return {
@@ -48,7 +53,7 @@ function wrapUtilityProcess(proc: Electron.UtilityProcess): ServerChild {
     kill() {
       proc.kill();
     },
-  };
+  } as ServerChild;
 }
 
 /**
@@ -64,12 +69,12 @@ function wrapChildProcess(proc: ChildProcess): ServerChild {
       proc.off(event, handler as (...args: unknown[]) => void);
     },
     send(msg: unknown) {
-      proc.send!(msg);
+      proc.send!(msg as import('node:child_process').Serializable);
     },
     kill() {
       proc.kill();
     },
-  };
+  } as ServerChild;
 }
 
 /**

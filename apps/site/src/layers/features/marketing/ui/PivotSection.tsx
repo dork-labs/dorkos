@@ -30,7 +30,7 @@ const WORD_REVEAL = {
 
 /** The OS metaphor reframe — makes "operating system" feel inevitable, not claimed. */
 export function PivotSection() {
-  const closingWords = 'So we built them one.'.split(' ');
+  const closingWords = 'So we built it.'.split(' ');
 
   return (
     <section className="bg-cream-secondary px-8 py-16 md:py-28">
@@ -55,8 +55,8 @@ export function PivotSection() {
           className="text-warm-gray mb-10 text-[15px] leading-[1.7] md:text-base"
         >
           That&apos;s the lesson of every team, every company, every civilization. The breakthroughs
-          never came from smarter people. They came from giving smart people better
-          systems&nbsp;&mdash; schedules, communication, shared memory, ways to find each other.
+          never came from smarter people. They came from giving smart people better systems:
+          schedules, communication, shared memory, ways to find each other.
         </motion.p>
 
         {/* OS icons — visual bridge from thesis to product */}
@@ -86,7 +86,8 @@ export function PivotSection() {
           variants={REVEAL}
           className="text-warm-gray mb-2 text-[18px] leading-[1.6] md:text-[20px]"
         >
-          Your AI agents have the intelligence. They just don&apos;t have the systems yet.
+          Your agents have the intelligence. What&apos;s been missing is the system that lets you
+          run them as one.
         </motion.p>
 
         {/* Word-by-word stagger on the closing line */}

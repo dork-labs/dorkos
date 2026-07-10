@@ -20,7 +20,7 @@ export function FeatureCatalogSection() {
             Built for how you actually work
           </h2>
           <p className="text-warm-gray mt-2 text-lg">
-            Every subsystem designed to get out of the way.
+            Every part is designed to get out of the way.
           </p>
         </div>
         <Link

@@ -10,11 +10,13 @@
 [![license](https://img.shields.io/npm/l/dorkos)](LICENSE)
 [![newsletter](https://img.shields.io/badge/newsletter-subscribe-e8590c)](https://dorkos.ai/newsletter)
 
-The command center for the AI coding agents you already run. See every session, approve what your agents do, and put them on a schedule. One place, on your own machine.
+**You, multiplied.**
+
+DorkOS is mission control for every coding agent you run: Claude Code, Codex, and OpenCode, in one cockpit. See every session, approve what your agents do, and put them on a schedule, all on your own machine.
 
 ## Who this is for
 
-You run AI coding agents like Claude Code, and you start them from a lot of places: your terminal, your editor, a script. DorkOS gathers all of those sessions into one dashboard in your browser, so you can see what each agent is doing and step in when it matters.
+You run AI coding agents like Claude Code, Codex, and OpenCode, and you start them from a lot of places: your terminal, your editor, a script. DorkOS gathers all of those sessions into one dashboard in your browser, so you can see what each agent is doing and step in when it matters.
 
 ## Install
 

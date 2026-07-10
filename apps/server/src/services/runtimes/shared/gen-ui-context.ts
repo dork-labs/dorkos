@@ -38,12 +38,16 @@ A <node> is { "type": <type>, ...props }. Catalog:
           checklist { items: [{ label, checked?, note? }], action?, submitLabel? } (checked labels post back via action),
           compare { options: [{ name, recommended? }], rows: [{ label, values: (string|number|boolean|null)[] }] },
           rating { value: 0-5, count?, label? }
+  delight: mood { emotion: "happy"|"thinking"|"celebrating"|"sheepish"|"determined"|"surprised"|"sad"|"love", message? } (express how you feel),
+          board { rows: [[{ glyph?, tone?, action? }]] } (grids & turn-based games — re-emit the board each turn),
+          reveal { kind: "coin"|"d6"|"d20"|"8ball", result } (animated reveal; you supply the result)
   media:  image { src (https/data only), alt, caption? }
   action: button { label, variant?, action }, form { children: node[], submit: { label, action } },
           input { name, label?, placeholder?, kind? }, select { name, label?, options: [{ label, value }] }
 
 Actions are one of: { kind: "ui", command: <control_ui command> } (dispatched locally),
 { kind: "url", href: "https://…" }, or { kind: "agent", id, label?, payload? } (sent back to you).
+{ "kind": "ui", "command": { "action": "celebrate" } } fires a confetti burst.
 
 When a user activates an "agent" action, you get a <ui_action> user turn with
 the widget title, action id, and payload (form values merged in). Give actions

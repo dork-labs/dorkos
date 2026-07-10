@@ -992,7 +992,14 @@ async function start() {
   // PTYs are boundary-confined to the requested cwd, and a terminal id is an
   // unguessable UUID minted only through this auth-gated POST — the WebSocket
   // (attached after listen) authenticates by bearer-of-id.
-  terminalManager = new TerminalManager({ boundary: resolvedBoundary });
+  // The detached-PTY grace window is operator-configurable (DOR-225): a longer
+  // TTL keeps a shell reattachable across a slow reload; a shorter one reclaims
+  // idle PTYs faster. Minutes in config → milliseconds for the manager.
+  const terminalGraceTtlMinutes = configManager.get('workbench').terminalGraceTtlMinutes;
+  terminalManager = new TerminalManager({
+    boundary: resolvedBoundary,
+    idleTimeoutMs: terminalGraceTtlMinutes * 60_000,
+  });
   app.use('/api/terminal', createTerminalRouter(terminalManager));
   logger.info('[Terminal] Routes mounted');
 

@@ -2,47 +2,46 @@ import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
-import { useAppStore, useSlotContributions, useTransport } from '@/layers/shared/model';
-import { useRouterState } from '@tanstack/react-router';
+import { useAppStore, type RightPanelContribution } from '@/layers/shared/model';
 
 interface RightPanelHeaderProps {
-  /** Optional actions rendered to the left of the close button. */
+  /**
+   * The visible panel contributions, in tab order. The tab strip renders one
+   * button per entry when there are 2+; the container is the single source of
+   * truth for which contributions are visible (route + transport filtering).
+   */
+  contributions: RightPanelContribution[];
+  /** Optional actions rendered to the left of the close button (the active tab's `headerActions`). */
   actions?: ReactNode;
 }
 
 /**
- * Shared header bar for right-panel contributions.
+ * Shared header bar for the right panel.
  *
- * Renders a segmented control for switching between panel tabs (Agent / Canvas)
- * when 2+ contributions are visible, plus a close button. Each contribution
- * component renders this at its top to provide consistent tab switching.
+ * Rendered exactly once by {@link RightPanelContainer}, above the active
+ * panel's content, so the tab strip and close button are structurally
+ * guaranteed — a panel contribution can never omit or break them. Shows a
+ * segmented tab control when 2+ contributions are visible, and renders the
+ * active tab's `headerActions` beside the close button.
  */
-export function RightPanelHeader({ actions }: RightPanelHeaderProps) {
+export function RightPanelHeader({ contributions, actions }: RightPanelHeaderProps) {
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
 
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
-  const transport = useTransport();
-  const allContributions = useSlotContributions('right-panel');
-  const visibleContributions = allContributions.filter(
-    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })
-  );
-
   return (
     <div
-      className="flex w-full items-center justify-between px-3 py-2"
+      className="flex w-full items-center justify-between border-b px-3 py-2"
       data-slot="right-panel-header"
     >
       {/* Segmented control — only when >1 contribution */}
-      {visibleContributions.length > 1 ? (
+      {contributions.length > 1 ? (
         <div
           className="bg-accent/60 inline-flex gap-0.5 rounded-lg p-0.5"
           role="tablist"
           aria-label="Right panel tabs"
         >
-          {visibleContributions.map((contribution) => {
+          {contributions.map((contribution) => {
             const isActive = contribution.id === activeTab;
             const Icon = contribution.icon;
             return (

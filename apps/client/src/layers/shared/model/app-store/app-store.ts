@@ -210,6 +210,7 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem(STORAGE_KEYS.CANVAS_SESSIONS);
             localStorage.removeItem(STORAGE_KEYS.PINNED_AGENTS);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
+            localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
           } catch {}
           document.documentElement.style.setProperty('--user-font-scale', '1');
           const defaultConfig = getFontConfig(DEFAULT_FONT);
@@ -226,6 +227,7 @@ export const useAppStore = create<AppState>()(
             pinnedAgentPaths: [],
             rightPanelOpen: false,
             activeRightPanelTab: null,
+            rightPanelLayoutKey: null,
           });
         },
 

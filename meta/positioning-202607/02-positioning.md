@@ -34,7 +34,7 @@ The core thesis survives fully intact ("intelligence doesn't scale; coordination
 
 ### What stays
 
-- **Thesis line**: "Intelligence doesn't scale. Coordination does." Still the roof of the message house; the market spent a year proving it.
+- **Thesis line**: "Intelligence doesn't scale. Coordination does." The market spent a year proving it — but it is no longer the roof _(amended 2026-07-09)_: it's a mechanism claim, and the roof now belongs to the customer ("**You, multiplied.**", see §5). The thesis stays as the **manifesto line** — essays, litepaper, anti-positioning/comparison surfaces, and the launch-thread defense (agents changed Brooks's coordination-cost curve). Demoted, not deleted.
 - **Identity close**: "Built by dorks. For dorks. Run by you." The tribe filter works; do not soften it.
 - **Anti-persona discipline**: no hosted no-code anything.
 - **Pro-human framing** (Decision 16): agents multiply what you accomplish; the human is the point.
@@ -52,6 +52,8 @@ The core thesis survives fully intact ("intelligence doesn't scale; coordination
 3. **The Obsidian knowledge-worker dev** (Priya): completely unserved (no peer product has an Obsidian surface), reachable through one concentrated channel (Obsidian plugin directory + community), and the plugin already exists. Small niche, outsized loyalty and content energy.
 4. **The AI-native dev shop (1-10 people)**: the existing ICP; adopts after individuals bring it in. Do not sell to them directly yet; make individual adoption excellent.
 
+_(2026-07-09: two grounded personas joined the set — Ikechi, the non-developer AI-native founder (secondary), and Lil, the private professional (horizon, staged). **Neither changes this ranking or the launch targeting.** They raise the product bar — plain-language errors, recovery paths, privacy defaults, the desktop surface — and mark the post-beachhead expansion path. See `../personas/` and the redrawn anti-persona boundary: operator mentality, not technical skill.)_
+
 ## 4. The few product moves that change the game
 
 Ordered by leverage per unit of work:
@@ -65,7 +67,7 @@ Explicitly _not_ now: hosted SaaS, team/multi-user features, Wing as a product, 
 
 ## 5. Message house (v2 draft)
 
-**Roof:** Intelligence doesn't scale. Coordination does.
+**Roof** _(amended 2026-07-09)_: **You, multiplied.** — one person, shipping like a team. The customer is the subject of the roof (StoryBrand discipline, §8.1, applied to the tagline itself). The coordination thesis demotes to manifesto line: it names the mechanism, so it leads the anti-positioning/comparison register and the essays, never the hero. Supporting argument when defending the reframe: model intelligence is abundant and vendor-sold; the customer's judgment is the scarce input; DorkOS scales _them_.
 
 **Pillar 1: One cockpit, any agent.** Claude Code, Codex, OpenCode. Per-session choice, one interface, every device (browser, desktop, Obsidian, phone). _Proof:_ live runtime switcher; sessions from the CLI appearing instantly; conformance suite in CI.
 

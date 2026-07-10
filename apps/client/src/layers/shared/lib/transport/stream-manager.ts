@@ -272,7 +272,9 @@ export class StreamManager {
    * are dispatched — a background session's agent must not pop the canvas over
    * the foreground one. Multi-subscriber; returns an unsubscribe function.
    *
-   * Wired in `main.tsx` to `executeUiCommand(dispatcherContext, command)`, which
+   * Wired in `main.tsx` to `executeUiCommand(dispatcherContext, command, 'agent')`
+   * — agent origin, so tab switches never persist over the user's per-agent
+   * right-panel preference (DOR-227) — which
    * the app layer owns (it holds the store + theme setter). Replayed/snapshot
    * commands are NOT re-dispatched (the durable stream resumes exclusive on the
    * last-seen seq, and snapshots arrive via `onSnapshot`, not here), so a

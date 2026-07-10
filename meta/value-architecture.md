@@ -291,6 +291,7 @@ Synthesize all Value Ladders into a coherent message structure.
 3. Pillar headlines should hit Layer 3 or 4 (emotional or functional)
 4. Proof points come from each Value Ladder's proof anchor
 5. Maximum 3-4 pillars — if you have more, you haven't prioritized
+6. **The hero test** _(added 2026-07-09)_: the roof's subject is the customer — who they become — not the brand, the mechanism, or a thesis about the world. A Layer 2 (mechanism) claim on the roof is a construction defect, even a memorable one; mechanism claims belong in pillars, evaluation copy, and the anti-positioning section (4C), where naming the paradigm is the job.
 
 ### 3B. Headline Bank
 

@@ -10,14 +10,11 @@ import type { RightPanelContribution } from '@/layers/shared/model';
 // Mutable mock state — mutate per-test
 const mockSetRightPanelOpen = vi.fn();
 const mockSetActiveRightPanelTab = vi.fn();
-
 let mockActiveRightPanelTab: string | null = null;
-let mockPathname = '/session';
-let mockContributions: RightPanelContribution[] = [];
-// The active transport gates capability-scoped tabs (e.g. the web-only
-// terminal); mutate per-test to exercise the transport-gated visibility path.
-let mockTransport: { supportsTerminal: boolean } = { supportsTerminal: true };
 
+// The header reads only the active tab and the open/close setters from the
+// store now — the container owns contribution filtering and passes the visible
+// list in as a prop.
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
@@ -25,13 +22,6 @@ vi.mock('@/layers/shared/model', () => ({
       activeRightPanelTab: mockActiveRightPanelTab,
       setActiveRightPanelTab: mockSetActiveRightPanelTab,
     }),
-  useSlotContributions: () => mockContributions,
-  useTransport: () => mockTransport,
-}));
-
-vi.mock('@tanstack/react-router', () => ({
-  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
-    select({ location: { pathname: mockPathname } }),
 }));
 
 beforeAll(() => {
@@ -75,10 +65,10 @@ function makeContribution(
   };
 }
 
-function renderHeader() {
+function renderHeader(contributions: RightPanelContribution[], actions?: React.ReactNode) {
   return render(
     <TooltipProvider>
-      <RightPanelHeader />
+      <RightPanelHeader contributions={contributions} actions={actions} />
     </TooltipProvider>
   );
 }
@@ -91,62 +81,36 @@ describe('RightPanelHeader', () => {
 
   beforeEach(() => {
     mockActiveRightPanelTab = 'agent';
-    mockPathname = '/session';
-    mockContributions = [];
-    mockTransport = { supportsTerminal: true };
   });
 
-  it('renders one tab per visible contribution', () => {
-    mockContributions = [
+  it('renders one tab per contribution when there are 2+', () => {
+    renderHeader([
       makeContribution('agent', { title: 'Agent Profile' }),
       makeContribution('canvas', { title: 'Canvas' }),
-    ];
-    renderHeader();
+    ]);
 
+    expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
   });
 
-  // Regression (DOR-218): the tab strip must forward `transport` to visibleWhen
-  // so capability-gated tabs (the web-only terminal) surface. Before the fix the
-  // predicate saw `transport === undefined` and the Terminal tab never rendered.
-  it('renders a transport-gated tab when the active transport has the capability', () => {
-    mockTransport = { supportsTerminal: true };
-    mockContributions = [
-      makeContribution('agent', { title: 'Agent Profile' }),
-      makeContribution('terminal', {
-        title: 'Terminal',
-        visibleWhen: ({ pathname, transport }) =>
-          pathname === '/session' && transport?.supportsTerminal === true,
-      }),
-    ];
-    renderHeader();
+  it('renders no tab strip with a single contribution', () => {
+    renderHeader([makeContribution('agent', { title: 'Agent Profile' })]);
 
-    expect(screen.getByRole('tab', { name: 'Terminal' })).toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
-  it('hides a transport-gated tab when the active transport lacks the capability', () => {
-    mockTransport = { supportsTerminal: false };
-    mockContributions = [
-      makeContribution('agent', { title: 'Agent Profile' }),
-      makeContribution('canvas', { title: 'Canvas' }),
-      makeContribution('terminal', {
-        title: 'Terminal',
-        visibleWhen: ({ pathname, transport }) =>
-          pathname === '/session' && transport?.supportsTerminal === true,
-      }),
-    ];
-    renderHeader();
+  it('renders the active tab actions beside the close button', () => {
+    renderHeader(
+      [makeContribution('agent'), makeContribution('files')],
+      <button type="button">New File</button>
+    );
 
-    // Always-visible tabs remain; the gated Terminal tab is absent.
-    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New File' })).toBeInTheDocument();
   });
 
   it('always renders the close button', () => {
-    mockContributions = [makeContribution('agent', { title: 'Agent Profile' })];
-    renderHeader();
+    renderHeader([makeContribution('agent', { title: 'Agent Profile' })]);
 
     expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
   });
