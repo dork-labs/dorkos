@@ -1,8 +1,22 @@
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { Button, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import {
+  Button,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  useRovingTabList,
+} from '@/layers/shared/ui';
 import { useAppStore, type RightPanelContribution } from '@/layers/shared/model';
+
+/** DOM id of the right-panel content region the active tab controls. */
+export const RIGHT_PANEL_PANEL_ID = 'right-panel-content';
+
+/** Stable DOM id for a right-panel contribution's tab — links panel `aria-labelledby` to it. */
+export function rightPanelTabDomId(contributionId: string): string {
+  return `right-panel-tab-${contributionId}`;
+}
 
 interface RightPanelHeaderProps {
   /**
@@ -29,6 +43,14 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
 
+  const { getTabProps } = useRovingTabList({
+    orderedIds: contributions.map((c) => c.id),
+    activeId: activeTab,
+    // Source is irrelevant here (no content auto-focus) — drop it so the store
+    // setter keeps its single-argument contract.
+    onActivate: (id) => setActiveTab(id),
+  });
+
   return (
     <div
       className="flex w-full items-center justify-between border-b px-3 py-2"
@@ -52,7 +74,9 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
                     role="tab"
                     aria-selected={isActive}
                     aria-label={contribution.title}
-                    onClick={() => setActiveTab(contribution.id)}
+                    id={rightPanelTabDomId(contribution.id)}
+                    aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
+                    {...getTabProps(contribution.id)}
                     className={cn(
                       'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors',
                       isActive
