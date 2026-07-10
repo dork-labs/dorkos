@@ -1,7 +1,7 @@
 ---
 id: 260708-141143
 title: The DorkOS server, not the client or runtime, fetches MCP App ui:// resources
-status: proposed
+status: accepted
 created: 2026-07-08
 spec: mcp-apps-host
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

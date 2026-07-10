@@ -1,7 +1,7 @@
 ---
 id: 260708-185518
 title: Multi-document canvas model — openDocuments[] + activeDocumentId replaces the single content slot
-status: draft
+status: accepted
 created: 2026-07-08
 spec: right-panel-workbench
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: right-panel-workbench)
+Accepted
 
 ## Context
 

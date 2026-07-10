@@ -1,7 +1,7 @@
 ---
 id: 260708-111501
 title: Own the widget wire schema in @dorkos/shared instead of adopting json-render or A2UI
-status: proposed
+status: accepted
 created: 2026-07-08
 spec: gen-ui-tier1
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

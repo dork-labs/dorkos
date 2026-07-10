@@ -1,7 +1,7 @@
 ---
 id: 260708-111459
 title: Two-tier generative UI — declarative widget catalog plus MCP Apps
-status: proposed
+status: accepted
 created: 2026-07-08
 spec: gen-ui-tier1
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

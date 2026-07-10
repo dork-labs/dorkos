@@ -1,7 +1,7 @@
 ---
 id: 260708-111500
 title: Widgets are fence-delivered assistant content, not a render tool
-status: proposed
+status: accepted
 created: 2026-07-08
 spec: gen-ui-tier1
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

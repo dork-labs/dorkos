@@ -1,7 +1,7 @@
 ---
 id: 260708-185522
 title: First-party mime→viewer registry with config-choosable defaults; third-party viewers route to MCP Apps
-status: draft
+status: accepted
 created: 2026-07-08
 spec: right-panel-workbench
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: right-panel-workbench)
+Accepted
 
 ## Context
 

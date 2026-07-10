@@ -44,7 +44,7 @@
       "number": 320,
       "slug": "optional-local-login-required-on-exposure",
       "title": "Optional-by-default local login, auto-required on exposure; subsumes tunnel passcode and global MCP key",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "accounts-and-auth",
       "created": "2026-07-02",
       "specSlug": "accounts-and-auth"
@@ -53,7 +53,7 @@
       "number": 319,
       "slug": "account-first-cloud-identity-device-link",
       "title": "Account-first cloud identity: instances device-link to DorkOS accounts",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "accounts-and-auth",
       "created": "2026-07-02",
       "specSlug": "accounts-and-auth"
@@ -62,7 +62,7 @@
       "number": 311,
       "slug": "embed-better-auth-as-single-identity-core",
       "title": "Embed Better Auth as the single identity core across OSS and Cloud",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "accounts-and-auth",
       "created": "2026-07-02",
       "specSlug": "accounts-and-auth"
@@ -205,7 +205,7 @@
       "number": 303,
       "slug": "harness-sync-multi-source-projection",
       "title": "Harness Sync is a multi-source projector \u2014 marketplace plugins project automatically, agent-native assets adopt explicitly",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "harness-sync",
       "created": "2026-06-29",
       "specSlug": "harness-sync"
@@ -2351,7 +2351,7 @@
       "id": "260708-111459",
       "slug": "two-tier-generative-ui",
       "title": "Two-tier generative UI \u2014 declarative widget catalog plus MCP Apps",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-08",
       "specSlug": "gen-ui-tier1"
     },
@@ -2359,7 +2359,7 @@
       "id": "260708-111500",
       "slug": "fence-delivered-widgets",
       "title": "Widgets are fence-delivered assistant content, not a render tool",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-08",
       "specSlug": "gen-ui-tier1"
     },
@@ -2367,7 +2367,7 @@
       "id": "260708-111501",
       "slug": "own-widget-wire-schema",
       "title": "Own the widget wire schema in @dorkos/shared instead of adopting json-render or A2UI",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-08",
       "specSlug": "gen-ui-tier1"
     },
@@ -2375,7 +2375,7 @@
       "id": "260708-141143",
       "slug": "server-side-mcp-app-resource-fetch",
       "title": "The DorkOS server, not the client or runtime, fetches MCP App ui:// resources",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-08",
       "specSlug": "mcp-apps-host"
     },
@@ -2383,7 +2383,7 @@
       "id": "260708-185518",
       "slug": "multi-document-canvas-model",
       "title": "Multi-document canvas model \u2014 openDocuments[] + activeDocumentId replaces the single content slot",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
       "specSlug": "right-panel-workbench"
@@ -2392,7 +2392,7 @@
       "id": "260708-185519",
       "slug": "local-html-serving-origin-isolation",
       "title": "Local-HTML serving and localhost proxy render in an opaque-origin sandbox, not allow-same-origin",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
       "specSlug": "right-panel-workbench"
@@ -2401,7 +2401,7 @@
       "id": "260708-185521",
       "slug": "embedded-terminal-pty-architecture",
       "title": "Embedded terminal \u2014 xterm.js + node-pty over WebSocket, web-only, confined to session cwd",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
       "specSlug": "right-panel-workbench"
@@ -2410,7 +2410,7 @@
       "id": "260708-185522",
       "slug": "mime-viewer-registry-config-overrides",
       "title": "First-party mime\u2192viewer registry with config-choosable defaults; third-party viewers route to MCP Apps",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
       "specSlug": "right-panel-workbench"

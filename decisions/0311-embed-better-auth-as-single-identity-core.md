@@ -1,7 +1,7 @@
 ---
 number: 311
 title: Embed Better Auth as the single identity core across OSS and Cloud
-status: draft
+status: accepted
 created: 2026-07-02
 spec: accounts-and-auth
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: accounts-and-auth)
+Accepted
 
 ## Context
 

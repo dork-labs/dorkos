@@ -1,7 +1,7 @@
 ---
 id: 260708-185519
 title: Local-HTML serving and localhost proxy render in an opaque-origin sandbox, not allow-same-origin
-status: draft
+status: accepted
 created: 2026-07-08
 spec: right-panel-workbench
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: right-panel-workbench)
+Accepted
 
 ## Context
 

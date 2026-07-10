@@ -1,7 +1,7 @@
 ---
 number: 319
 title: 'Account-first cloud identity: instances device-link to DorkOS accounts'
-status: draft
+status: accepted
 created: 2026-07-02
 spec: accounts-and-auth
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: accounts-and-auth)
+Accepted
 
 ## Context
 
