@@ -9,6 +9,7 @@ vi.mock('../server-process', () => ({
 }));
 vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
 vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
+vi.mock('../auto-updater', () => ({ setupAutoUpdater: vi.fn() }));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test

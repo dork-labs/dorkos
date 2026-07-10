@@ -62,23 +62,16 @@ const config: KnipConfig = {
         'src/preload/index.ts',
         'src/server-entry.ts',
       ],
-      // WIP: the auto-updater is implemented but not yet wired (index.ts has a
-      // commented-out `setupAutoUpdater()` call). Remove this ignore — and the
-      // electron-log/electron-updater entries below — once it's wired.
-      ignore: ['src/main/auto-updater.ts'],
       // Build- and bundle-time deps the Electron build needs but no source file
       // imports statically: the renderer (`@dorkos/client` + `tailwindcss`), the
       // native-module rebuild step (`@electron/rebuild`), and the bundled server
-      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`). Plus
-      // electron-log/electron-updater, imported only by the parked auto-updater.
+      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`).
       ignoreDependencies: [
         '@dorkos/client',
         '@dorkos/db',
         '@dorkos/shared',
         '@electron/rebuild',
         'better-sqlite3',
-        'electron-log',
-        'electron-updater',
         'tailwindcss',
       ],
     },

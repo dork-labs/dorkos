@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('electron', () => import('./electron-mock'));
+vi.mock('../auto-updater', () => ({ checkForUpdatesInteractive: vi.fn() }));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test
@@ -52,8 +53,9 @@ describe('setupMenu (B1)', () => {
   });
 
   it('app menu has About, a gated Check for Updates…, and Settings… with Cmd+, accelerator', async () => {
-    const { Menu, resetElectronMock } = await getElectronMock();
+    const { app, Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
+    app.isPackaged = false;
     const { setupMenu } = await import('../menu');
 
     setupMenu(() => null);
@@ -71,6 +73,25 @@ describe('setupMenu (B1)', () => {
     const settingsItem = appMenu.find((item) => item.label === 'Settings…');
     expect(settingsItem).toBeDefined();
     expect(settingsItem!.accelerator).toBe('Cmd+,');
+  });
+
+  it('Check for Updates… is enabled when packaged and disabled when not, and click triggers checkForUpdatesInteractive', async () => {
+    const { app, Menu, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { setupMenu } = await import('../menu');
+    const { checkForUpdatesInteractive } = await import('../auto-updater');
+
+    setupMenu(() => null);
+    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
+      | Electron.MenuItemConstructorOptions[]
+      | undefined;
+    const appMenu = template![0].submenu as Electron.MenuItemConstructorOptions[];
+    const checkForUpdates = appMenu.find((item) => item.label === 'Check for Updates…');
+
+    expect(checkForUpdates!.enabled).toBe(true);
+    checkForUpdates!.click!({} as never, undefined, {} as never);
+    expect(checkForUpdatesInteractive).toHaveBeenCalledTimes(1);
   });
 
   it('Settings… sends the navigate IPC with the settings route', async () => {

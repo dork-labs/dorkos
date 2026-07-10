@@ -3,7 +3,7 @@ import { createWindow } from './window-manager';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
-// import { setupAutoUpdater } from './auto-updater';
+import { setupAutoUpdater } from './auto-updater';
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
@@ -81,9 +81,9 @@ if (!gotTheLock) {
     setupAboutPanel();
     setupDockMenu(showMainWindow);
 
-    // 4. Check for updates in the background (non-blocking)
-    // Uncomment when code signing is configured (Phase 3).
-    // setupAutoUpdater();
+    // 4. Check for updates in the background (non-blocking). No-ops in dev
+    // (unpackaged builds can't apply updates) — see auto-updater.ts.
+    setupAutoUpdater(getMainWindow);
   });
 
   // macOS convention: closing all windows does NOT quit the app.
@@ -97,6 +97,14 @@ if (!gotTheLock) {
   // Clean up the server process before the app quits.
   // Electron does not await async before-quit handlers, so we
   // prevent quit, run cleanup, then quit explicitly.
+  //
+  // This also has to interplay correctly with `autoUpdater.quitAndInstall()`
+  // (auto-updater.ts): it arms the native installer, then calls `app.quit()`.
+  // That first quit hits preventDefault() and runs stopServer(), then the
+  // `isQuitting` guard lets the second, explicit quit() through — so install
+  // + relaunch only happens after the server has shut down cleanly.
+  // `autoInstallOnAppQuit = true` is the fallback if quitAndInstall() is never
+  // called directly. Do not "simplify" this dance without preserving that.
   let isQuitting = false;
   app.on('before-quit', (e) => {
     if (isQuitting) return;
