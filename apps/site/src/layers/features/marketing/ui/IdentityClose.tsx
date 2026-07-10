@@ -9,7 +9,7 @@ interface IdentityCloseProps {
   email: string;
 }
 
-/** Tribal identity close — origin story, boldness invitation, and contact postscript. */
+/** Identity close — origin story, hero turn, and contact postscript. */
 export function IdentityClose({ email }: IdentityCloseProps) {
   const [revealed, setRevealed] = useState(false);
 
@@ -26,21 +26,21 @@ export function IdentityClose({ email }: IdentityCloseProps) {
           variants={REVEAL}
           className="text-charcoal mb-12 text-[28px] leading-[1.3] font-medium tracking-[-0.02em] md:text-[32px]"
         >
-          Built by dorks. For dorks. Run by you.
+          We built it for ourselves. Now it&apos;s yours.
         </motion.h2>
 
         <motion.div variants={STAGGER} className="mb-12 space-y-6">
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
-            Dork was never an insult to us.
+            DorkOS started as the system we needed. One person, five projects, ten agents in ten
+            different windows. We built the coordination layer so we could build more, faster.
           </motion.p>
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
-            It is what you call someone who cares too much about something most people do not care
-            about at all. Someone who names their AI agents. Someone who wakes up at 6am to check if
-            the overnight tests passed that nobody asked them to check.
+            It&apos;s how we ship everything else: one person and a fleet of agents, 44 public
+            releases in five months, every decision documented in the open.
           </motion.p>
           <motion.p variants={REVEAL} className="text-warm-gray text-[15px] leading-[1.75]">
-            We build at 3am because we cannot stop. Not because someone is paying us to. Because the
-            problem is right there and walking away from it feels worse than staying up.
+            And yes, we named it after ourselves. Dork is what they call someone who cares too much
+            about the plumbing. We answer to it. You never have to.
           </motion.p>
         </motion.div>
 
@@ -65,7 +65,7 @@ export function IdentityClose({ email }: IdentityCloseProps) {
               rel="noopener noreferrer"
               className="hover:text-brand-orange transition-smooth"
             >
-              Dorkian
+              Dorian
             </a>
           </motion.p>
         </motion.div>
