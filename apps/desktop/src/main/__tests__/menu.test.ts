@@ -31,6 +31,13 @@ function findItem(
 describe('setupMenu (B1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `../menu` imports `../navigation`, which holds module-level pending-
+    // navigation state (Chunk D) — reset so tests don't leak readiness/
+    // pending-path state into each other. `electron` (and the mocked
+    // `../auto-updater`) stay memoized across resetModules (see
+    // `getElectronMock`'s doc comment), so this only re-evaluates the real
+    // modules under test.
+    vi.resetModules();
   });
 
   it('builds top-level roles: custom app menu, editMenu, viewMenu, windowMenu, help', async () => {
@@ -38,7 +45,7 @@ describe('setupMenu (B1)', () => {
     resetElectronMock();
     const { setupMenu } = await import('../menu');
 
-    setupMenu(() => null);
+    setupMenu(() => null, vi.fn());
 
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
       | Electron.MenuItemConstructorOptions[]
@@ -58,7 +65,7 @@ describe('setupMenu (B1)', () => {
     app.isPackaged = false;
     const { setupMenu } = await import('../menu');
 
-    setupMenu(() => null);
+    setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
       | Electron.MenuItemConstructorOptions[]
       | undefined;
@@ -82,7 +89,7 @@ describe('setupMenu (B1)', () => {
     const { setupMenu } = await import('../menu');
     const { checkForUpdatesInteractive } = await import('../auto-updater');
 
-    setupMenu(() => null);
+    setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
       | Electron.MenuItemConstructorOptions[]
       | undefined;
@@ -94,14 +101,17 @@ describe('setupMenu (B1)', () => {
     expect(checkForUpdatesInteractive).toHaveBeenCalledTimes(1);
   });
 
-  it('Settings… sends the navigate IPC with the settings route', async () => {
+  it('Settings… sends the navigate IPC immediately when the renderer is ready, and ensures the window', async () => {
     const { BrowserWindow, Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
     const { setupMenu } = await import('../menu');
-    const { SETTINGS_ROUTE } = await import('../navigation');
+    const { SETTINGS_ROUTE, resolvePendingNavigate } = await import('../navigation');
 
     const win = new BrowserWindow({ width: 1200, height: 800 });
-    setupMenu(() => win as unknown as Electron.BrowserWindow);
+    // Simulate the renderer having already subscribed (client hook mount).
+    resolvePendingNavigate(win.webContents.id);
+    const ensureWindow = vi.fn();
+    setupMenu(() => win as unknown as Electron.BrowserWindow, ensureWindow);
 
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
       | Electron.MenuItemConstructorOptions[]
@@ -110,6 +120,27 @@ describe('setupMenu (B1)', () => {
     settingsItem!.click!({} as never, undefined, {} as never);
 
     expect(win.webContents.send).toHaveBeenCalledWith('navigate', SETTINGS_ROUTE);
+    expect(ensureWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('Settings… with zero windows open queues the path and ensures a window (pending-navigation handoff)', async () => {
+    const { Menu, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    const { setupMenu } = await import('../menu');
+    const { SETTINGS_ROUTE, resolvePendingNavigate } = await import('../navigation');
+
+    const ensureWindow = vi.fn();
+    setupMenu(() => null, ensureWindow);
+
+    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
+      | Electron.MenuItemConstructorOptions[]
+      | undefined;
+    const settingsItem = findItem(template!, 'Settings…');
+    settingsItem!.click!({} as never, undefined, {} as never);
+
+    expect(ensureWindow).toHaveBeenCalledTimes(1);
+    // Delivered once a window exists and its renderer picks up the pending path.
+    expect(resolvePendingNavigate(1)).toBe(SETTINGS_ROUTE);
   });
 
   it('Help menu has the 3 external items wired to shell.openExternal', async () => {
@@ -117,7 +148,7 @@ describe('setupMenu (B1)', () => {
     resetElectronMock();
     const { setupMenu } = await import('../menu');
 
-    setupMenu(() => null);
+    setupMenu(() => null, vi.fn());
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
       | Electron.MenuItemConstructorOptions[]
       | undefined;

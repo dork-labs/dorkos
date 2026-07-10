@@ -26,4 +26,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('navigate', listener);
     return () => ipcRenderer.removeListener('navigate', listener);
   },
+  /**
+   * Pending-navigation handoff: also marks this renderer as "ready" for the
+   * `navigate` hot path (see `navigation.ts`'s `resolvePendingNavigate`).
+   * Called once by `useElectronNavigate` on mount, right after subscribing
+   * via `onNavigate` — covers a path requested (menu click, `dorkos://` deep
+   * link) before this window's renderer existed or had subscribed yet.
+   *
+   * @returns The queued path, or `null` if nothing is pending.
+   */
+  getPendingNavigate: (): Promise<string | null> => ipcRenderer.invoke('get-pending-navigate'),
 });

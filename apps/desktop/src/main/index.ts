@@ -4,6 +4,10 @@ import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
 import { setupAutoUpdater } from './auto-updater';
+import { parseDeepLink, requestNavigate, resolvePendingNavigate } from './navigation';
+
+/** The custom URL scheme `dorkos://` deep links arrive on. */
+const DEEP_LINK_PROTOCOL = 'dorkos';
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
@@ -59,6 +63,27 @@ if (!gotTheLock) {
     showMainWindow();
   });
 
+  // Register `dorkos://` as this app's protocol handler. Safe to call
+  // before 'ready' and idempotent across launches.
+  app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+
+  // macOS delivers `dorkos://` activations here — including a cold-start
+  // deep link, which can fire before 'ready' (before any window or server
+  // exists). Per Electron's docs this listener must be registered as early
+  // as possible, before 'ready', to reliably catch that case.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    const path = parseDeepLink(url);
+    if (path) {
+      // requestNavigate both ensures/focuses a window and tolerates a
+      // renderer that isn't subscribed yet (pending-navigation handoff).
+      requestNavigate(getMainWindow, showMainWindow, path);
+    } else {
+      // Malformed/unknown deep link: just bring the app forward.
+      showMainWindow();
+    }
+  });
+
   // Register IPC handlers for the preload bridge.
   // These must be registered before the window is created.
   ipcMain.on('get-server-port', (event) => {
@@ -69,6 +94,11 @@ if (!gotTheLock) {
     event.returnValue = app.getVersion();
   });
 
+  // Renderer-readiness + pending-navigation pickup (see navigation.ts) —
+  // called by the client's useElectronNavigate hook right after it
+  // subscribes to `onNavigate` on mount.
+  ipcMain.handle('get-pending-navigate', (event) => resolvePendingNavigate(event.sender.id));
+
   app.on('ready', async () => {
     // 1. Start Express in a UtilityProcess on a free port
     serverPort = await startServer();
@@ -77,7 +107,7 @@ if (!gotTheLock) {
     createTrackedWindow();
 
     // 3. Set up the native macOS menu bar, About panel, and Dock menu
-    setupMenu(getMainWindow);
+    setupMenu(getMainWindow, showMainWindow);
     setupAboutPanel();
     setupDockMenu(showMainWindow);
 

@@ -132,3 +132,110 @@ describe('single-instance lock (A1)', () => {
     expect(windowManager.createWindow).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Look up the handler `../index` registered for `ipcMain.handle(channel, ...)`. */
+  async function getHandler(
+    channel: string
+  ): Promise<(event: Electron.IpcMainInvokeEvent) => unknown> {
+    const { ipcMain } = await getElectronMock();
+    const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === channel);
+    if (!call) throw new Error(`no ipcMain.handle registered for "${channel}"`);
+    return call[1] as (event: Electron.IpcMainInvokeEvent) => unknown;
+  }
+
+  it('registers dorkos:// as the default protocol client at startup', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    await import('../index');
+
+    expect(app.setAsDefaultProtocolClient).toHaveBeenCalledWith('dorkos');
+  });
+
+  it('a cold-start open-url (before any window) queues the path; it is delivered once the window is ready', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+
+    // Electron can deliver `open-url` before 'ready' on a cold-start deep
+    // link — no window or server exists yet, so this must not throw and
+    // must not attempt an immediate send.
+    const preventDefault = vi.fn();
+    await app.emit('open-url', { preventDefault }, 'dorkos://agents');
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+
+    // The window is created once the app finishes starting up.
+    await app.emit('ready');
+
+    // The renderer's on-mount pull picks up the path that was queued
+    // before it existed. Read-once: a second pull returns null.
+    const handler = await getHandler('get-pending-navigate');
+    expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
+      '/agents'
+    );
+    expect(
+      handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)
+    ).toBeNull();
+  });
+
+  it('open-url with an already-ready window sends the navigate IPC immediately', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    // Simulate the client hook's on-mount pull, which marks this window's
+    // renderer ready even though nothing is pending yet.
+    const handler = await getHandler('get-pending-navigate');
+    handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent);
+
+    const preventDefault = vi.fn();
+    await app.emit('open-url', { preventDefault }, 'dorkos://session?id=42');
+
+    expect(win.webContents.send).toHaveBeenCalledWith('navigate', '/session?id=42');
+  });
+
+  it('a malformed/unknown deep link just focuses the existing window', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    const preventDefault = vi.fn();
+    await app.emit('open-url', { preventDefault }, 'https://not-dorkos.example');
+
+    expect(win.focus).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+  });
+});
