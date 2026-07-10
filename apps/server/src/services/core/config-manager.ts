@@ -364,60 +364,41 @@ const CONFIG_MIGRATIONS = {
   // default also yields `disabled: []` on read, so this just writes the key through
   // on the upgrade where it lands.
   '0.44.0': backfillExtensionsDisabled,
-  // Backfill the `workspace` section (WorkspaceManager, DOR-84). Keyed to the
-  // next release; /system:release reconciles the concrete version at tag time.
-  '0.45.0': backfillWorkspaceDefaults,
-  // Backfill the `harness` section (Harness Sync auto-sync gate, GAP-4). Keyed
-  // to the next ascending release; /system:release reconciles the concrete
-  // version at tag time. Additive + idempotent; the schema default also yields
-  // `{ autoSync: true }` on read, so this just writes the key through on the
-  // upgrade where it lands.
-  '0.46.0': backfillHarnessDefaults,
-  // Backfill the `runtimes` section (multi-runtime support, DOR-180). Keyed to
-  // the next ascending release; /system:release reconciles the concrete
-  // version at tag time. Additive + idempotent; the schema default also yields
-  // this object on read, so this just writes the key through on the upgrade
-  // where it lands.
-  '0.47.0': backfillRuntimesDefaults,
-  // Backfill the credential substrate (CredentialProvider port + `providers`
-  // registry + per-runtime credential fields, effortless-runtime-switching T1,
-  // DOR-183, ADR-0315). Keyed to the next ascending release; /system:release
-  // reconciles the concrete version at tag time. Additive + idempotent; seeds
-  // only references/nulls, never a plaintext secret.
-  '0.48.0': backfillProvidersDefaults,
-  // Backfill the `auth` section (local login gate, accounts-and-auth P1). Keyed
-  // to the next ascending release; /system:release reconciles the concrete
-  // version at tag time. `0.49.0` because DOR-180 (`runtimes`) took `0.47.0` and
-  // DOR-183 (`providers`) took `0.48.0` on main. Additive + idempotent; the
-  // schema default also yields `{ enabled: false }` on read, so this just writes
-  // the key through on the upgrade where it lands.
-  '0.49.0': backfillAuthDefaults,
-  // Remove the tunnel passcode fields and root `sessionSecret` (accounts-and-auth
-  // P1, task 1.6). The passcode auth path and cookie-session signing secret were
-  // deleted in favor of Better Auth; existing hashes are discarded, not migrated.
-  // Keyed to the next ascending release; /system:release reconciles the concrete
-  // version at tag time. `0.50.0` follows the accounts-and-auth chain shifted up
-  // by the runtimes + providers migrations on main. Idempotent; only mutates when
-  // a stale key is present.
-  '0.50.0': dropTunnelPasscodeAndSessionSecret,
-  // Backfill the `cloud` section (device-link instance token, accounts-and-auth
-  // P2, task 2.4). Keyed to the next ascending release; /system:release
-  // reconciles the concrete version at tag time. Additive + idempotent; the
-  // schema default also yields the all-null object on read, so this just writes
-  // the key through on the upgrade where it lands.
-  '0.51.0': backfillCloudDefaults,
-  // Backfill the `workbench` section (right-panel workbench viewer-registry
-  // overrides, DOR-219). Keyed to the next ascending release; /system:release
-  // reconciles the concrete version at tag time. Additive + idempotent; the
-  // schema default also yields `{ defaultViewers: {} }` on read, so this just
-  // writes the key through on the upgrade where it lands.
-  '0.52.0': backfillWorkbenchDefaults,
-  // Backfill `workbench.terminalGraceTtlMinutes` (embedded-terminal re-attach
-  // grace window, DOR-225). Keyed to the next ascending release; /system:release
-  // reconciles the concrete version at tag time. Additive + idempotent; supplies
-  // the nested field conf's shallow defaults-merge won't add to an existing
-  // `workbench` block, defaulting to 10 minutes.
-  '0.53.0': backfillWorkbenchTerminalGraceTtl,
+  // Everything below shipped together in v0.45.0. Each body was authored on a
+  // placeholder "next ascending release" key (0.45.0-0.53.0) while on main;
+  // /system:release reconciled them to the one real release at tag time
+  // (2026-07-09). Order matters: conf runs entries in insertion order, and
+  // `backfillWorkbenchTerminalGraceTtl` must follow `backfillWorkbenchDefaults`.
+  // Every body is idempotent, so re-running the composite is safe.
+  '0.45.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+    delete: (key: string) => void;
+  }) => {
+    // `workspace` section (WorkspaceManager, DOR-84).
+    backfillWorkspaceDefaults(store);
+    // `harness` section (Harness Sync auto-sync gate, GAP-4).
+    backfillHarnessDefaults(store);
+    // `runtimes` section (multi-runtime support, DOR-180).
+    backfillRuntimesDefaults(store);
+    // Credential substrate (`providers` registry, DOR-183, ADR-0315). Seeds
+    // only references/nulls, never a plaintext secret.
+    backfillProvidersDefaults(store);
+    // `auth` section (local login gate, accounts-and-auth P1).
+    backfillAuthDefaults(store);
+    // Remove tunnel passcode fields + root `sessionSecret` (accounts-and-auth
+    // P1, task 1.6). Better Auth replaced them; stale hashes are discarded,
+    // not migrated.
+    dropTunnelPasscodeAndSessionSecret(store);
+    // `cloud` section (device-link instance token, accounts-and-auth P2).
+    backfillCloudDefaults(store);
+    // `workbench` section (viewer-registry overrides, DOR-219).
+    backfillWorkbenchDefaults(store);
+    // `workbench.terminalGraceTtlMinutes` (terminal re-attach grace window,
+    // DOR-225) — supplies the nested field conf's shallow defaults-merge won't
+    // add to a `workbench` block the previous body just created.
+    backfillWorkbenchTerminalGraceTtl(store);
+  },
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
