@@ -2,13 +2,14 @@
   "title": "Documentation",
   "pages": [
     "getting-started",
-    "marketplace",
     "guides",
+    "marketplace",
     "concepts",
     "integrations",
     "api",
     "self-hosting",
     "contributing",
+    "glossary",
     "changelog",
     "changelog-archive"
   ]

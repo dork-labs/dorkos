@@ -1,4 +1,4 @@
 {
   "title": "Integrations",
-  "pages": ["building-integrations", "mcp-server", "extensions", "sse-protocol"]
+  "pages": ["building-integrations", "extensions", "mcp-server", "building-relay-adapters", "sse-protocol"]
 }
