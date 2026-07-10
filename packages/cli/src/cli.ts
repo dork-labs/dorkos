@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { checkClaude } from './check-claude.js';
+import { checkCoreExtensions } from './check-core-extensions.js';
 import { checkForUpdate } from './update-check.js';
 import { maybeShowNewsletterTip } from './newsletter-tip.js';
 import { link } from './terminal-link.js';
@@ -381,13 +382,21 @@ if (values.version) {
 
 if (values['post-install-check']) {
   const claudeFound = checkClaude();
+  // A missing core-extensions/ dir means the package itself was built or
+  // packed incorrectly (DOR-245) — unlike a missing Claude Code CLI, this
+  // is never something the user can fix, so it always fails the check.
+  const coreExtensionsFound = checkCoreExtensions();
   console.log(`dorkos ${__CLI_VERSION__}`);
-  if (claudeFound) {
-    console.log('Installation verified.');
-  } else {
+  if (!coreExtensionsFound) {
+    console.log('Installation incomplete — bundled core extensions are missing.');
+  }
+  if (!claudeFound) {
     console.log('Installation incomplete — Claude Code CLI is missing.');
+  }
+  if (!coreExtensionsFound || !claudeFound) {
     process.exit(1);
   }
+  console.log('Installation verified.');
   process.exit(0);
 }
 
