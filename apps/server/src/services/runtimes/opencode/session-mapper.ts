@@ -316,6 +316,32 @@ export class OpenCodeSessionMapper {
   }
 
   /**
+   * Targeted single-session read for a KNOWN binding, booting the sidecar
+   * when needed (same reasoning as `getMessageHistory`: the caller asked for
+   * a specific session, so the boot cost is justified — unlike `listSessions`
+   * which must return fast on a cold sidecar). Without this, a bookmarked
+   * session id would 404 after a server restart until something else booted
+   * the sidecar (DOR-251). Returns null for an unknown binding (no boot), a
+   * session deleted upstream, or an unreachable sidecar — the AgentRuntime
+   * `getSession` contract is "Session or null, never a throw".
+   *
+   * @param projectDir - Working directory of the requesting session
+   * @param dorkosSessionId - DorkOS session identifier
+   */
+  async getSession(projectDir: string, dorkosSessionId: string): Promise<Session | null> {
+    const openCodeId = this.dorkosToOpenCode.get(dorkosSessionId);
+    if (!openCodeId) return null;
+    try {
+      const client = await this.provider.getClient(projectDir);
+      const result = await client.session.get({ path: { id: openCodeId } });
+      if (result.data === undefined) return null;
+      return mapSession(result.data, dorkosSessionId);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Resolve (or mint) the DorkOS id for an OpenCode session discovered outside
    * `ensureSession` — list results, SSE events (task 3.4). Returns the existing
    * binding when known (including bindings hydrated from the durable store, so

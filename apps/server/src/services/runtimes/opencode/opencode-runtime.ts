@@ -487,9 +487,22 @@ export class OpenCodeRuntime implements AgentRuntime {
     return sessions;
   }
 
+  /**
+   * @inheritdoc
+   *
+   * The cheap path reads the sidecar listing + tracked registry. On a miss
+   * with a KNOWN durable binding (post-restart, cold sidecar — `listSessions`
+   * never boots), falls through to the mapper's targeted single-session read,
+   * which boots the sidecar: a bookmarked id must resolve after a restart
+   * instead of 404ing until something else warms the sidecar (DOR-251).
+   */
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     const sessions = await this.listSessions(projectDir);
-    return sessions.find((session) => session.id === sessionId) ?? null;
+    const listed = sessions.find((session) => session.id === sessionId);
+    if (listed) return listed;
+    const session = await this.mapper.getSession(projectDir, sessionId);
+    if (session) this.overlayTrackedSettings(session);
+    return session;
   }
 
   /**

@@ -95,6 +95,7 @@ function createMockClient() {
     session: {
       list: vi.fn(),
       create: vi.fn(),
+      get: vi.fn(),
       messages: vi.fn(),
     },
   };
@@ -538,6 +539,43 @@ describe('OpenCodeSessionMapper', () => {
       expect(history[0]!.content).toBe('hello again');
       // The hydrated binding resolved directly — no recovery re-list needed.
       expect(client.session.list).not.toHaveBeenCalled();
+    });
+
+    it('getSession resolves a known binding on a cold restart by booting the sidecar', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      client.session.get.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      const store = createFakeStore();
+
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const restarted = new OpenCodeSessionMapper(createProvider(client), store);
+      const session = await restarted.getSession(PROJECT_DIR, DORKOS_ID);
+
+      expect(client.session.get).toHaveBeenCalledWith({ path: { id: 'ses_abc123' } });
+      expect(session?.id).toBe(DORKOS_ID);
+      expect(session?.runtime).toBe('opencode');
+    });
+
+    it('getSession returns null for an unknown binding without booting', async () => {
+      const client = createMockClient();
+      const provider = createProvider(client);
+      const mapper = new OpenCodeSessionMapper(provider, createFakeStore());
+
+      await expect(mapper.getSession(PROJECT_DIR, DORKOS_ID)).resolves.toBeNull();
+      expect(provider.getClient).not.toHaveBeenCalled();
+    });
+
+    it('getSession returns null (never throws) when the sidecar is unreachable', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      const store = createFakeStore();
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const restarted = new OpenCodeSessionMapper(createProvider(null), store);
+      await expect(restarted.getSession(PROJECT_DIR, DORKOS_ID)).resolves.toBeNull();
     });
 
     it('does not persist derived adoptions — they are deterministic by construction', async () => {
