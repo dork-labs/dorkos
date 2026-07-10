@@ -66,9 +66,13 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
     });
   };
 
+  // Every inert flavor explains itself — including a sibling-latch, so a second
+  // click while a dispatch is in flight gets "waiting", not silence. The
+  // dispatched button itself already speaks through its spinner/check.
   let tooltipText: string | null = null;
-  if (state.unavailable) tooltipText = "Interactions aren't available here";
-  else if (state.superseded) tooltipText = 'Superseded — use the latest widget';
+  if (state.superseded) tooltipText = 'Superseded — use the latest widget';
+  else if (state.unavailable) tooltipText = "Interactions aren't available here";
+  else if (state.latched) tooltipText = "Sent — waiting for the agent's reply";
 
   // Use aria-disabled (not the `disabled` attribute) for the inert case so the
   // button stays focusable/hoverable and its tooltip is keyboard- and
@@ -95,9 +99,9 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
     </Button>
   );
 
-  // The unavailable/superseded cases stay an unwrapped Button so
-  // `TooltipTrigger asChild` merges its `aria-describedby`/focus handlers onto
-  // the real <button>, not a wrapper div.
+  // The tooltip'd (inert) cases stay an unwrapped Button so `TooltipTrigger
+  // asChild` merges its `aria-describedby`/focus handlers onto the real
+  // <button>, not a wrapper div.
   if (tooltipText) {
     return (
       <TooltipProvider>

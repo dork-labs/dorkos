@@ -10,6 +10,7 @@ import { motion } from 'motion/react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WidgetAction, WidgetNode } from '@dorkos/shared/ui-widget';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { toneBadgeClass } from '../../../lib/widget-tone';
 import { useAgentActionState, useWidgetActions } from '../../../model/widget-context';
@@ -116,12 +117,52 @@ function ActionBoardCell({
     return state.interactive ? `${prefix}: empty — play here` : `${prefix}: empty`;
   })();
 
-  let title: string | undefined;
-  if (state.superseded) title = 'Superseded — use the latest widget';
-  else if (state.unavailable) title = "Interactions aren't available here";
+  // Every inert flavor explains itself (mirrors WidgetActionButton's copy) —
+  // including a sibling-latch, so a quick second tap right after a move gets
+  // "waiting", not silence. The dispatched cell itself needs no words: its
+  // drawn mark IS the feedback.
+  let tooltipText: string | null = null;
+  if (state.superseded) tooltipText = 'Superseded — use the latest widget';
+  else if (state.unavailable) tooltipText = "Interactions aren't available here";
+  else if (state.latched) tooltipText = "Move sent — waiting for the agent's reply";
+
+  const buttonEl = (
+    <motion.button
+      type="button"
+      aria-label={label}
+      aria-disabled={inert || undefined}
+      onClick={inert ? undefined : handleClick}
+      className={cn(
+        cellClassName(cell),
+        'group focus-ring w-full transition-colors',
+        state.interactive && 'hover:bg-muted/60 cursor-pointer',
+        inert && 'cursor-default',
+        winRole === 'loser' && 'opacity-60'
+      )}
+      whileHover={state.interactive ? { scale: 1.05 } : undefined}
+      whileTap={state.interactive ? { scale: 0.95 } : undefined}
+      transition={WIDGET_SPRING}
+    >
+      {/* Hover ghost — a faint preview of your mark; desktop hover only (Tailwind
+          v4 gates `hover:` on hover-capable pointers), never on inert boards. */}
+      {showGhost && (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-2xl opacity-0 transition-opacity duration-150 group-hover:opacity-20">
+          <DrawnMark mark={optimisticMarkFor(cell.action)} motionOn={false} />
+        </span>
+      )}
+      <CellMark
+        optimisticMark={optimisticMark}
+        glyph={cell.glyph}
+        icon={Icon}
+        motionOn={motionOn}
+      />
+    </motion.button>
+  );
 
   // `role="gridcell"` stays on the wrapper so the button keeps its native
-  // "button" role for screen readers.
+  // "button" role for screen readers. Inert cells wrap in the app Tooltip
+  // (same pattern as WidgetActionButton): aria-disabled keeps the button
+  // focusable, so the explanation is keyboard- and pointer-reachable.
   return (
     <motion.div
       role="gridcell"
@@ -132,37 +173,16 @@ function ActionBoardCell({
           : undefined
       }
     >
-      <motion.button
-        type="button"
-        aria-label={label}
-        aria-disabled={inert || undefined}
-        title={title}
-        onClick={inert ? undefined : handleClick}
-        className={cn(
-          cellClassName(cell),
-          'group focus-ring w-full transition-colors',
-          state.interactive && 'hover:bg-muted/60 cursor-pointer',
-          inert && 'cursor-default',
-          winRole === 'loser' && 'opacity-60'
-        )}
-        whileHover={state.interactive ? { scale: 1.05 } : undefined}
-        whileTap={state.interactive ? { scale: 0.95 } : undefined}
-        transition={WIDGET_SPRING}
-      >
-        {/* Hover ghost — a faint preview of your mark; desktop hover only (Tailwind
-            v4 gates `hover:` on hover-capable pointers), never on inert boards. */}
-        {showGhost && (
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-2xl opacity-0 transition-opacity duration-150 group-hover:opacity-20">
-            <DrawnMark mark={optimisticMarkFor(cell.action)} motionOn={false} />
-          </span>
-        )}
-        <CellMark
-          optimisticMark={optimisticMark}
-          glyph={cell.glyph}
-          icon={Icon}
-          motionOn={motionOn}
-        />
-      </motion.button>
+      {tooltipText ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>{buttonEl}</TooltipTrigger>
+            <TooltipContent>{tooltipText}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        buttonEl
+      )}
     </motion.div>
   );
 }

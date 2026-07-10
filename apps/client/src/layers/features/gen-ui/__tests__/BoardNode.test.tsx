@@ -78,9 +78,13 @@ describe('BoardNode interaction latch', () => {
 
     // The payload's glyph lands on the clicked cell immediately.
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
-    // The other agent cell is now inert (widget latched).
+    // The other agent cell is now inert (widget latched) and explains why on focus.
     const secondCell = screen.getByLabelText('Row 1, column 2: empty');
     await waitFor(() => expect(secondCell).toHaveAttribute('aria-disabled', 'true'));
+    secondCell.focus();
+    expect(
+      (await screen.findAllByText("Move sent — waiting for the agent's reply")).length
+    ).toBeGreaterThan(0);
     // The move posts back with its payload.
     expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
       actionId: 'm-0-0',
@@ -108,7 +112,7 @@ describe('BoardNode interaction latch', () => {
 });
 
 describe('BoardNode superseded state', () => {
-  it('renders agent cells inert when the widget is not the latest message', () => {
+  it('renders agent cells inert with an explanatory tooltip when not the latest message', async () => {
     renderBoard(
       {
         type: 'board',
@@ -118,7 +122,12 @@ describe('BoardNode superseded state', () => {
     );
     const cell = screen.getByLabelText('Row 1, column 1: empty');
     expect(cell).toHaveAttribute('aria-disabled', 'true');
-    expect(cell).toHaveAttribute('title', 'Superseded — use the latest widget');
+    // aria-disabled (not `disabled`) keeps the cell focusable, so the Radix
+    // tooltip explanation is keyboard-reachable.
+    cell.focus();
+    expect(
+      (await screen.findAllByText('Superseded — use the latest widget')).length
+    ).toBeGreaterThan(0);
   });
 });
 
