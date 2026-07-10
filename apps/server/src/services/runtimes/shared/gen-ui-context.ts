@@ -47,7 +47,7 @@ A <node> is { "type": <type>, ...props }. Catalog:
 
 Actions are one of: { kind: "ui", command: <control_ui command> } (dispatched locally),
 { kind: "url", href: "https://…" }, or { kind: "agent", id, label?, payload? } (sent back to you).
-{ "kind": "ui", "command": { "action": "celebrate" } } fires a confetti burst.
+{ "kind": "ui", "command": { "action": "celebrate", "kind"?: "fireworks"|"cannons"|"emoji"|"rain"|"stars", "emoji"?: "🏆" } } throws confetti (default burst; emoji kind throws the glyph).
 
 When a user activates an "agent" action, you get a <ui_action> user turn with
 the widget title, action id, and payload (form values merged in). Give actions

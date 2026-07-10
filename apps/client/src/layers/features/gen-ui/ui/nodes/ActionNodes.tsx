@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { motion } from 'motion/react';
 import { Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -17,7 +17,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, rectToCelebrationOrigin } from '@/layers/shared/lib';
 import { useAgentActionState, useWidgetActions } from '../../model/widget-context';
 import { useWidgetForm } from '../../model/form-context';
 import { useWidgetMotion, WIDGET_SPRING } from '../../lib/widget-motion';
@@ -52,9 +52,12 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   const inert = !state.interactive;
   const interactive = motionOn && state.interactive;
 
-  const handleClick = () => {
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     if (inert) return;
-    const dispatched = onAction(action);
+    // Capture the button's viewport center so a `ui` celebrate command erupts
+    // from this control rather than screen-center (origin-aware confetti).
+    const origin = rectToCelebrationOrigin(event.currentTarget.getBoundingClientRect());
+    const dispatched = onAction(action, { origin });
     // Only `agent` actions are async (a network POST); `ui`/`url` resolve
     // immediately, so the toast lifecycle is scoped to `agent`. Latch state is
     // owned by the provider.

@@ -14,7 +14,7 @@ vi.mock('../lib/widget-motion', async () => {
 
 vi.mock('@/layers/shared/lib', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib');
-  return { ...actual, fireConfetti: vi.fn().mockResolvedValue(vi.fn()) };
+  return { ...actual, fireCelebration: vi.fn().mockResolvedValue(vi.fn()) };
 });
 
 import { MoodNode } from '../ui/nodes/mood';
@@ -41,10 +41,10 @@ describe('MoodNode under reduced motion', () => {
   });
 
   it('does not fire confetti for celebrating when motion is reduced', async () => {
-    const { fireConfetti } = await import('@/layers/shared/lib');
-    vi.mocked(fireConfetti).mockClear();
+    const { fireCelebration } = await import('@/layers/shared/lib');
+    vi.mocked(fireCelebration).mockClear();
     render(<MoodNode node={{ type: 'mood', emotion: 'celebrating' }} />);
-    expect(fireConfetti).not.toHaveBeenCalled();
+    expect(fireCelebration).not.toHaveBeenCalled();
   });
 
   it('renders the message bubble', () => {

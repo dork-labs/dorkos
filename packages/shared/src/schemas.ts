@@ -2472,6 +2472,59 @@ export const UiToastLevelSchema = z
 
 export type UiToastLevel = z.infer<typeof UiToastLevelSchema>;
 
+/** The canonical celebration styles the `celebrate` command can fire. */
+export const CELEBRATION_KINDS = [
+  'burst',
+  'fireworks',
+  'cannons',
+  'emoji',
+  'rain',
+  'stars',
+] as const;
+
+/**
+ * Synonym → canonical celebration kind. Lets agents reach for natural
+ * vocabulary ("explosion", "party", "confetti") and still land on a real kind.
+ * Every unrecognized string collapses to `burst` in the preprocess below, so
+ * this map only needs the memorable aliases worth steering.
+ */
+const CELEBRATION_KIND_SYNONYMS: Record<string, (typeof CELEBRATION_KINDS)[number]> = {
+  burst: 'burst',
+  confetti: 'burst',
+  pop: 'burst',
+  party: 'burst',
+  fireworks: 'fireworks',
+  firework: 'fireworks',
+  fireshow: 'fireworks',
+  cannons: 'cannons',
+  cannon: 'cannons',
+  crossfire: 'cannons',
+  emoji: 'emoji',
+  emojis: 'emoji',
+  rain: 'rain',
+  drizzle: 'rain',
+  shower: 'rain',
+  stars: 'stars',
+  star: 'stars',
+  sparkle: 'stars',
+};
+
+/**
+ * Celebration kind, tolerant by design: a recognized synonym maps to its
+ * canonical kind and anything else (including a typo or an invented style)
+ * falls back to `burst` instead of failing validation — a celebration should
+ * never be the thing that rejects an otherwise-valid command. Non-strings pass
+ * through so `.optional()` still sees `undefined` as absent.
+ */
+export const CelebrationKindSchema = z
+  .preprocess((value) => {
+    if (typeof value !== 'string') return value;
+    return CELEBRATION_KIND_SYNONYMS[value.trim().toLowerCase()] ?? 'burst';
+  }, z.enum(CELEBRATION_KINDS))
+  .openapi('CelebrationKind');
+
+export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
+
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
  * Discriminated on `action` — 18 variants covering panels, sidebar, canvas,
@@ -2562,7 +2615,21 @@ export const UiCommandSchema = z
     z.object({ action: z.literal('open_command_palette') }),
 
     // Celebration
-    z.object({ action: z.literal('celebrate') }),
+    z.object({
+      action: z.literal('celebrate'),
+      /**
+       * The celebration style. Omit for the default `burst`. Tolerant of
+       * unknown values — anything unrecognized falls back to `burst` rather than
+       * rejecting the whole command (Postel's law, matching the widget coercers).
+       */
+      kind: CelebrationKindSchema.optional(),
+      /**
+       * The glyph thrown by the `emoji` kind (e.g. "🏆", "❤️", "😂"). Ignored by
+       * every other kind. Defaults to "🎉" when the kind is `emoji` and this is
+       * omitted. Capped at 8 chars so a stray sentence can't become a particle.
+       */
+      emoji: z.string().min(1).max(8).optional(),
+    }),
   ])
   .openapi('UiCommand');
 

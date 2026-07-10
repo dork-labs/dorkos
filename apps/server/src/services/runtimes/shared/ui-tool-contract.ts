@@ -49,7 +49,7 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - scroll_to_message: { messageId?: string } (omit for bottom)
 - switch_agent: { cwd: string }
 - open_command_palette
-- celebrate — fire a brief confetti burst (skips automatically under reduced motion)
+- celebrate: { kind?: "burst"|"fireworks"|"cannons"|"emoji"|"rain"|"stars", emoji?: string } — throw confetti (default a burst from screen-center). kind picks the style: fireworks (aerial shells), cannons (side crossfire), rain (calm drizzle), stars (gold stars), or emoji (throws the "emoji" glyph, e.g. "🏆"; defaults to 🎉). Skips automatically under reduced motion.
 
 Notes:
 - Delivery: UI commands only take visible effect when an interactive client is attached to this session. In headless or scheduled runs (no client) the command is accepted and queued but has no on-screen effect. A success result means "accepted", not "displayed".
@@ -92,4 +92,11 @@ export const CONTROL_UI_INPUT = {
     .string()
     .optional()
     .describe('Working directory for switch_agent, or optional cwd hint for open_terminal'),
+  kind: z
+    .string()
+    .optional()
+    .describe(
+      'Celebration style for celebrate: burst|fireworks|cannons|emoji|rain|stars (default burst)'
+    ),
+  emoji: z.string().optional().describe('Glyph thrown by the celebrate "emoji" kind (default 🎉)'),
 } as const;

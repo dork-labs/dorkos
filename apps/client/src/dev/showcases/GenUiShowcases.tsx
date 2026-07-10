@@ -201,8 +201,9 @@ const RATING: WidgetDocument = {
 
 /**
  * All eight moods side by side so the whole family is eyeballable at once.
- * `celebrating` is included — its confetti fires once on page mount, which is
- * the widget's real behavior and lets the bounce-squash be judged live.
+ * `celebrating` is included — its confetti fires once on page mount (erupting
+ * from its own face), which is the widget's real behavior and lets the
+ * bounce-squash be judged live.
  */
 const MOOD: WidgetDocument = {
   version: 1,
@@ -234,12 +235,85 @@ const MOOD_ROW_2: WidgetDocument = {
   },
 };
 
-const CELEBRATE_DEMO: WidgetDocument = {
+/**
+ * One button per celebration kind. Each `ui` celebrate action erupts from the
+ * button that fired it (origin-aware), so spreading them horizontally makes the
+ * origin-awareness self-evident: click the leftmost and confetti pops on the
+ * left; click the rightmost and it pops on the right.
+ */
+const CELEBRATION_KINDS_DEMO: WidgetDocument = {
   version: 1,
   root: {
-    type: 'button',
-    label: 'Celebrate',
-    action: { kind: 'ui', command: { action: 'celebrate' } },
+    type: 'stack',
+    direction: 'horizontal',
+    gap: 'sm',
+    children: [
+      {
+        type: 'button',
+        label: '🎉 Burst',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'burst' } },
+      },
+      {
+        type: 'button',
+        label: '🎆 Fireworks',
+        variant: 'secondary',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'fireworks' } },
+      },
+      {
+        type: 'button',
+        label: '💥 Cannons',
+        variant: 'secondary',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'cannons' } },
+      },
+      {
+        type: 'button',
+        label: '⭐ Stars',
+        variant: 'secondary',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'stars' } },
+      },
+      {
+        type: 'button',
+        label: '🌧️ Rain',
+        variant: 'secondary',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'rain' } },
+      },
+    ],
+  },
+};
+
+/** Emoji-particle presets — the `emoji` kind throws whichever glyph the command carries. */
+const CELEBRATION_EMOJI_DEMO: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'stack',
+    direction: 'horizontal',
+    gap: 'sm',
+    children: [
+      {
+        type: 'button',
+        label: '🏆 Trophy',
+        variant: 'outline',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'emoji', emoji: '🏆' } },
+      },
+      {
+        type: 'button',
+        label: '❤️ Hearts',
+        variant: 'outline',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'emoji', emoji: '❤️' } },
+      },
+      {
+        type: 'button',
+        label: '😂 Tears',
+        variant: 'outline',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'emoji', emoji: '😂' } },
+      },
+      {
+        type: 'button',
+        label: '🚀 Rocket',
+        variant: 'outline',
+        action: { kind: 'ui', command: { action: 'celebrate', kind: 'emoji', emoji: '🚀' } },
+      },
+    ],
   },
 };
 
@@ -420,7 +494,7 @@ export function GenUiShowcases() {
 
       <PlaygroundSection
         title="Generative UI — Mood"
-        description="A compact SVG face with brows, humanlike blinks (occasional double-blink), emotion-appropriate idle body motion, and one signature micro-tell per emotion — a sliding sweat bead, a welling tear, steam wisps, a cheek-lift smile beat. The celebrate command (below) fires the same confetti burst a celebrating mood plays on mount."
+        description="A compact SVG face with brows, humanlike blinks (occasional double-blink), emotion-appropriate idle body motion, and one signature micro-tell per emotion — a sliding sweat bead, a welling tear, steam wisps, a cheek-lift smile beat. A celebrating mood fires confetti from its own face on mount (see the Celebrations section for the standalone command)."
       >
         <ShowcaseLabel>all eight emotions</ShowcaseLabel>
         <ShowcaseDemo>
@@ -429,9 +503,21 @@ export function GenUiShowcases() {
             <WidgetRenderer document={MOOD_ROW_2} />
           </div>
         </ShowcaseDemo>
-        <ShowcaseLabel>{'{ kind: "ui", command: { action: "celebrate" } }'}</ShowcaseLabel>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Generative UI — Celebrations"
+        description="The celebrate command's vocabulary. Every kind erupts from the button that fired it (origin-aware confetti) — click the buttons left-to-right and watch the burst follow. Each honors reduced motion (a no-op) and cleans up its own timers. Burst is the default; fireworks, cannons, and rain own the whole viewport; stars and emoji pop from the origin."
+      >
+        <ShowcaseLabel>
+          one button per kind — burst · fireworks · cannons · stars · rain
+        </ShowcaseLabel>
         <ShowcaseDemo>
-          <WidgetRenderer document={CELEBRATE_DEMO} />
+          <WidgetRenderer document={CELEBRATION_KINDS_DEMO} />
+        </ShowcaseDemo>
+        <ShowcaseLabel>emoji kind — the glyph is the particle</ShowcaseLabel>
+        <ShowcaseDemo>
+          <WidgetRenderer document={CELEBRATION_EMOJI_DEMO} />
         </ShowcaseDemo>
       </PlaygroundSection>
 

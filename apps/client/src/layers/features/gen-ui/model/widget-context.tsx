@@ -35,7 +35,12 @@ import {
   type ReactNode,
 } from 'react';
 import { formatUiActionMessage, type WidgetAction } from '@dorkos/shared/ui-widget';
-import { executeUiCommand, TIMING, type DispatcherContext } from '@/layers/shared/lib';
+import {
+  executeUiCommand,
+  TIMING,
+  type CelebrationOrigin,
+  type DispatcherContext,
+} from '@/layers/shared/lib';
 import { LinkSafetyModal } from '@/layers/shared/ui';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { useSessionStreamStore } from '@/layers/entities/session';
@@ -50,8 +55,13 @@ export interface WidgetActionsValue {
    * the actual open to the link-safety confirmation); `agent` resolves once the
    * return-channel POST settles (rejects on failure so the caller can surface an
    * error — the provider has already un-latched by then).
+   *
+   * @param action - The action to dispatch.
+   * @param opts - Optional dispatch hints. `origin` is the normalized viewport
+   *   point a resulting `celebrate` command erupts from (the clicked control's
+   *   center), so confetti bursts out of the button rather than screen-center.
    */
-  onAction: (action: WidgetAction) => Promise<void>;
+  onAction: (action: WidgetAction, opts?: { origin?: CelebrationOrigin }) => Promise<void>;
   /** Whether `agent`-kind actions can be dispatched (true when a target session exists). */
   agentActionsEnabled: boolean;
   /**
@@ -123,17 +133,19 @@ export function WidgetActionProvider({
   const dispatchedRef = useRef(false);
 
   const onAction = useCallback(
-    async (action: WidgetAction): Promise<void> => {
+    async (action: WidgetAction, opts?: { origin?: CelebrationOrigin }): Promise<void> => {
       switch (action.kind) {
         case 'ui': {
           // getState() snapshot at call-time — the dispatcher is a pure side effect.
           // `supportsTerminal` keeps `open_terminal` degrading gracefully on a
           // transport with no terminal (DirectTransport/Obsidian), matching the
-          // agent-stream dispatch path.
+          // agent-stream dispatch path. `celebrationOrigin` makes a `celebrate`
+          // command erupt from the clicked control (origin-aware confetti).
           const ctx: DispatcherContext = {
             store: useAppStore.getState(),
             setTheme,
             supportsTerminal: transport.supportsTerminal,
+            celebrationOrigin: opts?.origin,
           };
           // Origin 'user': widget actions only fire when the person clicks a
           // widget button, so a resulting tab switch is an explicit pick and

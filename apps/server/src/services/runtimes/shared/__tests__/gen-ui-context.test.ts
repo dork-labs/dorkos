@@ -46,13 +46,19 @@ describe('GEN_UI_CONTEXT', () => {
     expect(GEN_UI_CONTEXT).toContain('payload');
   });
 
+  it('advertises the celebration kinds and the emoji glyph', () => {
+    expect(GEN_UI_CONTEXT).toContain('"action": "celebrate"');
+    for (const kind of ['fireworks', 'cannons', 'emoji', 'rain', 'stars']) {
+      expect(GEN_UI_CONTEXT).toContain(kind);
+    }
+    expect(GEN_UI_CONTEXT).toContain('"emoji"?');
+  });
+
   it('stays compact — it rides the cacheable prefix on every turn', () => {
-    // Budget ceiling: 3700 chars, bumped from 3200 to fit the "Board games"
-    // discipline paragraph (full-state-in-payload + validate-before-apply +
-    // state-first-then-derive-rows + one-re-emit-per-turn + mood/celebrate on
-    // game end, needed to keep turn-based games like tic-tac-toe from drifting
-    // or rendering a board that disagrees with its own state); current usage is
-    // ~3695 (~99.9%). Any further addition requires trimming elsewhere first.
-    expect(GEN_UI_CONTEXT.length).toBeLessThanOrEqual(3700);
+    // Budget ceiling: 3850 chars, bumped from 3700 to fit the celebration
+    // vocabulary (the celebrate command now advertises its kinds + emoji glyph,
+    // added on top of the "Board games" discipline paragraph); current usage is
+    // ~3804. Any further addition requires trimming elsewhere first.
+    expect(GEN_UI_CONTEXT.length).toBeLessThanOrEqual(3850);
   });
 });

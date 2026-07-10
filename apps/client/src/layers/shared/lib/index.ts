@@ -60,12 +60,13 @@ export {
   type CelebrationEvent,
   type CelebrationEngineConfig,
 } from './celebrations/celebration-engine';
+export { RADIAL_GLOW_STYLE, MINI_SPRING_CONFIG, SHIMMER_STYLE } from './celebrations/effects';
 export {
-  fireConfetti,
-  RADIAL_GLOW_STYLE,
-  MINI_SPRING_CONFIG,
-  SHIMMER_STYLE,
-} from './celebrations/effects';
+  fireCelebration,
+  rectToCelebrationOrigin,
+  DEFAULT_CELEBRATION_ORIGIN,
+  type CelebrationOrigin,
+} from './celebrations/celebration-effects';
 export {
   STORAGE_KEYS,
   FONT_SCALE_MAP,

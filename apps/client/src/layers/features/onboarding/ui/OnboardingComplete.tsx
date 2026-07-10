@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Bot, Users, Clock } from 'lucide-react';
 import { HoverBorderGradient } from '@/layers/shared/ui';
-import { fireConfetti } from '@/layers/shared/lib';
+import { fireCelebration } from '@/layers/shared/lib';
 import { useOnboarding } from '../model/use-onboarding';
 
 export interface OnboardingCompleteProps {
@@ -27,7 +27,7 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
   useEffect(() => {
     if (!confettiFired.current) {
       confettiFired.current = true;
-      fireConfetti();
+      void fireCelebration();
     }
   }, []);
 

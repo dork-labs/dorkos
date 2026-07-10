@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  fireConfetti,
+  fireCelebration,
   RADIAL_GLOW_STYLE,
   TIMING,
   type CelebrationEvent,
@@ -26,11 +26,7 @@ export function CelebrationOverlay({ celebration, onComplete }: CelebrationOverl
 
     let cancelled = false;
 
-    fireConfetti({
-      particleCount: 40,
-      origin: { x: 0.5, y: 0.6 },
-      colors: ['#FFD700', '#FFC107', '#F7B500'],
-    }).then((cleanup) => {
+    fireCelebration({ kind: 'burst' }).then((cleanup) => {
       if (cancelled) {
         cleanup();
         return;
