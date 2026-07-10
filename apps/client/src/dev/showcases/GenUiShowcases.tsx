@@ -199,7 +199,11 @@ const RATING: WidgetDocument = {
   },
 };
 
-/** Four moods (no `celebrating` — its confetti burst isn't a static-showcase citizen) plus a celebrate command demo. */
+/**
+ * All eight moods side by side so the whole family is eyeballable at once.
+ * `celebrating` is included — its confetti fires once on page mount, which is
+ * the widget's real behavior and lets the bounce-squash be judged live.
+ */
 const MOOD: WidgetDocument = {
   version: 1,
   root: {
@@ -209,8 +213,23 @@ const MOOD: WidgetDocument = {
     children: [
       { type: 'mood', emotion: 'happy' },
       { type: 'mood', emotion: 'thinking' },
-      { type: 'mood', emotion: 'sheepish', message: "Oops, that wasn't quite right." },
+      { type: 'mood', emotion: 'celebrating' },
+      { type: 'mood', emotion: 'sheepish' },
+    ],
+  },
+};
+
+const MOOD_ROW_2: WidgetDocument = {
+  version: 1,
+  root: {
+    type: 'stack',
+    direction: 'horizontal',
+    gap: 'lg',
+    children: [
       { type: 'mood', emotion: 'determined' },
+      { type: 'mood', emotion: 'surprised' },
+      { type: 'mood', emotion: 'sad' },
+      { type: 'mood', emotion: 'love', message: 'Shipped it!' },
     ],
   },
 };
@@ -401,11 +420,14 @@ export function GenUiShowcases() {
 
       <PlaygroundSection
         title="Generative UI — Mood"
-        description="A compact SVG face that blinks on a calm cadence, plus a per-emotion idle tell. The celebrate command (below) fires the same confetti burst a celebrating mood plays on mount."
+        description="A compact SVG face with brows, humanlike blinks (occasional double-blink), emotion-appropriate idle body motion, and one signature micro-tell per emotion — a sliding sweat bead, a welling tear, steam wisps, a cheek-lift smile beat. The celebrate command (below) fires the same confetti burst a celebrating mood plays on mount."
       >
-        <ShowcaseLabel>four emotions, one with a message</ShowcaseLabel>
+        <ShowcaseLabel>all eight emotions</ShowcaseLabel>
         <ShowcaseDemo>
-          <WidgetRenderer document={MOOD} />
+          <div className="flex flex-col gap-6">
+            <WidgetRenderer document={MOOD} />
+            <WidgetRenderer document={MOOD_ROW_2} />
+          </div>
         </ShowcaseDemo>
         <ShowcaseLabel>{'{ kind: "ui", command: { action: "celebrate" } }'}</ShowcaseLabel>
         <ShowcaseDemo>
