@@ -1,21 +1,14 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import {
-  Check,
-  Columns2,
-  GitCommitHorizontal,
-  Info,
-  RotateCcw,
-  Rows2,
-  TriangleAlert,
-  Undo2,
-} from 'lucide-react';
+import { lazy, Suspense, useState } from 'react';
+import { AnimatePresence, useReducedMotion } from 'motion/react';
+import { Check, Columns2, GitCommitHorizontal, Info, RotateCcw, Rows2, Undo2 } from 'lucide-react';
 import type { DiffBaselineOrigin, UiCanvasContent } from '@dorkos/shared/types';
 import { diffMediaKindForPath } from '@dorkos/shared/viewer-registry';
-import { cn } from '@/layers/shared/lib';
 import { useAppStore, useIsMobile, useTheme } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useDiffReview } from '../model/use-diff-review';
+import { useAgentEditRefresh } from '../model/use-agent-edit-refresh';
+import { Banner, ModeButton, DiffMessage, ArmedButton } from './diff-chrome';
+import { CanvasImageDiffContent } from './CanvasImageDiffContent';
 
 // Lazy: the whole `@codemirror/merge` runtime lands only when a diff first
 // renders — never in the main bundle (matching the file viewer's editor chunk).
@@ -66,7 +59,22 @@ function isDegradedBase(capturedFrom: DiffBaselineOrigin): boolean {
 }
 
 /**
- * The per-hunk diff review surface for a text file (DOR-212).
+ * The diff review surface for a file (DOR-212): routes to the per-hunk text
+ * merge view or the image modes (2-up / swipe / onion-skin) by the file's
+ * media kind — resolved from the viewer registry when the command carries no
+ * hint. A thin dispatcher so the text surface's baseline query never fires for
+ * an image (it would 415) and vice versa.
+ */
+export function CanvasDiffContent({ content, documentId }: CanvasDiffContentProps) {
+  const mediaKind = content.mediaKind ?? diffMediaKindForPath(content.sourcePath);
+  if (mediaKind === 'image') {
+    return <CanvasImageDiffContent content={content} />;
+  }
+  return <TextDiffReview content={content} documentId={documentId} />;
+}
+
+/**
+ * The per-hunk diff review surface for a text file.
  *
  * Loads the pre-edit baseline + current content, then renders the CodeMirror
  * merge view with an accept/reject gutter. Rejecting a hunk reverts it on disk
@@ -76,7 +84,7 @@ function isDegradedBase(capturedFrom: DiffBaselineOrigin): boolean {
  * (confirm-gated when the base isn't the session snapshot), mark-reviewed, a
  * side-by-side toggle (wide screens), and a compare-against toggle.
  */
-export function CanvasDiffContent({ content }: CanvasDiffContentProps) {
+function TextDiffReview({ content }: CanvasDiffContentProps) {
   const cwd = useAppStore((s) => s.selectedCwd);
   const sessionId = useAppStore((s) => s.sessionId);
   const { theme } = useTheme();
@@ -87,15 +95,13 @@ export function CanvasDiffContent({ content }: CanvasDiffContentProps) {
   const [hunkCount, setHunkCount] = useState<number | null>(null);
 
   const review = useDiffReview({ cwd, sourcePath: content.sourcePath, sessionId });
+  // A repeated agent edit re-activates this document WITHOUT remounting it, and
+  // the baseline query would otherwise sit on its stale cache — revalidate so
+  // the hunks track the latest disk state live (banners are preserved).
+  useAgentEditRefresh(cwd, content.sourcePath, review.revalidate);
 
   if (cwd === null || sessionId === null) {
     return <DiffMessage>Open a session to review changes.</DiffMessage>;
-  }
-  // Image diffs (2-up / swipe / onion-skin) are a later addition; until then a
-  // changed image opens honestly rather than as a broken text diff.
-  const mediaKind = content.mediaKind ?? diffMediaKindForPath(content.sourcePath);
-  if (mediaKind === 'image') {
-    return <DiffMessage>Reviewing image changes isn&rsquo;t available here yet.</DiffMessage>;
   }
   if (review.isLoading) {
     return <DiffMessage>Loading changes…</DiffMessage>;
@@ -186,33 +192,6 @@ export function CanvasDiffContent({ content }: CanvasDiffContentProps) {
   );
 }
 
-/** A calm inline notice strip below the header (conflict / write-failure). */
-function Banner({
-  tone,
-  reduceMotion,
-  children,
-}: {
-  tone: 'warn' | 'error';
-  reduceMotion: boolean | null;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      initial={reduceMotion ? false : { opacity: 0, y: -4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
-      className={cn(
-        'mx-2 mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-sm',
-        tone === 'warn'
-          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
-          : 'bg-destructive/10 text-destructive'
-      )}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
 interface DiffHeaderProps {
   fileName: string;
   hunkCount: number | null;
@@ -226,9 +205,6 @@ interface DiffHeaderProps {
   onRejectAll: () => void;
   onMarkReviewed: () => void;
 }
-
-/** How long an armed "Confirm reject all" stays armed before quietly disarming (ms). */
-const REJECT_ALL_ARM_TIMEOUT_MS = 5000;
 
 /**
  * The review header: change count, base-degradation disclosure, compare-mode
@@ -251,29 +227,6 @@ function DiffHeader({
   onMarkReviewed,
 }: DiffHeaderProps) {
   const degraded = isDegradedBase(capturedFrom);
-  // Confirm-gate reject-all whenever the base isn't this session's snapshot —
-  // including the deliberate "Last commit" mode, where reject-all still
-  // overwrites uncommitted work.
-  const needsConfirm = degraded;
-  const [armed, setArmed] = useState(false);
-  const disarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (disarmTimer.current) clearTimeout(disarmTimer.current);
-    },
-    []
-  );
-
-  const handleRejectAll = () => {
-    if (!needsConfirm || armed) {
-      setArmed(false);
-      if (disarmTimer.current) clearTimeout(disarmTimer.current);
-      onRejectAll();
-      return;
-    }
-    setArmed(true);
-    disarmTimer.current = setTimeout(() => setArmed(false), REJECT_ALL_ARM_TIMEOUT_MS);
-  };
 
   const countLabel =
     hunkCount === null
@@ -326,22 +279,19 @@ function DiffHeader({
           </Button>
         )}
 
-        <Button
-          type="button"
-          variant={armed ? 'destructive' : 'ghost'}
-          size="sm"
-          className="h-7"
+        {/* Confirm-gate reject-all whenever the base isn't this session's
+            snapshot — including the deliberate "Last commit" mode, where
+            reject-all still overwrites uncommitted work. */}
+        <ArmedButton
+          label="Reject all"
+          confirmLabel="Really reject all?"
+          ariaLabel="Reject all changes"
+          confirmAriaLabel="Confirm: reject all changes"
+          icon={<Undo2 className="mr-1 size-3.5" />}
+          requireConfirm={degraded}
           disabled={writing}
-          aria-label={armed ? 'Confirm: reject all changes' : 'Reject all changes'}
-          onClick={handleRejectAll}
-        >
-          {armed ? (
-            <TriangleAlert className="mr-1 size-3.5" />
-          ) : (
-            <Undo2 className="mr-1 size-3.5" />
-          )}
-          {armed ? 'Really reject all?' : 'Reject all'}
-        </Button>
+          onConfirm={onRejectAll}
+        />
         <Button
           type="button"
           variant="secondary"
@@ -360,42 +310,6 @@ function DiffHeader({
           <span>{disclosure}</span>
         </div>
       )}
-    </div>
-  );
-}
-
-/** A pill button inside the compare-mode segmented control. */
-function ModeButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'flex items-center rounded px-2 py-0.5 text-xs transition-colors',
-        active
-          ? 'bg-secondary text-secondary-foreground'
-          : 'text-muted-foreground hover:text-foreground'
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** Centered muted message for empty/error/loading diff states. */
-function DiffMessage({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-center">
-      <p>{children}</p>
     </div>
   );
 }

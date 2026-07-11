@@ -67,6 +67,8 @@ export type {
   AdvanceDiffBaselineRequest,
   DiffPendingQuery,
   DiffPendingResponse,
+  DiffBaselineRawQuery,
+  RevertDiffBaselineRequest,
   WorkbenchSignRequest,
   WorkbenchSignResponse,
   HealthResponse,

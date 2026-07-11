@@ -182,5 +182,11 @@ export function useDiffReview({ cwd, sourcePath, sessionId }: UseDiffReviewArgs)
     rejectAll,
     markReviewed,
     refresh,
+    /**
+     * Recompute against the latest disk WITHOUT clearing the conflict/failure
+     * notices — the agent-edit live-refresh path (a banner the operator hasn't
+     * acted on must survive background recomputes).
+     */
+    revalidate,
   };
 }

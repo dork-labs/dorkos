@@ -409,6 +409,21 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       }
     },
 
+    // The in-process host has no HTTP surface a webview can fetch, so baseline
+    // image bytes can't be served by URL here — the image diff is web-only,
+    // mirroring the shipped `mediaUrl` gap. The viewer gates on this null and
+    // shows a calm "web-only" message instead.
+    diffBaselineMediaUrl(_cwd: string, _filePath: string, _sessionId: string): string | null {
+      return null;
+    },
+
+    // Web-only alongside diffBaselineMediaUrl: the image-diff surface (the sole
+    // caller) is gated off under the in-process transport, so this is a hard
+    // guard, matching the terminal methods' posture.
+    revertDiffBaseline(): Promise<never> {
+      return Promise.reject(new Error('unsupported'));
+    },
+
     /** Create a file or directory via direct fs; throws if the target exists. */
     async createEntry(
       cwd: string,

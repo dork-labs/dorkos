@@ -1873,6 +1873,42 @@ export const DiffPendingResponseSchema = z
 
 export type DiffPendingResponse = z.infer<typeof DiffPendingResponseSchema>;
 
+/**
+ * Query for `GET /api/diff/baseline/raw` — streams a file's BASELINE image
+ * bytes (its pre-edit snapshot, or its git-HEAD content when no snapshot
+ * exists) for the image-diff surface's "before" layer. Only media types are
+ * served (the `GET /api/files/raw` allowlist); 404 when no baseline exists.
+ * Current bytes come from `GET /api/files/raw`.
+ */
+export const DiffBaselineRawQuerySchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+    /** Session whose pre-edit snapshot to serve; keyed `(sessionId, path)`. */
+    sessionId: z.string().min(1),
+  })
+  .openapi('DiffBaselineRawQuery');
+
+export type DiffBaselineRawQuery = z.infer<typeof DiffBaselineRawQuerySchema>;
+
+/**
+ * Request for `POST /api/diff/revert` — restore a file's baseline bytes to
+ * disk, whole-file (the image diff's "reject"). Binary-safe, unlike the
+ * text-oriented `PUT /api/files/content`: the server writes the snapshot's own
+ * bytes (git-HEAD fallback), so no bytes travel from the client. Refused (404)
+ * when no restorable baseline exists — an image the agent created this session
+ * has no previous version, and the revert never deletes files.
+ */
+export const RevertDiffBaselineRequestSchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+    sessionId: z.string().min(1),
+  })
+  .openapi('RevertDiffBaselineRequest');
+
+export type RevertDiffBaselineRequest = z.infer<typeof RevertDiffBaselineRequestSchema>;
+
 export type RenameEntryRequest = z.infer<typeof RenameEntryRequestSchema>;
 
 /** Response for a successful delete or rename. */

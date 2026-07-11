@@ -213,6 +213,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       capturedFrom: 'empty',
     }),
     advanceDiffBaseline: vi.fn().mockResolvedValue(undefined),
+    diffBaselineMediaUrl: vi.fn(
+      (cwd: string, filePath: string, sessionId: string) =>
+        `http://mock/api/diff/baseline/raw?cwd=${cwd}&path=${filePath}&sessionId=${sessionId}`
+    ),
+    revertDiffBaseline: vi.fn().mockResolvedValue(undefined),
     createEntry: vi.fn().mockResolvedValue({ ok: true, path: 'mock-path' }),
     deleteEntry: vi.fn().mockResolvedValue({ ok: true }),
     renameEntry: vi.fn().mockResolvedValue({ ok: true }),

@@ -626,6 +626,44 @@ export interface Transport {
    */
   advanceDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void>;
   /**
+   * Build a same-origin URL that streams a file's BASELINE image bytes — its
+   * pre-edit snapshot for this session, or its git-HEAD content when no
+   * snapshot exists — for the image-diff surface's "before" layer (DOR-212
+   * Chunk B). Current bytes come from {@link mediaUrl}. The path is resolved
+   * within and confined to `cwd` server-side, and only media content types are
+   * served (the raw-file allowlist); the URL 404s when no baseline exists,
+   * which the viewer reads as "this image is new".
+   *
+   * Returns `null` when the transport cannot serve bytes over a URL (the
+   * in-process Obsidian transport) — image diff is a web-only surface,
+   * mirroring the shipped {@link mediaUrl} gap.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - File path, absolute or relative to `cwd`.
+   * @param sessionId - Session whose pre-edit snapshot to serve.
+   */
+  diffBaselineMediaUrl(cwd: string, filePath: string, sessionId: string): string | null;
+  /**
+   * Restore a file's baseline bytes to disk, whole-file — the image diff's
+   * "reject" (DOR-212 Chunk B). Binary-safe, unlike the text-oriented
+   * {@link writeFile}: the server writes the snapshot's own bytes (git-HEAD
+   * fallback), atomically, so no bytes travel from the client. Throws with
+   * `code: 'NO_BASELINE'` (404) when no restorable baseline exists — a file
+   * the agent created this session has no previous version, and the revert
+   * never deletes files. Content-independent and idempotent: it restores the
+   * same pre-session bytes regardless of what is on disk now, so the caller
+   * confirm-gates the action instead of hash-gating the write.
+   *
+   * Web-only alongside {@link diffBaselineMediaUrl}: the in-process transport
+   * throws `'unsupported'` (the image-diff surface is gated off before this
+   * can be reached).
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - File path, absolute or relative to `cwd`.
+   * @param sessionId - Session whose baseline to restore.
+   */
+  revertDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void>;
+  /**
    * Create a new file or directory within `cwd`. Rejects (409, thrown with
    * `code: 'CONFLICT'`) when the target already exists. `content` seeds a new
    * file's bytes (ignored for `type: 'dir'`). The write is atomic for files.
