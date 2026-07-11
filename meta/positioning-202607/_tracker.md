@@ -61,9 +61,9 @@
 - [x] 2026-07-09 — GitHub repo description + topics fixed — Jul 8 (description per `06` tactic #1; swapped 4 stack topics for codex/opencode/orchestration/meta-harness at the 20-topic cap)
 - [x] 2026-07-11 README overhaul (positioning, 5-min path, honest alpha status) — Jul 19 · positioning PR #156; 5-min path verified + fixed PR #224 (DOR-276): removed the ANTHROPIC_API_KEY footgun that broke Claude-Code-authed users, corrected the cross-project-sessions overclaim, added the alpha-status note + prerequisites; applied to repo + npm READMEs. Live walkthrough: cockpit reachable in seconds
 - [x] 2026-07-06 — Site fixes wave 1: 14 docsUrl 404s, Slack contradiction, FAQ corrections (`07` §1) — Jul 26 (PR #92)
-- [x] 2026-07-11 Social-profile coherence (X bio, org page, footer) — Jul 12 · X bio (4 options) + GitHub org description/README drafted for founder review, not posted (`12-founder-copy-draft.md`); footer nav gained a `/pricing` link alongside Security/Privacy/Terms/Cookies (DOR-295)
+- [x] 2026-07-11 Social-profile coherence (X bio, org page, footer) — Jul 12 · X bio (4 options) + GitHub org description/README drafted for founder review, not posted (`12-founder-copy-draft.md`); footer nav gained a `/pricing` link alongside Security/Privacy/Terms/Cookies (DOR-295, PR #231)
 - [ ] GitHub Sponsors live — Jul 12
-- [x] 2026-07-11 Pricing-philosophy page (what stays free forever) (`07` §4.7) — Jul 26 · shipped `/pricing` (DOR-295): free core in writing, where money will come in later (our servers or multi-person coordination, no dollar figures pre-announced), the rug-pull-vaccine promise; footer + sitemap updated
+- [x] 2026-07-11 Pricing-philosophy page (what stays free forever) (`07` §4.7) — Jul 26 · shipped `/pricing` (DOR-295, PR #231): free core in writing, where money will come in later (our servers or multi-person coordination, no dollar figures pre-announced), the rug-pull-vaccine promise; footer + sitemap updated
 - [ ] Awesome-list + directory submissions (agent-drafted PRs) — Jul 26
 - [ ] First build-in-public X post ("5 stars, 44 releases, we never launched") — Jul 10
 
