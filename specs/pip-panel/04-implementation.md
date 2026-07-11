@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 6 / 7
+**Tasks Completed:** 7 / 7
 
 ## Session
 
@@ -24,6 +24,11 @@
 - Task #2.2: Mount PipHost in both shells + route-persistence test — Mona/Sonnet, DONE (same-DOM-node assertion across rerender; app-shell-slots mock extended with PIP fields — required, PipHost is now real in AppShell)
 - Task #3.1: Dev Playground showcase — Pia/Sonnet, DONE (one FloatingPanel section: open A/B replace proof + close; manual browser check deferred to batch 4)
 - Task #3.2: Changelog fragment — Chip/Sonnet, DONE (deleted 2 auto-stubs, wrote 260711-154357-pip-panel-primitive.md)
+- Task #3.3: Final a11y + design-token review, full verify — Vera/Opus, DONE (audit clean, zero fixes needed; pnpm verify: 441 files / 4925 tests pass; use-session-submit teardown race is a pre-existing full-run flake, green in isolation)
+
+## Known Issues
+
+- Keyboard drag/resize gap: panel move/resize is pointer-only in v1 (close/restore fully keyboard-reachable). Intentional scope decision (spec D8/task 3.3); revisit if review asks.
 
 ## Files Modified/Created
 
@@ -43,10 +48,6 @@
 
 - `apps/client/src/layers/shared/ui/__tests__/floating-panel.test.tsx` (new, 13 tests)
 - `apps/client/src/layers/shared/model/app-store/__tests__/app-store-pip.test.ts` (new, 7 tests)
-
-## Known Issues
-
-_(None yet)_
 
 ## Implementation Notes
 
