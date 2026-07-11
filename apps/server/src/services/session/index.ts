@@ -42,6 +42,12 @@ export { reconstructHistoryFromEvents } from './event-log-history.js';
 export { SessionEventStore } from './session-event-store.js';
 export { readLogBackedHistory } from './log-backed-history.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './ring-buffer.js';
+export { DevtoolsCaptureStore, devtoolsCaptureStore } from './devtools-capture-store.js';
+export type {
+  CaptureBuffer,
+  CaptureBufferView,
+  DevtoolsScreenshotEntry,
+} from './devtools-capture-store.js';
 export { triggerTurn, DetachedTurnLifecycle, CANONICAL_ID_TIMEOUT_MS } from './trigger-turn.js';
 export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
 export { withStallGuard } from './stall-guard.js';

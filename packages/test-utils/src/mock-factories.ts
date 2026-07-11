@@ -185,6 +185,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         `/api/workbench/serve/mock-token/${filePath ?? 'index.html'}?cwd=${cwd}`
     ),
     createProxyUrl: vi.fn(async (port: number) => `/api/workbench/proxy/mock-token/?port=${port}`),
+    ingestDevtoolsCapture: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
     // (supported); tests that need the DirectTransport path override
     // `supportsTerminal: false`.

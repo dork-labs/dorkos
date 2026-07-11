@@ -13,3 +13,4 @@ export {
   type WorkbenchTokenErrorCode,
 } from './token.js';
 export { proxyToLocalhost, stripFrameAncestors } from './proxy.js';
+export { injectDevtoolsScript, DEVTOOLS_AGENT_SCRIPT } from './devtools-inject.js';

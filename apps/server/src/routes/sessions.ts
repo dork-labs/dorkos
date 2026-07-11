@@ -25,6 +25,7 @@ import {
 } from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
+import { sessionDevtoolsIngestHandler } from './session-devtools.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -603,6 +604,11 @@ router.post(
 // Semantics: mirrors /messages (fresh turn via triggerTurn, 202, turn streams
 // over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
 router.post('/:id/ui-action', asyncHandler(sessionUiActionHandler));
+
+// POST /api/sessions/:id/devtools/ingest — DevTools bridge capture sink (DOR-213).
+// Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.
+// The handler lives in `session-devtools.ts` to keep this file under the size rule.
+router.post('/:id/devtools/ingest', asyncHandler(sessionDevtoolsIngestHandler));
 
 // POST /api/sessions/:id/mcp-app/resource — Read a ui:// MCP App resource
 // (SEP-1865) for client rendering. The handler lives in

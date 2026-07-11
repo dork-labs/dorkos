@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import type { BrowserHistoryState } from '@/layers/shared/model';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 import {
   classifyBrowserTarget,
   describeAddress,
@@ -101,6 +102,13 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
 
   const currentUrl = history[cursor];
   const target = useMemo(() => classifyBrowserTarget(currentUrl), [currentUrl]);
+
+  // DevTools bridge seam (DOR-213): relay the served/proxied preview's console +
+  // network to the attached session. The shim talks only to this frame's parent
+  // (never `/api/*`); this hook is that parent. Inert for external frames (no
+  // shim is injected there) and when no session is attached.
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  useDevtoolsBridge({ iframeRef, documentId, logicalUrl: currentUrl });
 
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<ResolveError>(null);
@@ -200,6 +208,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         reloadNonce={reloadNonce}
         title={content.title ?? 'Embedded browser'}
         onOpenExternally={openExternally}
+        iframeRef={iframeRef}
       />
     </div>
   );
@@ -311,6 +320,8 @@ interface BrowserBodyProps {
   reloadNonce: number;
   title: string;
   onOpenExternally: () => void;
+  /** Ref attached to the rendered iframe so the DevTools bridge can identify it. */
+  iframeRef: React.RefObject<HTMLIFrameElement | null>;
 }
 
 /** The frame (or a message) for the current navigation state. */
@@ -321,6 +332,7 @@ function BrowserBody({
   reloadNonce,
   title,
   onOpenExternally,
+  iframeRef,
 }: BrowserBodyProps) {
   if (target.mode === 'blocked') {
     return <BrowserMessage>This address can’t be displayed for security reasons.</BrowserMessage>;
@@ -346,6 +358,7 @@ function BrowserBody({
       <iframe
         // Remount on reload so the frame reloads even when the src is unchanged.
         key={`${resolvedSrc}:${reloadNonce}`}
+        ref={iframeRef}
         src={resolvedSrc}
         sandbox={sandbox}
         className="min-h-0 w-full flex-1 border-0"

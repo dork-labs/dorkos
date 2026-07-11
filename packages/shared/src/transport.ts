@@ -82,7 +82,12 @@ import type {
   OllamaPullResult,
 } from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
-import type { UiActionRequest, McpAppResourceRequest, McpAppResourceResponse } from './schemas.js';
+import type {
+  UiActionRequest,
+  McpAppResourceRequest,
+  McpAppResourceResponse,
+  DevtoolsIngest,
+} from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
@@ -537,6 +542,20 @@ export interface Transport {
    * @param port - Localhost port of the dev server to proxy (1–65535).
    */
   createProxyUrl(port: number): Promise<string | null>;
+  /**
+   * Relay a DevTools capture batch from the embedded browser preview to the
+   * server's per-session buffer (DOR-213), via `POST /sessions/:id/devtools/ingest`.
+   *
+   * The injected in-page shim posts captures to the client (`window.parent`),
+   * never to `/api/*`; this client — same-origin and authenticated — is the
+   * credentialed party that forwards them here. Best-effort and fire-and-forget:
+   * a preview that can't be reached simply produces no capture. `DirectTransport`
+   * no-ops (the embedded browser is web-only already).
+   *
+   * @param sessionId - The session whose preview produced the batch.
+   * @param batch - The validated console/network (and navigation) capture batch.
+   */
+  ingestDevtoolsCapture(sessionId: string, batch: DevtoolsIngest): Promise<void>;
 
   // --- Workbench file service (explorer + viewers; DOR-217) ---
 

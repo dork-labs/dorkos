@@ -31,6 +31,34 @@ export const WORKBENCH = {
   SIGNED_URL_TTL_MS: 30 * 60 * 1000,
   /** Request timeout (ms) when the localhost proxy calls the dev server. */
   PROXY_TIMEOUT_MS: 30 * 1000,
+  /**
+   * DevTools capture ring-buffer caps per session (DOR-213). Bounded so memory
+   * is O(cap), not O(page lifetime): once full, the oldest entry is dropped.
+   * Console keeps more than network because a noisy page logs far more lines
+   * than it makes requests.
+   */
+  DEVTOOLS_CONSOLE_BUFFER: 500,
+  DEVTOOLS_NETWORK_BUFFER: 200,
+  /**
+   * Approximate per-session byte budget across both capture rings (measured as
+   * serialized-JSON chars of the retained entries). The count caps alone don't
+   * bound memory — the schema permits ~56 KB per console entry, so 500 max-size
+   * entries would retain ~28 MB. Past the budget, the oldest entries evict
+   * first. A typical noisy page retains a few hundred KB at most, so 1 MB never
+   * trims legitimate captures.
+   */
+  DEVTOOLS_SESSION_MAX_BYTES: 1_048_576,
+  /**
+   * Screenshots are single-slot (latest wins). The slot exists now; the capture
+   * round-trip that fills it lands with `browser_screenshot` in a follow-up.
+   */
+  DEVTOOLS_SCREENSHOT_BUFFER: 1,
+  /**
+   * Max sessions holding a live capture buffer. A side store keyed by session id
+   * is dropped on session close, but this caps it against leaks (a client that
+   * relays then vanishes) by evicting the least-recently-updated buffer.
+   */
+  DEVTOOLS_MAX_SESSIONS: 50,
 } as const;
 
 export const WATCHER = {

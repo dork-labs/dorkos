@@ -40,6 +40,7 @@ import { listPendingInteractions } from './pending-interactions.js';
 import { logger } from '../../lib/logger.js';
 import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
+import { devtoolsCaptureStore } from './devtools-capture-store.js';
 import type { SessionEventStore } from './session-event-store.js';
 
 /**
@@ -886,6 +887,9 @@ export function peekProjector(sessionId: string): SessionStateProjector | undefi
  */
 export function disposeProjector(sessionId: string): void {
   projectors.delete(sessionId);
+  // Drop the session's DevTools capture buffer alongside its projector — the
+  // preview is gone, and the buffer must not outlive the session (DOR-213).
+  devtoolsCaptureStore.dropSession(sessionId);
 }
 
 /**
@@ -933,6 +937,9 @@ export function rekeyProjector(oldId: string, newId: string): void {
   }
   projectors.set(newId, projector);
   projectors.delete(oldId);
+  // Carry any DevTools capture buffer across the same rekey so a preview opened
+  // under the request UUID keeps feeding the canonical session (DOR-213).
+  devtoolsCaptureStore.rekeySession(oldId, newId);
   // Re-announce under the canonical id, carrying the request UUID as retired:
   // transitions broadcast before the rekey landed in client stores under the
   // UUID, and no session_removed will ever fire for it — without the retire

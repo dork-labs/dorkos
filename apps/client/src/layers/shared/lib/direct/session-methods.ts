@@ -194,6 +194,15 @@ export function createDirectSessionMethods(
       return { sessionId: result.canonicalId ?? sessionId };
     },
 
+    /**
+     * No-op: the embedded browser preview (DOR-216/DOR-213) is a web-only
+     * surface, so there is never a capture to relay in the in-process Obsidian
+     * transport. Present to satisfy the Transport contract.
+     */
+    async ingestDevtoolsCapture(): Promise<void> {
+      /* web-only surface — nothing to relay in-process */
+    },
+
     // ── Tool Approval ───────────────────────────────────────────────────────
 
     async approveTool(

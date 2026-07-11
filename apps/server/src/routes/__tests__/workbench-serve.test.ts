@@ -35,6 +35,11 @@ beforeAll(async () => {
   // /var → /private/var); the sign route canonicalizes cwd the same way at mint.
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wb-serve-')));
   await fs.writeFile(path.join(root, 'index.html'), '<h1>hello preview</h1>', 'utf8');
+  await fs.writeFile(
+    path.join(root, 'page.html'),
+    '<html><head><title>t</title></head><body><h1>hi</h1></body></html>',
+    'utf8'
+  );
   await fs.writeFile(path.join(root, 'style.css'), 'body{color:red}', 'utf8');
   // A file OUTSIDE the served root, to prove the path-escape rejection is real.
   outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wb-outside-')));
@@ -121,12 +126,50 @@ describe('GET /api/workbench/serve/:token/*', () => {
   });
 });
 
+describe('GET /api/workbench/serve — DevTools shim injection (DOR-213)', () => {
+  const validToken = () => workbenchTokenSigner.mint({ kind: 'serve', cwd: root });
+
+  it('injects the shim as the first <head> child of an HTML file, with a recomputed Content-Length', async () => {
+    const res = await request(app).get(`/api/workbench/serve/${validToken()}/page.html`);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.text).toMatch(/<head><script>/);
+    expect(res.text).toContain('__dorkosDevtools');
+    expect(res.text).toContain('<h1>hi</h1>');
+    // Length must reflect the injected body, not the on-disk file size.
+    expect(Number(res.headers['content-length'])).toBe(Buffer.byteLength(res.text));
+  });
+
+  it('leaves a non-HTML asset byte-for-byte unchanged (no shim, no length change)', async () => {
+    const res = await request(app).get(`/api/workbench/serve/${validToken()}/style.css`);
+    expect(res.status).toBe(200);
+    expect(res.text).toBe('body{color:red}');
+    expect(res.text).not.toContain('__dorkosDevtools');
+    expect(Number(res.headers['content-length'])).toBe(Buffer.byteLength('body{color:red}'));
+  });
+});
+
 describe('ALL /api/workbench/proxy/:token/*', () => {
   let upstream: http.Server;
   let upstreamPort: number;
 
   beforeAll(async () => {
     upstream = http.createServer((req, res) => {
+      // A non-HTML asset must stream through the proxy untouched.
+      if (req.url?.endsWith('.css')) {
+        res.setHeader('Content-Type', 'text/css');
+        res.end('p{color:blue}');
+        return;
+      }
+      // A page declaring a non-UTF-8 charset: 0xE9 is 'é' in latin-1 but an
+      // invalid byte sequence in UTF-8 — a UTF-8 decode would corrupt it.
+      if (req.url?.endsWith('/latin1.html')) {
+        res.setHeader('Content-Type', 'text/html; charset=iso-8859-1');
+        res.end(
+          Buffer.from([...Buffer.from('<html><body>caf'), 0xe9, ...Buffer.from('</body></html>')])
+        );
+        return;
+      }
       // A dev server that would refuse framing — the proxy must strip these.
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
@@ -162,6 +205,61 @@ describe('ALL /api/workbench/proxy/:token/*', () => {
     const res = await request(app).get(`/api/workbench/proxy/${token}/foo%3Fbar.js`);
     expect(res.status).toBe(200);
     expect(res.text).toContain('/foo%3Fbar.js');
+  });
+
+  it('injects the shim into a proxied HTML page and still strips frame-ancestors', async () => {
+    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+    const res = await request(app).get(`/api/workbench/proxy/${token}/`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('__dorkosDevtools');
+    expect(res.text).toContain('dev server');
+    // Composes with the framing transform — both apply on the same HTML branch.
+    expect(res.headers['content-security-policy']).not.toContain('frame-ancestors');
+    expect(Number(res.headers['content-length'])).toBe(Buffer.byteLength(res.text));
+  });
+
+  it('sends injected HTML with an explicit charset=utf-8 content-type', async () => {
+    // The upstream declared no charset. The ~8 KB shim can push an in-document
+    // <meta charset> past the browser's 1024-byte prescan, so the response we DO
+    // inject into must declare its (UTF-8) encoding on the header.
+    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+    const res = await request(app).get(`/api/workbench/proxy/${token}/`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('__dorkosDevtools');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+  });
+
+  it('relays non-UTF-8 HTML byte-for-byte UNINSTRUMENTED, keeping its charset header', async () => {
+    // A UTF-8 text() decode would corrupt latin-1 bytes while the header still
+    // claimed iso-8859-1 — so the proxy must not inject here at all.
+    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+    const res = await request(app)
+      .get(`/api/workbench/proxy/${token}/latin1.html`)
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('iso-8859-1');
+    const body = res.body as Buffer;
+    const original = Buffer.concat([
+      Buffer.from('<html><body>caf'),
+      Buffer.from([0xe9]),
+      Buffer.from('</body></html>'),
+    ]);
+    // Byte-for-byte: the 0xE9 latin-1 byte survives and no shim was inserted.
+    expect(body.equals(original)).toBe(true);
+    expect(body.toString('latin1')).not.toContain('__dorkosDevtools');
+  });
+
+  it('streams a proxied non-HTML asset byte-for-byte unchanged (no shim)', async () => {
+    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+    const res = await request(app).get(`/api/workbench/proxy/${token}/app.css`);
+    expect(res.status).toBe(200);
+    expect(res.text).toBe('p{color:blue}');
+    expect(res.text).not.toContain('__dorkosDevtools');
   });
 
   it('returns 502 when nothing is listening on the target port (no arbitrary-host reach)', async () => {
