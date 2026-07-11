@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 3 / 7
+**Tasks Completed:** 6 / 7
 
 ## Session
 
@@ -21,6 +21,9 @@
 - Task #1.1: Build the floating-panel primitive (drag, resize, clamp, chrome, a11y) — Petra/Opus, DONE (13 tests)
 - Task #1.2: Add the PIP state slice with persisted geometry — Sable/Sonnet, DONE (7 tests; app-store suite 69/69 green)
 - Task #2.1: Build the PipHost content-routing feature — Hollis/Opus, DONE (6 tests; batch-1 regression green; node-identity remount test instead of mount-spy, deliberate)
+- Task #2.2: Mount PipHost in both shells + route-persistence test — Mona/Sonnet, DONE (same-DOM-node assertion across rerender; app-shell-slots mock extended with PIP fields — required, PipHost is now real in AppShell)
+- Task #3.1: Dev Playground showcase — Pia/Sonnet, DONE (one FloatingPanel section: open A/B replace proof + close; manual browser check deferred to batch 4)
+- Task #3.2: Changelog fragment — Chip/Sonnet, DONE (deleted 2 auto-stubs, wrote 260711-154357-pip-panel-primitive.md)
 
 ## Files Modified/Created
 

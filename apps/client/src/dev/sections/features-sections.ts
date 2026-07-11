@@ -3,7 +3,7 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Feature component sections from FeaturesPage.
  *
- * Sources: AgentIdentityShowcases, AgentSidebarShowcases, RelayShowcases, MeshShowcases, TasksShowcases.
+ * Sources: AgentIdentityShowcases, AgentSidebarShowcases, RelayShowcases, MeshShowcases, TasksShowcases, PipPanelShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
   // PersonalityPickerShowcases
@@ -175,5 +175,13 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Tasks',
     keywords: ['preset', 'card', 'schedule', 'toggle', 'selectable', 'cron', 'tasks'],
+  },
+  // PipPanelShowcases
+  {
+    id: 'floatingpanel',
+    title: 'FloatingPanel',
+    page: 'features',
+    category: 'PIP Panel',
+    keywords: ['pip', 'panel', 'floating', 'drag', 'resize', 'mini-player', 'pop out'],
   },
 ];

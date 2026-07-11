@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 
 // ── Route-aware mock: control the pathname returned by useRouterState ──
+//
+// Mirrors apps/client/src/__tests__/app-shell-slots.test.tsx. This test proves
+// PipHost survives a simulated route change, so — unlike that file — the real
+// app-store is left unmocked: PipHost reads pipContent/pipGeometry off it.
 
 let mockPathname = '/';
 
@@ -105,35 +109,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   };
 });
 
-// ── Mock shared model hooks ──
-
-let mockSidebarLevel: 'dashboard' | 'session' = 'dashboard';
-
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state: Record<string, unknown> = {
-      sidebarOpen: true,
-      setSidebarOpen: vi.fn(),
-      isStreaming: false,
-      activeForm: null,
-      isWaitingForUser: false,
-      tasksBadgeCount: 0,
-      setOnboardingStep: vi.fn(),
-      sidebarLevel: mockSidebarLevel,
-      setSidebarLevel: vi.fn((level: string) => {
-        mockSidebarLevel = level as 'dashboard' | 'session';
-      }),
-      loadRightPanelState: vi.fn(),
-      toggleRightPanel: vi.fn(),
-      pipContent: null,
-      pipGeometry: null,
-      closePip: vi.fn(),
-      setPipGeometry: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-}));
-
 vi.mock('react-resizable-panels', () => ({
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   PanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -202,81 +177,47 @@ function renderAppShell() {
   );
 }
 
-describe('AppShell slot integration', () => {
+describe('PIP panel route persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSidebarLevel = 'dashboard';
+    mockPathname = '/';
     mockTransport = createMockTransport();
+    localStorage.clear();
+    act(() => {
+      useAppStore.setState({ pipContent: null, pipGeometry: null });
+    });
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  describe('sidebar slots', () => {
-    it('renders DashboardSidebar at /', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
+  it('keeps the same PipHost DOM node mounted across a simulated route change', () => {
+    const { rerender } = renderAppShell();
+
+    act(() => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Route test' });
     });
 
-    it('renders DashboardSidebar at /session by default', () => {
-      mockPathname = '/session';
-      mockSidebarLevel = 'dashboard';
-      renderAppShell();
-      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
-    });
+    const panel = screen.getByRole('complementary');
+    expect(panel).toHaveAccessibleName('Route test');
 
-    it('renders SessionSidebar at /session when drilled into session level', () => {
-      mockPathname = '/session';
-      mockSidebarLevel = 'session';
-      renderAppShell();
-      expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
-    });
-  });
+    // Simulate navigation: change the mocked route and rerender the SAME tree.
+    mockPathname = '/session';
+    rerender(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <TransportProvider transport={mockTransport}>
+          <TooltipProvider>
+            <AppShell />
+          </TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
 
-  describe('header slots', () => {
-    it('renders DashboardHeader at /', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('dashboard-header')).toBeInTheDocument();
-      expect(screen.queryByTestId('session-header')).not.toBeInTheDocument();
-    });
-
-    it('renders SessionHeader at /session', () => {
-      mockPathname = '/session';
-      renderAppShell();
-      expect(screen.getByTestId('session-header')).toBeInTheDocument();
-      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('static chrome', () => {
-    it('renders SidebarFooterBar regardless of route', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
-
-      cleanup();
-
-      mockPathname = '/session';
-      renderAppShell();
-      expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
-    });
-
-    it('renders the app-shell container on both routes', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
-
-      cleanup();
-
-      mockPathname = '/session';
-      renderAppShell();
-      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
-    });
+    const panelAfterNavigation = screen.getByRole('complementary');
+    expect(panelAfterNavigation).toBe(panel);
+    expect(panelAfterNavigation).toHaveAccessibleName('Route test');
   });
 });
