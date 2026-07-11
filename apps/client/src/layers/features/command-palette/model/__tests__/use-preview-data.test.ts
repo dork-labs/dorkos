@@ -77,12 +77,28 @@ vi.mock('@/layers/entities/mesh', () => ({
   }),
 }));
 
+// Every test below `await import()`s the module under test rather than a
+// static top-level import, matching this directory's convention for suites
+// that `vi.mock(..., importOriginal)` (see use-agent-frecency.test.ts,
+// use-palette-items.test.ts): only the FIRST import pays real module-transform
+// cost, later ones resolve from cache. Under severe cross-process CPU
+// contention (several concurrent package suites on one box) that cold
+// transform can outrun vitest's 5s default test timeout — reproduced directly
+// (this suite's first test timed out at 5005ms under a synthetic full-load
+// stress run). The explicit timeout below is slack for that cold-import cost,
+// not a sign the hook itself is slow.
+const COLD_IMPORT_TEST_TIMEOUT_MS = 15_000;
+
 describe('usePreviewData', () => {
-  it('returns session count for the agent CWD', async () => {
-    const { usePreviewData } = await import('../use-preview-data');
-    const { result } = renderHook(() => usePreviewData('agent-1', '/projects/auth'));
-    expect(result.current.sessionCount).toBe(4);
-  });
+  it(
+    'returns session count for the agent CWD',
+    async () => {
+      const { usePreviewData } = await import('../use-preview-data');
+      const { result } = renderHook(() => usePreviewData('agent-1', '/projects/auth'));
+      expect(result.current.sessionCount).toBe(4);
+    },
+    COLD_IMPORT_TEST_TIMEOUT_MS
+  );
 
   it('returns at most 3 recent sessions', async () => {
     const { usePreviewData } = await import('../use-preview-data');
