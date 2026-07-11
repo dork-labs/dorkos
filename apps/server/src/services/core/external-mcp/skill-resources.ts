@@ -77,7 +77,12 @@ async function listWorkspaceSkills(cwd: string): Promise<ParsedSkill<SkillFrontm
     const filePath = join(skillsRoot, entry.name, SKILL_FILENAME);
     try {
       const content = await readFile(filePath, 'utf-8');
-      const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
+      // Consumption path: tolerate a frontmatter name that differs from the
+      // directory name — projected plugin skills are namespaced `<pkg>__<name>`
+      // and third-party CC skills legitimately diverge (DOR-263).
+      const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
+        requireNameMatch: false,
+      });
       if (!parsed.ok) {
         logger.debug('[skill-resources] skipping unparseable skill', {
           skill: entry.name,

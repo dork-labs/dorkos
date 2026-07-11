@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockSecretStores = new Map<string, Map<string, string>>();
 
 vi.mock('@dorkos/shared/extension-secrets', () => ({
-  ExtensionSecretStore: vi.fn().mockImplementation((extensionId: string) => {
+  ExtensionSecretStore: vi.fn().mockImplementation(function (extensionId: string) {
     if (!mockSecretStores.has(extensionId)) {
       mockSecretStores.set(extensionId, new Map());
     }

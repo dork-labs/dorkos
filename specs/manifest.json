@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260711-031801",
+      "slug": "task-completion-notifications",
+      "title": "Automatic task-completion notifications (\"your agent finished\")",
+      "created": "2026-07-10",
+      "status": "implemented",
+      "adr": "260711-031624",
+      "linearIssue": "DOR-240"
+    },
+    {
       "id": "260710-025100",
       "slug": "durable-event-log",
       "title": "Durable EventLog: stateless-runtime transcripts survive server restart",

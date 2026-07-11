@@ -16,10 +16,10 @@ async function flushRaf() {
 }
 
 describe('useDeepLinkScroll', () => {
-  let scrollIntoViewSpy: ReturnType<typeof vi.fn>;
+  let scrollIntoViewSpy: ReturnType<typeof vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>>;
 
   beforeEach(() => {
-    scrollIntoViewSpy = vi.fn();
+    scrollIntoViewSpy = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
     Element.prototype.scrollIntoView = scrollIntoViewSpy;
   });
 

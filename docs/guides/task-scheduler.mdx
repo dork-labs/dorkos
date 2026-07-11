@@ -62,6 +62,27 @@ Short answer: yes, once it's live in a real DorkOS install. Schedules always sho
 
 If you're following this guide in a normal DorkOS install, you're already in the environment where schedules fire. Nothing extra to do.
 
+## Get a message when a task finishes
+
+DorkOS can message you the moment a scheduled task wraps up, so you do not have to sit and watch it. The message names the task, how long it took, and the first line of what it produced. This works on its own. The agent does not have to do anything.
+
+To turn it on:
+
+1. Open the agent, go to **Channels**, and connect a channel like Telegram.
+2. Bind the channel and open its **Advanced** settings.
+3. Turn on **Message me when tasks finish**.
+4. Turn on **Agent can start conversations**. This is the real switch. Nothing gets sent until you allow the agent to reach you.
+
+Failures always reach you. Successful runs reach you only while the switch is on, so you can mute the routine "all good" pings and still hear about breaks.
+
+<Callout type="info">
+  A chat app like Telegram will not let a bot text you until you have messaged it first. Until you
+  do, the channel shows a one-line reminder to "message your bot once." After your first message,
+  notifications start flowing.
+</Callout>
+
+Cancelled runs never send a message, since you cancelled them yourself. Tasks that are not linked to an agent do not send a message yet.
+
 ## Enabling or disabling Tasks
 
 Tasks ships on by default, so most people never need to touch this. If someone turned it off, or you want to force it on or off for a specific run:

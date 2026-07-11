@@ -98,12 +98,20 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  *   relevant with `withUiTemplates`). A dropped template does not fail the
  *   skill here — `validateSkillStructure` is the surface that reports it as
  *   an error. Defaults to a no-op.
+ * @param options.requireNameMatch - Forwarded to {@link parseSkillFile}: when
+ *   `false`, a frontmatter `name` that differs from the directory name does
+ *   not fail the parse (Claude Code compatibility, DOR-263). Defaults to `true`.
  * @returns Array of parse results (both successes and failures)
  */
 export async function scanSkillDirectory<T>(
   dir: string,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-  options?: { includeMissing?: boolean; withUiTemplates?: boolean; logger?: Logger }
+  options?: {
+    includeMissing?: boolean;
+    withUiTemplates?: boolean;
+    logger?: Logger;
+    requireNameMatch?: boolean;
+  }
 ): Promise<ParseResult<ParsedSkill<T>>[]> {
   const includeMissing = options?.includeMissing ?? true;
   const withUiTemplates = options?.withUiTemplates ?? false;
@@ -139,7 +147,9 @@ export async function scanSkillDirectory<T>(
       continue;
     }
 
-    const parsed = parseSkillFile(skillPath, content, schema);
+    const parsed = parseSkillFile(skillPath, content, schema, {
+      requireNameMatch: options?.requireNameMatch,
+    });
     if (!parsed.ok || !withUiTemplates) {
       results.push(parsed);
       continue;

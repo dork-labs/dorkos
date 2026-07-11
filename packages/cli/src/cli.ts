@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { checkClaude } from './check-claude.js';
 import { checkCoreExtensions } from './check-core-extensions.js';
+import { checkExtensionCompilation } from './check-extension-compilation.js';
 import { checkForUpdate } from './update-check.js';
 import { maybeShowNewsletterTip } from './newsletter-tip.js';
 import { link } from './terminal-link.js';
@@ -254,6 +255,17 @@ if (process.argv[2] === 'marketplace') {
 // main command flow below.
 const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
 
+// `doctor` runs a read-only setup checklist. Intercept before the top-level
+// parseArgs so it isn't treated as an unknown command, and place it after
+// DORK_HOME is resolved (it reads config) but before any server boot — doctor
+// changes nothing and needs no running server. Dispatch + help live in
+// commands/doctor.ts.
+if (process.argv[2] === 'doctor') {
+  process.env.DORK_HOME = DORK_HOME;
+  const { runDoctor } = await import('./commands/doctor.js');
+  process.exit(await runDoctor(DORK_HOME, process.argv.slice(3)));
+}
+
 // `auth` subcommand has its own flag namespace (`--email`, `--password`).
 // Intercept before the top-level parseArgs call so those flags aren't rejected
 // as unknown options. Operates directly on the local SQLite database and
@@ -343,6 +355,7 @@ Commands:
   cloud login          Link this instance to a DorkOS account
   cloud logout         Unlink this instance from its DorkOS account
   cloud status         Show the linked account, or 'not linked'
+  doctor               Check your setup and report problems in plain words
   cleanup              Remove all DorkOS data
 
 Options:
@@ -386,14 +399,23 @@ if (values['post-install-check']) {
   // packed incorrectly (DOR-245) — unlike a missing Claude Code CLI, this
   // is never something the user can fix, so it always fails the check.
   const coreExtensionsFound = checkCoreExtensions();
+  // Files existing is necessary but not sufficient: server-capable extensions
+  // (marketplace is defaultEnabled) must actually COMPILE via the esbuild JS
+  // API at runtime. DOR-256 shipped a bundle where esbuild was inlined and
+  // could not spawn its native binary, so every such extension silently failed
+  // to compile. Prove compilation works, not just that the source is present.
+  const extensionsCompile = await checkExtensionCompilation();
   console.log(`dorkos ${__CLI_VERSION__}`);
   if (!coreExtensionsFound) {
     console.log('Installation incomplete — bundled core extensions are missing.');
   }
+  if (coreExtensionsFound && !extensionsCompile) {
+    console.log('Installation incomplete — extensions cannot be compiled (esbuild unavailable).');
+  }
   if (!claudeFound) {
     console.log('Installation incomplete — Claude Code CLI is missing.');
   }
-  if (!coreExtensionsFound || !claudeFound) {
+  if (!coreExtensionsFound || !extensionsCompile || !claudeFound) {
     process.exit(1);
   }
   console.log('Installation verified.');

@@ -75,7 +75,8 @@ describe('CodexSessionRegistry', () => {
 
       registry.hydrate([hydratedSession({ id: SESSION_ID, title: 'stale re-run' })]);
       // A live event from the second hydrate would arrive before this upsert.
-      registry.register(OTHER_SESSION_ID);
+      // (Registered WITH a cwd — cwd-less sessions are never announced, DOR-202.)
+      registry.register(OTHER_SESSION_ID, { cwd: '/projects/demo' });
       events.push((await iterator.next()).value as SessionListEvent);
       await iterator.return?.(undefined);
 
@@ -108,6 +109,32 @@ describe('CodexSessionRegistry', () => {
           session: expect.objectContaining({ id: OTHER_SESSION_ID, title: 'Second' }),
         }),
       ]);
+    });
+
+    it('never announces cwd-less sessions on the live stream (DOR-202)', async () => {
+      // Pre-fix, both the inventory snapshot and live pushes announced
+      // cwd-less sessions fleet-wide over /api/events — ghost rows under
+      // every agent, contradicting list()'s "belongs to NO list" rule.
+      registry.hydrate([hydratedSession({ id: SESSION_ID, cwd: undefined })]);
+
+      const iterator = registry.subscribe();
+      const first = iterator.next();
+
+      registry.register(OTHER_SESSION_ID); // cwd-less live push → suppressed
+      registry.recordMessage(OTHER_SESSION_ID, 'first turn', { cwd: '/projects/demo' });
+
+      const event = (await first).value as SessionListEvent;
+      await iterator.return?.(undefined);
+
+      // The first delivered event is the cwd-resolving upsert — the snapshot
+      // skipped the hydrated ghost and the cwd-less register was suppressed.
+      expect(event).toMatchObject({
+        type: 'session_upserted',
+        session: expect.objectContaining({ id: OTHER_SESSION_ID, cwd: '/projects/demo' }),
+      });
+      // Both stay reachable by id.
+      expect(registry.get(SESSION_ID)?.id).toBe(SESSION_ID);
+      expect(registry.get(OTHER_SESSION_ID)?.id).toBe(OTHER_SESSION_ID);
     });
 
     it('emitted events carry copies that do not observe later mutations', async () => {

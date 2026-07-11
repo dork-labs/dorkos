@@ -133,6 +133,49 @@ async function shootGenUiWidgets(page: Page, theme: Theme, rec: RunRecorder): Pr
   await shoot(page, 'gen-ui-widgets', theme, rec);
 }
 
+/**
+ * The accessible name of the `board` cell the drive clicks — row 3, column 3
+ * (1-based, `BoardCell`'s label convention), the square that completes the
+ * seeded opening board's main diagonal (`demo-scenario-tictactoe.ts`).
+ */
+const TICTACTOE_WINNING_CELL_LABEL = 'Row 3, column 3: empty — play here';
+
+/**
+ * Drive the tic-tac-toe board end to end: the intro line and the mid-game
+ * board stream in and settle (a brief hold lets the "board with a few moves
+ * already on" beat read before anything moves), then a REAL click on an empty
+ * cell — the same `POST /api/sessions/:id/ui-action` channel a genuine move
+ * uses — completes the player's diagonal. The mark draws itself instantly
+ * (optimistic placement); the agent's reply streams in with one line of trash
+ * talk, the board's win-line stroke, and a celebrating mood face. Shared by
+ * the still and the loop; `mark()` (loop only) starts the recording the
+ * moment the opening board's content appears, so the loop opens on the same
+ * "board mid-render" beat the still never shows.
+ */
+async function driveTicTacToe(page: Page, mark?: LoopMark): Promise<void> {
+  await openLiveTurn(page, 'demo-gen-ui-tictactoe', "Let's finish this one", 'atlas');
+  // The intro line is the money content — start the loop the moment it appears, so
+  // the recording carries the board's own draw-on, not just the aftermath.
+  await page.getByText('Your move', { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  mark?.();
+  // The outro lands once the board has fully drawn in.
+  await page.getByText("Board's set", { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  await sleep(1200); // hold on the settled opening board before the click
+  await page
+    .getByRole('button', { name: TICTACTOE_WINNING_CELL_LABEL })
+    .click({ timeout: WAIT_MS });
+  // The mood bubble is the reply turn's final content — once it lands, the
+  // win-line has already started its draw (it fires on the same mount).
+  await page.getByText('Well played', { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  await sleep(1500); // let the win-line stroke, mood entrance, and confetti settle
+}
+
+/** Capture the tic-tac-toe widget mid-celebration (drawn win-line, celebrating mood face). */
+async function shootTicTacToe(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
+  await driveTicTacToe(page);
+  await shoot(page, 'gen-ui-tictactoe', theme, rec);
+}
+
 /** Capture a tool-approval prompt. */
 async function shootToolApproval(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await openLiveTurn(page, 'demo-approval', 'Migrate the auth tokens table', 'atlas');
@@ -443,6 +486,9 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   await attemptShot('gen-ui-widgets', 'gen-ui-widgets-light', () =>
     shootGenUiWidgets(page, theme, rec)
   );
+  await attemptShot('gen-ui-tictactoe', 'gen-ui-tictactoe-light', () =>
+    shootTicTacToe(page, theme, rec)
+  );
   await attemptShot('subagents', 'subagents-light', () => shootSubagents(page, theme, rec));
   await attemptShot('multi-session', 'multi-session-light', () =>
     shootMultiSession(page, theme, rec)
@@ -497,6 +543,14 @@ export async function captureLoops(browser: Browser, rec: RunRecorder): Promise<
       surface: 'gen-ui-widgets',
       durationMs: 3000,
       drive: driveGenUiWidgets,
+    },
+    // The board settles, a real click completes the diagonal, and the reply
+    // streams in with the win-line stroke and a celebrating mood face — an
+    // extra tail hold lets the confetti and mood idle fully play out.
+    {
+      surface: 'gen-ui-tictactoe',
+      durationMs: 2200,
+      drive: driveTicTacToe,
     },
     // The fleet money shot: sidebar rows pulsing while four sessions stream.
     {

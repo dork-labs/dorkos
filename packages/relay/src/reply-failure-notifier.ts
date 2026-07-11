@@ -48,13 +48,20 @@ export interface ReplyFailureNotifierDeps {
  * @returns A notifier that settles a waiting caller on delivery failure.
  */
 export function createReplyFailureNotifier(deps: ReplyFailureNotifierDeps): ReplyFailureNotifier {
-  return async (replyTo, reason, envelope) => {
+  return async (replyTo, reason, _envelope) => {
     if (!REPLY_INBOX_PREFIXES.some((prefix) => replyTo.startsWith(prefix))) return;
     if (!deps.hasConsumer(replyTo)) return;
 
+    // The notice is a system-generated delivery signal, NOT another hop in the
+    // failed message's chain — it must be deliverable precisely when the
+    // original budget is exhausted. It previously inherited the rejected
+    // envelope's hopCount (+1), so a "max hops exceeded" rejection produced a
+    // notice that the publish pipeline's own budget gate rejected in turn,
+    // silently leaving the waiting caller to time out. A fresh default budget
+    // always passes the gate; loops remain impossible because the notice
+    // carries no replyTo and only ever targets reply inboxes.
     const options: PublishOptions = {
       from: DELIVERY_FAILURE_SENDER,
-      budget: { hopCount: envelope.budget.hopCount + 1 },
     };
     await deps.publish(replyTo, { type: 'error', data: { message: reason } }, options);
     await deps.publish(replyTo, { type: 'done' }, options);

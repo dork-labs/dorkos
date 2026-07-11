@@ -238,6 +238,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
             canInitiate: editDialog.binding.canInitiate,
             canReply: editDialog.binding.canReply,
             canReceive: editDialog.binding.canReceive,
+            notifyOnTaskComplete: editDialog.binding.notifyOnTaskComplete,
           }}
           adapterName={editDialog.adapterName}
           agentName={getAgentDisplayName(agent)}

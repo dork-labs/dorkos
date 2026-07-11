@@ -34,8 +34,8 @@
     "@dorkos/skills": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@ngrok/ngrok": "^1.7.0",
-    "@openai/codex": "0.142.5",
-    "@openai/codex-sdk": "~0.142.5",
+    "@openai/codex": "0.144.1",
+    "@openai/codex-sdk": "~0.144.1",
     "@opencode-ai/sdk": "^1.17.13",
     "@scalar/express-api-reference": "^0.9.8",
     "better-auth": "^1.6",
@@ -68,10 +68,10 @@
     "@types/semver": "^7.7.1",
     "@types/ws": "^8.18.1",
     "@types/supertest": "^7.2.0",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "^4.1.10",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.10"
   }
 }

@@ -148,39 +148,80 @@ describe('validatePackage', () => {
     });
   });
 
-  describe('SKILL_INVALID', () => {
-    it('reports SKILL_INVALID when a bundled SKILL.md has a name/dir mismatch', async () => {
+  describe('SKILL_NAME_MISMATCH', () => {
+    it('warns (not errors) when a bundled SKILL.md has a name/dir mismatch', async () => {
       const dir = await tempDir();
-      const pkg = path.join(dir, 'bad-skill-pkg');
+      const pkg = path.join(dir, 'mismatch-skill-pkg');
 
       await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
         schemaVersion: 1,
-        name: 'bad-skill-pkg',
+        name: 'mismatch-skill-pkg',
         version: '1.0.0',
         type: 'plugin',
-        description: 'A plugin with a malformed SKILL.md',
+        description: 'A plugin with a name-mismatched SKILL.md',
         license: 'MIT',
         tags: [],
         layers: ['skills'],
         extensions: [],
       });
       await writeJson(path.join(pkg, CLAUDE_PLUGIN_MANIFEST_PATH), {
-        name: 'bad-skill-pkg',
+        name: 'mismatch-skill-pkg',
         version: '1.0.0',
         description: 'plugin manifest',
       });
 
-      // Skill directory called "right-name" but frontmatter declares
-      // a different name — parser rejects this with an error.
+      // Skill directory called "writing-rules" but frontmatter declares a
+      // different name — the exact shape Anthropic's real `hookify` plugin
+      // ships. Claude Code accepts it (skills are keyed by directory name),
+      // so a superset validator must not hard-reject it (DOR-263).
       await writeText(
-        path.join(pkg, 'skills', 'right-name', 'SKILL.md'),
-        '---\nname: wrong-name\ndescription: malformed\n---\nBody\n'
+        path.join(pkg, 'skills', 'writing-rules', 'SKILL.md'),
+        '---\nname: writing-hookify-rules\ndescription: real upstream shape\n---\nBody\n'
+      );
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(true);
+      const mismatch = result.issues.find((i) => i.code === 'SKILL_NAME_MISMATCH');
+      expect(mismatch).toBeDefined();
+      expect(mismatch?.level).toBe('warning');
+      expect(mismatch?.message).toContain('writing-hookify-rules');
+      expect(mismatch?.message).toContain('writing-rules');
+    });
+
+    it('still hard-rejects a genuinely broken skill (invalid directory slug)', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'broken-skill-pkg');
+
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'broken-skill-pkg',
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'A plugin with a structurally broken skill',
+        license: 'MIT',
+        tags: [],
+        layers: ['skills'],
+        extensions: [],
+      });
+      await writeJson(path.join(pkg, CLAUDE_PLUGIN_MANIFEST_PATH), {
+        name: 'broken-skill-pkg',
+        version: '1.0.0',
+        description: 'plugin manifest',
+      });
+
+      // Not a valid kebab-case slug — `validateSkillStructure` rejects it.
+      await writeText(
+        path.join(pkg, 'skills', 'Bad_Slug', 'SKILL.md'),
+        '---\ndescription: bad directory name\n---\nBody\n'
       );
 
       const result = await validatePackage(pkg);
 
       expect(result.ok).toBe(false);
-      expect(result.issues.some((i) => i.code === 'SKILL_INVALID')).toBe(true);
+      expect(result.issues.some((i) => i.code === 'SKILL_INVALID' && i.level === 'error')).toBe(
+        true
+      );
     });
   });
 

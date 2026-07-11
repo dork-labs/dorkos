@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { Transport, TerminalHandle } from '@dorkos/shared/transport';
+import { TERMINAL_CLOSE_SUPERSEDED } from '@dorkos/shared/terminal-schemas';
 import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
@@ -19,6 +20,13 @@ interface TerminalInstanceProps {
   initialPtyId: string | null;
   /** Whether this instance is the visible (active) tab. Hidden tabs stay mounted. */
   active: boolean;
+  /**
+   * Whether becoming active should focus the shell. True for pointer clicks,
+   * tab creation, and the initial mount (keystrokes belong in the terminal);
+   * false for keyboard strip traversal — focusing xterm mid-arrow-scrub would
+   * steal focus off the tab strip and feed the next arrow key to the shell.
+   */
+  focusOnActivate: boolean;
   /** Called with the server id once a fresh shell is spawned (create path only). */
   onCreated: (id: string) => void;
   /**
@@ -26,6 +34,15 @@ interface TerminalInstanceProps {
    * a re-attach target was already gone (dead id). The parent removes the tab.
    */
   onEnded: () => void;
+  /**
+   * Called when the server closed this socket with `TERMINAL_CLOSE_SUPERSEDED` —
+   * another window took the PTY over. The tab is kept (dead, with the in-terminal
+   * notice), but the parent must record the takeover: the PTY is no longer this
+   * window's, so its id is dropped from persisted storage (a refresh here must
+   * not re-attach and steal the session back) and a later close of this tab
+   * skips `closeTerminal` (destroying it would kill the other window's shell).
+   */
+  onSuperseded: () => void;
   /**
    * Called when the attach resolves AFTER this instance was already torn down
    * (tab closed or panel unmounted mid-spawn). The abort signal only cancels
@@ -63,8 +80,10 @@ export function TerminalInstance({
   cwd,
   initialPtyId,
   active,
+  focusOnActivate,
   onCreated,
   onEnded,
+  onSuperseded,
   onLateSpawn,
 }: TerminalInstanceProps) {
   const transport = useTransport();
@@ -77,11 +96,19 @@ export function TerminalInstance({
   // command-bridge pattern in FileExplorer.
   const onCreatedRef = useRef(onCreated);
   const onEndedRef = useRef(onEnded);
+  const onSupersededRef = useRef(onSuperseded);
   const onLateSpawnRef = useRef(onLateSpawn);
+  // Same ref treatment for focusOnActivate: the activation effect must read the
+  // value belonging to the activation that flipped `active` without re-running
+  // when the flag alone changes. This sync effect is declared before the
+  // activation effect, so the ref is current when the latter runs.
+  const focusOnActivateRef = useRef(focusOnActivate);
   useEffect(() => {
     onCreatedRef.current = onCreated;
     onEndedRef.current = onEnded;
+    onSupersededRef.current = onSuperseded;
     onLateSpawnRef.current = onLateSpawn;
+    focusOnActivateRef.current = focusOnActivate;
   });
 
   // The xterm + fit addon + live handle, shared between the mount effect and the
@@ -153,10 +180,25 @@ export function TerminalInstance({
         for await (const chunk of handle.output) {
           term.write(chunk);
         }
-        // The stream ended without a client-initiated teardown (`cancelled` is
-        // still false), so the server closed it: the shell exited or the PTY was
-        // idle-reclaimed. Tell the parent so it prunes this tab.
-        if (!cancelled) onEndedRef.current();
+        // Client-initiated teardown (unmount/abort) — the parent already owns
+        // this instance's fate; nothing to report.
+        if (cancelled) return;
+        // A takeover: the server replaced this sink with a newer attachment
+        // (e.g. this session was duplicated into another window). Keep the tab —
+        // dead but labeled — and don't prune it. Re-attaching here would just
+        // steal the sink back and start a takeover war between the two windows.
+        // The parent records the takeover: it drops the id from THIS window's
+        // persisted storage (so a refresh doesn't re-attach and steal the
+        // session back either) and skips the PTY destroy when this tab is later
+        // closed — the shell belongs to the other window now.
+        if (handle.closeInfo?.code === TERMINAL_CLOSE_SUPERSEDED) {
+          term.write('\r\n\x1b[2m[opened in another window — session moved]\x1b[0m\r\n');
+          onSupersededRef.current();
+          return;
+        }
+        // Otherwise the server closed it because the shell exited or the PTY was
+        // idle-reclaimed. Tell the parent so it prunes this tab and clears its id.
+        onEndedRef.current();
       } catch (err) {
         // If the abort raced the create AFTER the server spawned but before the
         // response was read, the PTY's id is unknowable client-side — that
@@ -207,8 +249,13 @@ export function TerminalInstance({
     };
   }, []);
 
-  // On reveal, re-fit (a hidden instance measured zero) and resize the PTY, then
-  // focus so keystrokes land in the just-activated terminal.
+  // On reveal, re-fit (a hidden instance measured zero) and resize the PTY.
+  // Keyboard arrow-scrubbing across N tabs runs this once per reveal — N
+  // fire-and-forget refit/resize calls. Accepted deliberately: N is small, the
+  // POSTs are cheap, and gating them would complicate the reveal contract
+  // (DOR-229 review). Focus is gated, though: only pointer-driven activations
+  // (and creation/initial mount) put keystrokes in the shell — keyboard strip
+  // traversal must keep focus on the tab strip.
   useEffect(() => {
     if (!active) return;
     const term = termRef.current;
@@ -218,7 +265,7 @@ export function TerminalInstance({
     if (handleRef.current) {
       transport.resizeTerminal(handleRef.current, { cols: term.cols, rows: term.rows });
     }
-    term.focus();
+    if (focusOnActivateRef.current) term.focus();
   }, [active, transport]);
 
   return (

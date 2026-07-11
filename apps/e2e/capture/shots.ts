@@ -62,7 +62,7 @@ export interface Shot {
 }
 
 /**
- * Every product-media shot. The 16 marketing surfaces are the current catalog;
+ * Every product-media shot. The 17 marketing surfaces are the current catalog;
  * docs- or changelog-only shots are added here with the appropriate
  * `consumers` and simply do not surface on `/features`.
  */
@@ -86,6 +86,8 @@ export const SHOTS: readonly Shot[] = [
   { id: 'agent-discovery', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   // gen-ui-widgets is also embedded in the docs (docs/guides/generative-ui.mdx).
   { id: 'gen-ui-widgets', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  // gen-ui-tictactoe is also embedded in the docs (docs/guides/generative-ui.mdx).
+  { id: 'gen-ui-tictactoe', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   // --- Mobile stills (marketing) ---
   { id: 'mobile-sessions', kind: 'still', frame: 'mobile', consumers: ['marketing'] },
   { id: 'mobile-approval', kind: 'still', frame: 'mobile', consumers: ['marketing'] },

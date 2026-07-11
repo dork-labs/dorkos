@@ -81,6 +81,49 @@ describe('reconcileBoardState', () => {
     expect(reconcileBoardState(rows)).toBe(rows);
   });
 
+  it('reads a leading/trailing space as a positional empty marker (#191 review)', () => {
+    // Segment " X" on a 2-wide row: the space IS cell (0,0)'s empty marker.
+    // Per-segment trimming used to shorten it to 1 char and discard the whole
+    // state — a silently missed heal.
+    const rows: BoardRows = [
+      [{}, actionCell('a', ' X/..')],
+      [{}, {}],
+    ];
+    const healed = reconcileBoardState(rows);
+    expect(healed[0][1].glyph).toBe('X');
+    expect(healed[0][1].action).toBeUndefined();
+    expect(healed[0][0].glyph).toBeUndefined();
+  });
+
+  it('tolerates a trailing newline on the state string', () => {
+    const rows: BoardRows = [
+      [actionCell('a', 'X./..\n'), {}],
+      [{}, {}],
+    ];
+    const healed = reconcileBoardState(rows);
+    expect(healed[0][0].glyph).toBe('X');
+  });
+
+  it('salvages decoratively padded segments via the trimmed fallback', () => {
+    // " X. " is 4 chars against a 2-wide row — raw read fails, trimmed "X."
+    // matches, so the padding was decorative rather than positional.
+    const rows: BoardRows = [
+      [actionCell('a', ' X. / .. '), {}],
+      [{}, {}],
+    ];
+    const healed = reconcileBoardState(rows);
+    expect(healed[0][0].glyph).toBe('X');
+  });
+
+  it('lets dot-empty and space-empty states vote as one in the consensus', () => {
+    // "X." and "X " describe the same board — normalization must not split
+    // the vote into a tie that discards both.
+    const rows: BoardRows = [[actionCell('a', 'X.'), actionCell('b', 'X ')]];
+    const healed = reconcileBoardState(rows);
+    expect(healed[0][0].glyph).toBe('X');
+    expect(healed[0][1].glyph).toBeUndefined();
+  });
+
   it('ignores states whose dimensions do not match the grid', () => {
     const rows: BoardRows = [
       [actionCell('a', 'X../.O./..X'), {}],

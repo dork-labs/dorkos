@@ -6,6 +6,7 @@ import { BrowseDirectoryQuerySchema } from '@dorkos/shared/schemas';
 import { AGENT_NAME_REGEX } from '@dorkos/shared/validation';
 import { validateBoundary, getBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
 
 const CreateDirectoryBodySchema = z.object({
   parentPath: z.string().min(1),
@@ -77,7 +78,14 @@ router.get('/', async (req, res) => {
 
 // GET /api/directory/default - Get the server's default working directory
 router.get('/default', (_req, res) => {
-  res.json({ path: process.cwd() });
+  // Use the CLI-resolved, boundary-validated default cwd (lib/resolve-root.js),
+  // not the raw process.cwd() — the two diverge whenever the process starts
+  // outside the configured boundary (e.g. a container with no WORKDIR): the
+  // CLI clamps DORKOS_DEFAULT_CWD back to the boundary root, but process.cwd()
+  // never changes without an explicit chdir. Returning the unclamped value
+  // handed clients a directory that boundary-enforced routes (POST
+  // /api/terminal, session creation) would then reject with 403.
+  res.json({ path: DEFAULT_CWD });
 });
 
 // POST /api/directory - Create a new directory within the boundary

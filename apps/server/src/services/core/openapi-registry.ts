@@ -721,7 +721,7 @@ registry.registerPath({
   path: '/api/directory/default',
   tags: ['Directory'],
   summary: 'Get default working directory',
-  description: "Returns the server's default working directory (process.cwd()).",
+  description: "Returns the server's boundary-resolved default working directory.",
   responses: {
     200: {
       description: 'Default directory path',

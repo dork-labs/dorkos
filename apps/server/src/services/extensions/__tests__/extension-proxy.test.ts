@@ -9,12 +9,14 @@ import type { DataProxyConfig } from '@dorkos/extension-api';
 const mockSecretGet = vi.fn<[string], Promise<string | null>>();
 
 vi.mock('@dorkos/shared/extension-secrets', () => ({
-  ExtensionSecretStore: vi.fn().mockImplementation(() => ({
-    get: mockSecretGet,
-    set: vi.fn(),
-    has: vi.fn(),
-    delete: vi.fn(),
-  })),
+  ExtensionSecretStore: vi.fn().mockImplementation(function () {
+    return {
+      get: mockSecretGet,
+      set: vi.fn(),
+      has: vi.fn(),
+      delete: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock('../../../lib/logger.js', () => ({

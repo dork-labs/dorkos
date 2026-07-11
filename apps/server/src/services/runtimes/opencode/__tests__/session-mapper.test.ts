@@ -95,6 +95,7 @@ function createMockClient() {
     session: {
       list: vi.fn(),
       create: vi.fn(),
+      get: vi.fn(),
       messages: vi.fn(),
     },
   };
@@ -468,6 +469,124 @@ describe('OpenCodeSessionMapper', () => {
         /No OpenCode session mapped/
       );
       expect(client.session.messages).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('durable id stability (DOR-251)', () => {
+    /** In-memory OpenCodeSessionMapStore fake with the replace-on-either-key contract. */
+    function createFakeStore() {
+      const rows = new Map<string, string>(); // sessionId -> ocSessionId
+      return {
+        rows,
+        bind: vi.fn((sessionId: string, ocSessionId: string) => {
+          for (const [sid, oid] of [...rows]) {
+            if (sid === sessionId || oid === ocSessionId) rows.delete(sid);
+          }
+          rows.set(sessionId, ocSessionId);
+        }),
+        listAll: vi.fn(() =>
+          [...rows].map(([sessionId, ocSessionId]) => ({ sessionId, ocSessionId }))
+        ),
+      };
+    }
+
+    it('writes a created binding through to the durable store', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_new' }) });
+      const store = createFakeStore();
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      expect(store.bind).toHaveBeenCalledWith(DORKOS_ID, 'ses_new');
+    });
+
+    it('a restarted mapper re-lists the same OpenCode session under its ORIGINAL DorkOS id', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      client.session.list.mockResolvedValue({ data: [ocSession({ id: 'ses_abc123' })] });
+      const store = createFakeStore();
+
+      // Server lifetime 1: DorkOS-created session binds the client UUID.
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      // Server lifetime 2: fresh mapper hydrated from the durable store. The
+      // pre-fix behavior minted a NEW derived (v5) UUID here, permanently
+      // 404ing the original id (DOR-251).
+      const restarted = new OpenCodeSessionMapper(createProvider(client), store);
+      const sessions = await restarted.listSessions(PROJECT_DIR);
+
+      expect(sessions.map((s) => s.id)).toEqual([DORKOS_ID]);
+      expect(restarted.getOpenCodeSessionId(DORKOS_ID)).toBe('ses_abc123');
+    });
+
+    it('serves history under the original id after a restart without a rebuild re-list', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      client.session.messages.mockResolvedValue({
+        data: [{ info: userMessage(), parts: [textPart('hello again')] }],
+      });
+      const store = createFakeStore();
+
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const restarted = new OpenCodeSessionMapper(createProvider(client), store);
+      const history = await restarted.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      expect(client.session.messages).toHaveBeenCalledWith({ path: { id: 'ses_abc123' } });
+      expect(history[0]!.content).toBe('hello again');
+      // The hydrated binding resolved directly — no recovery re-list needed.
+      expect(client.session.list).not.toHaveBeenCalled();
+    });
+
+    it('getSession resolves a known binding on a cold restart by booting the sidecar', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      client.session.get.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      const store = createFakeStore();
+
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const restarted = new OpenCodeSessionMapper(createProvider(client), store);
+      const session = await restarted.getSession(PROJECT_DIR, DORKOS_ID);
+
+      expect(client.session.get).toHaveBeenCalledWith({ path: { id: 'ses_abc123' } });
+      expect(session?.id).toBe(DORKOS_ID);
+      expect(session?.runtime).toBe('opencode');
+    });
+
+    it('getSession returns null for an unknown binding without booting', async () => {
+      const client = createMockClient();
+      const provider = createProvider(client);
+      const mapper = new OpenCodeSessionMapper(provider, createFakeStore());
+
+      await expect(mapper.getSession(PROJECT_DIR, DORKOS_ID)).resolves.toBeNull();
+      expect(provider.getClient).not.toHaveBeenCalled();
+    });
+
+    it('getSession returns null (never throws) when the sidecar is unreachable', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_abc123' }) });
+      const store = createFakeStore();
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const restarted = new OpenCodeSessionMapper(createProvider(null), store);
+      await expect(restarted.getSession(PROJECT_DIR, DORKOS_ID)).resolves.toBeNull();
+    });
+
+    it('does not persist derived adoptions — they are deterministic by construction', async () => {
+      const client = createMockClient();
+      client.session.list.mockResolvedValue({ data: [ocSession({ id: 'ses_tui' })] });
+      const store = createFakeStore();
+      const mapper = new OpenCodeSessionMapper(createProvider(client), store);
+
+      await mapper.listSessions(PROJECT_DIR);
+
+      expect(store.bind).not.toHaveBeenCalled();
     });
   });
 });

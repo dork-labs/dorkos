@@ -10,6 +10,7 @@ import {
   publishErrorContent,
   type SenderIdentity,
 } from './relay-helpers.js';
+import { resolveNotifyTarget } from '../../../relay/notify-target.js';
 
 /**
  * Send a message via Relay.
@@ -364,93 +365,74 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       );
     }
 
-    const allBindings = deps.bindingStore.getAll();
-    let myBindings = allBindings.filter((b) => b.agentId === agentId);
+    // Resolve the channel via the shared resolver (also used by the system-level
+    // TaskCompletionNotifier, DOR-240) so both proactive paths honor identical
+    // binding, active-session, and `canInitiate` (DOR-239) rules.
+    const target = resolveNotifyTarget(agentId, {
+      bindingStore: deps.bindingStore,
+      bindingRouter: deps.bindingRouter,
+      adapterManager: deps.adapterManager,
+      channel: args.channel,
+    });
 
-    if (args.channel) {
-      const channel = args.channel.toLowerCase();
-
-      // Tier 1: exact adapter ID match
-      const exactIdMatches = myBindings.filter((b) => b.adapterId.toLowerCase() === channel);
-      if (exactIdMatches.length > 0) {
-        myBindings = exactIdMatches;
-      } else if (deps.adapterManager) {
-        // Tier 2: exact adapter type match (e.g., "telegram" matches all telegram adapters)
-        const adapters = deps.adapterManager.listAdapters();
-        const typeMatchIds = new Set(
-          adapters.filter((a) => a.config.type.toLowerCase() === channel).map((a) => a.config.id)
-        );
-        const typeMatches = myBindings.filter((b) => typeMatchIds.has(b.adapterId));
-        // Tier 3: substring ID match (fallback for partial IDs like "tele")
-        myBindings =
-          typeMatches.length > 0
-            ? typeMatches
-            : myBindings.filter((b) => b.adapterId.toLowerCase().includes(channel));
-      } else {
-        // No adapterManager — fall back to substring match
-        myBindings = myBindings.filter((b) => b.adapterId.toLowerCase().includes(channel));
+    if (!target.ok) {
+      switch (target.reason) {
+        case 'NO_BINDING':
+          return jsonContent(
+            {
+              sent: false,
+              error: args.channel
+                ? `No binding found for channel "${args.channel}"`
+                : 'No adapter bindings found for this agent',
+              availableChannels: target.availableChannels,
+              code: 'NO_BINDING',
+            },
+            true
+          );
+        case 'NO_ACTIVE_SESSIONS':
+          return jsonContent(
+            {
+              sent: false,
+              error:
+                'No active chat sessions found. The user must message the bot first to establish a chat.',
+              availableAdapters: target.availableAdapters,
+              code: 'NO_ACTIVE_SESSIONS',
+            },
+            true
+          );
+        case 'INITIATE_NOT_ALLOWED':
+          // relay_notify_user always INITIATES a message — it is never how an
+          // agent replies to an inbound chat message (replies to a
+          // <relay_context> turn are forwarded automatically by the runtime
+          // adapter, see context-builder.ts). So a false canInitiate on the
+          // resolved binding unconditionally blocks this call; it never blocks
+          // the automatic reply-forwarding path.
+          return jsonContent(
+            {
+              sent: false,
+              error:
+                "This channel doesn't allow the agent to start conversations; reply routing still works.",
+              code: 'INITIATE_NOT_ALLOWED',
+              bindingId: target.bindingId,
+              adapterId: target.adapterId,
+            },
+            true
+          );
       }
     }
-
-    if (myBindings.length === 0) {
-      const available = allBindings.filter((b) => b.agentId === agentId).map((b) => b.adapterId);
-      return jsonContent(
-        {
-          sent: false,
-          error: args.channel
-            ? `No binding found for channel "${args.channel}"`
-            : 'No adapter bindings found for this agent',
-          availableChannels: available,
-          code: 'NO_BINDING',
-        },
-        true
-      );
-    }
-
-    let bestSession: {
-      bindingId: string;
-      chatId: string;
-      sessionId: string;
-      adapterId: string;
-    } | null = null;
-    for (const binding of myBindings) {
-      const sessions = deps.bindingRouter.getSessionsByBinding(binding.id);
-      if (sessions.length > 0) {
-        const latest = sessions[sessions.length - 1]!;
-        bestSession = { ...latest, bindingId: binding.id, adapterId: binding.adapterId };
-      }
-    }
-
-    if (!bestSession) {
-      return jsonContent(
-        {
-          sent: false,
-          error:
-            'No active chat sessions found. The user must message the bot first to establish a chat.',
-          availableAdapters: myBindings.map((b) => b.adapterId),
-          code: 'NO_ACTIVE_SESSIONS',
-        },
-        true
-      );
-    }
-
-    const adapters = deps.adapterManager?.listAdapters() ?? [];
-    const adapter = adapters.find((a) => a.config.id === bestSession!.adapterId);
-    const adapterType = adapter?.config?.type ?? 'unknown';
-    const subject = `relay.human.${adapterType}.${bestSession.adapterId}.${bestSession.chatId}`;
 
     try {
       // Same server-injected principal as every other send tool — the bare
       // agentId is not a relay subject and would not match any access rule.
-      const result = await deps.relayCore!.publish(subject, args.message, {
+      const result = await deps.relayCore!.publish(target.subject, args.message, {
         from: identity.subject,
       });
       return jsonContent({
         sent: true,
-        subject,
-        adapterId: bestSession.adapterId,
-        adapterType,
-        chatId: bestSession.chatId,
+        subject: target.subject,
+        adapterId: target.adapterId,
+        adapterType: target.adapterType,
+        chatId: target.chatId,
         messageId: result.messageId,
         deliveredTo: result.deliveredTo,
       });
@@ -610,7 +592,10 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
       'Send a message to the user on a bound external channel (Telegram, Slack, etc.). ' +
         'Automatically resolves the best active chat. If channel is omitted, sends to the ' +
         'most recently active chat across all bound adapters. Specify channel to target a ' +
-        'specific adapter type (e.g., "telegram") or adapter ID (e.g., "telegram-lifeos").',
+        'specific adapter type (e.g., "telegram") or adapter ID (e.g., "telegram-lifeos"). ' +
+        'This always INITIATES a message — replying to an inbound chat message happens ' +
+        'automatically and does not need this tool. Fails with code INITIATE_NOT_ALLOWED ' +
+        'when the resolved binding has "Agent can start conversations" turned off.',
       {
         message: z.string().describe('Message text to send to the user'),
         channel: z

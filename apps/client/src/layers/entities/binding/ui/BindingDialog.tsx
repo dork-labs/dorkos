@@ -123,6 +123,7 @@ export function BindingDialog({
         canInitiate: value.canInitiate,
         canReply: value.canReply,
         canReceive: value.canReceive,
+        notifyOnTaskComplete: value.notifyOnTaskComplete,
       });
       if (!isEdit) {
         form.reset();
@@ -197,7 +198,8 @@ export function BindingDialog({
               values.permissionMode !== defaultValues.permissionMode ||
               values.canInitiate !== defaultValues.canInitiate ||
               values.canReply !== defaultValues.canReply ||
-              values.canReceive !== defaultValues.canReceive;
+              values.canReceive !== defaultValues.canReceive ||
+              values.notifyOnTaskComplete !== defaultValues.notifyOnTaskComplete;
             // Resolve agent display name for the preview sentence.
             const resolvedAgentName = isEdit
               ? agentName
@@ -223,7 +225,8 @@ export function BindingDialog({
               values.permissionMode !== 'acceptEdits' ||
               values.canInitiate ||
               !values.canReply ||
-              !values.canReceive;
+              !values.canReceive ||
+              !values.notifyOnTaskComplete;
             const isSubmitDisabled = !isValid || !isDirty || !!isPending || isSubmitting;
             const isLoading = !!isPending || isSubmitting;
 
@@ -409,6 +412,11 @@ export function BindingDialog({
                     onCanReplyChange={(v) => form.setFieldValue('canReply', v)}
                     canReceive={values.canReceive}
                     onCanReceiveChange={(v) => form.setFieldValue('canReceive', v)}
+                    notifyOnTaskComplete={values.notifyOnTaskComplete}
+                    onNotifyOnTaskCompleteChange={(v) =>
+                      form.setFieldValue('notifyOnTaskComplete', v)
+                    }
+                    notifyBootstrapHint={observedChats.length === 0}
                     open={advancedOpen}
                     onOpenChange={setAdvancedOpen}
                     hasChanges={hasAdvancedChanges}

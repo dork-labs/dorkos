@@ -85,6 +85,46 @@ describe('Relay routes', () => {
       expect(res.body.error).toBe('Access denied');
       expect(res.body.code).toBe('ACCESS_DENIED');
     });
+
+    // DOR-277 review follow-up: this route accepts a client-supplied `from`. It
+    // must not let an untrusted caller assert a principal the initiate-consent
+    // gate trusts as exempt (system / reply / inbound-echo) and thereby deliver
+    // to a bound human channel with canInitiate off. Rejected BEFORE publish.
+    it.each([
+      ['relay.system.tasks.notifier', 'system notifier'],
+      ['agent:session-abc', 'reply-forwarding'],
+      ['relay.human.telegram.tg1.bot', 'inbound adapter echo'],
+    ])('rejects a client-asserted reserved sender %s (%s) and never publishes', async (from) => {
+      const res = await request(app)
+        .post('/api/relay/messages')
+        .send({
+          subject: 'relay.human.telegram.tg1.chat-42',
+          payload: { text: 'spoofed initiate' },
+          from,
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('RESERVED_SENDER');
+      // The message must never reach the bus — no bypass of the consent gate.
+      expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
+    });
+
+    it('still allows the in-app console operator principal (relay.human.console)', async () => {
+      const res = await request(app)
+        .post('/api/relay/messages')
+        .send({
+          subject: 'relay.agent.some-agent',
+          payload: { text: 'operator message' },
+          from: 'relay.human.console',
+        });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(relayCore.publish)).toHaveBeenCalledWith(
+        'relay.agent.some-agent',
+        { text: 'operator message' },
+        expect.objectContaining({ from: 'relay.human.console' })
+      );
+    });
   });
 
   describe('POST /api/relay/messages — adapter activity events', () => {

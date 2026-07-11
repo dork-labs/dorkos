@@ -21,10 +21,14 @@ DorkOS uses [ngrok](https://ngrok.com/) to do this: it's a service that opens a 
 
 Don't worry if it doesn't connect right away: DorkOS keeps running locally either way.
 
+Setup is a one-time job that takes about two minutes. Before your first tunnel, you need two things:
+
 ## Prerequisites
 
-- An [ngrok account](https://ngrok.com/) (free tier works)
-- An ngrok auth token from your [ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken)
+- **An owner login for your DorkOS.** A tunnel puts your instance on the public internet, so DorkOS will not start one until a login protects it. If you don't have one yet, starting a tunnel walks you through creating it. See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
+- **A free [ngrok account](https://ngrok.com/) and its auth token.** ngrok is the service that carries the tunnel. Grab the token from your [ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken) and paste it into DorkOS — the free tier is enough.
+
+After this one-time setup, remote access really is one tap: scan the QR code and approve from your phone.
 
 ## Quick Start
 

@@ -28,6 +28,7 @@ export interface BindingFormValues {
   canInitiate?: boolean;
   canReply?: boolean;
   canReceive?: boolean;
+  notifyOnTaskComplete?: boolean;
 }
 
 /**
@@ -48,6 +49,7 @@ export function toCreateBindingRequest(values: BindingFormValues): CreateBinding
     canInitiate: values.canInitiate,
     canReply: values.canReply,
     canReceive: values.canReceive,
+    notifyOnTaskComplete: values.notifyOnTaskComplete,
   };
 }
 
@@ -69,6 +71,7 @@ export function toUpdateBindingRequest(values: BindingFormValues): UpdateBinding
     canInitiate: values.canInitiate,
     canReply: values.canReply,
     canReceive: values.canReceive,
+    notifyOnTaskComplete: values.notifyOnTaskComplete,
   };
 }
 
@@ -83,6 +86,7 @@ export function hasNonDefaultAdvanced(vals?: Partial<BindingFormValues>): boolea
     vals?.canInitiate ||
     vals?.canReply === false ||
     vals?.canReceive === false ||
+    vals?.notifyOnTaskComplete === false ||
     (vals?.permissionMode !== undefined && vals.permissionMode !== 'acceptEdits') ||
     (vals?.sessionStrategy && vals.sessionStrategy !== 'per-chat')
   );
@@ -107,5 +111,6 @@ export function buildDefaultValues(vals?: Partial<BindingFormValues>) {
     canInitiate: vals?.canInitiate ?? false,
     canReply: vals?.canReply ?? true,
     canReceive: vals?.canReceive ?? true,
+    notifyOnTaskComplete: vals?.notifyOnTaskComplete ?? true,
   };
 }

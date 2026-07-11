@@ -7,11 +7,14 @@ import type { ChatMessage } from '../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 
 // jsdom does not implement IntersectionObserver
-globalThis.IntersectionObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+globalThis.IntersectionObserver = vi.fn().mockImplementation(function () {
+  // Vitest 4 spies honor `new` semantics; the implementation must be constructible.
+  return {
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+  };
+});
 
 afterEach(() => {
   cleanup();

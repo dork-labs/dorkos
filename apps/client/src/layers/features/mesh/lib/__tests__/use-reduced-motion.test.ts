@@ -39,11 +39,22 @@ function createMockMql(initialMatches: boolean) {
   return { mql, setMatches, listeners };
 }
 
+/**
+ * jsdom does not implement window.matchMedia, and Vitest 4's vi.spyOn refuses
+ * to spy on an undefined property — stub the global instead.
+ */
+function stubMatchMedia(mql: ReturnType<typeof createMockMql>['mql']) {
+  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue(mql as unknown as MediaQueryList));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -52,7 +63,7 @@ afterEach(cleanup);
 describe('usePrefersReducedMotion', () => {
   it('returns false when system prefers no reduction', () => {
     const { mql } = createMockMql(false);
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql as unknown as MediaQueryList);
+    stubMatchMedia(mql);
 
     const { result } = renderHook(() => usePrefersReducedMotion());
     expect(result.current).toBe(false);
@@ -60,7 +71,7 @@ describe('usePrefersReducedMotion', () => {
 
   it('returns true when system prefers reduced motion', () => {
     const { mql } = createMockMql(true);
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql as unknown as MediaQueryList);
+    stubMatchMedia(mql);
 
     const { result } = renderHook(() => usePrefersReducedMotion());
     expect(result.current).toBe(true);
@@ -68,7 +79,7 @@ describe('usePrefersReducedMotion', () => {
 
   it('reacts to runtime changes in system preference', () => {
     const { mql, setMatches } = createMockMql(false);
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql as unknown as MediaQueryList);
+    stubMatchMedia(mql);
 
     const { result } = renderHook(() => usePrefersReducedMotion());
     expect(result.current).toBe(false);
@@ -88,7 +99,7 @@ describe('usePrefersReducedMotion', () => {
 
   it('registers a change event listener on the MediaQueryList', () => {
     const { mql } = createMockMql(false);
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql as unknown as MediaQueryList);
+    stubMatchMedia(mql);
 
     renderHook(() => usePrefersReducedMotion());
     expect(mql.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
@@ -96,7 +107,7 @@ describe('usePrefersReducedMotion', () => {
 
   it('cleans up the event listener on unmount', () => {
     const { mql } = createMockMql(false);
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mql as unknown as MediaQueryList);
+    stubMatchMedia(mql);
 
     const { unmount } = renderHook(() => usePrefersReducedMotion());
     unmount();

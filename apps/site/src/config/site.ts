@@ -20,3 +20,11 @@ export const siteConfig = {
 } as const;
 
 export type SiteConfig = typeof siteConfig;
+
+/**
+ * `siteConfig.github` with `utm_source`/`utm_medium` link hygiene tags, for
+ * every outbound-to-GitHub anchor on the site (header, footer, mobile hero
+ * CTA). Attributes GitHub referral traffic back to dorkos.ai without touching
+ * the plain canonical URL used elsewhere (JSON-LD `sameAs`, `llms.txt`).
+ */
+export const GITHUB_OUTBOUND_HREF = `${siteConfig.github}?utm_source=dorkos_site&utm_medium=website`;

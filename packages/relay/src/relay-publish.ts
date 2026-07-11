@@ -9,7 +9,7 @@
  */
 import { monotonicFactory } from 'ulidx';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
-import { createDefaultBudget } from './budget-enforcer.js';
+import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { EndpointRegistry } from './endpoint-registry.js';
@@ -18,8 +18,8 @@ import type { MaildirStore } from './maildir-store.js';
 import type { SqliteIndex } from './sqlite-index.js';
 import type { AccessControl } from './access-control.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
+import type { AdapterDelivery, ReplyFailureNotifier } from './adapter-delivery.js';
 import type { DeliveryPipeline } from './delivery-pipeline.js';
-import type { AdapterDelivery } from './adapter-delivery.js';
 import type {
   RateLimitConfig,
   PublishOptions,
@@ -29,30 +29,16 @@ import type {
   DeliveryResult,
   TraceStoreLike,
   RelayLogger,
+  InitiateConsentGate,
+  PublishResult,
 } from './types.js';
 
 // === Types ===
 
-/** Result of a publish operation. */
-export interface PublishResult {
-  /** The ULID message ID assigned to the published envelope. */
-  messageId: string;
-
-  /** Number of endpoints the message was delivered to. */
-  deliveredTo: number;
-
-  /** Endpoints that rejected the message, with structured reasons. */
-  rejected?: Array<{
-    endpointHash: string;
-    reason: 'backpressure' | 'circuit_open' | 'rate_limited' | 'budget_exceeded';
-  }>;
-
-  /** Per-endpoint pressure ratios for proactive signaling (0.0-1.0). */
-  mailboxPressure?: Record<string, number>;
-
-  /** Result from adapter delivery, if attempted. */
-  adapterResult?: DeliveryResult;
-}
+// `PublishResult` is defined in types.ts (so adapter interfaces can reference
+// it without a circular import through relay-core.ts) and re-exported here for
+// callers that import it from the pipeline module.
+export type { PublishResult } from './types.js';
 
 /** Resolved options needed by the publish pipeline. */
 export interface PublishResolvedOptions {
@@ -109,6 +95,12 @@ export class RelayPublishPipeline {
   private rateLimitConfig: RateLimitConfig;
   private adapterContextBuilder?: (subject: string) => AdapterContext | undefined;
 
+  /** Optional callback to settle a waiting reply-inbox caller when the budget gate rejects. */
+  private replyFailureNotifier?: ReplyFailureNotifier;
+
+  /** Optional agent→human initiate-consent gate (DOR-277). */
+  private initiateConsentGate?: InitiateConsentGate;
+
   constructor(
     deps: PublishDeps,
     opts: PublishResolvedOptions,
@@ -132,6 +124,35 @@ export class RelayPublishPipeline {
   }
 
   /**
+   * Register the callback used to notify a reply inbox when the authoritative
+   * budget gate rejects a message. Wired by RelayCore with the same notifier
+   * instance that {@link AdapterDelivery} uses, so a budget rejection settles a
+   * waiting caller (`relay_send_and_wait`, the A2A executor) exactly like a
+   * failed detached delivery does.
+   *
+   * @param notifier - The reply-failure notifier.
+   */
+  setReplyFailureNotifier(notifier: ReplyFailureNotifier): void {
+    this.replyFailureNotifier = notifier;
+  }
+
+  /**
+   * Register the authoritative agent→human initiate-consent gate (DOR-277).
+   *
+   * Wired by the host after construction (the binding store the gate reads is
+   * not available at RelayCore construction time). Once set, every publish
+   * whose `from` is an agent-initiated principal targeting a bound human
+   * channel is denied unless the resolved binding is enabled and its
+   * `canInitiate` consent is on — closing the side door where `relay_send` to a
+   * raw `relay.human.*` subject bypassed the two proactive-notify tool handlers.
+   *
+   * @param gate - The consent gate predicate.
+   */
+  setInitiateConsentGate(gate: InitiateConsentGate): void {
+    this.initiateConsentGate = gate;
+  }
+
+  /**
    * Execute the publish pipeline for a message.
    *
    * Pipeline:
@@ -139,9 +160,14 @@ export class RelayPublishPipeline {
    * 2. Check access control (from -> subject)
    * 3. Rate limit check (per-sender sliding window, before fan-out)
    * 4. Build envelope with ULID ID, budget, and payload
-   * 5. Find all registered endpoints matching the subject
-   * 6. For each endpoint: enforce budget, deliver via Maildir, index in SQLite
-   * 7. Deliver to matching adapter (unified fan-out)
+   * 4b. Authoritative initiate-consent gate — an agent-initiated send to a
+   *    bound human channel without `canInitiate` consent is dead-lettered and
+   *    NO delivery path runs (DOR-277)
+   * 5. Authoritative budget gate (hops, cycle, TTL, call budget) — a rejected
+   *    message is dead-lettered and NO delivery path runs (DOR-260)
+   * 6. For each matching endpoint: per-copy budget update, deliver via
+   *    Maildir, index in SQLite
+   * 7. Deliver to matching adapter with the gate-decremented budget
    * 8. Dead-letter when no delivery targets matched
    *
    * @param subject - The target subject for the message
@@ -211,8 +237,8 @@ export class RelayPublishPipeline {
       payload,
     };
 
-    // 5. Index for rate-limit counting (before fan-out so every published
-    //    message is tracked regardless of delivery path)
+    // Index for rate-limit counting (before fan-out so every published
+    // message is tracked regardless of delivery path)
     this.deps.sqliteIndex.insertMessage({
       id: messageId,
       subject,
@@ -223,7 +249,7 @@ export class RelayPublishPipeline {
       sender: options.from,
     });
 
-    // 6-10. Deliver, dead-letter, and trace
+    // 5-11. Budget gate, deliver, dead-letter, and trace
     return this.deliverAndFinalize(envelope, subject, options, messageId);
   }
 
@@ -239,9 +265,57 @@ export class RelayPublishPipeline {
     options: PublishOptions,
     messageId: string
   ): Promise<PublishResult> {
+    // 4b. Authoritative agent→human initiate-consent gate (DOR-277). Runs
+    //     BEFORE the budget gate and any delivery path, as a sibling
+    //     authoritative check: an agent-initiated send to a bound human channel
+    //     whose `canInitiate` consent is off (or that has no enabled binding) is
+    //     denied here, no matter which publish path it took (relay_send*, A2A,
+    //     etc.). Reply-forwarding and system principals are not agent-initiated
+    //     and the gate returns allowed for them (see the host-side gate).
+    if (this.initiateConsentGate) {
+      let consent;
+      try {
+        consent = this.initiateConsentGate(envelope.from, subject);
+      } catch (err) {
+        // Fail closed: a throwing consent policy denies rather than letting the
+        // message slip through undecided. Dead-letter under the target subject.
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.logger?.warn?.(`initiate-consent gate threw; denying: ${message}`);
+        consent = { allowed: false as const, reason: `consent gate error: ${message}` };
+      }
+      if (!consent.allowed) {
+        return this.rejectAtGate(
+          envelope,
+          subject,
+          messageId,
+          'initiate_denied',
+          consent.reason ?? consent.code ?? 'agent is not allowed to start conversations here'
+        );
+      }
+    }
+
+    // 5. Authoritative budget gate — ONE check, against the target subject,
+    //    BEFORE any delivery path runs. The per-endpoint Maildir check alone
+    //    was insufficient: the adapter fan-out dispatches the real (paid)
+    //    agent turn and previously ran unconditionally, so a budget-exhausted
+    //    message was dead-lettered on the mailbox side while the live turn
+    //    still executed (DOR-260). A rejection here guarantees nothing
+    //    downstream runs — no Maildir copy, no adapter dispatch, no
+    //    subscriber fan-out.
+    const gate = enforceBudget(envelope, subject);
+    if (!gate.allowed) {
+      return this.rejectAtGate(
+        envelope,
+        subject,
+        messageId,
+        'budget_exceeded',
+        gate.reason ?? 'budget enforcement failed'
+      );
+    }
+
     const matchingEndpoints = findMatchingEndpoints(this.deps.endpointRegistry, subject);
 
-    // 5. Deliver to Maildir endpoints
+    // 6. Deliver to Maildir endpoints (per-copy budget update inside)
     let deliveredTo = 0;
     const rejected: PublishResult['rejected'] = [];
     const mailboxPressure: Record<string, number> = {};
@@ -258,35 +332,41 @@ export class RelayPublishPipeline {
       if (result.pressure !== undefined) mailboxPressure[endpoint.hash] = result.pressure;
     }
 
-    // 6. Deliver to matching adapter (unified fan-out — always attempted)
+    // 7. Deliver to the matching adapter with the gate-decremented budget:
+    //    the adapter copy is what triggers the real (paid) agent turn, so it
+    //    must consume one call-budget unit, count one hop, and extend the
+    //    ancestor chain exactly like a Maildir copy does. Each delivered copy
+    //    is decremented exactly once — the Maildir path decrements its own
+    //    copies from the original envelope above.
     let adapterResult: DeliveryResult | null = null;
     if (this.deps.adapterRegistry) {
+      const adapterEnvelope: RelayEnvelope = { ...envelope, budget: gate.updatedBudget! };
       adapterResult = await this.deps.adapterDelivery.deliver(
         subject,
-        envelope,
+        adapterEnvelope,
         this.adapterContextBuilder
       );
       if (adapterResult?.success) deliveredTo++;
     }
 
-    // 7. Dispatch to subscription handlers when no Maildir endpoints exist
+    // 8. Dispatch to subscription handlers when no Maildir endpoints exist
     let subscriberCount = 0;
     if (matchingEndpoints.length === 0) {
       subscriberCount = await this.dispatchToSubscribers(envelope, subject);
       deliveredTo += subscriberCount;
     }
 
-    // 8. Buffer for late subscribers when no handlers matched
+    // 9. Buffer for late subscribers when no handlers matched
     if (subscriberCount === 0 && matchingEndpoints.length === 0) {
       this.deps.subscriptionRegistry.bufferForPendingSubscriber(subject, envelope);
     }
 
-    // 9. Dead-letter only when NO delivery targets matched at all
+    // 10. Dead-letter only when NO delivery targets matched at all
     if (deliveredTo === 0 && matchingEndpoints.length === 0 && subscriberCount === 0) {
       await this.deadLetter(subject, envelope, adapterResult);
     }
 
-    // 10. Record trace span
+    // 11. Record trace span
     this.recordTrace(messageId, subject, deliveredTo, rejected, adapterResult, envelope);
 
     return {
@@ -317,6 +397,52 @@ export class RelayPublishPipeline {
       }
     }
     return count;
+  }
+
+  /**
+   * Reject a message at an authoritative pre-delivery gate (budget or consent).
+   *
+   * Dead-letters the envelope under the target subject (the same convention
+   * detached adapter failures use), settles any caller waiting on a reply
+   * inbox, and records a failed trace span. Nothing is delivered: no Maildir
+   * copy, no adapter dispatch (i.e. no live agent turn), no subscriber
+   * fan-out.
+   *
+   * @param envelope - The envelope being rejected.
+   * @param subject - The target subject.
+   * @param messageId - The envelope's message id.
+   * @param rejectionCode - Machine reason surfaced in the {@link PublishResult}.
+   * @param reason - Human-readable reason recorded on the dead letter.
+   */
+  private async rejectAtGate(
+    envelope: RelayEnvelope,
+    subject: string,
+    messageId: string,
+    rejectionCode: NonNullable<PublishResult['rejected']>[number]['reason'],
+    reason: string
+  ): Promise<PublishResult> {
+    this.deps.logger?.warn?.(
+      `publish rejected at ${rejectionCode} gate: subject=${subject}, ` +
+        `from=${envelope.from}, reason=${reason}`
+    );
+
+    await this.deps.maildirStore.ensureMaildir(subject);
+    await this.deps.deadLetterQueue.reject(subject, envelope, reason);
+
+    // Settle a waiting caller (relay_send_and_wait, the A2A executor) now
+    // instead of leaving it to block until its own timeout.
+    if (envelope.replyTo && this.replyFailureNotifier) {
+      try {
+        await this.replyFailureNotifier(envelope.replyTo, reason, envelope);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.logger?.warn?.(`failed to notify reply inbox of gate rejection: ${message}`);
+      }
+    }
+
+    const rejected: PublishResult['rejected'] = [{ endpointHash: subject, reason: rejectionCode }];
+    this.recordTrace(messageId, subject, 0, rejected, null, envelope);
+    return { messageId, deliveredTo: 0, rejected };
   }
 
   /** Dead-letter a message that had no delivery targets. */

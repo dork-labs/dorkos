@@ -14,7 +14,7 @@
 # Custom port:
 #   docker run --rm -p 8080:8080 -e ANTHROPIC_API_KEY=sk-... dorkos --port 8080
 
-ARG NODE_VERSION=20
+ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-slim
 
 LABEL org.opencontainers.image.source="https://github.com/dork-labs/dorkos"

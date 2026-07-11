@@ -64,6 +64,7 @@ import type {
   RelayMetrics,
   AdapterRegistryLike,
   AdapterContext,
+  InitiateConsentGate,
 } from './types.js';
 import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
 import type { IndexedMessage } from './sqlite-index.js';
@@ -225,17 +226,18 @@ export class RelayCore {
     );
 
     // Settle a waiting caller (relay_send_and_wait, A2A executor) when a
-    // detached agent delivery dead-letters, instead of leaving it to time out.
-    adapterDelivery.setReplyFailureNotifier(
-      createReplyFailureNotifier({
-        publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
-        // A reply inbox may be a registered endpoint (relay_send_and_wait) or a
-        // pure subscription (the A2A executor subscribes with no endpoint).
-        hasConsumer: (subject) =>
-          endpointRegistry.hasEndpoint(subject) ||
-          this.subscriptionRegistry.getSubscribers(subject).length > 0,
-      })
-    );
+    // detached agent delivery dead-letters OR the publish pipeline's
+    // authoritative budget gate rejects, instead of leaving it to time out.
+    const replyFailureNotifier = createReplyFailureNotifier({
+      publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
+      // A reply inbox may be a registered endpoint (relay_send_and_wait) or a
+      // pure subscription (the A2A executor subscribes with no endpoint).
+      hasConsumer: (subject) =>
+        endpointRegistry.hasEndpoint(subject) ||
+        this.subscriptionRegistry.getSubscribers(subject).length > 0,
+    });
+    adapterDelivery.setReplyFailureNotifier(replyFailureNotifier);
+    this.publishPipeline.setReplyFailureNotifier(replyFailureNotifier);
 
     this.subscriptionDeps = {
       subscriptionRegistry: this.subscriptionRegistry,
@@ -291,6 +293,18 @@ export class RelayCore {
    */
   setAdapterContextBuilder(builder: (subject: string) => AdapterContext | undefined): void {
     this.publishPipeline.setAdapterContextBuilder(builder);
+  }
+
+  /**
+   * Set the authoritative agent→human initiate-consent gate (DOR-277).
+   *
+   * The host wires this after construction once the binding store is available.
+   * Delegates to {@link RelayPublishPipeline.setInitiateConsentGate}.
+   *
+   * @param gate - The consent gate predicate.
+   */
+  setInitiateConsentGate(gate: InitiateConsentGate): void {
+    this.publishPipeline.setInitiateConsentGate(gate);
   }
 
   // --- Publish ---
@@ -515,20 +529,36 @@ export class RelayCore {
    * conversation is never swept out from under its participants (M3).
    */
   private startTtlSweeper(): void {
-    this.ttlSweepInterval = setInterval(async () => {
-      const now = Date.now();
-      const registry = this.endpointDeps.endpointRegistry;
-      for (const endpoint of registry.listEndpoints()) {
-        if (inferEndpointType(endpoint.subject) === 'dispatch') {
-          const lastActivity =
-            registry.getLastActivityMs(endpoint.subject) ?? Date.parse(endpoint.registeredAt);
-          if (now - lastActivity > this.dispatchInboxTtlMs) {
-            await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
-          }
-        }
-      }
+    this.ttlSweepInterval = setInterval(() => {
+      void this.runTtlSweep();
     }, this.ttlSweepIntervalMs);
     this.ttlSweepInterval.unref();
+  }
+
+  /**
+   * Run one TTL sweep of dispatch inboxes, unregistering any whose
+   * inactivity window has elapsed. Exposed (mirroring {@link runGcSweep})
+   * so callers — chiefly tests — can trigger a deterministic sweep instead
+   * of racing the periodic timer, which can lag under event-loop load.
+   *
+   * @returns The subjects unregistered by this sweep.
+   */
+  async runTtlSweep(): Promise<string[]> {
+    if (this.closed) return [];
+    const now = Date.now();
+    const registry = this.endpointDeps.endpointRegistry;
+    const swept: string[] = [];
+    for (const endpoint of registry.listEndpoints()) {
+      if (inferEndpointType(endpoint.subject) === 'dispatch') {
+        const lastActivity =
+          registry.getLastActivityMs(endpoint.subject) ?? Date.parse(endpoint.registeredAt);
+        if (now - lastActivity > this.dispatchInboxTtlMs) {
+          await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
+          swept.push(endpoint.subject);
+        }
+      }
+    }
+    return swept;
   }
 
   /**

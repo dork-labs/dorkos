@@ -95,10 +95,14 @@ IMPORTANT — Outbound messaging rules:
 - When your CURRENT message has a <relay_context> block: respond naturally. Your response
   is automatically forwarded to the sender. Do NOT call relay_send.
 - When your current message does NOT have <relay_context> (e.g., from the DorkOS console)
-  and the user asks you to message them on another channel: use relay_send() with the
-  subject from <relay_connections>, or use relay_notify_user() for convenience.
-- Only call relay_send/relay_send_and_wait/relay_send_async to INITIATE a new message
-  to another agent or external platform.
+  and the user asks you to message them on an external channel (Telegram, Slack): use
+  relay_notify_user(message="…", channel="{adapter type or ID}"). It resolves the bound chat
+  and honors the channel's "agent may start conversations" permission — if that permission is
+  off it returns INITIATE_NOT_ALLOWED instead of sending. Do NOT try to reach a human by
+  publishing a raw relay.human.* subject with relay_send: that path enforces the same
+  permission and will be denied.
+- relay_send/relay_send_and_wait/relay_send_async are for reaching other AGENTS
+  (relay.agent.*), not for initiating messages to humans on external channels.
 
 relay_list_endpoints returns type ("dispatch"|"query"|"persistent"|"agent"|"unknown") and expiresAt
 (ISO string or null) for each endpoint. Use these to identify active inboxes and their expiry.
@@ -131,15 +135,18 @@ Runtimes: claude-code | cursor | codex | other
 const ADAPTER_TOOLS_CONTEXT = `<adapter_tools>
 Relay adapters bridge external platforms (Telegram, webhooks) to the agent message bus.
 
-Subject conventions for external messages:
+To message a human on an external channel, use relay_notify_user(message="…",
+channel="{adapter type or ID}") — never publish a relay.human.* subject directly. The bus
+addresses external chats with these subjects internally; they are how inbound messages arrive
+and how your automatic replies are routed, NOT a send target for you:
   relay.human.telegram.{adapterId}.{chatId}        — Telegram DM
   relay.human.telegram.{adapterId}.group.{chatId}  — Telegram group
   relay.human.slack.{adapterId}.{chatId}            — Slack channel/DM
   relay.human.webhook.{webhookId}                   — Webhook
 
 The {adapterId} is the adapter's ID from relay_list_adapters() (e.g., "telegram-lifeos").
-The {chatId} is the platform-specific chat identifier (e.g., "817732118" for Telegram).
-Use <relay_connections> or binding_list_sessions() to get pre-computed subjects.
+Whether you may start a conversation on a channel is a per-binding permission ("agent may
+start conversations"); relay_notify_user enforces it and reports INITIATE_NOT_ALLOWED when off.
 
 Adapter management:
 - relay_list_adapters() — see all adapters and their status (connected, disconnected, error)
@@ -315,21 +322,24 @@ function buildRelayConnectionsBlock(
     if (sessions.length > 0) {
       lines.push('  Active chats:');
       for (const session of sessions) {
-        const adapterType = adapter?.config?.type ?? 'unknown';
-        const subject = `relay.human.${adapterType}.${binding.adapterId}.${session.chatId}`;
         const keyParts = session.key.split(':');
         const channelType = keyParts[1] === 'chat' ? 'DM' : (keyParts[1] ?? 'unknown');
-        lines.push(`  - ${subject} (${channelType})`);
+        lines.push(`  - ${session.chatId} (${channelType})`);
       }
     } else {
       lines.push('  No active chats yet (user must message the bot first)');
     }
+    lines.push(
+      binding.canInitiate
+        ? '  Start-conversations permission: ON'
+        : '  Start-conversations permission: OFF (reply-only — you cannot message first here)'
+    );
   }
 
   lines.push('');
-  lines.push('To message a user on a bound adapter:');
-  lines.push(`  relay_send(subject="{chat subject}", payload="your message")`);
-  lines.push(`  OR: relay_notify_user(message="your message", channel="{adapter type or ID}")`);
+  lines.push('To message a user on a bound adapter, use relay_notify_user — it resolves the');
+  lines.push("chat and enforces the channel's start-conversations permission:");
+  lines.push('  relay_notify_user(message="your message", channel="{adapter type or ID}")');
 
   return `<relay_connections>\n${lines.join('\n')}\n</relay_connections>`;
 }

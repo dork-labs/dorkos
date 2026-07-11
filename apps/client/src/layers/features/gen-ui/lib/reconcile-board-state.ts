@@ -26,19 +26,41 @@ type BoardCell = BoardRows[number][number];
 /** State characters that mean "this square is empty" (lenient set). */
 const EMPTY_CHARS = new Set(['.', ' ', '-', '_']);
 
+/** The canonical empty marker every {@link EMPTY_CHARS} member normalizes to. */
+const EMPTY = '.';
+
+/**
+ * Read one row segment's per-cell characters, or `null` if it can't match the
+ * expected length. The UNTRIMMED read wins so a leading/trailing space can mean
+ * "this edge square is empty" (space is a documented empty marker — trimming
+ * first would shorten `" X."` to 2 chars and silently discard a valid heal,
+ * caught in #191 review); when the raw length misses, a trimmed read salvages
+ * decorative padding. Empty-marker characters normalize to `.` so equivalent
+ * states (`"X."` vs `"X "`) vote as one in the consensus.
+ */
+function segmentChars(segment: string, expected: number): string[] | null {
+  const normalize = (chars: string[]) => chars.map((c) => (EMPTY_CHARS.has(c) ? EMPTY : c));
+  const raw = [...segment];
+  if (raw.length === expected) return normalize(raw);
+  const trimmed = [...segment.trim()];
+  if (trimmed.length === expected) return normalize(trimmed);
+  return null;
+}
+
 /**
  * Parse one payload `state` string against the board's exact shape. Returns the
- * per-cell characters, or `null` unless every row segment matches its rendered
- * row's length (lenient about surrounding whitespace, strict about shape — we
- * only act when the state cleanly describes THIS grid).
+ * per-cell characters (empty markers normalized to `.`), or `null` unless every
+ * row segment matches its rendered row's length (lenient about padding and
+ * trailing newlines, strict about shape — we only act when the state cleanly
+ * describes THIS grid).
  */
 function parseState(state: string, rows: BoardRows): string[][] | null {
-  const segments = state.trim().split('/');
+  const segments = state.split('/');
   if (segments.length !== rows.length) return null;
   const parsed: string[][] = [];
   for (let r = 0; r < segments.length; r++) {
-    const chars = [...segments[r].trim()];
-    if (chars.length !== rows[r].length) return null;
+    const chars = segmentChars(segments[r], rows[r].length);
+    if (!chars) return null;
     parsed.push(chars);
   }
   return parsed;
@@ -100,8 +122,8 @@ export function reconcileBoardState(rows: BoardRows): BoardRows {
     row.map((cell, c) => {
       const char = state[r][c];
       // Fill-only: never touch a visibly filled cell, never act on an
-      // empty-state character.
-      if (cell.glyph || cell.icon || EMPTY_CHARS.has(char)) return cell;
+      // empty-state character (normalized to `.` at parse).
+      if (cell.glyph || cell.icon || char === EMPTY) return cell;
       changed = true;
       const { action: _action, ...rest } = cell;
       return { ...rest, glyph: char } satisfies BoardCell;

@@ -174,6 +174,15 @@ export const MarketplacePackageManifestSchema = z.discriminatedUnion('type', [
 ]);
 
 /**
+ * The package `name` field schema (kebab-case slug, 1-64 chars), exported for
+ * consumers that must validate a package name outside a full manifest parse —
+ * e.g. the harness scanner's `.claude-plugin/plugin.json` fallback, where the
+ * name is interpolated into filesystem paths and must never be an arbitrary
+ * string.
+ */
+export const PackageNameSchema = SkillNameSchema;
+
+/**
  * Validated marketplace package manifest. Discriminated union — narrow on
  * `manifest.type` to access type-specific fields.
  */

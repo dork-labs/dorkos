@@ -15,6 +15,22 @@
 import { z } from 'zod';
 
 /**
+ * WebSocket close code the terminal server uses when a NEW attachment supersedes
+ * an existing one for the same PTY — a takeover. The classic trigger is a
+ * duplicated browser tab: `sessionStorage` (and its terminal ids) is copied into
+ * the dupe, which re-attaches to the same ids and the server replaces each
+ * original socket. It is an application close code (RFC 6455 reserves 4000-4999
+ * for application use, so it never collides with a protocol code). The client
+ * reads it to tell "your socket was replaced elsewhere" apart from "the shell
+ * exited": a takeover keeps the tab (with a moved-elsewhere notice) and leaves
+ * the stored ids untouched, where an exit prunes the tab and clears its id.
+ */
+export const TERMINAL_CLOSE_SUPERSEDED = 4001;
+
+/** WebSocket close reason paired with {@link TERMINAL_CLOSE_SUPERSEDED}. */
+export const TERMINAL_CLOSE_SUPERSEDED_REASON = 'superseded';
+
+/**
  * Terminal viewport dimensions in character cells. Bounded to sane values so a
  * malformed resize can never ask the PTY for a pathological grid.
  */

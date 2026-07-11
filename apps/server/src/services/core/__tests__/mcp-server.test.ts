@@ -22,41 +22,45 @@ const { registeredTools, mockConnect, stubHandler, stubFactory } = vi.hoisted(()
 });
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
-  McpServer: vi.fn().mockImplementation((config: { name: string; version: string }) => ({
-    name: config.name,
-    version: config.version,
-    connect: mockConnect,
-    registerTool: vi.fn(
-      (
-        name: string,
-        config: {
-          description: string;
-          inputSchema?: Record<string, unknown>;
-          annotations?: Record<string, boolean>;
-          outputSchema?: unknown;
-        },
-        handler: (...args: unknown[]) => unknown
-      ) => {
-        registeredTools.push({
-          name,
-          description: config.description,
-          schema: config.inputSchema ?? {},
-          annotations: config.annotations,
-          outputSchema: config.outputSchema,
-          handler,
-        });
-      }
-    ),
-    // Resources aren't under test in this file (see resource-specific test
-    // files) — just enough surface for createExternalMcpServer's resource
-    // registration + capability-override call not to throw.
-    registerResource: vi.fn(),
-    server: { registerCapabilities: vi.fn() },
-  })),
-  ResourceTemplate: vi.fn().mockImplementation((uriTemplate: string, callbacks: unknown) => ({
-    uriTemplate,
-    callbacks,
-  })),
+  McpServer: vi.fn().mockImplementation(function (config: { name: string; version: string }) {
+    return {
+      name: config.name,
+      version: config.version,
+      connect: mockConnect,
+      registerTool: vi.fn(
+        (
+          name: string,
+          config: {
+            description: string;
+            inputSchema?: Record<string, unknown>;
+            annotations?: Record<string, boolean>;
+            outputSchema?: unknown;
+          },
+          handler: (...args: unknown[]) => unknown
+        ) => {
+          registeredTools.push({
+            name,
+            description: config.description,
+            schema: config.inputSchema ?? {},
+            annotations: config.annotations,
+            outputSchema: config.outputSchema,
+            handler,
+          });
+        }
+      ),
+      // Resources aren't under test in this file (see resource-specific test
+      // files) — just enough surface for createExternalMcpServer's resource
+      // registration + capability-override call not to throw.
+      registerResource: vi.fn(),
+      server: { registerCapabilities: vi.fn() },
+    };
+  }),
+  ResourceTemplate: vi.fn().mockImplementation(function (uriTemplate: string, callbacks: unknown) {
+    return {
+      uriTemplate,
+      callbacks,
+    };
+  }),
 }));
 
 // ── Mock all tool handler modules to return stubs ───────────────────────────

@@ -107,8 +107,8 @@ export interface TerminalWebSocket {
   binaryType: string;
   /** Send an output frame to the client. */
   send(data: string | Uint8Array): void;
-  /** Close the connection. */
-  close(): void;
+  /** Close the connection, optionally with a WebSocket close code and reason. */
+  close(code?: number, reason?: string): void;
   /** Subscribe to an inbound message. */
   on(event: 'message', cb: (data: Buffer, isBinary: boolean) => void): void;
   /** Subscribe to connection close. */
@@ -137,7 +137,7 @@ export function bindTerminalSocket(
     send: (data) => {
       if (ws.readyState === WS_OPEN) ws.send(data);
     },
-    close: () => ws.close(),
+    close: (code, reason) => ws.close(code, reason),
   };
   manager.attach(id, sink);
 

@@ -7,6 +7,16 @@ description: Common problems and their fixes, starting with the most likely
 
 Something not working? Find the problem below and work through the steps in order, most likely fix first.
 
+## Start here: `dorkos doctor`
+
+Before anything else, run:
+
+```bash
+dorkos doctor
+```
+
+It checks your whole setup (Node version, data directory, port, agent tools, login and tunnel config) and reports what's wrong in plain words. It reads and probes; it never changes anything. If the doctor finds the problem, its report tells you the fix. If everything passes and something is still off, keep reading.
+
 ## "DorkOS won't start, something about a port"
 
 You'll see an error like `Port 4242 is already in use.` DorkOS listens on port 4242 by default (the address your browser uses to reach it), and something else on your machine already has that port claimed.
@@ -26,8 +36,8 @@ You'll see an error like `Port 4242 is already in use.` DorkOS listens on port 4
 DorkOS checks two things for each agent tool: is the CLI installed, and are you logged in. When either is missing, DorkOS shows a **Connect** button instead of trying to run a session and failing partway through.
 
 1. Open **Settings > Runtimes** to see which agent tool needs attention. Each one shows **Ready** or **Connect**, plus an Advanced section with the exact command to run.
-2. Install and log in to the CLI that's missing:
-   - **Claude Code**: `curl -fsSL https://claude.ai/install.sh | bash` (on Windows: `irm https://claude.ai/install.ps1 | iex`), then set your `ANTHROPIC_API_KEY`.
+2. Install and log in to the tool that's missing:
+   - **Claude Code**: DorkOS bundles the Claude Code engine, so there's nothing to install. You only need to authenticate: set your `ANTHROPIC_API_KEY`, or log in with a `claude` CLI if you have one on your PATH.
    - **Codex**: `npm i -g @openai/codex && codex login`
    - **OpenCode**: `npm i -g opencode-ai && opencode auth login`
 3. Click **Refresh** in the Runtimes tab (or click Connect again). DorkOS re-checks the CLI and login state and flips to Ready once both pass.

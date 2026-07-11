@@ -6,13 +6,15 @@ import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TerminalHandle } from '@dorkos/shared/transport';
+import { TERMINAL_CLOSE_SUPERSEDED } from '@dorkos/shared/terminal-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 
 // Shared, hoist-safe capture of everything written to the stubbed xterm, so
-// tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy.
-const xterm = vi.hoisted(() => ({ writes: [] as string[] }));
+// tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy — plus
+// a focus() call count for the keyboard-vs-pointer focus gate (DOR-229).
+const xterm = vi.hoisted(() => ({ writes: [] as string[], focusCalls: 0 }));
 
 // xterm touches canvas/WebGL, which jsdom cannot provide — stub the terminal,
 // its fit addon, the WebGL renderer, and the CSS side-effect import so instances
@@ -24,7 +26,9 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon() {}
     open() {}
     onData() {}
-    focus() {}
+    focus() {
+      xterm.focusCalls += 1;
+    }
     write(data: string | Uint8Array) {
       xterm.writes.push(typeof data === 'string' ? data : new TextDecoder().decode(data));
     }
@@ -75,6 +79,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   xterm.writes.length = 0;
+  xterm.focusCalls = 0;
   resizeCallbacks.length = 0;
   sessionStorage.clear();
   useAppStore.setState({ selectedCwd: CWD, sessionId: null });
@@ -190,12 +195,40 @@ describe('TerminalPanel', () => {
     await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
 
     // Switch back to the first tab — no new PTY is created, both stay mounted.
-    await user.click(screen.getByRole('tab', { name: /Terminal 1/ }).querySelector('button')!);
+    await user.click(screen.getByRole('tab', { name: /Terminal 1/ }));
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: /Terminal 1/, selected: true })).toBeInTheDocument()
     );
     expect(transport.openTerminal).toHaveBeenCalledTimes(2);
     expect(instanceCount(container)).toBe(2);
+  });
+
+  it('keyboard tab activation never focuses the shell; pointer activation does (DOR-229)', async () => {
+    const user = userEvent.setup();
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'New terminal' }));
+    await waitFor(() => expect(transport.openTerminal).toHaveBeenCalledTimes(2));
+
+    // Keyboard traversal: focus the active tab and arrow across the strip.
+    // xterm's focus() would steal focus off the strip and swallow the next
+    // arrow key in the shell — it must NOT be called.
+    screen.getByRole('tab', { name: /Terminal 2/ }).focus();
+    const focusCallsBefore = xterm.focusCalls;
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('tab', { name: /Terminal 1/, selected: true })).toHaveFocus();
+    expect(xterm.focusCalls).toBe(focusCallsBefore);
+
+    // …and traversal keeps working past one tab (the strip retains focus).
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('tab', { name: /Terminal 2/, selected: true })).toHaveFocus();
+    expect(xterm.focusCalls).toBe(focusCallsBefore);
+
+    // Pointer activation: the user expects keystrokes in the revealed shell.
+    await user.click(screen.getByRole('tab', { name: /Terminal 1/ }));
+    await waitFor(() => expect(xterm.focusCalls).toBeGreaterThan(focusCallsBefore));
   });
 
   it('ignores the zero-size observer entry a hidden tab fires — no bogus PTY resize', async () => {
@@ -226,8 +259,9 @@ describe('TerminalPanel', () => {
     // Wait until the seeded shell has an id persisted (created + flushed).
     await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['pty-1']));
 
-    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
-    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    // The close control is a sibling of the tab (a non-tab-stop button), so it
+    // is queried at the strip level rather than within the tab element.
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
 
     await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('pty-1'));
     // Last tab closed → empty state, panel stays open.
@@ -245,8 +279,8 @@ describe('TerminalPanel', () => {
 
     // The seeded tab is still spawning — close it. No id yet, so nothing to
     // destroy at click time.
-    const tab = await screen.findByRole('tab', { name: /Terminal 1/ });
-    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    await screen.findByRole('tab', { name: /Terminal 1/ });
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
     expect(transport.closeTerminal).not.toHaveBeenCalled();
     await screen.findByText('No terminals open.');
 
@@ -265,7 +299,7 @@ describe('TerminalPanel', () => {
     transport.openTerminal = vi.fn(() => create.promise);
 
     renderTerminal(transport);
-    const tab = await screen.findByRole('tab', { name: /Terminal 1/ });
+    await screen.findByRole('tab', { name: /Terminal 1/ });
 
     // Close and resolve back-to-back in the SAME tick — no interim flush. The
     // create's continuation can then run in the gap where removeTab has
@@ -273,7 +307,7 @@ describe('TerminalPanel', () => {
     // `cancelled` yet, so the id arrives via onCreated for a tab that no
     // longer exists. closedPendingKeys (mutated synchronously in closeTab) is
     // what routes it to destruction regardless of which path fires.
-    fireEvent.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
     create.resolve({ id: 'late-pty', output: exitedOutput() });
 
     await waitFor(() => expect(transport.closeTerminal).toHaveBeenCalledWith('late-pty'));
@@ -321,8 +355,9 @@ describe('TerminalPanel', () => {
     renderTerminal(transport);
 
     await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual(['pty-1']));
-    const tab = screen.getByRole('tab', { name: /Terminal 1/ });
-    await user.click(within(tab).getByRole('button', { name: 'Close Terminal 1' }));
+    // The close control is a sibling of the tab (a non-tab-stop button), so it
+    // is queried at the strip level rather than within the tab element.
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
     const emptyState = (await screen.findByText('No terminals open.')).parentElement!;
 
     // The empty state carries its own create button (besides the strip's "+").
@@ -389,6 +424,134 @@ describe('TerminalPanel', () => {
     // must not linger in storage.
     await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
     await screen.findByText('No terminals open.');
+  });
+
+  it('keeps the tab but drops the stored id on a takeover close (session moved to another window)', async () => {
+    // A duplicated tab re-attaches to the same PTY id; the server closes THIS
+    // socket with TERMINAL_CLOSE_SUPERSEDED. The tab must survive with a notice —
+    // not be pruned like an exit — but the id must leave THIS window's persisted
+    // list: otherwise a refresh here would re-attach and steal the session back
+    // from the takeover window, ping-ponging it on every reload.
+    writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: exitedOutput(),
+        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+      })
+    );
+    const openTerminal = vi.fn();
+    transport.openTerminal = openTerminal;
+
+    renderTerminal(transport);
+
+    await waitFor(() =>
+      expect(xterm.writes.join('')).toContain('[opened in another window — session moved]')
+    );
+    // Tab kept (dead but labeled), no fresh shell spawned to replace it.
+    expect(screen.getByRole('tab', { name: /Terminal 1/ })).toBeInTheDocument();
+    expect(openTerminal).not.toHaveBeenCalled();
+    // The id is gone from THIS window's persisted list (sessionStorage is
+    // per-browser-tab, so the takeover window's own copy is untouched).
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
+  });
+
+  it('does not restore a superseded tab on refresh — no re-attach steal-back', async () => {
+    // The moved-away window reloads: its persisted list no longer holds the
+    // superseded id, so the remount must NOT attach to it (which would supersede
+    // the takeover window right back). With nothing stored, the panel seeds one
+    // fresh shell instead.
+    writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: exitedOutput(),
+        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+      })
+    );
+
+    const { unmount } = renderTerminal(transport);
+    await waitFor(() => expect(readTerminalTabs(null, CWD).ids).toEqual([]));
+
+    // Simulated refresh: unmount, then remount from (now-empty) storage.
+    unmount();
+    const attachTerminal = vi.fn();
+    const openTerminal = vi.fn(
+      async (_cwd: string, signal?: AbortSignal): Promise<TerminalHandle> => ({
+        id: 'fresh',
+        output: liveOutput(signal!),
+      })
+    );
+    transport.attachTerminal = attachTerminal;
+    transport.openTerminal = openTerminal;
+    renderTerminal(transport);
+
+    await waitFor(() => expect(openTerminal).toHaveBeenCalledTimes(1));
+    // Never re-attached to the stolen id — the takeover window keeps the shell.
+    expect(attachTerminal).not.toHaveBeenCalled();
+  });
+
+  it('closing a superseded tab never destroys the PTY (the other window owns it now)', async () => {
+    // After a takeover the dead tab and the live terminal in the other window
+    // share ONE PTY id. Clicking × on the dead tab must NOT call closeTerminal
+    // (the DELETE would kill the other window's live shell) — just remove the
+    // tab; its id already left this window's stored list at supersede time.
+    const user = userEvent.setup();
+    writeTerminalTabs(null, CWD, { ids: ['stolen'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: exitedOutput(),
+        closeInfo: { code: TERMINAL_CLOSE_SUPERSEDED, reason: 'superseded' },
+      })
+    );
+
+    renderTerminal(transport);
+    await waitFor(() =>
+      expect(xterm.writes.join('')).toContain('[opened in another window — session moved]')
+    );
+
+    // The close control is a sibling of the tab (a non-tab-stop button), so it
+    // is queried at the strip level rather than within the tab element.
+    await user.click(screen.getByRole('button', { name: 'Close Terminal 1' }));
+
+    // Tab removed, id dropped from this window's stored list — but the shared
+    // PTY was never destroyed.
+    await screen.findByText('No terminals open.');
+    expect(readTerminalTabs(null, CWD).ids).toEqual([]);
+    expect(transport.closeTerminal).not.toHaveBeenCalled();
+  });
+
+  it('renders the truncation cue in order: [reconnected] → cue → replay', async () => {
+    // The server leads a re-attach replay with the dim truncation cue (it alone
+    // knows the detached buffer overflowed), then the surviving scrollback. The
+    // client writes them straight through, after its own [reconnected] cue.
+    writeTerminalTabs(null, CWD, { ids: ['t1'], activeIndex: 0 });
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.attachTerminal = vi.fn(
+      async (id: string): Promise<TerminalHandle> => ({
+        id,
+        output: (async function* () {
+          yield new TextEncoder().encode(
+            '\x1b[2m[some output was lost while disconnected]\x1b[0m\r\n'
+          );
+          yield new TextEncoder().encode('surviving scrollback\r\n');
+        })(),
+      })
+    );
+
+    renderTerminal(transport);
+
+    await waitFor(() => expect(xterm.writes.join('')).toContain('surviving scrollback'));
+    const joined = xterm.writes.join('');
+    expect(joined.indexOf('[reconnected]')).toBeGreaterThanOrEqual(0);
+    expect(joined.indexOf('[reconnected]')).toBeLessThan(joined.indexOf('some output was lost'));
+    expect(joined.indexOf('some output was lost')).toBeLessThan(
+      joined.indexOf('surviving scrollback')
+    );
   });
 
   it('shows human copy when a create hits the live-terminal cap (TERMINAL_LIMIT)', async () => {

@@ -6,7 +6,7 @@
  *
  * @module services/relay/adapter-config
  */
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, chmod, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { z } from 'zod';
@@ -80,6 +80,10 @@ function stripRemovedAdapterTypes(raw: unknown): unknown {
 export async function loadAdapterConfig(configPath: string): Promise<AdapterConfig[]> {
   try {
     const raw = await readFile(configPath, 'utf-8');
+    // The file holds bot tokens in cleartext. If an instance wrote it before we
+    // enforced 0600, or it was restored from a lax backup, tighten it on read so
+    // the secrets stop being world-readable without waiting for the next save.
+    await repairAdapterConfigPermissions(configPath);
     const sanitized = stripRemovedAdapterTypes(JSON.parse(raw));
     const parsed = AdaptersConfigFileSchema.safeParse(sanitized);
     if (parsed.success) {
@@ -103,9 +107,42 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
 }
 
 /**
+ * Owner-only file mode for `adapters.json` (`rw-------`). Adapter configs hold
+ * live bot tokens (Telegram, Slack) in cleartext, so the file must not be
+ * readable by other local users.
+ */
+const ADAPTER_CONFIG_MODE = 0o600;
+
+/**
+ * Tighten `adapters.json` to owner-only if a read finds it group/world-readable.
+ *
+ * Mirrors the session-secret repair in `services/core/auth/secret.ts`: repair
+ * rather than reject, warn once, and never let a stat/chmod failure break the
+ * load. No-op on Windows, where POSIX mode bits do not apply.
+ *
+ * @param configPath - Absolute path to adapters.json.
+ */
+async function repairAdapterConfigPermissions(configPath: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  try {
+    const mode = (await stat(configPath)).mode & 0o777;
+    if ((mode & 0o077) !== 0) {
+      await chmod(configPath, ADAPTER_CONFIG_MODE);
+      logger.warn(
+        `[AdapterConfig] adapters.json was readable by other users (mode ${mode.toString(8)}); tightened it to owner-only (0600)`
+      );
+    }
+  } catch (err) {
+    // A stat/chmod failure must never break loading the config.
+    logger.warn('[AdapterConfig] Could not verify permissions on adapters.json:', err);
+  }
+}
+
+/**
  * Persist adapter configs to disk using atomic write (tmp + rename).
  *
- * Creates the parent directory if it does not exist.
+ * Creates the parent directory if it does not exist. The file is written
+ * owner-only (`0600`) because it stores adapter secrets in cleartext.
  *
  * @param configPath - Absolute path to adapters.json
  * @param configs - The adapter configs to write
@@ -116,8 +153,14 @@ export async function saveAdapterConfig(
 ): Promise<void> {
   await mkdir(dirname(configPath), { recursive: true });
   const tmpPath = `${configPath}.tmp`;
-  await writeFile(tmpPath, JSON.stringify({ adapters: configs }, null, 2), 'utf-8');
+  await writeFile(tmpPath, JSON.stringify({ adapters: configs }, null, 2), {
+    encoding: 'utf-8',
+    mode: ADAPTER_CONFIG_MODE,
+  });
   await rename(tmpPath, configPath);
+  // Re-assert the mode: a pre-existing file's perms survive `rename`, and the
+  // tmp file's create mode is subject to the process umask.
+  await chmod(configPath, ADAPTER_CONFIG_MODE);
 }
 
 /**

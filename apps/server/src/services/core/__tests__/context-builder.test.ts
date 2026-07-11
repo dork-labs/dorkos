@@ -876,7 +876,7 @@ describe('buildRelayConnectionsBlock', () => {
     expect(result).toContain('[connected]');
   });
 
-  it('lists active chats with pre-computed relay subjects', () => {
+  it('lists active chats by chatId without exposing a raw publishable subject (DOR-277)', () => {
     const ctx = makeRelayContext({
       bindingRouter: {
         getSessionsByBinding: vi.fn(() => [
@@ -886,8 +886,12 @@ describe('buildRelayConnectionsBlock', () => {
     });
     const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
     expect(result).toContain('Active chats:');
-    expect(result).toContain('relay.human.telegram.telegram-lifeos.817732118');
+    expect(result).toContain('817732118');
     expect(result).toContain('(DM)');
+    // The raw relay.human.* subject is no longer advertised as a send target.
+    expect(result).not.toContain('relay.human.telegram.telegram-lifeos.817732118');
+    // Default binding is canInitiate:false — the permission is surfaced honestly.
+    expect(result).toContain('Start-conversations permission: OFF');
   });
 
   it('shows "No active chats yet" for bindings without sessions', () => {
@@ -907,11 +911,12 @@ describe('buildRelayConnectionsBlock', () => {
     expect(result).toMatch(/\n<\/relay_connections>$/);
   });
 
-  it('includes relay_send and relay_notify_user usage instructions', () => {
+  it('steers to relay_notify_user and does not offer relay_send for reaching humans (DOR-277)', () => {
     const ctx = makeRelayContext();
     const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
-    expect(result).toContain('relay_send(');
     expect(result).toContain('relay_notify_user(');
+    // relay_send is no longer advertised as a way to message a human channel.
+    expect(result).not.toContain('relay_send(');
   });
 
   it('falls back to isRelayEnabled when toolConfig is not provided', () => {

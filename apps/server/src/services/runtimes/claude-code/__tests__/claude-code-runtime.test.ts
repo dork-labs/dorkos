@@ -85,10 +85,14 @@ vi.mock('../../../../lib/boundary.js', () => ({
 }));
 // Mock the filesystem command scanner so tests don't read real .claude/commands/ on disk
 vi.mock('../tooling/command-registry.js', () => ({
-  CommandRegistryService: vi.fn().mockImplementation(() => ({
-    getCommands: vi.fn().mockResolvedValue({ commands: [], lastScanned: new Date().toISOString() }),
-    invalidateCache: vi.fn(),
-  })),
+  CommandRegistryService: vi.fn().mockImplementation(function () {
+    return {
+      getCommands: vi
+        .fn()
+        .mockResolvedValue({ commands: [], lastScanned: new Date().toISOString() }),
+      invalidateCache: vi.fn(),
+    };
+  }),
 }));
 // Mock the unified-stream fan-out so command-list broadcasts can be asserted
 // without an open SSE connection.

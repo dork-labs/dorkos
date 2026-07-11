@@ -32,6 +32,23 @@ export interface ParsedSkill<T> {
   uiTemplates?: WidgetTemplate[];
 }
 
+/** Options for {@link parseSkillFile}. */
+export interface ParseSkillFileOptions {
+  /**
+   * Whether a frontmatter `name` that differs from the parent directory name
+   * fails the parse. Defaults to `true` — the right strictness for content
+   * DorkOS authors itself (tasks, personal skills), where the two are kept in
+   * lockstep by the writer.
+   *
+   * Pass `false` when consuming third-party Claude Code content: CC keys a
+   * skill by its DIRECTORY name and tolerates a divergent frontmatter name
+   * (Anthropic's own `hookify` plugin ships one), so a superset consumer must
+   * accept it too (DOR-263). The parsed definition's `name` is always the
+   * directory name either way.
+   */
+  requireNameMatch?: boolean;
+}
+
 /**
  * Parse a SKILL.md file and validate its frontmatter against a Zod schema.
  *
@@ -39,16 +56,19 @@ export interface ParsedSkill<T> {
  * 1. The file is named SKILL.md
  * 2. Frontmatter passes the provided schema
  * 3. The `name` field in frontmatter matches the parent directory name
+ *    (unless `options.requireNameMatch` is `false`)
  *
  * @param filePath - Absolute path to the SKILL.md file
  * @param content - Raw file content (UTF-8)
  * @param schema - Zod schema to validate frontmatter against
+ * @param options - Parse strictness options
  * @returns ParseResult with the validated definition or an error
  */
 export function parseSkillFile<T>(
   filePath: string,
   content: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  options?: ParseSkillFileOptions
 ): ParseResult<ParsedSkill<T>> {
   // Validate filename
   const filename = path.basename(filePath);
@@ -90,8 +110,9 @@ export function parseSkillFile<T>(
   const dirName = path.basename(dirPath);
 
   // Validate name matches directory (when schema includes a name field)
+  const requireNameMatch = options?.requireNameMatch ?? true;
   const meta = result.data as Record<string, unknown>;
-  if (typeof meta.name === 'string' && meta.name !== dirName) {
+  if (requireNameMatch && typeof meta.name === 'string' && meta.name !== dirName) {
     return {
       ok: false,
       error: `Frontmatter name "${meta.name}" does not match directory name "${dirName}"`,

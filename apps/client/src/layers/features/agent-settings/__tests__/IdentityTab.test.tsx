@@ -38,7 +38,10 @@ const baseAgent: AgentManifest = {
   enabledToolGroups: {},
 };
 
-function renderTab(agent: AgentManifest, onUpdate: ReturnType<typeof vi.fn>) {
+function renderTab(
+  agent: AgentManifest,
+  onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>
+) {
   const { container } = render(
     <TooltipProvider>
       <IdentityTab agent={agent} onUpdate={onUpdate} />
@@ -48,11 +51,11 @@ function renderTab(agent: AgentManifest, onUpdate: ReturnType<typeof vi.fn>) {
 }
 
 describe('IdentityTab', () => {
-  let onUpdate: ReturnType<typeof vi.fn>;
+  let onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    onUpdate = vi.fn();
+    onUpdate = vi.fn<(updates: Partial<AgentManifest>) => void>();
   });
 
   describe('Tags section', () => {

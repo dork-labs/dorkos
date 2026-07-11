@@ -153,6 +153,19 @@ export function createTerminalMethods(baseUrl: string) {
     ws.binaryType = 'arraybuffer';
     sockets.set(id, ws);
 
+    // Capture the close code/reason so the panel can tell a server takeover
+    // (TERMINAL_CLOSE_SUPERSEDED) from the shell exiting once `output` ends. The
+    // listener fires synchronously within the same close dispatch that ends the
+    // stream, so `closeInfo` is set by the time the consumer's loop completes.
+    let closeInfo: { code: number; reason: string } | undefined;
+    ws.addEventListener(
+      'close',
+      (ev) => {
+        closeInfo = { code: ev.code, reason: ev.reason };
+      },
+      { once: true }
+    );
+
     let cleaned = false;
     const cleanup = (): void => {
       if (cleaned) return;
@@ -176,7 +189,13 @@ export function createTerminalMethods(baseUrl: string) {
     }
 
     const output = createOutputStream(ws, cleanup, signal);
-    return { id, output };
+    return {
+      id,
+      output,
+      get closeInfo() {
+        return closeInfo;
+      },
+    };
   };
 
   return {

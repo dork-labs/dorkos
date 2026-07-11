@@ -65,4 +65,5 @@ export {
   max,
   inArray,
   isNull,
+  or,
 } from 'drizzle-orm';

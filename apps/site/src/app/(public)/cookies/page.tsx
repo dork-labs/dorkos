@@ -12,7 +12,7 @@ export default function CookiePolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Cookie Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 9, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 10, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             This site is run by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
             we mean.
@@ -57,10 +57,10 @@ export default function CookiePolicyPage() {
           <div className="space-y-3">
             <h3 className="text-charcoal text-lg font-medium">Analytics</h3>
             <p className="text-warm-gray leading-relaxed">
-              We do not run website analytics today, so we do not set analytics cookies. We have
-              wired up PostHog, a privacy-friendly analytics tool, but it is switched off by
-              default. If we turn it on, it would set its own cookie to remember your choice, and we
-              would update this page first.
+              We do not run website analytics today, so we do not set analytics cookies. The site
+              has PostHog, a privacy-friendly analytics tool, wired in, but it stays completely off
+              until we configure it. If we turn it on, PostHog will only store anything in your
+              browser after you accept the consent banner, and we will update this page first.
             </p>
           </div>
         </section>

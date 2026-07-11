@@ -531,6 +531,7 @@ export function createMockBinding(overrides: Partial<AdapterBinding> = {}): Adap
     canInitiate: false,
     canReply: true,
     canReceive: true,
+    notifyOnTaskComplete: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,

@@ -198,8 +198,14 @@ describe('ensureCoreExtensions', () => {
     const info = await ensureCoreExtensions(dorkHome);
     const byId = Object.fromEntries(info.map((i) => [i.id, i]));
 
-    // Marketplace ships enabled; Hello World and Linear Loop ship off (opt-in).
-    expect(byId.marketplace).toEqual({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+    // Marketplace ships enabled and LOCKED — its UI is host-bundled, so a
+    // toggle would be a no-op (DOR-122). Hello World and Linear Loop ship off
+    // (opt-in).
+    expect(byId.marketplace).toEqual({
+      id: 'marketplace',
+      defaultEnabled: true,
+      canDisable: false,
+    });
     expect(byId['hello-world']).toEqual({
       id: 'hello-world',
       defaultEnabled: false,

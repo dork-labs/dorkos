@@ -157,6 +157,25 @@ export async function runAutoProjection(
       sweepOrphans: true,
     });
 
+    // An install whose package contributes NOTHING to the plan means the
+    // plugin's files never reach any harness — the exact silent failure of
+    // DOR-264. Surface it loudly instead of burying an `applied: 0` in the
+    // info summary. (Legitimate for asset-free packages, hence warn not error.)
+    const pluginPrefix = `.dork/plugins/${packageName}/`;
+    const touchesPackage = (entry: { source?: string }): boolean =>
+      entry.source?.startsWith(pluginPrefix) ?? false;
+    if (
+      action === 'install' &&
+      !plan.actions.some(touchesPackage) &&
+      !plan.drops.some(touchesPackage)
+    ) {
+      logger.warn('[HarnessSync] Install projected no files for package', {
+        packageName,
+        projectPath,
+        hint: `Nothing under ${pluginPrefix} contributed skills, commands, or hooks to any harness. The package may have no portable assets, or its install directory was not recognized.`,
+      });
+    }
+
     // A conflict means a real file is blocking a managed projection target;
     // surface it at warn rather than burying it in the info-level summary.
     if (conflicts.length > 0) {

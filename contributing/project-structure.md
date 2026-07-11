@@ -26,7 +26,7 @@ dorkos/
 │   ├── icons/            # @dorkos/icons — SVG icon & logo registry
 │   └── test-utils/       # Mock factories, test helpers
 ├── turbo.json
-├── vitest.workspace.ts
+├── vitest.config.ts
 └── package.json
 ```
 

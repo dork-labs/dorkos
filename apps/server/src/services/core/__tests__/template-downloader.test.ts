@@ -223,8 +223,28 @@ describe('execGitClone', () => {
         'https://github.com/org/repo.git',
         '/tmp/target',
       ],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
+      expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
+  });
+
+  it('runs the clone with the hardened git env and a timeout', async () => {
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc);
+
+    const promise = execGitClone('https://github.com/org/repo.git', '/tmp/target');
+    mockProc._emit('close', 0);
+    await promise;
+
+    const opts = vi.mocked(spawn).mock.calls[0][2] as {
+      env?: NodeJS.ProcessEnv;
+      timeout?: number;
+    };
+    // GIT_ALLOW_PROTOCOL confines the author URL to safe transports (blocks ext::).
+    expect(opts.env?.GIT_ALLOW_PROTOCOL).toBe('https:ssh:git');
+    // GIT_TERMINAL_PROMPT=0 stops a private URL from hanging on a prompt.
+    expect(opts.env?.GIT_TERMINAL_PROMPT).toBe('0');
+    // A wall-clock cap bounds a stalled clone.
+    expect(opts.timeout).toBeGreaterThan(0);
   });
 
   it('removes .git directory after successful clone', async () => {

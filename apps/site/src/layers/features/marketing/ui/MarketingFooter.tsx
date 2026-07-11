@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { DorkLogo } from '@dorkos/icons/logos';
 
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
+import { GITHUB_OUTBOUND_HREF } from '@/config/site';
+import { FooterSocialLink } from './FooterSocialLink';
 
 interface SocialLink {
   name: string;
@@ -68,16 +70,13 @@ export function MarketingFooter({
         {socialLinks.length > 0 && (
           <div className="mb-5 flex justify-center gap-5">
             {socialLinks.map((link) => (
-              <a
+              <FooterSocialLink
                 key={link.name}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-cream-tertiary hover:text-brand-orange transition-smooth"
-                aria-label={link.name}
+                name={link.name}
+                href={link.name === 'GitHub' ? GITHUB_OUTBOUND_HREF : link.href}
               >
                 {link.icon}
-              </a>
+              </FooterSocialLink>
             ))}
           </div>
         )}
@@ -103,6 +102,12 @@ export function MarketingFooter({
             className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
           >
             Terms
+          </Link>
+          <Link
+            href="/security"
+            className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
+          >
+            Security
           </Link>
           <Link
             href="/cookies"

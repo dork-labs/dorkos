@@ -63,14 +63,15 @@
     "@inquirer/prompts": "^8.5.2",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@ngrok/ngrok": "^1.7.0",
-    "@openai/codex": "0.142.5",
-    "@openai/codex-sdk": "~0.142.5",
+    "@openai/codex": "0.144.1",
+    "@openai/codex-sdk": "~0.144.1",
     "@opencode-ai/sdk": "^1.17.13",
     "@scalar/express-api-reference": "^0.9.8",
     "better-sqlite3": "^12.11.1",
     "conf": "^15.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "esbuild": "^0.28.0",
     "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "node-pty": "^1.1.0",
@@ -81,16 +82,17 @@
   },
   "devDependencies": {
     "@better-auth/api-key": "^1.6.23",
+    "@dorkos/client": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/harness": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
+    "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "better-auth": "^1.6",
-    "esbuild": "^0.28.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

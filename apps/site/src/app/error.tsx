@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import posthog from 'posthog-js';
+import { trackClientError } from '@/lib/analytics';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Home } from 'lucide-react';
 import Link from 'next/link';
@@ -16,12 +16,8 @@ export default function Error({
   useEffect(() => {
     // Log the error to an error reporting service
     console.error('Error:', error);
-    // Capture error in PostHog
-    posthog.captureException(error);
-    posthog.capture('client_error', {
-      error_message: error.message,
-      error_digest: error.digest,
-    });
+    // Capture error in PostHog (no-op when analytics is not configured)
+    trackClientError(error, 'route');
   }, [error]);
 
   return (

@@ -70,6 +70,58 @@ describe('StreamingText dorkos-ui fence', () => {
     expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
   });
 
+  it('holds the skeleton for a closed-but-truncated fence while the message streams', async () => {
+    // The mid-stream flicker scenario: a chunk boundary closes the fence
+    // (Streamdown reports it complete) while the JSON is still truncated.
+    // Through the real pipeline, isStreaming must reach the fence and hold
+    // the skeleton — never flash the error card.
+    const truncatedClosed = [
+      'Your move:',
+      '',
+      '```dorkos-ui',
+      '{ "version": 1, "root": { "type": "board", "rows": [["X", "O"',
+      '```',
+    ].join('\n');
+    render(<StreamingText content={truncatedClosed} isStreaming />, { wrapper: Wrapper });
+    expect(await screen.findByLabelText('Loading widget')).toBeInTheDocument();
+    expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
+  });
+
+  it('settles a closed-but-truncated fence into the error card once streaming ends', async () => {
+    const truncatedClosed = ['```dorkos-ui', '{ "version": 1, "root": { "type"', '```'].join('\n');
+    const { rerender } = render(<StreamingText content={truncatedClosed} isStreaming />, {
+      wrapper: Wrapper,
+    });
+    expect(await screen.findByLabelText('Loading widget')).toBeInTheDocument();
+
+    // The turn ends; the JSON never completed — now it is genuinely broken.
+    rerender(<StreamingText content={truncatedClosed} isStreaming={false} />);
+    expect(await screen.findByText("This widget couldn't be rendered")).toBeInTheDocument();
+  });
+
+  it('keeps the widget mounted when isLatestMessage or isStreaming change', async () => {
+    // Regression: the fence renderer was an inline closure recreated whenever
+    // isLatestMessage/isStreaming changed, so React saw a new component type and
+    // remounted the whole widget tree — destroying a board's in-flight dispatch
+    // state (the optimistic mark) at the exact moment a click superseded it.
+    const { rerender } = render(
+      <StreamingText content={widgetFence} sessionId="s-1" isLatestMessage isStreaming />,
+      { wrapper: Wrapper }
+    );
+    const stat = await screen.findByText('64°F');
+
+    rerender(
+      <StreamingText
+        content={widgetFence}
+        sessionId="s-1"
+        isLatestMessage={false}
+        isStreaming={false}
+      />
+    );
+    // Same DOM node instance — the widget re-rendered, it did not remount.
+    expect(screen.getByText('64°F')).toBe(stat);
+  });
+
   it('renders multiple dorkos-ui fences in one message independently', async () => {
     const twoFences = [
       'First:',

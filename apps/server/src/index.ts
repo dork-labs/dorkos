@@ -6,7 +6,11 @@ import {
   CodexThreadMap,
   createCodexUiMcpServer,
 } from './services/runtimes/codex/index.js';
-import { OpenCodeRuntime, openCodeServerManager } from './services/runtimes/opencode/index.js';
+import {
+  OpenCodeRuntime,
+  OpenCodeSessionMap,
+  openCodeServerManager,
+} from './services/runtimes/opencode/index.js';
 import {
   runtimeRegistry,
   applyConfiguredDefaultRuntime,
@@ -25,6 +29,7 @@ import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
+import { TaskCompletionNotifier } from './services/tasks/task-completion-notifier.js';
 import {
   TaskSchedulerService,
   type SchedulerAgentManager,
@@ -44,6 +49,7 @@ import {
 import { createRelayRouter } from './routes/relay.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
+import { createInitiateConsentGate } from './services/relay/initiate-consent.js';
 import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
@@ -328,7 +334,12 @@ async function start() {
     // lazily on first use; its shutdown is wired into shutdownServices().
     const openCodeConfig = configManager.get('runtimes').opencode;
     if (openCodeConfig.enabled) {
-      const openCodeRuntime = new OpenCodeRuntime({ provider: openCodeServerManager });
+      const openCodeRuntime = new OpenCodeRuntime({
+        provider: openCodeServerManager,
+        // Durable sessionId <-> OpenCode-session-id map on the shared Drizzle
+        // handle, so DorkOS-facing ids survive a server restart (DOR-251).
+        sessionMap: new OpenCodeSessionMap(db),
+      });
       // Durable per-session settings hydrate/write-through (ADR-0260), same
       // port the Claude adapter uses.
       openCodeRuntime.setSessionSettings(runtimeRegistry);
@@ -524,6 +535,15 @@ async function start() {
         claudeRuntime.setRelayBindingContext(bindingRouter, bindingStore, adapterManager);
       }
 
+      // Enforce the DOR-239 "agent may start conversations" consent at the relay
+      // delivery layer (DOR-277). This is the authoritative gate: every
+      // agent-initiated send to a bound human channel — relay_send*, A2A, or any
+      // other publish path — is denied unless the binding is enabled and
+      // canInitiate. Without a binding store there is no consent to resolve.
+      if (bindingStore) {
+        relayCore.setInitiateConsentGate(createInitiateConsentGate({ bindingStore }));
+      }
+
       logger.info('[Relay] AdapterManager initialized');
     } catch (err) {
       const errInfo = logError(err);
@@ -531,6 +551,29 @@ async function start() {
       // Non-fatal: RelayCore and MeshCore remain operational.
       // Adapters (including ClaudeCodeAdapter) will be unavailable.
       adapterManager = undefined;
+    }
+  }
+
+  // Automatic task-completion notifications (DOR-240): one store-level terminal
+  // hook feeds a TaskCompletionNotifier that resolves the linked agent's bound
+  // channel and delivers via RelayCore. The relay task-handler and the scheduler
+  // share this same in-process TaskStore, so this single registration covers
+  // every execution path. Guarded on the relay deps the notifier needs to
+  // deliver — without them there is no channel to notify on.
+  if (taskStore && relayCore && adapterManager) {
+    const bindingStore = adapterManager.getBindingStore();
+    const bindingRouter = adapterManager.getBindingRouter();
+    if (bindingStore && bindingRouter) {
+      const notifier = new TaskCompletionNotifier({
+        bindingStore,
+        bindingRouter,
+        adapterManager,
+        relayCore,
+        taskStore,
+        logger,
+      });
+      taskStore.setOnRunTerminal((run, task) => void notifier.handle(run, task));
+      logger.info('[Tasks] Completion notifier wired to run-terminal hook');
     }
   }
 

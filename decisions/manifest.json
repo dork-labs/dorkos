@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260711-031624",
+      "slug": "system-level-task-completion-notifications",
+      "title": "System-level task-completion notifications originate from a store terminal hook",
+      "status": "draft",
+      "created": "2026-07-10",
+      "extractedFrom": "task-completion-notifications",
+      "specSlug": "task-completion-notifications"
+    },
+    {
       "id": "260710-024641",
       "slug": "durable-session-event-store",
       "title": "Durable SQLite session-event store for log-backed runtimes",

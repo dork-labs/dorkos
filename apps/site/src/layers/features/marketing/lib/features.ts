@@ -125,6 +125,7 @@ export type ProductSurface =
   | 'canvas-editing'
   | 'chat-streaming'
   | 'cockpit'
+  | 'gen-ui-tictactoe'
   | 'gen-ui-widgets'
   | 'marketplace'
   | 'mobile-approval'
@@ -143,6 +144,7 @@ export const LOOP_SURFACES = [
   'canvas',
   'canvas-editing',
   'chat-streaming',
+  'gen-ui-tictactoe',
   'gen-ui-widgets',
   'mobile-chat',
   'multi-session',
@@ -504,10 +506,10 @@ export const features: Feature[] = [
       'Claude Code, Codex, and OpenCode all render widgets the same way',
     ],
     moment:
-      'You ask how the fleet is doing, and the agent answers with a live card: stats, a bar chart, and a status timeline, not a paragraph to parse. You click "Pause fleet" right in the card, and the agent picks it up.',
+      "You're waiting on a build, so you challenge your agent to tic-tac-toe right in the chat. You click a square, your mark draws itself, and the agent's comeback streams in with the win-line already drawn.",
     media: {
-      surface: 'gen-ui-widgets',
-      alt: 'A DorkOS chat reply rendering a fleet-status widget with stats, a bar chart, a timeline, and action buttons',
+      surface: 'gen-ui-tictactoe',
+      alt: 'A DorkOS chat session playing tic-tac-toe against the agent, with a drawn win-line and a celebrating mood face',
       loop: true,
     },
     docsUrl: '/docs/guides/generative-ui',

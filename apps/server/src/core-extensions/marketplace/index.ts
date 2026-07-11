@@ -4,9 +4,12 @@
  * The Marketplace UI lives in the client codebase under FSD layers
  * (`apps/client/src/layers/features/marketplace/` and
  * `apps/client/src/layers/widgets/marketplace/`) and is wired into the
- * router at `/marketplace`. The sidebar tab that links to that route is
- * registered here so the host's slot machinery (`useSlotContributions`)
- * can surface it alongside other extension-contributed tabs.
+ * router at `/marketplace`. Its sidebar entry is a HARDCODED `NavButton`
+ * in `DashboardSidebar`, NOT a `sidebar.tabs` slot contribution — nothing
+ * about this extension's enabled state affects the host UI. That is why
+ * the manifest declares `canDisable: false`: until Marketplace is rebuilt
+ * as a real extension (DOR-122), a toggle would be a no-op lie, so the
+ * settings UI renders a "Required" lock instead.
  *
  * This file is intentionally minimal: the activate function is a no-op
  * because the corresponding React components are bundled with the host

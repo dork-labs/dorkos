@@ -23,21 +23,18 @@ vi.mock('@/config/site', () => ({
   siteConfig: siteConfigMock,
 }));
 
-// PostHog spies. `optedOut` models PostHog's current capture state so we can
+// Analytics spies (the banner talks to @/lib/analytics, never posthog-js
+// directly). `optedOut` models PostHog's current capture state so we can
 // exercise the mount re-sync branches; it defaults to opted-out to match
 // instrumentation-client.ts (opt_out_capturing_by_default: true).
 const optIn = vi.fn();
 const optOut = vi.fn();
-const capture = vi.fn();
 let optedOut = true;
 
-vi.mock('posthog-js', () => ({
-  default: {
-    opt_in_capturing: (...args: unknown[]) => optIn(...args),
-    opt_out_capturing: (...args: unknown[]) => optOut(...args),
-    has_opted_out_capturing: () => optedOut,
-    capture: (...args: unknown[]) => capture(...args),
-  },
+vi.mock('@/lib/analytics', () => ({
+  optInCapturing: (...args: unknown[]) => optIn(...args),
+  optOutCapturing: (...args: unknown[]) => optOut(...args),
+  hasOptedOutCapturing: () => optedOut,
 }));
 
 const CONSENT_KEY = 'cookie-consent';
@@ -93,9 +90,9 @@ describe('CookieConsentBanner', () => {
     });
 
     expect(optOut).toHaveBeenCalledTimes(1);
+    // No opt-in and no decline event — capturing after a decline is the dark
+    // pattern we fix.
     expect(optIn).not.toHaveBeenCalled();
-    // No decline event — capturing after a decline is the dark pattern we fix.
-    expect(capture).not.toHaveBeenCalled();
     expect(storedConsentValue()).toBe('rejected');
   });
 

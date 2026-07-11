@@ -57,7 +57,7 @@ override tweak never requires re-booting the app or re-recording — re-run
 
 ## Parallel capture (`--shards N`)
 
-Recording is the slow phase (it boots a stack, drives ~16 surfaces, and holds
+Recording is the slow phase (it boots a stack, drives ~17 surfaces, and holds
 each loop for its full duration). `--shards N` splits those shots across `N`
 **fully isolated stacks** and records them at the same time:
 
@@ -89,11 +89,18 @@ the session-list shots are pinned to shard 0, so in practice the money content
 reads the same — but a pixel-identical transcript history across shard counts is
 not a goal.
 
-Teardown is reliable: `bootSeedAndDrive` tears its stack down in a `finally` and
-on `SIGTERM`/`SIGINT` (`teardownAll` — the server/Vite run in their own process
-groups, so a bare Ctrl-C would not otherwise reach them; this covers the serial
-path too), and the orchestrator kills every shard's process group on failure or
-interrupt, so nothing is left holding a port.
+Teardown is reliable: `bootSeedAndDrive` tears its stack down in a `finally`
+(`teardownAll` awaits the actual process-group deaths, escalating
+SIGTERM→SIGKILL) and on `SIGTERM`/`SIGINT` (`teardownAllSync` — the server/Vite
+run in their own process groups, so a bare Ctrl-C would not otherwise reach
+them; this covers the serial path too), a `process.on('exit')` hook group-kills
+anything still tracked on any other exit path, and the orchestrator kills every
+shard's process group on failure or interrupt — so nothing is left holding a
+port. If a run still dies uncleanly (SIGKILL, power loss), the next record's
+preflight reconciles the survivors from the pidfile boot wrote under this
+shard's capture home (`supervisor.ts`), then requires the capture ports to be
+free — failing fast with the offending port instead of seeding against a
+foreign server.
 
 **Default is `--shards 1`** (the unchanged serial path). How much sharding helps
 is bound by cores and by the per-shard boot+seed cost, which is paid on every
@@ -234,7 +241,8 @@ Nothing rendered depends on `Date.now()`.
 
 - `shots.ts` — **the shot registry** (source of truth): every shot's id, kind, frame, consumers, and target dimensions; plus the manifest snapshot projection.
 - `config.ts` — ports, viewports, library/output/archive/overrides paths, and all deterministic demo data (fleet, tasks, runs, sessions, prompts, canvas doc, discovery projects, marketplace).
-- `boot.ts` — spawns/teardowns the test-mode server + Vite client.
+- `boot.ts` — spawns/teardowns the test-mode server + Vite client (single guaranteed teardown path + boot preflight).
+- `supervisor.ts` — crash-safe supervision: the stack pidfile, stale-stack reconciliation, port-occupancy probing, and the self-healing run log.
 - `seed.ts` — pre-boot filesystem prep + post-boot API/DB seeding.
 - `record.ts` / `process.ts` / `capture.ts` / `archive.ts` — the entry points (record raws, process raws + overrides, both, freeze an archive).
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.

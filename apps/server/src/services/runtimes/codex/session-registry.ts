@@ -41,6 +41,18 @@ export interface CodexSessionPatch {
   cwd?: string;
 }
 
+/**
+ * Whether a session-list event may reach live subscribers. A
+ * `session_upserted` for a cwd-less session is suppressed: such a session
+ * belongs to NO project list (see `list()`), so announcing it fleet-wide over
+ * the global `/api/events` stream re-created the DOR-202 ghosts that the
+ * list-side fix removed from `GET /api/sessions`. The session stays reachable
+ * by id and self-announces on the upsert that resolves its cwd.
+ */
+function isAnnounceable(event: SessionListEvent): boolean {
+  return event.type !== 'session_upserted' || event.session.cwd !== undefined;
+}
+
 /** Truncate message content into a one-line title/preview (codepoint-safe). */
 function toPreview(content: string): string {
   const firstLine = content.split('\n', 1)[0] ?? '';
@@ -163,10 +175,11 @@ export class CodexSessionRegistry {
    * waiter and leave the first promise unsettled.
    */
   subscribe(): AsyncIterableIterator<SessionListEvent> {
-    const queue: SessionListEvent[] = [...this.sessions.values()].map((session) => ({
-      type: 'session_upserted',
-      session: { ...session },
-    }));
+    const queue: SessionListEvent[] = [...this.sessions.values()]
+      .map((session): SessionListEvent => ({ type: 'session_upserted', session: { ...session } }))
+      // The inventory snapshot honors the same announce rule as live pushes:
+      // a cwd-less session is never announced (DOR-202).
+      .filter(isAnnounceable);
     let waiter: ((result: IteratorResult<SessionListEvent>) => void) | null = null;
     let closed = false;
 
@@ -241,8 +254,9 @@ export class CodexSessionRegistry {
     return session;
   }
 
-  /** Fan an event to all live list subscribers. */
+  /** Fan an event to all live list subscribers (cwd-less upserts are suppressed — DOR-202). */
   private emit(event: SessionListEvent): void {
+    if (!isAnnounceable(event)) return;
     for (const listener of this.listeners) listener(event);
   }
 }

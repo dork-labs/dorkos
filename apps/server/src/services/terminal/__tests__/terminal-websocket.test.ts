@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import {
+  TERMINAL_CLOSE_SUPERSEDED,
+  TERMINAL_CLOSE_SUPERSEDED_REASON,
+} from '@dorkos/shared/terminal-schemas';
 import { TerminalManager, type PtyLike, type SpawnPtyOptions } from '../terminal-manager.js';
 import {
   authorizeTerminalUpgrade,
@@ -148,6 +152,22 @@ describe('terminal websocket auth + binding', () => {
       fire('message', Buffer.from([1, 2, 3]), true); // binary — not a control frame
       expect(lastPty.write).not.toHaveBeenCalled();
       expect(lastPty.resize).not.toHaveBeenCalled();
+    });
+
+    it('closes a superseded socket with the takeover code so the client keeps the tab', async () => {
+      // A second bind for the same id (duplicated tab) supersedes the first. The
+      // incumbent's socket must be closed with the app close code + reason,
+      // threaded straight through to ws.close — not a bare close that reads as an
+      // exit.
+      const id = await manager.create({ cwd: boundary });
+      const first = makeFakeWs();
+      bindTerminalSocket(first.ws, id, manager);
+      const second = makeFakeWs();
+      bindTerminalSocket(second.ws, id, manager);
+      expect(first.ws.close).toHaveBeenCalledWith(
+        TERMINAL_CLOSE_SUPERSEDED,
+        TERMINAL_CLOSE_SUPERSEDED_REASON
+      );
     });
 
     it('detaches on socket close (id remains for reconnect until idle teardown)', async () => {

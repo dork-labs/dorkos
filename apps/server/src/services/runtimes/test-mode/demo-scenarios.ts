@@ -1,6 +1,8 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
 import type { ScenarioFn } from './scenario-store.js';
+import { DEMO_SESSION_ID, DEMO_MODEL, delay, streamText } from './demo-scenario-shared.js';
+import { demoGenUiTicTacToe } from './demo-scenario-tictactoe.js';
 
 /**
  * Rich, paced demo scenarios for the marketing product-capture pipeline
@@ -17,39 +19,19 @@ import type { ScenarioFn } from './scenario-store.js';
  * still. Pacing is deliberately short (single-digit seconds total) to keep
  * recorded loops within the site's asset-size budget.
  *
+ * The session/model constants and the paced text streamer live in
+ * `demo-scenario-shared.ts`; the tic-tac-toe board scenario lives in its own
+ * `demo-scenario-tictactoe.ts` module (this file was pushing the 500-line
+ * split threshold — `.claude/rules/conventions.md`).
+ *
  * @module services/runtimes/test-mode/demo-scenarios
  */
-
-/** Session id echoed on synthetic status events (mirrors the built-in scenarios). */
-const DEMO_SESSION_ID = 'test-mode';
-
-/** Model label shown on the status strip during demo turns. */
-const DEMO_MODEL = 'claude-sonnet-4-5';
-
-/** Delay between fine-grained text chunks — fast enough to read as live typing. */
-const TEXT_CHUNK_DELAY_MS = 55;
 
 /** Delay around tool-call boundaries — long enough to register as a discrete step. */
 const STEP_DELAY_MS = 650;
 
 /** Approval timeout advertised to the client's countdown UI (two minutes). */
 const APPROVAL_TIMEOUT_MS = 120_000;
-
-/** Resolve after `ms` milliseconds. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Emit a body of markdown as word-level `text_delta` chunks, paced for capture. */
-async function* streamText(body: string): AsyncGenerator<StreamEvent> {
-  // Split on whitespace boundaries but keep the whitespace so markdown structure
-  // (newlines, fences) survives reassembly on the client.
-  const chunks = body.match(/\S+\s*/g) ?? [body];
-  for (const chunk of chunks) {
-    yield { type: 'text_delta', data: { text: chunk } } as StreamEvent;
-    await delay(TEXT_CHUNK_DELAY_MS);
-  }
-}
 
 /** A single tool call rendered start → input → result, with capture pacing. */
 async function* streamToolCall(
@@ -443,4 +425,5 @@ export const DEMO_SCENARIOS: Record<string, ScenarioFn> = {
   'demo-canvas': demoCanvas,
   'demo-subagents': demoSubagents,
   'demo-gen-ui': demoGenUi,
+  'demo-gen-ui-tictactoe': demoGenUiTicTacToe,
 };

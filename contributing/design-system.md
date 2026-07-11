@@ -242,6 +242,14 @@ Both overlays live in a `relative flex-1 min-h-0` wrapper in ChatPanel, position
 - **"New messages" pill:** `absolute bottom-16 left-1/2 -translate-x-1/2`. Rounded pill, `bg-foreground text-background` (inverted for high contrast in both themes), `text-xs font-medium`, `px-3 py-1.5`. `role="status" aria-live="polite"`. Visible when new messages arrive while scrolled up.
 - **Layout when both visible:** Pill centered at `bottom-16` (64px), button right-aligned at `bottom-4` (16px). Non-overlapping. Both clickable, both scroll to bottom, both dismiss when bottom is reached.
 
+### Scrollbars
+
+Tailwind's first-party `scrollbar-*` utilities (v4.3+) are the sanctioned surface — never hand-roll `scrollbar-width` / `::-webkit-scrollbar` CSS:
+
+- **`scrollbar-none`** — hide the native scrollbar while keeping scroll (status strip, message list with custom scroll overlays). Radix `ScrollArea` already hides native scrollbars and renders its own; use it for panels that want a styled thumb.
+- **`scrollbar-thin`** — thin native scrollbar where visible chrome is fine. The global base style in `index.css` already applies `scrollbar-width: thin` + theme-aware `scrollbar-color` to every element, so reach for this only to re-thin something after overriding.
+- **`scrollbar-gutter-stable`** — reserve gutter space on conditionally-scrolling dialog/panel bodies to prevent layout shift on classic-scrollbar platforms (Linux/Windows).
+
 ### Input Area
 
 - Full-width textarea with auto-resize

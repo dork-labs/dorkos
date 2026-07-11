@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import {
+  TERMINAL_CLOSE_SUPERSEDED,
+  TERMINAL_CLOSE_SUPERSEDED_REASON,
+} from '@dorkos/shared/terminal-schemas';
 import { BoundaryError } from '../../../lib/boundary.js';
 import {
   TerminalManager,
@@ -169,6 +173,65 @@ describe('TerminalManager', () => {
     lastPty.emit('$ ');
     expect(stale.send).not.toHaveBeenCalled();
     expect(Buffer.from(fresh.send.mock.calls[0][0]).toString('utf8')).toBe('$ ');
+  });
+
+  it('closes a superseded sink with the takeover code + reason (not a bare close)', async () => {
+    // A takeover (e.g. a duplicated tab re-attaching to the same id) must close
+    // the incumbent with the app close code so its client renders a "moved to
+    // another window" notice instead of pruning the tab as if the shell exited.
+    const id = await manager.create({ cwd: boundary });
+    const incumbent = makeSink();
+    manager.attach(id, incumbent);
+    manager.attach(id, makeSink());
+    expect(incumbent.close).toHaveBeenCalledWith(
+      TERMINAL_CLOSE_SUPERSEDED,
+      TERMINAL_CLOSE_SUPERSEDED_REASON
+    );
+  });
+
+  describe('truncated-scrollback cue', () => {
+    /** A manager with a tiny pre-attach buffer so a couple of emits overflow it. */
+    function tinyBufferManager() {
+      return new TerminalManager({ spawn, boundary, idleTimeoutMs: 60_000, pendingMaxBytes: 8 });
+    }
+
+    it('evicts the OLDEST chunks on overflow and leads the replay with the cue once, then resets', async () => {
+      const mgr = tinyBufferManager();
+      const id = await mgr.create({ cwd: boundary });
+      lastPty.emit('12345678'); // fills the 8-byte buffer to the cap
+      lastPty.emit('newest'); // over the cap → the oldest chunk is evicted, truncation flagged
+
+      const sink = makeSink();
+      mgr.attach(id, sink);
+      // The dim cue leads the replay, ahead of the surviving buffered output.
+      expect(Buffer.from(sink.send.mock.calls[0][0]).toString('utf8')).toContain(
+        '[some output was lost while disconnected]'
+      );
+      // Ring-buffer semantics: the NEWEST output survives (it's what the user
+      // needs on reconnect); the stale head is what got dropped.
+      expect(Buffer.from(sink.send.mock.calls[1][0]).toString('utf8')).toBe('newest');
+      expect(sink.send).toHaveBeenCalledTimes(2);
+
+      // Re-attach after a clean detach: the flag was reset, so no second cue.
+      mgr.detach(id, sink);
+      const sink2 = makeSink();
+      mgr.attach(id, sink2);
+      const cueAgain = sink2.send.mock.calls.find((c) =>
+        Buffer.from(c[0]).toString('utf8').includes('some output was lost')
+      );
+      expect(cueAgain).toBeUndefined();
+    });
+
+    it('emits no cue when the detached buffer stayed under the cap', async () => {
+      const mgr = tinyBufferManager();
+      const id = await mgr.create({ cwd: boundary });
+      lastPty.emit('hi'); // 2 bytes, well under the 8-byte cap
+
+      const sink = makeSink();
+      mgr.attach(id, sink);
+      expect(sink.send).toHaveBeenCalledTimes(1);
+      expect(Buffer.from(sink.send.mock.calls[0][0]).toString('utf8')).toBe('hi');
+    });
   });
 
   it('ignores a late detach of a superseded sink (does not detach the live one)', async () => {

@@ -5,6 +5,18 @@
  * and tasks handler sub-modules. Extracted to keep individual handlers
  * focused on their primary routing logic.
  *
+ * BUDGET NOTE (deliberate — do not "fix"): every helper here publishes its
+ * reply with `budget: { hopCount: originalEnvelope.budget.hopCount + 1 }`,
+ * carrying ONLY the hop count forward. `callBudgetRemaining` intentionally
+ * resets to the pipeline default on each reply: a single agent turn streams
+ * many events (text deltas, tool results, progress) to the same reply
+ * subject, and each publish passes through the relay's authoritative budget
+ * gate (DOR-260). If replies inherited the inbound envelope's decremented
+ * call budget, a turn's own reply stream would exhaust it within a few
+ * events and the gate would start dead-lettering the replies. Hop count is
+ * the chain-length control that carries across turns; call budget is
+ * per-message spend control.
+ *
  * @module relay/adapters/claude-code-publish
  */
 
@@ -32,6 +44,7 @@ export async function publishAgentResult(
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
     from: `agent:${fromId}`,
+    // Hop count only — call budget deliberately resets (see module BUDGET NOTE)
     budget: {
       hopCount: originalEnvelope.budget.hopCount + 1,
     },
@@ -63,6 +76,7 @@ export async function publishDispatchProgress(
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
     from: `agent:${fromId}`,
+    // Hop count only — call budget deliberately resets (see module BUDGET NOTE)
     budget: { hopCount: originalEnvelope.budget.hopCount + 1 },
   };
   await relay.publish(
@@ -99,6 +113,7 @@ export async function publishResponseWithCorrelation(
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
     from: `agent:${fromId}`,
+    // Hop count only — call budget deliberately resets (see module BUDGET NOTE)
     budget: {
       hopCount: originalEnvelope.budget.hopCount + 1,
     },

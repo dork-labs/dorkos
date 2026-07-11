@@ -74,6 +74,16 @@ function createMockAgentManager(): AgentRuntimeLike {
 // Test suite
 // ---------------------------------------------------------------------------
 
+/**
+ * Timeout for tests that wait on a handful of short REAL setTimeout delays
+ * (TTL-sweeper inactivity tests below; chokidar rules out fake timers here).
+ * Under severe event-loop starvation — several concurrent package suites on
+ * one box — a real setTimeout can fire far later than its nominal delay, and
+ * vitest's 5s default test timeout was itself observed to trip. The waits
+ * these tests use are tens of milliseconds nominal; this budget is slack.
+ */
+const REAL_TIMER_TEST_TIMEOUT_MS = 15_000;
+
 describe('relay → CCA round-trip', () => {
   let tmpDir: string;
   let relay: RelayCore;
@@ -382,26 +392,38 @@ describe('relay → CCA round-trip', () => {
     expect(toolSteps.length).toBeGreaterThan(0);
   });
 
-  it('TTL sweeper unregisters dispatch inboxes after configured TTL', async () => {
-    // Purpose: guard against TTL sweeper regression — dispatch inboxes must auto-expire.
-    // Uses real timers with a very short TTL to avoid chokidar/fake-timer conflicts.
-    const shortRelay = new RelayCore({
-      dataDir: path.join(tmpDir, 'ttl-test'),
-      dispatchInboxTtlMs: 10, // 10ms TTL
-      ttlSweepIntervalMs: 5, // 5ms sweep
-      adapterRegistry: new SingleAdapterRegistry(cca),
-    });
+  it(
+    'TTL sweeper unregisters dispatch inboxes after configured TTL',
+    async () => {
+      // Purpose: guard against TTL sweeper regression — dispatch inboxes must auto-expire.
+      // Uses real timers (chokidar needs them) but drives the sweep directly via
+      // runTtlSweep() instead of racing the periodic interval, which can lag
+      // under event-loop load and made this test ~50% flaky under the full suite.
+      // Deliberately does NOT set ttlSweepIntervalMs: the periodic timer defaults
+      // to 5 minutes, far outside this test's lifetime, so it cannot ALSO fire
+      // and race the manual sweep below (an earlier version of this fix set a
+      // fast interval "for realism" and reintroduced the exact same race one
+      // level up — the background timer sweeping the endpoint out from under
+      // an in-flight readInbox()/runTtlSweep() call).
+      const shortRelay = new RelayCore({
+        dataDir: path.join(tmpDir, 'ttl-test'),
+        dispatchInboxTtlMs: 10, // 10ms TTL
+        adapterRegistry: new SingleAdapterRegistry(cca),
+      });
 
-    await shortRelay.registerEndpoint('relay.inbox.dispatch.ttl-test-uuid');
-    expect(shortRelay.listEndpoints()).toHaveLength(1);
+      await shortRelay.registerEndpoint('relay.inbox.dispatch.ttl-test-uuid');
+      expect(shortRelay.listEndpoints()).toHaveLength(1);
 
-    // Wait for TTL (10ms) + two sweep intervals (10ms) + buffer — well under 100ms
-    await new Promise((resolve) => setTimeout(resolve, 60));
+      // Let the TTL (10ms) elapse, then sweep deterministically.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await shortRelay.runTtlSweep();
 
-    expect(shortRelay.listEndpoints()).toHaveLength(0);
+      expect(shortRelay.listEndpoints()).toHaveLength(0);
 
-    await shortRelay.close();
-  });
+      await shortRelay.close();
+    },
+    REAL_TIMER_TEST_TIMEOUT_MS
+  );
 
   it('a failed detached delivery settles a waiting send_and_wait caller via a reply-inbox failure notice', async () => {
     // Mimic relay_send_and_wait: register + subscribe the reply inbox BEFORE
@@ -458,31 +480,182 @@ describe('relay → CCA round-trip', () => {
     expect((events[0].data as Record<string, unknown>)?.message).toContain('agent boom');
   });
 
-  it('TTL sweeper keeps an actively-polled dispatch inbox alive, then reaps it once polling stops', async () => {
-    // Purpose: inactivity-based sweep (M3) — an inbox being drained mid-
-    // conversation must not be swept out from under its poller.
-    const shortRelay = new RelayCore({
-      dataDir: path.join(tmpDir, 'inactivity-test'),
-      dispatchInboxTtlMs: 50,
-      ttlSweepIntervalMs: 10,
-      adapterRegistry: new SingleAdapterRegistry(cca),
+  it(
+    'TTL sweeper keeps an actively-polled dispatch inbox alive, then reaps it once polling stops',
+    async () => {
+      // Purpose: inactivity-based sweep (M3) — an inbox being drained mid-
+      // conversation must not be swept out from under its poller.
+      // Drives the sweep directly via runTtlSweep() rather than waiting on the
+      // periodic timer, which can lag under event-loop load: the real-timer
+      // sweep previously did not reliably land inside the assertion window
+      // under full-suite parallelism (~50% failure rate, DOR-267). See
+      // REAL_TIMER_TEST_TIMEOUT_MS for why this test also needs a wider budget.
+      // Deliberately does NOT set ttlSweepIntervalMs — see the sibling TTL
+      // test above for why the periodic timer must stay at its 5-minute
+      // default here (it would otherwise race the manual sweep).
+      const shortRelay = new RelayCore({
+        dataDir: path.join(tmpDir, 'inactivity-test'),
+        dispatchInboxTtlMs: 50,
+        adapterRegistry: new SingleAdapterRegistry(cca),
+      });
+
+      const inboxSubject = 'relay.inbox.dispatch.active-uuid';
+      await shortRelay.registerEndpoint(inboxSubject);
+
+      // Poll well past the TTL — each read refreshes last-activity.
+      for (let i = 0; i < 6; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await shortRelay.readInbox(inboxSubject, { status: 'unread' });
+      }
+      await shortRelay.runTtlSweep();
+      expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(true);
+
+      // Stop polling — once the inactivity window has elapsed, a sweep reaps it.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await shortRelay.runTtlSweep();
+      expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(false);
+
+      await shortRelay.close();
+    },
+    REAL_TIMER_TEST_TIMEOUT_MS
+  );
+
+  it('budget-exhausted message never dispatches a live agent turn (DOR-260)', async () => {
+    // Regression: with callBudgetRemaining 0 the mailbox copy was correctly
+    // dead-lettered, but the adapter fan-out ran unconditionally and the
+    // target agent still executed a full (paid) turn. The authoritative
+    // budget gate must reject BEFORE any dispatch.
+    vi.mocked(agentManager.sendMessage).mockClear();
+    vi.mocked(agentManager.ensureSession).mockClear();
+
+    const result = await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'this must never trigger a turn' },
+      { from: 'relay.agent.sender-session', budget: { callBudgetRemaining: 0 } }
+    );
+
+    expect(result.deliveredTo).toBe(0);
+    expect(result.rejected).toEqual([
+      { endpointHash: 'relay.agent.lifeOS-session', reason: 'budget_exceeded' },
+    ]);
+    expect(result.adapterResult).toBeUndefined();
+
+    // Positive signal that the publish pipeline fully settled: the dead
+    // letter exists with the budget reason...
+    await vi.waitFor(async () => {
+      const dead = await relay.getDeadLetters();
+      expect(
+        dead.some(
+          (d) => d.messageId === result.messageId && d.reason.includes('call budget exhausted')
+        )
+      ).toBe(true);
     });
 
-    const inboxSubject = 'relay.inbox.dispatch.active-uuid';
-    await shortRelay.registerEndpoint(inboxSubject);
+    // ...and NO live agent turn was started.
+    expect(agentManager.ensureSession).not.toHaveBeenCalled();
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
+  });
 
-    // Poll well past the TTL — each read refreshes last-activity.
-    for (let i = 0; i < 6; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      await shortRelay.readInbox(inboxSubject, { status: 'unread' });
-    }
-    expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(true);
+  it('budget rejection settles a waiting send_and_wait caller via a reply-inbox failure notice', async () => {
+    const inboxSubject = 'relay.inbox.query.budget-reject';
+    await relay.registerEndpoint(inboxSubject);
 
-    // Stop polling — after the inactivity window elapses it is swept.
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(false);
+    const settled = new Promise<Record<string, unknown>>((resolve) => {
+      relay.subscribe(inboxSubject, (envelope) => {
+        const payload = envelope.payload as Record<string, unknown>;
+        if (payload?.type === 'progress' && payload?.done === false) return;
+        resolve(payload);
+      });
+    });
 
-    await shortRelay.close();
+    vi.mocked(agentManager.sendMessage).mockClear();
+
+    await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'hi' },
+      {
+        from: 'relay.agent.sender-session',
+        replyTo: inboxSubject,
+        budget: { callBudgetRemaining: 0 },
+      }
+    );
+
+    const payload = await settled;
+    expect(payload.type).toBe('error');
+    expect((payload.data as Record<string, unknown>)?.message).toContain('call budget exhausted');
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('max-hops rejection also settles a waiting caller — the notice must not inherit the exhausted budget', async () => {
+    // Regression (PR #210 review): the failure notice used to carry the
+    // rejected envelope's hopCount + 1, so a "max hops exceeded" rejection
+    // produced a notice that the budget gate rejected in turn — the waiting
+    // caller silently timed out. With default maxHops (5) < default call
+    // budget (10), max-hops is the realistic runaway-loop failure mode, so
+    // this path must settle callers too.
+    const inboxSubject = 'relay.inbox.query.hops-reject';
+    await relay.registerEndpoint(inboxSubject);
+
+    const settled = new Promise<Record<string, unknown>>((resolve) => {
+      relay.subscribe(inboxSubject, (envelope) => {
+        const payload = envelope.payload as Record<string, unknown>;
+        if (payload?.type === 'progress' && payload?.done === false) return;
+        resolve(payload);
+      });
+    });
+
+    vi.mocked(agentManager.sendMessage).mockClear();
+
+    const result = await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'hop-exhausted' },
+      {
+        from: 'relay.agent.sender-session',
+        replyTo: inboxSubject,
+        budget: { hopCount: 5, maxHops: 5 },
+      }
+    );
+
+    expect(result.deliveredTo).toBe(0);
+    expect(result.rejected).toEqual([
+      { endpointHash: 'relay.agent.lifeOS-session', reason: 'budget_exceeded' },
+    ]);
+
+    const payload = await settled;
+    expect(payload.type).toBe('error');
+    expect((payload.data as Record<string, unknown>)?.message).toContain('max hops exceeded');
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('adapter copy carries the gate-decremented budget (one unit per delivered copy)', async () => {
+    const deliverSpy = vi.spyOn(cca, 'deliver');
+
+    await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'count me' },
+      { from: 'relay.agent.sender-session', budget: { callBudgetRemaining: 3 } }
+    );
+
+    await vi.waitFor(() => expect(deliverSpy).toHaveBeenCalledTimes(1));
+    const envelope = deliverSpy.mock.calls[0][1];
+    expect(envelope.budget.callBudgetRemaining).toBe(2);
+    expect(envelope.budget.hopCount).toBe(1);
+    expect(envelope.budget.ancestorChain).toContain('relay.agent.lifeOS-session');
+  });
+
+  it('a message with the last remaining budget unit still runs a turn (boundary)', async () => {
+    vi.mocked(agentManager.sendMessage).mockClear();
+
+    const result = await relay.publish(
+      'relay.agent.lifeOS-session',
+      { text: 'last call' },
+      { from: 'relay.agent.sender-session', budget: { callBudgetRemaining: 1 } }
+    );
+
+    expect(result.rejected).toBeUndefined();
+    await vi.waitFor(() => {
+      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('relay_send_and_wait resolves with populated progress array for CCA progress streaming', async () => {

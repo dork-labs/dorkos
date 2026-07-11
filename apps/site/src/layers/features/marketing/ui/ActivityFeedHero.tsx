@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { GITHUB_OUTBOUND_HREF } from '@/config/site';
+import { trackGithubClick } from '@/lib/analytics';
 import { REVEAL, STAGGER } from '../lib/motion-variants';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -11,8 +13,8 @@ import { REVEAL, STAGGER } from '../lib/motion-variants';
 interface ActivityFeedHeroProps {
   ctaText: string;
   ctaHref: string;
-  /** GitHub repo URL — used as secondary mobile CTA. */
-  githubHref?: string;
+  /** Show the secondary mobile GitHub CTA (links to GITHUB_OUTBOUND_HREF, UTM-tagged). */
+  showGithubLink?: boolean;
 }
 
 type ModuleId = 'engine' | 'tasks' | 'mesh' | 'relay' | 'agent';
@@ -326,7 +328,7 @@ function ActivityFeedPanel() {
  * Full-width headline and tagline on top, a subordinate simulated
  * real-time activity feed in the center, and CTA buttons at the bottom.
  */
-export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedHeroProps) {
+export function ActivityFeedHero({ ctaText, ctaHref, showGithubLink }: ActivityFeedHeroProps) {
   return (
     <section className="bg-cream-primary film-grain relative flex min-h-0 flex-col items-center justify-center overflow-hidden px-6 pt-28 pb-16 md:min-h-[85vh]">
       {/* Subtle graph-paper background */}
@@ -431,11 +433,12 @@ export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedH
           </Link>
 
           {/* Mobile: GitHub as secondary */}
-          {githubHref && (
+          {showGithubLink && (
             <Link
-              href={githubHref}
+              href={GITHUB_OUTBOUND_HREF}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackGithubClick('hero_mobile')}
               className="text-button text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1.5 font-mono tracking-[0.08em] lg:hidden"
             >
               View on GitHub

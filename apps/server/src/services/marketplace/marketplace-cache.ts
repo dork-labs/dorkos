@@ -24,7 +24,7 @@
  */
 import { mkdir, mkdtemp, readFile, rename, writeFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parseMarketplaceJson, type MarketplaceJson } from '@dorkos/marketplace';
+import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
 
 /** Default TTL for cached `marketplace.json` documents (1 hour). */
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
@@ -107,6 +107,15 @@ export class MarketplaceCache {
    * its `.last-fetched` stamp, or when the cached document fails schema
    * validation (treated as a cache miss so the caller refetches).
    *
+   * Parses with the LENIENT consumption parser, matching the fetch path in
+   * `package-fetcher.ts`. The strict authoring parser rejects reserved
+   * marketplace names — but the real Anthropic marketplace legitimately
+   * self-declares `claude-plugins-official`, so a strict read-back turned
+   * every successfully cached official document into a permanent cache miss
+   * and made all of its packages uninstallable via `name@marketplace`
+   * (DOR-261). The reserved-name list is a publishing policy, enforced at
+   * authoring surfaces; the cache is a consumption surface.
+   *
    * Past TTL the entry is still returned with `stale: true` — the caller
    * decides whether to serve it or refresh.
    *
@@ -125,7 +134,7 @@ export class MarketplaceCache {
       return null;
     }
 
-    const parsed = parseMarketplaceJson(raw);
+    const parsed = parseMarketplaceJsonLenient(raw);
     if (!parsed.ok) {
       return null;
     }

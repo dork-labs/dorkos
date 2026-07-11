@@ -8,6 +8,7 @@ import { TransportProvider } from '@dorkos/client/contexts/TransportContext';
 import { DirectTransport } from '@dorkos/client/lib/direct-transport';
 import { streamManager } from '@dorkos/client/lib/transport';
 import { createObsidianAdapter } from '../lib/obsidian-adapter';
+import { resolvePluginDorkHome } from '../lib/dork-home';
 import { ObsidianProvider } from '../contexts/ObsidianContext';
 import { ObsidianApp } from '../components/ObsidianApp';
 import {
@@ -57,7 +58,7 @@ export class CopilotView extends ItemView {
 
     // Create service instances for DirectTransport
     // All services need the repo root (where .claude/ and SDK transcripts live)
-    const runtime = new ClaudeCodeRuntime(repoRoot);
+    const runtime = new ClaudeCodeRuntime(resolvePluginDorkHome(), repoRoot);
     const transcriptReader = new TranscriptReader();
     const commandRegistry = new CommandRegistryService(repoRoot);
 

@@ -310,6 +310,16 @@ export const AdapterBindingSchema = z
     canInitiate: z.boolean().default(false),
     canReply: z.boolean().default(true),
     canReceive: z.boolean().default(true),
+    /**
+     * When true, a scheduled/manual Task run that finishes on this agent sends
+     * an automatic completion message to this channel (DOR-240) — no agent
+     * cooperation, no tool call. Failures always notify; successes notify only
+     * when this is true. Defaults **true**, but `canInitiate` (default false) is
+     * the real gate: nothing reaches the user until they turn a channel's
+     * "Agent can start conversations" on, so a fresh binding never sends an
+     * unsolicited message despite this default.
+     */
+    notifyOnTaskComplete: z.boolean().default(true),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
@@ -341,6 +351,7 @@ export const UpdateBindingRequestSchema = z
     canInitiate: z.boolean().optional(),
     canReply: z.boolean().optional(),
     canReceive: z.boolean().optional(),
+    notifyOnTaskComplete: z.boolean().optional(),
     permissionMode: PermissionModeSchema.optional(),
     enabled: z.boolean().optional(),
   })

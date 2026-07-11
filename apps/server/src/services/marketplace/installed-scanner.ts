@@ -317,7 +317,10 @@ async function readManifestSummary(
   try {
     raw = await readFile(manifestPath, 'utf-8');
   } catch {
-    return null;
+    // No .dork/manifest.json — a CC-native package installed verbatim. The
+    // canonical validator synthesizes identity from .claude-plugin/plugin.json,
+    // so such installs stay visible to list/uninstall/update (DOR-264).
+    return validatedSummary(packagePath);
   }
 
   let parsed: unknown;
@@ -349,6 +352,18 @@ async function readManifestSummary(
   // Shallow parse rejected the file — give the canonical validator a chance
   // before discarding the entry. This keeps the scanner forgiving of older
   // installs that may have a slightly different field shape on disk.
+  return validatedSummary(packagePath);
+}
+
+/**
+ * Resolve a package's identity via the canonical {@link validatePackage},
+ * which also synthesizes a manifest from `.claude-plugin/plugin.json` for
+ * CC-native packages. Returns `null` when validation fails or produces no
+ * manifest, so walkers skip the entry silently.
+ */
+async function validatedSummary(
+  packagePath: string
+): Promise<Omit<InstalledPackage, 'installedFrom' | 'installedAt'> | null> {
   const validated = await validatePackage(packagePath);
   if (!validated.ok || !validated.manifest) {
     return null;
