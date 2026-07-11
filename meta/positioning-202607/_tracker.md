@@ -52,14 +52,14 @@
 
 ### Security (pre-traction requirement)
 
-- [ ] Hardening audit (bindings, tunnel auth, MCP key) — Jul 26
-- [ ] SECURITY.md + `/security` page + threat model — Jul 26
-- [ ] `dorkos doctor`-style self-check — Aug 2
+- [~] 2026-07-11 Hardening audit (bindings, tunnel auth, MCP key) — Jul 26 · done early (DOR-272 umbrella, report `research/20260711_security-hardening-audit.md`, PR #225 in review). 5 fixes inline incl. **Critical**: marketplace git-subdir URL reached git clone at preview time (ext:: arbitrary exec) — transport allowlist + path guard + GIT_ALLOW_PROTOCOL. Open findings filed DOR-277 (relay_send bypasses canInitiate — **launch-relevant**), DOR-278 (unauth MCP tools on localhost), DOR-279/280/281 (marketplace integrity, token credential-ref, auth rate-limit)
+- [~] 2026-07-11 SECURITY.md + `/security` page + threat model — Jul 26 · PR #225 (DOR-274): SECURITY.md (security@dorkos.ai, honest one-person response), docs/self-hosting/threat-model.mdx, /security site page footer-linked
+- [~] 2026-07-11 `dorkos doctor`-style self-check — Aug 2 · PR #225 (DOR-275): read-only checklist (node, dork-home, port, claude CLI, runtime auth, extension compile, login/tunnel sanity), plain output, exits non-zero only on real failure
 
 ### Marketing surfaces, wave 1
 
 - [x] 2026-07-09 — GitHub repo description + topics fixed — Jul 8 (description per `06` tactic #1; swapped 4 stack topics for codex/opencode/orchestration/meta-harness at the 20-topic cap)
-- [ ] README overhaul (positioning, 5-min path, honest alpha status) — Jul 19 (positioning done 2026-07-09 via PR #156 — "You, multiplied." + multi-runtime opener on repo + npm READMEs, atop PR #148's plain-language rewrite; still open: verify 5-min path + honest alpha status before checking off. Same day: homepage/site reframe PRs #157-#160 merged — hero, feature catalog, FAQ, legal pages, marketplace chrome)
+- [x] 2026-07-11 README overhaul (positioning, 5-min path, honest alpha status) — Jul 19 · positioning PR #156; 5-min path verified + fixed PR #224 (DOR-276): removed the ANTHROPIC_API_KEY footgun that broke Claude-Code-authed users, corrected the cross-project-sessions overclaim, added the alpha-status note + prerequisites; applied to repo + npm READMEs. Live walkthrough: cockpit reachable in seconds
 - [x] 2026-07-06 — Site fixes wave 1: 14 docsUrl 404s, Slack contradiction, FAQ corrections (`07` §1) — Jul 26 (PR #92)
 - [ ] Social-profile coherence (X bio, org page, footer) — Jul 12
 - [ ] GitHub Sponsors live — Jul 12
