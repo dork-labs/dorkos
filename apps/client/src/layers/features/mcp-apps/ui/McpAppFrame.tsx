@@ -3,7 +3,8 @@
  * §2.4). Fetches the App HTML via the resource endpoint, frames it in a
  * strict-sandbox `srcdoc` iframe (scripts only, opaque origin), and wires the
  * postMessage JSON-RPC bridge. App link-opens route through the shared
- * {@link LinkSafetyModal}; a fullscreen request is forwarded to the host.
+ * {@link LinkSafetyModal}; fullscreen and pip display-mode requests are
+ * forwarded to the host.
  *
  * @module features/mcp-apps/ui/McpAppFrame
  */
@@ -35,6 +36,8 @@ export interface McpAppFrameProps {
   title?: string;
   /** Called when the App requests fullscreen — the host moves it to the canvas. */
   onRequestFullscreen?: () => void;
+  /** Called when the App requests `pip` — the host pops it into the floating panel. */
+  onRequestPip?: () => void;
   /** Extra classes for the frame wrapper. */
   className?: string;
 }
@@ -55,6 +58,7 @@ export function McpAppFrame({
   uri,
   title,
   onRequestFullscreen,
+  onRequestPip,
   className,
 }: McpAppFrameProps) {
   const transport = useTransport();
@@ -80,8 +84,9 @@ export function McpAppFrame({
   const requestDisplayMode = useCallback(
     (mode: McpAppDisplayMode) => {
       if (mode === 'fullscreen') onRequestFullscreen?.();
+      else if (mode === 'pip') onRequestPip?.();
     },
-    [onRequestFullscreen]
+    [onRequestFullscreen, onRequestPip]
   );
 
   // The document actually handed to the iframe. Gated on the bridge listener

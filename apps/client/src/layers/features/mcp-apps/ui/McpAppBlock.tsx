@@ -6,12 +6,14 @@
  * runs sandboxed scripts, so the first App from a given server shows a consent
  * card before anything renders; the choice is remembered per server. Once
  * consented, the App renders inline with a "fullscreen" affordance that moves it
- * to the canvas.
+ * to the canvas and a "pop out" affordance that floats it in the always-on-top
+ * PIP panel (DOR-297). Popping out keeps this inline block live, so closing the
+ * panel is the exit — there is nothing to send back.
  *
  * @module features/mcp-apps/ui/McpAppBlock
  */
-import { AppWindow, Maximize2 } from 'lucide-react';
-import { useAppStore } from '@/layers/shared/model';
+import { AppWindow, Maximize2, PictureInPicture2 } from 'lucide-react';
+import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import { McpAppFrame } from './McpAppFrame';
 import { useRenderConsent } from '../model/render-consent';
 
@@ -38,10 +40,18 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
   const { consented, grant } = useRenderConsent(serverName);
   const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
   const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
+  const openPip = useAppStore((s) => s.openPip);
+  const isMobile = useIsMobile();
 
   const openFullscreen = () => {
     openCanvasDocument({ type: 'mcp_app', serverName, uri, title });
     setCanvasOpen(true);
+  };
+
+  const popOut = () => {
+    // The panel header always needs a label; fall back to the same string the
+    // inline header shows when the App declares no title.
+    openPip({ kind: 'mcp_app', sessionId, serverName, uri, title: title ?? `App · ${serverName}` });
   };
 
   if (!consented) {
@@ -75,14 +85,29 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
           <AppWindow className="text-muted-foreground size-3.5 shrink-0" />
           <span className="truncate">{title ?? `App · ${serverName}`}</span>
         </div>
-        <button
-          type="button"
-          onClick={openFullscreen}
-          title="Open in canvas"
-          className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
-        >
-          <Maximize2 className="size-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Hidden below 768px: the PIP host renders nothing there, so the
+              affordance would be a no-op. Canvas (maximize) still works. */}
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={popOut}
+              aria-label="Pop out into a floating window"
+              title="Pop out"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
+            >
+              <PictureInPicture2 className="size-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={openFullscreen}
+            title="Open in canvas"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </div>
       </div>
       <McpAppFrame
         sessionId={sessionId}
@@ -90,6 +115,7 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
         uri={uri}
         title={title}
         onRequestFullscreen={openFullscreen}
+        onRequestPip={popOut}
         className={INLINE_HEIGHT}
       />
     </div>

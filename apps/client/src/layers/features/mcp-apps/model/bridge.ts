@@ -21,8 +21,12 @@ const METHOD_NOT_FOUND = -32601;
 /** Application error code for host-refused operations (tools/call in v1). */
 const APP_NOT_PERMITTED = -32000;
 
-/** Display modes the host advertises during the handshake (D5). `pip` is deferred. */
-export const ADVERTISED_DISPLAY_MODES = ['inline', 'fullscreen'] as const;
+/**
+ * Display modes the host advertises during the handshake. Spec `mcp-apps-host`
+ * D5 originally deferred `pip` for lack of a floating surface; DOR-297 lights it
+ * up now that the floating PIP panel primitive (DOR-296) exists.
+ */
+export const ADVERTISED_DISPLAY_MODES = ['inline', 'fullscreen', 'pip'] as const;
 
 /** A display mode an App may request. */
 export type McpAppDisplayMode = 'inline' | 'fullscreen' | 'pip';
@@ -129,7 +133,9 @@ export function createMcpAppBridge(options: McpAppBridgeOptions): () => void {
       case 'ui/request-display-mode': {
         const mode = readModeParam(req.params);
         if (mode) handlers.requestDisplayMode(mode);
-        respond(req.id, { granted: mode === 'fullscreen' || mode === 'inline' });
+        respond(req.id, {
+          granted: mode === 'fullscreen' || mode === 'inline' || mode === 'pip',
+        });
         return;
       }
       case 'tools/call': {

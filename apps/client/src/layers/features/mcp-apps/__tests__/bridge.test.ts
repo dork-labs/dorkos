@@ -118,6 +118,12 @@ describe('createMcpAppBridge', () => {
     expect(post.mock.calls[0][0]).toMatchObject({ id: 9, error: { code: -32601 } });
   });
 
+  it('advertises pip as a supported display mode (DOR-297, superseding spec D5)', () => {
+    // D5 deferred `pip` for lack of a floating surface; DOR-296's PIP panel
+    // primitive removed that blocker, so the host now advertises it.
+    expect([...ADVERTISED_DISPLAY_MODES]).toContain('pip');
+  });
+
   it('forwards a fullscreen display-mode request to the host', async () => {
     const { iframe } = makeIframe();
     const h = handlers();
@@ -135,6 +141,26 @@ describe('createMcpAppBridge', () => {
     await Promise.resolve();
 
     expect(h.requestDisplayMode).toHaveBeenCalledWith('fullscreen');
+  });
+
+  it('forwards a pip display-mode request and answers granted:true (DOR-297)', async () => {
+    const { iframe, post } = makeIframe();
+    const h = handlers();
+    dispose = createMcpAppBridge({
+      iframe,
+      expectedOrigin: 'null',
+      hostContext: { hostName: 'DorkOS', theme: 'light' },
+      handlers: h,
+    });
+
+    dispatchMessage(
+      { jsonrpc: '2.0', id: 8, method: 'ui/request-display-mode', params: { mode: 'pip' } },
+      iframe.contentWindow
+    );
+    await Promise.resolve();
+
+    expect(h.requestDisplayMode).toHaveBeenCalledWith('pip');
+    expect(post.mock.calls[0][0]).toMatchObject({ id: 8, result: { granted: true } });
   });
 
   it('routes ui/open-link to the host link handler', async () => {
