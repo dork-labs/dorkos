@@ -169,16 +169,18 @@ The `cloud` section holds the device-link binding between this instance and a Do
 
 The shared opt-in consent namespace for everything DorkOS can send to dorkos.ai. Every channel is a peer boolean and defaults to `false` — nothing leaves the machine without an explicit opt-in (DOR-293, ADR 260711-141639). `userHasDecided` is the one shared gate: it records that the user answered a consent prompt either way, so no channel re-prompts. The namespace is deliberately per-channel so future work (error reporting, a remote OpenTelemetry exporter) hangs off the same object without a redesign.
 
-| Key                        | Type    | Default | Description                                                                                             |
-| -------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| `telemetry.userHasDecided` | boolean | `false` | Shared gate: `true` once the user answered a consent prompt (either way), stopping the first-run banner |
-| `telemetry.install`        | boolean | `false` | Send anonymous marketplace install events to dorkos.ai (formerly `telemetry.enabled`)                   |
-| `telemetry.heartbeat`      | boolean | `false` | Send the weekly anonymous heartbeat to dorkos.ai (payload documented at https://dorkos.ai/telemetry)    |
-| `telemetry.errorReporting` | boolean | `false` | Send crash/error reports. **Reserved** for the error-reporting work; not yet wired to any sender        |
+| Key                        | Type    | Default | Description                                                                                                                                                                                                                   |
+| -------------------------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `telemetry.userHasDecided` | boolean | `false` | Shared gate: `true` once the user answered a consent prompt (either way), stopping the first-run banner                                                                                                                       |
+| `telemetry.install`        | boolean | `false` | Send anonymous marketplace install events to dorkos.ai (formerly `telemetry.enabled`)                                                                                                                                         |
+| `telemetry.heartbeat`      | boolean | `false` | Send the weekly anonymous heartbeat to dorkos.ai (payload documented at https://dorkos.ai/telemetry)                                                                                                                          |
+| `telemetry.errorReporting` | boolean | `false` | Send scrubbed crash reports to a third-party Sentry/GlitchTip project. A **separate** explicit opt-in (never set by the first-run banner); fires only when this is `true` AND `SENTRY_DSN` is set. DOR-293, ADR 260711-153307 |
 
 The heartbeat payload is anonymous by construction — an instance UUID, version, OS/arch, configured runtimes, tunnel + cloud-link flags, and rough counts, never prompts, code, paths, or session content. It is sent at most once a week (enforced by a `heartbeat-last-sent` marker in `~/.dork/`), and the shared anonymous instance id lives in `~/.dork/telemetry-install-id`. Full contract: [dorkos.ai/telemetry](https://dorkos.ai/telemetry) and `docs/self-hosting/telemetry.mdx`.
 
 The `0.46.0` config migration renames the legacy `telemetry.enabled` to `telemetry.install` (preserving the user's prior choice) and backfills `heartbeat` + `errorReporting` to `false`; it never enrolls an existing user in the new channels.
+
+`telemetry.errorReporting` (DOR-293 PR-B, ADR 260711-153307) is deliberately a **separate** opt-in from the first-party anonymous channels because crash reports go to a **third party** (Sentry, or a self-hosted GlitchTip on the same protocol). It fires only when the flag is `true` AND the `SENTRY_DSN` env var is set; missing either sends nothing. The DSN carries a public ingest key, not a secret at rest, so it lives in env, never `config.json`. The report is built by an allowlist in `@dorkos/shared/error-report`: the error type plus a stack scrubbed to repo-relative filenames, with the raw message omitted and home dirs / absolute paths / secret-shaped tokens stripped. The same reporter is wired into the server (`services/core/error-reporter.ts`, hooked to the process crash handlers) and the CLI (`packages/cli/src/lib/error-reporter.ts`, for standalone commands). Full contract: [dorkos.ai/telemetry](https://dorkos.ai/telemetry).
 
 ### providers
 

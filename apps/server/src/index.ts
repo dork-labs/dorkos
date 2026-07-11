@@ -109,6 +109,10 @@ import { TerminalManager, attachTerminalWebSocket } from './services/terminal/in
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
+import {
+  initServerErrorReporting,
+  type ServerErrorReporter,
+} from './services/core/error-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import {
   initObservability,
@@ -140,6 +144,9 @@ let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
+// Opt-in error reporter (DOR-293) — assigned in start() when the user consented
+// and a DSN is set; stays null otherwise so the process handlers report nothing.
+let serverErrorReporter: ServerErrorReporter | null = null;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -248,6 +255,19 @@ async function start() {
   if (telemetryConfig?.install) {
     logger.info('[Telemetry] Marketplace install reporter registered (consent: opt-in)');
   }
+
+  // Opt-in error reporting (DOR-293). A SEPARATE explicit opt-in from the
+  // anonymous-data channels: fires only when `telemetry.errorReporting` is true
+  // AND a `SENTRY_DSN` is set (third-party egress). `null` when off — the
+  // process error handlers below then send nothing. Scrubbing + message
+  // omission live in the shared error-report core.
+  serverErrorReporter = initServerErrorReporting({
+    consent: telemetryConfig?.errorReporting ?? false,
+    dsn: env.SENTRY_DSN,
+    version: SERVER_VERSION,
+    environment: env.NODE_ENV,
+    cwd: process.cwd(),
+  });
 
   // Stage the bundled core extensions on disk before the discovery pipeline
   // runs, and capture their tier metadata (default-on/off, disableability) to
@@ -1306,6 +1326,7 @@ process.on('uncaughtException', (err) => {
     stack: err.stack,
     name: err.name,
   });
+  serverErrorReporter?.capture(err);
   process.exit(1);
 });
 
@@ -1313,6 +1334,7 @@ process.on('unhandledRejection', (reason) => {
   logger.error('[DorkOS] Unhandled promise rejection', {
     reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : reason,
   });
+  serverErrorReporter?.capture(reason);
   // Don't exit — the rejection may be non-fatal (e.g., a cancelled fetch).
   // Node 15+ defaults to --unhandled-rejections=throw which would crash anyway,
   // but logging here ensures we capture context before that happens.
