@@ -52,6 +52,7 @@ import { feedProjector } from './session-event-normalizer.js';
 import { assembleAdditionalContext } from './context-assembler.js';
 import { withStallGuard } from './stall-guard.js';
 import { SESSIONS } from '../../config/constants.js';
+import { startSpan, SPAN, ATTR } from '../observability/index.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -206,6 +207,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const firstEvent = new Promise<void>((resolve) => {
     signalFirstEvent = resolve;
   });
+  // Span the detached turn's real lifetime (started here, ended in the turn's
+  // finally). No-op when debug tracing is off. `eventCount` is tallied in the
+  // per-event tap below and recorded when the turn settles.
+  const turnSpan = startSpan(SPAN.SESSION_TURN, { [ATTR.SESSION_ID]: sessionId });
+  let eventCount = 0;
   let idResolved = false;
   const tryRekey = (): void => {
     if (idResolved) return;
@@ -228,6 +234,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     () => {
       signalFirstEvent();
       tryRekey();
+      eventCount++;
     }
   );
 
@@ -257,8 +264,15 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // guardTurnErrors already swallows source throws; this catch is the last line
     // of defense against a feedProjector-internal rejection so the detached
     // promise never becomes an unhandled rejection. The lock still releases below.
-    .catch((err) => opts.onError?.(err))
-    .finally(releaseOnce);
+    .catch((err) => {
+      turnSpan.markError();
+      return opts.onError?.(err);
+    })
+    .finally(() => {
+      turnSpan.setAttr(ATTR.EVENT_COUNT, eventCount);
+      turnSpan.end();
+      releaseOnce();
+    });
   // The turn runs to completion in the background; the request does not await it.
   void turn;
 

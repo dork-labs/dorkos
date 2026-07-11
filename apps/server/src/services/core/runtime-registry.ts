@@ -2,6 +2,7 @@ import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-run
 import type { SessionSettings } from '@dorkos/shared/types';
 import { sessionMetadata, eq, inArray, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
+import { traceRuntime } from '../observability/index.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -70,7 +71,10 @@ export class RuntimeRegistry {
    * @param runtime - The runtime to register. Replaces any existing registration for the same type.
    */
   register(runtime: AgentRuntime): void {
-    this.runtimes.set(runtime.type, runtime);
+    // Wrap at the one registration seam so every runtime call is traced when
+    // debug tracing is on, and left untouched (zero overhead) when off — no
+    // span code leaks into the runtime adapters.
+    this.runtimes.set(runtime.type, traceRuntime(runtime));
   }
 
   /**

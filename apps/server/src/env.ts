@@ -48,6 +48,13 @@ const serverEnvSchema = z.object({
   DORKOS_AUTH_SIGNIN_RATE_LIMIT: z.coerce.number().int().min(1).optional(),
   DORKOS_TASKS_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
+  // Local-first debug tracing (DOR-294). When 'true' (set by `dorkos
+  // --debug-trace`), the server records OpenTelemetry spans for session turns,
+  // runtime calls, relay dispatch, and task runs to a sanitized JSONL file
+  // under <dorkHome>/traces/. Off by default: no spans, no file, no SDK load.
+  // Never phones home — there is no remote/OTLP exporter — so it is a purely
+  // local opt-in and does NOT go through the anonymous-telemetry consent.
+  DORKOS_OTEL_DEBUG: boolFlag,
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
   // binding a non-loopback host without a login. Off by default; set only by
   // container images that own their own network boundary (see Dockerfile.*).

@@ -9,6 +9,7 @@ import { isRelayEnabled } from '../relay/relay-state.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
+import { withSpan, SPAN, ATTR } from '../observability/index.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -402,10 +403,11 @@ export class TaskSchedulerService {
 
   /** Execute a run — branches between Relay dispatch and direct AgentManager execution. */
   private async executeRun(task: Task, run: TaskRun): Promise<void> {
-    if (isRelayEnabled() && this.relay) {
-      return this.executeRunViaRelay(task, run);
-    }
-    return this.executeRunDirect(task, run);
+    return withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
+      const viaRelay = isRelayEnabled() && this.relay;
+      span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
+      return viaRelay ? this.executeRunViaRelay(task, run) : this.executeRunDirect(task, run);
+    });
   }
 
   /**
