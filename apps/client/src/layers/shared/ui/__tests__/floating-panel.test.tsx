@@ -173,4 +173,31 @@ describe('FloatingPanel', () => {
     fireEvent.keyDown(screen.getByRole('complementary'), { key: 'Escape' });
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('aborts an in-flight drag on unmount without committing a geometry', () => {
+    const { onGeometryChange, unmount } = renderPanel();
+    const header = screen.getByText('Panel title').parentElement as HTMLElement;
+
+    fireEvent.pointerDown(header, { clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(document, { clientX: 250, clientY: 230 });
+    unmount();
+
+    // The document listeners were removed on unmount: releasing (or moving)
+    // the pointer afterward must not fire onGeometryChange.
+    fireEvent.pointerMove(document, { clientX: 300, clientY: 300 });
+    fireEvent.pointerUp(document, { clientX: 300, clientY: 300 });
+    expect(onGeometryChange).not.toHaveBeenCalled();
+  });
+
+  it('aborts an in-flight resize on unmount without committing a geometry', () => {
+    const { onGeometryChange, unmount } = renderPanel();
+    const handle = document.querySelector('.cursor-nwse-resize') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { clientX: 460, clientY: 340 });
+    fireEvent.pointerMove(document, { clientX: 500, clientY: 400 });
+    unmount();
+
+    fireEvent.pointerUp(document, { clientX: 500, clientY: 400 });
+    expect(onGeometryChange).not.toHaveBeenCalled();
+  });
 });

@@ -6,7 +6,7 @@
 
 ## Progress
 
-**Status:** In Progress
+**Status:** Complete
 **Tasks Completed:** 7 / 7
 
 ## Session
@@ -25,6 +25,8 @@
 - Task #3.1: Dev Playground showcase — Pia/Sonnet, DONE (one FloatingPanel section: open A/B replace proof + close; manual browser check deferred to batch 4)
 - Task #3.2: Changelog fragment — Chip/Sonnet, DONE (deleted 2 auto-stubs, wrote 260711-154357-pip-panel-primitive.md)
 - Task #3.3: Final a11y + design-token review, full verify — Vera/Opus, DONE (audit clean, zero fixes needed; pnpm verify: 441 files / 4925 tests pass; use-session-submit teardown race is a pre-existing full-run flake, green in isolation)
+- Review round: Rex/Opus (code-reviewer, REVIEW.md) — verdict ready-to-merge, 4 polish nits; all applied by Hollis/Opus (exit animation via always-mounted AnimatePresence, stable dock geometry identity, mount-count renderer test, gesture abort on unmount) — 38 tests green after fixes
+- Live browser pass (orchestrator, Playwright): default dock exact, replace-on-open single instance, Escape survives, drag commits once + persists exact geometry, reload restores position, mobile guard closes below 768px, zero new console errors
 
 ## Known Issues
 

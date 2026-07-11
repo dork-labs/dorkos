@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { AnimatePresence } from 'motion/react';
 import { FloatingPanel, type FloatingPanelGeometry } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile, type PipContent } from '@/layers/shared/model';
 import { DemoPipContent } from './DemoPipContent';
@@ -33,6 +34,11 @@ function defaultGeometry(): FloatingPanelGeometry {
   };
 }
 
+/** Value equality for geometries, used to keep the dock's object identity stable. */
+function sameGeometry(a: FloatingPanelGeometry, b: FloatingPanelGeometry): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
 /** Render the body for a PIP content descriptor via {@link PIP_RENDERERS}. */
 function renderPipContent(content: PipContent): React.ReactNode {
   switch (content.kind) {
@@ -55,10 +61,13 @@ function renderPipContent(content: PipContent): React.ReactNode {
  * once at the tail of each client shell, outside the router-swapped subtree, so
  * a floating panel survives navigation.
  *
- * Renders nothing when nothing is open or the viewport is mobile; crossing into
- * mobile while a panel is open closes it (ideation D2). Geometry persistence
- * rides the primitive's single end-of-gesture callback wired straight to
- * `setPipGeometry`, so no throttling is needed here.
+ * The panel conditionally renders INSIDE an always-mounted `AnimatePresence`
+ * boundary so the primitive's ~150ms exit animation plays on close; the mobile
+ * guard sits outside it on purpose — crossing the breakpoint closes instantly
+ * (ideation D2), the animated exit matters for the normal close affordance.
+ *
+ * Geometry persistence rides the primitive's single end-of-gesture callback
+ * wired straight to `setPipGeometry`, so no throttling is needed here.
  */
 export function PipHost(): React.ReactNode {
   const pipContent = useAppStore((s) => s.pipContent);
@@ -67,29 +76,57 @@ export function PipHost(): React.ReactNode {
   const setPipGeometry = useAppStore((s) => s.setPipGeometry);
   const isMobile = useIsMobile();
 
+  // The default bottom-right dock, used until the user's first drag/resize
+  // commits a real geometry to the store. Held in state (not recomputed per
+  // render) so its object identity is stable across unrelated re-renders —
+  // a fresh object each render would make FloatingPanel's reclamp effect
+  // (which depends on `geometry`) tear down and re-add its window listener
+  // on every re-render.
+  const [dockGeometry, setDockGeometry] = React.useState<FloatingPanelGeometry>(defaultGeometry);
+
+  // Keep the dock pinned to the corner while ungeometried: re-pin on window
+  // resize, and once on (re)attach in case the window changed while a
+  // committed geometry was in effect (e.g. until a preferences reset). The
+  // functional updater returns the previous object when nothing changed, so
+  // this never causes render churn.
+  React.useEffect(() => {
+    if (pipGeometry !== null) return;
+    const repin = () =>
+      setDockGeometry((prev) => {
+        const next = defaultGeometry();
+        return sameGeometry(prev, next) ? prev : next;
+      });
+    repin();
+    window.addEventListener('resize', repin);
+    return () => window.removeEventListener('resize', repin);
+  }, [pipGeometry]);
+
   // Crossing the mobile breakpoint while a panel is open closes it, instead of
   // leaving stale content behind an invisible (null-rendering) host.
   React.useEffect(() => {
     if (isMobile && pipContent !== null) closePip();
   }, [isMobile, pipContent, closePip]);
 
-  if (isMobile || pipContent === null) return null;
+  // Instant, unanimated removal below the breakpoint by design (see TSDoc).
+  if (isMobile) return null;
 
-  // Recomputed each render while ungeometried so a pre-first-gesture window
-  // resize keeps the dock pinned to the corner rather than going stale. Nothing
-  // is written to the store until the user's first drag/resize commits.
-  const geometry = pipGeometry ?? defaultGeometry();
+  const geometry = pipGeometry ?? dockGeometry;
 
   return (
-    <FloatingPanel
-      title={pipContent.title}
-      geometry={geometry}
-      onGeometryChange={setPipGeometry}
-      onClose={closePip}
-      // onRestore is undefined for `demo` (no restore target in v1); DOR-297
-      // wires "send back to inline/canvas" here per ideation decision D8.
-    >
-      {renderPipContent(pipContent)}
-    </FloatingPanel>
+    <AnimatePresence>
+      {pipContent !== null && (
+        <FloatingPanel
+          key="pip-panel"
+          title={pipContent.title}
+          geometry={geometry}
+          onGeometryChange={setPipGeometry}
+          onClose={closePip}
+          // onRestore is undefined for `demo` (no restore target in v1); DOR-297
+          // wires "send back to inline/canvas" here per ideation decision D8.
+        >
+          {renderPipContent(pipContent)}
+        </FloatingPanel>
+      )}
+    </AnimatePresence>
   );
 }

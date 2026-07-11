@@ -70,6 +70,10 @@ function geometriesDiffer(a: FloatingPanelGeometry, b: FloatingPanelGeometry): b
  *
  * Escape does not close the panel by design (it is non-modal, ideation D8).
  *
+ * Entrance and exit are a ~150ms ease-out fade+scale. The exit only plays when
+ * the host removes the panel inside a motion `AnimatePresence` boundary that
+ * itself stays mounted (see `features/pip-panel`'s `PipHost`).
+ *
  * @param props - See {@link FloatingPanelProps}.
  */
 export function FloatingPanel(props: FloatingPanelProps): React.ReactNode {
@@ -101,6 +105,14 @@ export function FloatingPanel(props: FloatingPanelProps): React.ReactNode {
     return () => window.removeEventListener('resize', reclamp);
   }, [geometry, minW, minH, onGeometryChange]);
 
+  // Teardown for the gesture currently in flight, if any. Held in a ref so the
+  // unmount cleanup below can abort a mid-drag gesture: it removes the document
+  // listeners and drops the pending frame WITHOUT committing, so
+  // onGeometryChange can never fire after unmount (e.g. the host closing
+  // mid-drag when the viewport crosses the mobile breakpoint).
+  const abortGestureRef = React.useRef<(() => void) | null>(null);
+  React.useEffect(() => () => abortGestureRef.current?.(), []);
+
   // Shared document-listener gesture: apply the live delta imperatively to the
   // container (rAF-throttled) and commit the clamped result once on release.
   const beginGesture = React.useCallback(
@@ -111,6 +123,12 @@ export function FloatingPanel(props: FloatingPanelProps): React.ReactNode {
       e.preventDefault();
       const el = containerRef.current;
       if (!el) return;
+      // Non-null alias: hoisted function declarations below don't inherit the
+      // guard's narrowing.
+      const panel: HTMLDivElement = el;
+
+      // A new pointer while a gesture is still active discards the old one.
+      abortGestureRef.current?.();
 
       const startX = e.clientX;
       const startY = e.clientY;
@@ -118,30 +136,38 @@ export function FloatingPanel(props: FloatingPanelProps): React.ReactNode {
       let latest = start;
       let rafId = 0;
 
-      const apply = () => {
+      // Function declarations (hoisted) so detach/onUp can reference each other.
+      function apply() {
         rafId = 0;
-        el.style.left = `${latest.x}px`;
-        el.style.top = `${latest.y}px`;
-        el.style.width = `${latest.width}px`;
-        el.style.height = `${latest.height}px`;
-      };
+        panel.style.left = `${latest.x}px`;
+        panel.style.top = `${latest.y}px`;
+        panel.style.width = `${latest.width}px`;
+        panel.style.height = `${latest.height}px`;
+      }
 
-      const onMove = (ev: PointerEvent) => {
+      function onMove(ev: PointerEvent) {
         latest = compute(ev.clientX - startX, ev.clientY - startY, start);
         if (!rafId) rafId = requestAnimationFrame(apply);
-      };
+      }
 
-      const onUp = () => {
+      function detach() {
         if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
         document.removeEventListener('pointercancel', onUp);
+        abortGestureRef.current = null;
+      }
+
+      function onUp() {
+        detach();
         onGeometryChange(clampGeometry(latest, minW, minH));
-      };
+      }
 
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
       document.addEventListener('pointercancel', onUp);
+      abortGestureRef.current = detach;
     },
     [geometry, minW, minH, onGeometryChange]
   );
@@ -175,6 +201,7 @@ export function FloatingPanel(props: FloatingPanelProps): React.ReactNode {
       aria-label={title}
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
       style={{ left: geometry.x, top: geometry.y, width: geometry.width, height: geometry.height }}
       className={cn(
