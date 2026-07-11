@@ -204,6 +204,7 @@ function makeBinding(adapterId: string, agentId: string): AdapterBinding {
     canInitiate: false,
     canReply: true,
     canReceive: true,
+    notifyOnTaskComplete: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
