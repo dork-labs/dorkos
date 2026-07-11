@@ -49,6 +49,13 @@ describe('sanitizeFlags', () => {
     });
     expect(result).toEqual({});
   });
+
+  it('drops an enum value outside its known set even if it looks harmless', () => {
+    // A user-customized theme name is short and lowercase but not a known theme.
+    const result = sanitizeFlags({ 'ui.theme': 'midnight-custom', 'logging.level': 'info' });
+    expect(result).toEqual({ 'logging.level': 'info' });
+    expect(result['ui.theme']).toBeUndefined();
+  });
 });
 
 describe('redactSecrets', () => {
@@ -81,6 +88,43 @@ describe('redactSecrets', () => {
     const secret = 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
     const out = redactSecrets(`bearer body ${secret}`);
     expect(out).not.toContain(secret);
+  });
+
+  it('redacts IPv4 and IPv6 addresses', () => {
+    const v4 = redactSecrets('host at 10.20.30.40 here');
+    expect(v4).not.toContain('10.20.30.40');
+    expect(v4).toContain('[ip]');
+    const v6 = redactSecrets('host at 2001:0db8:85a3:0000:0000:8a2e:0370:7334 here');
+    expect(v6).not.toContain('2001:0db8:85a3');
+    expect(v6).toContain('[ip]');
+  });
+
+  it('redacts UNC network paths', () => {
+    const out = redactSecrets('share at \\\\CORP-FS\\home\\dorian here');
+    expect(out).not.toContain('CORP-FS');
+    expect(out).not.toContain('dorian');
+    expect(out).toContain('[path]');
+  });
+
+  it('redacts AWS-style access key ids', () => {
+    const out = redactSecrets('key AKIAIOSFODNN7EXAMPLE used');
+    expect(out).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(out).toContain('[redacted]');
+  });
+
+  it('redacts a Windows path that contains a space', () => {
+    const out = redactSecrets('at C:\\Program Files\\DorkOS\\config.json');
+    expect(out).not.toContain('Program Files');
+    expect(out).toContain('[path]');
+  });
+
+  // Documents the limit: redaction is best-effort, NOT the guarantee. A bare
+  // internal hostname has no reliable shape, so this net leaves it untouched.
+  // It can never reach a report because no allowlisted field holds a hostname
+  // (the positive allowlist is the real guarantee).
+  it('does NOT catch a bare internal hostname (best-effort limit)', () => {
+    const out = redactSecrets('server prod-db-01.internal responded');
+    expect(out).toContain('prod-db-01.internal');
   });
 });
 

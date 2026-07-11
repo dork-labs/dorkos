@@ -58,9 +58,22 @@ export const FEEDBACK_FLAG_ALLOWLIST: Readonly<Record<string, FlagType>> = {
 };
 
 /**
- * Pattern an enum value must match to be reported: short, lowercase, and free of
- * slashes or whitespace. This blocks a filesystem path or a token from ever
- * passing through an allowlisted enum key.
+ * Known finite value sets for allowlisted enum flags. An enum value is reported
+ * only when it appears here, so a user-customized value (e.g. a renamed theme)
+ * is dropped rather than echoed. Keep these in sync with the config schema.
+ */
+const FEEDBACK_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
+  'runtimes.default': ['claude-code', 'codex', 'opencode'],
+  'logging.level': ['fatal', 'error', 'warn', 'info', 'debug', 'trace'],
+  'ui.theme': ['light', 'dark', 'system'],
+};
+
+/**
+ * Fallback pattern for an allowlisted enum with no known value set: short,
+ * lowercase, and free of slashes or whitespace. Every enum in
+ * {@link FEEDBACK_FLAG_ALLOWLIST} currently has a value set in
+ * {@link FEEDBACK_ENUM_VALUES}, so this only guards a future enum whose values
+ * are not cleanly enumerable.
  */
 const SAFE_ENUM = /^[a-z0-9][a-z0-9._-]{0,31}$/;
 
@@ -97,26 +110,44 @@ export interface FeedbackReport {
 }
 
 /**
- * Redact anything that looks like a secret, token, path, home directory, or
- * email from a string.
+ * Best-effort scrub of common secret, token, path, and identity shapes from a
+ * string.
  *
- * This is a defensive second pass. Reported values are already allowlisted, but
- * redaction guarantees that even a mistaken or malicious value cannot leak the
- * user's identity or credentials into the URL.
+ * This is a defensive net, NOT a guarantee. It catches common shapes (emails,
+ * prefixed and high-entropy tokens, Unix/Windows/UNC paths, IP addresses), but
+ * it cannot catch everything: an unprefixed key id below the entropy threshold,
+ * an internal hostname, or a novel token format can survive it untouched.
+ *
+ * The real guarantee is the positive allowlist ({@link FEEDBACK_FLAG_ALLOWLIST}
+ * plus {@link FEEDBACK_ENUM_VALUES}): a report only ever carries booleans,
+ * bounded numbers, and enum values from known finite sets, none of which can be
+ * a secret. Never route free-form text or user-identifying strings through this
+ * function and trust it to sanitize them; add such fields to the allowlist model
+ * instead, or do not report them at all.
  *
  * @param value - The raw string to clean
- * @returns The string with sensitive substrings replaced by a placeholder
+ * @returns The string with recognized sensitive substrings replaced
  */
 export function redactSecrets(value: string): string {
   return (
     value
       // Emails.
       .replace(/[^\s/@]+@[^\s/@]+\.[^\s/@]+/g, '[email]')
-      // Common credential prefixes followed by their token body.
-      .replace(/\b(?:sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[baprs]-)[A-Za-z0-9_-]+/g, '[redacted]')
+      // Common credential prefixes and shapes.
+      .replace(
+        /\b(?:sk-|pk-|rk-|ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|xox[baprsc]-)[A-Za-z0-9._-]+/g,
+        '[redacted]'
+      )
+      // AWS-style access key ids (AKIA/ASIA + 16 uppercase alnum).
+      .replace(/\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b/g, '[redacted]')
       .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, '[redacted]')
-      // Windows paths (C:\Users\name\...).
-      .replace(/\b[A-Za-z]:\\[^\s]+/g, '[path]')
+      // IPv4 and IPv6 (and MAC-shaped) addresses.
+      .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, '[ip]')
+      .replace(/\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b/g, '[ip]')
+      // UNC network paths (\\host\share\...).
+      .replace(/\\\\[^\s\\]+(?:\\[^\s\\]+)+/g, '[path]')
+      // Windows drive paths (C:\...), greedy to end of line to catch spaces.
+      .replace(/\b[A-Za-z]:\\[^\r\n]*/g, '[path]')
       // Unix home directories, then any remaining absolute path.
       .replace(/\/(?:Users|home)\/[^\s/]+/g, '[home]')
       .replace(/(?:\/[\w.-]+){2,}\/?/g, '[path]')
@@ -125,12 +156,24 @@ export function redactSecrets(value: string): string {
   );
 }
 
+/** Decide whether an allowlisted enum value is safe to report. */
+function isSafeEnum(key: string, value: string): boolean {
+  const known = FEEDBACK_ENUM_VALUES[key];
+  // Prefer the known finite set: only exact members pass, so a user-customized
+  // value is dropped rather than echoed.
+  if (known) return known.includes(value);
+  // No enumerable set: fall back to the shape check plus a redaction check that
+  // rejects anything the defensive pass would scrub (a stray token or path).
+  return SAFE_ENUM.test(value) && redactSecrets(value) === value;
+}
+
 /**
  * Reduce a raw record of config values to the allowlisted, safe subset.
  *
  * Only keys named in {@link FEEDBACK_FLAG_ALLOWLIST} survive, and only when the
- * value matches the expected type. Enums must also pass the {@link SAFE_ENUM}
- * shape. Everything else is dropped, so unknown or sensitive keys can never be
+ * value matches the expected type. Enum values must belong to their known set in
+ * {@link FEEDBACK_ENUM_VALUES} (or, lacking one, pass the {@link SAFE_ENUM}
+ * shape). Everything else is dropped, so unknown or sensitive keys can never be
  * reported.
  *
  * @param raw - Config values keyed by dotted path (missing keys are fine)
@@ -149,14 +192,7 @@ export function sanitizeFlags(
       safe[key] = value;
     } else if (type === 'number' && typeof value === 'number' && Number.isFinite(value)) {
       safe[key] = value;
-    } else if (
-      type === 'enum' &&
-      typeof value === 'string' &&
-      SAFE_ENUM.test(value) &&
-      redactSecrets(value) === value
-    ) {
-      // The shape check bounds the value; the redaction check rejects anything
-      // the defensive pass would scrub (a stray token, path, or email).
+    } else if (type === 'enum' && typeof value === 'string' && isSafeEnum(key, value)) {
       safe[key] = value;
     }
   }
