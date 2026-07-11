@@ -652,3 +652,279 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('getPinnedSessionId is null until a session is pinned', () => {
+    const { manager } = setup();
+    expect(manager.getPinnedSessionId()).toBeNull();
+    manager.attachSession('A');
+    manager.pinSession('A');
+    expect(manager.getPinnedSessionId()).toBe('A');
+    manager.unpinSession();
+    expect(manager.getPinnedSessionId()).toBeNull();
+  });
+
+  it('does NOT open a second connection when pinning the already-attached session (shared, invariant)', () => {
+    // Invariant: pinned === attached share the single active connection, so the
+    // pin records state without a new SSE (pinnedConnection stays null).
+    const { manager, connections } = setup();
+    manager.attachSession('A');
+    manager.pinSession('A');
+    expect(connections).toHaveLength(1);
+    expect(manager.getPinnedSessionId()).toBe('A');
+    expect(manager.getAttachedSessionId()).toBe('A');
+  });
+
+  it('pinSession is idempotent for the same id (no churn)', () => {
+    const { manager, connections } = setup();
+    manager.attachSession('A');
+    manager.pinSession('B'); // off-route → opens a pinned connection
+    expect(connections).toHaveLength(2);
+    manager.pinSession('B'); // repeat → no-op
+    expect(connections).toHaveLength(2);
+    expect(connections[1]!.destroy).not.toHaveBeenCalled();
+    expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a dedicated pinned connection for an off-route session and folds its events into the store', () => {
+    // The pinned background session still feeds the store fold (so the widget
+    // follows live), but ui_command dispatch stays gated to the attached one.
+    const onSessionEvent = vi.fn();
+    const onUiCommand = vi.fn();
+    const { manager, connections } = setup();
+    manager.setListeners({ onSessionEvent });
+    manager.subscribeUiCommand(onUiCommand);
+    manager.attachSession('A');
+    manager.pinSession('B'); // connections[1] is the pinned B stream
+    expect(connections[1]!.url).toBe('/api/sessions/B/events');
+    connections[1]!.push('turn_start', { type: 'turn_start', seq: 1 });
+    expect(onSessionEvent).toHaveBeenCalledWith('B', { type: 'turn_start', seq: 1 });
+    // A ui_command on the background pinned session must NOT pop UI over 'A'.
+    connections[1]!.push('ui_command', {
+      type: 'ui_command',
+      seq: 2,
+      command: { action: 'close_canvas' },
+    } as SessionEvent);
+    expect(onUiCommand).not.toHaveBeenCalled();
+  });
+
+  // --- Transition table (one dedicated test per row) ---
+
+  it('row 1: pinned A + attached A (shared), attachSession(B) transfers the active connection into the pinned slot (no close/reopen) and opens a fresh B', () => {
+    const onSessionEvent = vi.fn();
+    const onUiCommand = vi.fn();
+    const { manager, connections } = setup();
+    manager.setListeners({ onSessionEvent });
+    manager.subscribeUiCommand(onUiCommand);
+    manager.attachSession('A'); // connections[0] shared active+pin
+    manager.pinSession('A');
+
+    manager.attachSession('B'); // connections[1] fresh active B
+
+    expect(manager.getAttachedSessionId()).toBe('B');
+    expect(manager.getPinnedSessionId()).toBe('A');
+    // The A connection was TRANSFERRED, never destroyed (identity preserved).
+    expect(connections[0]!.destroy).not.toHaveBeenCalled();
+    expect(connections).toHaveLength(2);
+    expect(connections[1]!.url).toBe('/api/sessions/B/events');
+    expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
+    // connections[0] now serves the (background) pinned A: events fold, but a
+    // ui_command must not dispatch since A is no longer the attached session.
+    connections[0]!.push('turn_start', { type: 'turn_start', seq: 1 });
+    expect(onSessionEvent).toHaveBeenCalledWith('A', { type: 'turn_start', seq: 1 });
+    connections[0]!.push('ui_command', {
+      type: 'ui_command',
+      seq: 2,
+      command: { action: 'close_canvas' },
+    } as SessionEvent);
+    expect(onUiCommand).not.toHaveBeenCalled();
+  });
+
+  it('row 2: pinned A + attached B, attachSession(A) adopts the pinned connection into the active slot (no duplicate; pinnedConnection cleared)', () => {
+    const onUiCommand = vi.fn();
+    const { manager, connections } = setup();
+    manager.subscribeUiCommand(onUiCommand);
+    manager.attachSession('B'); // connections[0] active B
+    manager.pinSession('A'); // connections[1] pinned A (own conn)
+
+    manager.attachSession('A'); // adopt connections[1]
+
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(manager.getPinnedSessionId()).toBe('A'); // shared again
+    expect(connections).toHaveLength(2); // NO duplicate opened
+    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1); // old active B torn down
+    expect(connections[1]!.destroy).not.toHaveBeenCalled(); // adopted, identity preserved
+    expect(connections[1]!.connect).toHaveBeenCalledTimes(1); // only its original connect
+    // connections[1] is now the ACTIVE connection for A: a ui_command dispatches.
+    connections[1]!.push('ui_command', {
+      type: 'ui_command',
+      seq: 2,
+      command: { action: 'close_canvas' },
+    } as SessionEvent);
+    expect(onUiCommand).toHaveBeenCalledWith({ action: 'close_canvas' });
+  });
+
+  it('row 2 with a DIVERGENT cwd: attachSession(A, newCwd) re-opens instead of adopting the stale-URL pinned connection', () => {
+    // Real failure mode: the pinned connection's URL is bound to the OLD cwd, so
+    // adopting it on a cwd change would silently serve the wrong project's
+    // history — contradicting attachSession's changed-cwd re-open contract.
+    const { manager, connections } = setup();
+    manager.attachSession('B'); // connections[0] active B
+    manager.pinSession('A', '/old'); // connections[1] pinned A, URL bound to /old
+
+    manager.attachSession('A', '/new'); // divergent cwd → no adopt
+
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(manager.getPinnedSessionId()).toBe('A'); // pin state survives, now shared
+    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1); // outgoing active B torn down
+    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1); // stale-cwd pinned conn torn down
+    expect(connections).toHaveLength(3); // fresh connection against the NEW cwd
+    expect(connections[2]!.url).toBe('/api/sessions/A/events?cwd=%2Fnew');
+    expect(connections[2]!.connect).toHaveBeenCalledTimes(1);
+    // One-owner invariant: the pin shares the fresh active connection, so a later
+    // unpin must NOT close the active stream.
+    manager.unpinSession();
+    expect(connections[2]!.destroy).not.toHaveBeenCalled();
+    expect(manager.getAttachedSessionId()).toBe('A');
+  });
+
+  it('row 3: pinned A + attached B, attachSession(C) re-targets the active slot B→C and leaves the pinned connection untouched', () => {
+    const { manager, connections } = setup();
+    manager.attachSession('B'); // connections[0] active B
+    manager.pinSession('A'); // connections[1] pinned A
+
+    manager.attachSession('C'); // connections[2] active C
+
+    expect(manager.getAttachedSessionId()).toBe('C');
+    expect(manager.getPinnedSessionId()).toBe('A');
+    expect(connections).toHaveLength(3);
+    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1); // active B destroyed
+    expect(connections[1]!.destroy).not.toHaveBeenCalled(); // pinned A untouched
+    expect(connections[2]!.url).toBe('/api/sessions/C/events');
+    expect(connections[2]!.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('row 4a: unpinSession with an OWN pinned connection closes only the pinned connection', () => {
+    const { manager, connections } = setup();
+    manager.attachSession('B'); // connections[0] active B
+    manager.pinSession('A'); // connections[1] pinned A
+
+    manager.unpinSession();
+
+    expect(manager.getPinnedSessionId()).toBeNull();
+    expect(manager.getAttachedSessionId()).toBe('B'); // active untouched
+    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1);
+    expect(connections[0]!.destroy).not.toHaveBeenCalled();
+  });
+
+  it('row 4b: unpinSession on a SHARED pin leaves the active connection connected and attached unchanged', () => {
+    const { manager, connections } = setup();
+    manager.attachSession('A'); // connections[0] shared active+pin
+    manager.pinSession('A');
+
+    manager.unpinSession();
+
+    expect(manager.getPinnedSessionId()).toBeNull();
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(connections).toHaveLength(1);
+    expect(connections[0]!.destroy).not.toHaveBeenCalled();
+  });
+
+  it('row 5: pinned A + attached B, pinSession(C) unpins A (closing its connection) then pins C', () => {
+    const { manager, connections } = setup();
+    manager.attachSession('B'); // connections[0] active B
+    manager.pinSession('A'); // connections[1] pinned A
+
+    manager.pinSession('C'); // unpin A, pin C → connections[2]
+
+    expect(manager.getAttachedSessionId()).toBe('B');
+    expect(manager.getPinnedSessionId()).toBe('C');
+    expect(connections).toHaveLength(3);
+    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1); // A's pinned conn closed
+    expect(connections[2]!.url).toBe('/api/sessions/C/events');
+    expect(connections[2]!.connect).toHaveBeenCalledTimes(1);
+    expect(connections[0]!.destroy).not.toHaveBeenCalled(); // active B untouched
+  });
+
+  it('row 6: a transport rebuild (source switch) with attached A + differently-pinned B restores BOTH slots against the new source', () => {
+    const { manager, connections } = setup();
+    manager.attachSession('A', '/pa'); // connections[0] active A
+    manager.pinSession('B', '/pb'); // connections[1] pinned B
+
+    manager.useHttpSource('http://localhost:9999/api');
+
+    // Both old connections torn down, both slots rebuilt against the new origin.
+    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1);
+    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(manager.getPinnedSessionId()).toBe('B'); // pin STATE survived
+    const rebuilt = connections.slice(2).map((c) => c.url);
+    expect(rebuilt).toContain('http://localhost:9999/api/sessions/A/events?cwd=%2Fpa');
+    expect(rebuilt).toContain('http://localhost:9999/api/sessions/B/events?cwd=%2Fpb');
+    for (const conn of connections.slice(2)) {
+      expect(conn.connect).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('row 6 (shared): a source switch with a SHARED pin keeps it shared (no separate pinned connection)', () => {
+    // When pinned === attached the active reattach re-establishes the shared
+    // connection; the pin must NOT spawn a duplicate against the new source.
+    const { manager, connections } = setup();
+    manager.attachSession('A'); // connections[0] shared active+pin
+    manager.pinSession('A');
+
+    manager.useHttpSource('http://localhost:9999/api');
+
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(manager.getPinnedSessionId()).toBe('A');
+    // Exactly one rebuild (the shared active), not two.
+    expect(connections).toHaveLength(2);
+    expect(connections[1]!.url).toBe('http://localhost:9999/api/sessions/A/events');
+  });
+
+  it('a shared pin takes the ATTACHED cwd, ignoring a divergent caller cwd (zero-gap transfer preserved; rebuild targets the real project)', () => {
+    // Real failure mode: LiveSessionWidget resolves cwd from session-list
+    // metadata while attachSession got the operator's selected cwd. Trusting
+    // the caller in pinSession's shared branch desyncs pinnedCwd from the
+    // shared connection's actual `?cwd=` URL, corrupting the later cwd-equality
+    // checks (needless destroy/reopen, or a rebuild against the wrong project).
+    const { manager, connections } = setup();
+    manager.attachSession('A', '/proj'); // connections[0], URL bound to /proj
+    manager.pinSession('A', '/stale-metadata-cwd'); // shared — caller cwd differs
+
+    manager.attachSession('B'); // row 1 transfer-out
+
+    // Zero-gap: the shared connection transferred, never destroyed.
+    expect(connections[0]!.destroy).not.toHaveBeenCalled();
+    expect(manager.getPinnedSessionId()).toBe('A');
+
+    // Observable proof pinnedCwd carried the CONNECTION's truth (/proj), not
+    // the caller's: a source rebuild re-opens the pinned slot from pinnedCwd.
+    manager.useHttpSource('http://localhost:9999/api');
+    const rebuilt = connections.map((c) => c.url);
+    expect(rebuilt).toContain('http://localhost:9999/api/sessions/A/events?cwd=%2Fproj');
+    expect(rebuilt.join(' ')).not.toContain('stale-metadata-cwd');
+  });
+
+  it('after a transfer-out, re-attaching with the ORIGINAL attached cwd adopts (no reopen) even when pinSession passed a different cwd', () => {
+    // Regression: with pinnedCwd corrupted by the caller's cwd (here null,
+    // the unresolved-metadata case), the adopt path's cwd-equality check would
+    // see a false divergence against '/proj' and destroy/reopen the pinned
+    // connection instead of adopting it — breaking the zero-gap guarantee.
+    const { manager, connections } = setup();
+    manager.attachSession('A', '/proj'); // connections[0]
+    manager.pinSession('A', null); // shared — caller cwd unknown/unresolved
+    manager.attachSession('B'); // transfer-out → connections[1] active B
+
+    manager.attachSession('A', '/proj'); // must ADOPT the transferred conn
+
+    expect(connections).toHaveLength(2); // no third connection opened
+    expect(connections[0]!.destroy).not.toHaveBeenCalled(); // adopted, zero-gap
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(manager.getPinnedSessionId()).toBe('A'); // shared again
+  });
+});

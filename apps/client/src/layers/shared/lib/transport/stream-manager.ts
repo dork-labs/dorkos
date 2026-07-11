@@ -1,8 +1,8 @@
 /**
- * StreamManager — connection-only owner of the two durable session streams.
+ * StreamManager — connection-only owner of the durable session streams.
  *
- * Owns exactly TWO stream connections per client (the two-connection budget,
- * spec chat-stream-reconnection):
+ * Owns AT MOST THREE stream connections per client (the connection budget,
+ * specs chat-stream-reconnection + gen-ui-pip):
  *
  * 1. The ACTIVE-SESSION durable stream (snapshot → replay → live). Re-targets
  *    when the active session switches.
@@ -13,6 +13,14 @@
  *    multi-subscriber {@link StreamManager.subscribeEvent} API consumed by
  *    `shared/model/event-stream-context.tsx`, so generic consumers share the
  *    list connection instead of opening a third one (CLI-B5).
+ * 3. The OPTIONAL PINNED-SESSION durable stream ({@link StreamManager.pinSession}):
+ *    a second, independently-liveable session connection that keeps a popped-out
+ *    (PIP) session streaming even after the operator switches the active session
+ *    elsewhere. It exists ONLY while the pinned session differs from the attached
+ *    one — when they coincide the two slots SHARE the single active connection
+ *    (exactly one owner per connection; see the invariant on
+ *    {@link StreamManager.pinSession}). So the ceiling is three, reached only
+ *    while a PIP'd session is off-route.
  *
  * The streams come from a configurable SOURCE:
  * - **HTTP/SSE** (default): `SSEConnection`s against `${baseUrl}/sessions/:id/events`
@@ -192,6 +200,16 @@ export class StreamManager {
   private attachedCwd: string | null = null;
   private listConnection: SSEConnectionLike | null = null;
 
+  // Pinned (PIP) session slot (gen-ui-pip). Keeps a popped-out session live
+  // across active-session switches. INVARIANT: when
+  // `pinnedSessionId === attachedSessionId` the two slots share the ACTIVE
+  // connection and `pinnedConnection` is null (exactly one owner per
+  // SSEConnectionLike). `pinnedConnection` is non-null ONLY while the pinned
+  // session differs from the attached one. See {@link pinSession}.
+  private pinnedSessionId: string | null = null;
+  private pinnedCwd: string | null = null;
+  private pinnedConnection: SSEConnectionLike | null = null;
+
   // Generic-event subscribers (CLI-B5): multi-subscriber, looked up live at
   // dispatch time so subscribing before or after connectList() both work.
   private genericListeners = new Map<GenericEventName, Set<(data: unknown) => void>>();
@@ -245,6 +263,16 @@ export class StreamManager {
   /** The session the durable active-session stream is attached to, if any. */
   getAttachedSessionId(): string | null {
     return this.attachedSessionId;
+  }
+
+  /**
+   * The session currently pinned (PIP), if any — symmetric with
+   * {@link getAttachedSessionId}. Non-null whether the pin owns its own
+   * connection (differs from the attached session) or shares the active one
+   * (coincides with it). See {@link pinSession}.
+   */
+  getPinnedSessionId(): string | null {
+    return this.pinnedSessionId;
   }
 
   /**
@@ -414,11 +442,25 @@ export class StreamManager {
       this.attachedSessionId !== null
         ? { sessionId: this.attachedSessionId, cwd: this.attachedCwd }
         : null;
+    // Capture the pin's OWN connection (off-route case) so we can rebuild it
+    // against the new source (transition-table row 6). The shared case
+    // (`pinnedConnection` null) needs no separate handling — the active
+    // reattach below re-establishes it as shared. Pin STATE
+    // (`pinnedSessionId`/`pinnedCwd`) survives the source switch; only the
+    // connection object is rebuilt.
+    const repin =
+      this.pinnedSessionId !== null && this.pinnedConnection !== null
+        ? { sessionId: this.pinnedSessionId, cwd: this.pinnedCwd }
+        : null;
     const hadList = this.listConnection !== null;
     // Rebuild the session connection WITHOUT detachSession(): the attached
     // session is unchanged across a source switch, so observers must not see
     // an A→null→A flicker (same single-transition rule as attachSession).
     this.closeSessionStream();
+    if (this.pinnedConnection) {
+      this.pinnedConnection.destroy();
+      this.pinnedConnection = null;
+    }
     this.disconnectList();
     this.source = source;
     // Re-open whatever was live so a late source switch (HMR, view re-open)
@@ -426,6 +468,10 @@ export class StreamManager {
     if (reattach) {
       this.sessionConnection = this.openSessionStream(reattach.sessionId, reattach.cwd);
       this.sessionConnection.connect();
+    }
+    if (repin) {
+      this.pinnedConnection = this.openSessionStream(repin.sessionId, repin.cwd);
+      this.pinnedConnection.connect();
     }
     if (hadList) this.connectList();
   }
@@ -454,15 +500,146 @@ export class StreamManager {
     )
       return;
 
-    // Tear down the old connection WITHOUT emitting a detach transition — a
-    // re-attach is a single A→B switch, not A→null→B.
-    this.closeSessionStream();
+    // ADOPT (pin transition-table row 2): the target is the separately-pinned
+    // session, which already owns a live connection. Transfer that connection
+    // into the active slot rather than opening a duplicate — the connection is
+    // session-bound, so re-targeting which field holds it is pure bookkeeping
+    // (no close/connect). The pin becomes shared again (`pinnedConnection`
+    // null, honoring the invariant). The outgoing active connection is torn
+    // down; it is neither shared with nor the pinned connection. Adoption is
+    // only sound when the caller's cwd matches the pin's: the stream URL
+    // (including `?cwd=`) is immutable per connection, so a DIVERGENT cwd must
+    // take the re-open path below instead (this method's changed-cwd contract).
+    if (sessionId === this.pinnedSessionId && this.pinnedConnection) {
+      if (nextCwd === this.pinnedCwd) {
+        this.closeSessionStream();
+        this.sessionConnection = this.pinnedConnection;
+        this.pinnedConnection = null;
+        this.attachedSessionId = sessionId;
+        this.attachedCwd = this.pinnedCwd;
+        this.notifyAttachedChange(sessionId);
+        return;
+      }
+      // Divergent cwd: the pinned connection reads the OLD cwd's history, so
+      // adopting it would silently serve the wrong project. Destroy it and fall
+      // through to the normal re-open — the pin then shares the fresh
+      // connection (one-owner invariant) and `pinnedCwd` follows `nextCwd` in
+      // the shared-cwd sync below.
+      this.pinnedConnection.destroy();
+      this.pinnedConnection = null;
+    }
+
+    // TRANSFER-OUT (row 1): the outgoing active connection is SHARED with the
+    // pin (pinned === attached) and we are switching AWAY from that session.
+    // Hand the shared connection to the pinned slot instead of destroying it,
+    // so the now-off-route pinned session keeps streaming with zero gap — the
+    // same avoid-flicker principle as `setSource`'s single-transition reattach.
+    const outgoingSharedWithPin =
+      this.attachedSessionId !== null &&
+      this.attachedSessionId === this.pinnedSessionId &&
+      this.sessionConnection !== null;
+    if (outgoingSharedWithPin && sessionId !== this.pinnedSessionId) {
+      this.pinnedConnection = this.sessionConnection;
+      this.sessionConnection = null;
+      // The transferred connection's URL was built from the OUTGOING attached
+      // cwd (still in `attachedCwd` here — it is overwritten with `nextCwd`
+      // below). pinSession's shared branch and the shared-cwd sync keep
+      // `pinnedCwd` equal to it already, but the transfer is the moment cwd
+      // truth changes slots, so restate it from the connection's own truth
+      // rather than relying on that equality holding forever.
+      this.pinnedCwd = this.attachedCwd;
+    } else {
+      // Normal re-target (row 3, the ordinary no-pin path, and a shared-session
+      // cwd change): the outgoing active connection is neither shared-with-pin
+      // nor transferable, so destroy it. No detach transition — a re-attach is
+      // a single A→B switch, not A→null→B.
+      this.closeSessionStream();
+    }
+
     this.attachedSessionId = sessionId;
     this.attachedCwd = nextCwd;
-
+    // If we just re-opened the SHARED session (pin coincides and holds no own
+    // connection), keep the pinned cwd in step with the connection's new URL.
+    if (this.pinnedSessionId === sessionId && this.pinnedConnection === null) {
+      this.pinnedCwd = nextCwd;
+    }
     this.sessionConnection = this.openSessionStream(sessionId, nextCwd);
     this.sessionConnection.connect();
     this.notifyAttachedChange(sessionId);
+  }
+
+  /**
+   * Pin a session (PIP) so its durable stream stays live even after the operator
+   * switches the active session elsewhere. Idempotent: re-pinning the SAME
+   * `sessionId` is a no-op. Single-instance panel → single pin: pinning a
+   * DIFFERENT session first unpins the current one (closing its connection).
+   *
+   * INVARIANT: when the pinned session equals the attached one the two slots
+   * SHARE the single active connection and `pinnedConnection` stays null (one
+   * owner per connection). A dedicated `pinnedConnection` opens ONLY when the
+   * pinned session differs from the attached one — that off-route case is the
+   * whole reason the slot exists. Uses the same {@link openSessionStream} path
+   * as the active slot, so the pinned stream has identical snapshot/replay
+   * semantics and folds into the store the active one.
+   *
+   * @param sessionId - The session to keep live in the background.
+   * @param cwd - The pinned session's working directory, forwarded as `?cwd=`
+   *   (see {@link sessionStreamUrl}). Omit/null when unknown; the caller
+   *   (`LiveSessionWidget`) resolves it from session metadata at pin time.
+   *   IGNORED when pinning the already-attached session — a shared pin's cwd
+   *   is definitionally the attached connection's cwd (see the branch comment).
+   */
+  pinSession(sessionId: string, cwd?: string | null): void {
+    if (this.pinnedSessionId === sessionId) return;
+
+    // Single-instance panel: a different session was pinned — unpin it (row 5)
+    // before pinning the new one.
+    if (this.pinnedSessionId !== null) {
+      this.unpinSession();
+    }
+
+    if (sessionId === this.attachedSessionId) {
+      // Shared: the active connection already streams this session. Record the
+      // pin without opening a second connection (invariant). The pin's cwd is
+      // taken from `attachedCwd`, NOT the caller: the pin shares that exact
+      // connection, whose `?cwd=` URL is immutable, so its cwd is
+      // definitionally the attached one. Callers resolve cwd from a different
+      // source (session-list metadata) than attachSession (selected cwd);
+      // trusting the caller here would let `pinnedCwd` desync from the shared
+      // connection's real cwd and corrupt the transfer/adopt cwd-equality
+      // checks — forcing a needless destroy/reopen (zero-gap broken) or, on a
+      // coincidental match, rebuilding the pinned stream against the wrong
+      // project directory.
+      this.pinnedSessionId = sessionId;
+      this.pinnedCwd = this.attachedCwd;
+      this.pinnedConnection = null;
+      return;
+    }
+
+    // Off-route: open a dedicated pinned connection via the active slot's
+    // path. Here the caller's cwd IS authoritative — it parameterizes the
+    // fresh connection's URL.
+    const nextCwd = cwd ?? null;
+    this.pinnedSessionId = sessionId;
+    this.pinnedCwd = nextCwd;
+    this.pinnedConnection = this.openSessionStream(sessionId, nextCwd);
+    this.pinnedConnection.connect();
+  }
+
+  /**
+   * Unpin the current PIP session (transition-table row 4). Destroys the pinned
+   * connection ONLY if the pin owned its own (the off-route case); the shared
+   * case (`pinnedConnection` null) leaves the active connection — and the
+   * attached session — completely untouched. Safe to call when nothing is
+   * pinned.
+   */
+  unpinSession(): void {
+    if (this.pinnedConnection) {
+      this.pinnedConnection.destroy();
+      this.pinnedConnection = null;
+    }
+    this.pinnedSessionId = null;
+    this.pinnedCwd = null;
   }
 
   /** Construct the active-session stream from the configured source. */

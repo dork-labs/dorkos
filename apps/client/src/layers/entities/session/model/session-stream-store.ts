@@ -9,7 +9,10 @@
  * cursor bookkeeping that makes event application idempotent and gap-free. It is
  * the single owner of `lastAppliedSeq`: {@link SessionStreamActions.applyEvent}
  * no-ops on a duplicate/out-of-order seq, so the StreamManager (shared layer) can
- * forward every validated frame without dedup.
+ * forward every validated frame without dedup. LRU-evicts idle sessions past
+ * {@link MAX_RETAINED_SESSIONS}, except the one session named by
+ * {@link SessionStreamActions.setPinnedSession} (DOR-298 PIP), which survives
+ * eviction regardless of idle state.
  *
  * This module is pure state — it imports NOTHING from the StreamManager. The
  * binding (`session-stream-binding.ts`) wires the two together so the
@@ -201,6 +204,11 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
 interface SessionStreamStoreState {
   sessions: Record<string, SessionStreamState>;
   sessionAccessOrder: string[];
+  /**
+   * The session id currently exempt from LRU eviction (DOR-298 PIP), or `null`
+   * when nothing is pinned. See {@link SessionStreamActions.setPinnedSession}.
+   */
+  pinnedSessionId: string | null;
 }
 
 interface SessionStreamActions {
@@ -279,6 +287,16 @@ interface SessionStreamActions {
   ensureSession: (sessionId: string) => void;
   /** Read a session's state, or {@link DEFAULT_SESSION_STREAM_STATE} for unknown ids. */
   getSession: (sessionId: string) => SessionStreamState;
+  /**
+   * Pin (or unpin with `null`) a session against LRU eviction (DOR-298 PIP): a
+   * pinned session's entry survives {@link touchAndGet}'s eviction loop even
+   * while idle, so a popped-out widget board never disappears just because the
+   * operator switched the active session elsewhere. Set/cleared by the SAME
+   * lifecycle that calls `streamManager.pinSession()`/`unpinSession()`
+   * (`LiveSessionWidget`'s mount/unmount effect) — never call one without the
+   * other, or store retention and stream liveness fall out of agreement.
+   */
+  setPinnedSession: (sessionId: string | null) => void;
 }
 
 /**
@@ -303,8 +321,14 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
   }
   const order = [sessionId, ...state.sessionAccessOrder.filter((id) => id !== sessionId)];
   for (const id of order.slice(MAX_RETAINED_SESSIONS)) {
-    // Only evict idle sessions (no turn in progress) to avoid dropping live state.
-    if (state.sessions[id] && state.sessions[id]!.inProgressTurn.length === 0) {
+    // Only evict idle sessions (no turn in progress) and never the pinned
+    // session (DOR-298 PIP) — a pinned session showing a completed, non-
+    // streaming widget board is exactly the idle-but-must-not-evict case.
+    if (
+      state.sessions[id] &&
+      state.sessions[id]!.inProgressTurn.length === 0 &&
+      id !== state.pinnedSessionId
+    ) {
       delete state.sessions[id];
     }
   }
@@ -451,6 +475,7 @@ export const useSessionStreamStore: SessionStreamStore = create<
     immer((set, get) => ({
       sessions: {},
       sessionAccessOrder: [],
+      pinnedSessionId: null,
 
       applySnapshot: (sessionId, snapshot) =>
         set(
@@ -643,6 +668,15 @@ export const useSessionStreamStore: SessionStreamStore = create<
         ),
 
       getSession: (sessionId) => get().sessions[sessionId] ?? DEFAULT_SESSION_STREAM_STATE,
+
+      setPinnedSession: (sessionId) =>
+        set(
+          (state) => {
+            state.pinnedSessionId = sessionId;
+          },
+          false,
+          'session-stream/setPinnedSession'
+        ),
     })),
     { name: 'SessionStreamStore', enabled: import.meta.env.DEV }
   )

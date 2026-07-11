@@ -8,11 +8,15 @@ import { FloatingPanel, type FloatingPanelProps } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import { PipHost } from '../ui/PipHost';
 
-const { demoMountSpy, demoUnmountSpy, presenceSpy } = vi.hoisted(() => ({
-  demoMountSpy: vi.fn(),
-  demoUnmountSpy: vi.fn(),
-  presenceSpy: vi.fn(),
-}));
+const { demoMountSpy, demoUnmountSpy, presenceSpy, widgetMountSpy, widgetUnmountSpy } = vi.hoisted(
+  () => ({
+    demoMountSpy: vi.fn(),
+    demoUnmountSpy: vi.fn(),
+    presenceSpy: vi.fn(),
+    widgetMountSpy: vi.fn(),
+    widgetUnmountSpy: vi.fn(),
+  })
+);
 
 // Mock the floating-panel primitive to a thin harness: its drag/resize/clamp
 // mechanics are covered by its own suite. Here we only assert what PipHost feeds
@@ -51,6 +55,20 @@ vi.mock('@/layers/features/mcp-apps', () => ({
       {props.title}
     </div>
   ),
+}));
+
+// Mock the gen-ui barrel: PipHost routes `widget` content to LiveSessionWidget,
+// whose own pin/subscribe/render lifecycle has its own suite (task 2.2). Here
+// we only assert PipHost hands it the descriptor's `sessionId`. Instrumented
+// with mount/unmount spies for the renderer-identity-stability test below.
+vi.mock('@/layers/features/gen-ui', () => ({
+  LiveSessionWidget: (props: { sessionId: string }) => {
+    useEffect(() => {
+      widgetMountSpy();
+      return () => widgetUnmountSpy();
+    }, []);
+    return <div data-testid="live-session-widget" data-session={props.sessionId} />;
+  },
 }));
 
 // Instrument DemoPipContent with mount/unmount spies so remounts are countable.
@@ -152,6 +170,20 @@ describe('PipHost', () => {
     expect(frame).toHaveAttribute('data-server', 'fixture-app');
     expect(frame).toHaveAttribute('data-uri', 'ui://dash/main');
     expect(frame).toHaveTextContent('Dash');
+  });
+
+  it('routes a widget descriptor to LiveSessionWidget, shows its title, and offers no restore control', () => {
+    act(() => {
+      useAppStore.getState().openPip({ kind: 'widget', sessionId: 's1', title: 'Tic-Tac-Toe' });
+    });
+    render(<PipHost />);
+
+    const panel = screen.getByTestId('floating-panel');
+    expect(panel).toHaveAttribute('data-title', 'Tic-Tac-Toe');
+    // v1 intentionally passes no onRestore for widget — close is the exit.
+    expect(panel).toHaveAttribute('data-has-restore', 'false');
+
+    expect(screen.getByTestId('live-session-widget')).toHaveAttribute('data-session', 's1');
   });
 
   it('uses the computed bottom-right default geometry when pipGeometry is null', () => {
@@ -278,5 +310,38 @@ describe('PipHost', () => {
     expect(demoUnmountSpy).not.toHaveBeenCalled();
     // Same DOM node, too — the subtree was never recreated.
     expect(screen.getByText('Stable panel')).toBe(before);
+  });
+
+  it('keeps the widget renderer identity stable across parent re-renders (mounts exactly once)', () => {
+    act(() => {
+      useAppStore.getState().openPip({ kind: 'widget', sessionId: 's1', title: 'Live board' });
+    });
+
+    // Same technique as the demo counterpart above, applied to `widget`: a
+    // remount here would tear down LiveSessionWidget's pinned stream and
+    // store retention (task 2.2), so this kind needs its own identity proof.
+    function Harness() {
+      const [, force] = useReducer((c: number) => c + 1, 0);
+      return (
+        <>
+          <button type="button" data-testid="force" onClick={() => force()}>
+            re-render
+          </button>
+          <PipHost />
+        </>
+      );
+    }
+
+    render(<Harness />);
+    expect(widgetMountSpy).toHaveBeenCalledTimes(1);
+    const before = screen.getByTestId('live-session-widget');
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('force'));
+    });
+
+    expect(widgetMountSpy).toHaveBeenCalledTimes(1);
+    expect(widgetUnmountSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('live-session-widget')).toBe(before);
   });
 });

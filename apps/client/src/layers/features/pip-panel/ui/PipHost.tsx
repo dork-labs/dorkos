@@ -3,6 +3,7 @@ import { AnimatePresence } from 'motion/react';
 import { FloatingPanel, type FloatingPanelGeometry } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile, type PipContent } from '@/layers/shared/model';
 import { McpAppFrame } from '@/layers/features/mcp-apps';
+import { LiveSessionWidget } from '@/layers/features/gen-ui';
 import { DemoPipContent } from './DemoPipContent';
 
 /** Default panel size and edge margin used to dock in the bottom-right corner. */
@@ -16,15 +17,19 @@ const DEFAULT_MARGIN = 16;
  * every render, which React treats as a different component type and
  * unmounts/remounts the whole subtree — the same hazard documented for
  * `DorkosUiFence` in `features/chat/ui/message/StreamingText.tsx`. Keeping the
- * map stable matters the moment DOR-298 puts a live, stateful widget inside:
- * a remount on every parent re-render would destroy its in-flight state.
+ * map stable matters most for `widget` (DOR-298): a remount on every parent
+ * re-render would destroy the pinned session's in-flight stream and board
+ * state ({@link WidgetPipContent} wraps `LiveSessionWidget`, which owns that
+ * lifecycle).
  */
 const PIP_RENDERERS: {
   demo: React.ComponentType<{ content: Extract<PipContent, { kind: 'demo' }> }>;
   mcp_app: React.ComponentType<{ content: Extract<PipContent, { kind: 'mcp_app' }> }>;
+  widget: React.ComponentType<{ content: Extract<PipContent, { kind: 'widget' }> }>;
 } = {
   demo: DemoPipContent,
   mcp_app: McpAppPipContent,
+  widget: WidgetPipContent,
 };
 
 /**
@@ -46,6 +51,19 @@ function McpAppPipContent({ content }: { content: Extract<PipContent, { kind: 'm
       className="h-full"
     />
   );
+}
+
+/**
+ * Adapter that maps a `widget` PIP descriptor onto {@link LiveSessionWidget}'s
+ * flat props. Declared at module scope (not inlined into {@link PIP_RENDERERS})
+ * for the same stable-identity reason as {@link McpAppPipContent} — the
+ * pinned session stream and live board underneath must never remount because
+ * an unrelated parent re-rendered.
+ *
+ * @param props.content - The `widget` PIP descriptor to render.
+ */
+function WidgetPipContent({ content }: { content: Extract<PipContent, { kind: 'widget' }> }) {
+  return <LiveSessionWidget sessionId={content.sessionId} />;
 }
 
 /** Compute the default bottom-right dock for a panel that has no saved geometry. */
@@ -74,10 +92,13 @@ function renderPipContent(content: PipContent): React.ReactNode {
       const Renderer = PIP_RENDERERS.mcp_app;
       return <Renderer content={content} />;
     }
+    case 'widget': {
+      const Renderer = PIP_RENDERERS.widget;
+      return <Renderer content={content} />;
+    }
     default: {
       // Exhaustive check — adding a kind without a case is a compile error here,
-      // forcing a new PIP content kind (e.g. DOR-298 widgets) to register its
-      // renderer before shipping.
+      // forcing a new PIP content kind to register its renderer before shipping.
       const _exhaustive: never = content;
       return _exhaustive;
     }
@@ -151,10 +172,11 @@ export function PipHost(): React.ReactNode {
           onGeometryChange={setPipGeometry}
           onClose={closePip}
           // onRestore is intentionally omitted for every v1 kind. `demo` has no
-          // restore target; `mcp_app` still keeps its inline block live in the
-          // transcript (popping out never removes it), so close IS the exit —
-          // there is nothing to "send back" to. A future kind that owns its only
-          // instance would wire a restore target here.
+          // restore target; `mcp_app` and `widget` both keep their inline block
+          // live in the transcript (popping out never removes it, dual-live
+          // instances per ideation D5), so close IS the exit — there is nothing
+          // to "send back" to. A future kind that owns its only instance would
+          // wire a restore target here.
         >
           {renderPipContent(pipContent)}
         </FloatingPanel>
