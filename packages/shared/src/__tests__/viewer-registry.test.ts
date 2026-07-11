@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveViewerForPath,
   isCanvasViewerType,
+  diffMediaKindForPath,
   CANVAS_VIEWER_TYPES,
 } from '../viewer-registry.js';
 
@@ -60,5 +61,33 @@ describe('isCanvasViewerType', () => {
 
   it('rejects an unknown id', () => {
     expect(isCanvasViewerType('terminal')).toBe(false);
+  });
+});
+
+describe('diffMediaKindForPath', () => {
+  it.each([
+    ['assets/logo.png', 'image'],
+    ['photo.JPG', 'image'],
+    ['diagram.svg', 'image'],
+  ])('resolves %s to the image diff surface', (path, kind) => {
+    expect(diffMediaKindForPath(path)).toBe(kind);
+  });
+
+  it.each([
+    ['src/index.ts', 'text'],
+    ['README.md', 'text'],
+    ['data/rows.csv', 'text'],
+    // pdf/3d have no diff surface in v1 → they fall to the text diff, which
+    // degrades gracefully rather than inventing a viewer.
+    ['report.pdf', 'text'],
+    ['model.glb', 'text'],
+    ['.gitignore', 'text'],
+  ])('resolves %s to the text diff surface', (path, kind) => {
+    expect(diffMediaKindForPath(path)).toBe(kind);
+  });
+
+  it('honors a viewer override when picking the diff surface', () => {
+    // Force a normally-image extension onto the text viewer → text diff.
+    expect(diffMediaKindForPath('logo.png', { png: 'file' })).toBe('text');
   });
 });

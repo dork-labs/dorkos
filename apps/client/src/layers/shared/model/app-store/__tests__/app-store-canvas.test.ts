@@ -52,6 +52,26 @@ describe('CanvasSlice — multi-document reducer', () => {
     ).toBe('a.ts');
   });
 
+  it('coalesces repeated diffs of one file onto a single document, labelled by base name (DOR-212)', () => {
+    const { openCanvasDocument } = useAppStore.getState();
+    const diffDoc = (path: string): UiCanvasContent => ({ type: 'diff', sourcePath: path });
+    openCanvasDocument(diffDoc('src/App.tsx'));
+    openCanvasDocument(diffDoc('src/App.tsx'));
+
+    const { openDocuments, activeDocumentId } = useAppStore.getState();
+    // A second edit to the same file refreshes the existing diff, no new tab.
+    expect(openDocuments.filter((d) => d.content.type === 'diff')).toHaveLength(1);
+    expect(openDocuments.find((d) => d.id === activeDocumentId)!.sourceLabel).toBe('App.tsx');
+  });
+
+  it('keeps a file document and its diff document separate (distinct source keys)', () => {
+    const { openCanvasDocument } = useAppStore.getState();
+    openCanvasDocument(fileDoc('src/App.tsx'));
+    openCanvasDocument({ type: 'diff', sourcePath: 'src/App.tsx' });
+
+    expect(useAppStore.getState().openDocuments).toHaveLength(2);
+  });
+
   it('evicts the least-recently-active document past the cap', () => {
     const { openCanvasDocument } = useAppStore.getState();
     for (let i = 0; i <= MAX_CANVAS_DOCUMENTS; i++) {

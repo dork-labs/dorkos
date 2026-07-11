@@ -10,6 +10,7 @@ import {
   backfillCloudDefaults,
   backfillWorkbenchDefaults,
   backfillWorkbenchTerminalGraceTtl,
+  backfillWorkbenchAutoOpenDiff,
   dropTunnelPasscodeAndSessionSecret,
   backfillProvidersDefaults,
   generalizeTelemetryConsent,
@@ -415,6 +416,38 @@ describe('backfillWorkbenchTerminalGraceTtl migration', () => {
   it('is a no-op when the workbench section is absent (backfillWorkbenchDefaults owns that case)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillWorkbenchTerminalGraceTtl(store);
+    expect(store.data.workbench).toBeUndefined();
+  });
+});
+
+describe('backfillWorkbenchAutoOpenDiff migration', () => {
+  it('adds autoOpenDiff=true to an existing workbench block, preserving other fields', () => {
+    const store = createMockStore({
+      workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10 },
+    });
+    backfillWorkbenchAutoOpenDiff(store);
+    expect(store.data.workbench).toEqual({
+      defaultViewers: { csv: 'file' },
+      terminalGraceTtlMinutes: 10,
+      autoOpenDiff: true,
+    });
+  });
+
+  it('is idempotent (leaves an already-set autoOpenDiff untouched)', () => {
+    const store = createMockStore({
+      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: false },
+    });
+    backfillWorkbenchAutoOpenDiff(store);
+    expect(store.data.workbench).toEqual({
+      defaultViewers: {},
+      terminalGraceTtlMinutes: 10,
+      autoOpenDiff: false,
+    });
+  });
+
+  it('is a no-op when the workbench section is absent (schema default owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillWorkbenchAutoOpenDiff(store);
     expect(store.data.workbench).toBeUndefined();
   });
 });

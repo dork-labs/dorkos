@@ -51,6 +51,7 @@ import { executeSdkQuery } from './messaging/message-sender.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { disposeProjector, getOrCreateProjector, peekProjector } from '../../session/index.js';
+import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
@@ -860,6 +861,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // markInterrupted is a no-op for an idle projector.
     const evictedIds = this.sessionStore.checkSessionHealth(this.lockManager);
     for (const sessionId of evictedIds) {
+      // Drop the session's captured diff baselines (DOR-212) — they are in-memory
+      // and per-session, so an evicted session must not leak them. Idempotent for
+      // an id that captured none.
+      editBaselineStore.clearSession(sessionId);
       const projector = peekProjector(sessionId);
       if (!projector) continue;
       projector.markInterrupted();

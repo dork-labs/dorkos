@@ -301,8 +301,16 @@ export const UserConfigSchema = z.object({
        * window lapses with no re-attach, the PTY is reclaimed. Default 10.
        */
       terminalGraceTtlMinutes: z.number().int().min(1).max(120).default(10),
+      /**
+       * Whether DorkOS auto-opens a diff document in the workbench when the
+       * attached session's agent edits a file (DOR-212). On by default so the
+       * operator sees what changed without asking; set `false` to keep the canvas
+       * on whatever the operator last opened (the agent can still surface a diff
+       * deliberately via the `open_diff` UI command).
+       */
+      autoOpenDiff: z.boolean().default(true),
     })
-    .default(() => ({ defaultViewers: {}, terminalGraceTtlMinutes: 10 })),
+    .default(() => ({ defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true })),
   runtimes: z
     .object({
       /** Runtime id the registry selects as its default at boot. */

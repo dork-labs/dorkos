@@ -22,6 +22,7 @@ import type {
   FileEntry,
   FileTreeResponse,
   FileContentResponse,
+  DiffBaselineResponse,
   CreateEntryResponse,
   FileMutationResponse,
   ServerConfig,
@@ -70,6 +71,30 @@ function codedError(message: string, code: string): Error & { code: string } {
 /** POSIX-separated path of `abs` relative to `root`, for wire responses. */
 function toPosixRel(pathMod: typeof import('path'), root: string, abs: string): string {
   return pathMod.relative(root, abs).split(pathMod.sep).join('/');
+}
+
+/**
+ * Read a file's text at git `HEAD` via `git show`, or `null` for a non-git cwd /
+ * untracked file. The in-process fallback base for {@link
+ * createDirectSystemMethods}'s `readDiffBaseline` when no snapshot bridge is
+ * wired. Runs through `execFile` (no shell) with a timeout.
+ */
+async function gitShowHeadText(root: string, absPath: string): Promise<string | null> {
+  const pathMod = (await import('path')).default;
+  const { execFile } = await import('child_process');
+  const { promisify } = await import('util');
+  const rel = pathMod.relative(root, absPath).split(pathMod.sep).join('/');
+  if (rel.startsWith('..') || pathMod.isAbsolute(rel)) return null;
+  try {
+    const { stdout } = await promisify(execFile)('git', ['show', `HEAD:${rel}`], {
+      cwd: root,
+      timeout: 5000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return stdout;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -319,6 +344,69 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       const content = buffer.toString('utf8');
       const hash = crypto.createHash('sha256').update(content, 'utf8').digest('hex');
       return { content, hash, encoding: 'utf-8' };
+    },
+
+    /**
+     * Resolve a file's diff baseline + current content in-process (DOR-212).
+     * Prefers the injected {@link DirectTransportServices.diffBaseline} bridge —
+     * the same per-session snapshot store the embedded runtime captures into.
+     * When the host hasn't wired it, falls back to a git-HEAD/empty base computed
+     * in-process (the documented fallback ladder): current disk vs `git show
+     * HEAD:<path>`, or empty when the file is untracked or the cwd is not a repo.
+     */
+    async readDiffBaseline(
+      cwd: string,
+      filePath: string,
+      sessionId: string,
+      mode?: 'session' | 'head'
+    ): Promise<DiffBaselineResponse> {
+      const resolvedMode = mode ?? 'session';
+      if (services.diffBaseline) {
+        return services.diffBaseline.readDiffBaseline(cwd, filePath, sessionId, resolvedMode);
+      }
+      const fs = (await import('fs/promises')).default;
+      const crypto = (await import('crypto')).default;
+      const sha = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+      const { root, resolved } = await confineWithin(cwd, filePath);
+
+      // Current disk text (a deleted file reads as empty → full removal). Same
+      // guards as readFileContent: a directory, oversize, or binary target is
+      // rejected with the coded errors the diff surface maps to friendly copy.
+      let current = '';
+      try {
+        const stat = await fs.stat(resolved);
+        if (!stat.isFile()) throw codedError('Not a regular file', 'NOT_A_FILE');
+        if (stat.size > MAX_TEXT_FILE_BYTES) {
+          throw codedError('File too large to diff here', 'TOO_LARGE');
+        }
+        const buf = await fs.readFile(resolved);
+        if (buf.includes(0))
+          throw codedError('Binary files cannot be diffed as text', 'BINARY_FILE');
+        current = buf.toString('utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+
+      // Baseline = git HEAD, else empty. Without the snapshot bridge there is no
+      // session-precise base in-process, so HEAD is the honest fallback.
+      const head = await gitShowHeadText(root, resolved);
+      const baseline = head ?? '';
+      return {
+        baseline,
+        baselineHash: sha(baseline),
+        current,
+        currentHash: sha(current),
+        capturedFrom: head !== null ? 'head' : 'empty',
+      };
+    },
+
+    /** Advance a file's diff baseline to current disk (finish-review; DOR-212). */
+    async advanceDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void> {
+      // Only the snapshot bridge holds advanceable baselines; the HEAD/empty
+      // fallback recomputes each read, so there is nothing to advance without it.
+      if (services.diffBaseline) {
+        await services.diffBaseline.advanceDiffBaseline(cwd, filePath, sessionId);
+      }
     },
 
     /** Create a file or directory via direct fs; throws if the target exists. */

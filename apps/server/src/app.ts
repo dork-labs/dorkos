@@ -9,6 +9,7 @@ import healthRoutes from './routes/health.js';
 import directoryRoutes from './routes/directory.js';
 import configRoutes from './routes/config.js';
 import fileRoutes from './routes/files.js';
+import diffRoutes from './routes/diff.js';
 import workbenchServeRoutes from './routes/workbench-serve.js';
 import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
@@ -116,6 +117,7 @@ export function createApp() {
   app.use('/api/directory', directoryRoutes);
   app.use('/api/config', configRoutes);
   app.use('/api/files', fileRoutes);
+  app.use('/api/diff', diffRoutes);
   app.use('/api/workbench', workbenchServeRoutes);
   app.use('/api/git', gitRoutes);
   app.use('/api/workspaces', workspaceRoutes);

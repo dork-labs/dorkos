@@ -155,6 +155,10 @@ function sourceKey(content: UiCanvasContent): string | null {
       return content.sourcePath ? `path:${content.sourcePath}` : null;
     case 'file':
       return `path:${content.sourcePath}`;
+    case 'diff':
+      // Coalesce repeated diffs of one file onto a single document so an agent's
+      // burst of edits refreshes one tab rather than spawning many (DOR-212).
+      return `diff:${content.sourcePath}`;
     case 'image':
     case 'pdf':
     case 'model3d':
@@ -187,6 +191,7 @@ const CONTENT_TYPE_FALLBACK_LABELS: Record<UiCanvasContent['type'], string> = {
   model3d: '3D Model',
   csv: 'CSV',
   browser: 'Browser',
+  diff: 'Diff',
 };
 
 /** Human label for a document tab — the content title, else a source-derived name. */
@@ -198,6 +203,8 @@ function sourceLabel(content: UiCanvasContent): string {
         ? baseName(content.sourcePath)
         : CONTENT_TYPE_FALLBACK_LABELS.markdown;
     case 'file':
+      return baseName(content.sourcePath);
+    case 'diff':
       return baseName(content.sourcePath);
     case 'image':
     case 'pdf':

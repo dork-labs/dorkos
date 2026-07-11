@@ -22,6 +22,7 @@ import type {
   TaskItem,
   GitStatusResponse,
   GitStatusError,
+  DiffBaselineResponse,
   ReloadPluginsResult,
   ModelOption,
   SubagentInfo,
@@ -103,6 +104,24 @@ export interface DirectTransportServices {
   };
   gitStatus?: {
     getGitStatus(cwd: string): Promise<GitStatusResponse | GitStatusError>;
+  };
+  /**
+   * Optional diff-baseline bridge (DOR-212). The embedding host wires the
+   * server's `services/diff` domain here so the in-process transport resolves the
+   * per-session pre-edit snapshot base (the same singleton the embedded runtime
+   * captures into). When absent, {@link import('./system-methods').createDirectSystemMethods}
+   * falls back to a git-HEAD/empty base computed in-process — the documented
+   * fallback ladder — so text diff still works, just without session-snapshot
+   * fidelity.
+   */
+  diffBaseline?: {
+    readDiffBaseline(
+      cwd: string,
+      filePath: string,
+      sessionId: string,
+      mode: 'session' | 'head'
+    ): Promise<DiffBaselineResponse>;
+    advanceDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void>;
   };
   vaultRoot: string;
 }

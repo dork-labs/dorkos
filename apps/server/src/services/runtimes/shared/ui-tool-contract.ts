@@ -41,6 +41,7 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
   When the markdown came from a file you read, pass sourcePath (the file's path) so the user can edit it in the canvas and have edits saved back to that file. Omit sourcePath for markdown you generated inline — it then renders read-only.
   For image/pdf, src may be an https URL, a data: URI, or a local file path (resolved within the session's working directory).
 - open_file: { sourcePath: string } — open a file from the session's working directory in the workbench. DorkOS picks the right viewer (code editor, image, PDF, 3D model, CSV table, or rich markdown) from the file's type and opens it as a new document, so the user can read or edit it in place. Use this instead of pasting a file's contents into the chat when you want the user to look at or edit a real file.
+- open_diff: { sourcePath: string } — open a review of what YOU changed in a file: a diff of the file's current contents against its state before your first edit this session, with per-hunk accept/reject the user drives. DorkOS auto-opens this when you edit a file, so use it only to deliberately re-surface a change for review (e.g. "here's exactly what I changed"). Opens as a diff document; repeat opens of the same file refresh it in place.
 - open_terminal: { cwd?: string } — reveal the workbench Terminal so the user has a shell in this session's worktree. Use it when you're about to suggest commands the user should run, or want them to watch a build/test as it happens. The terminal always runs in the session's own working directory; cwd is an optional hint. Terminals are web-only — in environments without one (e.g. the Obsidian plugin) this surfaces a brief notice that the terminal isn't available here instead of opening anything.
 - browser_navigate: { url: string } — open a page in the workbench's embedded browser: a running local dev server (localhost), a local HTML file in the working directory, or an external URL. Use it to show the user a live preview of something you built or a page relevant to the work. Opens as a new browser document; navigating to a URL that's already open just re-focuses it.
 - close_canvas
@@ -80,7 +81,7 @@ export const CONTROL_UI_INPUT = {
   sourcePath: z
     .string()
     .optional()
-    .describe('File path (cwd-confined) to open in the workbench for open_file'),
+    .describe('File path (cwd-confined) to open in the workbench for open_file / open_diff'),
   url: z.string().optional().describe('Page to open in the embedded browser for browser_navigate'),
   preferredWidth: z.number().optional().describe('Canvas width percentage (20-80) for open_canvas'),
   message: z.string().optional().describe('Toast message for show_toast'),

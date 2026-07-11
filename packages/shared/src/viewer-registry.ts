@@ -115,3 +115,21 @@ export function resolveViewerForPath(
 export function isCanvasViewerType(value: string): value is CanvasViewerType {
   return (CANVAS_VIEWER_TYPES as readonly string[]).includes(value);
 }
+
+/**
+ * Which diff surface a file resolves to — the text (CodeMirror merge) view or the
+ * image (2-up/swipe/onion-skin) view (DOR-212). A file whose viewer is `image`
+ * gets the image diff; everything else (code, markdown, csv, and — for v1 — pdf
+ * and 3D models, which have no diff surface) gets the text diff, which degrades
+ * gracefully for content it can't render as text.
+ *
+ * @param filePath - Workspace-relative or absolute file path.
+ * @param overrides - Optional extension → viewer overrides (config-provided),
+ *   consulted exactly as {@link resolveViewerForPath} does.
+ */
+export function diffMediaKindForPath(
+  filePath: string,
+  overrides?: Record<string, string>
+): 'text' | 'image' {
+  return resolveViewerForPath(filePath, overrides) === 'image' ? 'image' : 'text';
+}

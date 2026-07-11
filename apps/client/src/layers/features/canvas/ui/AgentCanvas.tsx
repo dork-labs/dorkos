@@ -24,6 +24,12 @@ const CanvasModel3dContent = lazy(() =>
 const CanvasCsvContent = lazy(() =>
   import('./CanvasCsvContent').then((m) => ({ default: m.CanvasCsvContent }))
 );
+// Feature→feature UI composition (DOR-212): the canvas dispatches the `diff`
+// variant to the diff-review feature's viewer, lazy so its `@codemirror/merge`
+// runtime never lands in the main bundle.
+const CanvasDiffContent = lazy(() =>
+  import('@/layers/features/diff-review').then((m) => ({ default: m.CanvasDiffContent }))
+);
 
 /** Renders one canvas document's content by its discriminated `type`. */
 function CanvasRenderer({
@@ -89,6 +95,15 @@ function CanvasRenderer({
       return (
         <Suspense fallback={<CanvasLoading />}>
           <CanvasCsvContent content={content} />
+        </Suspense>
+      );
+    case 'diff':
+      // Key per source file so review state (hunk count, side-by-side toggle,
+      // armed confirms) never leaks between two open diff tabs that share the
+      // same tree position on a tab switch.
+      return (
+        <Suspense fallback={<CanvasLoading />}>
+          <CanvasDiffContent key={content.sourcePath} documentId={documentId} content={content} />
         </Suspense>
       );
   }

@@ -102,6 +102,17 @@ describe('UiCommandSchema', () => {
     expect(() => UiCommandSchema.parse({ action: 'open_file', sourcePath: '' })).toThrow();
   });
 
+  it('parses open_diff command', () => {
+    expect(UiCommandSchema.parse({ action: 'open_diff', sourcePath: 'src/App.tsx' })).toEqual({
+      action: 'open_diff',
+      sourcePath: 'src/App.tsx',
+    });
+  });
+
+  it('rejects open_diff with an empty sourcePath', () => {
+    expect(() => UiCommandSchema.parse({ action: 'open_diff', sourcePath: '' })).toThrow();
+  });
+
   it('parses open_terminal with a cwd hint', () => {
     expect(UiCommandSchema.parse({ action: 'open_terminal', cwd: '/repo' })).toEqual({
       action: 'open_terminal',
@@ -309,6 +320,31 @@ describe('UiCanvasContentSchema', () => {
   it('round-trips csv content', () => {
     const content = { type: 'csv' as const, src: 'data/rows.csv' };
     expect(UiCanvasContentSchema.parse(content)).toEqual(content);
+  });
+
+  it('round-trips diff content with an optional mediaKind + title', () => {
+    const content = {
+      type: 'diff' as const,
+      sourcePath: 'src/App.tsx',
+      mediaKind: 'text' as const,
+      title: 'App.tsx',
+    };
+    expect(UiCanvasContentSchema.parse(content)).toEqual(content);
+  });
+
+  it('round-trips diff content with only a sourcePath', () => {
+    const content = { type: 'diff' as const, sourcePath: 'src/App.tsx' };
+    expect(UiCanvasContentSchema.parse(content)).toEqual(content);
+  });
+
+  it('rejects diff content missing sourcePath', () => {
+    expect(() => UiCanvasContentSchema.parse({ type: 'diff' })).toThrow();
+  });
+
+  it('rejects diff content with an unknown mediaKind', () => {
+    expect(() =>
+      UiCanvasContentSchema.parse({ type: 'diff', sourcePath: 'a.ts', mediaKind: 'video' })
+    ).toThrow();
   });
 });
 

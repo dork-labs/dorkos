@@ -22,6 +22,7 @@ import {
   EventStreamProvider,
 } from '@/layers/shared/model';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
+import { useAutoOpenDiff } from '@/layers/features/diff-review';
 import { ExtensionProvider, createExtensionEventBridge } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
 import { initializeExtensions } from './app/init-extensions';
@@ -179,6 +180,12 @@ function DevToolsPanel() {
   );
 }
 
+/** Null-rendering shell subscriber that auto-opens a diff on agent edits (DOR-212). */
+function AutoOpenDiffBridge() {
+  useAutoOpenDiff();
+  return null;
+}
+
 /** Root decides between the dev playground and the real app. */
 function Root() {
   // Dev playground renders outside router (unchanged)
@@ -202,6 +209,10 @@ function Root() {
             <AuthGuard>
               <RouterProvider router={router} />
             </AuthGuard>
+            {/* Auto-open a diff review when the attached agent edits a file
+                (DOR-212). Renders nothing — a shell-level subscriber that lives
+                inside the query + transport providers it needs. */}
+            <AutoOpenDiffBridge />
             {/* Owner-setup overlay for the tunnel exposure flow (task 1.3). */}
             <OwnerSetupHost />
           </ExtensionProvider>

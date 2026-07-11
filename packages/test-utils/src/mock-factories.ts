@@ -205,6 +205,14 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     readFileContent: vi
       .fn()
       .mockResolvedValue({ content: '', hash: 'mock-hash', encoding: 'utf-8' }),
+    readDiffBaseline: vi.fn().mockResolvedValue({
+      baseline: '',
+      baselineHash: 'mock-baseline-hash',
+      current: '',
+      currentHash: 'mock-current-hash',
+      capturedFrom: 'empty',
+    }),
+    advanceDiffBaseline: vi.fn().mockResolvedValue(undefined),
     createEntry: vi.fn().mockResolvedValue({ ok: true, path: 'mock-path' }),
     deleteEntry: vi.fn().mockResolvedValue({ ok: true }),
     renameEntry: vi.fn().mockResolvedValue({ ok: true }),

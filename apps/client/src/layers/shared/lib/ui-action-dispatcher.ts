@@ -180,6 +180,17 @@ export function executeUiCommand(
       revealCanvas(store, origin);
       break;
     }
+    case 'open_diff':
+      // Open (or refresh) a diff review for the file as a new canvas document.
+      // The store dedups by `diff:<sourcePath>`, so a repeated open — the common
+      // case when an agent edits the same file several times — re-activates and
+      // refreshes the existing document instead of spawning tabs. The viewer
+      // loads baseline + current itself, so no bytes travel here (mirrors
+      // `open_file`). `mediaKind` is left unset; the viewer resolves text vs
+      // image from the registry.
+      store.openCanvasDocument({ type: 'diff', sourcePath: command.sourcePath });
+      revealCanvas(store, origin);
+      break;
     case 'open_terminal': {
       // No agent-side PTY spawn (PTY creation is client-driven): reveal and
       // focus the Terminal tab for the attached session, which spawns the shell
