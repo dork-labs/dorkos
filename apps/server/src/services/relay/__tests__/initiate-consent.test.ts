@@ -3,6 +3,7 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import {
   bindingAllowsInitiate,
   createInitiateConsentGate,
+  isConsentExemptPrincipal,
   type ConsentBindingStore,
 } from '../initiate-consent.js';
 
@@ -39,6 +40,27 @@ describe('bindingAllowsInitiate (shared consent predicate)', () => {
     expect(bindingAllowsInitiate(makeBinding({ enabled: true, canInitiate: true }))).toBe(true);
     expect(bindingAllowsInitiate(makeBinding({ enabled: true, canInitiate: false }))).toBe(false);
     expect(bindingAllowsInitiate(makeBinding({ enabled: false, canInitiate: true }))).toBe(false);
+  });
+});
+
+describe('isConsentExemptPrincipal (trusted server-injected principals)', () => {
+  it('exempts reply-forwarding, system, and inbound adapter-echo principals', () => {
+    expect(isConsentExemptPrincipal('agent:session-abc')).toBe(true);
+    expect(isConsentExemptPrincipal('relay.system.tasks.notifier')).toBe(true);
+    expect(isConsentExemptPrincipal('relay.human.telegram.tg1.bot')).toBe(true);
+    expect(isConsentExemptPrincipal('relay.human.slack.s1.bot')).toBe(true);
+  });
+
+  it('does NOT exempt the console, agents, sessions, or arbitrary human ids', () => {
+    // The console is gated like any agent-initiated principal (its only exempt
+    // targets are agents + relay.human.console.*, handled by the gate directly).
+    expect(isConsentExemptPrincipal('relay.human.console')).toBe(false);
+    expect(isConsentExemptPrincipal('relay.human.console.client-9')).toBe(false);
+    expect(isConsentExemptPrincipal('relay.agent.ns.agent-1')).toBe(false);
+    expect(isConsentExemptPrincipal('relay.session.scratch')).toBe(false);
+    expect(isConsentExemptPrincipal('relay.external.mcp')).toBe(false);
+    // A human chat identity that is not the `.bot` echo must not be exempt.
+    expect(isConsentExemptPrincipal('relay.human.telegram.tg1.chat-42')).toBe(false);
   });
 });
 
@@ -87,9 +109,18 @@ describe('createInitiateConsentGate — the DOR-277 delivery-layer gate', () => 
       });
       expect(gate('relay.external.mcp', HUMAN).allowed).toBe(false);
     });
+
+    it('gates the in-app console principal reaching an EXTERNAL channel', () => {
+      // The console operator (or a spoofer of it) may not start a conversation
+      // on a bound external channel when canInitiate is off.
+      const gate = createInitiateConsentGate({
+        bindingStore: storeFor(makeBinding({ canInitiate: false })),
+      });
+      expect(gate('relay.human.console', HUMAN).allowed).toBe(false);
+    });
   });
 
-  describe('non-agent-initiated principals are EXEMPT', () => {
+  describe('trusted server-injected principals are EXEMPT', () => {
     // A canInitiate=false binding is used throughout to prove the bypass is by
     // principal, not because consent happened to be on.
     const gate = createInitiateConsentGate({

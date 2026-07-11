@@ -273,7 +273,16 @@ export class RelayPublishPipeline {
     //     etc.). Reply-forwarding and system principals are not agent-initiated
     //     and the gate returns allowed for them (see the host-side gate).
     if (this.initiateConsentGate) {
-      const consent = this.initiateConsentGate(envelope.from, subject);
+      let consent;
+      try {
+        consent = this.initiateConsentGate(envelope.from, subject);
+      } catch (err) {
+        // Fail closed: a throwing consent policy denies rather than letting the
+        // message slip through undecided. Dead-letter under the target subject.
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.logger?.warn?.(`initiate-consent gate threw; denying: ${message}`);
+        consent = { allowed: false as const, reason: `consent gate error: ${message}` };
+      }
       if (!consent.allowed) {
         return this.rejectAtGate(
           envelope,

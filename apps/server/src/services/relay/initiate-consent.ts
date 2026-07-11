@@ -8,17 +8,26 @@
  * `relay_send_async` with a raw `relay.human.{type}.{adapterId}.{chatId}`
  * subject and deliver straight through to the channel. This module moves the
  * decision down to the relay publish/delivery layer (wired via
- * {@link RelayCore.setInitiateConsentGate}) so EVERY agent→human path is gated,
- * not just those two handlers.
+ * {@link RelayCore.setInitiateConsentGate}) so the gate covers every publish
+ * path — `relay_send*`, A2A, binding-router re-dispatch — not just those two
+ * handlers.
  *
  * ## Principal trust model
  *
- * The publish `from` is a server-injected, unspoofable principal. The gate keys
- * its decision on it:
+ * The gate keys its decision on the publish `from`. That principal is only
+ * trustworthy where the server injects it and refuses to let a caller assert it:
  *
- * - **Agent-initiated** (`relay.agent.*`, `relay.session.*`, `relay.external.mcp`,
- *   and any other principal not listed below) → GATED. A send to a bound human
- *   channel is denied unless the resolved binding is enabled and `canInitiate`.
+ * - On the agent tool surface, `resolveSenderIdentity` derives `from` from the
+ *   session (never from tool args), so an LLM cannot spoof it.
+ * - The task-completion notifier and adapter reply-forwarding are server-internal
+ *   and assert their own principals.
+ * - The one entry point that takes a client-supplied `from` — the HTTP route
+ *   `POST /api/relay/messages` — rejects any principal in the exempt set below
+ *   via {@link isConsentExemptPrincipal}, so an untrusted local caller cannot
+ *   assert one to slip past the gate.
+ *
+ * The exempt set — principals only trusted server code emits, never gated:
+ *
  * - **Reply-forwarding** (`agent:*`) → EXEMPT. The runtime adapter republishes an
  *   agent's turn output to the inbound message's `replyTo` (a `relay.human.*`
  *   subject) under the distinct `agent:` principal. This is a reply to a message
@@ -27,12 +36,18 @@
  * - **System** (`relay.system.*`, e.g. the task-completion notifier
  *   `relay.system.tasks.notifier`) → EXEMPT. System senders already resolved
  *   consent upstream through {@link resolveNotifyTarget} (which enforces the same
- *   `enabled && canInitiate` predicate) before publishing, so re-gating here
- *   would be redundant. The trust boundary: only server-internal code can assert
- *   a `relay.system.*` principal — it is never taken from tool arguments.
- * - **Human** (`relay.human.*`, e.g. inbound bot echoes `relay.human.{type}.{id}.bot`
- *   and the in-app console `relay.human.console.*`) → EXEMPT. These originate from
- *   a human, not an autonomous agent.
+ *   `enabled && canInitiate` predicate) before publishing.
+ * - **Inbound adapter echo** (`relay.human.{type}.{adapterId}.bot`) → EXEMPT.
+ *   Telegram/Slack adapters publish an inbound human message onto the bus under
+ *   this `.bot` principal so BindingRouter can route it to the agent; gating it
+ *   would break inbound delivery. This is a human messaging IN, not an agent
+ *   messaging out.
+ *
+ * Every other principal — `relay.agent.*`, `relay.session.*`, `relay.external.mcp`,
+ * the in-app console `relay.human.console`, or anything else — is treated as
+ * agent-initiated and GATED when it targets a bound human channel. (The console
+ * operator's legitimate targets — agents and `relay.human.console.*` — are not
+ * gated; only an attempt to start a conversation on an external channel is.)
  *
  * Only `relay.human.*` targets are subject to the gate at all; `relay.human.console.*`
  * targets are additionally exempt because the in-app console is the operator's own
@@ -66,17 +81,29 @@ export function bindingAllowsInitiate(binding: AdapterBinding): boolean {
 }
 
 /**
- * Return true when `from` is an agent-initiated principal — i.e. a principal
- * that must pass the `canInitiate` gate to reach a human channel. Replies,
- * system senders, and human/console principals are not agent-initiated.
+ * Return true when `from` is a principal only trusted server code emits, and
+ * which the consent gate therefore exempts: reply-forwarding (`agent:*`), system
+ * senders (`relay.system.*`), and inbound adapter echoes
+ * (`relay.human.{type}.{adapterId}.bot`).
+ *
+ * This is the single source of truth for the exempt set. The consent gate uses
+ * it to decide exemption; the HTTP publish route uses it to REJECT a
+ * client-asserted `from` in this set (an untrusted caller must never be able to
+ * assert a trusted principal and slip past the gate — DOR-277 review follow-up).
+ *
+ * Note the in-app console principal (`relay.human.console`) is deliberately NOT
+ * exempt: it is gated like any agent-initiated principal, so neither the operator
+ * nor a spoofer can start a conversation on an external channel when `canInitiate`
+ * is off. Its legitimate targets (agents, `relay.human.console.*`) are not gated.
  *
  * @param from - The publish `from` principal.
  */
-function isAgentInitiatedPrincipal(from: string): boolean {
-  if (from.startsWith('agent:')) return false; // reply-forwarding
-  if (from.startsWith('relay.system.')) return false; // system (consent resolved upstream)
-  if (from.startsWith('relay.human.')) return false; // inbound bot echo / console operator
-  return true;
+export function isConsentExemptPrincipal(from: string): boolean {
+  if (from.startsWith('agent:')) return true; // reply-forwarding
+  if (from.startsWith('relay.system.')) return true; // system (consent resolved upstream)
+  // Inbound adapter echo: `relay.human.{type}.{adapterId}.bot`. NOT the console.
+  if (from.startsWith('relay.human.') && from.endsWith('.bot')) return true;
+  return false;
 }
 
 /**
@@ -100,8 +127,9 @@ export function createInitiateConsentGate(deps: {
     // The in-app console is the operator's own UI — no binding, no initiate
     // semantics. Never gate it (doing so would deny all console messaging).
     if (subject.startsWith('relay.human.console.')) return { allowed: true };
-    // Replies, system, and human principals are not agent-initiated.
-    if (!isAgentInitiatedPrincipal(from)) return { allowed: true };
+    // Trusted server-injected principals (replies, system, inbound bot echoes)
+    // are not agent-initiated.
+    if (isConsentExemptPrincipal(from)) return { allowed: true };
 
     const { adapterId, chatId, channelType } = parseHumanSubject(subject);
     if (!adapterId) {

@@ -101,6 +101,27 @@ describe('publish pipeline — initiate-consent gate (DOR-277)', () => {
     expect(replies.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('fails closed when the gate throws: denies, dead-letters, no delivery', async () => {
+    relay.setInitiateConsentGate(() => {
+      throw new Error('bindingStore.resolve blew up');
+    });
+
+    const received: RelayEnvelope[] = [];
+    relay.subscribe('relay.human.telegram.tg1.chat-42', (env) => {
+      received.push(env);
+    });
+
+    const result = await relay.publish(
+      'relay.human.telegram.tg1.chat-42',
+      { text: 'gate throws' },
+      { from: 'relay.agent.ns.agent-1' }
+    );
+
+    expect(result.deliveredTo).toBe(0);
+    expect(received).toHaveLength(0);
+    expect(result.rejected?.[0]?.reason).toBe('initiate_denied');
+  });
+
   it('is a no-op when no gate is injected (backward compatible)', async () => {
     const received: RelayEnvelope[] = [];
     relay.subscribe('relay.human.telegram.tg1.chat-42', (env) => {
