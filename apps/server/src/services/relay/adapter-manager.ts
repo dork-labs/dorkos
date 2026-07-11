@@ -38,6 +38,19 @@ import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './ad
 import { broadcastAdaptersChanged, broadcastBindingsChanged } from './relay-sse-events.js';
 import { BindingSubsystem } from './binding-subsystem.js';
 import type { RelayCoreLike } from './binding-router.js';
+import {
+  materializeAdapterSecrets,
+  persistAdapterConfigs,
+  resolveAdapterSecrets,
+  deleteAdapterSecrets,
+  type MaterializeSecretsContext,
+} from './adapter-secrets.js';
+import {
+  credentialProvider as defaultCredentialProvider,
+  credentialStore as defaultCredentialStore,
+  type CredentialProvider,
+  type CredentialStore,
+} from '../core/credential-provider.js';
 
 // Re-export for consumers that import AdapterError from this module
 export { AdapterError } from './adapter-error.js';
@@ -123,6 +136,18 @@ export interface AdapterManagerDeps {
   eventRecorder?: AdapterEventRecorder;
   /** Optional activity service for feed instrumentation */
   activityService?: ActivityEmitter;
+  /**
+   * Encrypted store that backs `file:` credential references for adapter
+   * secrets (DOR-280). Defaults to the process-wide {@link credentialStore}
+   * singleton; injectable for tests.
+   */
+  credentialStore?: CredentialStore;
+  /**
+   * Read port that resolves a credential reference to its secret at adapter
+   * construction (DOR-280). Defaults to the process-wide
+   * {@link credentialProvider} singleton; injectable for tests.
+   */
+  credentialProvider?: CredentialProvider;
 }
 
 /** Server-side adapter lifecycle manager. */
@@ -188,12 +213,41 @@ export class AdapterManager {
     return Array.from(this.agentRuntimes.keys());
   }
 
+  /** Credential store + manifests used to materialize adapter secrets (DOR-280). */
+  private get secretsCtx(): MaterializeSecretsContext {
+    return {
+      store: this.deps.credentialStore ?? defaultCredentialStore,
+      manifests: this.manifests,
+    };
+  }
+
+  /** Read port that resolves adapter-secret references at construction (DOR-280). */
+  private get credentialProvider(): CredentialProvider {
+    return this.deps.credentialProvider ?? defaultCredentialProvider;
+  }
+
+  /**
+   * Persist `this.configs`, materializing secrets into credential references
+   * first — the single funnel to disk, so a cleartext bot token is never
+   * written to `adapters.json` (DOR-280). Rewrites `this.configs` in place.
+   */
+  private persistConfigs(): Promise<void> {
+    return persistAdapterConfigs(this.configPath, this.configs, this.secretsCtx);
+  }
+
   /** Load config, start enabled adapters, begin watching for changes. */
   async initialize(): Promise<void> {
     this.populateBuiltinManifests();
     await this.enrichManifestsWithDocs();
     await ensureDefaultAdapterConfig(this.configPath);
     this.configs = await loadAdapterConfig(this.configPath);
+
+    // Migrate any legacy cleartext bot tokens into the encrypted credential
+    // store, rewriting adapters.json to hold references (DOR-280). An
+    // already-bound bot keeps working: its token is moved, not invalidated.
+    if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) {
+      await saveAdapterConfig(this.configPath, this.configs);
+    }
 
     // Correct builtin flag on user-created adapters.
     // Only the built-in claude-code adapter should have builtin: true.
@@ -271,7 +325,7 @@ export class AdapterManager {
     if (!config) throw new Error(`Adapter not found: ${id}`);
 
     config.enabled = true;
-    await saveAdapterConfig(this.configPath, this.configs);
+    await this.persistConfigs();
 
     const adapter = await this.buildAdapter(config);
     if (adapter) {
@@ -293,7 +347,7 @@ export class AdapterManager {
     if (!config) throw new Error(`Adapter not found: ${id}`);
 
     config.enabled = false;
-    await saveAdapterConfig(this.configPath, this.configs);
+    await this.persistConfigs();
     await this.registry.unregister(id);
     this.deps.eventRecorder?.insertAdapterEvent(
       id,
@@ -460,7 +514,7 @@ export class AdapterManager {
       config,
     } as AdapterConfig;
     this.configs.push(adapterConfig);
-    await saveAdapterConfig(this.configPath, this.configs);
+    await this.persistConfigs();
     logger.debug('[AdapterManager] config saved', { id });
 
     if (enabled) {
@@ -503,7 +557,7 @@ export class AdapterManager {
     } else {
       delete existing.label;
     }
-    await saveAdapterConfig(this.configPath, this.configs);
+    await this.persistConfigs();
   }
 
   /** Remove an adapter instance, stop it if running, and persist the change. */
@@ -533,7 +587,9 @@ export class AdapterManager {
 
     await this.emitAdapterLifecycle(id, 'disconnected', adapterName);
     this.configs.splice(index, 1);
-    await saveAdapterConfig(this.configPath, this.configs);
+    await this.persistConfigs();
+    // Best-effort cleanup of the removed adapter's stored secrets (DOR-280).
+    await deleteAdapterSecrets(config, this.secretsCtx);
 
     // Auto-delete bindings that belonged to the removed adapter
     const bindingStore = this.bindingSubsystem?.getBindingStore();
@@ -577,7 +633,7 @@ export class AdapterManager {
     if (typeof mergedConfig.label === 'string' && mergedConfig.label) {
       existing.label = mergedConfig.label;
     }
-    await saveAdapterConfig(this.configPath, this.configs);
+    await this.persistConfigs();
 
     // Restart adapter if running
     if (existing.enabled && this.registry.get(id)) {
@@ -662,8 +718,16 @@ export class AdapterManager {
 
   /** Delegate adapter instantiation to the factory module. */
   private async buildAdapter(config: AdapterConfig): Promise<RelayAdapter | null> {
+    // Resolve credential references to real secrets in memory only — the
+    // adapter receives the live token, but it is never written back to disk
+    // (DOR-280). A cleartext value (e.g. a transient test config) passes
+    // through unchanged.
+    const resolved = await resolveAdapterSecrets(config, {
+      provider: this.credentialProvider,
+      manifests: this.manifests,
+    });
     return createAdapter(
-      config,
+      resolved,
       {
         agentRuntimes: this.agentRuntimes,
         traceStore: this.deps.traceStore,

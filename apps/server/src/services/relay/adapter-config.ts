@@ -80,9 +80,11 @@ function stripRemovedAdapterTypes(raw: unknown): unknown {
 export async function loadAdapterConfig(configPath: string): Promise<AdapterConfig[]> {
   try {
     const raw = await readFile(configPath, 'utf-8');
-    // The file holds bot tokens in cleartext. If an instance wrote it before we
-    // enforced 0600, or it was restored from a lax backup, tighten it on read so
-    // the secrets stop being world-readable without waiting for the next save.
+    // Bot tokens live as credential references at rest (DOR-280), but a legacy
+    // file may still carry cleartext before its first migration, and the
+    // references themselves are sensitive. If an instance wrote the file before
+    // we enforced 0600, or it was restored from a lax backup, tighten it on read
+    // (defense in depth) without waiting for the next save.
     await repairAdapterConfigPermissions(configPath);
     const sanitized = stripRemovedAdapterTypes(JSON.parse(raw));
     const parsed = AdaptersConfigFileSchema.safeParse(sanitized);
@@ -107,9 +109,10 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
 }
 
 /**
- * Owner-only file mode for `adapters.json` (`rw-------`). Adapter configs hold
- * live bot tokens (Telegram, Slack) in cleartext, so the file must not be
- * readable by other local users.
+ * Owner-only file mode for `adapters.json` (`rw-------`). Bot tokens are stored
+ * as credential references at rest (DOR-280), but the references — and any
+ * cleartext in a not-yet-migrated legacy file — are sensitive, so the file must
+ * not be readable by other local users (defense in depth).
  */
 const ADAPTER_CONFIG_MODE = 0o600;
 
@@ -142,7 +145,10 @@ async function repairAdapterConfigPermissions(configPath: string): Promise<void>
  * Persist adapter configs to disk using atomic write (tmp + rename).
  *
  * Creates the parent directory if it does not exist. The file is written
- * owner-only (`0600`) because it stores adapter secrets in cleartext.
+ * owner-only (`0600`) as defense in depth around the adapter secret references
+ * it holds. Callers persist through `persistAdapterConfigs` (adapter-secrets),
+ * which materializes any cleartext secret into a reference before this write —
+ * this function does not itself guard against cleartext.
  *
  * @param configPath - Absolute path to adapters.json
  * @param configs - The adapter configs to write
@@ -290,8 +296,14 @@ export function mergeWithPasswordPreservation(
   return result;
 }
 
-/** Traverse a nested object using dot-notation key parts. */
-function getNestedValue(obj: Record<string, unknown>, parts: string[]): unknown {
+/**
+ * Traverse a nested object using dot-notation key parts.
+ *
+ * @internal Shared with {@link ../adapter-secrets} for password-field access.
+ * @param obj - The object to read from.
+ * @param parts - Dot-notation key parts (e.g. `['inbound', 'secret']`).
+ */
+export function getNestedValue(obj: Record<string, unknown>, parts: string[]): unknown {
   let current: unknown = obj;
   for (const part of parts) {
     if (current == null || typeof current !== 'object') return undefined;
@@ -300,8 +312,19 @@ function getNestedValue(obj: Record<string, unknown>, parts: string[]): unknown 
   return current;
 }
 
-/** Set a value in a nested object using dot-notation key parts, creating intermediates. */
-function setNestedValue(obj: Record<string, unknown>, parts: string[], value: unknown): void {
+/**
+ * Set a value in a nested object using dot-notation key parts, creating intermediates.
+ *
+ * @internal Shared with {@link ../adapter-secrets} for password-field rewrites.
+ * @param obj - The object to mutate.
+ * @param parts - Dot-notation key parts (e.g. `['inbound', 'secret']`).
+ * @param value - The value to set at the leaf.
+ */
+export function setNestedValue(
+  obj: Record<string, unknown>,
+  parts: string[],
+  value: unknown
+): void {
   let current: Record<string, unknown> = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     if (!(parts[i] in current) || typeof current[parts[i]] !== 'object') {
