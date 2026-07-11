@@ -55,9 +55,10 @@ export default function PricingPage() {
           <p className="text-warm-gray leading-relaxed">
             DorkOS is open source under the MIT license, and that does not change. The cockpit, all
             three agent runtimes, Tasks, Relay, Mesh, the Marketplace, your own tunnel for remote
-            access, and every client surface (browser, desktop, Obsidian) are yours to run, fork,
-            and keep. One operator, full power, works offline, no account required unless you choose
-            to open it up to another device.
+            access, and every client surface (browser, desktop, and the Obsidian plugin) is yours to
+            fork and keep (desktop and the Obsidian plugin are still in beta). One operator, full
+            power, works offline, no account required unless you choose to open it up to another
+            device.
           </p>
           <p className="text-warm-gray leading-relaxed">
             That is not a starter tier. It is the whole product. Its job is to be the best free
