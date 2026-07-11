@@ -501,6 +501,8 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         uptime: 0,
         workingDirectory: services.vaultRoot,
         nodeVersion: process.version,
+        platform: `${process.platform}-${process.arch}`,
+        runtimes: ['claude-code'],
         claudeCliPath: null,
         tunnel: {
           enabled: false,

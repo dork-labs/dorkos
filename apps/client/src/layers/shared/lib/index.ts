@@ -23,6 +23,7 @@ export {
   type PlatformAdapter,
 } from './platform';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
+export { buildClientReport } from './build-issue-report';
 export { HttpTransport, streamManager } from './transport';
 export { DirectTransport, type DirectTransportServices } from './direct-transport';
 export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';

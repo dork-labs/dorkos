@@ -9,6 +9,7 @@ export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
 export { useDialogTabState } from './use-dialog-tab-state';
 export { useTheme, type Theme } from './use-theme';
+export { useReportIssue } from './report-issue/use-report-issue';
 export { useIsMobile } from './use-is-mobile';
 export { useFavicon } from './use-favicon';
 export { useDocumentTitle } from './use-document-title';

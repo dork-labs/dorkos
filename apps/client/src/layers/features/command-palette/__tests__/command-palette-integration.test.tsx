@@ -77,6 +77,7 @@ vi.mock('@/layers/shared/model', () => ({
     return selector ? selector(state) : state;
   },
   useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
+  useReportIssue: () => vi.fn(),
   useIsMobile: () => false,
   useNow: () => Date.now(),
   // URL deep-link hooks — during the dual-signal era we forward open/close

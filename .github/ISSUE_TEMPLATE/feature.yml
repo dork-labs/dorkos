@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest something new or an improvement for DorkOS.
+labels: ['enhancement', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thanks for the idea. Tell us the problem you are trying to solve, not
+        just the solution you have in mind. That helps us find the best fix.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: Describe the task or goal that DorkOS makes hard today.
+      placeholder: I want to ... but right now I have to ...
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: Describe the change you have in mind, if you have one.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do instead today?
+      description: Any workaround you use now, or other tools that get this right.
+    validations:
+      required: false

@@ -213,6 +213,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       uptime: 0,
       workingDirectory: '/test',
       nodeVersion: 'v20.0.0',
+      platform: 'linux-x64',
+      runtimes: ['claude-code'],
       claudeCliPath: null,
       tunnel: {
         enabled: false,

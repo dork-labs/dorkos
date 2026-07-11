@@ -7,6 +7,7 @@ import {
   useSettingsDeepLink,
   useTasksDeepLink,
   useRelayDeepLink,
+  useReportIssue,
 } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
 import { useAgentFrecency } from './use-agent-frecency';
@@ -43,6 +44,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const navigate = useNavigate();
 
   const setPreviousCwd = useAppStore((s) => s.setPreviousCwd);
+  const reportIssue = useReportIssue();
 
   // URL-based openers for dialog panels. These update TanStack Router
   // search params; DialogHost listens to both the store flag and the URL
@@ -140,6 +142,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'toggleTheme':
           setTheme(theme === 'dark' ? 'light' : 'dark');
           return;
+        case 'reportIssue':
+          reportIssue('bug');
+          return;
         case 'openTasks':
           openTasks();
           return;
@@ -168,6 +173,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       openTasks,
       openRelay,
       openSettings,
+      reportIssue,
     ]
   );
 

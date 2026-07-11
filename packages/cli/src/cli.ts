@@ -266,6 +266,17 @@ if (process.argv[2] === 'doctor') {
   process.exit(await runDoctor(DORK_HOME, process.argv.slice(3)));
 }
 
+// `feedback` opens a prefilled GitHub issue with the local setup details.
+// Intercept before the top-level parseArgs so its flags (`--bug`/`--feature`/
+// `--runtime`/`--print`) aren't rejected as unknown options. Reads config only,
+// boots no server, and sends nothing. Dispatch + help live in
+// commands/feedback.ts.
+if (process.argv[2] === 'feedback') {
+  process.env.DORK_HOME = DORK_HOME;
+  const { runFeedback } = await import('./commands/feedback.js');
+  process.exit(await runFeedback(DORK_HOME, __CLI_VERSION__, process.argv.slice(3)));
+}
+
 // `auth` subcommand has its own flag namespace (`--email`, `--password`).
 // Intercept before the top-level parseArgs call so those flags aren't rejected
 // as unknown options. Operates directly on the local SQLite database and
@@ -356,6 +367,7 @@ Commands:
   cloud logout         Unlink this instance from its DorkOS account
   cloud status         Show the linked account, or 'not linked'
   doctor               Check your setup and report problems in plain words
+  feedback             Report a bug or request a feature on GitHub
   cleanup              Remove all DorkOS data
 
 Options:

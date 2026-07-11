@@ -39,6 +39,8 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   uptime: 12_345,
   workingDirectory: '/Users/dev/dorkos',
   nodeVersion: 'v22.10.0',
+  platform: 'darwin-arm64',
+  runtimes: ['claude-code', 'codex', 'opencode'],
   claudeCliPath: '/usr/local/bin/claude',
   tunnel: {
     enabled: false,
