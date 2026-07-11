@@ -516,9 +516,10 @@ fork; the rest are low-risk.
 
 ## Related ADRs
 
-- **New (seed from this spec):** "Diff base: per-session pre-edit snapshot over
-  git working tree" (`260711-142049`, draft) — the load-bearing architectural
-  decision (why not git; capture point; fallback ladder; ephemerality).
+- **`260711-142049`** "Diff base: per-session pre-edit snapshot over
+  git working tree" (`decisions/260711-142049-diff-base-session-snapshot-over-git-working-tree.md`,
+  proposed) — the load-bearing architectural decision (why not git; capture
+  point; fallback ladder; ephemerality).
 - `260708-185518` multi-document canvas model (the store this extends).
 - `0290`–`0293` (canvas editing, edit-protection, editor-owns-document/host-owns-
   file) — the `PUT /content` optimistic-concurrency contract reject writes reuse.

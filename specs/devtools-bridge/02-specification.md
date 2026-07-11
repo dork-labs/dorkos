@@ -453,10 +453,12 @@ design was chosen specifically to preserve it:
   data-flow (inject → postMessage → ingest → buffer → tool), the security
   rationale (why postMessage-to-parent, not fetch-to-API), and how to add a
   future capture signal. Changelog fragment per chunk.
-- **ADR (seed at SPECIFY):** "DevTools bridge capture architecture — in-page shim
-  over postMessage, server-buffered, Claude-Code read tools" (records: shim vs.
-  proxy-side capture; postMessage vs. direct POST; in-page rasterization vs.
-  server headless; Codex read-tool exclusion; retention model).
+- **ADR:** `260711-143246` "DevTools bridge capture architecture: in-page shim
+  over postMessage, server-buffered, Claude-Code read tools"
+  (`decisions/260711-143246-devtools-bridge-postmessage-capture-channel.md`,
+  proposed; records: shim vs. proxy-side capture; postMessage vs. direct POST;
+  in-page rasterization vs. server headless; Codex read-tool exclusion;
+  retention model).
 
 ## Implementation Phases
 
@@ -491,7 +493,10 @@ design was chosen specifically to preserve it:
 - `260708-111459` two-tier generative UI (never invent a third delivery
   mechanism — the read tools are plain MCP tools, the capture-request rides the
   existing SSE event stream).
-- **New (seeded by this spec):** DevTools bridge capture architecture.
+- **`260711-143246`** DevTools bridge capture architecture: in-page shim over
+  postMessage, server-buffered, Claude-Code read tools
+  (`decisions/260711-143246-devtools-bridge-postmessage-capture-channel.md`,
+  proposed).
 
 ## References
 

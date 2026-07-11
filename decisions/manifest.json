@@ -2,6 +2,24 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260711-143246",
+      "slug": "devtools-bridge-postmessage-capture-channel",
+      "title": "DevTools bridge capture architecture: in-page shim over postMessage, server-buffered, Claude-Code read tools",
+      "status": "proposed",
+      "created": "2026-07-11",
+      "extractedFrom": "devtools-bridge",
+      "specSlug": "devtools-bridge"
+    },
+    {
+      "id": "260711-142049",
+      "slug": "diff-base-session-snapshot-over-git-working-tree",
+      "title": "Diff base: per-session pre-edit snapshot over git working tree",
+      "status": "proposed",
+      "created": "2026-07-11",
+      "extractedFrom": "diff-viewer",
+      "specSlug": "diff-viewer"
+    },
+    {
       "id": "260711-031624",
       "slug": "system-level-task-completion-notifications",
       "title": "System-level task-completion notifications originate from a store terminal hook",
