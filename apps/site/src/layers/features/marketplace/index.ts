@@ -22,3 +22,4 @@ export { PackageHeader } from './ui/PackageHeader';
 export { PackageReadme } from './ui/PackageReadme';
 export { InstallInstructions } from './ui/InstallInstructions';
 export { RelatedPackages } from './ui/RelatedPackages';
+export { MarketplaceBrowseTracker } from './ui/MarketplaceBrowseTracker';

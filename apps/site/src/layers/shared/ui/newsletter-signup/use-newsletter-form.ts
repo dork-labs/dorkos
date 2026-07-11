@@ -12,8 +12,8 @@
  * @module shared/ui/newsletter-signup/use-newsletter-form
  */
 import { useState } from 'react';
-import posthog from 'posthog-js';
 
+import { trackNewsletterSignup } from '@/lib/analytics';
 import type { NewsletterSource } from '@/db/newsletter-schema';
 
 /** Form lifecycle state. */
@@ -69,7 +69,7 @@ export function useNewsletterForm(source: NewsletterSource): UseNewsletterForm {
         );
         return;
       }
-      posthog.capture('newsletter_signup', { source, email_domain: emailDomain(email) });
+      trackNewsletterSignup(source, emailDomain(email));
       setState('success');
     } catch {
       setState('error');

@@ -51,7 +51,7 @@ export default function HomePage() {
       <MarketingHeader />
 
       <main className="pt-8">
-        <ActivityFeedHero ctaText="Install" ctaHref="#install" githubHref={siteConfig.github} />
+        <ActivityFeedHero ctaText="Install" ctaHref="#install" showGithubLink />
 
         <VillainSection />
 

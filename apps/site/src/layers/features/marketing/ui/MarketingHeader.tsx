@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { DorkLogo } from '@dorkos/icons/logos';
-import { siteConfig } from '@/config/site';
+import { GITHUB_OUTBOUND_HREF } from '@/config/site';
+import { trackGithubClick } from '@/lib/analytics';
 
 /** GitHub mark — lucide dropped its brand glyph, so inline the official path. */
 function GitHubMark() {
@@ -48,10 +49,11 @@ export function MarketingHeader() {
     >
       <div className="flex w-full items-center justify-between">
         <a
-          href={siteConfig.github}
+          href={GITHUB_OUTBOUND_HREF}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="DorkOS on GitHub"
+          onClick={() => trackGithubClick('header')}
           className="text-warm-gray-light hover:text-brand-orange transition-smooth flex w-16 items-center"
         >
           <GitHubMark />

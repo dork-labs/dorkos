@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import posthog from 'posthog-js';
+import { hasOptedOutCapturing, optInCapturing, optOutCapturing } from '@/lib/analytics';
 import { siteConfig } from '@/config/site';
 
 const COOKIE_CONSENT_KEY = 'cookie-consent';
@@ -51,10 +51,10 @@ export function CookieConsentBanner() {
     // stored choice on mount — a visitor who accepted in a prior session, or
     // before this gating shipped, must be re-opted-in here. captureEventName:
     // false avoids emitting a duplicate opt-in event on every page load.
-    if (consent === 'accepted' && posthog.has_opted_out_capturing()) {
-      posthog.opt_in_capturing({ captureEventName: false });
-    } else if (consent === 'rejected' && !posthog.has_opted_out_capturing()) {
-      posthog.opt_out_capturing();
+    if (consent === 'accepted' && hasOptedOutCapturing()) {
+      optInCapturing({ captureEventName: false });
+    } else if (consent === 'rejected' && !hasOptedOutCapturing()) {
+      optOutCapturing();
     }
 
     if (consent === null) {
@@ -70,11 +70,11 @@ export function CookieConsentBanner() {
 
     if (accepted) {
       // Enable capture and record the decision as the opt-in event in one call.
-      posthog.opt_in_capturing({ captureEventName: 'cookie_consent_accepted' });
+      optInCapturing({ captureEventName: 'cookie_consent_accepted' });
     } else {
       // Stop all capture. We intentionally do NOT capture a decline event —
       // sending analytics after a decline is the dark pattern this fixes.
-      posthog.opt_out_capturing();
+      optOutCapturing();
     }
 
     // Wait for animation to complete
