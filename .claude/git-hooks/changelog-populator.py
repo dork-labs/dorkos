@@ -224,6 +224,11 @@ def is_replayed_commit() -> bool:
     commit is treated as fresh and the entry-line guard remains the only
     defense — better an occasional duplicate than silently never creating
     fragments.
+
+    `commit (merge):` is allowed through: a real merge commit is a fresh
+    commit, not a replay (default "Merge ..." subjects are skipped later by
+    SKIP_PREFIXES anyway; this matters only for merges with a custom,
+    conventional first line).
     """
     result = subprocess.run(
         ["git", "reflog", "-1", "--format=%gs"],
@@ -233,7 +238,7 @@ def is_replayed_commit() -> bool:
     action = (result.stdout or "").strip()
     if not action:
         return False
-    return not action.startswith(("commit:", "commit (initial):"))
+    return not action.startswith(("commit:", "commit (initial):", "commit (merge):"))
 
 
 def entry_already_recorded(unreleased_dir: Path, entry: str) -> bool:

@@ -33,7 +33,8 @@ export type ShotConsumer = 'marketing' | 'docs' | 'changelog';
 /**
  * What a shot produces. `still` ships a single light still; `loop` ships a
  * light still *and* an animated dark loop (webm) with a dark poster extracted
- * from the loop's own first frame. There is no "loop without a still", so a
+ * from the loop itself (frame 0, or the settled pre-seam frame — see
+ * {@link Shot.posterFrame}). There is no "loop without a still", so a
  * two-value kind is exhaustive — see the note in the README on why `both` was
  * not adopted.
  */
