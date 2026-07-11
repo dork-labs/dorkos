@@ -30,6 +30,15 @@ const NODE_PTY_BAN = {
   message:
     'node-pty imports are confined to services/terminal/. Spawn PTYs through the terminal service, not directly.',
 };
+// OpenTelemetry is confined to services/observability/ (DOR-294), mirroring the
+// SDK-confinement posture: the rest of the server instruments through the
+// observability helpers (withSpan, startSpan, traceRuntime, traceRelay), so the
+// tracing wiring has exactly one owner and stays trivially off-by-default.
+const OTEL_BAN = {
+  group: ['@opentelemetry/*'],
+  message:
+    'OpenTelemetry imports are confined to services/observability/. Instrument through the observability helpers instead.',
+};
 const HOMEDIR_BANS = [
   {
     name: 'os',
@@ -85,6 +94,7 @@ export default defineConfig([
       'src/services/runtimes/codex/**',
       'src/services/runtimes/opencode/**',
       'src/services/terminal/**',
+      'src/services/observability/**',
       'src/lib/dork-home.ts',
       'src/**/__tests__/**',
     ],
@@ -92,7 +102,7 @@ export default defineConfig([
       'no-restricted-imports': [
         'error',
         {
-          patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN, NODE_PTY_BAN],
+          patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN, NODE_PTY_BAN, OTEL_BAN],
           paths: HOMEDIR_BANS,
         },
       ],
@@ -107,7 +117,10 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN], paths: HOMEDIR_BANS },
+        {
+          patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN, OTEL_BAN],
+          paths: HOMEDIR_BANS,
+        },
       ],
     },
   },
@@ -118,7 +131,7 @@ export default defineConfig([
   {
     files: ['src/services/runtimes/claude-code/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [CODEX_SDK_BAN, OPENCODE_SDK_BAN] }],
+      'no-restricted-imports': ['error', { patterns: [CODEX_SDK_BAN, OPENCODE_SDK_BAN, OTEL_BAN] }],
     },
   },
   {
@@ -126,7 +139,7 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [CLAUDE_SDK_BAN, OPENCODE_SDK_BAN], paths: HOMEDIR_BANS },
+        { patterns: [CLAUDE_SDK_BAN, OPENCODE_SDK_BAN, OTEL_BAN], paths: HOMEDIR_BANS },
       ],
     },
   },
@@ -135,7 +148,7 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN], paths: HOMEDIR_BANS },
+        { patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OTEL_BAN], paths: HOMEDIR_BANS },
       ],
     },
   },

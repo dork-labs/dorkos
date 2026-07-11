@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260711-154514",
+      "slug": "otel-spans-local-debug-trace",
+      "title": "OpenTelemetry spans are off by default and only ever export to a local debug-trace file",
+      "status": "accepted",
+      "created": "2026-07-11",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
       "id": "260711-143626",
       "slug": "feedback-rails-prefilled-github-issues",
       "title": "Feedback rails open prefilled GitHub issues from a shared, sanitized URL builder",

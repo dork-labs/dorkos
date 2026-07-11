@@ -313,6 +313,7 @@ try {
       boundary: { type: 'string', short: 'b' },
       tasks: { type: 'boolean' },
       open: { type: 'boolean' },
+      'debug-trace': { type: 'boolean', default: false },
       'log-level': { type: 'string', short: 'l' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
@@ -378,6 +379,7 @@ Options:
       --tasks              Enable Tasks scheduler
       --no-tasks           Disable Tasks scheduler
       --no-open            Don't open browser on startup
+      --debug-trace        Write a local trace file for bug reports (never sent anywhere)
   -l, --log-level <level>  Log level (fatal|error|warn|info|debug|trace)
       --post-install-check  Verify installation and exit
   -h, --help             Show this help message
@@ -515,6 +517,14 @@ if (values.tasks !== undefined) {
   process.env.DORKOS_TASKS_ENABLED = values.tasks ? 'true' : 'false';
 } else if (!process.env.DORKOS_TASKS_ENABLED && cfgMgr.getDot('scheduler.enabled')) {
   process.env.DORKOS_TASKS_ENABLED = 'true';
+}
+
+// Debug tracing: CLI flag > env var (no config key — a purely local, explicit
+// opt-in per invocation; it writes a local trace file and never phones home, so
+// it is disjoint from the anonymous-telemetry consent). `--debug-trace` sets the
+// server env flag; DORKOS_OTEL_DEBUG passed in the environment also works.
+if (values['debug-trace']) {
+  process.env.DORKOS_OTEL_DEBUG = 'true';
 }
 
 // Browser open: CLI flag > env var > config > default (true)

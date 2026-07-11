@@ -110,6 +110,11 @@ import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import {
+  initObservability,
+  shutdownObservability,
+  traceRelay,
+} from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
 import { SessionEventStore, setSessionEventStore } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
@@ -164,6 +169,19 @@ async function start() {
       maxLogSize: (loggingConfig.maxLogSizeKb ?? 500) * 1024,
       maxLogFiles: loggingConfig.maxLogFiles ?? 14,
     });
+  }
+
+  // Local-first debug tracing (DOR-294). Off unless `dorkos --debug-trace`
+  // (DORKOS_OTEL_DEBUG) is set — then spans for turns, runtime calls, relay
+  // dispatch, and task runs are written to a sanitized JSONL file. Must run
+  // before runtimes/relay are registered so the tracing wrappers see it on.
+  const traceFile = await initObservability({
+    debug: env.DORKOS_OTEL_DEBUG,
+    dorkHome,
+    version: SERVER_VERSION,
+  });
+  if (traceFile) {
+    logger.info(`[OTel] Debug tracing ON — writing spans to ${traceFile}`);
   }
 
   // Create consolidated Drizzle database and run migrations before any service init.
@@ -449,7 +467,11 @@ async function start() {
       traceStore = new TraceStore(db);
       logger.info('[Relay] TraceStore initialized');
 
-      relayCore = new RelayCore({ dataDir: relayDataDir, adapterRegistry, db, traceStore, logger });
+      // traceRelay wraps publish with a relay.dispatch span when debug tracing
+      // is on; returns the core untouched otherwise (zero overhead).
+      relayCore = traceRelay(
+        new RelayCore({ dataDir: relayDataDir, adapterRegistry, db, traceStore, logger })
+      );
       await relayCore.registerEndpoint('relay.system.console');
       logger.info(`[Relay] RelayCore initialized (dataDir: ${relayDataDir})`);
     } catch (err) {
@@ -1257,6 +1279,9 @@ async function shutdownServices() {
   await openCodeServerManager.shutdown();
   await tunnelManager.stop();
   cloudLinkManager.stop();
+  // Flush and tear down debug tracing last so late spans are written. No-op
+  // when tracing is off.
+  await shutdownObservability();
 }
 
 // Graceful shutdown — guarded against concurrent signals (SIGINT + SIGTERM)
