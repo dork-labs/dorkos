@@ -53,6 +53,20 @@ The list above is the complete payload. It is enforced in code and in tests, so 
 
 The same opt-in also turns on anonymous marketplace install events, which help rank packages and spot broken installs. They follow the same no-PII rule and are documented on the [marketplace privacy page](https://dorkos.ai/marketplace/privacy).
 
+## Error reporting (a separate opt-in)
+
+DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. It is different from the heartbeat, so it is its own separate choice and the "share anonymous data" banner never turns it on:
+
+- It goes to a **third party**, not to us. You point it at your own [Sentry](https://sentry.io) or self-hosted [GlitchTip](https://glitchtip.com) project. Nothing is sent unless you set that up.
+- It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file contents, no session data.
+
+Before anything leaves your machine, home directories and full file paths are stripped so no username can leak, and anything shaped like a key, token, or password is redacted. To turn it on, set two things: a `SENTRY_DSN` environment variable pointing at your project, and `telemetry.errorReporting: true` in your config. Leave either one unset and nothing is reported.
+
+<Callout type="info">
+  Error reporting works the same way with a self-hosted GlitchTip: use its DSN instead of Sentry's.
+  Everything stays under your control.
+</Callout>
+
 ## How to turn it on or off
 
 The first time you open DorkOS, a banner asks whether to share anonymous data and shows you the payload above. Pick either option and it remembers your choice. To change it later, open settings, or edit `~/.dork/config.json`:
@@ -62,12 +76,13 @@ The first time you open DorkOS, a banner asks whether to share anonymous data an
   "telemetry": {
     "heartbeat": false,
     "install": false,
+    "errorReporting": false,
     "userHasDecided": true
   }
 }
 ```
 
-Set a value to `true` to opt in, or `false` to opt out. The default for every channel is `false`.
+Set a value to `true` to opt in, or `false` to opt out. The default for every channel is `false`. Error reporting needs one more thing on top of its flag: a `SENTRY_DSN` environment variable. Without it, nothing is sent even if the flag is `true`.
 
 <Callout type="info">
   Because this is off by default, our numbers only reflect people who chose to share. We undercount

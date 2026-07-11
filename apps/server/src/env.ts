@@ -22,6 +22,11 @@ const serverEnvSchema = z.object({
   CLIENT_DIST_PATH: z.string().optional(),
   // MCP external server — optional API key for authenticated access
   MCP_API_KEY: z.string().optional(),
+  // Opt-in error reporting (DOR-293) — Sentry/GlitchTip DSN. Reports are only
+  // sent when this is set AND `config.telemetry.errorReporting` is true. The DSN
+  // contains a public ingest key, not a secret at rest; it lives in env, never
+  // config.json. See services/core/error-reporter.ts.
+  SENTRY_DSN: z.string().optional(),
   // Note: BETTER_AUTH_SECRET (the optional session-signing-secret override) is
   // deliberately NOT declared here. Its sole consumer,
   // services/core/auth/secret.ts, reads process.env directly — that module is a

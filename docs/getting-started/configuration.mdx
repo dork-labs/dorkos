@@ -358,7 +358,8 @@ DorkOS is private by default. Every telemetry channel is off until you opt in, a
       default: 'false',
     },
     'telemetry.errorReporting': {
-      description: 'Reserved for opt-in crash and error reporting. Not yet active.',
+      description:
+        'Send scrubbed crash reports to your own Sentry or self-hosted GlitchTip project. A separate opt-in from the anonymous channels; also needs a SENTRY_DSN env var. Sends the error type and a cleaned stack trace, never the message, paths, or session data. See the telemetry page.',
       type: 'boolean',
       default: 'false',
     },

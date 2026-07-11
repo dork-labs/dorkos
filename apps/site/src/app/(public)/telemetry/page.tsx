@@ -115,6 +115,57 @@ export default function TelemetryPage() {
 
         <section className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">
+            Error reporting (a separate opt-in)
+          </h2>
+          <p className="text-warm-gray leading-relaxed">
+            DorkOS can also send a crash report when something breaks, so we can fix it without
+            asking you to dig through log files. This is different from the heartbeat in two
+            important ways, so it is its own separate choice and is never turned on by the
+            &quot;share anonymous data&quot; banner:
+          </p>
+          <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
+            <li>
+              It goes to a <span className="text-charcoal font-semibold">third party</span>, not to
+              us directly. You point it at your own{' '}
+              <a
+                href="https://sentry.io"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-charcoal hover:text-brand-orange underline"
+              >
+                Sentry
+              </a>{' '}
+              or self-hosted{' '}
+              <a
+                href="https://glitchtip.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-charcoal hover:text-brand-orange underline"
+              >
+                GlitchTip
+              </a>{' '}
+              project. Nothing is sent unless you set that up.
+            </li>
+            <li>
+              We send the error type and a cleaned-up stack trace (which function, which file, which
+              line), and nothing else. We do{' '}
+              <span className="text-charcoal font-semibold">not</span> send the error message text
+              at all, because a message can contain whatever your code put in it. No prompts, no
+              code, no file contents, no session data.
+            </li>
+          </ul>
+          <p className="text-warm-gray leading-relaxed">
+            Before anything is sent, home directories and full file paths are stripped (so no
+            username leaks), and anything that looks like a key, token, or password is redacted. To
+            turn it on you set two things: a <span className="font-mono">SENTRY_DSN</span>{' '}
+            environment variable pointing at your project, and{' '}
+            <span className="font-mono">telemetry.errorReporting: true</span> in your config. Leave
+            either one unset and nothing is reported.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">
             How to turn it on or off
           </h2>
           <p className="text-warm-gray leading-relaxed">
@@ -128,6 +179,7 @@ export default function TelemetryPage() {
   "telemetry": {
     "heartbeat": false,       // the weekly ping
     "install": false,         // marketplace install events
+    "errorReporting": false,  // crash reports (also needs SENTRY_DSN)
     "userHasDecided": true
   }
 }`}</code>

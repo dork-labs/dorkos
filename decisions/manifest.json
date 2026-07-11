@@ -2503,6 +2503,15 @@
       "created": "2026-07-11",
       "extractedFrom": "pip-panel",
       "specSlug": "pip-panel"
+    },
+    {
+      "id": "260711-153307",
+      "slug": "opt-in-error-reporting",
+      "title": "Opt-in error reporting is a separate consent to a third party, sent by a minimal allowlist reporter",
+      "status": "accepted",
+      "created": "2026-07-11",
+      "extractedFrom": null,
+      "specSlug": null
     }
   ]
 }
