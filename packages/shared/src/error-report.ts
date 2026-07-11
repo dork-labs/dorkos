@@ -167,11 +167,19 @@ export function scrubFilename(filename: string, cwd: string): string {
   if (normalizedCwd && f.startsWith(`${normalizedCwd}/`)) {
     return f.slice(normalizedCwd.length + 1);
   }
-  // Backstop: strip any remaining home dir, then never return an absolute path,
-  // a Windows drive path, or a home-relative path (all can carry the leading
-  // dirs a project/client name lives in) — collapse those to the basename.
+  // Backstop: strip any remaining home dir, then collapse to the basename
+  // whenever an absolute path, a home dir, or a drive path appears ANYWHERE in
+  // the string — not just at the start. This catches eval/vm frames like
+  // `eval at <anonymous> (~/secret-client/app.js:10:5)` whose EMBEDDED directory
+  // (a project or client name) would otherwise survive the leading-anchor check.
   f = redactPaths(f);
-  if (/^([A-Za-z]:|\/|~)/.test(f)) {
+  if (
+    /^([A-Za-z]:|\/|~)/.test(f) || // starts absolute / home / drive
+    f.includes('~/') || // embedded home (post-redaction)
+    /\/(?:Users|home)\//.test(f) || // embedded home (belt-and-suspenders)
+    /[A-Za-z]:[\\/]/.test(f) || // embedded Windows drive
+    /[\s(]\//.test(f) // embedded absolute path after a space or "("
+  ) {
     const parts = f.split('/').filter(Boolean);
     return parts.slice(-1)[0] ?? f;
   }
@@ -231,7 +239,10 @@ export function scrubStack(stack: string | undefined, cwd: string): ScrubbedFram
     const filename = scrubFilename(frame.filename, cwd);
     return {
       filename,
-      function: frame.function,
+      // Defense in depth: a function name is normally a code identifier, but an
+      // eval/vm frame can embed a path or the caller can name a function oddly —
+      // scrub it the same way as any other free-form text.
+      function: scrubMessage(frame.function),
       ...(frame.lineno !== undefined ? { lineno: frame.lineno } : {}),
       ...(frame.colno !== undefined ? { colno: frame.colno } : {}),
       in_app: !filename.startsWith('node_modules/'),
@@ -340,4 +351,33 @@ export async function sendErrorEvent(event: ErrorEvent, dsn: string): Promise<vo
   } catch {
     // Telemetry must never fail user operations.
   }
+}
+
+/**
+ * How long a fatal path (an `uncaughtException` that is about to `process.exit`)
+ * waits for a crash report to flush before giving up. Bounded on purpose: a
+ * blocked ingest endpoint must never hang shutdown — the timeout is the guard.
+ */
+export const FATAL_FLUSH_TIMEOUT_MS = 1500;
+
+/**
+ * Resolve when `promise` settles OR after `ms`, whichever comes first, and never
+ * reject. Used on fatal shutdown paths to give an in-flight `sendErrorEvent` a
+ * bounded window to reach the network before the process exits, without letting
+ * a hung endpoint delay exit beyond `ms`.
+ *
+ * @param promise - The work to wait for (typically a fire-and-forget send).
+ * @param ms - Maximum time to wait, in milliseconds.
+ */
+export function raceWithTimeout(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    const done = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    // `then(done, done)` handles both settlements, so a rejected `promise`
+    // never escapes as an unhandled rejection.
+    void Promise.resolve(promise).then(done, done);
+  });
 }

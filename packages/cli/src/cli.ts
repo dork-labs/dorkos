@@ -13,7 +13,11 @@ import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
 import { env } from './env.js';
 import { checkNodeVersion, diagnoseStartupError, formatDiagnostic } from './startup-diagnostics.js';
-import { initCliErrorReporting, installCliErrorHandlers } from './lib/error-reporter.js';
+import {
+  initCliErrorReporting,
+  installCliErrorHandlers,
+  flushCliError,
+} from './lib/error-reporter.js';
 
 // Early Node.js version guard — before any imports that could fail on older runtimes
 const nodeVersionIssue = checkNodeVersion();
@@ -257,12 +261,16 @@ if (process.argv[2] === 'marketplace') {
 const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
 
 // Opt-in error reporting (DOR-293). Install early so standalone CLI commands
-// (doctor, feedback, package, harness, …) are covered. No-op unless
+// (doctor, feedback, package, harness, …) are covered — but ONLY when reporting
+// is on (a non-null reporter). Installing handlers unconditionally would disable
+// Node's default crash-on-unhandled-rejection for every user. No-op unless
 // `telemetry.errorReporting` is true in config AND a SENTRY_DSN is set. The
 // handlers are uninstalled just before the in-process server boots, so the
 // server's own reporter owns the cockpit path (no double report).
 const cliErrorReporter = initCliErrorReporting({ dorkHome: DORK_HOME, version: __CLI_VERSION__ });
-const uninstallCliErrorHandlers = installCliErrorHandlers(cliErrorReporter);
+const uninstallCliErrorHandlers = cliErrorReporter
+  ? installCliErrorHandlers(cliErrorReporter)
+  : undefined;
 
 // `doctor` runs a read-only setup checklist. Intercept before the top-level
 // parseArgs so it isn't treated as an unknown command, and place it after
@@ -616,15 +624,16 @@ if (fs.existsSync(envPath)) {
 
 // Hand off error handling to the server, which installs its own reporter and
 // process handlers once imported — avoids double-reporting on the cockpit path.
-uninstallCliErrorHandlers();
+uninstallCliErrorHandlers?.();
 
 // Start the server — wrap import to catch dependency and startup errors
 try {
   await import('../server/index.js');
 } catch (err) {
   // The server never finished importing, so its reporter never initialized —
-  // report the startup failure from the CLI side (no-op unless opted in).
-  void cliErrorReporter?.capture(err);
+  // report the startup failure from the CLI side (no-op unless opted in). This
+  // is a fatal path, so bounded-await the send before exiting.
+  await flushCliError(cliErrorReporter, err);
   const diag = diagnoseStartupError(err);
   console.error(formatDiagnostic(diag));
   process.exit(1);

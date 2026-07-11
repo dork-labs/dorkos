@@ -9,7 +9,7 @@ vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { initServerErrorReporting } from '../error-reporter.js';
+import { initServerErrorReporting, flushServerError } from '../error-reporter.js';
 import { logger } from '../../../lib/logger.js';
 
 const VALID_DSN = 'https://pub@o1.ingest.sentry.io/456';
@@ -65,9 +65,8 @@ describe('ServerErrorReporter.capture', () => {
     const reporter = initServerErrorReporting({ ...baseOptions, consent: true, dsn: VALID_DSN });
     expect(reporter).not.toBeNull();
 
-    reporter!.capture(new Error('boom at /Users/alice/x with sk-abcdefgh12345678'));
-    // capture is fire-and-forget; let the microtask flush.
-    await new Promise((r) => setTimeout(r, 0));
+    // capture now resolves when the send settles — await it directly.
+    await reporter!.capture(new Error('boom at /Users/alice/x with sk-abcdefgh12345678'));
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -78,5 +77,33 @@ describe('ServerErrorReporter.capture', () => {
     expect(body).not.toContain('sk-abcdefgh12345678');
     expect(body).toContain('"surface":"server"');
     expect(body).toContain('dorkos@0.46.0');
+  });
+});
+
+describe('flushServerError (fatal path)', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  let originalFetch: typeof globalThis.fetch | undefined;
+
+  beforeEach(() => {
+    fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    originalFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalFetch) globalThis.fetch = originalFetch;
+    vi.clearAllMocks();
+  });
+
+  it('is a no-op that resolves when the reporter is null', async () => {
+    await expect(flushServerError(null, new Error('boom'))).resolves.toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('attempts the send (fetch) before resolving, so the report is not dropped on exit', async () => {
+    const reporter = initServerErrorReporting({ ...baseOptions, consent: true, dsn: VALID_DSN });
+    await flushServerError(reporter, new Error('boom'));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

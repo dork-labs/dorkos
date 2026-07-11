@@ -18,13 +18,22 @@
  * @module services/core/error-reporter
  */
 
-import { buildErrorEvent, parseDsn, sendErrorEvent } from '@dorkos/shared/error-report';
+import {
+  buildErrorEvent,
+  parseDsn,
+  raceWithTimeout,
+  sendErrorEvent,
+  FATAL_FLUSH_TIMEOUT_MS,
+} from '@dorkos/shared/error-report';
 import { logger } from '../../lib/logger.js';
 
-/** A live server error reporter. `capture` is fire-and-forget and never throws. */
+/** A live server error reporter. `capture` never throws; it resolves when the send settles. */
 export interface ServerErrorReporter {
-  /** Scrub and send one error report. No-op-safe; swallows all failures. */
-  capture(error: unknown): void;
+  /**
+   * Scrub and send one error report. Swallows all failures. Returns the send
+   * promise so a fatal path can bounded-await it (see {@link flushServerError}).
+   */
+  capture(error: unknown): Promise<void>;
 }
 
 /** Options for {@link initServerErrorReporting}. */
@@ -71,7 +80,7 @@ export function initServerErrorReporting(
   logger.info('[Telemetry] Error reporting enabled (Sentry/GlitchTip, opt-in)');
 
   return {
-    capture(error: unknown): void {
+    capture(error: unknown): Promise<void> {
       const event = buildErrorEvent({
         error,
         release,
@@ -80,7 +89,24 @@ export function initServerErrorReporting(
         os,
         cwd: options.cwd,
       });
-      void sendErrorEvent(event, dsn);
+      return sendErrorEvent(event, dsn);
     },
   };
+}
+
+/**
+ * Bounded-await a crash report on a fatal path (an `uncaughtException` about to
+ * `process.exit`). Gives the send up to {@link FATAL_FLUSH_TIMEOUT_MS} to reach
+ * the network, then resolves so shutdown proceeds even if the ingest endpoint is
+ * blocked. No-op when `reporter` is `null`. Never throws.
+ *
+ * @param reporter - The active reporter, or `null` when reporting is off.
+ * @param error - The fatal error to report.
+ */
+export async function flushServerError(
+  reporter: ServerErrorReporter | null,
+  error: unknown
+): Promise<void> {
+  if (!reporter) return;
+  await raceWithTimeout(reporter.capture(error), FATAL_FLUSH_TIMEOUT_MS);
 }

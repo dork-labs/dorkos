@@ -3,7 +3,7 @@
  * config.json and the consent + DSN gate. Scrubbing/send are covered by the
  * shared `@dorkos/shared/error-report` tests.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -12,7 +12,12 @@ import {
   initCliErrorReporting,
   installCliErrorHandlers,
   readErrorReportingConsent,
+  type CliErrorReporter,
 } from '../lib/error-reporter.js';
+
+// This test intentionally sets and reads the SENTRY_DSN env var to exercise the
+// DSN gate, so the "read env via env.ts" rule does not apply here.
+/* eslint-disable no-restricted-syntax */
 
 const VALID_DSN = 'https://pub@o1.ingest.sentry.io/456';
 
@@ -89,9 +94,42 @@ describe('installCliErrorHandlers', () => {
   });
 
   it('adds handlers and the returned uninstall removes exactly them', () => {
-    const uninstall = installCliErrorHandlers(null);
+    const reporter: CliErrorReporter = { capture: vi.fn().mockResolvedValue(undefined) };
+    const uninstall = installCliErrorHandlers(reporter);
     expect(process.listenerCount('uncaughtException')).toBe(before.ue + 1);
     expect(process.listenerCount('unhandledRejection')).toBe(before.ur + 1);
     uninstall();
+  });
+
+  it('reporting OFF: no CLI handler is installed, so Node crash-on-rejection stands', () => {
+    // Mirrors cli.ts: only install for a non-null reporter. initCliErrorReporting
+    // returns null when reporting is off, so no listener is added and an
+    // unhandled rejection keeps its default non-zero-exit behavior.
+    const reporter: CliErrorReporter | null = null;
+    const uninstall = reporter ? installCliErrorHandlers(reporter) : undefined;
+    expect(uninstall).toBeUndefined();
+    expect(process.listenerCount('unhandledRejection')).toBe(before.ur);
+  });
+
+  it('reporting ON: an unhandled rejection still exits non-zero, after attempting the send', async () => {
+    const capture = vi.fn().mockResolvedValue(undefined);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const priorRejection = process.listeners('unhandledRejection');
+    const uninstall = installCliErrorHandlers({ capture });
+    const added = process
+      .listeners('unhandledRejection')
+      .filter((l) => !priorRejection.includes(l));
+    expect(added).toHaveLength(1);
+
+    (added[0] as (reason: unknown) => void)(new Error('boom'));
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1));
+    // Send was attempted before the exit fired (fatal-flush, not dropped).
+    expect(capture).toHaveBeenCalledTimes(1);
+
+    uninstall();
+    exitSpy.mockRestore();
+    errSpy.mockRestore();
   });
 });

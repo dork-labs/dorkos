@@ -111,6 +111,7 @@ import { registerDorkosCommunityTelemetry } from './services/marketplace/telemet
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import {
   initServerErrorReporting,
+  flushServerError,
   type ServerErrorReporter,
 } from './services/core/error-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
@@ -1326,18 +1327,19 @@ process.on('uncaughtException', (err) => {
     stack: err.stack,
     name: err.name,
   });
-  serverErrorReporter?.capture(err);
-  process.exit(1);
+  // Fatal path: bounded-await the crash report so it actually reaches the
+  // network before we exit (a bare fire-and-forget would be dropped when the
+  // event loop stops on the next line). The timeout guards against a hung
+  // endpoint delaying shutdown.
+  void flushServerError(serverErrorReporter, err).finally(() => process.exit(1));
 });
 
 process.on('unhandledRejection', (reason) => {
   logger.error('[DorkOS] Unhandled promise rejection', {
     reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : reason,
   });
-  serverErrorReporter?.capture(reason);
-  // Don't exit — the rejection may be non-fatal (e.g., a cancelled fetch).
-  // Node 15+ defaults to --unhandled-rejections=throw which would crash anyway,
-  // but logging here ensures we capture context before that happens.
+  // Non-fatal (we don't exit), so fire-and-forget is fine here.
+  void serverErrorReporter?.capture(reason);
 });
 
 start().catch((err) => {

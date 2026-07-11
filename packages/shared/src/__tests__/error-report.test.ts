@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildErrorEvent,
   parseDsn,
+  raceWithTimeout,
   redactPaths,
   redactTokens,
   scrubFilename,
@@ -77,6 +78,19 @@ describe('scrubFilename', () => {
     expect(out).not.toContain('alice');
     expect(out.startsWith('/')).toBe(false);
     expect(/^[A-Za-z]:/.test(out)).toBe(false);
+  });
+
+  it('collapses an eval/vm frame with an EMBEDDED home path (no dir name survives)', () => {
+    const out = scrubFilename('eval at <anonymous> (/Users/alice/secret-client/app.js:10:5)', cwd);
+    expect(out).not.toContain('alice');
+    expect(out).not.toContain('secret-client');
+    expect(out).not.toContain('~');
+  });
+
+  it('collapses an embedded absolute (non-home) path too', () => {
+    const out = scrubFilename('eval at <anonymous> (/opt/build/secret-proj/x.js:1:1)', cwd);
+    expect(out).not.toContain('secret-proj');
+    expect(out.includes('/opt')).toBe(false);
   });
 });
 
@@ -272,5 +286,28 @@ describe('sendErrorEvent', () => {
     await expect(
       sendErrorEvent(event, 'https://pub@o1.ingest.sentry.io/456')
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('raceWithTimeout', () => {
+  it('resolves as soon as the promise settles (fast path)', async () => {
+    let settled = false;
+    await raceWithTimeout(
+      Promise.resolve().then(() => void (settled = true)),
+      5000
+    );
+    expect(settled).toBe(true);
+  });
+
+  it('resolves within the timeout when the promise hangs (bounded)', async () => {
+    const never = new Promise<void>(() => {}); // never settles
+    const start = Date.now();
+    await raceWithTimeout(never, 20);
+    // Resolved despite the hung promise; bounded near the timeout, not forever.
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  it('never rejects even if the promise rejects', async () => {
+    await expect(raceWithTimeout(Promise.reject(new Error('boom')), 50)).resolves.toBeUndefined();
   });
 });

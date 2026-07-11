@@ -18,7 +18,13 @@
 
 import fs from 'fs';
 import path from 'path';
-import { buildErrorEvent, parseDsn, sendErrorEvent } from '@dorkos/shared/error-report';
+import {
+  buildErrorEvent,
+  parseDsn,
+  raceWithTimeout,
+  sendErrorEvent,
+  FATAL_FLUSH_TIMEOUT_MS,
+} from '@dorkos/shared/error-report';
 
 /** A live CLI error reporter. `capture` is fire-and-forget and never throws. */
 export interface CliErrorReporter {
@@ -91,31 +97,49 @@ export function initCliErrorReporting(
 }
 
 /**
- * Install CLI-level `uncaughtException` / `unhandledRejection` handlers that
- * report through `reporter` (when non-null) and then preserve the CLI's normal
- * behavior. Returns an uninstall function — the caller MUST call it before
- * importing the in-process server so the server's own handlers are the only
- * ones on the cockpit-boot path.
+ * Bounded-await a crash report on a fatal path (about to `process.exit`). Gives
+ * the send up to {@link FATAL_FLUSH_TIMEOUT_MS} to reach the network, then
+ * resolves so shutdown proceeds even if the ingest endpoint is blocked. No-op
+ * when `reporter` is `null`. Never throws.
  *
- * @param reporter - The reporter, or `null` to install pass-through handlers.
+ * @param reporter - The active reporter, or `null` when reporting is off.
+ * @param error - The fatal error to report.
  */
-export function installCliErrorHandlers(reporter: CliErrorReporter | null): () => void {
-  const onException = (err: unknown): void => {
-    void reporter?.capture(err);
-    // Preserve the pre-existing crash behavior: print and exit non-zero.
-    console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
-    process.exit(1);
-  };
-  const onRejection = (reason: unknown): void => {
-    void reporter?.capture(reason);
-    console.error(reason instanceof Error ? (reason.stack ?? reason.message) : String(reason));
+export async function flushCliError(
+  reporter: CliErrorReporter | null,
+  error: unknown
+): Promise<void> {
+  if (!reporter) return;
+  await raceWithTimeout(reporter.capture(error), FATAL_FLUSH_TIMEOUT_MS);
+}
+
+/**
+ * Install CLI-level `uncaughtException` / `unhandledRejection` handlers that
+ * report through `reporter`, then preserve the CLI's default crash semantics —
+ * both handlers print and `process.exit(1)`. Registering an `unhandledRejection`
+ * listener disables Node's default `--unhandled-rejections=throw`, so the
+ * handler restores the non-zero exit itself.
+ *
+ * Only call this when reporting is ON (a non-null reporter). When off, install
+ * nothing so Node's own crash behavior stands unchanged. Returns an uninstall
+ * function — the caller MUST call it before importing the in-process server so
+ * the server's own handlers are the only ones on the cockpit-boot path.
+ *
+ * @param reporter - The active reporter (never null; reporting is on).
+ */
+export function installCliErrorHandlers(reporter: CliErrorReporter): () => void {
+  const flushAndCrash = (value: unknown): void => {
+    void flushCliError(reporter, value).finally(() => {
+      console.error(value instanceof Error ? (value.stack ?? value.message) : String(value));
+      process.exit(1);
+    });
   };
 
-  process.on('uncaughtException', onException);
-  process.on('unhandledRejection', onRejection);
+  process.on('uncaughtException', flushAndCrash);
+  process.on('unhandledRejection', flushAndCrash);
 
   return () => {
-    process.removeListener('uncaughtException', onException);
-    process.removeListener('unhandledRejection', onRejection);
+    process.removeListener('uncaughtException', flushAndCrash);
+    process.removeListener('unhandledRejection', flushAndCrash);
   };
 }
