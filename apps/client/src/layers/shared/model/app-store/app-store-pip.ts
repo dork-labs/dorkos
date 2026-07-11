@@ -26,18 +26,25 @@ import type { AppState } from './app-store-types';
  * React node (ideation D4), so it can be persisted, inspected, and
  * round-tripped like any other store value. The `demo` kind drives the Dev
  * Playground showcase (task 3.1) and tests; `mcp_app` (DOR-297) pops an
- * interactive MCP App into the floating panel.
+ * interactive MCP App into the floating panel; `widget` (DOR-298) pops a live
+ * generative-UI board out of a session's transcript.
  *
  * The `mcp_app` descriptor carries everything `McpAppFrame` needs to re-mount
  * itself in the panel — `sessionId` scopes the server-side fetch, and `title`
  * is always resolved (call sites fall back to the uri/server name), so the
  * panel header never renders empty.
  *
- * DOR-298 will add `{ kind: 'widget'; sessionId; ... }`.
+ * The `widget` descriptor carries everything `LiveSessionWidget` needs to
+ * re-mount itself in the panel — `sessionId` is the session whose newest
+ * `dorkos-ui` fence it follows (pinning that session's stream and store
+ * retention for the panel's lifetime), and `title` is the popped widget
+ * document's own title, resolved at pop-out time so the panel header never
+ * renders empty.
  */
 export type PipContent =
   | { kind: 'demo'; title: string }
-  | { kind: 'mcp_app'; sessionId: string; serverName: string; uri: string; title: string };
+  | { kind: 'mcp_app'; sessionId: string; serverName: string; uri: string; title: string }
+  | { kind: 'widget'; sessionId: string; title: string };
 
 // ---------------------------------------------------------------------------
 // Slice interface
