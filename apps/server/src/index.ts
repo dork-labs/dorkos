@@ -630,8 +630,8 @@ async function start() {
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
     };
-    claudeRuntime.setMcpServerFactory((session) => ({
-      dorkos: createDorkOsToolServer(mcpToolDeps!, session),
+    claudeRuntime.setMcpServerFactory((session, sessionId) => ({
+      dorkos: createDorkOsToolServer(mcpToolDeps!, session, sessionId),
     }));
   }
 

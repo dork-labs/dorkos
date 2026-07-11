@@ -84,6 +84,11 @@ describe('createCodexUiMcpServer', () => {
     const tools = parseResponse(res).result?.tools ?? [];
     expect(tools.map((t) => t.name)).toEqual(['control_ui']);
     expect(tools.map((t) => t.name)).not.toContain('get_ui_state');
+    // DevTools read tools (DOR-213) are Claude-Code-only: the session-less Codex
+    // external server can't resolve which session's buffer to read, and a read
+    // must return data in-result. They must never appear here.
+    expect(tools.map((t) => t.name)).not.toContain('browser_read_console');
+    expect(tools.map((t) => t.name)).not.toContain('browser_read_network');
     expect(tools[0]!.description!.length).toBeGreaterThan(0);
   });
 

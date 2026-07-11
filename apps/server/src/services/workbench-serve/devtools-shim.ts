@@ -323,7 +323,10 @@ function installDevtoolsShim(serialize: (value: unknown) => unknown): void {
               meta.method,
               meta.url,
               this.status,
-              this.status >= 200 && this.status < 400,
+              // Match fetch's Response.ok (2xx only) so `ok` means the same
+              // thing regardless of initiator — a 304 must not classify
+              // differently between fetch and XHR.
+              this.status >= 200 && this.status < 300,
               startedAt,
               len ? Number(len) : undefined,
               'xhr'

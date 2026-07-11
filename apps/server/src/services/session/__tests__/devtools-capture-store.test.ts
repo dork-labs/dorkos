@@ -143,6 +143,54 @@ describe('DevtoolsCaptureStore', () => {
     expect(buf.approxBytes).toBe(actual);
   });
 
+  it('reports no eviction while both rings are within bounds', () => {
+    const store = new DevtoolsCaptureStore();
+    store.ingest('s1', batch({ console: [consoleEntry('hi')], network: [networkEntry('/a')] }));
+    const buf = store.read('s1')!;
+    expect(buf.consoleEvicted).toBe(false);
+    expect(buf.networkEvicted).toBe(false);
+  });
+
+  it('flags the console ring evicted when the count cap drops entries', () => {
+    const store = new DevtoolsCaptureStore();
+    const cap = WORKBENCH.DEVTOOLS_CONSOLE_BUFFER;
+    store.ingest(
+      's1',
+      batch({ console: Array.from({ length: cap + 1 }, (_, i) => consoleEntry(`l${i}`)) })
+    );
+    const buf = store.read('s1')!;
+    expect(buf.consoleEvicted).toBe(true);
+    expect(buf.networkEvicted).toBe(false); // the untouched ring stays clean
+  });
+
+  it('flags the console ring evicted when the byte budget drops entries below the count cap', () => {
+    const store = new DevtoolsCaptureStore();
+    // ~60 × ~20 KB ≈ 1.2 MB: over the 1 MB byte budget, far under the 500 count
+    // cap — the flag must come from trimBytes, not trimCount.
+    const big = (i: number): DevtoolsConsoleEntry => ({
+      level: 'log',
+      text: `${i}:${'x'.repeat(20_000)}`,
+      timestamp: i,
+    });
+    store.ingest('s1', batch({ console: Array.from({ length: 60 }, (_, i) => big(i)) }));
+    const buf = store.read('s1')!;
+    expect(buf.console.length).toBeLessThan(WORKBENCH.DEVTOOLS_CONSOLE_BUFFER);
+    expect(buf.consoleEvicted).toBe(true);
+  });
+
+  it('clears eviction flags on a navigation reset (new page starts clean)', () => {
+    const store = new DevtoolsCaptureStore();
+    const cap = WORKBENCH.DEVTOOLS_CONSOLE_BUFFER;
+    store.ingest(
+      's1',
+      batch({ console: Array.from({ length: cap + 1 }, (_, i) => consoleEntry(`l${i}`)) })
+    );
+    expect(store.read('s1')!.consoleEvicted).toBe(true);
+
+    store.ingest('s1', batch({ reset: true, console: [consoleEntry('fresh')] }));
+    expect(store.read('s1')!.consoleEvicted).toBe(false);
+  });
+
   it('evicts the least-recently-updated buffer past the session cap', () => {
     const store = new DevtoolsCaptureStore();
     const max = WORKBENCH.DEVTOOLS_MAX_SESSIONS;
