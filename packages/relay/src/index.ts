@@ -101,6 +101,8 @@ export type {
   AdapterInboundCallbacks,
   AdapterOutboundCallbacks,
   PlatformClient,
+  InitiateConsentGate,
+  InitiateConsentDecision,
 } from './types.js';
 
 export { noopLogger } from './types.js';

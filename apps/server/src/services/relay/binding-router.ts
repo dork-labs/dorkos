@@ -27,6 +27,7 @@ import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
+import { parseHumanSubject } from './human-subject.js';
 
 /** Minimal interface for AgentManager session creation. */
 export interface AgentSessionCreator {
@@ -244,7 +245,7 @@ export class BindingRouter {
         return;
       }
 
-      const { adapterId, chatId, channelType } = this.parseSubject(envelope.subject);
+      const { adapterId, chatId, channelType } = parseHumanSubject(envelope.subject);
       if (!adapterId) {
         logger.warn(`BindingRouter: could not parse subject '${envelope.subject}'`);
         return;
@@ -439,49 +440,6 @@ export class BindingRouter {
     });
     const session = await this.deps.agentManager.createSession(projectPath, binding.permissionMode);
     return session.id;
-  }
-
-  /**
-   * Parse a relay subject into adapter routing components.
-   *
-   * Expected patterns (instance-aware format):
-   * - `relay.human.{platformType}.{instanceId}.{chatId}` (DM)
-   * - `relay.human.{platformType}.{instanceId}.group.{chatId}` (group chat)
-   *
-   * The instance ID segment is the adapter's unique ID and is used directly
-   * as the `adapterId` for binding resolution.
-   */
-  private parseSubject(subject: string): {
-    adapterId?: string;
-    chatId?: string;
-    channelType?: string;
-  } {
-    const parts = subject.split('.');
-    if (parts[0] !== 'relay' || parts[1] !== 'human') return {};
-
-    const platformType = parts[2];
-    if (!platformType) return {};
-
-    const remaining = parts.slice(3);
-
-    // First remaining token is the instance ID (adapter ID)
-    const instanceId = remaining[0];
-    if (!instanceId) return {};
-
-    const adapterId = instanceId;
-    const afterInstance = remaining.slice(1);
-
-    let chatId: string | undefined;
-    let channelType: string | undefined;
-
-    if (afterInstance.length >= 2 && afterInstance[0] === 'group') {
-      channelType = 'group';
-      chatId = afterInstance.slice(1).join('.');
-    } else if (afterInstance.length >= 1) {
-      chatId = afterInstance.join('.');
-    }
-
-    return { adapterId, chatId, channelType };
   }
 
   private async loadSessionMap(): Promise<void> {

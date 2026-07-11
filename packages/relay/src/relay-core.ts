@@ -64,6 +64,7 @@ import type {
   RelayMetrics,
   AdapterRegistryLike,
   AdapterContext,
+  InitiateConsentGate,
 } from './types.js';
 import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
 import type { IndexedMessage } from './sqlite-index.js';
@@ -292,6 +293,18 @@ export class RelayCore {
    */
   setAdapterContextBuilder(builder: (subject: string) => AdapterContext | undefined): void {
     this.publishPipeline.setAdapterContextBuilder(builder);
+  }
+
+  /**
+   * Set the authoritative agent→human initiate-consent gate (DOR-277).
+   *
+   * The host wires this after construction once the binding store is available.
+   * Delegates to {@link RelayPublishPipeline.setInitiateConsentGate}.
+   *
+   * @param gate - The consent gate predicate.
+   */
+  setInitiateConsentGate(gate: InitiateConsentGate): void {
+    this.publishPipeline.setInitiateConsentGate(gate);
   }
 
   // --- Publish ---
