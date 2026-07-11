@@ -67,6 +67,17 @@ function isTerminalRunStatus(status: TaskRunStatus): boolean {
 }
 
 /**
+ * Callback fired exactly once when a run transitions to a terminal status
+ * (DOR-240). The store stays a pure data layer: it holds this reference and
+ * calls it fire-and-forget after the DB write — it contains no
+ * binding/relay/notification logic of its own.
+ *
+ * @param run - The run as persisted at the terminal write.
+ * @param task - The run's task, or null if it could not be read.
+ */
+export type RunTerminalListener = (run: TaskRun, task: Task | null) => void;
+
+/**
  * Persistence layer for Task scheduler data.
  *
  * The DB is a derived cache — files on disk are the source of truth.
@@ -75,9 +86,24 @@ function isTerminalRunStatus(status: TaskRunStatus): boolean {
  */
 export class TaskStore {
   private db: Db;
+  /** Optional listener fired once per run's terminal transition (DOR-240). */
+  private onRunTerminal: RunTerminalListener | null = null;
 
   constructor(db: Db) {
     this.db = db;
+  }
+
+  /**
+   * Register the run-terminal listener (DOR-240). Fired fire-and-forget exactly
+   * once, on the write that moves a non-terminal run to a terminal status —
+   * never on the already-terminal no-op, never on a `running` write. When unset
+   * (tests, `packages/relay` consumers that build their own store), behavior is
+   * unchanged.
+   *
+   * @param listener - Callback invoked after the terminal DB write.
+   */
+  setOnRunTerminal(listener: RunTerminalListener): void {
+    this.onRunTerminal = listener;
   }
 
   // === Task CRUD ===
@@ -215,7 +241,27 @@ export class TaskStore {
       .where(eq(pulseRuns.id, id))
       .run();
 
-    return this.getRun(id);
+    const updated = this.getRun(id);
+
+    // Terminal hook (DOR-240): fire exactly once, only on the write that moves a
+    // non-terminal run to a terminal status. Reaching here means the guard above
+    // did NOT short-circuit, so `existing` was non-terminal; a terminal
+    // `update.status` is therefore a genuine non-terminal→terminal transition.
+    // Dispatched fire-and-forget so notification latency never blocks the status
+    // write, and wrapped so a listener throw can never corrupt run persistence.
+    if (this.onRunTerminal && updated && update.status && isTerminalRunStatus(update.status)) {
+      const listener = this.onRunTerminal;
+      const task = this.getTask(updated.scheduleId);
+      queueMicrotask(() => {
+        try {
+          listener(updated, task);
+        } catch (err) {
+          logger.debug(`TaskStore: onRunTerminal listener threw for run ${id}`, err);
+        }
+      });
+    }
+
+    return updated;
   }
 
   /** Get a single run by ID. */

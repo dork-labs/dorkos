@@ -29,6 +29,7 @@ import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
+import { TaskCompletionNotifier } from './services/tasks/task-completion-notifier.js';
 import {
   TaskSchedulerService,
   type SchedulerAgentManager,
@@ -540,6 +541,29 @@ async function start() {
       // Non-fatal: RelayCore and MeshCore remain operational.
       // Adapters (including ClaudeCodeAdapter) will be unavailable.
       adapterManager = undefined;
+    }
+  }
+
+  // Automatic task-completion notifications (DOR-240): one store-level terminal
+  // hook feeds a TaskCompletionNotifier that resolves the linked agent's bound
+  // channel and delivers via RelayCore. The relay task-handler and the scheduler
+  // share this same in-process TaskStore, so this single registration covers
+  // every execution path. Guarded on the relay deps the notifier needs to
+  // deliver — without them there is no channel to notify on.
+  if (taskStore && relayCore && adapterManager) {
+    const bindingStore = adapterManager.getBindingStore();
+    const bindingRouter = adapterManager.getBindingRouter();
+    if (bindingStore && bindingRouter) {
+      const notifier = new TaskCompletionNotifier({
+        bindingStore,
+        bindingRouter,
+        adapterManager,
+        relayCore,
+        taskStore,
+        logger,
+      });
+      taskStore.setOnRunTerminal((run, task) => void notifier.handle(run, task));
+      logger.info('[Tasks] Completion notifier wired to run-terminal hook');
     }
   }
 

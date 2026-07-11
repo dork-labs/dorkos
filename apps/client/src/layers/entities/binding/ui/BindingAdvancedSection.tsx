@@ -79,6 +79,13 @@ export interface BindingAdvancedSectionProps {
   onCanReplyChange: (value: boolean) => void;
   canReceive: boolean;
   onCanReceiveChange: (value: boolean) => void;
+  notifyOnTaskComplete: boolean;
+  onNotifyOnTaskCompleteChange: (value: boolean) => void;
+  /**
+   * When true, no chat session exists yet for this channel — show the
+   * one-time "message your bot once" activation hint (bots can't text first).
+   */
+  notifyBootstrapHint?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   hasChanges: boolean;
@@ -105,6 +112,9 @@ export function BindingAdvancedSection({
   onCanReplyChange,
   canReceive,
   onCanReceiveChange,
+  notifyOnTaskComplete,
+  onNotifyOnTaskCompleteChange,
+  notifyBootstrapHint,
   open,
   onOpenChange,
   hasChanges,
@@ -206,6 +216,32 @@ export function BindingAdvancedSection({
               aria-label="Agent receives inbound messages"
             />
           </div>
+        </div>
+
+        {/* Task-completion notifications (DOR-240) */}
+        <div className="space-y-2.5 px-4 py-3">
+          <p className="text-muted-foreground text-xs font-medium">Notifications</p>
+          <div className="flex cursor-pointer items-center justify-between gap-3">
+            <Label htmlFor="notify-task-complete" className="cursor-pointer text-xs font-normal">
+              Message me when tasks finish
+            </Label>
+            <Switch
+              id="notify-task-complete"
+              checked={notifyOnTaskComplete}
+              onCheckedChange={onNotifyOnTaskCompleteChange}
+              aria-label="Message me when tasks finish"
+            />
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Get a message here when a scheduled task on this agent finishes. Failures always come
+            through; turn this off to skip the ones that succeed. Requires “Agent can initiate
+            messages”.
+          </p>
+          {notifyBootstrapHint && (
+            <p className="text-muted-foreground text-xs">
+              Message your bot once to activate notifications — bots can’t text you first.
+            </p>
+          )}
         </div>
       </CollapsibleFieldCard>
 

@@ -6,7 +6,7 @@
       "slug": "task-completion-notifications",
       "title": "Automatic task-completion notifications (\"your agent finished\")",
       "created": "2026-07-10",
-      "status": "specified",
+      "status": "implemented",
       "adr": "260711-031624",
       "linearIssue": "DOR-240"
     },

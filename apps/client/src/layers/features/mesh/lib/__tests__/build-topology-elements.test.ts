@@ -384,6 +384,7 @@ describe('buildTopologyElements', () => {
         canInitiate: false,
         canReply: true,
         canReceive: true,
+        notifyOnTaskComplete: true,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
@@ -447,6 +448,7 @@ describe('buildTopologyElements', () => {
       canInitiate: false,
       canReply: true,
       canReceive: true,
+      notifyOnTaskComplete: true,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     };
@@ -597,6 +599,7 @@ describe('buildTopologyElements', () => {
         canInitiate: false,
         canReply: true,
         canReceive: true,
+        notifyOnTaskComplete: true,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
@@ -628,6 +631,7 @@ describe('buildTopologyElements', () => {
         canInitiate: false,
         canReply: true,
         canReceive: true,
+        notifyOnTaskComplete: true,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
