@@ -12,6 +12,7 @@ import {
   backfillWorkbenchTerminalGraceTtl,
   dropTunnelPasscodeAndSessionSecret,
   backfillProvidersDefaults,
+  generalizeTelemetryConsent,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -315,6 +316,67 @@ describe('backfillCloudDefaults migration', () => {
       instanceName: 'kai-mbp',
       linkedAccountLabel: 'Kai',
     });
+  });
+});
+
+describe('generalizeTelemetryConsent migration', () => {
+  it('renames telemetry.enabled -> telemetry.install, preserving an opted-in choice', () => {
+    const store = createMockStore({ telemetry: { enabled: true, userHasDecided: true } });
+    generalizeTelemetryConsent(store);
+    expect(store.data.telemetry).toEqual({
+      install: true,
+      userHasDecided: true,
+      heartbeat: false,
+      errorReporting: false,
+    });
+  });
+
+  it('preserves an opted-out choice through the rename', () => {
+    const store = createMockStore({ telemetry: { enabled: false, userHasDecided: true } });
+    generalizeTelemetryConsent(store);
+    expect(store.data.telemetry).toEqual({
+      install: false,
+      userHasDecided: true,
+      heartbeat: false,
+      errorReporting: false,
+    });
+  });
+
+  it('never enrolls a user in the new channels (defaults OFF)', () => {
+    const store = createMockStore({ telemetry: { enabled: true, userHasDecided: true } });
+    generalizeTelemetryConsent(store);
+    const telemetry = store.data.telemetry as Record<string, boolean>;
+    expect(telemetry.heartbeat).toBe(false);
+    expect(telemetry.errorReporting).toBe(false);
+  });
+
+  it('is idempotent — a fully-migrated block is untouched', () => {
+    const migrated = {
+      userHasDecided: true,
+      install: true,
+      heartbeat: true,
+      errorReporting: false,
+    };
+    const store = createMockStore({ telemetry: { ...migrated } });
+    generalizeTelemetryConsent(store);
+    expect(store.data.telemetry).toEqual(migrated);
+  });
+
+  it('backfills only the missing channel flags when install already exists', () => {
+    const store = createMockStore({ telemetry: { userHasDecided: true, install: true } });
+    generalizeTelemetryConsent(store);
+    expect(store.data.telemetry).toEqual({
+      userHasDecided: true,
+      install: true,
+      heartbeat: false,
+      errorReporting: false,
+    });
+  });
+
+  it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => generalizeTelemetryConsent(store)).not.toThrow();
+    expect(store.data.telemetry).toBeUndefined();
   });
 });
 

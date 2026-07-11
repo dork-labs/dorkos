@@ -6,7 +6,6 @@
  * from a clean reporter slot via `_resetTelemetryReporter()`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import path from 'node:path';
 
 const { mockReadFile, mockWriteFile, mockMkdir } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
@@ -30,14 +29,9 @@ import {
   reportInstallEvent,
   type InstallEvent,
 } from '../telemetry-hook.js';
-import {
-  buildPayload,
-  getOrCreateInstallId,
-  registerDorkosCommunityTelemetry,
-} from '../telemetry-reporter.js';
+import { buildPayload, registerDorkosCommunityTelemetry } from '../telemetry-reporter.js';
 
 const DORK_HOME = '/tmp/test-dork-home';
-const INSTALL_ID_PATH = path.join(DORK_HOME, 'telemetry-install-id');
 const TELEMETRY_ENDPOINT = 'https://dorkos.ai/api/telemetry/install';
 const DORKOS_VERSION = '1.2.3';
 
@@ -112,51 +106,6 @@ describe('telemetry-reporter', () => {
       });
       expect(typeof body.installId).toBe('string');
       expect((body.installId as string).length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('getOrCreateInstallId', () => {
-    it('reads existing UUID from disk when present', async () => {
-      const existingId = '11111111-2222-3333-4444-555555555555';
-      mockReadFile.mockResolvedValue(`${existingId}\n`);
-
-      const id = await getOrCreateInstallId(DORK_HOME);
-
-      expect(id).toBe(existingId);
-      expect(mockReadFile).toHaveBeenCalledWith(INSTALL_ID_PATH, 'utf8');
-      expect(mockWriteFile).not.toHaveBeenCalled();
-    });
-
-    it('generates and writes a new UUID when the file is missing', async () => {
-      mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-
-      const id = await getOrCreateInstallId(DORK_HOME);
-
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-      expect(mockMkdir).toHaveBeenCalledWith(DORK_HOME, { recursive: true });
-      expect(mockWriteFile).toHaveBeenCalledWith(INSTALL_ID_PATH, id, 'utf8');
-    });
-
-    it('returns the same UUID across two calls', async () => {
-      // Simulate a real filesystem with a single in-memory cell so the
-      // second `getOrCreateInstallId` reads what the first one wrote.
-      let stored: string | null = null;
-      mockReadFile.mockImplementation(async () => {
-        if (stored === null) {
-          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-        }
-        return stored;
-      });
-      mockWriteFile.mockImplementation(async (_p, contents) => {
-        stored = contents as string;
-      });
-
-      const first = await getOrCreateInstallId(DORK_HOME);
-      const second = await getOrCreateInstallId(DORK_HOME);
-
-      expect(second).toBe(first);
-      // Only the first call should have written to disk.
-      expect(mockWriteFile).toHaveBeenCalledTimes(1);
     });
   });
 

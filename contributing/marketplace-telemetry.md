@@ -10,11 +10,11 @@ Pair this guide with:
 
 ## 1. Overview
 
-A user installs a marketplace package. Their DorkOS client checks `telemetry.enabled` in their config; if `true` (and only if `true`), it POSTs a single anonymized event to `https://dorkos.ai/api/telemetry/install`. That endpoint is a Vercel Edge Function that validates the payload with Zod and writes one row to the `marketplace_install_events` table in Neon Postgres via Drizzle. That is the entire pipeline.
+A user installs a marketplace package. Their DorkOS client checks `telemetry.install` in their config (the shared opt-in consent namespace, DOR-293; formerly `telemetry.enabled`); if `true` (and only if `true`), it POSTs a single anonymized event to `https://dorkos.ai/api/telemetry/install`. That endpoint is a Vercel Edge Function that validates the payload with Zod and writes one row to the `marketplace_install_events` table in Neon Postgres via Drizzle. That is the entire pipeline.
 
 There is no Redis cache layer, no queue, no fan-out worker. The Edge Function makes one synchronous insert and returns 200. The `/marketplace` and `/marketplace/[slug]` pages read aggregate counts at hourly ISR refresh time via a single `GROUP BY` query — also through Drizzle. One ORM, one mental model, one storage tier.
 
-The pipeline is opt-in by default. The DorkOS client never reports anything until the user explicitly flips `telemetry.enabled` to `true` in `~/.dork/config.json` or via the in-product toggle in the Marketplace UI.
+The pipeline is opt-in by default. The DorkOS client never reports anything until the user explicitly flips `telemetry.install` to `true` in `~/.dork/config.json` or via the first-run consent banner. The heartbeat sibling channel (`telemetry.heartbeat`) shares the same consent namespace and anonymous instance id; see `contributing/configuration.md` → `### telemetry` and `docs/self-hosting/telemetry.mdx`.
 
 ## 2. Required Vercel integration
 

@@ -2467,6 +2467,15 @@
       "status": "accepted",
       "created": "2026-07-11",
       "extractedFrom": "DOR-110"
+    },
+    {
+      "id": "260711-141639",
+      "slug": "opt-in-observability-consent",
+      "title": "One shared opt-in consent namespace for all outbound telemetry and observability",
+      "status": "accepted",
+      "created": "2026-07-11",
+      "extractedFrom": null,
+      "specSlug": null
     }
   ]
 }

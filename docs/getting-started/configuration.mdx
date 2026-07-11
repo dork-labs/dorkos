@@ -334,6 +334,37 @@ Uploaded files (from chat, workbench, or anywhere else you attach a file) are st
   }}
 />
 
+### Telemetry
+
+DorkOS is private by default. Every telemetry channel is off until you opt in, and the first-run banner shows you the exact payload before you decide. See the full [telemetry contract](/docs/self-hosting/telemetry) for what the weekly heartbeat sends and how to opt in or out.
+
+<TypeTable
+  type={{
+    'telemetry.userHasDecided': {
+      description:
+        'True once you have answered a telemetry consent prompt either way. Stops the first-run banner from reappearing.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'telemetry.heartbeat': {
+      description:
+        'Send an anonymous weekly heartbeat to dorkos.ai (version, OS, configured runtimes, and rough counts). Never prompts, code, paths, or session content.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'telemetry.install': {
+      description: 'Send anonymous marketplace install events to dorkos.ai.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'telemetry.errorReporting': {
+      description: 'Reserved for opt-in crash and error reporting. Not yet active.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
 ### Config Directory
 
 DorkOS creates `~/.dork/` on startup for configuration and state storage. Structured logs are written to `~/.dork/logs/dorkos.log`, one JSON entry per line.

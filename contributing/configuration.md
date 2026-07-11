@@ -163,7 +163,22 @@ The `cloud` section holds the device-link binding between this instance and a Do
 | `cloud.instanceName`       | string \| null | `null`  | This instance's display name registered with the cloud (typically the hostname)             |
 | `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable label of the linked DorkOS account, when the cloud reports one               |
 
-`cloud.instanceToken` is registered in `SENSITIVE_CONFIG_KEYS`, so the CLI and REST API warn when it is written directly. The cloud base URL is set by the `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`; override for local dev against the site). While linked, the server heartbeats the cloud on startup and every 15 minutes; a `401` from the cloud (the account revoked the instance) clears the token and marks the instance unlinked.
+`cloud.instanceToken` is registered in `SENSITIVE_CONFIG_KEYS`, so the CLI and REST API warn when it is written directly. The cloud base URL is set by the `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`; override for local dev against the site). While linked, the server heartbeats the cloud on startup and every 15 minutes; a `401` from the cloud (the account revoked the instance) clears the token and marks the instance unlinked. (This device-link check-in is unrelated to the opt-in telemetry heartbeat below.)
+
+### telemetry
+
+The shared opt-in consent namespace for everything DorkOS can send to dorkos.ai. Every channel is a peer boolean and defaults to `false` — nothing leaves the machine without an explicit opt-in (DOR-293, ADR 260711-141639). `userHasDecided` is the one shared gate: it records that the user answered a consent prompt either way, so no channel re-prompts. The namespace is deliberately per-channel so future work (error reporting, a remote OpenTelemetry exporter) hangs off the same object without a redesign.
+
+| Key                        | Type    | Default | Description                                                                                             |
+| -------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| `telemetry.userHasDecided` | boolean | `false` | Shared gate: `true` once the user answered a consent prompt (either way), stopping the first-run banner |
+| `telemetry.install`        | boolean | `false` | Send anonymous marketplace install events to dorkos.ai (formerly `telemetry.enabled`)                   |
+| `telemetry.heartbeat`      | boolean | `false` | Send the weekly anonymous heartbeat to dorkos.ai (payload documented at https://dorkos.ai/telemetry)    |
+| `telemetry.errorReporting` | boolean | `false` | Send crash/error reports. **Reserved** for the error-reporting work; not yet wired to any sender        |
+
+The heartbeat payload is anonymous by construction — an instance UUID, version, OS/arch, configured runtimes, tunnel + cloud-link flags, and rough counts, never prompts, code, paths, or session content. It is sent at most once a week (enforced by a `heartbeat-last-sent` marker in `~/.dork/`), and the shared anonymous instance id lives in `~/.dork/telemetry-install-id`. Full contract: [dorkos.ai/telemetry](https://dorkos.ai/telemetry) and `docs/self-hosting/telemetry.mdx`.
+
+The `0.46.0` config migration renames the legacy `telemetry.enabled` to `telemetry.install` (preserving the user's prior choice) and backfills `heartbeat` + `errorReporting` to `false`; it never enrolls an existing user in the new channels.
 
 ### providers
 

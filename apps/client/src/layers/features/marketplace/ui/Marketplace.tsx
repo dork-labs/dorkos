@@ -5,7 +5,6 @@ import { PackageGrid } from './PackageGrid';
 import { PackageDetailSheet } from './PackageDetailSheet';
 import { InstallConfirmationDialog } from './InstallConfirmationDialog';
 import { InstalledPackagesView } from './InstalledPackagesView';
-import { TelemetryConsentBanner } from './TelemetryConsentBanner';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import type { MarketplaceView } from '../model/marketplace-search';
 
@@ -23,14 +22,12 @@ import type { MarketplaceView } from '../model/marketplace-search';
  * in both views so a deep link like `?view=installed&pkg=flow` opens the drawer
  * over either surface. The detail sheet reads its open state from the URL
  * (`?pkg=`); the install dialog reads transient state from `useMarketplaceStore`.
- * `TelemetryConsentBanner` sits above all content until the user decides.
  */
 export function Marketplace() {
   const { view, setView } = useMarketplaceParams();
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-8">
-      <TelemetryConsentBanner />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Marketplace</h1>

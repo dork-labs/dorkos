@@ -8,12 +8,18 @@ import {
   auditLog,
   deviceCode,
   instance,
+  instanceHeartbeats,
   marketplaceInstallEvents,
   session,
   user,
   verification,
 } from '../schema';
-import type { MarketplaceInstallEvent, NewMarketplaceInstallEvent } from '../schema';
+import type {
+  InstanceHeartbeat,
+  MarketplaceInstallEvent,
+  NewInstanceHeartbeat,
+  NewMarketplaceInstallEvent,
+} from '../schema';
 
 /**
  * Schema tests for `marketplace_install_events`.
@@ -131,6 +137,101 @@ describe('marketplaceInstallEvents schema', () => {
       receivedAt: new Date('2026-04-07T00:00:00.000Z'),
     };
     expect(sample.id).toBe(1n);
+    expect(sample.receivedAt).toBeInstanceOf(Date);
+  });
+});
+
+/**
+ * Schema tests for `instance_heartbeats` (DOR-293).
+ *
+ * Same privacy contract as `marketplace_install_events`: the negative
+ * assertions guarantee no PII column ever lands in the table. The anonymous
+ * `instanceId` is allowed (it is a random per-install UUID, not a user id), but
+ * hostname/username/cwd/ipAddress/userAgent are forbidden.
+ */
+describe('instanceHeartbeats schema', () => {
+  const columns = getTableColumns(instanceHeartbeats);
+  const columnNames = Object.keys(columns);
+
+  it('exposes exactly the 11 allowed columns', () => {
+    const allowed = new Set([
+      'id',
+      'instanceId',
+      'dorkosVersion',
+      'os',
+      'runtimesConfigured',
+      'tunnelEnabled',
+      'cloudLinked',
+      'countAgents',
+      'countTasks',
+      'countRelayAdapters',
+      'receivedAt',
+    ]);
+    expect(new Set(columnNames)).toEqual(allowed);
+    expect(columnNames.length).toBe(11);
+  });
+
+  describe('privacy contract — forbidden PII columns', () => {
+    const forbidden = ['ipAddress', 'userAgent', 'hostname', 'username', 'cwd'] as const;
+    for (const field of forbidden) {
+      it(`does not include \`${field}\``, () => {
+        expect(columnNames).not.toContain(field);
+        expect(instanceHeartbeats).not.toHaveProperty(field);
+      });
+    }
+  });
+
+  it('exposes the underlying snake_case column names', () => {
+    expect(instanceHeartbeats.instanceId.name).toBe('instance_id');
+    expect(instanceHeartbeats.dorkosVersion.name).toBe('dorkos_version');
+    expect(instanceHeartbeats.runtimesConfigured.name).toBe('runtimes_configured');
+    expect(instanceHeartbeats.tunnelEnabled.name).toBe('tunnel_enabled');
+    expect(instanceHeartbeats.cloudLinked.name).toBe('cloud_linked');
+    expect(instanceHeartbeats.countRelayAdapters.name).toBe('count_relay_adapters');
+    expect(instanceHeartbeats.receivedAt.name).toBe('received_at');
+  });
+
+  it('marks every non-id column NOT NULL', () => {
+    expect(instanceHeartbeats.instanceId.notNull).toBe(true);
+    expect(instanceHeartbeats.dorkosVersion.notNull).toBe(true);
+    expect(instanceHeartbeats.os.notNull).toBe(true);
+    expect(instanceHeartbeats.runtimesConfigured.notNull).toBe(true);
+    expect(instanceHeartbeats.tunnelEnabled.notNull).toBe(true);
+    expect(instanceHeartbeats.cloudLinked.notNull).toBe(true);
+    expect(instanceHeartbeats.countAgents.notNull).toBe(true);
+    expect(instanceHeartbeats.receivedAt.notNull).toBe(true);
+  });
+
+  it('has no foreign keys — it references nothing, least of all accounts', () => {
+    expect(getTableConfig(instanceHeartbeats).foreignKeys).toHaveLength(0);
+  });
+
+  it('carries no user/account reference columns', () => {
+    const accountRefColumns = ['userId', 'user_id', 'accountId', 'account_id', 'sessionId'];
+    for (const col of accountRefColumns) {
+      expect(columnNames).not.toContain(col);
+    }
+  });
+
+  it('inferred insert/select types match the anonymous contract', () => {
+    const row: NewInstanceHeartbeat = {
+      instanceId: '00000000-0000-0000-0000-000000000000',
+      dorkosVersion: '0.46.0',
+      os: 'darwin-arm64',
+      runtimesConfigured: ['claude-code'],
+      tunnelEnabled: false,
+      cloudLinked: false,
+      countAgents: 0,
+      countTasks: 0,
+      countRelayAdapters: 0,
+    };
+    expect(row.instanceId).toBe('00000000-0000-0000-0000-000000000000');
+
+    const sample: InstanceHeartbeat = {
+      id: 1n,
+      ...row,
+      receivedAt: new Date('2026-07-11T00:00:00.000Z'),
+    };
     expect(sample.receivedAt).toBeInstanceOf(Date);
   });
 });

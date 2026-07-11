@@ -20,7 +20,16 @@
  *
  * @module db/schema
  */
-import { bigserial, index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigserial,
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 export { account, apikey, deviceCode, session, user, verification } from './auth-schema';
 export { instance, type Instance, type NewInstance } from './instance-schema';
@@ -87,3 +96,55 @@ export type MarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferSele
 
 /** A row insertable into `marketplace_install_events`. */
 export type NewMarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferInsert;
+
+/**
+ * `instance_heartbeats` — append-only log for the opt-in weekly heartbeat
+ * (DOR-293). One row per ping lets us count "known weekly-active instances".
+ *
+ * The columns below are the **complete allowed set**. Like
+ * `marketplace_install_events`, this table is the privacy contract: the schema
+ * test in `__tests__/schema.test.ts` forbids any PII column (ipAddress,
+ * userAgent, hostname, username, cwd). Every field here is anonymous and
+ * aggregate-safe by construction. Public contract: https://dorkos.ai/telemetry.
+ */
+export const instanceHeartbeats = pgTable(
+  'instance_heartbeats',
+  {
+    /** Surrogate primary key. */
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+    /**
+     * Random per-install UUID (shared with install telemetry). Identifies one
+     * DorkOS installation so we can de-duplicate to weekly-active counts — NOT
+     * a user, and never joined to any account table.
+     */
+    instanceId: uuid('instance_id').notNull(),
+    /** DorkOS version that produced the heartbeat (e.g. `0.46.0`). */
+    dorkosVersion: text('dorkos_version').notNull(),
+    /** Platform and CPU architecture, e.g. `darwin-arm64`. */
+    os: text('os').notNull(),
+    /** Runtime ids the user has enabled, e.g. `{claude-code,codex}`. */
+    runtimesConfigured: text('runtimes_configured').array().notNull(),
+    /** Whether the public tunnel is enabled (mobile-access signal). */
+    tunnelEnabled: boolean('tunnel_enabled').notNull(),
+    /** Whether this instance is device-linked to a DorkOS account (fleet signal). */
+    cloudLinked: boolean('cloud_linked').notNull(),
+    /** Rough count of registered agents. */
+    countAgents: integer('count_agents').notNull(),
+    /** Rough count of scheduled tasks. */
+    countTasks: integer('count_tasks').notNull(),
+    /** Rough count of configured relay adapters. */
+    countRelayAdapters: integer('count_relay_adapters').notNull(),
+    /** Server-side receive timestamp. Trust this, never the client clock. */
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_heartbeats_instance_received').on(t.instanceId, t.receivedAt.desc()),
+    index('idx_heartbeats_received').on(t.receivedAt.desc()),
+  ]
+);
+
+/** A row read from `instance_heartbeats`. */
+export type InstanceHeartbeat = typeof instanceHeartbeats.$inferSelect;
+
+/** A row insertable into `instance_heartbeats`. */
+export type NewInstanceHeartbeat = typeof instanceHeartbeats.$inferInsert;

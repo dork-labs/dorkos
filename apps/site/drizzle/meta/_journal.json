@@ -50,6 +50,13 @@
       "when": 1783394634347,
       "tag": "0006_great_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783780273966,
+      "tag": "0007_robust_bushwacker",
+      "breakpoints": true
     }
   ]
 }

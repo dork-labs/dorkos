@@ -16,6 +16,7 @@ import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
 import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
+import { TelemetryConsentBanner } from '@/layers/features/telemetry-consent';
 import { SessionSidebar, SidebarFooterBar } from '@/layers/features/session-list';
 import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
 import { useOnboarding, OnboardingFlow, ProgressCard } from '@/layers/features/onboarding';
@@ -268,6 +269,7 @@ export function AppShell() {
                   data-testid="app-shell"
                   className="bg-background text-foreground flex h-dvh flex-col"
                 >
+                  <TelemetryConsentBanner />
                   <PermissionBanner sessionId={activeSessionId} />
                   <SidebarProvider
                     open={sidebarOpen}

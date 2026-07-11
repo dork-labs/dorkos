@@ -349,6 +349,56 @@ export function backfillWorkbenchTerminalGraceTtl(store: {
   }
 }
 
+/**
+ * Migration body: generalize the `telemetry` section into the shared opt-in
+ * consent namespace (DOR-293, ADR 260711-141639). Two additive, idempotent
+ * steps on an EXISTING `telemetry` block:
+ *
+ * 1. Rename `telemetry.enabled` → `telemetry.install` (the marketplace-install
+ *    channel), preserving the user's prior choice exactly. Only runs when the
+ *    legacy `enabled` key is present and `install` is not, then deletes
+ *    `enabled` so the block matches the new schema.
+ * 2. Backfill the two new peer channel flags — `heartbeat` and
+ *    `errorReporting` — to `false` when absent. conf merges top-level defaults
+ *    SHALLOWLY, so a `telemetry` object already on disk never inherits these
+ *    nested defaults; this step supplies them without touching consent.
+ *
+ * Never flips a user from opted-out to opted-in: the new channels default OFF
+ * and `userHasDecided` is left untouched, so a user who already answered the
+ * marketplace consent is not re-prompted but is also not silently enrolled in
+ * the heartbeat. The whole-object-absent case is handled by the schema default
+ * on read.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`/`delete`).
+ */
+export function generalizeTelemetryConsent(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+  delete: (key: string) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry == null || typeof telemetry !== 'object') return;
+  const t = telemetry as Record<string, unknown>;
+  let changed = false;
+
+  if ('enabled' in t && !('install' in t)) {
+    t.install = t.enabled;
+    delete t.enabled;
+    changed = true;
+  }
+  if (!('heartbeat' in t)) {
+    t.heartbeat = false;
+    changed = true;
+  }
+  if (!('errorReporting' in t)) {
+    t.errorReporting = false;
+    changed = true;
+  }
+
+  if (changed) store.set('telemetry', t);
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -399,6 +449,12 @@ const CONFIG_MIGRATIONS = {
     // add to a `workbench` block the previous body just created.
     backfillWorkbenchTerminalGraceTtl(store);
   },
+  // Generalize `telemetry` into the shared opt-in consent namespace (DOR-293,
+  // ADR 260711-141639): rename `telemetry.enabled` → `telemetry.install` and
+  // backfill the new `heartbeat` + `errorReporting` channel flags (both OFF).
+  // Authored on the next-ascending-release placeholder while on main;
+  // /system:release reconciles the key to the real release at tag time.
+  '0.46.0': generalizeTelemetryConsent,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

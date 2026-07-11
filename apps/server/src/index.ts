@@ -100,7 +100,7 @@ import { mcpApiKeyAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { requireMcpEnabled } from './middleware/mcp-enabled.js';
 import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
-import { createDb, runMigrations } from '@dorkos/db';
+import { createDb, runMigrations, agents } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { SERVER_VERSION } from './lib/version.js';
@@ -108,6 +108,7 @@ import { createWorkspaceSubsystem, setWorkspaceManager } from './services/worksp
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
+import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
 import { SessionEventStore, setSessionEventStore } from './services/session/index.js';
@@ -219,14 +220,14 @@ async function start() {
   logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
 
   // Register the dorkos.ai marketplace telemetry reporter. This is a no-op
-  // unless `config.telemetry.enabled === true` — defaults to false. The
+  // unless `config.telemetry.install === true` — defaults to false. The
   // reporter forwards `InstallEvent`s emitted by the marketplace install
   // pipeline to https://dorkos.ai/api/telemetry/install with a stable
   // per-machine install ID stored in dorkHome. Privacy contract:
   // https://dorkos.ai/marketplace/privacy
   const telemetryConfig = configManager.get('telemetry');
-  registerDorkosCommunityTelemetry(telemetryConfig?.enabled ?? false, dorkHome, SERVER_VERSION);
-  if (telemetryConfig?.enabled) {
+  registerDorkosCommunityTelemetry(telemetryConfig?.install ?? false, dorkHome, SERVER_VERSION);
+  if (telemetryConfig?.install) {
     logger.info('[Telemetry] Marketplace install reporter registered (consent: opt-in)');
   }
 
@@ -1104,6 +1105,39 @@ async function start() {
       category: 'system',
       eventType: 'system.started',
       summary: 'DorkOS started',
+    });
+
+    // Register the anonymous weekly heartbeat. No-op unless
+    // `config.telemetry.heartbeat === true` — defaults to false, so nothing is
+    // read or sent without explicit opt-in. Payload documented at
+    // https://dorkos.ai/telemetry (DOR-293).
+    const runtimesConfig = configManager.get('runtimes');
+    const runtimesConfigured = [
+      'claude-code',
+      ...(runtimesConfig.codex.enabled ? ['codex'] : []),
+      ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
+    ];
+    registerHeartbeat({
+      consent: configManager.get('telemetry')?.heartbeat ?? false,
+      dorkHome,
+      dorkosVersion: SERVER_VERSION,
+      runtimesConfigured,
+      tunnelEnabled: configManager.get('tunnel')?.enabled ?? false,
+      cloudLinked: configManager.get('cloud')?.instanceToken != null,
+      collectCounts: (): HeartbeatCounts => {
+        // Best-effort snapshot; any failure just contributes a zero.
+        let agentCount = 0;
+        try {
+          agentCount = db.select().from(agents).all().length;
+        } catch {
+          /* ignore */
+        }
+        return {
+          agents: agentCount,
+          tasks: taskStore?.getTasks().length ?? 0,
+          relayAdapters: adapterManager?.listAdapters().length ?? 0,
+        };
+      },
     });
   });
 
