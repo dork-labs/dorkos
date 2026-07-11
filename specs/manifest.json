@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260711-150300",
+      "slug": "pip-panel",
+      "title": "Floating picture-in-picture panel for the cockpit",
+      "created": "2026-07-11",
+      "status": "specified"
+    },
+    {
       "id": "260711-142048",
       "slug": "diff-viewer",
       "title": "Diff viewer — per-hunk review surface (fast-follow)",
