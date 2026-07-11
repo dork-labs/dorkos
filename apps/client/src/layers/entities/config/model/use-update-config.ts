@@ -6,7 +6,7 @@ import { configKeys } from '../api/query-keys';
  * Patch the persisted user config.
  *
  * Accepts any partial slice of {@link UserConfig} (e.g.
- * `{ telemetry: { enabled: true, userHasDecided: true } }`). The server
+ * `{ telemetry: { heartbeat: true, userHasDecided: true } }`). The server
  * deep-merges the patch with the current on-disk config and re-validates the
  * result, so callers don't need to round-trip the full document.
  *

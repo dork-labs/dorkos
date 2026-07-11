@@ -201,23 +201,52 @@ export const UserConfigSchema = z.object({
       apiKey: null,
       rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
     })),
+  /**
+   * Shared opt-in consent namespace for everything DorkOS can send to
+   * dorkos.ai. Every channel below is a peer boolean that defaults to
+   * `false` — nothing leaves the machine until the user explicitly opts in.
+   * `userHasDecided` is the one shared gate: it records that the user has
+   * answered a consent prompt (opt-in or opt-out) so no channel re-prompts.
+   *
+   * The namespace is deliberately per-channel so future work hangs off the
+   * same consent object without a schema redesign: error reporting (PR-B)
+   * flips `errorReporting`, and a later remote OpenTelemetry exporter can add
+   * its own peer flag here. See ADR 260711-141639 and the /telemetry page.
+   */
   telemetry: z
     .object({
       /**
-       * Whether to send opt-in marketplace install events to dorkos.ai.
-       *
-       * Defaults to `false`. The user must explicitly enable this in their
-       * config file or via the in-product toggle. Privacy contract:
-       * https://dorkos.ai/marketplace/privacy
-       */
-      enabled: z.boolean().default(false),
-      /**
-       * True once the user has explicitly chosen (opt-in or opt-out) so the
-       * in-product consent banner stops appearing on the Marketplace page.
+       * Shared consent gate. `true` once the user has answered a telemetry
+       * consent prompt either way (opt-in or opt-out), which stops the
+       * first-run consent banner from reappearing for any channel.
        */
       userHasDecided: z.boolean().default(false),
+      /**
+       * Channel: send anonymous marketplace install events to dorkos.ai so we
+       * can rank packages and spot install failures. Formerly `telemetry.enabled`.
+       * Privacy contract: https://dorkos.ai/marketplace/privacy
+       */
+      install: z.boolean().default(false),
+      /**
+       * Channel: send a weekly anonymous heartbeat to dorkos.ai (instance id,
+       * version, OS/arch, configured runtimes, tunnel + cloud-link flags,
+       * and rough counts — never prompts, code, paths, or session content).
+       * Payload documented verbatim at https://dorkos.ai/telemetry.
+       */
+      heartbeat: z.boolean().default(false),
+      /**
+       * Channel: send crash and error reports to dorkos.ai. RESERVED for the
+       * error-reporting work (PR-B) and not yet wired to any sender — it
+       * exists now so that feature hangs off this same consent object.
+       */
+      errorReporting: z.boolean().default(false),
     })
-    .default(() => ({ enabled: false, userHasDecided: false })),
+    .default(() => ({
+      userHasDecided: false,
+      install: false,
+      heartbeat: false,
+      errorReporting: false,
+    })),
   workspace: z
     .object({
       /** Whether the WorkspaceManager is active (binding sessions, allocating ports). */

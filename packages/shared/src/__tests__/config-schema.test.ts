@@ -35,7 +35,12 @@ describe('UserConfigSchema', () => {
         apiKey: null,
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
-      telemetry: { enabled: false, userHasDecided: false },
+      telemetry: {
+        userHasDecided: false,
+        install: false,
+        heartbeat: false,
+        errorReporting: false,
+      },
       workspace: {
         enabled: true,
         rootPath: null,
@@ -247,7 +252,12 @@ describe('USER_CONFIG_DEFAULTS', () => {
         apiKey: null,
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
-      telemetry: { enabled: false, userHasDecided: false },
+      telemetry: {
+        userHasDecided: false,
+        install: false,
+        heartbeat: false,
+        errorReporting: false,
+      },
       workspace: {
         enabled: true,
         rootPath: null,
@@ -434,63 +444,60 @@ describe('UserConfigSchema agents', () => {
 });
 
 describe('UserConfigSchema telemetry', () => {
-  it('telemetry defaults to { enabled: false, userHasDecided: false } when omitted', () => {
+  const ALL_OFF = {
+    userHasDecided: false,
+    install: false,
+    heartbeat: false,
+    errorReporting: false,
+  };
+
+  it('telemetry defaults to every channel off when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
-    expect(result.telemetry).toEqual({ enabled: false, userHasDecided: false });
-    expect(result.telemetry.enabled).toBe(false);
-    expect(result.telemetry.userHasDecided).toBe(false);
+    expect(result.telemetry).toEqual(ALL_OFF);
   });
 
   it('telemetry section defaults when empty object provided', () => {
     const result = UserConfigSchema.parse({ version: 1, telemetry: {} });
-    expect(result.telemetry).toEqual({ enabled: false, userHasDecided: false });
+    expect(result.telemetry).toEqual(ALL_OFF);
   });
 
-  it('telemetry.enabled accepts true', () => {
+  it('each channel accepts true independently', () => {
     const result = UserConfigSchema.parse({
       version: 1,
-      telemetry: { enabled: true },
+      telemetry: { install: true, heartbeat: true, errorReporting: true, userHasDecided: true },
     });
-    expect(result.telemetry.enabled).toBe(true);
-  });
-
-  it('telemetry.enabled accepts false explicitly', () => {
-    const result = UserConfigSchema.parse({
-      version: 1,
-      telemetry: { enabled: false },
+    expect(result.telemetry).toEqual({
+      install: true,
+      heartbeat: true,
+      errorReporting: true,
+      userHasDecided: true,
     });
-    expect(result.telemetry.enabled).toBe(false);
   });
 
-  it('telemetry.userHasDecided accepts true', () => {
+  it('unset channels default to false when only one is set', () => {
     const result = UserConfigSchema.parse({
       version: 1,
-      telemetry: { enabled: false, userHasDecided: true },
+      telemetry: { heartbeat: true },
+    });
+    expect(result.telemetry).toEqual({ ...ALL_OFF, heartbeat: true });
+  });
+
+  it('userHasDecided is independent of the channel flags', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      telemetry: { userHasDecided: true },
     });
     expect(result.telemetry.userHasDecided).toBe(true);
+    expect(result.telemetry.install).toBe(false);
+    expect(result.telemetry.heartbeat).toBe(false);
   });
 
-  it('telemetry.userHasDecided defaults to false when only enabled is set', () => {
-    const result = UserConfigSchema.parse({
-      version: 1,
-      telemetry: { enabled: true },
-    });
-    expect(result.telemetry.userHasDecided).toBe(false);
-  });
-
-  it('telemetry.enabled rejects string values', () => {
-    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { enabled: 'yes' } })).toThrow();
-  });
-
-  it('telemetry.enabled rejects numeric values', () => {
-    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { enabled: 1 } })).toThrow();
-  });
-
-  it('telemetry.enabled rejects null', () => {
-    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { enabled: null } })).toThrow();
-  });
-
-  it('telemetry.userHasDecided rejects non-boolean values', () => {
+  it('rejects non-boolean channel values', () => {
+    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { install: 'yes' } })).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { heartbeat: 1 } })).toThrow();
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, telemetry: { errorReporting: null } })
+    ).toThrow();
     expect(() =>
       UserConfigSchema.parse({ version: 1, telemetry: { userHasDecided: 'yes' } })
     ).toThrow();

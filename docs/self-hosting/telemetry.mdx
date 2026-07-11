@@ -1,0 +1,79 @@
+---
+title: Telemetry
+description: What the optional DorkOS heartbeat sends, how to turn it on or off, and the private-by-default promise
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+DorkOS is private by default. Nothing about how you use it leaves your computer unless you turn it on. This page shows the exact data it would send, word for word, so you can decide with full information.
+
+<Callout type="info">
+  Every telemetry channel is off on a fresh install. DorkOS asks once, on first run, and shows you
+  the payload before you choose. You can change your mind anytime.
+</Callout>
+
+## The short version
+
+- Telemetry is off until you opt in. Fresh installs send nothing.
+- It is anonymous. No prompts, no code, no file paths, no session content, ever.
+- The full payload is documented here and enforced in code and tests.
+- The public version of this page lives at [dorkos.ai/telemetry](https://dorkos.ai/telemetry).
+
+## What the heartbeat sends
+
+If you opt in, DorkOS sends one small message to dorkos.ai about once a week. This is how we can even roughly count how many people actively run DorkOS. Here is the whole payload:
+
+```json
+{
+  "instanceId": "a1b2c3d4-e5f6-...",
+  "dorkosVersion": "0.46.0",
+  "os": "darwin-arm64",
+  "runtimesConfigured": ["claude-code", "codex"],
+  "tunnelEnabled": false,
+  "cloudLinked": false,
+  "counts": { "agents": 4, "tasks": 2, "relayAdapters": 1 }
+}
+```
+
+| Field                | What it is                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `instanceId`         | A random id created on your machine. Marks one install so we do not double-count you. Not traceable to you. |
+| `dorkosVersion`      | Which version of DorkOS you are running.                                                                    |
+| `os`                 | Your platform and chip type, like `darwin-arm64`. Not your hostname.                                        |
+| `runtimesConfigured` | Which agent runtimes you have turned on, like Claude Code or Codex.                                         |
+| `tunnelEnabled`      | Whether you use the tunnel to reach DorkOS from your phone. True or false only.                             |
+| `cloudLinked`        | Whether this install is linked to a DorkOS account. True or false only.                                     |
+| `counts`             | Rough totals of your agents, tasks, and relay adapters. Just numbers, never their names or contents.        |
+
+## What it never sends
+
+The list above is the complete payload. It is enforced in code and in tests, so nothing sneaks in. It never includes your prompts, your code, file paths, your hostname or username, IP address, or anything from your sessions. If we ever want to add a field, we update this page first.
+
+## Marketplace installs
+
+The same opt-in also turns on anonymous marketplace install events, which help rank packages and spot broken installs. They follow the same no-PII rule and are documented on the [marketplace privacy page](https://dorkos.ai/marketplace/privacy).
+
+## How to turn it on or off
+
+The first time you open DorkOS, a banner asks whether to share anonymous data and shows you the payload above. Pick either option and it remembers your choice. To change it later, open settings, or edit `~/.dork/config.json`:
+
+```json
+{
+  "telemetry": {
+    "heartbeat": false,
+    "install": false,
+    "userHasDecided": true
+  }
+}
+```
+
+Set a value to `true` to opt in, or `false` to opt out. The default for every channel is `false`.
+
+<Callout type="info">
+  Because this is off by default, our numbers only reflect people who chose to share. We undercount
+  on purpose. A private-by-default product that flies a little blind is the right trade.
+</Callout>
+
+## When this changes
+
+DorkOS moves fast. If what the heartbeat sends ever changes, we update this page and the public [dorkos.ai/telemetry](https://dorkos.ai/telemetry) page before the change ships. No quiet edits.
