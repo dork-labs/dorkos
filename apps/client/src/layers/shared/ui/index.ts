@@ -85,6 +85,8 @@ export {
 } from './field';
 export { FieldCard, FieldCardContent, CollapsibleFieldCard } from './field-card';
 export type { CollapsibleFieldCardProps } from './field-card';
+export { FloatingPanel, clampGeometry } from './floating-panel';
+export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
 export { HoverBorderGradient } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
 export { Kbd } from './kbd';

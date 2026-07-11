@@ -10,3 +10,4 @@ export type { PanelsSlice } from './app-store-panels';
 export type { PreferencesSlice } from './app-store-preferences';
 export type { CanvasSlice, CanvasDocument, BrowserHistoryState } from './app-store-canvas';
 export type { RightPanelSlice } from './app-store-right-panel';
+export type { PipSlice, PipContent } from './app-store-pip';

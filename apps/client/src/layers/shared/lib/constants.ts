@@ -10,6 +10,7 @@ export const STORAGE_KEYS = {
   PINNED_AGENTS: 'dorkos-pinned-agents',
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
+  PIP_PANEL_STATE: 'dorkos-pip-panel-state',
 } as const;
 
 /** Maximum number of per-session canvas entries stored in localStorage. */

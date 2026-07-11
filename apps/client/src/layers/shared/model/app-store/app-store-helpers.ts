@@ -5,6 +5,7 @@
  */
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { STORAGE_KEYS, MAX_CANVAS_SESSIONS, MAX_RIGHT_PANEL_LAYOUTS } from '@/layers/shared/lib';
+import type { FloatingPanelGeometry } from '@/layers/shared/ui';
 
 /** Read a boolean from localStorage with try/catch safety. */
 export function readBool(key: string, defaultValue: boolean): boolean {
@@ -311,5 +312,33 @@ export function writeRightPanelLayout(agentKey: string | null, entry: RightPanel
     } else {
       localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS, JSON.stringify(map));
     }
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// PIP panel persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the persisted PIP panel geometry from localStorage. Returns null if
+ * missing or corrupt. Deliberately unclamped — the floating-panel primitive
+ * re-clamps against the current viewport on mount (task 1.1), so a stale
+ * geometry from a resized window self-corrects the instant the panel renders
+ * instead of the slice duplicating that clamp math.
+ */
+export function readPipGeometry(): FloatingPanelGeometry | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PIP_PANEL_STATE);
+    if (!raw) return null;
+    return JSON.parse(raw) as FloatingPanelGeometry;
+  } catch {
+    return null;
+  }
+}
+
+/** Write the PIP panel geometry to localStorage. Silently fails on quota errors. */
+export function writePipGeometry(g: FloatingPanelGeometry): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PIP_PANEL_STATE, JSON.stringify(g));
   } catch {}
 }

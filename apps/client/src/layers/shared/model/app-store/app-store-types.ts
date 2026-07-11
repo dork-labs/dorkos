@@ -10,6 +10,7 @@
  *   app-store-prefs        → app-store-helpers
  *   app-store-canvas       → app-store-helpers
  *   app-store-right-panel  → app-store-helpers
+ *   app-store-pip          → app-store-helpers
  *   app-store-types        → all slice files  ← this file
  *   app-store              → app-store-types + slice files
  *
@@ -19,6 +20,7 @@ import type { PanelsSlice } from './app-store-panels';
 import type { PreferencesSlice } from './app-store-preferences';
 import type { CanvasSlice } from './app-store-canvas';
 import type { RightPanelSlice } from './app-store-right-panel';
+import type { PipSlice } from './app-store-pip';
 import type { ContextFile, RecentCwd } from './app-store-helpers';
 
 // ---------------------------------------------------------------------------
@@ -97,5 +99,10 @@ export interface CoreSlice {
 // Combined state type
 // ---------------------------------------------------------------------------
 
-/** Complete store state — intersection of all five slices. */
-export type AppState = CoreSlice & PanelsSlice & PreferencesSlice & CanvasSlice & RightPanelSlice;
+/** Complete store state — intersection of all six slices. */
+export type AppState = CoreSlice &
+  PanelsSlice &
+  PreferencesSlice &
+  CanvasSlice &
+  RightPanelSlice &
+  PipSlice;
