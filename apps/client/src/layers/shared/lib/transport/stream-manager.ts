@@ -541,6 +541,13 @@ export class StreamManager {
     if (outgoingSharedWithPin && sessionId !== this.pinnedSessionId) {
       this.pinnedConnection = this.sessionConnection;
       this.sessionConnection = null;
+      // The transferred connection's URL was built from the OUTGOING attached
+      // cwd (still in `attachedCwd` here — it is overwritten with `nextCwd`
+      // below). pinSession's shared branch and the shared-cwd sync keep
+      // `pinnedCwd` equal to it already, but the transfer is the moment cwd
+      // truth changes slots, so restate it from the connection's own truth
+      // rather than relying on that equality holding forever.
+      this.pinnedCwd = this.attachedCwd;
     } else {
       // Normal re-target (row 3, the ordinary no-pin path, and a shared-session
       // cwd change): the outgoing active connection is neither shared-with-pin
@@ -579,6 +586,8 @@ export class StreamManager {
    * @param cwd - The pinned session's working directory, forwarded as `?cwd=`
    *   (see {@link sessionStreamUrl}). Omit/null when unknown; the caller
    *   (`LiveSessionWidget`) resolves it from session metadata at pin time.
+   *   IGNORED when pinning the already-attached session — a shared pin's cwd
+   *   is definitionally the attached connection's cwd (see the branch comment).
    */
   pinSession(sessionId: string, cwd?: string | null): void {
     if (this.pinnedSessionId === sessionId) return;
@@ -589,17 +598,28 @@ export class StreamManager {
       this.unpinSession();
     }
 
-    const nextCwd = cwd ?? null;
     if (sessionId === this.attachedSessionId) {
       // Shared: the active connection already streams this session. Record the
-      // pin without opening a second connection (invariant).
+      // pin without opening a second connection (invariant). The pin's cwd is
+      // taken from `attachedCwd`, NOT the caller: the pin shares that exact
+      // connection, whose `?cwd=` URL is immutable, so its cwd is
+      // definitionally the attached one. Callers resolve cwd from a different
+      // source (session-list metadata) than attachSession (selected cwd);
+      // trusting the caller here would let `pinnedCwd` desync from the shared
+      // connection's real cwd and corrupt the transfer/adopt cwd-equality
+      // checks — forcing a needless destroy/reopen (zero-gap broken) or, on a
+      // coincidental match, rebuilding the pinned stream against the wrong
+      // project directory.
       this.pinnedSessionId = sessionId;
-      this.pinnedCwd = nextCwd;
+      this.pinnedCwd = this.attachedCwd;
       this.pinnedConnection = null;
       return;
     }
 
-    // Off-route: open a dedicated pinned connection via the active slot's path.
+    // Off-route: open a dedicated pinned connection via the active slot's
+    // path. Here the caller's cwd IS authoritative — it parameterizes the
+    // fresh connection's URL.
+    const nextCwd = cwd ?? null;
     this.pinnedSessionId = sessionId;
     this.pinnedCwd = nextCwd;
     this.pinnedConnection = this.openSessionStream(sessionId, nextCwd);

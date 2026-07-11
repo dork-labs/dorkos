@@ -885,4 +885,46 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     expect(connections).toHaveLength(2);
     expect(connections[1]!.url).toBe('http://localhost:9999/api/sessions/A/events');
   });
+
+  it('a shared pin takes the ATTACHED cwd, ignoring a divergent caller cwd (zero-gap transfer preserved; rebuild targets the real project)', () => {
+    // Real failure mode: LiveSessionWidget resolves cwd from session-list
+    // metadata while attachSession got the operator's selected cwd. Trusting
+    // the caller in pinSession's shared branch desyncs pinnedCwd from the
+    // shared connection's actual `?cwd=` URL, corrupting the later cwd-equality
+    // checks (needless destroy/reopen, or a rebuild against the wrong project).
+    const { manager, connections } = setup();
+    manager.attachSession('A', '/proj'); // connections[0], URL bound to /proj
+    manager.pinSession('A', '/stale-metadata-cwd'); // shared — caller cwd differs
+
+    manager.attachSession('B'); // row 1 transfer-out
+
+    // Zero-gap: the shared connection transferred, never destroyed.
+    expect(connections[0]!.destroy).not.toHaveBeenCalled();
+    expect(manager.getPinnedSessionId()).toBe('A');
+
+    // Observable proof pinnedCwd carried the CONNECTION's truth (/proj), not
+    // the caller's: a source rebuild re-opens the pinned slot from pinnedCwd.
+    manager.useHttpSource('http://localhost:9999/api');
+    const rebuilt = connections.map((c) => c.url);
+    expect(rebuilt).toContain('http://localhost:9999/api/sessions/A/events?cwd=%2Fproj');
+    expect(rebuilt.join(' ')).not.toContain('stale-metadata-cwd');
+  });
+
+  it('after a transfer-out, re-attaching with the ORIGINAL attached cwd adopts (no reopen) even when pinSession passed a different cwd', () => {
+    // Regression: with pinnedCwd corrupted by the caller's cwd (here null,
+    // the unresolved-metadata case), the adopt path's cwd-equality check would
+    // see a false divergence against '/proj' and destroy/reopen the pinned
+    // connection instead of adopting it — breaking the zero-gap guarantee.
+    const { manager, connections } = setup();
+    manager.attachSession('A', '/proj'); // connections[0]
+    manager.pinSession('A', null); // shared — caller cwd unknown/unresolved
+    manager.attachSession('B'); // transfer-out → connections[1] active B
+
+    manager.attachSession('A', '/proj'); // must ADOPT the transferred conn
+
+    expect(connections).toHaveLength(2); // no third connection opened
+    expect(connections[0]!.destroy).not.toHaveBeenCalled(); // adopted, zero-gap
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(manager.getPinnedSessionId()).toBe('A'); // shared again
+  });
 });
