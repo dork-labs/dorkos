@@ -28,6 +28,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { hardenedGitEnv } from './git-safety.js';
 import type { Logger } from '@dorkos/shared/logger';
 import type { ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetchedPackage, FetchPackageOptions, FetcherDeps } from '../package-fetcher.js';
@@ -266,6 +267,9 @@ async function runGit(args: string[], cwd: string | undefined): Promise<void> {
     const child: ChildProcess = spawn('git', args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Confine git to safe transports so an author-controlled clone URL cannot
+      // reach the `ext::`/`file::` helpers and run arbitrary commands.
+      env: hardenedGitEnv(),
     });
     let stderr = '';
     child.stderr?.on('data', (chunk: Buffer) => {

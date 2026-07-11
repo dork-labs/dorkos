@@ -6,7 +6,7 @@
  *
  * @module services/relay/adapter-config
  */
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, chmod } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { z } from 'zod';
@@ -103,9 +103,17 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
 }
 
 /**
+ * Owner-only file mode for `adapters.json` (`rw-------`). Adapter configs hold
+ * live bot tokens (Telegram, Slack) in cleartext, so the file must not be
+ * readable by other local users.
+ */
+const ADAPTER_CONFIG_MODE = 0o600;
+
+/**
  * Persist adapter configs to disk using atomic write (tmp + rename).
  *
- * Creates the parent directory if it does not exist.
+ * Creates the parent directory if it does not exist. The file is written
+ * owner-only (`0600`) because it stores adapter secrets in cleartext.
  *
  * @param configPath - Absolute path to adapters.json
  * @param configs - The adapter configs to write
@@ -116,8 +124,14 @@ export async function saveAdapterConfig(
 ): Promise<void> {
   await mkdir(dirname(configPath), { recursive: true });
   const tmpPath = `${configPath}.tmp`;
-  await writeFile(tmpPath, JSON.stringify({ adapters: configs }, null, 2), 'utf-8');
+  await writeFile(tmpPath, JSON.stringify({ adapters: configs }, null, 2), {
+    encoding: 'utf-8',
+    mode: ADAPTER_CONFIG_MODE,
+  });
   await rename(tmpPath, configPath);
+  // Re-assert the mode: a pre-existing file's perms survive `rename`, and the
+  // tmp file's create mode is subject to the process umask.
+  await chmod(configPath, ADAPTER_CONFIG_MODE);
 }
 
 /**

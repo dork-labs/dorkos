@@ -93,8 +93,22 @@ const UrlSourceSchema = z.object({
  */
 const GitSubdirSourceSchema = z.object({
   source: z.literal('git-subdir'),
-  url: z.string(),
-  path: z.string().min(1),
+  // Confine the author-supplied remote URL to safe transports. A bare string
+  // reaches `git clone`/`git ls-remote` at preview time (before install
+  // consent), where git's `ext::`/`file::` helpers would run arbitrary
+  // commands. Accept only https/git/ssh URLs and scp-style `git@host:path`;
+  // reject anything starting with `-` (git would read it as an option).
+  url: z
+    .string()
+    .refine(
+      (u) => !u.startsWith('-') && /^(https:\/\/|git:\/\/|ssh:\/\/|git@[\w.-]+:)/.test(u),
+      'git-subdir url must be an https, git, or ssh URL'
+    ),
+  // Mirror the relative-path resolver: no `..` escaping the sparse-clone root.
+  path: z
+    .string()
+    .min(1)
+    .refine((s) => !s.includes('..'), 'git-subdir path must not contain ".."'),
   ref: z.string().optional(),
   sha: z
     .string()

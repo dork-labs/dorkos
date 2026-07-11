@@ -87,6 +87,51 @@ describe('PluginSourceSchema — five source forms', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects a git-subdir url using the ext:: transport (command execution)', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'git-subdir',
+      url: "ext::sh -c 'id > /tmp/pwned'",
+      path: 'plugins/qa',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a git-subdir url that begins with a dash (git option injection)', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'git-subdir',
+      url: '--upload-pack=touch /tmp/pwned',
+      path: 'plugins/qa',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a file:// git-subdir url', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'git-subdir',
+      url: 'file:///etc',
+      path: 'plugins/qa',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts an scp-style git-subdir url (git@host:path)', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'git-subdir',
+      url: 'git@github.com:foo/monorepo.git',
+      path: 'plugins/qa',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a git-subdir path that escapes the clone root with ".."', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'git-subdir',
+      url: 'https://github.com/foo/monorepo.git',
+      path: '../../../../etc',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('accepts an npm source', () => {
     const result = PluginSourceSchema.safeParse({
       source: 'npm',

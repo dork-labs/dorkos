@@ -43,6 +43,7 @@ import { relativePathResolver } from './source-resolvers/relative-path.js';
 import { githubResolver } from './source-resolvers/github.js';
 import { urlResolver } from './source-resolvers/url.js';
 import { gitSubdirResolver } from './source-resolvers/git-subdir.js';
+import { hardenedGitEnv } from './source-resolvers/git-safety.js';
 import { npmResolver } from './source-resolvers/npm.js';
 
 const execFileAsync = promisify(execFile);
@@ -457,6 +458,8 @@ export class PackageFetcher {
     try {
       const { stdout } = await execFileAsync('git', ['ls-remote', gitUrl, target], {
         timeout: LS_REMOTE_TIMEOUT_MS,
+        // Confine git to safe transports (blocks `ext::`/`file::` command execution).
+        env: hardenedGitEnv(),
       });
       const firstLine = stdout.split('\n').find((line) => line.trim().length > 0);
       if (firstLine) {

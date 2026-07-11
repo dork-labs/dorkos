@@ -1,0 +1,76 @@
+---
+title: 'Security Hardening Audit — Bindings, Tunnel/Auth, MCP, Marketplace, Secrets'
+date: 2026-07-11
+type: internal-audit
+status: active
+tags: [security, hardening, mcp, relay, tunnel, auth, marketplace, exposure-guard, gtm]
+---
+
+# Security Hardening Audit
+
+Pre-traction hardening pass for the GTM security cluster (`meta/positioning-202607/09-gtm-plan.md` §2.4, the "OpenClaw lesson"). The goal is honest-by-design: an architect who reads the source before adopting (persona: Priya) should find the exposure surface deliberately gated, the sharp edges documented, and the residual risks tracked, not hidden.
+
+Scope: the surfaces that decide who can drive an agent fleet and what a package can do to the host — relay/adapter send paths, tunnel + authentication + the exposure guard, the `/mcp` endpoint, the marketplace install path, and secrets-in-logs hygiene. Method: five parallel read-only audits over the real code (not memory), each returning findings with `file:line`, severity, and whether the control is done right.
+
+This report is the record. Small, unambiguous fixes landed inline in the same PR (listed under "Fixed inline"). Larger or judgment-heavy items became Linear issues (listed under "Filed as issues"). Nothing here is a claim that a surface is safe to expose beyond what the code enforces.
+
+## Severity summary
+
+| Sev          | Finding                                                                                                                        | Location                                                                                                           | Disposition                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| **Critical** | `git-subdir` marketplace URL is unvalidated; reaches `git` at preview time where the `ext::` transport runs arbitrary commands | `packages/marketplace/src/marketplace-json-schema.ts:96`; spawned at `package-fetcher.ts:458`, `git-subdir.ts:266` | **Fixed inline** (schema allowlist + `GIT_ALLOW_PROTOCOL`)            |
+| **High**     | `canInitiate` consent gate is bypassable — `relay_send` to a `relay.human.telegram.*` subject skips the DOR-239 check          | `apps/server/src/services/relay/notify-target.ts:140`; delivery at `packages/relay/src/adapter-registry.ts:161`    | **Filed** (DOR-277)                                                   |
+| **High**     | Default install exposes every destructive/RCE-class MCP tool unauthenticated on localhost                                      | `apps/server/src/middleware/mcp-auth.ts:62`; tools in `services/core/external-mcp/*`                               | **Filed** (DOR-278) — localhost bind is the sole mitigation           |
+| **Med**      | Symlinks inside a package are copied verbatim and activated → escape/read outside the install root                             | `apps/server/src/services/marketplace/flows/install-plugin.ts:172`                                                 | **Filed** (DOR-279)                                                   |
+| **Med**      | Better Auth signing secret is not permission-checked on read; a group/world-readable file is trusted                           | `apps/server/src/services/core/auth/secret.ts:84`                                                                  | **Fixed inline** (repair-to-0600 + warn on read)                      |
+| **Med**      | Telegram/Slack bot tokens stored in cleartext in `adapters.json` with default (world-readable) file mode                       | `apps/server/src/services/relay/adapter-config.ts:113`                                                             | **Fixed inline** (0600); credential-ref migration **Filed** (DOR-280) |
+| **Med**      | `git-subdir.path` lacks the `..` rejection its sibling relative-path resolver has                                              | `packages/marketplace/src/marketplace-json-schema.ts:97`                                                           | **Fixed inline** (`..` refine)                                        |
+| **Med**      | No app-level rate limit on Better Auth sign-in endpoints (`/api/auth/*` are gate-exempt)                                       | `apps/server/src/services/core/auth/session-gate.ts:56`                                                            | **Filed** (DOR-281) — verify Better Auth's own throttle               |
+| **Med**      | `DORKOS_ALLOW_INSECURE_BIND=true` re-opens an unauthenticated public bind if a container env leaks to bare metal               | `apps/server/src/services/core/auth/exposure-guard.ts:161`                                                         | **By design** — documented in threat model                            |
+| **Low**      | MCP API-key compare used `===`, not constant-time                                                                              | `apps/server/src/middleware/mcp-auth.ts:44,57`                                                                     | **Fixed inline** (`timingSafeEqual`)                                  |
+| **Low**      | Marketplace installs have no checksum/signature; unpinned `sha` = trust-on-first-use on `HEAD`                                 | all source resolvers                                                                                               | **Filed** (DOR-279, folded in)                                        |
+| **Low**      | `TUNNEL_AUTH` basic-auth string is not format-checked before it reaches ngrok                                                  | `apps/server/src/env.ts:69`                                                                                        | Noted; low value                                                      |
+| **Info**     | Relay a2a/console publish routes are prefix-restricted; sender identity is server-injected and unspoofable                     | `apps/server/src/routes/relay.ts:29`; `relay-helpers.ts:29`                                                        | **Done right**                                                        |
+
+## Fixed inline (this PR)
+
+Each is small, unambiguous, and has an existing precedent in the codebase. All shipped with tests.
+
+1. **Marketplace git RCE (Critical).** `git-subdir` source URLs were a bare `z.string()`, so a marketplace entry like `{ source: 'git-subdir', url: "ext::sh -c 'id'" }` executed a shell command when the entry was _previewed_ — before the install consent gate. Two layers now close it:
+   - **Parse-time:** the `git-subdir` `url` must match `https://` / `git://` / `ssh://` / scp-style `git@host:` and must not begin with `-` (git would read a leading `-` as an option). The `path` field now rejects `..`, mirroring the relative-path resolver. `packages/marketplace/src/marketplace-json-schema.ts`.
+   - **Runtime backstop:** every `git` spawn that touches a marketplace URL now runs with `GIT_ALLOW_PROTOCOL=https:ssh:git` (git's authoritative transport allowlist, overrides any config) and `GIT_TERMINAL_PROMPT=0`. New helper `apps/server/src/services/marketplace/source-resolvers/git-safety.ts`, wired into `git-subdir.ts` (`runGit`) and `package-fetcher.ts` (`ls-remote`).
+
+2. **Session-signing secret file perms on read (Med).** `resolveBetterAuthSecret` wrote the secret `0600` but trusted whatever it read back. A file restored from a lax backup, synced dotfiles, or an old loose-umask build could be group/world-readable and leak the key that forges session cookies. The read path now repairs the mode back to `0600` and warns (rather than reject — that would lock the owner out of their own instance). No-op on Windows. `apps/server/src/services/core/auth/secret.ts`.
+
+3. **Adapter tokens at rest (Med).** `adapters.json` holds Telegram/Slack bot tokens in cleartext and was written with the default umask (typically `0644`). It is now written `0600` with a post-rename `chmod` re-assert. `apps/server/src/services/relay/adapter-config.ts`. (Moving these to `keychain:`/`env:`/`file:` credential references, as `config.json` already requires, is the real fix — filed as DOR-280.)
+
+4. **Constant-time MCP key compare (Low).** The static `MCP_API_KEY` and legacy config-key checks used `===`; they now use `crypto.timingSafeEqual` via a length-guarded helper, matching the pattern already used in `workbench-serve/token.ts`. `apps/server/src/middleware/mcp-auth.ts`.
+
+## Filed as issues
+
+Larger or judgment-heavy items, each with the audit detail attached to the Linear issue:
+
+- **DOR-277 (High) — relay `canInitiate` bypass.** The DOR-239 consent gate ("agent may start conversations = off") lives in `resolveNotifyTarget`, which only `relay_notify_user` and the task-completion notifier use. An agent can call `relay_send` / `relay_send_and_wait` / `relay_send_async` with the outbound subject `relay.human.telegram.{adapterId}.{chatId}` and deliver straight through the budget gate to Telegram, never touching `canInitiate`. Worse, `context-builder.ts:330` teaches the agent this subject and offers `relay_send` as an equal alternative. Fix requires moving the initiate check into the publish/delivery layer (or an access-control deny on `relay.agent.* -> relay.human.*`), which is architectural — not an inline change. Until fixed, the per-binding "start conversations" toggle is advisory, not enforced.
+
+- **DOR-278 (High, posture) — default unauthenticated MCP surface.** With no `MCP_API_KEY` and login off (the zero-config default), a local `curl` to `/mcp` can invoke every tool, including `marketplace_install`, `create_extension`, `test_extension` (RCE-class), `relay_send`, `create_agent`, and `tasks_create`. The **exposure guard hard-blocks binding this to the network** (`process.exit(1)` on a non-loopback host without login), so the blast radius is local processes / malware running as the user — but that is a large surface for a fleet controller. Track an opt-in local token or a capability split for destructive tools. Documented in the threat model as an explicit trust assumption.
+
+- **DOR-279 (Med) — marketplace package symlink escape + no integrity pinning.** `install-plugin.ts:172` does a recursive `cp` of package contents (including symlinks) then activates the tree; a package shipping `data -> /etc/passwd` or `data -> ../../other-project` escapes the install root when harness sync later follows it. Fix: strip or realpath-contain symlinks during `stage`. Folded in: no checksum/signature and optional `sha` mean unpinned installs are trust-on-first-use on `HEAD`.
+
+- **DOR-280 (Med) — adapter tokens should be credential references.** `config.json` already forbids raw secrets (schema forces `keychain:`/`env:`/`file:`). Extend the same `CredentialRefSchema` to `adapters.json` so bot tokens are never at rest in cleartext. The 0600 fix above is the interim mitigation.
+
+- **DOR-281 (Med) — auth endpoint rate limiting.** `/api/auth/*` is exempt from the session gate and carries no `express-rate-limit`, unlike `/mcp`, `/a2a`, and `/api/admin`. Verify Better Auth's built-in throttle is enabled; if not, add one to blunt local password brute-force.
+
+## Done right (notable)
+
+The exposure surface is, on the whole, deliberately gated. Worth stating plainly because it is the honest-by-design story:
+
+- **Exposure guard requires both auth-enabled and an owner account** before any non-loopback bind or tunnel start, and enforces it as a hard `process.exit(1)` before `listen` (`exposure-guard.ts:61`, `index.ts:1065`). The A2A gateway carries its own independent exposure check.
+- **Session gate fails closed**, is read per-request (flag flips without restart), lowercases the path to defeat Express case-insensitive-routing bypasses, and correctly gates the SSE streams (`session-gate.ts`).
+- **Relay budget gate (DOR-260)** runs once before _any_ delivery path, so a budget-exhausted message never triggers a paid agent turn; sender identity is server-resolved from the session cwd and cannot be spoofed by tool args.
+- **MCP rate limiting is on by default** (60/60s), origin validation defends against DNS rebinding, and `/api/admin` carries a strict 3-per-5-min limiter.
+- **Secrets never reach logs.** The request logger omits body and headers by design; git clone stderr is token-redacted; config PATCH logs key names only; `GET /api/config` returns booleans for secret _state_ (`tokenConfigured`, `authConfigured`), never values. Raw provider secrets cannot be persisted to `config.json` at all (credential-ref schema).
+
+## Residual risk (accepted, documented)
+
+- `DORKOS_ALLOW_INSECURE_BIND=true` is the one documented way to run `0.0.0.0` with login off. It exists for containers that own their network boundary, defaults off, and logs a loud warning. Copying a container env onto bare metal is the foot-gun; the threat model calls this out.
+- The zero-config localhost MCP surface (DOR-278) is a deliberate trade for a frictionless single-user local tool. It is safe only under the "your machine is your trust boundary" assumption the local-first model already makes.

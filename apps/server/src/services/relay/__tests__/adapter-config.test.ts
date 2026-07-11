@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { readFile } from 'node:fs/promises';
-import { loadAdapterConfig } from '../adapter-config.js';
+import { readFile, writeFile, chmod } from 'node:fs/promises';
+import { loadAdapterConfig, saveAdapterConfig } from '../adapter-config.js';
 import { logger } from '../../../lib/logger.js';
 
 // Mock fs/promises
@@ -9,6 +9,7 @@ vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
   mkdir: vi.fn().mockResolvedValue(undefined),
   rename: vi.fn().mockResolvedValue(undefined),
+  chmod: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock logger
@@ -79,5 +80,26 @@ describe('loadAdapterConfig — removed adapter types', () => {
 
     expect(configs).toHaveLength(1);
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveAdapterConfig — secret-file permissions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('writes adapters.json owner-only (0600) because it holds bot tokens', async () => {
+    await saveAdapterConfig(CONFIG_PATH, [
+      { id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'secret-bot-token' } },
+    ] as never);
+
+    // The atomic write stages to a tmp file with an owner-only create mode...
+    expect(vi.mocked(writeFile)).toHaveBeenCalledWith(
+      `${CONFIG_PATH}.tmp`,
+      expect.any(String),
+      expect.objectContaining({ mode: 0o600 })
+    );
+    // ...and the final path is re-asserted to 0600 after rename.
+    expect(vi.mocked(chmod)).toHaveBeenCalledWith(CONFIG_PATH, 0o600);
   });
 });

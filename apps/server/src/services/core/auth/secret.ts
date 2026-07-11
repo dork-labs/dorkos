@@ -83,7 +83,10 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
 
   try {
     const persisted = fs.readFileSync(secretPath, 'utf8').trim();
-    if (persisted) return persisted;
+    if (persisted) {
+      repairSecretPermissions(secretPath);
+      return persisted;
+    }
   } catch (err) {
     // ENOENT is the expected first-boot case; anything else (e.g. EACCES) is
     // worth surfacing before we overwrite, but is still recoverable by
@@ -104,4 +107,36 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
   fs.chmodSync(secretPath, SECRET_FILE_MODE);
   logger.info('[Auth] Generated a persistent session-signing secret', { path: secretPath });
   return generated;
+}
+
+/**
+ * Ensure a persisted secret file is owner-only on read.
+ *
+ * The secret is written `0600`, but a file restored from a lax-permission
+ * backup, synced from a dotfiles repo, or left by an older build under a loose
+ * umask can end up group- or world-readable — which silently leaks the
+ * session-signing key. Rather than reject (that would lock the owner out of
+ * their own instance), we repair the mode back to `0600` and warn. On Windows,
+ * where POSIX mode bits do not apply, this is a no-op.
+ *
+ * @param secretPath - Absolute path to the persisted secret file.
+ */
+function repairSecretPermissions(secretPath: string): void {
+  if (process.platform === 'win32') return;
+  try {
+    const mode = fs.statSync(secretPath).mode & 0o777;
+    if ((mode & 0o077) !== 0) {
+      fs.chmodSync(secretPath, SECRET_FILE_MODE);
+      logger.warn(
+        '[Auth] Session-signing secret file was readable by other users; tightened it to owner-only (0600)',
+        { path: secretPath, previousMode: mode.toString(8) }
+      );
+    }
+  } catch (err) {
+    // A stat/chmod failure must never block sign-in; the secret already read.
+    logger.warn('[Auth] Could not verify permissions on the signing secret file', {
+      path: secretPath,
+      error: (err as Error).message,
+    });
+  }
 }
