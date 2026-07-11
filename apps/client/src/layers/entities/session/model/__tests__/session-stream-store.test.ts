@@ -142,16 +142,18 @@ describe('useSessionStreamStore', () => {
     store.applyEvent(SID, { type: 'turn_start', seq: 1 });
     store.applyEvent(SID, { type: 'system_status', seq: 2, message: 'Running hook "pre"...' });
     store.applyEvent(SID, {
-      type: 'system_status',
+      type: 'operation_progress',
       seq: 3,
+      operation: 'compaction',
+      state: 'started',
+      determinate: false,
       message: 'Compacting context…',
-      status: 'compacting',
     });
     const s = useSessionStreamStore.getState().getSession(SID);
     expect(s.inProgressTurn.map((e) => e.type)).toEqual([
       'turn_start',
       'system_status',
-      'system_status',
+      'operation_progress',
     ]);
   });
 

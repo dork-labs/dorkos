@@ -8,15 +8,31 @@ import { useSystemStatusEvents } from '../use-system-status-events';
 
 const SID = 'sess-1';
 
+/** A compaction start — the standardized operation_progress `started` phase. */
 function compacting(seq: number): SessionEvent {
-  return { seq, type: 'system_status', message: 'Compacting context…', status: 'compacting' };
+  return {
+    seq,
+    type: 'operation_progress',
+    operation: 'compaction',
+    state: 'started',
+    determinate: false,
+    message: 'Compacting context…',
+  };
 }
 
+/** A compaction resolution — `done` (success) or `failed`. */
 function resolved(seq: number, result: 'success' | 'failed'): SessionEvent {
-  return { seq, type: 'system_status', message: 'done', compactResult: result };
+  return {
+    seq,
+    type: 'operation_progress',
+    operation: 'compaction',
+    state: result === 'success' ? 'done' : 'failed',
+    determinate: false,
+    ...(result === 'failed' ? { error: 'boom' } : {}),
+  };
 }
 
-/** A non-tool hook progress event ("Running hook X…") — message, no status. */
+/** A non-tool hook progress event ("Running hook X…") — message, no operation. */
 function hook(seq: number, name: string): SessionEvent {
   return { seq, type: 'system_status', message: `Running hook "${name}"...` };
 }
@@ -31,153 +47,137 @@ function requesting(seq: number): SessionEvent {
   return { seq, type: 'system_status', message: 'Status: requesting', status: 'requesting' };
 }
 
-describe('useSystemStatusEvents', () => {
-  it('shows the compacting strip while a compaction is in flight', () => {
-    // Real failure mode (DOR-118): the strip's legacy producer was retired, so
-    // "Compacting context…" never showed under the durable /events contract.
-    const setSystemStatus = vi.fn();
+describe('useSystemStatusEvents — operation progress (compaction)', () => {
+  it('shows the compaction bar while a compaction is in flight', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     renderHook(() =>
-      useSystemStatusEvents(SID, [{ seq: 6, type: 'turn_start' }, compacting(7)], setSystemStatus)
+      useSystemStatusEvents(SID, [{ seq: 6, type: 'turn_start' }, compacting(7)], setOp, setStatus)
     );
-    expect(setSystemStatus).toHaveBeenCalledWith({
+    expect(setOp).toHaveBeenCalledWith({
+      operation: 'compaction',
+      determinate: false,
       message: 'Compacting context…',
-      status: 'compacting',
     });
   });
 
-  it('clears the strip when the compaction resolves (success)', () => {
-    const setSystemStatus = vi.fn();
+  it('clears the bar when the compaction resolves (success)', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     const { rerender } = renderHook(
-      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setSystemStatus),
+      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setOp, setStatus),
       { initialProps: { turn: [compacting(6)] as SessionEvent[] } }
     );
-    expect(setSystemStatus).toHaveBeenLastCalledWith({
-      message: 'Compacting context…',
-      status: 'compacting',
-    });
+    expect(setOp).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'compaction' }));
 
     rerender({ turn: [compacting(6), resolved(7, 'success')] });
-    expect(setSystemStatus).toHaveBeenLastCalledWith(null);
+    expect(setOp).toHaveBeenLastCalledWith(null);
   });
 
-  it('clears the strip when the compaction resolves with a failure', () => {
-    const setSystemStatus = vi.fn();
+  it('clears the bar when the compaction resolves with a failure', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     const { rerender } = renderHook(
-      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setSystemStatus),
+      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setOp, setStatus),
       { initialProps: { turn: [compacting(6)] as SessionEvent[] } }
     );
-    // The failure detail surfaces inline (bubble projection); the strip just clears.
+    // The failure detail surfaces inline (bubble projection); the bar just clears.
     rerender({ turn: [compacting(6), resolved(7, 'failed')] });
-    expect(setSystemStatus).toHaveBeenLastCalledWith(null);
+    expect(setOp).toHaveBeenLastCalledWith(null);
   });
 
-  it('clears the strip when the turn ends without an explicit resolution', () => {
-    // Real failure mode: if compaction never emits its resolving status (turn
-    // aborted), the strip must not get stuck — the empty turn clears it.
-    const setSystemStatus = vi.fn();
+  it('clears the bar when the turn ends without an explicit resolution', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     const { rerender } = renderHook(
-      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setSystemStatus),
+      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setOp, setStatus),
       { initialProps: { turn: [compacting(6)] as SessionEvent[] } }
     );
     rerender({ turn: [] });
-    expect(setSystemStatus).toHaveBeenLastCalledWith(null);
+    expect(setOp).toHaveBeenLastCalledWith(null);
   });
 
-  it('re-shows the strip on a snapshot hydrated mid-compaction (reconnect)', () => {
-    // A reconnect during an active compaction hydrates the turn with the
-    // unresolved `compacting` event — the strip is re-derived and shown, so the
-    // operator does not lose the indicator across the gap.
-    const setSystemStatus = vi.fn();
+  it('re-shows the bar on a snapshot hydrated mid-compaction (reconnect)', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     renderHook(() =>
-      useSystemStatusEvents(SID, [{ seq: 4, type: 'turn_start' }, compacting(5)], setSystemStatus)
+      useSystemStatusEvents(SID, [{ seq: 4, type: 'turn_start' }, compacting(5)], setOp, setStatus)
     );
-    expect(setSystemStatus).toHaveBeenCalledWith({
-      message: 'Compacting context…',
-      status: 'compacting',
-    });
+    expect(setOp).toHaveBeenCalledWith(expect.objectContaining({ operation: 'compaction' }));
   });
 
   it('does not get stuck when the resolution landed during a disconnect (snapshot has both)', () => {
-    // The snapshot taken after reconnect carries BOTH the compacting event and
-    // its resolution — derived state is "resolved", so the strip is never shown.
-    const setSystemStatus = vi.fn();
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     renderHook(() =>
-      useSystemStatusEvents(SID, [compacting(4), resolved(5, 'success')], setSystemStatus)
+      useSystemStatusEvents(SID, [compacting(4), resolved(5, 'success')], setOp, setStatus)
     );
-    expect(setSystemStatus).not.toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'compacting' })
-    );
+    expect(setOp).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'compaction' }));
   });
 
   it('does not write redundantly while the compaction state is unchanged', () => {
-    const setSystemStatus = vi.fn();
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     const turn: SessionEvent[] = [compacting(6)];
     const { rerender } = renderHook(
-      ({ t }: { t: SessionEvent[] }) => useSystemStatusEvents(SID, t, setSystemStatus),
+      ({ t }: { t: SessionEvent[] }) => useSystemStatusEvents(SID, t, setOp, setStatus),
       { initialProps: { t: turn } }
     );
-    expect(setSystemStatus).toHaveBeenCalledTimes(1);
-    // A new turn array with the same compaction state must not re-write the strip.
+    expect(setOp).toHaveBeenCalledTimes(1);
+    // A new turn array with the same compaction state must not re-write the bar.
     rerender({ t: [compacting(6)] });
-    expect(setSystemStatus).toHaveBeenCalledTimes(1);
+    expect(setOp).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the compaction bar through content events (durable, unlike hooks)', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
+    renderHook(() => useSystemStatusEvents(SID, [compacting(1), textDelta(2)], setOp, setStatus));
+    expect(setOp).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'compaction' }));
+  });
+
+  it('does nothing without a session id', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
+    renderHook(() => useSystemStatusEvents(null, [compacting(1)], setOp, setStatus));
+    expect(setOp).not.toHaveBeenCalled();
+    expect(setStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('useSystemStatusEvents — session hooks', () => {
   it('shows a session hook flash while the hook is running (DOR-125)', () => {
-    // A non-tool hook ("Running hook X…") was orphaned by PR #18. While it runs
-    // and nothing else has streamed, the strip surfaces it.
-    const setSystemStatus = vi.fn();
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     renderHook(() =>
       useSystemStatusEvents(
         SID,
         [{ seq: 1, type: 'turn_start' }, hook(2, 'inject-context')],
-        setSystemStatus
+        setOp,
+        setStatus
       )
     );
-    expect(setSystemStatus).toHaveBeenCalledWith({
-      message: 'Running hook "inject-context"...',
-      status: null,
-    });
+    expect(setStatus).toHaveBeenCalledWith({ message: 'Running hook "inject-context"...' });
   });
 
   it('clears the hook flash once the model resumes (next turn event)', () => {
-    // The flash is transient: the first event after the hook (the model
-    // streaming) clears it so the crafted rotating verb takes over instead of a
-    // frozen label.
-    const setSystemStatus = vi.fn();
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     const { rerender } = renderHook(
-      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setSystemStatus),
+      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setOp, setStatus),
       { initialProps: { turn: [hook(1, 'pre')] as SessionEvent[] } }
     );
-    expect(setSystemStatus).toHaveBeenLastCalledWith({
-      message: 'Running hook "pre"...',
-      status: null,
-    });
+    expect(setStatus).toHaveBeenLastCalledWith({ message: 'Running hook "pre"...' });
     rerender({ turn: [hook(1, 'pre'), textDelta(2)] });
-    expect(setSystemStatus).toHaveBeenLastCalledWith(null);
+    expect(setStatus).toHaveBeenLastCalledWith(null);
   });
 
   it('does not surface "requesting" — the rotating verb owns the thinking phase (DOR-125)', () => {
-    const setSystemStatus = vi.fn();
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
     renderHook(() =>
-      useSystemStatusEvents(SID, [{ seq: 1, type: 'turn_start' }, requesting(2)], setSystemStatus)
+      useSystemStatusEvents(SID, [{ seq: 1, type: 'turn_start' }, requesting(2)], setOp, setStatus)
     );
-    expect(setSystemStatus).not.toHaveBeenCalled();
-  });
-
-  it('keeps the compaction strip through content events (durable, unlike hooks)', () => {
-    // A content delta clears a transient hook but must NOT clear an in-flight
-    // compaction — compaction only resolves via compactResult or turn end.
-    const setSystemStatus = vi.fn();
-    renderHook(() => useSystemStatusEvents(SID, [compacting(1), textDelta(2)], setSystemStatus));
-    expect(setSystemStatus).toHaveBeenLastCalledWith({
-      message: 'Compacting context…',
-      status: 'compacting',
-    });
-  });
-
-  it('does nothing without a session id', () => {
-    const setSystemStatus = vi.fn();
-    renderHook(() => useSystemStatusEvents(null, [compacting(1)], setSystemStatus));
-    expect(setSystemStatus).not.toHaveBeenCalled();
+    expect(setStatus).not.toHaveBeenCalled();
   });
 });

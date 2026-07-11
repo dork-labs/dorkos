@@ -154,6 +154,7 @@ export function ChatPanel({
     isRateLimited,
     rateLimitRetryAfter,
     systemStatus,
+    operationProgress,
     promptSuggestions,
     syncConnectionState,
     retryMessage,
@@ -302,6 +303,7 @@ export function ChatPanel({
         isRateLimited={isRateLimited ?? false}
         rateLimitRetryAfter={rateLimitRetryAfter ?? null}
         systemStatus={systemStatus}
+        operationProgress={operationProgress}
       />
 
       <AnimatePresence>

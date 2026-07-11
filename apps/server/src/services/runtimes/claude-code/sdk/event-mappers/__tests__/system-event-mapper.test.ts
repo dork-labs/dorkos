@@ -119,26 +119,34 @@ describe('mapSystemEvent — DOR-108 subtypes', () => {
   });
 
   describe('status', () => {
-    it('forwards the raw status for an in-flight compaction', async () => {
+    it('maps an in-flight compaction to an operation_progress started (DOR-110)', async () => {
       const events = await collect(
         sys({ type: 'system', subtype: 'status', status: 'compacting' })
       );
       expect(events).toEqual([
-        { type: 'system_status', data: { message: 'Status: compacting', status: 'compacting' } },
+        {
+          type: 'operation_progress',
+          data: {
+            operation: 'compaction',
+            state: 'started',
+            determinate: false,
+            message: 'Compacting context…',
+          },
+        },
       ]);
     });
 
-    it('forwards compact_result when a compaction resolves successfully', async () => {
+    it('maps a successful compaction resolution to operation_progress done', async () => {
       const events = await collect(
         sys({ type: 'system', subtype: 'status', status: null, compact_result: 'success' })
       );
       expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('system_status');
-      expect(events[0].data).toMatchObject({ compactResult: 'success' });
-      expect(events[0].data).not.toHaveProperty('compactError');
+      expect(events[0].type).toBe('operation_progress');
+      expect(events[0].data).toMatchObject({ operation: 'compaction', state: 'done' });
+      expect(events[0].data).not.toHaveProperty('error');
     });
 
-    it('forwards compact_result and compact_error on failure', async () => {
+    it('maps a failed compaction resolution to operation_progress failed + error', async () => {
       const events = await collect(
         sys({
           type: 'system',
@@ -149,10 +157,21 @@ describe('mapSystemEvent — DOR-108 subtypes', () => {
         })
       );
       expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('operation_progress');
       expect(events[0].data).toMatchObject({
-        compactResult: 'failed',
-        compactError: 'context too large to summarize',
+        operation: 'compaction',
+        state: 'failed',
+        error: 'context too large to summarize',
       });
+    });
+
+    it('forwards a generic (non-compaction) status on the system_status channel', async () => {
+      const events = await collect(
+        sys({ type: 'system', subtype: 'status', status: 'requesting' })
+      );
+      expect(events).toEqual([
+        { type: 'system_status', data: { message: 'Status: requesting', status: 'requesting' } },
+      ]);
     });
 
     it('yields nothing when the status carries no renderable signal', async () => {

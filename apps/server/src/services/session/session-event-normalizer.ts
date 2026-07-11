@@ -198,20 +198,32 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return boundary;
     }
 
-    // A transient operational status (e.g. "Compacting context…") and the
-    // compaction resolution. Drives the client status strip and the failed-
-    // compaction error surface; forward only the fields present.
+    // A transient operational status (hook progress, a raw SDK `status` token).
+    // Drives the client status strip; forward only the fields present. Operation
+    // lifecycle (compaction) rides `operation_progress`, not this member.
     case 'system_status': {
       const status: RawOf<'system_status'> = {
         type: 'system_status',
         message: String(data.message ?? ''),
         ...(data.status !== undefined ? { status: String(data.status) } : {}),
-        ...(data.compactResult !== undefined
-          ? { compactResult: data.compactResult as RawOf<'system_status'>['compactResult'] }
-          : {}),
-        ...(data.compactError !== undefined ? { compactError: String(data.compactError) } : {}),
       };
       return status;
+    }
+
+    // Runtime-agnostic operation progress (DOR-110 — compaction start/done/failed).
+    // Drives the status strip's progress treatment and the failed-compaction error
+    // surface; forward only the fields present so a lean phase stays lean.
+    case 'operation_progress': {
+      const progress: RawOf<'operation_progress'> = {
+        type: 'operation_progress',
+        operation: data.operation as RawOf<'operation_progress'>['operation'],
+        state: data.state as RawOf<'operation_progress'>['state'],
+        determinate: Boolean(data.determinate),
+        ...(data.percent !== undefined ? { percent: Number(data.percent) } : {}),
+        ...(data.message !== undefined ? { message: String(data.message) } : {}),
+        ...(data.error !== undefined ? { error: String(data.error) } : {}),
+      };
+      return progress;
     }
 
     // A pending interaction was cancelled WITHOUT an operator action (SDK

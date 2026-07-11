@@ -90,24 +90,57 @@ export async function* mapSystemEvent(
       return;
     }
 
-    // Handle system status messages ("Compacting context...", permission mode changes, 'requesting').
-    // The status that *resolves* an in-flight compaction also carries `compact_result`
-    // ('success' | 'failed') and, on failure, `compact_error` — forward both so the
-    // client can clear the "Compacting context…" state or surface the failure (DOR-108).
+    // Handle system status messages. Compaction lifecycle maps to the
+    // runtime-agnostic `operation_progress` contract (DOR-110): the in-flight
+    // `status: 'compacting'` opens an indeterminate operation (the SDK exposes no
+    // percent — parity with the CLI's own indeterminate bar), and the resolving
+    // status carrying `compact_result`/`compact_error` closes it done/failed.
+    // Every OTHER status (`'requesting'`, permission-mode changes, generic
+    // tokens) stays on the generic `system_status` channel.
     if (message.subtype === 'status') {
       const msg = message as Record<string, unknown>;
       const status = msg.status as string | undefined;
       const text = (msg.body as string) ?? (msg.message as string) ?? '';
       const compactResult = msg.compact_result as 'success' | 'failed' | undefined;
       const compactError = msg.compact_error as string | undefined;
-      if (text || status || compactResult || compactError) {
+
+      // Compaction start.
+      if (status === 'compacting') {
+        yield {
+          type: 'operation_progress',
+          data: {
+            operation: 'compaction',
+            state: 'started',
+            determinate: false,
+            message: 'Compacting context…',
+          },
+        };
+        return;
+      }
+
+      // Compaction resolution. Success ALSO fires a separate `compact_boundary`
+      // (the durable transcript row); this `done` just clears the live strip.
+      // Failure fires NO boundary, so this `failed` carries the error surface.
+      if (compactResult !== undefined) {
+        yield {
+          type: 'operation_progress',
+          data: {
+            operation: 'compaction',
+            state: compactResult === 'failed' ? 'failed' : 'done',
+            determinate: false,
+            ...(compactError ? { error: compactError } : {}),
+          },
+        };
+        return;
+      }
+
+      // Generic (non-compaction) status.
+      if (text || status) {
         yield {
           type: 'system_status',
           data: {
             message: text || (status ? `Status: ${status}` : ''),
             ...(status ? { status } : {}),
-            ...(compactResult ? { compactResult } : {}),
-            ...(compactError ? { compactError } : {}),
           },
         };
       }

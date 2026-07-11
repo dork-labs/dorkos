@@ -2,12 +2,10 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { Info, RefreshCw, Shield } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { DEFAULT_THEME } from '../ui/status/inference-themes';
 import {
   deriveStripState,
-  deriveSystemIcon,
-  deriveStatusCopy,
   ChatStatusStrip,
   type StripStateInput,
 } from '../ui/status/ChatStatusStrip';
@@ -36,6 +34,7 @@ describe('deriveStripState', () => {
     countdown: null,
     isWaitingForUser: false,
     waitingType: 'approval',
+    operationProgress: null,
     systemStatus: null,
     elapsed: '0m 00s',
     verb: 'Thinking',
@@ -72,7 +71,7 @@ describe('deriveStripState', () => {
   it('uses skull icon and no animation for bypass verbs', () => {
     const state = deriveStripState({ ...baseInput, status: 'streaming', isBypassVerb: true });
     if (state.type === 'streaming') {
-      expect(state.icon).toBe('\u2620');
+      expect(state.icon).toBe('☠');
       expect(state.iconAnimation).toBeNull();
     }
   });
@@ -101,12 +100,16 @@ describe('deriveStripState', () => {
     }
   });
 
-  it('waiting takes priority over system message (priority 2 > 3)', () => {
+  it('waiting takes priority over operation-progress (priority 2 > 3)', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
       isWaitingForUser: true,
-      systemStatus: { message: 'Compacting context...', status: null },
+      operationProgress: {
+        operation: 'compaction',
+        determinate: false,
+        message: 'Compacting context…',
+      },
     });
     expect(state.type).toBe('waiting');
   });
@@ -125,24 +128,72 @@ describe('deriveStripState', () => {
     }
   });
 
-  it('system message takes priority over streaming (priority 3 > 4)', () => {
+  it('operation-progress takes priority over system-message (priority 3 > 4)', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
-      systemStatus: { message: 'Compacting context...', status: null },
+      operationProgress: {
+        operation: 'compaction',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+      systemStatus: { message: 'Running hook "format"…' },
+    });
+    expect(state.type).toBe('operation-progress');
+  });
+
+  it('operation-progress carries the producer message and indeterminate flag', () => {
+    const state = deriveStripState({
+      ...baseInput,
+      status: 'streaming',
+      operationProgress: {
+        operation: 'compaction',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+    });
+    if (state.type === 'operation-progress') {
+      expect(state.message).toBe('Compacting context…');
+      expect(state.determinate).toBe(false);
+      expect(state.percent).toBeNull();
+    }
+  });
+
+  it('operation-progress carries a determinate percent when present', () => {
+    const state = deriveStripState({
+      ...baseInput,
+      status: 'streaming',
+      operationProgress: {
+        operation: 'compaction',
+        determinate: true,
+        percent: 42,
+        message: 'Compacting context…',
+      },
+    });
+    if (state.type === 'operation-progress') {
+      expect(state.determinate).toBe(true);
+      expect(state.percent).toBe(42);
+    }
+  });
+
+  it('system message takes priority over streaming (priority 4 > 5)', () => {
+    const state = deriveStripState({
+      ...baseInput,
+      status: 'streaming',
+      systemStatus: { message: 'Running hook "format"…' },
     });
     expect(state.type).toBe('system-message');
   });
 
-  it('system message includes message and icon', () => {
+  it('system message includes the message and the Info icon', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
-      systemStatus: { message: 'Compacting context...', status: null },
+      systemStatus: { message: 'Running hook "format"…' },
     });
     if (state.type === 'system-message') {
-      expect(state.message).toBe('Compacting context...');
-      expect(state.icon).toBe(RefreshCw);
+      expect(state.message).toBe('Running hook "format"…');
+      expect(state.icon).toBe(Info);
     }
   });
 
@@ -150,44 +201,9 @@ describe('deriveStripState', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'idle',
-      systemStatus: { message: 'Permission mode changed', status: null },
+      systemStatus: { message: 'Running hook "lint"…' },
     });
     expect(state.type).toBe('system-message');
-  });
-
-  it('does not map "requesting" \u2014 falls back to raw message (Thinking is the verb, DOR-125)', () => {
-    const state = deriveStripState({
-      ...baseInput,
-      systemStatus: { message: 'Status: requesting', status: 'requesting' },
-    });
-    expect(state.type).toBe('system-message');
-    if (state.type === 'system-message') {
-      expect(state.message).toBe('Status: requesting');
-    }
-  });
-
-  it('uses compacting copy when status is compacting', () => {
-    const state = deriveStripState({
-      ...baseInput,
-      systemStatus: { message: 'Status: compacting', status: 'compacting' },
-    });
-    expect(state.type).toBe('system-message');
-    if (state.type === 'system-message') {
-      expect(state.message).toBe('Compacting context\u2026');
-      // icon is still keyed on the final rendered string, so "compacting" hits RefreshCw
-      expect(state.icon).toBe(RefreshCw);
-    }
-  });
-
-  it('falls back to raw message when status is unknown', () => {
-    const state = deriveStripState({
-      ...baseInput,
-      systemStatus: { message: 'Reading knowledge files…', status: null },
-    });
-    expect(state.type).toBe('system-message');
-    if (state.type === 'system-message') {
-      expect(state.message).toBe('Reading knowledge files…');
-    }
   });
 
   it('returns complete when showComplete is true', () => {
@@ -199,7 +215,7 @@ describe('deriveStripState', () => {
     }
   });
 
-  it('streaming takes priority over complete (priority 4 > 5)', () => {
+  it('streaming takes priority over complete (priority 5 > 6)', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
@@ -215,59 +231,7 @@ describe('deriveStripState', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 2: deriveSystemIcon() tests
-// ---------------------------------------------------------------------------
-
-describe('deriveSystemIcon', () => {
-  it('returns RefreshCw for compact messages', () => {
-    expect(deriveSystemIcon('Compacting context...')).toBe(RefreshCw);
-  });
-
-  it('returns RefreshCw for uppercase compact messages', () => {
-    expect(deriveSystemIcon('COMPACT OPERATION IN PROGRESS')).toBe(RefreshCw);
-  });
-
-  it('returns Shield for permission messages', () => {
-    expect(deriveSystemIcon('Permission mode changed')).toBe(Shield);
-  });
-
-  it('returns Info for unknown messages', () => {
-    expect(deriveSystemIcon('Some other status')).toBe(Info);
-  });
-
-  it('returns Info for empty string', () => {
-    expect(deriveSystemIcon('')).toBe(Info);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Group 3: deriveStatusCopy() tests
-// ---------------------------------------------------------------------------
-
-describe('deriveStatusCopy', () => {
-  it('returns null for requesting — Thinking is the rotating verb, not the strip (DOR-125)', () => {
-    expect(deriveStatusCopy('requesting')).toBeNull();
-  });
-
-  it('returns "Compacting context…" for compacting', () => {
-    expect(deriveStatusCopy('compacting')).toBe('Compacting context\u2026');
-  });
-
-  it('returns null for unknown status (forward-compat)', () => {
-    expect(deriveStatusCopy('tool_waiting')).toBeNull();
-  });
-
-  it('returns null for null', () => {
-    expect(deriveStatusCopy(null)).toBeNull();
-  });
-
-  it('returns null for undefined', () => {
-    expect(deriveStatusCopy(undefined)).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Group 4: ChatStatusStrip component rendering tests
+// Group 2: ChatStatusStrip component rendering tests
 // ---------------------------------------------------------------------------
 
 describe('ChatStatusStrip component', () => {
@@ -360,28 +324,54 @@ describe('ChatStatusStrip component', () => {
     expect(screen.getByText(/Rate limited.*retrying shortly/)).toBeInTheDocument();
   });
 
-  it('renders system message with contextual icon', () => {
+  it('renders an indeterminate operation-progress bar for compaction (DOR-110)', () => {
     render(
       <ChatStatusStrip
-        status="idle"
-        streamStartTime={null}
+        status="streaming"
+        streamStartTime={Date.now()}
         estimatedTokens={0}
-        systemStatus={{ message: 'Compacting context...', status: null }}
+        systemStatus={null}
+        operationProgress={{
+          operation: 'compaction',
+          determinate: false,
+          message: 'Compacting context…',
+        }}
       />
     );
-    expect(screen.getByTestId('chat-status-strip-system-message')).toBeInTheDocument();
-    expect(screen.getByText('Compacting context...')).toBeInTheDocument();
+    const bar = screen.getByTestId('chat-status-strip-operation-progress');
+    expect(bar).toBeInTheDocument();
+    expect(bar).toHaveAttribute('data-determinate', 'false');
+    expect(bar).toHaveTextContent('Compacting context…');
+  });
+
+  it('renders a determinate operation-progress bar when a percent is present', () => {
+    render(
+      <ChatStatusStrip
+        status="streaming"
+        streamStartTime={Date.now()}
+        estimatedTokens={0}
+        systemStatus={null}
+        operationProgress={{
+          operation: 'compaction',
+          determinate: true,
+          percent: 65,
+          message: 'Compacting context…',
+        }}
+      />
+    );
+    const bar = screen.getByTestId('chat-status-strip-operation-progress');
+    expect(bar).toHaveAttribute('data-determinate', 'true');
   });
 
   it('renders a session hook message in the strip (DOR-125)', () => {
-    // Hooks are the real non-compaction state the strip surfaces. ('requesting'
+    // Hooks are the real non-operation state the strip surfaces. ('requesting'
     // is never forwarded — the rotating verb owns the thinking phase.)
     render(
       <ChatStatusStrip
         status="streaming"
         streamStartTime={Date.now()}
         estimatedTokens={0}
-        systemStatus={{ message: 'Running hook "format"...', status: null }}
+        systemStatus={{ message: 'Running hook "format"...' }}
       />
     );
     expect(screen.getByTestId('chat-status-strip-system-message')).toHaveTextContent(
@@ -391,7 +381,7 @@ describe('ChatStatusStrip component', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 5: Lifecycle tests
+// Group 3: Lifecycle tests
 // ---------------------------------------------------------------------------
 
 describe('ChatStatusStrip lifecycle', () => {

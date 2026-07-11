@@ -457,16 +457,17 @@ describe('projectInProgressTurn', () => {
     });
   });
 
-  it('synthesizes a failed compaction row from system_status compactResult:failed (DOR-118)', () => {
-    // Purpose: a failed compaction fires NO compact_boundary, so its only signal
-    // is system_status — surface that inline as a failed row carrying the error.
+  it('synthesizes a failed compaction row from operation_progress state:failed (DOR-110)', () => {
+    // Purpose: a failed compaction fires NO compact_boundary, so its only durable
+    // signal is operation_progress — surface that inline as a failed row + error.
     const events: SessionEvent[] = [
       {
         seq: 1,
-        type: 'system_status',
-        message: 'Status: compacting',
-        compactResult: 'failed',
-        compactError: 'summarization failed',
+        type: 'operation_progress',
+        operation: 'compaction',
+        state: 'failed',
+        determinate: false,
+        error: 'summarization failed',
       },
     ];
     expect(projectInProgressTurn(events)).toEqual([
@@ -524,10 +525,11 @@ describe('projectInProgressTurn', () => {
     expect(detailsOnly).toEqual([{ type: 'error', message: 'm', details: 'HTTP 529' }]);
   });
 
-  it('skips turn_start / turn_end / status_change / todo_update / non-failed system_status', () => {
+  it('skips turn_start / turn_end / status_change / todo_update / system_status / non-failed operation_progress', () => {
     // Purpose: lifecycle and status events drive the projection/status bar, not
-    // the assistant bubble, so they produce no parts. An in-flight (compacting)
-    // or successful system_status drives the strip, not the transcript.
+    // the assistant bubble, so they produce no parts. A compaction start
+    // (operation_progress started) and its done resolution drive the strip, not
+    // the transcript; a system_status hook flash likewise renders no bubble part.
     const events: SessionEvent[] = [
       { seq: 1, type: 'turn_start' },
       {
@@ -541,9 +543,23 @@ describe('projectInProgressTurn', () => {
         action: 'snapshot',
         task: { id: 'x', subject: 'do', status: 'pending' },
       },
-      { seq: 4, type: 'system_status', message: 'Compacting context…', status: 'compacting' },
-      { seq: 5, type: 'system_status', message: 'done', compactResult: 'success' },
-      { seq: 6, type: 'turn_end' },
+      { seq: 4, type: 'system_status', message: 'Running hook "fmt"…' },
+      {
+        seq: 5,
+        type: 'operation_progress',
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+      {
+        seq: 6,
+        type: 'operation_progress',
+        operation: 'compaction',
+        state: 'done',
+        determinate: false,
+      },
+      { seq: 7, type: 'turn_end' },
     ];
     expect(projectInProgressTurn(events)).toEqual([]);
   });

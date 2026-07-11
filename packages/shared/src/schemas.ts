@@ -60,6 +60,7 @@ export const StreamEventTypeSchema = z
     'background_task_done',
     'subagent_text_delta',
     'system_status',
+    'operation_progress',
     'memory_recall',
     'compact_boundary',
     'prompt_suggestion',
@@ -883,22 +884,71 @@ export const SystemStatusEventSchema = z
   .object({
     message: z.string(),
     /**
-     * Raw SDK status value (SDK 0.2.108+ — e.g., `'requesting'`, `'compacting'`).
-     * `message` carries a human-readable fallback for renderers that ignore this field.
+     * Raw SDK status value (SDK 0.2.108+ — e.g., `'requesting'`). A generic,
+     * runtime-shaped status channel: `message` carries the human-readable
+     * fallback for renderers that ignore this field. Operation lifecycle
+     * (compaction start/done/failure) is NOT reported here — it rides the
+     * runtime-agnostic {@link OperationProgressEventSchema}.
      */
     status: z.string().optional(),
-    /**
-     * Terminal outcome of a compaction the in-flight `status` reported (SDK
-     * `compact_result`). Present on the resolving status message so a client can
-     * clear the "Compacting context…" state or surface a failure.
-     */
-    compactResult: z.enum(['success', 'failed']).optional(),
-    /** Human-readable failure detail when `compactResult` is `'failed'` (SDK `compact_error`). */
-    compactError: z.string().optional(),
   })
   .openapi('SystemStatusEvent');
 
 export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
+
+/**
+ * The named long-running operations a runtime can report progress for. An
+ * extensible union: today only `compaction` (context-window summarization), but
+ * a runtime that exposes indexing, cloning, or model-download progress adds its
+ * kind here and every consumer keeps working (unknown kinds degrade to the
+ * generic bar treatment). Runtime-agnostic by construction.
+ */
+export const OperationKindSchema = z.enum(['compaction']).openapi('OperationKind');
+
+export type OperationKind = z.infer<typeof OperationKindSchema>;
+
+/** Lifecycle phase of an operation: it begins, then resolves to done or failed. */
+export const OperationStateSchema = z.enum(['started', 'done', 'failed']).openapi('OperationState');
+
+export type OperationState = z.infer<typeof OperationStateSchema>;
+
+/**
+ * Runtime-agnostic progress for a named long-running operation (DOR-110). The
+ * single structured contract that replaces per-runtime, stringly-typed progress
+ * signals (the old `system_status` `compactResult`/`compacting` fields the
+ * client string-matched). Every runtime maps its native progress onto this
+ * shape; a runtime that cannot observe a start simply omits the `started`
+ * event (honest degradation), and the client renders whatever phases arrive.
+ *
+ * Phase semantics: a `started` shows the progress treatment (an indeterminate
+ * bar when `determinate` is false, a `percent` bar when true); a `done` or
+ * `failed` resolves it. On `failed`, `error` carries the human-readable reason.
+ * `message` is optional operation-labelling copy (e.g. "Compacting context…")
+ * the producer supplies, so the client never has to synthesize or string-match
+ * copy from a status token.
+ */
+export const OperationProgressEventSchema = z
+  .object({
+    /** Which operation this progress is for (extensible union). */
+    operation: OperationKindSchema,
+    /** Lifecycle phase: `started` opens the treatment, `done`/`failed` resolve it. */
+    state: OperationStateSchema,
+    /**
+     * Whether `percent` is meaningful. `false` → render an indeterminate bar
+     * (the runtime cannot report completion fraction — e.g. SDK compaction
+     * exposes none, so parity with the CLI's own indeterminate bar is honest).
+     */
+    determinate: z.boolean(),
+    /** Completion fraction 0–100, present only when `determinate` is true. */
+    percent: z.number().min(0).max(100).optional(),
+    /** Optional human-readable operation label (e.g. "Compacting context…"). */
+    message: z.string().optional(),
+    /** Human-readable failure reason; present only when `state` is `failed`. */
+    error: z.string().optional(),
+  })
+  .openapi('OperationProgressEvent');
+
+export type OperationProgressEvent = z.infer<typeof OperationProgressEventSchema>;
 
 /**
  * A single memory entry surfaced by the SDK — either a recalled file (with a real
@@ -1103,6 +1153,7 @@ export const StreamEventSchema = z
       BackgroundTaskDoneEventSchema,
       SubagentTextDeltaEventSchema,
       SystemStatusEventSchema,
+      OperationProgressEventSchema,
       MemoryRecallEventSchema,
       CompactBoundaryEventSchema,
       PromptSuggestionEventSchema,
@@ -1325,10 +1376,10 @@ export type PermissionDeniedPart = z.infer<typeof PermissionDeniedPartSchema>;
 /**
  * An inline row in the message stream marking a context-window compaction.
  * Sourced from the `compact_boundary` session event on success (carrying the
- * SDK `compact_metadata`), or synthesized from a `system_status`
- * `compactResult: 'failed'` on failure (no boundary fires). The renderer shows
- * "Compacted — N tokens summarized (manual/auto)" or, when `failed`, an error
- * surface carrying `error`.
+ * SDK `compact_metadata`), or synthesized from an `operation_progress`
+ * `{ operation: 'compaction', state: 'failed' }` on failure (no boundary
+ * fires). The renderer shows "Compacted — N tokens summarized (manual/auto)"
+ * or, when `failed`, an error surface carrying `error`.
  */
 export const CompactBoundaryPartSchema = z
   .object({

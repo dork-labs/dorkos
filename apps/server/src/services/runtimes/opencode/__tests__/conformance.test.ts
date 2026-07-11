@@ -78,10 +78,27 @@ import {
   opencodeErrorTurn,
   opencodeSimpleTurn,
   serverConnected,
+  sessionCompacted,
+  sessionIdle,
   sessionInfo,
+  statusEvent,
   textPart,
   userMessage,
 } from './opencode-sse-fixtures.js';
+
+/**
+ * A turn that compacts before going idle. OpenCode reports compaction as a
+ * single post-hoc `session.compacted` — the mapper emits an `operation_progress`
+ * `done` (honest degradation: no start signal) plus the `compact_boundary` row.
+ */
+function opencodeCompactingTurn(sessionID: string): OpenCodeWireEvent[] {
+  return [
+    statusEvent(sessionID, { type: 'busy' }),
+    sessionCompacted(sessionID),
+    statusEvent(sessionID, { type: 'idle' }),
+    sessionIdle(sessionID),
+  ];
+}
 
 // A real sidecar spawns `opencode serve` with the session's directory, which
 // must exist; mocked turns never touch the filesystem, so the fixed fake path
@@ -204,6 +221,12 @@ runtimeConformance(
               provider: makeMockedProvider(
                 opencodeErrorTurn(OC_SESSION_A, 'Simulated OpenCode turn failure')
               ),
+            }),
+          // A scripted compaction can't be forced against a live sidecar, so the
+          // operation_progress gate runs only in mocked mode (DOR-110).
+          makeCompactingRuntime: () =>
+            new OpenCodeRuntime({
+              provider: makeMockedProvider(opencodeCompactingTurn(OC_SESSION_A)),
             }),
         }),
   }

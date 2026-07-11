@@ -395,24 +395,44 @@ describe('toRawSessionEvent', () => {
       expected: { type: 'compact_boundary', preTokens: 0 },
     },
     {
-      name: 'system_status → system_status (in-flight compacting, DOR-118)',
+      name: 'system_status → system_status (hook flash)',
       input: {
         type: 'system_status',
-        data: { message: 'Compacting context…', status: 'compacting' },
+        data: { message: 'Running hook "format"…' },
       },
-      expected: { type: 'system_status', message: 'Compacting context…', status: 'compacting' },
+      expected: { type: 'system_status', message: 'Running hook "format"…' },
     },
     {
-      name: 'system_status → system_status (failed compaction carries compactError, DOR-118)',
+      name: 'operation_progress → operation_progress (compaction started, DOR-110)',
       input: {
-        type: 'system_status',
-        data: { message: 'Status: compacting', compactResult: 'failed', compactError: 'boom' },
+        type: 'operation_progress',
+        data: {
+          operation: 'compaction',
+          state: 'started',
+          determinate: false,
+          message: 'Compacting context…',
+        },
       },
       expected: {
-        type: 'system_status',
-        message: 'Status: compacting',
-        compactResult: 'failed',
-        compactError: 'boom',
+        type: 'operation_progress',
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+    },
+    {
+      name: 'operation_progress → operation_progress (failed compaction carries error, DOR-110)',
+      input: {
+        type: 'operation_progress',
+        data: { operation: 'compaction', state: 'failed', determinate: false, error: 'boom' },
+      },
+      expected: {
+        type: 'operation_progress',
+        operation: 'compaction',
+        state: 'failed',
+        determinate: false,
+        error: 'boom',
       },
     },
     {
@@ -634,16 +654,21 @@ describe('feedProjector', () => {
     ]);
   });
 
-  // DOR-118: compaction + local-command members ride the replay stream with NO
-  // explicit projector case (project() auto-appends non-status events to the
-  // turn), and system_status leaves the held status projection untouched.
+  // DOR-110: compaction members ride the replay stream with NO explicit
+  // projector case (project() auto-appends non-status events to the turn), and
+  // neither operation_progress nor compact_boundary touches the held status.
   it('projects compaction members into the stream without touching status', async () => {
     const projector = new SessionStateProjector('s6');
 
     async function* turn(): AsyncIterable<StreamEvent> {
       yield {
-        type: 'system_status',
-        data: { message: 'Compacting context…', status: 'compacting' },
+        type: 'operation_progress',
+        data: {
+          operation: 'compaction',
+          state: 'started',
+          determinate: false,
+          message: 'Compacting context…',
+        },
       };
       yield {
         type: 'compact_boundary',
@@ -655,7 +680,7 @@ describe('feedProjector', () => {
     await feedProjector(projector, turn());
     expect(projector.replayFrom(0).map((e) => e.type)).toEqual([
       'turn_start',
-      'system_status',
+      'operation_progress',
       'compact_boundary',
       'turn_end',
     ]);

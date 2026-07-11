@@ -187,12 +187,15 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   'todo_update',
   'hook_update',
   'memory_recall',
-  // Retained so the live turn feeds `useSystemStatusEvents` (compaction + session
-  // hooks → status strip) and the projection's failed-compaction row. The bubble
-  // projection skips every non-failed `system_status`, so this adds no stray
-  // parts. Without it the strip's producer is starved live and only the durable
-  // history reload shows these states (DOR-118, DOR-125).
+  // Retained so the live turn feeds `useSystemStatusEvents` (session-hook flashes
+  // → status strip). The bubble projection produces no part for a `system_status`,
+  // so this adds no stray parts. Without it the strip's producer is starved live
+  // and only the durable history reload shows these states (DOR-125).
   'system_status',
+  // Retained so the live turn feeds the status strip's progress treatment
+  // (compaction start→done) and the projection's failed-compaction row. The
+  // bubble projection produces a part only for a `failed` phase (DOR-110).
+  'operation_progress',
 ]);
 
 interface SessionStreamStoreState {

@@ -423,22 +423,22 @@ function foldCompactBoundary(
 }
 
 /**
- * Fold a `system_status` event. A successful compaction renders from
- * `compact_boundary`; a FAILED compaction fires NO boundary, so its only signal
- * is `system_status` with `compactResult: 'failed'` — surface that inline as a
- * failed compaction row. All other `system_status` content (in-flight
- * "Compacting…", hook progress) drives the transient status strip via
- * `useSystemStatusEvents`, not the bubble, so it produces no part here.
+ * Fold an `operation_progress` event. A successful compaction renders its inline
+ * row from `compact_boundary`; a FAILED compaction fires NO boundary, so its only
+ * durable signal is `operation_progress` `{ operation: 'compaction', state:
+ * 'failed' }` — surface that inline as a failed compaction row (DOR-110). The
+ * `started`/`done` phases drive the transient status strip via
+ * `useSystemStatusEvents`, not the bubble, so they produce no part here.
  */
-function foldSystemStatus(
+function foldOperationProgress(
   parts: MessagePart[],
-  event: Extract<SessionEvent, { type: 'system_status' }>
+  event: Extract<SessionEvent, { type: 'operation_progress' }>
 ) {
-  if (event.compactResult !== 'failed') return;
+  if (event.operation !== 'compaction' || event.state !== 'failed') return;
   parts.push({
     type: 'compact_boundary',
     failed: true,
-    ...(event.compactError !== undefined ? { error: event.compactError } : {}),
+    ...(event.error !== undefined ? { error: event.error } : {}),
   });
 }
 
@@ -646,13 +646,14 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
       case 'compact_boundary':
         foldCompactBoundary(parts, event);
         break;
-      case 'system_status':
-        foldSystemStatus(parts, event);
+      case 'operation_progress':
+        foldOperationProgress(parts, event);
         break;
       case 'error':
         foldError(parts, event);
         break;
-      // turn_start, turn_end, status_change, todo_update carry no renderable part.
+      // turn_start, turn_end, status_change, todo_update, system_status carry no
+      // renderable part (system_status drives only the transient status strip).
       default:
         break;
     }

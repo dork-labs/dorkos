@@ -1,6 +1,6 @@
 import { beforeEach, vi } from 'vitest';
 import { runtimeConformance } from '@dorkos/test-utils';
-import { wrapSdkQuery, sdkError, sdkSimpleText } from './sdk-scenarios.js';
+import { wrapSdkQuery, sdkError, sdkSimpleText, sdkCompaction } from './sdk-scenarios.js';
 
 // Purpose: ClaudeCodeRuntime must clear the SAME shared conformance gate as
 // the stateless TestModeRuntime (spec additional-agent-runtimes, task 1.5).
@@ -132,6 +132,16 @@ runtimeConformance(
           wrapSdkQuery(sdkError('Simulated SDK execution failure')) as unknown as ReturnType<
             typeof query
           >
+      );
+      return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    },
+    // One-shot compacting turn: the SDK stream carries a `status: 'compacting'`,
+    // a `compact_boundary`, and a resolving `compact_result: 'success'`, which the
+    // system-event-mapper maps to the `operation_progress` started→done contract
+    // (DOR-110). mockImplementationOnce applies to exactly the next query() call.
+    makeCompactingRuntime: () => {
+      mockedQuery.mockImplementationOnce(
+        () => wrapSdkQuery(sdkCompaction()) as unknown as ReturnType<typeof query>
       );
       return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
     },

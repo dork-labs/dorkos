@@ -268,8 +268,18 @@ describe('StreamManager', () => {
       {
         type: 'system_status',
         seq: 4,
+        message: 'Running hook "format"…',
+      } as SessionEvent,
+    ],
+    [
+      'operation_progress',
+      {
+        type: 'operation_progress',
+        seq: 6,
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
         message: 'Compacting context…',
-        status: 'compacting',
       } as SessionEvent,
     ],
     [

@@ -1590,22 +1590,54 @@
               },
               "status": {
                 "type": "string"
-              },
-              "compactResult": {
-                "type": "string",
-                "enum": [
-                  "success",
-                  "failed"
-                ]
-              },
-              "compactError": {
-                "type": "string"
               }
             },
             "required": [
               "seq",
               "type",
               "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "operation_progress"
+                ]
+              },
+              "operation": {
+                "$ref": "#/components/schemas/OperationKind"
+              },
+              "state": {
+                "$ref": "#/components/schemas/OperationState"
+              },
+              "determinate": {
+                "type": "boolean"
+              },
+              "percent": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "message": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "operation",
+              "state",
+              "determinate"
             ]
           },
           {
@@ -1908,6 +1940,20 @@
           "pending",
           "in_progress",
           "completed"
+        ]
+      },
+      "OperationKind": {
+        "type": "string",
+        "enum": [
+          "compaction"
+        ]
+      },
+      "OperationState": {
+        "type": "string",
+        "enum": [
+          "started",
+          "done",
+          "failed"
         ]
       },
       "TerminalReason": {
@@ -5182,22 +5228,54 @@
                         },
                         "status": {
                           "type": "string"
-                        },
-                        "compactResult": {
-                          "type": "string",
-                          "enum": [
-                            "success",
-                            "failed"
-                          ]
-                        },
-                        "compactError": {
-                          "type": "string"
                         }
                       },
                       "required": [
                         "seq",
                         "type",
                         "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "operation_progress"
+                          ]
+                        },
+                        "operation": {
+                          "$ref": "#/components/schemas/OperationKind"
+                        },
+                        "state": {
+                          "$ref": "#/components/schemas/OperationState"
+                        },
+                        "determinate": {
+                          "type": "boolean"
+                        },
+                        "percent": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "operation",
+                        "state",
+                        "determinate"
                       ]
                     },
                     {

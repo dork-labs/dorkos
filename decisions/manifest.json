@@ -2432,6 +2432,14 @@
       "created": "2026-07-09",
       "extractedFrom": "desktop-macos-polish",
       "specSlug": "desktop-macos-polish"
+    },
+    {
+      "id": "260711-144122",
+      "slug": "operation-progress-runtime-contract",
+      "title": "Runtime-agnostic operation_progress StreamEvent for long-running operations",
+      "status": "accepted",
+      "created": "2026-07-11",
+      "extractedFrom": "DOR-110"
     }
   ]
 }

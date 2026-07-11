@@ -116,6 +116,7 @@ const SESSION_EVENT_TYPES = [
   'memory_recall',
   'compact_boundary',
   'system_status',
+  'operation_progress',
   'error',
   'turn_start',
   'turn_end',

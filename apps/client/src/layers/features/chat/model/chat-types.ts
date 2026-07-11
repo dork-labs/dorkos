@@ -11,6 +11,7 @@ export type {
   TransportErrorInfo,
   ChatStatus,
   SystemStatusState,
+  OperationProgressState,
 } from '@/layers/shared/model/chat-message-types';
 
 export interface ChatSessionOptions {
