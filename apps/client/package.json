@@ -26,6 +26,7 @@
     "@dorkos/shared": "workspace:*",
     "@codemirror/language": "^6.11.0",
     "@codemirror/language-data": "^6.5.1",
+    "@codemirror/merge": "^6.10.0",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.0",
     "@google/model-viewer": "^4.0.0",

@@ -84,6 +84,23 @@ The Canvas holds more than one document at a time. Open a file, then a browser p
 
 If you (or the agent) open something that's already open, DorkOS switches to that existing tab instead of opening a duplicate.
 
+## Reviewing Changes: See Exactly What the Agent Edited
+
+When the agent edits a file, DorkOS opens a **diff** for it automatically — a view of just the lines that changed since the agent started, not the whole file. You read three changed lines instead of hunting through three hundred.
+
+Every changed block (a "hunk") has two controls in the margin:
+
+- **Accept** keeps the agent's change and settles the block out of your way.
+- **Reject** undoes that one block on disk — the lines snap back to how they were before the agent touched them. Everything else the agent did stays.
+
+Above the diff you can **Reject all** (undo every change to the file at once) or **Mark reviewed** (you're happy — later edits will diff from here). On a wide screen, a toggle switches between the stacked inline view and a side-by-side before/after. A second toggle compares against your **last commit** instead of the session's starting point, if you'd rather see it that way.
+
+If the file changes underneath you — say the agent edits it again while you're reviewing — you get a calm "this file changed" notice with a Refresh button, never a silent overwrite.
+
+Reviewing an image isn't available here yet — a changed image opens on its own instead. Diff review works in the web app and the Obsidian plugin; the image tools, when they arrive, will be web-only.
+
+You can turn the automatic open off with `workbench.autoOpenDiff` in your [config file](/docs/getting-started/configuration) — the agent can still bring up a diff on purpose.
+
 ## Agents Can Drive the Workbench for You
 
 An agent isn't limited to describing what it did in text. It can act directly on the workbench you're looking at:
@@ -100,8 +117,9 @@ Two settings live under `workbench` in your [config file](/docs/getting-started/
 
 - `workbench.defaultViewers`: an object mapping a file extension to the viewer that should open it (for example, forcing `.csv` files into the plain code editor instead of the table view). Empty by default, which means every file type above uses its standard viewer.
 - `workbench.terminalGraceTtlMinutes`: how long a terminal's shell stays alive after every browser tab pointed at it disconnects, so a refresh can reattach instead of losing the shell. Defaults to 10 minutes.
+- `workbench.autoOpenDiff`: whether a diff opens automatically when the agent edits a file. On by default; set it to `false` to keep the canvas on whatever you last had open.
 
-Neither field is something most people ever need to touch.
+None of these are something most people ever need to touch.
 
 ## Next Steps
 

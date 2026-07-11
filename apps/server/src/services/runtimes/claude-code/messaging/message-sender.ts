@@ -38,6 +38,9 @@ import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import { resolveToolConfig, buildAllowedTools } from '../tooling/tool-filter.js';
 import { validateBoundary } from '../../../../lib/boundary.js';
 import { logger } from '../../../../lib/logger.js';
+import path from 'node:path';
+import { isEditFamilyTool, editToolFilePath } from '@dorkos/shared/diff-tools';
+import { editBaselineStore } from '../../../diff/index.js';
 import { readManifest } from '@dorkos/shared/manifest';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
@@ -73,6 +76,38 @@ const SLASH_COMMAND_RE = /^\/([A-Za-z0-9][\w.-]*(?::[\w.-]+)*)(?=\s|$)/;
 export function detectSlashCommandName(content: string): string | null {
   const match = SLASH_COMMAND_RE.exec(content.trimStart());
   return match ? match[1] : null;
+}
+
+/**
+ * Build the pre-tool preflight that snapshots a file's pre-edit bytes for the
+ * diff base (DOR-212). Fires at the `canUseTool` seam BEFORE the SDK applies an
+ * edit-family tool, so the captured bytes are the true pre-image. First-touch-
+ * wins (a later edit to the same file keeps the first baseline); a capture
+ * failure never blocks the tool. If the direct disk snapshot can't be taken (a
+ * transient read error), it falls back to reconstructing the pre-image from the
+ * tool input (§Q1 Fallback A).
+ *
+ * @param sessionId - The DorkOS session the edit belongs to.
+ * @param cwd - The session's working directory (for resolving relative paths).
+ */
+function createEditBaselineCapture(
+  sessionId: string,
+  cwd: string
+): (toolName: string, input: Record<string, unknown>) => Promise<void> {
+  return async (toolName, input) => {
+    if (!isEditFamilyTool(toolName)) return;
+    const filePath = editToolFilePath(input);
+    if (!filePath) return;
+    const abs = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
+    try {
+      const captured = await editBaselineStore.captureFromDisk(sessionId, abs);
+      if (!captured) {
+        await editBaselineStore.captureFromToolInput(sessionId, abs, toolName, input);
+      }
+    } catch (err) {
+      logger.debug('[sendMessage] diff baseline capture failed', { session: sessionId, err });
+    }
+  };
 }
 
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
@@ -484,7 +519,11 @@ export async function* executeSdkQuery(
     sdkOptions.allowedTools = [...(sdkOptions.allowedTools ?? []), ...allowedTools];
   }
 
-  sdkOptions.canUseTool = createCanUseTool(session, logger.debug.bind(logger));
+  sdkOptions.canUseTool = createCanUseTool(
+    session,
+    logger.debug.bind(logger),
+    createEditBaselineCapture(sessionId, effectiveCwd)
+  );
   sdkOptions.onElicitation = (request, { signal }) => {
     logger.debug('[sendMessage] elicitation request', {
       session: sessionId,

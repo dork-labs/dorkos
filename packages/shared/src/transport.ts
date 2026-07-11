@@ -24,6 +24,7 @@ import type {
   FileContentResponse,
   CreateEntryResponse,
   FileMutationResponse,
+  DiffBaselineResponse,
   GitStatusResponse,
   GitStatusError,
   Task,
@@ -587,6 +588,43 @@ export interface Transport {
    * @param filePath - File path, absolute or relative to `cwd`.
    */
   readFileContent(cwd: string, filePath: string): Promise<FileContentResponse>;
+
+  // --- Workbench diff review (per-hunk agent-edit review; DOR-212) ---
+
+  /**
+   * Resolve the pre-edit baseline for a file plus its current disk content, for
+   * the text-diff review surface. The base is the session's pre-edit snapshot of
+   * `filePath` (captured at the runtime's pre-tool boundary), falling back to
+   * reconstruct-from-tool-input → git `HEAD` → empty when no snapshot exists.
+   * `mode: 'head'` forces the git-HEAD compare (the secondary user-toggled mode).
+   *
+   * The returned `currentHash` is the optimistic-concurrency token a later reject
+   * write (`writeFile` with `expectedHash`) passes, so a file that changed under
+   * the diff yields a conflict rather than a blind clobber. Under the in-process
+   * transport this works from the in-process baseline store (git via
+   * `child_process`), so text diff is available in Obsidian.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - File path, absolute or relative to `cwd`.
+   * @param sessionId - Session whose pre-edit snapshot to diff against.
+   * @param mode - `'session'` (default, snapshot base) or `'head'` (git-HEAD compare).
+   */
+  readDiffBaseline(
+    cwd: string,
+    filePath: string,
+    sessionId: string,
+    mode?: 'session' | 'head'
+  ): Promise<DiffBaselineResponse>;
+  /**
+   * Advance a file's diff baseline to its current disk content (finish-review),
+   * so subsequent agent edits diff from the just-reviewed state. A no-op when no
+   * baseline exists for the pair.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - File path, absolute or relative to `cwd`.
+   * @param sessionId - Session whose baseline to advance.
+   */
+  advanceDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void>;
   /**
    * Create a new file or directory within `cwd`. Rejects (409, thrown with
    * `code: 'CONFLICT'`) when the target already exists. `content` seeds a new

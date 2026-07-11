@@ -97,6 +97,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `agentContext.adapterTools`         | boolean                                                                  | `true`             | Include adapter tool documentation in agent context                                                    |
 | `agentContext.tasksTools`           | boolean                                                                  | `true`             | Include Tasks scheduler tool documentation in agent context                                            |
 | `workbench.terminalGraceTtlMinutes` | integer (1--120)                                                         | `10`               | Minutes a detached embedded-terminal PTY stays alive so a page refresh can re-attach to the live shell |
+| `workbench.autoOpenDiff`            | boolean                                                                  | `true`             | Auto-open a diff review in the workbench when the attached session's agent edits a file (DOR-212)      |
 
 The `agents` section configures agent storage defaults:
 

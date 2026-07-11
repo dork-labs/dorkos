@@ -1779,6 +1779,100 @@ export const RenameEntryRequestSchema = z
   })
   .openapi('RenameEntryRequest');
 
+// ---------------------------------------------------------------------------
+// Diff review (DOR-212) — per-hunk agent-edit review surface
+// ---------------------------------------------------------------------------
+
+/**
+ * How a diff baseline was resolved, in descending precision (DOR-212 §Q1):
+ * - `pre-tool` — the exact bytes captured at the runtime's pre-tool boundary
+ *   before the agent's first edit to this file (the primary, precise base);
+ * - `reconstructed` — rebuilt by reverse-applying an `Edit`/`MultiEdit` tool
+ *   input against current disk when no snapshot exists;
+ * - `head` — the file's content at git `HEAD` (fallback, or the user-toggled
+ *   compare mode);
+ * - `empty` — no baseline found, so the whole file reads as added.
+ */
+export const DiffBaselineOriginSchema = z.enum(['pre-tool', 'reconstructed', 'head', 'empty']);
+
+export type DiffBaselineOrigin = z.infer<typeof DiffBaselineOriginSchema>;
+
+/**
+ * Query for `GET /api/diff/baseline` — resolves the pre-edit baseline for a file
+ * and returns it alongside the current disk content, both for the text-diff
+ * surface. `mode` selects the base: `session` (default) uses the per-session
+ * snapshot with the reconstruct→HEAD→empty fallback ladder; `head` forces the
+ * git-HEAD compare.
+ */
+export const DiffBaselineQuerySchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+    /** Session whose pre-edit snapshot to diff against; keyed `(sessionId, path)`. */
+    sessionId: z.string().min(1),
+    mode: z.enum(['session', 'head']).optional().default('session'),
+  })
+  .openapi('DiffBaselineQuery');
+
+export type DiffBaselineQuery = z.infer<typeof DiffBaselineQuerySchema>;
+
+/**
+ * Response for `GET /api/diff/baseline`: the resolved `baseline` text and the
+ * `current` disk text, each with its SHA-256 fingerprint. `currentHash` is the
+ * optimistic-concurrency token a later reject write (`PUT /api/files/content`)
+ * passes as `expectedHash`, so a file that changed under the diff yields a
+ * 409-refresh rather than a blind clobber.
+ */
+export const DiffBaselineResponseSchema = z
+  .object({
+    baseline: z.string(),
+    baselineHash: z.string(),
+    current: z.string(),
+    currentHash: z.string(),
+    capturedFrom: DiffBaselineOriginSchema,
+  })
+  .openapi('DiffBaselineResponse');
+
+export type DiffBaselineResponse = z.infer<typeof DiffBaselineResponseSchema>;
+
+/**
+ * Request for `POST /api/diff/baseline/advance` — advance a file's baseline to
+ * its current disk content (finish-review), so subsequent agent edits diff from
+ * the just-reviewed state. A no-op when no baseline exists for the pair.
+ */
+export const AdvanceDiffBaselineRequestSchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+    sessionId: z.string().min(1),
+  })
+  .openapi('AdvanceDiffBaselineRequest');
+
+export type AdvanceDiffBaselineRequest = z.infer<typeof AdvanceDiffBaselineRequestSchema>;
+
+/**
+ * Query for `GET /api/diff/pending` — lists the files a session has a live
+ * baseline for that still differ from disk (i.e. unreviewed agent edits). Powers
+ * explorer "agent touched this" badges and a review count.
+ */
+export const DiffPendingQuerySchema = z
+  .object({
+    cwd: z.string().min(1),
+    sessionId: z.string().min(1),
+  })
+  .openapi('DiffPendingQuery');
+
+export type DiffPendingQuery = z.infer<typeof DiffPendingQuerySchema>;
+
+/** Response for `GET /api/diff/pending`: `cwd`-relative paths with pending agent edits. */
+export const DiffPendingResponseSchema = z
+  .object({
+    files: z.array(z.string()),
+  })
+  .openapi('DiffPendingResponse');
+
+export type DiffPendingResponse = z.infer<typeof DiffPendingResponseSchema>;
+
 export type RenameEntryRequest = z.infer<typeof RenameEntryRequestSchema>;
 
 /** Response for a successful delete or rename. */
@@ -2086,6 +2180,9 @@ export const ServerConfigSchema = z
         defaultViewers: z.record(z.string(), z.string()).openapi({
           description:
             'Extension → canvas-viewer overrides for the mime→viewer registry (workbench D7)',
+        }),
+        autoOpenDiff: z.boolean().optional().openapi({
+          description: 'Auto-open a diff review when the attached agent edits a file (DOR-212)',
         }),
       })
       .optional()
@@ -2544,6 +2641,27 @@ export const UiCanvasContentSchema = z
       url: z.string().min(1),
       title: z.string().optional(),
     }),
+    z.object({
+      type: z.literal('diff'),
+      /**
+       * Path of the file whose agent edits this diff reviews. Workspace-relative
+       * or absolute; the server resolves and confines it to the session's working
+       * directory. No bytes travel in the command — the diff renderer loads the
+       * pre-edit `baseline` and the `current` disk content itself (mirroring the
+       * `file` variant), then shows a per-hunk accept/reject surface. The diff
+       * base is the session's pre-edit snapshot of this path, not git HEAD (see
+       * the diff-base ADR).
+       */
+      sourcePath: z.string().min(1),
+      /**
+       * Optional hint for which diff surface to render — the text (CodeMirror
+       * merge) or image (2-up/swipe/onion-skin) view. Resolved from the viewer
+       * registry ({@link import('./viewer-registry').diffMediaKindForPath}) when
+       * absent, so the agent never needs to know a file's media type.
+       */
+      mediaKind: z.enum(['text', 'image']).optional(),
+      title: z.string().optional(),
+    }),
   ])
   .openapi('UiCanvasContent');
 
@@ -2663,6 +2781,17 @@ export const UiCommandSchema = z
       sourcePath: z.string().min(1),
     }),
     z.object({
+      action: z.literal('open_diff'),
+      /**
+       * Path of the file whose agent edits to review. Workspace-relative or
+       * absolute; resolved and confined to the session's working directory. Opens
+       * (or refreshes) a `diff` canvas document showing what changed since the
+       * session's pre-edit snapshot, with per-hunk accept/reject. Deduped by path
+       * — a repeated open re-activates the existing diff document.
+       */
+      sourcePath: z.string().min(1),
+    }),
+    z.object({
       action: z.literal('open_terminal'),
       /**
        * Optional working-directory hint. The terminal always spawns in the
@@ -2771,6 +2900,7 @@ export const UiStateSchema = z
           'model3d',
           'csv',
           'browser',
+          'diff',
         ])
         .nullable(),
     }),

@@ -253,6 +253,30 @@ describe('executeUiCommand — open_file', () => {
   });
 });
 
+// --- open_diff (DorkOS-observed auto-open + agent tool) ---
+
+describe('executeUiCommand — open_diff', () => {
+  it('opens a diff document and reveals the canvas view-only at agent origin (DOR-227)', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/App.tsx' }, 'agent');
+    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+      type: 'diff',
+      sourcePath: 'src/App.tsx',
+    });
+    // Agent-driven auto-open must not overwrite the user's pinned tab preference.
+    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('persists the tab pick when a user deliberately opens a diff', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/App.tsx' }, 'user');
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
+  });
+});
+
 // --- open_terminal (agent tool → reveal/focus the Terminal tab) ---
 
 describe('executeUiCommand — open_terminal', () => {

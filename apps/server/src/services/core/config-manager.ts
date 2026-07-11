@@ -399,6 +399,30 @@ export function generalizeTelemetryConsent(store: {
   if (changed) store.set('telemetry', t);
 }
 
+/**
+ * Migration body: backfill `workbench.autoOpenDiff` (auto-open the diff review
+ * surface on agent edits, DOR-212) onto an EXISTING `workbench` block. conf merges
+ * top-level defaults SHALLOWLY, so a `workbench` object already on disk never
+ * inherits the new nested default — this supplies it. Additive + idempotent: only
+ * writes when the field is absent, never overwrites a set value. Defaults to
+ * `true`, matching the schema.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillWorkbenchAutoOpenDiff(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const workbench = store.get('workbench');
+  if (workbench && typeof workbench === 'object' && !('autoOpenDiff' in workbench)) {
+    store.set('workbench', {
+      ...(workbench as Record<string, unknown>),
+      autoOpenDiff: true,
+    });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -449,12 +473,23 @@ const CONFIG_MIGRATIONS = {
     // add to a `workbench` block the previous body just created.
     backfillWorkbenchTerminalGraceTtl(store);
   },
-  // Generalize `telemetry` into the shared opt-in consent namespace (DOR-293,
-  // ADR 260711-141639): rename `telemetry.enabled` → `telemetry.install` and
-  // backfill the new `heartbeat` + `errorReporting` channel flags (both OFF).
-  // Authored on the next-ascending-release placeholder while on main;
-  // /system:release reconciles the key to the real release at tag time.
-  '0.46.0': generalizeTelemetryConsent,
+  // Both authored on the next-ascending-release placeholder while on main;
+  // /system:release reconciles the key to the real release at tag time. One
+  // composite body (an object literal can't repeat the key); order is
+  // insertion order and both are idempotent + independent.
+  '0.46.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+    delete: (key: string) => void;
+  }) => {
+    // Generalize `telemetry` into the shared opt-in consent namespace (DOR-293,
+    // ADR 260711-141639): rename `telemetry.enabled` → `telemetry.install` and
+    // backfill the new `heartbeat` + `errorReporting` channel flags (both OFF).
+    generalizeTelemetryConsent(store);
+    // `workbench.autoOpenDiff` (auto-open the diff review surface on agent
+    // edits, DOR-212).
+    backfillWorkbenchAutoOpenDiff(store);
+  },
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

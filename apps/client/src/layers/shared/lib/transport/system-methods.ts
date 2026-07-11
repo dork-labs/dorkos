@@ -10,6 +10,7 @@ import type {
   FileListResponse,
   FileTreeResponse,
   FileContentResponse,
+  DiffBaselineResponse,
   CreateEntryResponse,
   FileMutationResponse,
   HealthResponse,
@@ -130,6 +131,25 @@ export function createSystemMethods(baseUrl: string) {
     readFileContent(cwd: string, filePath: string): Promise<FileContentResponse> {
       const qs = buildQueryString({ cwd, path: filePath });
       return fetchJSON<FileContentResponse>(baseUrl, `/files/content${qs}`);
+    },
+
+    /** Resolve a file's diff baseline + current content for the review surface (DOR-212). */
+    readDiffBaseline(
+      cwd: string,
+      filePath: string,
+      sessionId: string,
+      mode?: 'session' | 'head'
+    ): Promise<DiffBaselineResponse> {
+      const qs = buildQueryString({ cwd, path: filePath, sessionId, mode });
+      return fetchJSON<DiffBaselineResponse>(baseUrl, `/diff/baseline${qs}`);
+    },
+
+    /** Advance a file's diff baseline to current disk (finish-review; DOR-212). */
+    async advanceDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void> {
+      await fetchJSON<{ ok: true }>(baseUrl, '/diff/baseline/advance', {
+        method: 'POST',
+        body: JSON.stringify({ cwd, path: filePath, sessionId }),
+      });
     },
 
     /** Create a file or directory; rejects (409) if the target already exists. */

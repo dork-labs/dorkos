@@ -9,6 +9,7 @@ import {
   Table,
   LayoutDashboard,
   AppWindow,
+  GitCompare,
   X,
 } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -27,6 +28,7 @@ const CONTENT_TYPE_ICONS = {
   model3d: Box,
   csv: Table,
   browser: Globe,
+  diff: GitCompare,
 } as const satisfies Record<UiCanvasContent['type'], unknown>;
 
 /** DOM id of the canvas content region the active tab controls. */

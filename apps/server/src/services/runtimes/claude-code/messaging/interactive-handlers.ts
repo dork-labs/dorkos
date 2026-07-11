@@ -324,16 +324,26 @@ export interface ToolApprovalContext {
  *
  * Routes AskUserQuestion to the question handler, tool approvals based on
  * permissionMode, and auto-allows everything else.
+ *
+ * @param session - The interactive session state (with its permission mode).
+ * @param logFn - Debug logger.
+ * @param onToolPreflight - Optional hook fired for EVERY tool BEFORE it runs and
+ *   before any approval wait — the synchronous pre-tool seam DorkOS uses to
+ *   snapshot a file's pre-edit bytes for the diff base (DOR-212). Awaited so the
+ *   snapshot is guaranteed captured before the SDK applies the edit; a rejection
+ *   is swallowed by the caller's wiring so capture never blocks a tool.
  */
 export function createCanUseTool(
   session: InteractiveSession & { permissionMode: string },
-  logFn: (msg: string, data: Record<string, unknown>) => void
+  logFn: (msg: string, data: Record<string, unknown>) => void,
+  onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>
 ): (
   toolName: string,
   input: Record<string, unknown>,
   context: ToolApprovalContext
 ) => Promise<PermissionResult> {
   return async (toolName, input, context) => {
+    if (onToolPreflight) await onToolPreflight(toolName, input);
     if (toolName === 'AskUserQuestion') {
       logFn('[canUseTool] routing to question handler', { toolName, toolUseID: context.toolUseID });
       return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
