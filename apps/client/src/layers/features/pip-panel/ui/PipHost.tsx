@@ -2,6 +2,7 @@ import * as React from 'react';
 import { AnimatePresence } from 'motion/react';
 import { FloatingPanel, type FloatingPanelGeometry } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile, type PipContent } from '@/layers/shared/model';
+import { McpAppFrame } from '@/layers/features/mcp-apps';
 import { DemoPipContent } from './DemoPipContent';
 
 /** Default panel size and edge margin used to dock in the bottom-right corner. */
@@ -20,9 +21,32 @@ const DEFAULT_MARGIN = 16;
  */
 const PIP_RENDERERS: {
   demo: React.ComponentType<{ content: Extract<PipContent, { kind: 'demo' }> }>;
+  mcp_app: React.ComponentType<{ content: Extract<PipContent, { kind: 'mcp_app' }> }>;
 } = {
   demo: DemoPipContent,
+  mcp_app: McpAppPipContent,
 };
+
+/**
+ * Adapter that maps an `mcp_app` PIP descriptor onto {@link McpAppFrame}'s flat
+ * props. Declared at module scope (not inlined into {@link PIP_RENDERERS}) so
+ * the frame — which owns its own TanStack Query, postMessage bridge lifecycle,
+ * and per-server render consent — keeps a stable component identity and is never
+ * torn down by an unrelated parent re-render.
+ *
+ * @param props.content - The `mcp_app` PIP descriptor to render.
+ */
+function McpAppPipContent({ content }: { content: Extract<PipContent, { kind: 'mcp_app' }> }) {
+  return (
+    <McpAppFrame
+      sessionId={content.sessionId}
+      serverName={content.serverName}
+      uri={content.uri}
+      title={content.title}
+      className="h-full"
+    />
+  );
+}
 
 /** Compute the default bottom-right dock for a panel that has no saved geometry. */
 function defaultGeometry(): FloatingPanelGeometry {
@@ -46,10 +70,15 @@ function renderPipContent(content: PipContent): React.ReactNode {
       const Renderer = PIP_RENDERERS.demo;
       return <Renderer content={content} />;
     }
+    case 'mcp_app': {
+      const Renderer = PIP_RENDERERS.mcp_app;
+      return <Renderer content={content} />;
+    }
     default: {
       // Exhaustive check — adding a kind without a case is a compile error here,
-      // forcing DOR-297/298 to register their renderer before shipping.
-      const _exhaustive: never = content.kind;
+      // forcing a new PIP content kind (e.g. DOR-298 widgets) to register its
+      // renderer before shipping.
+      const _exhaustive: never = content;
       return _exhaustive;
     }
   }
@@ -121,8 +150,11 @@ export function PipHost(): React.ReactNode {
           geometry={geometry}
           onGeometryChange={setPipGeometry}
           onClose={closePip}
-          // onRestore is undefined for `demo` (no restore target in v1); DOR-297
-          // wires "send back to inline/canvas" here per ideation decision D8.
+          // onRestore is intentionally omitted for every v1 kind. `demo` has no
+          // restore target; `mcp_app` still keeps its inline block live in the
+          // transcript (popping out never removes it), so close IS the exit —
+          // there is nothing to "send back" to. A future kind that owns its only
+          // instance would wire a restore target here.
         >
           {renderPipContent(pipContent)}
         </FloatingPanel>

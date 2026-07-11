@@ -37,6 +37,22 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
   };
 });
 
+// Mock the MCP Apps barrel: PipHost routes `mcp_app` content to McpAppFrame,
+// whose sandbox/query/bridge machinery has its own suite. Here we only assert
+// PipHost hands it the descriptor's fields.
+vi.mock('@/layers/features/mcp-apps', () => ({
+  McpAppFrame: (props: { sessionId: string; serverName: string; uri: string; title?: string }) => (
+    <div
+      data-testid="mcp-app-frame"
+      data-session={props.sessionId}
+      data-server={props.serverName}
+      data-uri={props.uri}
+    >
+      {props.title}
+    </div>
+  ),
+}));
+
 // Instrument DemoPipContent with mount/unmount spies so remounts are countable.
 vi.mock('../ui/DemoPipContent', () => ({
   DemoPipContent: ({ content }: { content: { kind: 'demo'; title: string } }) => {
@@ -112,6 +128,30 @@ describe('PipHost', () => {
     render(<PipHost />);
     expect(screen.getByTestId('floating-panel')).toHaveAttribute('data-title', 'Hello PIP');
     expect(screen.getByText('Hello PIP')).toBeInTheDocument();
+  });
+
+  it('routes an mcp_app descriptor to McpAppFrame, shows its title, and offers no restore control', () => {
+    act(() => {
+      useAppStore.getState().openPip({
+        kind: 'mcp_app',
+        sessionId: 's1',
+        serverName: 'fixture-app',
+        uri: 'ui://dash/main',
+        title: 'Dash',
+      });
+    });
+    render(<PipHost />);
+
+    const panel = screen.getByTestId('floating-panel');
+    expect(panel).toHaveAttribute('data-title', 'Dash');
+    // v1 intentionally passes no onRestore for mcp_app — close is the exit.
+    expect(panel).toHaveAttribute('data-has-restore', 'false');
+
+    const frame = screen.getByTestId('mcp-app-frame');
+    expect(frame).toHaveAttribute('data-session', 's1');
+    expect(frame).toHaveAttribute('data-server', 'fixture-app');
+    expect(frame).toHaveAttribute('data-uri', 'ui://dash/main');
+    expect(frame).toHaveTextContent('Dash');
   });
 
   it('uses the computed bottom-right default geometry when pipGeometry is null', () => {
