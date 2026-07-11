@@ -15,8 +15,16 @@ const webEnvSchema = z.object({
   VERCEL_URL: z.string().optional(),
   VERCEL_BRANCH_URL: z.string().optional(),
 
+  // Unset in every environment until the founder provisions a PostHog project
+  // (DOR-268). instrumentation-client.ts skips posthog.init() entirely when
+  // this is absent, so an unconfigured deploy makes zero PostHog network
+  // requests — the literal claim the /privacy and /cookies pages make.
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
-  NEXT_PUBLIC_POSTHOG_HOST: z.string().url().default('https://app.posthog.com'),
+  // The PostHog ingest host, region-specific (`https://us.i.posthog.com` or
+  // `https://eu.i.posthog.com`). Drives both the client SDK and the
+  // next.config.ts reverse-proxy rewrite, so switching region is one env var.
+  // See src/lib/posthog-host.ts for how the UI/asset hosts are derived from it.
+  NEXT_PUBLIC_POSTHOG_HOST: z.string().url().default('https://us.i.posthog.com'),
 
   // Better Auth — the DorkOS account cloud identity core (accounts-and-auth P2).
   // BETTER_AUTH_SECRET signs sessions; set a 32+ char secret in production. When
@@ -72,5 +80,17 @@ const webEnvSchema = z.object({
   CRON_SECRET: z.string().optional(),
 });
 
-export const env = webEnvSchema.parse(process.env);
+// Client bundles do not get the whole process.env object — Next.js (webpack
+// and Turbopack alike) only inlines *literal* `process.env.NEXT_PUBLIC_*`
+// member accesses at build time. Passing `process.env` wholesale to zod
+// therefore parses `{}` in the browser and every NEXT_PUBLIC_* var reads as
+// undefined there. The explicit spreads below are those literal accesses, so
+// public vars survive into client code; server-only vars still come from the
+// real process.env (server) and stay undefined on the client by design.
+export const env = webEnvSchema.parse({
+  ...process.env,
+  NODE_ENV: process.env.NODE_ENV,
+  NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
+  NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+});
 export type WebEnv = typeof env;

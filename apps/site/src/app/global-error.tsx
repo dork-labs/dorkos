@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import posthog from 'posthog-js';
+import { trackClientError } from '@/lib/analytics';
 import { GeistSans } from 'geist/font/sans';
 
 export default function GlobalError({
@@ -14,12 +14,8 @@ export default function GlobalError({
   useEffect(() => {
     // Log the error to an error reporting service
     console.error('Global error:', error);
-    // Capture global error in PostHog
-    posthog.captureException(error);
-    posthog.capture('global_error', {
-      error_message: error.message,
-      error_digest: error.digest,
-    });
+    // Capture global error in PostHog (no-op when analytics is not configured)
+    trackClientError(error, 'global');
   }, [error]);
 
   return (

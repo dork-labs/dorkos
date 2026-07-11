@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import posthog from 'posthog-js';
+import { trackContactEmailRevealed } from '@/lib/analytics';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 interface IdentityCloseProps {
@@ -106,7 +106,7 @@ export function IdentityClose({ email }: IdentityCloseProps) {
                   animate={{ opacity: 1 }}
                   onClick={() => {
                     setRevealed(true);
-                    posthog.capture('contact_email_revealed');
+                    trackContactEmailRevealed();
                   }}
                   className="text-brand-orange hover:text-brand-green transition-smooth font-mono text-sm"
                 >

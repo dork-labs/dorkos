@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { GITHUB_OUTBOUND_HREF } from '@/config/site';
+import { trackGithubClick } from '@/lib/analytics';
 import { REVEAL, STAGGER } from '../lib/motion-variants';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -433,9 +435,10 @@ export function ActivityFeedHero({ ctaText, ctaHref, githubHref }: ActivityFeedH
           {/* Mobile: GitHub as secondary */}
           {githubHref && (
             <Link
-              href={githubHref}
+              href={GITHUB_OUTBOUND_HREF}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackGithubClick('hero_mobile')}
               className="text-button text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1.5 font-mono tracking-[0.08em] lg:hidden"
             >
               View on GitHub

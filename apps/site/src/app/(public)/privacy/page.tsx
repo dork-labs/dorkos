@@ -12,7 +12,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 9, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 10, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
             we mean.
@@ -126,9 +126,16 @@ export default function PrivacyPolicyPage() {
           <div className="space-y-3">
             <h3 className="text-charcoal text-lg font-medium">What about analytics and cookies?</h3>
             <p className="text-warm-gray leading-relaxed">
-              We do not run website analytics today. We have wired up PostHog, a privacy-friendly
-              analytics tool, but it is switched off by default, and we will not turn it on without
-              asking first. If that changes, we will update this page.
+              We do not run website analytics today. The site has PostHog, a privacy-friendly
+              analytics tool, wired in, but it stays completely off until we configure it. When it
+              is off, the site makes no requests to PostHog at all. If we turn it on, we will update
+              this page.
+            </p>
+            <p className="text-warm-gray leading-relaxed">
+              If analytics are enabled, here is what that will mean: we count page visits and a few
+              clicks, like copying the install command. Nothing is recorded until you accept the
+              cookie banner. There is no session recording, we do not log what you type, and we
+              honor your browser&apos;s Do Not Track setting.
             </p>
             <p className="text-warm-gray leading-relaxed">
               The cookies we set are the basic ones: a login cookie if you sign in, and a small

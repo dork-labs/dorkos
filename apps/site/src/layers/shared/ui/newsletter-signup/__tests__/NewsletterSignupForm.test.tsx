@@ -2,7 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { captureMock } = vi.hoisted(() => ({ captureMock: vi.fn() }));
-vi.mock('posthog-js', () => ({ default: { capture: captureMock } }));
+vi.mock('@/lib/analytics', () => ({
+  trackNewsletterSignup: (source: string, emailDomain: string) =>
+    captureMock('newsletter_signup', { source, email_domain: emailDomain }),
+}));
 
 import { NewsletterSignupForm } from '../NewsletterSignupForm';
 

@@ -5,6 +5,7 @@ import { source } from '@/lib/source';
 import { siteConfig } from '@/config/site';
 import { MarketingFooter } from '@/layers/features/marketing';
 import { DocsNavTitle } from './_components/DocsNavTitle';
+import { DocsVisitTracker } from './_components/DocsVisitTracker';
 import 'fumadocs-ui/style.css';
 
 const socialLinks = [
@@ -37,6 +38,7 @@ const socialLinks = [
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <RootProvider>
+      <DocsVisitTracker />
       <div className="flex min-h-screen flex-col">
         <DocsLayout
           containerProps={{ className: 'flex-1' }}

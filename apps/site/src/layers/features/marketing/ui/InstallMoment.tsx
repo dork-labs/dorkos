@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, useInView, useReducedMotion } from 'motion/react';
 import { Copy, Check } from 'lucide-react';
+import { trackHeroInstallCopy, type InstallMethod } from '@/lib/analytics';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 const SCRAMBLE_CHARS = '!@#$%&*_+-=<>?~';
@@ -91,9 +92,10 @@ export function InstallMoment() {
   const handleCopy = useCallback(() => {
     // Always copy the real command, never the scrambled display text.
     navigator.clipboard.writeText(activeMethod.command);
+    trackHeroInstallCopy(activeMethod.id as InstallMethod);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [activeMethod.command]);
+  }, [activeMethod.command, activeMethod.id]);
 
   return (
     <section id="install" ref={ref} className="bg-cream-primary relative px-8 py-14 md:py-24">
