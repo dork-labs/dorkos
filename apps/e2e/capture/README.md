@@ -198,9 +198,13 @@ Every loop is edited by `writeLoop` (`optimize.ts`) with the bundled
    budget), no audio, normalized to the surface's dimensions. Two passes because
    average-bitrate lands on the target regardless of scene complexity — a fixed
    CRF cannot.
-4. **Poster.** The dark PNG poster is the loop's own first post-trim frame
-   (`extractPoster`), so the site's poster→video handoff is invisible. There is
-   no separate dark-still capture.
+4. **Poster.** The dark PNG poster is extracted from the loop itself
+   (`extractPoster`) — there is no separate dark-still capture. By default it
+   is frame 0, so the site's poster→video handoff is invisible. A shot whose
+   loop opens on a build-up (streaming text, a loading skeleton) sets
+   `posterFrame: 'settled'` in the registry to poster the last clean frame
+   before the end seam instead — the poster doubles as the still that GitHub
+   release notes and docs embed, and a skeleton there reads as broken.
 
 The stage is deterministic and idempotent: the same raw + markers always yields
 the same webm + poster.
@@ -226,8 +230,9 @@ the same webm + poster.
 | `mobile-chat`     | light  | dark | 390px streaming session (the mobile loop)        |
 | `mobile-approval` | light  | —    | 390px tool-approval prompt                       |
 
-Dark PNGs exist only as loop posters, and each is extracted from its loop's own
-first frame during post-processing — no dark screenshots are taken.
+Dark PNGs exist only as loop posters, extracted from the loop during
+post-processing (frame 0, or the settled pre-seam frame for
+`posterFrame: 'settled'` shots) — no dark screenshots are taken.
 
 ## Determinism
 

@@ -1,130 +1,94 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-10T21:16:17.966Z",
+  "generatedAt": "2026-07-11T14:25:01.243Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
-  "runId": "20260710-161008",
-  "totalBytes": 12090114,
+  "runId": "20260711-092043",
+  "totalBytes": 12261051,
   "count": 40,
   "shots": [
     {
       "id": "cockpit",
       "kind": "still",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "agents",
       "kind": "still",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "tasks",
       "kind": "still",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "marketplace",
       "kind": "still",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "tool-approval",
       "kind": "still",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "topology",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "chat-streaming",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "subagents",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "multi-session",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "personality",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "canvas",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "canvas-editing",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "agent-discovery",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "gen-ui-widgets",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": [
-        "marketing",
-        "docs"
-      ]
+      "consumers": ["marketing", "docs"]
     },
     {
       "id": "gen-ui-tictactoe",
@@ -136,25 +100,19 @@
       "id": "mobile-sessions",
       "kind": "still",
       "frame": "mobile",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "mobile-approval",
       "kind": "still",
       "frame": "mobile",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     },
     {
       "id": "mobile-chat",
       "kind": "loop",
       "frame": "mobile",
-      "consumers": [
-        "marketing"
-      ]
+      "consumers": ["marketing"]
     }
   ],
   "assets": [
@@ -166,9 +124,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 120380,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 122750,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -178,10 +136,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 335944,
-      "durationMs": 3126,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 418724,
+      "durationMs": 3141,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -192,8 +150,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 68203,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -203,9 +161,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84646,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 85715,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -215,9 +173,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 104536,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 105079,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -227,10 +185,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 416857,
-      "durationMs": 7626,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 516901,
+      "durationMs": 7211,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -240,9 +198,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 104277,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 102742,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -252,10 +210,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1001776,
-      "durationMs": 10787,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 864075,
+      "durationMs": 10560,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -265,9 +223,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 105274,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 104950,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -277,9 +235,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 94111,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 94415,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -289,9 +247,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 39478,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 38583,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -301,10 +259,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 807273,
-      "durationMs": 8591,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 783567,
+      "durationMs": 8609,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -314,9 +272,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 76620,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 77465,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -326,9 +284,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 80687,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 73812,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -338,9 +296,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 32221,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 103312,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -350,10 +308,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1266362,
-      "durationMs": 9083,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 1256994,
+      "durationMs": 8919,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -364,8 +322,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 48603,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -375,9 +333,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 34518,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 64812,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -387,10 +345,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 726259,
-      "durationMs": 7138,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 686308,
+      "durationMs": 7029,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -401,8 +359,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 57709,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -413,8 +371,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 83427,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -425,8 +383,8 @@
       "width": 1170,
       "height": 2532,
       "bytes": 66137,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -436,9 +394,9 @@
       "kind": "still",
       "width": 390,
       "height": 844,
-      "bytes": 44317,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 41366,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -448,10 +406,10 @@
       "kind": "loop",
       "width": 390,
       "height": 844,
-      "bytes": 1269588,
-      "durationMs": 9637,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 1305879,
+      "durationMs": 9610,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -461,9 +419,9 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 102623,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 103598,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -473,9 +431,9 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 74283,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 73112,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -485,9 +443,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 90258,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 84176,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -497,10 +455,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1278400,
-      "durationMs": 11601,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 1265881,
+      "durationMs": 11627,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -510,9 +468,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 102021,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 102276,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -522,9 +480,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 129551,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 130095,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -534,10 +492,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 918573,
-      "durationMs": 8108,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 965842,
+      "durationMs": 8081,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -547,9 +505,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 205813,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 208794,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -559,9 +517,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 55328,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 57095,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -571,10 +529,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 759124,
-      "durationMs": 8643,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 754334,
+      "durationMs": 8634,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -584,9 +542,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 50683,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 51244,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -596,9 +554,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 83939,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 84500,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -608,9 +566,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 42029,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 41900,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -620,9 +578,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 116966,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 111260,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -632,10 +590,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 903284,
-      "durationMs": 6648,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 946892,
+      "durationMs": 6400,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     },
     {
       "source": "auto",
@@ -645,9 +603,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 108036,
-      "runId": "20260710-161008",
-      "capturedAt": "2026-07-10T21:14:08.343Z"
+      "bytes": 108524,
+      "runId": "20260711-092043",
+      "capturedAt": "2026-07-11T14:22:57.103Z"
     }
   ]
 }

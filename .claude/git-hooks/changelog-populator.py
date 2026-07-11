@@ -210,13 +210,46 @@ def slugify(description: str) -> str:
     return slug or "change"
 
 
+def is_replayed_commit() -> bool:
+    """Return True when HEAD was produced by replaying an existing commit.
+
+    An amend, cherry-pick, or rebase pick re-fires post-commit for a commit
+    that already had its populator run — and whose fragment may have been
+    hand-edited since, which defeats the entry-line idempotency guard below
+    (the reworded fragment no longer matches the subject-derived entry, so a
+    duplicate lands; bit PR #189). The reflog action is the reliable signal:
+    only a plain `commit:` / `commit (initial):` mints a fragment.
+
+    Fails open: if the reflog is unavailable (core.logAllRefUpdates off), every
+    commit is treated as fresh and the entry-line guard remains the only
+    defense — better an occasional duplicate than silently never creating
+    fragments.
+
+    `commit (merge):` is allowed through: a real merge commit is a fresh
+    commit, not a replay (default "Merge ..." subjects are skipped later by
+    SKIP_PREFIXES anyway; this matters only for merges with a custom,
+    conventional first line).
+    """
+    result = subprocess.run(
+        ["git", "reflog", "-1", "--format=%gs"],
+        capture_output=True,
+        text=True,
+    )
+    action = (result.stdout or "").strip()
+    if not action:
+        return False
+    return not action.startswith(("commit:", "commit (initial):", "commit (merge):"))
+
+
 def entry_already_recorded(unreleased_dir: Path, entry: str) -> bool:
     """Return True if any existing fragment already contains this exact entry line.
 
-    Idempotency guard: a commit that is amended, cherry-picked, or replayed by a
-    rebase re-fires this hook with the same subject. Without this, the same entry
-    would land in a second fragment. Matching by entry line (not filename) catches
-    replays even when the commit time — and therefore the fragment name — differs.
+    Second idempotency layer behind the reflog guard: catches replays the
+    reflog cannot see (e.g. a fragment-less commit re-created verbatim in a
+    fresh clone). Matching by entry line (not filename) works even when the
+    commit time — and therefore the fragment name — differs. Defeated by
+    hand-editing the fragment wording, which is why the reflog guard runs
+    first.
     """
     if not unreleased_dir.is_dir():
         return False
@@ -249,6 +282,11 @@ def main() -> int:
 
     # Prevent re-entry (amend triggers post-commit again)
     if lock_file.exists():
+        return 0
+
+    # Replays (amend / cherry-pick / rebase pick) never mint a new fragment —
+    # the original commit already had its populator run.
+    if is_replayed_commit():
         return 0
 
     # Get commit info

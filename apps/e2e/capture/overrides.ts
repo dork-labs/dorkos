@@ -170,6 +170,7 @@ export async function applyOverrides(autoAssets: AssetEntry[], now: string): Pro
         height: target.height,
         headTrimMs: 0,
         validateSourceAspect: true,
+        posterFrame: shot.posterFrame,
       });
       for (const entry of produced.map(tag)) {
         byFile.set(entry.file, entry);

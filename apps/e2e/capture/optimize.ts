@@ -268,6 +268,12 @@ export interface WriteLoopOptions {
    * the extra probe.
    */
   validateSourceAspect?: boolean;
+  /**
+   * Which frame becomes the dark poster: `first` (frame 0, seamless handoff)
+   * or `settled` (the last clean frame before the end-seam crossfade). Comes
+   * from the shot registry ({@link Shot.posterFrame}); defaults to `first`.
+   */
+  posterFrame?: 'first' | 'settled';
 }
 
 /** The filtergraph inputs for one loop's edit. */
@@ -326,23 +332,29 @@ function buildLoopFilter(spec: LoopFilterSpec): string {
 }
 
 /**
- * Extract the loop's first post-trim frame, optimize it, and write it as the
- * dark poster. Because it is literally frame 0 of the encoded webm, the
- * poster→video handoff on the site is seamless.
+ * Extract one frame of the encoded loop, optimize it, and write it as the dark
+ * poster. At `atSec` 0 (the default) the poster is literally frame 0 of the
+ * webm, so the poster→video handoff on the site is seamless; a `settled`
+ * poster (see the shot registry's `posterFrame`) passes the pre-seam
+ * timestamp instead.
  */
 async function extractPoster(
   ffmpeg: string,
   webmPath: string,
   surface: string,
   width: number,
-  height: number
+  height: number,
+  atSec = 0
 ): Promise<AssetEntry> {
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-poster-'));
   try {
     const rawPoster = path.join(workDir, 'poster.png');
-    execFileSync(ffmpeg, ['-y', '-hide_banner', '-i', webmPath, '-frames:v', '1', rawPoster], {
-      stdio: 'ignore',
-    });
+    const seek = atSec > 0 ? ['-ss', atSec.toFixed(3)] : [];
+    execFileSync(
+      ffmpeg,
+      ['-y', '-hide_banner', ...seek, '-i', webmPath, '-frames:v', '1', rawPoster],
+      { stdio: 'ignore' }
+    );
     const optimized = await optimizePng(await fs.readFile(rawPoster));
     await fs.writeFile(path.join(OUTPUT_DIR, `${surface}-dark.png`), optimized);
     return {
@@ -367,7 +379,8 @@ async function extractPoster(
  * head-trim always yields the same two files.
  */
 export async function writeLoop(options: WriteLoopOptions): Promise<AssetEntry[]> {
-  const { sourcePath, surface, width, height, headTrimMs, validateSourceAspect } = options;
+  const { sourcePath, surface, width, height, headTrimMs, validateSourceAspect, posterFrame } =
+    options;
   const ffmpeg = resolveFfmpeg();
   const dest = path.join(OUTPUT_DIR, `${surface}-dark.webm`);
 
@@ -426,7 +439,13 @@ export async function writeLoop(options: WriteLoopOptions): Promise<AssetEntry[]
     );
   }
 
-  const poster = await extractPoster(ffmpeg, dest, surface, width, height);
+  // A `settled` poster lands one frame before the crossfade seam starts — the
+  // last frame that is pure, fully-drawn content (during the seam, the head
+  // fades back in over it; after it, frame equality with frame 0 restores the
+  // very build-up state the settled poster exists to avoid).
+  const posterAtSec =
+    posterFrame === 'settled' ? Math.max(0, bodyEndSec - crossfadeSec - 1 / LOOP_FPS) : 0;
+  const poster = await extractPoster(ffmpeg, dest, surface, width, height, posterAtSec);
   return [
     {
       file: `${surface}-dark.webm`,
