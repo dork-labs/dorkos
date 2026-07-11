@@ -9,7 +9,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Securing Your Instance
 
-By default, DorkOS runs with **no login** — instant start, no accounts, localhost only. That is the right default for a tool running on your own machine. The moment you want to reach DorkOS from another device, you turn on a real login: an owner account backed by a password, not a PIN.
+By default, DorkOS runs with **no login**: instant start, no accounts, localhost only. That is the right default for a tool running on your own machine. The moment you want to reach DorkOS from another device, you turn on a real login: an owner account backed by a password, not a PIN.
 
 <Callout type="info">
   Login is **optional and off by default**. Turning it on adds an owner account and a sign-in
@@ -29,9 +29,9 @@ Open **Settings** (gear icon), then the **Security** tab.
 <Step>
 ### Turn on "Require login"
 
-Toggle **Require login**. DorkOS walks you through creating the **owner account** — an email and a password.
+Toggle **Require login**. DorkOS walks you through creating the **owner account**: an email and a password.
 
-The email is a **local identifier only**: it is never verified and no email is ever sent. There is no SMTP anywhere in the local edition.
+The email is a **local identifier only**: it is never verified and no email is ever sent.
 
 </Step>
 
@@ -40,12 +40,14 @@ The email is a **local identifier only**: it is never verified and no email is e
 
 Once the owner account exists, login is required. Your session persists for 7 days with sliding refresh, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Security**.
 
+Turning **Require login** back off doesn't delete the owner account, it just stops asking for it: the account and any API keys stay put, and the instance goes back to the no-login default.
+
 </Step>
 </Steps>
 
 ## Exposing DorkOS beyond localhost
 
-Exposing an instance — starting a tunnel, or binding to a non-loopback network interface — now **requires login**. This replaces the old tunnel passcode entirely.
+Want to reach DorkOS from your phone or another computer? Turn on login first. It is the only way in once you leave localhost, whether you get there through a tunnel or by binding to another network interface (any address other than your own machine, like your Wi-Fi IP).
 
 <Callout type="warn">
   **Breaking change:** the 6-digit tunnel passcode is gone. Exposing DorkOS requires an owner
@@ -53,14 +55,14 @@ Exposing an instance — starting a tunnel, or binding to a non-loopback network
 </Callout>
 
 - **Starting a tunnel** with login off routes you into owner-account creation first, with the copy _"Exposing DorkOS requires a login."_ After the owner exists and login is on, the tunnel starts.
-- **Binding to a non-loopback host** (`DORKOS_HOST` set to something other than `localhost` / `127.0.0.1` / `::1`) with login not configured **refuses to start** with an actionable error. Enable login first, then restart.
+- **Binding to a non-loopback host** (setting `DORKOS_HOST` to anything other than `localhost` / `127.0.0.1` / `::1`) with login not configured **refuses to start** with an actionable error. Enable login first, then restart.
 
-Remote visitors reaching an exposed instance get the **sign-in screen** — static assets load so the login page renders, but every API call requires a valid session.
+Remote visitors reaching an exposed instance get the **sign-in screen**: static assets load so the login page renders, but every API call requires a valid session.
 
 <Callout type="info">
-  Containers that own their own network boundary (e.g. the official Docker images binding `0.0.0.0`)
-  can set `DORKOS_ALLOW_INSECURE_BIND=true` to override the bind gate. Real machines should enable
-  login instead.
+  **Reference, for container setups:** containers that own their own network boundary (e.g. the
+  official Docker images binding `0.0.0.0`) can set `DORKOS_ALLOW_INSECURE_BIND=true` to override
+  the bind gate. Most people never need this. Real machines should enable login instead.
 </Callout>
 
 ## API keys for MCP, scripts, and agents
@@ -78,14 +80,16 @@ External agents (Claude Code, Cursor, Windsurf), scripts, and the MCP endpoint a
 <Step>
 ### Copy it once
 
-The key value is shown **exactly once** at creation. Copy it immediately — DorkOS never displays it again. Revoke a key anytime from the same screen.
+The key value is shown **exactly once** at creation. Copy it immediately: DorkOS never displays it again. Revoke a key anytime from the same screen.
 
 </Step>
 
 <Step>
 ### Use it as a Bearer token
 
-Send the key as `Authorization: Bearer <key>` to `/mcp` or any `/api/*` route.
+Send the key as a Bearer token (a kind of key you attach to each request) in an `Authorization: Bearer <key>` header, to `/mcp` or any `/api/*` route.
+
+**Reference:** here's what that looks like in practice.
 
 ```bash
 curl -H "Authorization: Bearer dork_..." http://localhost:4242/mcp
@@ -95,16 +99,16 @@ curl -H "Authorization: Bearer dork_..." http://localhost:4242/mcp
 </Steps>
 
 <Callout type="info">
-  **Headless deployments:** the `MCP_API_KEY` environment variable is still honored as a static
-  override for the `/mcp` endpoint. It takes priority over per-user keys and cannot be revoked from
-  the UI — ideal for CI and server deployments where no one is signing in.
+  **Headless deployments** (a server running with nobody signed in at a screen, like CI or a
+  background job): the `MCP_API_KEY` environment variable is still honored as a static override for
+  the `/mcp` endpoint. It takes priority over per-user keys and cannot be revoked from the UI.
 </Callout>
 
 The old global MCP key (and its `POST /api/config/mcp/generate-key` / `DELETE /api/config/mcp/api-key` endpoints) have been removed. If you had a global MCP key configured, it is **migrated automatically** into an owner-owned API key the first time you create the owner account (or on the next server start if an owner already exists), so existing MCP clients keep working without changes.
 
 ## Recovering a lost password
 
-There is no "forgot password" email — the local edition sends no email. Because machine access already implies owner-level trust, you recover from the command line:
+There is no "forgot password" email: the local edition sends no email, and a laptop that already trusts you doesn't need one. Because machine access already implies owner-level trust, you recover from the command line:
 
 ```bash
 # Reset the owner password (prompts, or pipe it in for non-interactive use)
@@ -120,7 +124,7 @@ dorkos auth enable --email you@example.com --password '<secret>'
 ```
 
 <Callout type="warn">
-  If a server is already running, restart it after `dorkos auth enable` — the CLI writes
+  If a server is already running, restart it after `dorkos auth enable`. The CLI writes
   `~/.dork/config.json` directly and the running server does not watch the file.
 </Callout>
 
@@ -129,15 +133,16 @@ dorkos auth enable --email you@example.com --password '<secret>'
 <Callout type="error">
   Anyone who can drive agents on an instance effectively has the server process's filesystem access
   and spends the owner's Claude quota. That is why registration is **owner-only**: the first account
-  is the owner, and further sign-ups are closed. A viewer/operator role model that safely admits
-  more people is a planned fast-follow; until it exists, only give the owner login to people you
-  trust with your machine and your Claude account.
+  is the owner, and further sign-ups are closed. There is no second account today: sharing access
+  means sharing the owner login itself. A viewer/operator role model that safely admits more people
+  is a planned fast-follow; until it exists, only share the owner login with people you trust with
+  your machine and your Claude account.
 </Callout>
 
 ## Next Steps
 
 <Cards>
-  <Card title="Tunnel Setup" href="/docs/guides/tunnel-setup">
+  <Card title="Tunnel Setup" href="/docs/self-hosting/tunnel-setup">
     Expose your instance remotely via ngrok
   </Card>
   <Card title="Reverse Proxy" href="/docs/self-hosting/reverse-proxy">

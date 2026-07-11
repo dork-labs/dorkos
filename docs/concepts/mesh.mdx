@@ -10,6 +10,13 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Mesh finds the AI agents scattered across your projects and gathers them in one place. It scans your folders, shows you what it found, and lets you approve which agents to add. Once an agent is in, other agents can find it and reach it. Mesh is always on, with nothing to turn on first.
 
+<Callout type="info">
+  Cross-project messaging is new. We're still hardening it, so expect a rough edge here and
+  there while we catch up with real-world use.
+</Callout>
+
+**Try it:** open the **Agents** page and click **New Agent**, then choose **Import Project**. Mesh scans your folders and shows you what it found. From the Agents page you can also switch to the **Topology** tab to see the network map, or the **Access** tab to manage messaging rules between groups.
+
 ## The problem it solves
 
 When you run agents in several projects, they cannot see each other. A Claude Code agent working on your backend has no idea a Cursor agent is editing your frontend. So you become the go-between, copying context from one session into the next.
@@ -64,7 +71,7 @@ The network map shows you your agents grouped by namespace, with the rules that 
 
 ## Knowing which agents are alive
 
-Mesh watches each agent through a heartbeat: a quick "still here" signal an agent sends as it works. From that, it sorts every agent into one of three states:
+Mesh watches each agent through a heartbeat: a quick "still here" signal an agent sends as it works, the agent equivalent of a text back that just says "yep, still alive." From that, it sorts every agent into one of three states:
 
 - **Active**: seen just now
 - **Inactive**: quiet for a while, but probably fine
@@ -74,7 +81,9 @@ When an agent's state changes, the dashboard updates the network map on the spot
 
 ## Where Mesh keeps its data
 
-Mesh keeps its list in a small database at `~/.dork/dork.db`. But the real source of truth is the `.dork/agent.json` file in each project, not the database (a design choice recorded in ADR-0043). If the database is ever lost, Mesh rebuilds it from those files on the next pass. Nothing you care about lives only in the database, so you cannot lose an agent by deleting `dork.db`.
+Mesh keeps its list in a small database at `~/.dork/dork.db`. But the real source of truth is the `.dork/agent.json` file in each project, not the database, on purpose, so your agents survive even if the database doesn't. If the database is ever lost, Mesh rebuilds it from those files on the next pass. Nothing you care about lives only in the database, so you cannot lose an agent by deleting `dork.db`.
+
+Scanning and registering agents only ever reads and writes files on your own machine, through your own DorkOS server.
 
 ## Reference
 
@@ -113,7 +122,7 @@ Every registered agent has a manifest stored in `.dork/agent.json`:
 | **runtime**           | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`) |
 | **capabilities**      | Capability tags (e.g., "typescript", "testing")                                                                                                |
 | **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`                                                                            |
-| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100). Advisory only — not enforced at runtime today.                    |
+| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100). Advisory only, not enforced at runtime today.                    |
 | **namespace**         | Derived from project path relative to scan root                                                                                                |
 | **persona**           | Optional system prompt text injected into Claude sessions                                                                                      |
 | **personaEnabled**    | Whether persona text is injected (default: true)                                                                                               |

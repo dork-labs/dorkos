@@ -1,4 +1,4 @@
 {
   "title": "Concepts",
-  "pages": ["architecture", "sessions", "transport", "relay", "mesh"]
+  "pages": ["architecture", "sessions", "relay", "mesh"]
 }

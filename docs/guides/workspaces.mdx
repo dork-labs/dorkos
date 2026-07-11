@@ -1,37 +1,74 @@
 ---
 title: Workspaces
-description: Isolated, server-managed checkouts — one per unit of work, bound to a session so agents never step on each other
+description: DorkOS gives every task its own folder on disk, so agents never step on each other's files
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Workspaces
 
-A **workspace** is an isolated, server-managed checkout of a repository — one per unit of work (an issue id, a spec slug, a feature branch) — bound to an agent session through its working directory. Workspaces graduate the manual "create a git worktree per task" habit into a first-class DorkOS entity with collision-free port allocation, dirty-safe cleanup, and a console view that shows you exactly which checkout a session is operating in.
+DorkOS gives every task its own private copy of your repo, automatically. Start a session on issue `DOR-84` and a second one on `DOR-91`, and each gets its own folder, its own dev-server ports, and its own uncommitted changes. Neither can step on the other.
 
-Workspaces are **on by default**. The first time a session is bound to a unit of work, a workspace is provisioned automatically; if you never bind one, sessions behave exactly as before.
+That folder is called a **workspace**. Workspaces are on by default: the first time a session works on a specific issue or spec, DorkOS provisions one behind the scenes. If you never touch this feature, nothing changes, sessions run in whatever folder they always did.
+
+## Quick look: what you'll see
+
+Open **Workspaces** from the sidebar and you'll see a card per checkout: which project it belongs to, its status, whether it has uncommitted changes, and which sessions are currently using it. While you work, the session's status bar shows a small chip like `⎇ DOR-84 · core · ● 3 changes`, so you always know which workspace a session is sitting in. Both are covered in detail below.
 
 ## Why workspaces exist
 
-The rule for any repository touched by more than one agent is **one checkout, one writer**. Two agents mutating the same working tree corrupt each other — racing commits, half-staged files, a dev server rebuilding under another agent's feet. The defensive move has always been "give each task its own git worktree," but doing that by hand means remembering to create it, picking a non-colliding dev-server port, and tearing it down without losing uncommitted work.
+If two agents edit the same folder at the same time, bad things happen: racing commits, half-staged files, a dev server rebuilding out from under the other agent. Nobody wants to debug that. The fix is **one checkout, one writer**: give every task its own folder.
 
-A workspace makes that automatic and safe:
+Doing that by hand means creating a `git worktree` (a second working copy of your repo that shares history with the original, so you're not re-cloning gigabytes for every task), picking a dev-server port that isn't already taken, and remembering to clean it up without losing uncommitted work. Workspaces automate all of it:
 
-- **Isolation** — each unit of work gets its own checkout, so parallel sessions never share a tree.
-- **Collision-free ports** — the server hands each workspace a contiguous block of ports, so two workspaces can both run a dev server at once.
-- **Dirty-safe lifecycle** — removal refuses to delete a checkout with unsaved work unless you explicitly force it.
-- **Visibility** — the `/workspaces` page and the session status bar tell you what exists and where you are.
+- **Isolation**: each task gets its own checkout, so parallel sessions never share a folder.
+- **Collision-free ports**: the server hands each workspace its own block of ports, so two workspaces can both run a dev server at once.
+- **Dirty-safe cleanup**: removing a workspace refuses to delete unsaved work unless you explicitly say to.
+- **Visibility**: the Workspaces page and the session status bar show you what exists and where each session is working.
 
 <Callout type="info">
-  A workspace is bound to a session purely by its **working directory** (`cwd`). There is no special
-  runtime mode — any agent session whose `cwd` is a managed checkout is "in" that workspace. This
-  keeps the feature additive: nothing about the session protocol changes.
+  A workspace is just a folder. A session is "in" a workspace when its working directory (the folder
+  it's running commands in) points at one, nothing else about the session changes.
 </Callout>
 
-## Anatomy of a workspace
+## The /workspaces page
+
+Open **Workspaces** from the sidebar to see every managed checkout, grouped by project. Each card shows the workspace's identity, status, provider, its primary port, and whether it has uncommitted changes or is pinned. Below the divider, the card lists the sessions currently attached to it, click one to jump straight into that session, opened in the workspace's checkout.
+
+Each card has two actions:
+
+- **Pin / Unpin**: protect the workspace from automatic cleanup.
+- **Remove**: delete the checkout. This is dirty-safe (see [Pinning and cleanup](#pinning-and-cleanup) below), so a stray click can't destroy work you haven't saved.
+
+<Callout type="info">
+  The page answers "what workspaces exist for this work, and which sessions are using them?", not
+  "show me every directory on disk." It's scoped to what DorkOS manages.
+</Callout>
+
+## Knowing which workspace you're in
+
+When a session's working directory is a managed workspace, the **Git Status** item in the session status bar leads with the workspace identity instead of a bare branch name:
+
+```
+⎇ DOR-84 · core · ● 3 changes
+```
+
+That reads as: you're in the `DOR-84` workspace of the `core` project, with 3 uncommitted changes. (Yes, `DOR-84` is a real ticket. We used it while building this feature and never got around to swapping in a placeholder.) Hovering the chip reveals the branch, provider, allocated ports, and pinned state. If the session is in an ordinary folder instead of a managed workspace, the item just shows the normal branch chip, nothing changes.
+
+<Callout type="info">
+  The Git Status item is shown on desktop-width layouts. If you don't see it, enable it from the
+  status-bar configuration popover.
+</Callout>
+
+---
+
+## Reference
+
+Most people never need what's below. This is the developer-facing tail, for anyone scripting against the API or tuning `config.json`.
+
+### Anatomy of a workspace
 
 Every workspace has a stable identity and a provisioned checkout:
 
@@ -45,7 +82,7 @@ Every workspace has a stable identity and a provisioned checkout:
     key: {
       type: 'string',
       description:
-        'The unit of work — typically an issue id or spec slug (e.g. "DOR-84"). Unique within a project.',
+        'The unit of work, typically an issue id or spec slug (e.g. "DOR-84"). Unique within a project.',
     },
     path: {
       type: 'string',
@@ -55,7 +92,7 @@ Every workspace has a stable identity and a provisioned checkout:
     provider: {
       type: "'worktree' | 'clone'",
       description:
-        'How the checkout was created — a git worktree (default, fast, shared object store) or a full clone.',
+        'How the checkout was created: a git worktree (default, fast, shared object store) or a full clone.',
     },
     branch: {
       type: 'string',
@@ -80,38 +117,11 @@ Every workspace has a stable identity and a provisioned checkout:
 
 The `projectKey` + `key` pair is unique, so asking for the same unit of work twice returns the **same** workspace rather than provisioning a duplicate.
 
-## The /workspaces page
+### Binding a session to a workspace
 
-Open **Workspaces** from the sidebar to see every server-managed checkout, grouped by project. Each card shows the workspace's identity, status, provider, its primary port, and whether it has uncommitted changes or is pinned. Below the divider, the card lists the **sessions currently attached** to that workspace — click one to jump straight into that session, opened in the workspace's checkout.
+Binding is opt-in, and most people never do it by hand, the DorkOS client sends this automatically when you start work on an issue or spec through the UI. It's shown here as the reference form, for anyone calling the API directly.
 
-Each card carries two actions:
-
-- **Pin / Unpin** — toggle whether the workspace is protected from automatic cleanup.
-- **Remove** — delete the checkout. This is dirty-safe (see [Pinning and cleanup](#pinning-and-cleanup)).
-
-<Callout type="info">
-  The page is per-project and per-agent by design: the question it answers is "what workspaces exist
-  for this work, and which sessions are using them?" — not "show me every directory on disk."
-</Callout>
-
-## Knowing which workspace you're in
-
-When a session's working directory is a managed workspace, the **Git Status item** in the session status bar leads with the workspace identity instead of a bare branch name:
-
-```
-⎇ DOR-84 · core · ● 3 changes
-```
-
-That reads as: you're in the `DOR-84` workspace of the `core` project, with 3 uncommitted changes. Hovering the chip reveals the branch, provider, allocated ports, and pinned state. If the session is in an ordinary directory (not a managed workspace), the item renders the normal branch chip — nothing changes.
-
-<Callout type="info">
-  The Git Status item is shown on desktop-width layouts. If you don't see it, enable it from the
-  status-bar configuration popover.
-</Callout>
-
-## Binding a session to a workspace
-
-Binding is opt-in. When you send a message to a session, include a `workspaceKey` (and optionally a `workspaceProvider`) and the server will **ensure** the workspace exists — provisioning it on first use — then run the turn with the workspace's checkout as the working directory and its port block injected into the environment:
+When you send a message to a session, include a `workspaceKey` (and optionally a `workspaceProvider`) and the server will ensure the workspace exists, provisioning it on first use, then run the turn with the workspace's checkout as the working directory and its port block injected into the environment:
 
 ```bash
 curl -X POST http://localhost:4242/api/sessions/{sessionId}/messages \
@@ -123,9 +133,9 @@ curl -X POST http://localhost:4242/api/sessions/{sessionId}/messages \
   }'
 ```
 
-Omit `workspaceKey` and the session runs in whatever `cwd` it already had — the path is byte-for-byte unchanged. If the WorkspaceManager is disabled or fails to provision, the turn falls back to the supplied `cwd` rather than erroring, so binding can never break a session.
+Omit `workspaceKey` and the session runs in whatever `cwd` it already had, the path is byte-for-byte unchanged. If the WorkspaceManager is disabled, or fails to provision for any reason, the turn falls back to the supplied `cwd` instead of erroring, so binding can never break a session.
 
-## Ports
+### Ports
 
 Each workspace reserves a **contiguous block** of ports so multiple workspaces can run dev servers simultaneously without clashing. Ports derive from the workspace's `portBase`:
 
@@ -137,21 +147,21 @@ Each workspace reserves a **contiguous block** of ports so multiple workspaces c
   }}
 />
 
-The server allocates the **lowest free block**, so two workspaces are guaranteed disjoint ports. With the default `portBase` of `4250` and a block size of `10`, the first workspace gets `4250/4251/4252`, the next `4260/4261/4262`, and so on. The allocated values are written into the workspace's `.env` file, so a dev server started inside the checkout picks them up automatically.
+The server allocates the **lowest free block**, so two workspaces are guaranteed disjoint ports. With the default `portBase` of `4250` and a block size of `10`, the first workspace gets `4250/4251/4252`, the next `4260/4261/4262`, and so on. The allocated values are written into the workspace's `.env` file, so a dev server started inside the checkout picks them up automatically, no manual port-hunting required.
 
-## Pinning and cleanup
+### Pinning and cleanup
 
-Removing a workspace deletes its checkout — so it's deliberately conservative:
+Removing a workspace deletes its checkout, so it's deliberately conservative:
 
-- **Dirty-safe removal.** Remove first checks the checkout for **uncommitted, untracked, or unpushed** work. If any exists, the request is refused and the UI re-prompts with an explicit _force_ confirmation rather than silently destroying work. Forcing deletes it permanently.
-- **Pinning.** A **pinned** workspace is exempt from automatic cleanup. Pin a workspace you want to keep around regardless of retention policy; the pin persists and shows on the card and in the status-bar chip tooltip.
+- **Dirty-safe removal.** Remove first checks the checkout for uncommitted, untracked, or unpushed work. If any exists, the request is refused and the UI re-prompts with an explicit force confirmation rather than silently destroying work, so you can't fat-finger delete on something you haven't saved. Forcing deletes it permanently.
+- **Pinning.** A pinned workspace is exempt from automatic cleanup. Pin a workspace you want to keep around regardless of retention policy; the pin persists and shows on the card and in the status-bar chip tooltip.
 
 <Callout type="warn">
   Pinning protects against *automatic* cleanup, not against an explicit remove. The two guards are
   independent: dirty-state protects unsaved work; pinning protects from reclamation policy.
 </Callout>
 
-## Providers
+### Providers
 
 A workspace's `provider` determines how its checkout is created:
 
@@ -162,7 +172,7 @@ A workspace's `provider` determines how its checkout is created:
 
 The default provider is configurable (`workspace.defaultProvider`); callers can override it per-request with `workspaceProvider`.
 
-## Configuration Reference
+### Configuration Reference
 
 Workspaces are configured under `workspace` in `~/.dork/config.json`:
 
@@ -202,16 +212,16 @@ Workspaces are configured under `workspace` in `~/.dork/config.json`:
   }}
 />
 
-## API Reference
+### API Reference
 
 All endpoints are under `/api/workspaces`:
 
 | Method & path                  | Purpose                                                                                   |
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
 | `GET /api/workspaces`          | List workspaces (optionally `?projectKey=`), each with attached sessions and dirty state. |
-| `GET /api/workspaces/resolve`  | Resolve a workspace from an absolute `?path=` — powers the session status-bar indicator.  |
+| `GET /api/workspaces/resolve`  | Resolve a workspace from an absolute `?path=`: powers the session status-bar indicator.   |
 | `POST /api/workspaces/ports`   | Preview the port block a given checkout `path` would receive.                             |
-| `POST /api/workspaces`         | Ensure a workspace (`{ projectKey, key, source, provider? }`) — provisions on first use.  |
+| `POST /api/workspaces`         | Ensure a workspace (`{ projectKey, key, source, provider? }`): provisions on first use.   |
 | `GET /api/workspaces/:id`      | Fetch a single workspace.                                                                 |
 | `POST /api/workspaces/:id/pin` | Pin or unpin (`{ pinned: boolean }`).                                                     |
 | `DELETE /api/workspaces/:id`   | Remove (`?force=true` to override a dirty refusal).                                       |
@@ -226,12 +236,12 @@ All endpoints are under `/api/workspaces`:
 
 <Cards>
   <Card title="Sessions" href="/docs/concepts/sessions">
-    How DorkOS sessions work — the thing a workspace binds to.
+    How DorkOS sessions work (the thing a workspace binds to).
   </Card>
   <Card title="Agent Identity" href="/docs/guides/agents">
     Give your projects a name, color, and emoji so you think in agents, not file paths.
   </Card>
   <Card title="Agent Coordination" href="/docs/guides/agent-coordination">
-    Run multiple agents in parallel — where per-workspace isolation earns its keep.
+    Run multiple agents in parallel, where per-workspace isolation earns its keep.
   </Card>
 </Cards>

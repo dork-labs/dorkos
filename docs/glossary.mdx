@@ -1,0 +1,104 @@
+---
+title: Glossary
+description: Plain-language definitions for the words DorkOS docs use most, so you only learn them once.
+---
+
+# Glossary
+
+DorkOS docs reuse a handful of terms on purpose. This page defines each one once, so you never have to relearn it on five different pages. Skim it now, or jump back here whenever a word stops making sense.
+
+## Agent
+
+An agent is the AI assistant working on one of your projects, running on a runtime like Claude Code, Codex, or OpenCode. You talk to it in a session, and DorkOS can give it a face: a name, color, and emoji. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
+
+## Agent Identity
+
+An agent identity is the name, color, and emoji DorkOS shows for a project instead of a raw file path. It appears in the sidebar, the tab title, and your task schedules, so you think in agents, not folders. See [Agent Identity](/docs/guides/agents).
+
+## Boundary
+
+A boundary is the folder, and everything inside it, that DorkOS is allowed to read and write. Anything outside it is off limits, no matter what an agent asks for. It defaults to your home directory, and you can set a tighter one with the `--boundary` flag. See [Configuration](/docs/getting-started/configuration).
+
+## Canvas
+
+The canvas is the space beside your chat where an agent opens images, PDFs, files, and other documents instead of burying them in the conversation. It can hold several documents at once, each in its own tab. See the [Workbench guide](/docs/guides/workbench).
+
+## Cockpit
+
+The cockpit is the web app where you chat with your agents, watch them work, and manage everything else DorkOS does. You open it in your browser after installing DorkOS with one command. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
+
+## DorkBot
+
+DorkBot is the one agent DorkOS creates for itself instead of for one of your projects, so the system has an identity of its own when it needs to send or receive a message. Unlike your own agents, it can't be renamed, blocked, unregistered, or deleted (an agent named DorkBot, because of course it is). See [Agent Identity](/docs/guides/agents).
+
+## Extension
+
+An extension is a bundle of code that adds custom UI or automation to DorkOS, built by anyone. It runs in your browser alongside the app and can watch session activity without ever seeing what was actually said inside a session. See [Extensions](/docs/integrations/extensions).
+
+## Generative UI
+
+Generative UI is how an agent shows you a chart, table, or checklist instead of describing your data in a wall of text. It happens right inside the chat, and the agent decides when a widget helps, so you never have to ask for one. See [Generative UI](/docs/guides/generative-ui).
+
+## Marketplace
+
+The marketplace is DorkOS's catalog of ready-made agents, plugins, skill packs, and adapters you can install with one command. Everything you install runs locally on your machine, under the same permissions as the rest of DorkOS. See [Marketplace](/docs/marketplace).
+
+## MCP
+
+MCP (the Model Context Protocol) is the standard that lets AI tools talk to each other, so one tool can use another's capabilities without custom glue code. DorkOS both exposes its own tools over MCP and can render interactive MCP apps from other servers inline in chat. See [MCP Server](/docs/integrations/mcp-server).
+
+## Mesh
+
+Mesh is how DorkOS finds the AI agents scattered across your projects and gathers them in one place, so they can find and message each other. It scans your folders for signs of an agent project and always asks before adding anything. See [Mesh](/docs/concepts/mesh).
+
+## Persona
+
+Persona is DorkOS's underlying name for an agent's personality: traits like terse or chatty, cautious or bold, plus any custom instructions that turn a generalist into a specialist. In the app today you'll find it under a tab simply called Config. See [Shape How Your Agent Behaves](/docs/guides/persona).
+
+## Relay
+
+Relay is DorkOS's built-in messaging layer, routing messages between your agents, you, and outside platforms like Telegram. It runs by default, so an agent can reach you the moment it finishes a task. See [Relay](/docs/concepts/relay).
+
+## Runtime
+
+A runtime is the coding agent engine behind a session: Claude Code, Codex, or OpenCode. Every runtime lands in the same session list and uses the same chat and tool approvals, so switching between them doesn't change how you work. See [Runtimes](/docs/guides/runtimes).
+
+## Session
+
+A session is one conversation with one agent: every message, file change, and reply belongs to it. It survives a page refresh and a second window, so you can pick it back up wherever you left off. See [Sessions](/docs/concepts/sessions).
+
+## Skill
+
+A skill is a packaged set of instructions that teaches an agent how to do a specific job, like running a security audit or drafting a changelog entry. Your project's own skills show up right alongside built-in commands when you type `/` in chat. See [Slash Commands](/docs/guides/slash-commands).
+
+## Slash Command
+
+A slash command turns a multi-step task into one word you type, like `/help` or `/compact`. Type `/` in the chat to see every command available: built-in ones, your project's own, and anything you've added yourself. See [Slash Commands](/docs/guides/slash-commands).
+
+## Task
+
+A task (a scheduled task, to be precise) tells an agent to run automatically on a timer, like every Monday at 10am, instead of you kicking it off by hand. It keeps running even after you close your laptop. See [Task Scheduler](/docs/guides/task-scheduler).
+
+## Tool Approval
+
+Tool approval is your checkpoint before an agent runs a command or edits a file. DorkOS pauses, shows you what it wants to do with a color-coded risk level, and waits for you to approve or deny it. See [Tool Approval](/docs/guides/tool-approval).
+
+## Tunnel
+
+A tunnel gives your local DorkOS instance a temporary public web address, so you can check on your agents from your phone or show someone else what you're building. DorkOS uses ngrok to create one, and it only works when DorkOS is running from the command line, not from the Obsidian plugin. See [Tunnel Setup](/docs/self-hosting/tunnel-setup).
+
+## Widget
+
+A widget is a real, interactive piece of UI (a chart, table, or checklist) that an agent renders inline in chat instead of describing your data in text. You can click its buttons or fill in its form, and DorkOS sends your response back to the agent. See [Generative UI](/docs/guides/generative-ui).
+
+## Workbench
+
+The workbench is the file, terminal, and browser view that opens beside your chat: the deep-dive on everything the canvas can hold. It's where you read, and sometimes edit, the documents an agent opens for you. See the [Workbench guide](/docs/guides/workbench).
+
+## Workspace
+
+A workspace is the private folder DorkOS gives a task automatically, so two agents working on different issues never step on each other's files or dev-server ports. It's on by default, and if you never touch this feature, nothing about how you work changes. See [Workspaces](/docs/guides/workspaces).
+
+## Worktree
+
+A worktree is the git mechanism behind most workspaces: a second working copy of your repo that shares history with the original, so DorkOS doesn't have to re-clone your whole codebase for every task. It's the default way DorkOS creates a workspace. See [Workspaces](/docs/guides/workspaces).

@@ -1,0 +1,112 @@
+---
+title: Troubleshooting
+description: Common problems and their fixes, starting with the most likely
+---
+
+# Troubleshooting
+
+Something not working? Find the problem below and work through the steps in order, most likely fix first.
+
+## Start here: `dorkos doctor`
+
+Before anything else, run:
+
+```bash
+dorkos doctor
+```
+
+It checks your whole setup (Node version, data directory, port, agent tools, login and tunnel config) and reports what's wrong in plain words. It reads and probes; it never changes anything. If the doctor finds the problem, its report tells you the fix. If everything passes and something is still off, keep reading.
+
+## "DorkOS won't start, something about a port"
+
+You'll see an error like `Port 4242 is already in use.` DorkOS listens on port 4242 by default (the address your browser uses to reach it), and something else on your machine already has that port claimed.
+
+1. Start DorkOS on a different port instead: `dorkos --port 8081` (or any free port).
+2. Find out what's using port 4242, so you can decide whether to stop it: `lsof -i :4242`. This lists the process holding that port.
+3. Make the new port stick so you don't have to type it every time: `dorkos config set server.port 8081`.
+
+<Callout type="info">
+  Port precedence, in order: the `--port` flag you pass, then the `DORKOS_PORT` environment
+  variable, then `server.port` in `~/.dork/config.json`, then the built-in default of 4242. Whatever
+  you set with `--port` wins over everything else for that run.
+</Callout>
+
+## "It says my agent isn't ready" or "Claude Code / Codex / OpenCode won't connect"
+
+DorkOS checks two things for each agent tool: is the CLI installed, and are you logged in. When either is missing, DorkOS shows a **Connect** button instead of trying to run a session and failing partway through.
+
+1. Open **Settings > Runtimes** to see which agent tool needs attention. Each one shows **Ready** or **Connect**, plus an Advanced section with the exact command to run.
+2. Install and log in to the tool that's missing:
+   - **Claude Code**: DorkOS bundles the Claude Code engine, so there's nothing to install. You only need to authenticate: set your `ANTHROPIC_API_KEY`, or log in with a `claude` CLI if you have one on your PATH.
+   - **Codex**: `npm i -g @openai/codex && codex login`
+   - **OpenCode**: `npm i -g opencode-ai && opencode auth login`
+3. Click **Refresh** in the Runtimes tab (or click Connect again). DorkOS re-checks the CLI and login state and flips to Ready once both pass.
+
+<Callout type="info">
+  DorkOS never stores your login for these CLIs itself. Each tool manages its own credentials (an
+  API key, or a login your browser or terminal completed), and DorkOS only asks it "are you ready?"
+</Callout>
+
+## "Is the server even running?"
+
+DorkOS exposes a health check you can hit directly, no login required:
+
+```bash
+curl http://localhost:4242/api/health
+```
+
+A healthy server answers with something like:
+
+```json
+{ "status": "ok", "version": "0.45.1", "uptime": 182.4 }
+```
+
+If that command fails to connect at all, the server process isn't running, or it's running on a different port than you expect (see the port section above).
+
+## "My agent or project isn't showing up"
+
+This is almost always Mesh, DorkOS's discovery system, not having scanned the right folder yet. Discovery only runs when you ask it to, it doesn't watch your filesystem in the background.
+
+1. Open the **Mesh** tab and click **Scan for Agents**. This looks for marker files (`CLAUDE.md`, `AGENTS.md`, a `.dork/agent.json` file, and others) in the folders DorkOS already knows about.
+2. Check that your project is actually inside a folder DorkOS scans. By default that's DorkOS's working directory; add other folders under `mesh.scanRoots` in `~/.dork/config.json` if your project lives elsewhere: `dorkos config set mesh.scanRoots '["/home/user/projects"]'`.
+3. Confirm the project has one of the marker files Mesh looks for (a `CLAUDE.md`, an `AGENTS.md`, or a `.dork/agent.json`). No marker, no match.
+4. If you approved or denied the project before, it won't show up as a new candidate again, check the Mesh tab's existing list rather than expecting it to reappear.
+
+See [Agent Discovery](/docs/guides/agent-discovery) for the full list of what Mesh looks for and how scanning works.
+
+## "My chat seems stuck" or "the agent isn't responding"
+
+1. Give it a moment. Long tool calls (installing packages, running tests, a big refactor) can look idle even though the agent is still working.
+2. Check the connection indicator in the status bar. If it says **Reconnecting**, DorkOS is recovering the live connection automatically and nothing is lost, just wait. If it says **Connection lost**, refresh the page; if that doesn't help, confirm the DorkOS server itself is still running (see the health check above).
+3. If the agent has genuinely gone silent (no output at all, not even a tool call) for 10 minutes, DorkOS interrupts the turn on its own and shows an error message in the chat saying so. You don't need to do anything, just send a new message to try again.
+4. Open the session in a fresh browser tab. If it opens fine there, the problem was the original tab or its connection, not the session itself.
+5. Still stuck? Check the server logs for anything unusual: they print to your terminal while DorkOS is running, and also get written to `~/.dork/logs/dorkos.log`.
+
+## "I can't reach DorkOS from my phone or another computer"
+
+By default DorkOS only listens on your own machine (`localhost`), so other devices can't see it yet. You have two options for opening it up safely: a temporary public link, or a proper reverse proxy for something more permanent. See [Tunnel Setup](/docs/self-hosting/tunnel-setup) and [Reverse Proxy](/docs/self-hosting/reverse-proxy).
+
+## "My file upload was rejected"
+
+DorkOS enforces upload limits so one runaway attachment can't fill your disk: a max file size (10 MB by default), a max number of files per upload (10 by default), and optionally a list of allowed file types (any type, by default).
+
+1. If the error mentions a file being too large, either shrink the file or raise the limit: `dorkos config set uploads.maxFileSize 52428800` (that example sets it to 50 MB).
+2. If the error mentions too many files at once, either upload fewer at a time or raise the limit: `dorkos config set uploads.maxFiles 20`.
+3. If the error says a file type isn't allowed, someone has restricted `uploads.allowedTypes` in your config. Check `~/.dork/config.json`, or ask whoever administers your DorkOS instance.
+
+## Frequently asked questions
+
+**Is DorkOS free?**
+Yes. It's free and open source (MIT licensed). See the [DorkOS Documentation](/docs) home page for the full picture.
+
+**Does my code leave my machine?**
+DorkOS itself runs entirely on your machine and doesn't send your code anywhere. The agent tools it drives (Claude Code, Codex, OpenCode) do call out to their own AI provider to do their work, that's how they think, the same as if you ran them yourself from a terminal.
+
+**Can I run more than one agent at once?**
+Yes, running several agents across several projects at once is the whole point of DorkOS. See [Sessions](/docs/concepts/sessions) and [Agent Discovery](/docs/guides/agent-discovery).
+
+**How do I update DorkOS?**
+Depends how you installed it, npm, Docker, or from source each update a little differently. See [Installation > Updating](/docs/getting-started/installation#updating).
+
+**How do I uninstall DorkOS?**
+Run `dorkos cleanup` to remove it and its data. See [Uninstall](/docs/getting-started/uninstall) for the full walkthrough, including Docker and manual cleanup.

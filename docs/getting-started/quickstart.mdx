@@ -9,9 +9,9 @@ From a fresh install to a running Claude Code session in the browser.
 
 ## Prerequisites
 
-- **Node.js 22+** installed
-- **Claude Code** authenticated — DorkOS bundles the Claude Code binary, so a separate install is optional (a `claude` on your PATH is only used as a fallback)
-- **DorkOS** installed — see the [Installation guide](/docs/getting-started/installation)
+- **Node.js 22+** installed.
+- **Claude Code** authenticated. DorkOS bundles the Claude Code binary, so installing it separately is optional. (A `claude` binary on your PATH is only used as a fallback.)
+- **DorkOS** installed. See the [Installation guide](/docs/getting-started/installation).
 
 ## Launch DorkOS
 
@@ -31,6 +31,8 @@ DorkOS starts on port **4242** by default and opens the web interface in your br
   Local:   http://localhost:4242 // [!code highlight]
   Network: http://192.168.1.100:4242
 ```
+
+If your browser doesn't open on its own (common over SSH or on a headless machine), copy the Local URL into any browser. See [Troubleshooting](/docs/getting-started/troubleshooting) if the page still won't load.
 
 To use a different port or project directory:
 
@@ -54,10 +56,15 @@ Explain the structure of this project
 <Step>
 ### Approve tool calls
 
-When Claude needs to read files, run commands, or make edits, a tool approval card appears. Review the action and click **Approve** or **Deny**.
+When Claude needs to read files, run commands, or make edits, a tool approval card appears. Review the action and click **Approve** or **Deny**, the same way you'd review a coworker's first pull request.
+
+<ProductShot
+  id="tool-approval"
+  alt="A tool approval card in the chat, showing what Claude wants to run with Approve and Deny buttons"
+/>
 
 <Callout type="warn">
-  Always review tool calls before approving — especially write operations and shell commands.
+  Always review tool calls before approving, especially write operations and shell commands.
 </Callout>
 
 </Step>
@@ -66,40 +73,45 @@ When Claude needs to read files, run commands, or make edits, a tool approval ca
 
 ## Explore the Interface
 
-<Tabs items={["Sessions", "Slash Commands", "Working Directory"]}>
+<Tabs items={["Working Directory", "Sessions", "Slash Commands"]}>
+
+<Tab value="Working Directory">
+  DorkOS works out of a **working directory**, the folder on your computer it reads and edits in. By
+  default that's the folder you ran `dorkos` from. Use the **directory picker** in the sidebar to
+  switch to a different project without restarting.
+</Tab>
 
 <Tab value="Sessions">
-The **sidebar** lists every conversation session across all your Claude Code clients — CLI, browser, and Obsidian all write to the same JSONL transcripts, so everything appears here. Each session entry shows the agent identity with color and icon, making it easy to see which project is active at a glance.
+The **sidebar** lists every conversation session across your Claude Code clients. Each entry shows the agent's identity with a color and icon, so you're not squinting at ten identical-looking tabs.
 
-- Click a session to switch to it
-- Click **New Session** to start fresh
-- History persists across restarts
+- Click a session to switch to it.
+- Click **New Session** to start fresh.
+- History persists across restarts.
+
+If you also use the Obsidian plugin, note that it's an early, still-hardening surface. It reads from the same session history, but expect rough edges.
 
 </Tab>
 
 <Tab value="Slash Commands">
   Type `/` in the chat input to open the **command palette**. Slash commands load from
-  `.claude/commands/` in your working directory and inject predefined prompts or workflows into the
-  conversation.
-</Tab>
-
-<Tab value="Working Directory">
-  DorkOS operates in a working directory, the same way the Claude Code CLI does. By default it uses
-  the directory where you ran `dorkos`. Use the **directory picker** in the sidebar to switch
-  without restarting.
+  `.claude/commands/` in your working directory (see above) and inject predefined prompts or
+  workflows into the conversation.
 </Tab>
 
 </Tabs>
 
 ## CLI Quick Reference
 
-| Flag                  | Short | Description                             | Default           |
-| --------------------- | ----- | --------------------------------------- | ----------------- |
-| `--port <port>`       | `-p`  | Server port                             | `4242`            |
-| `--dir <path>`        | `-d`  | Working directory                       | Current directory |
-| `--boundary <path>`   | `-b`  | Directory access boundary               | Home directory    |
-| `--tunnel`            | `-t`  | Enable ngrok tunnel                     | Off               |
-| `--log-level <level>` | `-l`  | Log verbosity (`fatal` through `trace`) | `info`            |
+Most people never touch these flags after the first launch. Here they are if you need them; see [Configuration](/docs/getting-started/configuration) for the matching environment variables and persistent settings.
+
+| Flag                  | Short | Description                                                       | Default             |
+| --------------------- | ----- | ----------------------------------------------------------------- | ------------------- |
+| `--port <port>`       | `-p`  | Server port                                                       | `4242`              |
+| `--dir <path>`        | `-d`  | Working directory                                                 | Current directory   |
+| `--boundary <path>`   | `-b`  | Boundary: the folders on your computer DorkOS is allowed to touch | Home directory      |
+| `--tunnel`            | `-t`  | Enable ngrok tunnel                                               | Off                 |
+| `--no-open`           |       | Don't open the browser on startup                                 | Off (opens browser) |
+| `--log-level <level>` | `-l`  | Log verbosity (`fatal` through `trace`)                           | `info`              |
 
 ## Next Steps
 
@@ -113,7 +125,7 @@ Once installed, browse the [Marketplace](/docs/marketplace) at `/marketplace` to
     Customize ports, directories, and persistent settings.
   </Card>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
-    Configure permission modes — from approve-everything to fully autonomous.
+    Configure permission modes, from approve-everything to fully autonomous.
   </Card>
   <Card title="Task Scheduler" href="/docs/guides/task-scheduler">
     Schedule agents to run on a cron, independently of your terminal.

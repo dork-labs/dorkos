@@ -5,7 +5,15 @@ description: Server-Sent Events streaming protocol reference
 
 # SSE Protocol
 
-DorkOS delivers all real-time state over two durable Server-Sent Events (SSE) streams: a per-session event stream (`GET /api/sessions/:id/events`) that carries everything about one session, and a global stream (`GET /api/events`) that carries session-list changes and system events. Sending a message does not stream anything back — it triggers a turn whose output arrives on the session event stream.
+Read this before building any client that talks to a DorkOS session over HTTP.
+
+DorkOS delivers all real-time state over two durable Server-Sent Events (SSE) streams: a per-session event stream (`GET /api/sessions/:id/events`) that carries everything about one session, and a global stream (`GET /api/events`) that carries session-list changes and system events. Sending a message does not stream anything back. It triggers a turn whose output arrives on the session event stream, a bit like ordering a coffee and getting a text when it's ready.
+
+<Callout type="info">
+  When `config.auth.enabled` is on, every `/api/*` route (including these SSE endpoints) requires a
+  Better Auth session cookie or a per-user API key. With auth disabled, the endpoints are reachable
+  to anyone who can reach the port, which is fine on localhost and a real risk on a public bind.
+</Callout>
 
 ## Triggering a Turn
 
@@ -19,6 +27,8 @@ X-Client-Id: your-client-uuid
 { "content": "Hello, Claude", "cwd": "/path/to/project" }
 ```
 
+`X-Client-Id` is optional. Omit it and the server generates a UUID for you, but then it can't tell your own reconnects apart from a fresh client, so you lose precise write-lock ownership tracking across a page reload. Send a stable id if your integration reconnects.
+
 The endpoint is trigger-only. It validates the request, acquires the session write-lock, starts the turn server-side, and responds immediately:
 
 ```
@@ -26,7 +36,7 @@ The endpoint is trigger-only. It validates the request, acquires the session wri
 { "sessionId": "canonical-session-id" }
 ```
 
-For a brand-new session the returned `sessionId` is the canonical id assigned by the runtime during the turn — it may differ from the id you supplied. Use it for all subsequent requests. The turn's tokens are delivered solely on `GET /api/sessions/:id/events`; if you are not already subscribed, open the stream before (or right after) the POST.
+For a brand-new session the returned `sessionId` is the canonical id assigned by the runtime during the turn: it may differ from the id you supplied. Use it for all subsequent requests. The turn's tokens are delivered solely on `GET /api/sessions/:id/events`; if you are not already subscribed, open the stream before (or right after) the POST.
 
 If another client holds the write lock, the server returns `409` with `{ code: "SESSION_LOCKED", lockedBy, lockedAt }`. See [Session Write Coordination](#session-write-coordination).
 
@@ -40,8 +50,8 @@ GET /api/sessions/:id/events
 
 The stream has three phases:
 
-1. **Snapshot.** On a cold connect the server emits a single `snapshot` event carrying the completed message history (`messages`), the in-progress turn (`inProgressTurn`, or `null` when idle), the server-held `status`, any `pendingInteractions` awaiting your response, and a `cursor` — the highest event sequence number the snapshot reflects.
-2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served (e.g., the server restarted), the stream falls back to a fresh snapshot — you never silently miss events.
+1. **Snapshot.** On a cold connect the server emits a single `snapshot` event carrying the completed message history (`messages`), the in-progress turn (`inProgressTurn`, or `null` when idle), the server-held `status`, any `pendingInteractions` awaiting your response, and a `cursor` (the highest event sequence number the snapshot reflects).
+2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served (e.g., the server restarted), the stream falls back to a fresh snapshot: you never silently miss events.
 3. **Live.** Events stream as the turn produces them. Every event carries a per-session monotonic `seq`, and every SSE frame carries an `id:` line of the form `<sessionId>-<epoch>-<seq>` for resumption.
 
 ```
@@ -61,7 +71,7 @@ event: turn_end
 data: {"seq":45,"type":"turn_end","terminalReason":"completed"}
 ```
 
-This one stream is also the cross-client sync mechanism: every client subscribed to the same session sees the same snapshot, replay, and live events — including turns triggered by other clients or by the CLI. There is no separate sync endpoint and nothing to enable.
+This one stream is also the cross-client sync mechanism: every client subscribed to the same session sees the same snapshot, replay, and live events, including turns triggered by other clients or by the CLI. There is no separate sync endpoint and nothing to enable.
 
 ## Session Event Types
 
@@ -77,11 +87,22 @@ All events share `{ seq: number, type: string }`. Payloads below list the type-s
         'An assistant turn began. Carries the triggering user message when the turn was DorkOS-triggered.',
     },
     turn_end: {
-      type: "{ terminalReason?: 'completed' | 'aborted_streaming' | ... }",
+      type: "{ terminalReason?: 'completed' | 'aborted_tools' | 'aborted_streaming' | 'max_turns' | 'blocking_limit' | 'rapid_refill_breaker' | 'prompt_too_long' | 'image_error' | 'model_error' | 'stop_hook_prevented' | 'hook_stopped' | 'tool_deferred' | 'error' | string }",
       description: 'The assistant turn finished.',
     },
   }}
 />
+
+`terminalReason` tells you why the turn stopped so you can render the right thing:
+
+- `completed`: normal finish. Show the final message as-is.
+- `aborted_tools`, `aborted_streaming`: the user or client interrupted the turn. Show it as stopped, not failed.
+- `max_turns`, `blocking_limit`, `rapid_refill_breaker`, `prompt_too_long`: a limit was hit. Tell the user what limit and let them retry or adjust (shorter prompt, new session).
+- `image_error`, `model_error`: something went wrong upstream. Show a retry affordance.
+- `stop_hook_prevented`, `hook_stopped`: a configured hook intervened. Surface the hook's message if you have one; otherwise say a hook stopped the turn.
+- `tool_deferred`: the turn ended waiting on a background task. Treat the session as still in progress.
+- `error`: an unhandled runtime or SDK crash mid-stream. Show a generic failure state and offer retry.
+- Absent, or a value not listed here: treat it like `completed` but don't assume; new SDK versions can add reasons the server passes through unchanged.
 
 ### Text Events
 
@@ -119,7 +140,7 @@ All events share `{ seq: number, type: string }`. Payloads below list the type-s
 
 ### Interactive Events
 
-Interactive events carry server-authoritative countdown fields — `startedAt` (ms since epoch) and `remainingMs` — so a reconnecting client resumes the timeout where it left off instead of resetting it. The same interactions also appear in the snapshot's `pendingInteractions`, so a freshly connected client always recovers prompts it has not answered.
+Interactive events carry server-authoritative countdown fields, `startedAt` (ms since epoch) and `remainingMs`, so a reconnecting client resumes the timeout where it left off instead of resetting it. The same interactions also appear in the snapshot's `pendingInteractions`, so a freshly connected client always recovers prompts it has not answered.
 
 <TypeTable
   type={{
@@ -139,7 +160,7 @@ Interactive events carry server-authoritative countdown fields — `startedAt` (
     interaction_resolved: {
       type: "{ id: string, resolution?: 'approved' | 'denied' | 'answered' | 'cancelled' }",
       description:
-        'A pending interaction was resolved — by an operator on any client, or without one (timeout, superseding steer). Remove the prompt card.',
+        'A pending interaction was resolved, either by an operator on any client or without one (timeout, superseding steer). Remove the prompt card.',
     },
   }}
 />
@@ -151,7 +172,7 @@ Interactive events carry server-authoritative countdown fields — `startedAt` (
     status_change: {
       type: '{ status: Partial<SessionStatus> }',
       description:
-        'Partial status update — token usage, cost, model, permission mode, lifecycle phase. Merge field-wise into the held status.',
+        'Partial status update: token usage, cost, model, permission mode, lifecycle phase. Merge field-wise into the held status.',
     },
     todo_update: {
       type: "{ action: 'create' | 'update' | 'snapshot', task: TaskItem, tasks?: TaskItem[] }",
@@ -163,7 +184,7 @@ Interactive events carry server-authoritative countdown fields — `startedAt` (
     },
     hook_update: {
       type: '{ hookId: string, status: HookStatus, hookName?: string, stdout?: string, stderr?: string, exitCode?: number }',
-      description: 'Hook lifecycle update — merge updates field-wise by hookId',
+      description: 'Hook lifecycle update, merge updates field-wise by hookId',
     },
     memory_recall: {
       type: "{ mode: 'select' | 'synthesize', memories: MemoryEntry[] }",
@@ -217,15 +238,15 @@ When `elicitation_prompt` is received, submit the completed form:
 ```bash
 POST /api/sessions/:id/submit-elicitation
 Content-Type: application/json
-{ "elicitationId": "eli_123", "action": "submit", "content": { "api_key": "sk-..." } }
+{ "interactionId": "eli_123", "action": "accept", "content": { "api_key": "sk-..." } }
 ```
 
-To cancel (agent treats as user declining):
+`action` is one of `accept` (submit `content`), `decline` (user said no, no content), or `cancel` (user dismissed the prompt):
 
 ```bash
 POST /api/sessions/:id/submit-elicitation
 Content-Type: application/json
-{ "elicitationId": "eli_123", "action": "cancel" }
+{ "interactionId": "eli_123", "action": "cancel" }
 ```
 
 <Callout type="warn">
@@ -247,21 +268,22 @@ GET /api/events
 
 This single persistent connection multiplexes all background events, distinguished by the SSE `event:` field:
 
-| Event              | Payload                                                                  | Description                                                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_upserted` | `{ session: Session }`                                                   | A session was created or its metadata changed                                                                                                       |
-| `session_removed`  | `{ sessionId: string }`                                                  | A session was deleted                                                                                                                               |
-| `session_status`   | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }` | A session's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey — drop state held under the old id |
-| `relay_*`          | varies                                                                   | Relay adapter activity, message delivery                                                                                                            |
-| `tunnel_*`         | varies                                                                   | Tunnel start/stop, URL changes                                                                                                                      |
-| `ext:{id}:*`       | varies                                                                   | Extension-emitted events (namespaced per extension ID)                                                                                              |
+| Event              | Payload                                                                  | Description                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_upserted` | `{ session: Session }`                                                   | A session was created or its metadata changed                                                                                                      |
+| `session_removed`  | `{ sessionId: string }`                                                  | A session was deleted                                                                                                                              |
+| `session_status`   | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }` | A session's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey: drop state held under the old id |
+| `relay_*`          | varies                                                                   | Relay adapter activity, message delivery                                                                                                           |
+| `tunnel_*`         | varies                                                                   | Tunnel start/stop, URL changes                                                                                                                     |
+| `ext:{id}:*`       | varies                                                                   | Extension-emitted events (namespaced per extension ID)                                                                                             |
 
 These session-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
 <Callout type="info">
-  The DorkOS client uses a single `GET /api/events` connection for all background state, replacing
-  the older per-resource SSE endpoints (`/api/relay/stream`, `/api/tunnel/stream`, etc.). Those
-  endpoints no longer exist. External clients should use `GET /api/events`.
+  The DorkOS client uses a single `GET /api/events` connection for all background state. The older
+  per-resource SSE endpoints (`/api/relay/stream`, `/api/tunnel/stream`) still exist for backward
+  compatibility, but they're deprecated and log a warning on every connection. Build new
+  integrations against `GET /api/events` only.
 </Callout>
 
 ## Session Write Coordination
@@ -288,7 +310,7 @@ These session-list events keep sidebars and dashboards live without polling `GET
 <Step>
 ### Open the session event stream
 
-Connect to `GET /api/sessions/:id/events`. Process the `snapshot` event to hydrate your UI — history, in-progress turn, status, and pending interactions.
+Connect to `GET /api/sessions/:id/events`. Process the `snapshot` event to hydrate your UI: history, in-progress turn, status, and pending interactions.
 
 </Step>
 

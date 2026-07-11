@@ -1,11 +1,13 @@
 ---
 title: Deployment
-description: Deploy DorkOS in production
+description: Run your own DorkOS server, from a one-line quick start to a production setup with systemd
 ---
 
 # Deployment
 
-DorkOS deploys as a standalone server via the `dorkos` npm package. A single process serves both the API and the built React client.
+DorkOS deploys as a standalone server via the `dorkos` npm package. One process serves both the API and the web cockpit, so nothing but your calls to Anthropic ever leaves the machine it's running on. Run it on your laptop, a spare desktop, or a cloud box, it's the same install either way.
+
+This page covers the Claude Code runtime (the default). If you're running Codex or OpenCode instead, check their setup docs for the credentials they expect.
 
 ## Quick Deploy
 
@@ -15,7 +17,13 @@ export ANTHROPIC_API_KEY=your-key-here
 dorkos --port 4242
 ```
 
-## Production Setup
+Open `http://localhost:4242` in your browser. That's your cockpit, already running. (Don't have a key yet? The [Installation guide](/docs/getting-started/installation) shows you where to get one.)
+
+Everything past this point is optional: production hardening for when you're running DorkOS somewhere other than your own machine.
+
+## Reference: production configuration
+
+Most people never touch what follows, it's here for when you're putting DorkOS on a shared server, a systemd unit, or anywhere else that isn't a quick local run.
 
 <Steps>
 
@@ -44,7 +52,7 @@ npm install -g dorkos
 dorkos init
 ```
 
-The setup wizard configures port, working directory, boundary, and optional tunnel settings. Configuration is saved to `~/.dork/config.json`.
+The setup wizard asks for the port, UI theme (system, light, or dark), whether to enable a tunnel, and a default working directory. Configuration is saved to `~/.dork/config.json`.
 
 </Tab>
 
@@ -65,7 +73,9 @@ dorkos
 
 </Steps>
 
-## Environment Variables
+### Environment variables
+
+Here's the full list, in case you're scripting a deployment or writing a systemd unit:
 
 <TypeTable
   type={{
@@ -73,7 +83,8 @@ dorkos
     DORKOS_PORT: { type: 'number', description: 'Server port', default: "'4242'" },
     DORKOS_HOST: {
       type: 'string',
-      description: 'Bind address. Set to 0.0.0.0 for Docker or any network-accessible deployment',
+      description:
+        'Which network address the server listens on. Set to 0.0.0.0 to let other devices on your network (or a Docker host) reach it',
       default: "'localhost'",
     },
     DORKOS_DEFAULT_CWD: {
@@ -83,7 +94,7 @@ dorkos
     },
     DORKOS_BOUNDARY: {
       type: 'string',
-      description: 'Directory boundary for file access',
+      description: 'The folder DorkOS is allowed to touch (see Directory Boundary below)',
       default: 'Home directory',
     },
     NODE_ENV: {
@@ -94,18 +105,18 @@ dorkos
   }}
 />
 
-## Directory Boundary
+### Directory Boundary
 
-`DORKOS_BOUNDARY` restricts file access to a specific directory tree. All `cwd`, `path`, and `dir` parameters are validated against this boundary — requests outside it return `403`.
+`DORKOS_BOUNDARY` is the folder DorkOS is allowed to touch. Every `cwd`, `path`, and `dir` parameter a request sends is checked against it; anything outside returns a `403` and gets rejected.
 
 <Callout type="warn">
-  The default boundary is the home directory. For production deployments, set a tighter boundary to
-  limit what Claude can access.
+  The default boundary is your whole home directory. For anything public-facing, fence it in tighter
+  than that: point `DORKOS_BOUNDARY` at just the folder your projects live in.
 </Callout>
 
-## systemd Service
+### systemd Service
 
-For long-running deployments on Linux:
+For long-running deployments on Linux, running DorkOS as a systemd service means it restarts automatically after a crash or reboot:
 
 ```ini title="/etc/systemd/system/dorkos.service"
 [Unit]
@@ -136,30 +147,33 @@ sudo systemctl enable dorkos
 sudo systemctl start dorkos
 ```
 
-## Docker Deployment
+### Docker Deployment
 
-For Docker-based deployments — including `docker run`, Docker Compose, persistent volumes, and reverse proxy setup — see the dedicated [Docker guide](/docs/self-hosting/docker).
+For Docker-based deployments, including `docker run`, Docker Compose, persistent volumes, and reverse proxy setup, see the dedicated [Docker guide](/docs/self-hosting/docker).
 
-## Health Check
+### Health Check
+
+Point a load balancer or monitoring tool at this endpoint to confirm the server is alive:
 
 ```bash
 curl http://localhost:4242/api/health
-# { "status": "ok", "version": "0.8.0", "uptime": 12345 }
+# { "status": "ok", "version": "x.y.z", "uptime": 12345 }
 ```
 
-When a tunnel is active, the response includes a `tunnel` field with tunnel status.
+When a tunnel (a secure link that exposes your local server to the internet without opening firewall ports) is active, the response includes a `tunnel` field with its status.
 
 <Callout type="info">
-  The health endpoint is unauthenticated and suitable for load balancer or monitoring use.
+  The health endpoint is unauthenticated on purpose, so monitoring tools can reach it without a key.
 </Callout>
 
 ## Next Steps
 
 <Cards>
   <Card title="Reverse Proxy" href="/docs/self-hosting/reverse-proxy">
-    Configure nginx or Caddy for HTTPS, domain routing, and SSE compatibility.
+    Configure nginx or Caddy for HTTPS, domain routing, and SSE (the live-update stream the cockpit
+    uses) compatibility.
   </Card>
-  <Card title="Tunnel Setup" href="/docs/guides/tunnel-setup">
+  <Card title="Tunnel Setup" href="/docs/self-hosting/tunnel-setup">
     Expose your instance remotely via ngrok without a reverse proxy.
   </Card>
   <Card title="Configuration" href="/docs/getting-started/configuration">

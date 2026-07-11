@@ -2,10 +2,11 @@
   "title": "Self-Hosting",
   "pages": [
     "deployment",
+    "docker",
+    "tunnel-setup",
+    "reverse-proxy",
     "securing-your-instance",
     "threat-model",
-    "dorkos-accounts",
-    "docker",
-    "reverse-proxy"
+    "dorkos-accounts"
   ]
 }

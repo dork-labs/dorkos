@@ -10,85 +10,121 @@
       "id": "cockpit",
       "kind": "still",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "agents",
       "kind": "still",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "tasks",
       "kind": "still",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "marketplace",
       "kind": "still",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "tool-approval",
       "kind": "still",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "topology",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "chat-streaming",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "subagents",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "multi-session",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "personality",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "canvas",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing", "docs"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "canvas-editing",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "agent-discovery",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "gen-ui-widgets",
       "kind": "loop",
       "frame": "desktop",
-      "consumers": ["marketing", "docs"]
+      "consumers": [
+        "marketing",
+        "docs"
+      ]
     },
     {
       "id": "gen-ui-tictactoe",
@@ -100,19 +136,25 @@
       "id": "mobile-sessions",
       "kind": "still",
       "frame": "mobile",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "mobile-approval",
       "kind": "still",
       "frame": "mobile",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     },
     {
       "id": "mobile-chat",
       "kind": "loop",
       "frame": "mobile",
-      "consumers": ["marketing"]
+      "consumers": [
+        "marketing"
+      ]
     }
   ],
   "assets": [

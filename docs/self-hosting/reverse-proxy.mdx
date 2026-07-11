@@ -1,15 +1,19 @@
 ---
 title: Reverse Proxy
-description: Configure nginx or Caddy as a reverse proxy for DorkOS
+description: Put DorkOS on your own domain with HTTPS, using nginx or Caddy
 ---
 
 # Reverse Proxy
 
-DorkOS uses Server-Sent Events (SSE) for real-time streaming. Reverse proxy configuration must account for SSE's long-lived connections and disable response buffering.
+Want DorkOS to live at `dorkos.example.com` instead of a bare port number, with a real HTTPS certificate? That's what a reverse proxy does: it sits in front of DorkOS and forwards traffic to it. This page covers the two most common ones, Caddy and nginx.
+
+You only need this page if you're self-hosting on your own domain, or running DorkOS alongside other services on the same machine. Just testing on `localhost`? Skip it. Want remote access without setting up a domain at all? See [Tunnel Setup](/docs/self-hosting/tunnel-setup) instead.
+
+DorkOS streams agent output live as it works, using a technique called SSE (Server-Sent Events). Most reverse proxies buffer that stream by default, which turns live output into one big delayed dump at the end. The configs below turn buffering off, so don't skip that part.
 
 <Callout type="warn">
-  Standard proxy settings will break SSE streaming. The configurations below include the required
-  SSE-specific directives.
+  Default proxy settings will break live streaming. It's a one-line fix, not a rabbit hole: the
+  configurations below include the directive you need.
 </Callout>
 
 ## Proxy Configuration
@@ -60,19 +64,32 @@ server {
 
 }
 
-```
+````
 </Tab>
 
 </Tabs>
 
+<Callout type="info">
+  Running DorkOS on your own domain, behind this proxy? Set `DORKOS_PUBLIC_URL` to that domain
+  (for example `https://dorkos.example.com`). Without it, DorkOS advertises its internal bind
+  address instead of your real URL wherever it needs to share a link to itself. See
+  [Deployment](/docs/self-hosting/deployment) for how to set environment variables.
+
+  If DorkOS itself is running in Docker, `localhost:4242` in the configs above needs to become
+  the container's name (for example `dorkos:4242`) or its address on the Docker network instead.
+  See [Docker](/docs/self-hosting/docker) for a worked example.
+</Callout>
+
 ## Key SSE Settings (nginx)
+
+Most people never touch these once the config above is working. Here's what each line does, if you're curious:
 
 <TypeTable type={{
   "proxy_buffering off": { type: "directive", description: "Disables response buffering so SSE events are sent immediately" },
-  "proxy_cache off": { type: "directive", description: "Disables caching — SSE streams must never be cached" },
+  "proxy_cache off": { type: "directive", description: "Disables caching, SSE streams must never be cached" },
   "proxy_read_timeout 86400s": { type: "directive", description: "24-hour timeout for long-lived SSE connections" },
   "Connection ''": { type: "header", description: "Empty connection header prevents premature connection close" },
-  "chunked_transfer_encoding off": { type: "directive", description: "Disables chunked encoding — SSE uses its own framing" },
+  "chunked_transfer_encoding off": { type: "directive", description: "Disables chunked encoding, SSE uses its own framing" },
 }} />
 
 ## Common Issues
@@ -110,17 +127,7 @@ server {
 <Tabs items={["Caddy (Automatic)", "nginx + certbot"]}>
 
 <Tab value="Caddy (Automatic)">
-Point your domain's DNS to the server and Caddy obtains and renews certificates automatically — no additional configuration needed.
-
-```
-
-dorkos.example.com {
-reverse_proxy localhost:4242 {
-flush_interval -1
-}
-}
-
-````
+Point your domain's DNS to the server and Caddy obtains and renews certificates automatically. The Caddy config above already handles this: no separate step needed.
 </Tab>
 
 <Tab value="nginx + certbot">
@@ -140,7 +147,7 @@ Certbot modifies your nginx config to add SSL directives and sets up automatic r
   <Card title="Deployment" href="/docs/self-hosting/deployment">
     Production deployment with systemd, environment variables, and health checks.
   </Card>
-  <Card title="Tunnel Setup" href="/docs/guides/tunnel-setup">
+  <Card title="Tunnel Setup" href="/docs/self-hosting/tunnel-setup">
     Remote access via ngrok without a reverse proxy.
   </Card>
   <Card title="SSE Protocol" href="/docs/integrations/sse-protocol">

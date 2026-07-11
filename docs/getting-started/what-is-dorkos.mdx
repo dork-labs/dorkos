@@ -1,0 +1,57 @@
+---
+title: What Is DorkOS?
+description: A plain-language introduction to DorkOS, what a coding agent is, and what happens on your machine when you use it.
+---
+
+# What Is DorkOS?
+
+<Callout type="info">
+  Already know what a coding agent is and just want DorkOS running? Skip ahead to the
+  [Quickstart](/docs/getting-started/quickstart) and you'll be running in about two minutes.
+</Callout>
+
+## DorkOS in one breath
+
+DorkOS is mission control for the AI coding agents you run: Claude Code, Codex, and OpenCode. Instead of juggling a separate window for each one, you get one screen, called the cockpit, where you can see every agent, check on its work, and start new sessions. Think of it less as a new AI tool and more as a dashboard for the AI tools you already have.
+
+## What is a "coding agent"?
+
+A coding agent is an AI assistant that does more than chat. It can open your project's files, write and edit code, and run commands on your computer: the same work a human developer would do. You describe what you want, like "add a sign-up page" or "fix this bug," and it does the work, then shows you the result.
+
+Claude Code, Codex, and OpenCode are three well-known coding agents, and the ones DorkOS supports today. Each is its own program, made by a different company: Anthropic, OpenAI, and the open-source OpenCode project. DorkOS doesn't replace any of them. It gives you one place to run and watch all three, instead of a separate window for each.
+
+## What happens on your machine, and what doesn't
+
+This is the part privacy-minded readers ask about first, so here's the honest answer.
+
+DorkOS itself runs on your computer, or on a server you control. There's no DorkOS cloud reading your files, and nobody at DorkOS sees your code.
+
+Your coding agent still needs somewhere to think, and that happens with its own AI provider: Claude Code talks to Anthropic, Codex talks to OpenAI, and OpenCode talks to whichever provider you've connected, including local models that never leave your machine at all. That's true whether or not you use DorkOS. It's how the agent already worked before you added DorkOS to the picture. You sign in with your own account, and your conversation travels straight from your machine to that provider, the same trip it would take anyway.
+
+## What you need before you install
+
+Four things, and you likely have most of them already:
+
+- **A computer.** Mac, Windows, or Linux all work.
+- **A terminal.** The window where you type commands instead of clicking icons. Every operating system has one built in.
+- **Node.js.** Free software that runs DorkOS behind the scenes. The [Installation guide](/docs/getting-started/installation) has the exact version you need and a one-line way to check what you already have.
+- **At least one coding agent, signed in.** Claude Code is the easiest starting point: it comes bundled with DorkOS, so you just need an Anthropic account. Already using Codex or OpenCode? DorkOS can run those too, once you've installed that agent's command-line tool and signed in.
+
+## What it costs
+
+DorkOS itself is free and open source. It's MIT-licensed, a standard open-source license that lets anyone read, use, and change the code with no strings attached.
+
+What you pay is whatever your AI provider already charges: an Anthropic subscription or pay-as-you-go plan for Claude Code, a ChatGPT plan or pay-per-use billing for Codex, and so on. That's the same bill you'd have running that agent on its own. DorkOS doesn't add a fee on top.
+
+## Ready to install
+
+If you've got Node.js and an agent picked out, head to [Installation](/docs/getting-started/installation) for the full walkthrough, or the [Quickstart](/docs/getting-started/quickstart) if you already have both set up. If a term anywhere in these docs loses you, the [Glossary](/docs/glossary) defines it in plain language.
+
+<Cards>
+  <Card title="Installation" href="/docs/getting-started/installation">
+    Step-by-step setup, with every install method spelled out.
+  </Card>
+  <Card title="Quickstart" href="/docs/getting-started/quickstart">
+    Already set up? Open your first session in about two minutes.
+  </Card>
+</Cards>

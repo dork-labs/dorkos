@@ -1,6 +1,6 @@
 ---
 title: What /flow is
-description: One PM-agnostic workflow engine spanning capture to done — a self-feeding, self-unblocking loop that is autonomous by default, uncertainty-gated, and always operator-overridable.
+description: One command path from a raw idea to shipped code, run by hand or handed off to run on its own.
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -9,151 +9,152 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # What /flow is
 
-`/flow` is **one** workflow engine for all product work. It runs a single, canonical path from a raw thought to shipped, deletes the old command sprawl (the legacy `/pm`, `/ideate`, `/spec:*`, and `/linear:*` families), and presents that path as one spine you can drive by hand or hand off to run on its own.
+You used to run nine different commands (`/pm`, `/ideate`, `/spec:*`, `/linear:*`, and more) to move one idea from a raw thought to shipped code. `/flow` replaces all of them with a single path: one set of commands that takes a piece of work from "I had a thought" to "it's merged."
 
-It is **PM-agnostic**: the engine speaks a generic work model and generic verbs, and every tracker call is confined to a single adapter. Linear is the tracker today; the engine never embeds a tracker string, so the same spine runs on a different tracker by swapping the adapter, not the workflow.
+Throughout this guide, "you" and "the operator" mean the same person: whoever is driving the loop. That's you.
+
+`/flow` also doesn't care which project-tracking tool you use (we call this **PM-agnostic**, short for "project management-agnostic"). It talks to your tracker through one narrow connector, so the same commands work no matter which tracker sits behind them. Today that tracker is Linear.
 
 <Callout type="info">
-  One spine is the single source of truth for "where work is." Tracker state, spec status, labels,
-  and loop phase are all **projected** from the stage, never authored independently. You move a
-  piece of work by advancing its stage; everything else follows.
+  `/flow` is the single place that knows "where work is." Your tracker, your specs, and your labels
+  all reflect the stage `/flow` has work in, not the other way around. Move a piece of work forward
+  by advancing its stage, and everything else (labels, tracker status) follows automatically.
 </Callout>
+
+## A quick glossary
+
+The stages below use a few words worth pinning down:
+
+- **Idea**: a raw thought, captured before anyone has decided if it's worth doing.
+- **Work item**: anything `/flow` is tracking. An idea, a task, and a full spec are all work items at different stages of readiness.
+- **Task**: a small, well-understood piece of work that can go straight to building, no design phase needed.
 
 ## The core promise
 
-`/flow` is a **self-feeding, self-unblocking loop**. Five properties define it:
+`/flow` runs on its own by default, but it knows when to stop and ask you. Four things to know:
 
-- **Self-feeding.** Every shaping stage produces the readiness signal the next stage needs, so the dispatch queue refills itself. When the queue does empty with shapeable work behind it, the engine **says so** (`0 ready, N shapeable: run a triage pass?`) instead of stopping silently.
-- **Self-unblocking.** When the engine genuinely needs you, it parks a durable question on the right channel, pings you out of band, and **resumes by polling** when you reply. No babysitting, and the same question is never asked twice.
-- **Autonomous by default.** The engine can run the full spine on its own. No human is required to _start_ any stage.
-- **Uncertainty-gated, not stage-gated.** A human is pulled in by genuine uncertainty (and by a small, fixed safety floor), never by which stage the work is in. This is why IDEATE asks freely while EXECUTE asks rarely: it is one rule, not a per-stage policy.
-- **Always operator-overridable.** Autonomy is never a loss of control. You can pause the loop, disable or reprioritize any part of it, reclaim or redirect any item, and take over a session at any point.
+- **It keeps itself fed.** Finishing one stage produces exactly what the next stage needs, so there's always more ready work in the queue. If the queue does run dry while unshaped work is waiting, `/flow` says so out loud (`0 ready, 3 shapeable: run a triage pass?`) instead of quietly stalling. The engine doesn't just give up: it tells you.
+- **It unblocks itself.** When `/flow` genuinely needs your input, it parks the question somewhere durable, pings you, and picks back up the moment you reply. You never have to babysit it, and it never asks the same question twice.
+- **It doesn't wait for permission to start.** `/flow` can run the whole path on its own. No stage requires a human to kick it off.
+- **It asks because it's unsure, not because of what stage it's in.** A human gets pulled in when the engine is genuinely uncertain (plus a small, fixed set of safety checks, more on those below), never just because the work reached a particular stage. That's why early brainstorming asks you lots of questions and late-stage building rarely does: it's one rule, not nine different policies per stage.
 
-## One spine, end to end
+You're always in charge. Pause the loop, turn off any part of it, take back any item, or step into a session yourself, at any point.
 
-Every piece of work travels the same path. Each stage is a thin command over a stage skill; a tracker transition into a stage and the slash command are two triggers for the same code.
+## One path, start to finish
 
-| Stage         | What it does                                                                                          | Command           |
-| ------------- | ----------------------------------------------------------------------------------------------------- | ----------------- |
-| **CAPTURE**   | Quick, low-commitment intake of a raw thought as an `idea`. Does not evaluate or classify.            | `/flow:capture`   |
-| **TRIAGE**    | Classify freeform input into a type, or evaluate a captured item and make the simple-vs-complex call. | `/flow:triage`    |
-| **IDEATE**    | Shape a complex brief into a structured ideation artifact.                                            | `/flow:ideate`    |
-| **SPECIFY**   | Turn ideation into a frozen specification plus draft ADRs.                                            | `/flow:specify`   |
-| **DECOMPOSE** | Break the spec into tasks, mirrored to the tracker as a checklist.                                    | `/flow:decompose` |
-| **EXECUTE**   | Implement the tasks across dependency-aware batches in an isolated worktree.                          | `/flow:execute`   |
-| **VERIFY**    | Run the touched surface, capture proof, open the PR, and hand off to review.                          | `/flow:verify`    |
-| **REVIEW**    | The human gate. The engine parks here. No skill, no command.                                          | _(human gate)_    |
-| **DONE**      | Close the work, create follow-ups, run the project-pulse check, and tear down the worktree.           | `/flow:done`      |
+Every piece of work travels the same nine stages. Simple work skips the middle ones (see below); complex work goes through all of them.
 
-Simple work skips the middle: TRIAGE can route a small, well-understood change straight to EXECUTE as a `task`, while complex work earns the full IDEATE → SPECIFY → DECOMPOSE shaping. After DONE, an optional MONITOR → SIGNAL tail can keep the loop spinning by feeding follow-up work back to CAPTURE.
+| Stage         | What happens                                                                           | Command                    |
+| ------------- | -------------------------------------------------------------------------------------- | -------------------------- |
+| **CAPTURE**   | A raw thought gets written down as an idea. Nothing is judged or classified yet.       | `/flow:capture`            |
+| **TRIAGE**    | The idea gets sorted: is it a quick task or does it need real design work?             | `/flow:triage`             |
+| **IDEATE**    | A complex idea gets shaped into a written plan.                                        | `/flow:ideate`             |
+| **SPECIFY**   | The plan becomes a locked-down spec, ready to build from.                              | `/flow:specify`            |
+| **DECOMPOSE** | The spec gets broken into a checklist of tasks.                                        | `/flow:decompose`          |
+| **EXECUTE**   | The tasks get built, in an isolated copy of your project so nothing else is disturbed. | `/flow:execute`            |
+| **VERIFY**    | The work gets tested, proof gets gathered, and a pull request opens.                   | `/flow:verify`             |
+| **REVIEW**    | You look at the pull request and decide: ship it or send it back.                      | _(you review, no command)_ |
+| **DONE**      | The item closes, follow-up work gets filed, and the temporary workspace is cleaned up. | `/flow:done`               |
 
-`/flow` with no stage is the **orchestrator**: it resolves what you typed (a stage name, a work item, a project, or `auto`) and routes to the matching command. With no arguments at all, it offers four intents: **capture** a new thought, **work on a project**, **continue the queue** (claim the next-ranked item and carry it to its gate), or **triage** the backlog.
+Small, well-understood changes skip straight from TRIAGE to EXECUTE as a task: no plan needed. Bigger or riskier work goes through IDEATE, SPECIFY, and DECOMPOSE first to get shaped properly.
+
+Typing `/flow` with nothing after it acts as a router: tell it a stage, a piece of work, a project, or the word `auto`, and it sends you to the right place. Type nothing at all and it offers a menu: capture a new thought, work on a project, keep clearing the queue, or triage the backlog.
 
 <Steps>
   <Step>
-    **Capture, then triage.** A thought lands as an `idea`. TRIAGE classifies it, decides accept or
-    reject, and routes it simple-vs-complex. Accepted work is marked ready, which is the fuel the
-    loop runs on.
+    **Capture, then triage.** Your thought becomes an idea. `/flow:triage` decides whether to accept
+    it, then whether it's a quick task or something bigger. Accepted work gets marked ready, which
+    is what keeps the queue moving.
   </Step>
   <Step>
-    **Shape (complex work only).** IDEATE → SPECIFY → DECOMPOSE turn a rough brief into a frozen
-    spec and a task checklist. Each boundary produces readiness for the next.
+    **Shape it (bigger work only).** `/flow:ideate`, then `/flow:specify`, then `/flow:decompose`
+    turn a rough idea into a locked spec and a checklist of tasks.
   </Step>
   <Step>
-    **Build and verify.** EXECUTE implements the tasks in an isolated worktree; VERIFY runs the
-    surface, gathers proof, and opens the PR.
+    **Build and check it.** `/flow:execute` writes the code in its own isolated workspace.
+    `/flow:verify` tests it, collects proof it works, and opens a pull request.
   </Step>
   <Step>
-    **You review.** The engine parks at the human-review gate with the PR and its evidence. This
-    gate is always on.
+    **You review.** `/flow` stops here and hands you the pull request plus its evidence. This step
+    always requires you, no exceptions.
   </Step>
   <Step>
-    **Close out.** On your approval, DONE closes the item, files follow-ups, and tears down the
-    worktree, then the loop looks for the next piece of work.
+    **Close it out.** Once you approve, `/flow:done` closes the item, files any follow-up work, and
+    cleans up. Then it looks for the next thing to do.
   </Step>
 </Steps>
 
-## Manual or autonomous
+## Running it by hand or letting it run itself
 
-The same stages run two ways. The difference is who drives the next step, not what the steps are.
+The stages above are the same either way. What changes is who presses the button for each step.
 
-| Aspect          | Manual                                                 | Autonomous                                                                           |
-| --------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| **How you run** | One stage at a time: `/flow:specify`, `/flow:execute`. | Hand the engine a queue: `/flow auto` drains the ready queue and stops at each gate. |
-| **Questions**   | Arrive interactively, in the session you are in.       | Parked durably and routed to you out of band; the run resumes when you reply.        |
-| **Server**      | None. Runs entirely from your terminal.                | Terminal drain runs server-free; the always-on unattended runner needs the server.   |
-| **Best for**    | Learning the spine, careful or one-off work.           | Clearing a backlog, letting work move while you do something else.                   |
+|                                     | Running it by hand                                                     | Letting it run itself                                                                                              |
+| ----------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **How you use it**                  | One stage at a time: `/flow:specify`, then `/flow:execute`, and so on. | Point it at the queue with `/flow auto`. It drains the ready work and stops at each gate.                          |
+| **When it has a question**          | Asked right in your current session.                                   | Parked somewhere durable and sent to you; picks back up when you reply.                                            |
+| **Do you need the server running?** | No, it runs entirely from your terminal.                               | Draining the queue from your terminal doesn't need the server either. An always-on unattended runner does need it. |
+| **Best for**                        | Learning how `/flow` works, or careful one-off changes.                | Clearing a backlog of ready work while you do something else.                                                      |
 
-### Which should I use
+### Which one should you use?
 
-**Drive it manually when:**
+**Run it by hand when:**
 
-- You are new to `/flow` and want to see each stage before trusting the loop.
-- The work is sensitive, exploratory, or a one-off where you want a hand on every step.
-- You want questions in front of you immediately, in the current session.
+- You're new to `/flow` and want to watch each stage happen before you trust it. Think of it as training wheels, not a downgrade.
+- The work is sensitive, exploratory, or a one-off where you want to approve every step.
+- You want any questions answered in the session you're already in.
 
-**Hand it to autonomy when:**
+**Hand it to autopilot when:**
 
-- You have a queue of ready, well-understood work and want it cleared in priority order.
-- You would rather be pinged when the engine needs a decision than sit and advance stages.
-- You are comfortable reviewing at the gate instead of at every step.
+- You've got a backlog of ready, well-understood work you want cleared in priority order.
+- You'd rather get pinged when a decision is needed than sit and advance every stage yourself.
+- You're comfortable reviewing at the final gate instead of at every step along the way.
 
 <Callout type="info">
-  Manual and autonomous share **one** code path: each `/flow:<stage>` command and the autonomous
-  trigger run the same stage skill. There is no second, divergent autonomous implementation to learn
-  or distrust.
+  Running it by hand and letting it run itself use the exact same code underneath. There's no
+  separate "autopilot version" to learn or worry about; it's the same nine stages either way.
 </Callout>
 
-## What pulls in a human
+## What always needs you
 
-Autonomy stops for exactly two reasons, both always on and not configurable away:
+Two things pull a human in, and neither can be turned off:
 
-- **The calibration floor.** Even at full confidence, the engine stops before anything **irreversible or destructive**, **outward-facing**, touching **secrets or spend**, or that **changes scope**. This floor is non-trimmable: you cannot empty it.
-- **The human-review gate (after VERIFY).** Work reaches a PR plus evidence and parks for your review. Nothing merges silently.
+- **A safety floor.** No matter how confident `/flow` is, it stops before anything irreversible or destructive, anything that faces the outside world, anything touching secrets or spending money, or anything that changes the scope of the work. You can't disable this.
+- **The review gate.** After VERIFY, every piece of work lands as a pull request with evidence, and waits for you. Nothing merges on its own.
 
-The plan-approval gate (after DECOMPOSE) is **off by default**: the engine flows from decomposition into execution and surfaces its plan assumptions at the review gate instead. Flip it on if you want a checkpoint before any code is written.
+There's also an optional gate after DECOMPOSE (approving the plan before any code gets written), but it's off by default: `/flow` goes straight from planning into building, and shows you its planning assumptions at the review gate instead.
 
 <Callout type="warn">
-  Today the engine **parks** at the review gate but does not yet detect your approval. Merge the
-  approved PR yourself, then run `/flow:done <issue>` to close the item and tear down the worktree.
-  Automatic approval detection and merge is the server build (see below).
+  Right now `/flow` parks at the review gate but can't yet tell when you've approved the pull
+  request. Merge it yourself, then run `/flow:done <issue>` to close the item and clean up. Detecting
+  your approval and merging automatically is planned for a future release.
 </Callout>
 
-## What is real today
+## What works today
 
-`/flow` v1 is a **typed and prose-driven harness**: the contracts that make the loop safe and resumable exist and are tested; the always-on runner that executes them unattended is the next build. Being honest about that line is part of the product.
+`/flow` today is tested and reliable for the parts described above, run either by hand or as a one-time queue drain from your terminal. An always-on version that runs continuously and unattended, with no one starting each drain, is still being built. A few specific things aren't here yet:
 
-<Callout type="info">
-  **Real now.** Readiness is produced at the TRIAGE and DECOMPOSE boundaries; a typed reconciler
-  registry, scheduler, and `loops` config compose the loop; a durable `FlowRun` store plus a
-  recovery reconciler make work crash-resumable; a normalized `TrackerEvent` seam with a polling
-  transport feeds inbound events; identity-aware comms and an inbox/resume reconciler route and
-  re-detect parked questions; `/flow:status`, `/flow:pause`, and `/flow:resume` give you
-  observability and control; the calibration floor is non-trimmable. Manual stages and the terminal
-  drain (`/flow auto`) run with no server.
-</Callout>
+- Running continuously, unattended, with nobody starting each pass.
+- Handling more than one piece of work safely at the same time (v1 works through the queue one item at a time).
+- Detecting your pull-request approval and merging automatically (today you merge, then run `/flow:done`).
+- Receiving tracker updates the instant they happen, instead of checking periodically.
+- A dedicated Linear identity built specifically for agents.
 
-**Deferred to the server build (P5).** Plainly not here yet:
-
-- The always-on scheduler that runs the loop **continuously and unattended**. Today the reconciler model is invoked from prose; the terminal drain runs it once through, in priority order, then stops.
-- **Atomic concurrency** (fencing tokens, heartbeats, stall detection). v1 stays sequential, one item at a time.
-- **Approval detection and auto-merge execution.** The merge _decision_ is built and tested; the _detection and execution_ that fires it unattended is the server build. For now you merge, then run `/flow:done`.
-- The **webhook transport**. v1 ships polling plus the seam; the webhook producer is a drop-in once there is an inbound endpoint to receive it.
-- **Linear Agent Accounts** as a dedicated agent identity.
+Being upfront about that line between what's built and what isn't is part of what makes `/flow` trustworthy.
 
 ## Next steps
 
 <Cards>
   <Card title="Driving it manually" href="/docs/guides/flow/driving-it-manually">
-    Run the spine one stage at a time from the terminal, with questions in front of you.
+    Run the path one stage at a time from the terminal, with every question answered right in front
+    of you.
   </Card>
   <Card title="Turning on autonomy" href="/docs/guides/flow/turning-on-autonomy">
-    Hand the engine a queue: how the loop feeds, unblocks, and resumes itself.
+    Hand the engine a queue and let it feed, unblock, and resume itself.
   </Card>
   <Card title="The dials" href="/docs/guides/flow/the-dials">
-    Every knob that shapes the loop — gates, calibration, ranking, concurrency, and comms.
+    Every setting that shapes the loop: gates, safety checks, ranking, and notifications.
   </Card>
   <Card title="How it works" href="/docs/guides/flow/how-it-works">
-    The reconciler registry, the scheduler, and the transport seam under the hood.
+    A closer look under the hood, for the curious.
   </Card>
 </Cards>

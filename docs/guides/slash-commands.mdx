@@ -1,11 +1,11 @@
 ---
 title: Slash Commands
-description: Create and use slash commands to guide Claude through repeatable tasks
+description: Turn a task you do often into one word you type, and learn how to write your own
 ---
 
 # Slash Commands
 
-DorkOS discovers slash commands from your project's `.claude/commands/` directory and makes them available through a command palette in the chat input.
+Slash commands turn a multi-step task you do often into one word you type once. Type `/` in the chat, pick a command, and DorkOS handles the rest, whether that command lives in your project, on your machine, or built into the agent itself.
 
 ## Using Commands
 
@@ -32,9 +32,17 @@ Select a command to insert it into the chat input. Add arguments after the comma
 </Step>
 </Steps>
 
+<Callout type="info">
+  Most commands in the palette get **inserted into the chat and sent to the agent** to act on. A
+  few, like `/rename`, are native: DorkOS runs them locally, right in your browser, and never sends
+  them to the agent at all. You won't notice the difference day to day (both show up in the same
+  palette), but if a command seems to do nothing "in the chat," that's often why: it already did its
+  job without a round trip.
+</Callout>
+
 ## The /flow command family
 
-`/flow` is the unified workflow engine: one PM-agnostic spine from capture to done. You drive it by hand, one stage at a time, with a command per stage. Each `/flow:<stage>` command is a thin trigger over a stage skill; the top-level `/flow` orchestrator routes a stage, a work item, or the autonomous drain.
+`/flow` is the unified workflow engine: one PM-agnostic spine that runs your work from capture to done, no detours. You drive it by hand, one stage at a time, with a command per stage. Each `/flow:<stage>` command is a thin trigger over a stage skill; the top-level `/flow` orchestrator routes a stage, a work item, or the autonomous drain.
 
 The stages run in order. The human-review gate after `VERIFY` has no command: it is the point where you look at the work before it advances.
 
@@ -67,11 +75,14 @@ Three more commands sit beside the spine. They observe or steer, never advance a
 
 ## Command Discovery
 
-DorkOS scans `.claude/commands/` recursively. Directory nesting creates namespaced commands using a `namespace:command` pattern:
+The palette shows more than your project's commands. It also includes built-in commands like `/compact`, `/help`, and `/clear`, plus any commands you've defined on your machine in `~/.claude/commands/`, plus your project's own skills. The agent itself supplies this full list; DorkOS's project scanner then adds a couple of extra details, like which tools a command is allowed to use, for any command backed by a file in your project.
+
+Your project commands live in `.claude/commands/`. A file directly inside that folder becomes a top-level command, and a file inside a named subfolder becomes a namespaced command using a `namespace:command` pattern:
 
 <Files>
   <Folder name=".claude" defaultOpen>
     <Folder name="commands" defaultOpen>
+      <File name="greet.md" />
       <Folder name="docs" defaultOpen>
         <File name="reconcile.md" />
         <File name="status.md" />
@@ -86,17 +97,21 @@ DorkOS scans `.claude/commands/` recursively. Directory nesting creates namespac
 
 | File                | Command           |
 | ------------------- | ----------------- |
+| `greet.md`          | `/greet`          |
 | `docs/reconcile.md` | `/docs:reconcile` |
 | `docs/status.md`    | `/docs:status`    |
 | `flow/specify.md`   | `/flow:specify`   |
 | `flow/execute.md`   | `/flow:execute`   |
 
 <Callout type="info">
-  Only `.md` files inside namespace subdirectories are discovered. Top-level files directly inside
-  `commands/` are not picked up: commands must live inside a named subdirectory.
+  A command file at the top level of `commands/` (no subfolder) appears in the palette with no
+  namespace prefix, like `/greet`. Put it inside a named subfolder instead, and it appears as
+  `namespace:command`, like `/docs:reconcile`.
 </Callout>
 
-## Command Format
+## Reference: command file format
+
+Most people never touch frontmatter directly. A command works fine with just a `description` and, optionally, an `argument-hint`. Here is the full format, for when you want more control over how your own command behaves.
 
 Commands are Markdown files with optional YAML frontmatter:
 
@@ -105,7 +120,6 @@ Commands are Markdown files with optional YAML frontmatter:
 description: Check developer guides for documentation drift
 argument-hint: '[guide-name | --all]'
 allowed-tools: Read, Grep, Glob, Bash
-category: documentation
 ---
 
 # Documentation Reconciliation
@@ -131,7 +145,32 @@ category: documentation
       description:
         "Comma-separated list of tools this command may use (e.g. 'Read, Grep, Glob, Bash')",
     },
-    category: { type: 'string', description: 'Grouping category in the palette' },
+    'user-invocable': {
+      type: 'boolean',
+      description: 'Whether the command appears in the `/` palette at all',
+      default: 'true',
+    },
+    'disable-model-invocation': {
+      type: 'boolean',
+      description:
+        'Stop the agent from running this command on its own; only a person can trigger it',
+    },
+    context: {
+      type: '"fork"',
+      description: 'Run the command in an isolated subagent instead of the main conversation',
+    },
+    agent: {
+      type: 'string',
+      description: 'Which subagent type to use when `context` is `"fork"`',
+    },
+    model: {
+      type: 'string',
+      description: 'Override which model runs this command',
+    },
+    effort: {
+      type: '"low" | "medium" | "high" | "max"',
+      description: 'Override how much effort the model spends on this command',
+    },
   }}
 />
 
@@ -178,19 +217,12 @@ EOF
 <Step>
 ### Refresh the command list
 
-The registry caches results for 5 minutes. To refresh immediately, click the refresh button in the command palette or call the API with `?refresh=true`.
+DorkOS caches the discovered commands for 5 minutes (a server restart also clears the cache). To see a new command right away, click the refresh button in the command palette, or call the API with `?refresh=true`.
 
 </Step>
 </Steps>
 
-## Cache Behavior
-
-The command registry caches results for 5 minutes. The cache is also cleared on server restart. To force an immediate refresh:
-
-- Click the refresh button in the command palette
-- Call the API with `?refresh=true`
-
-## API
+## Reference: API
 
 ```bash
 # List all discovered commands
@@ -200,7 +232,7 @@ curl http://localhost:4242/api/commands
 curl http://localhost:4242/api/commands?refresh=true
 ```
 
-The response includes a `lastScanned` timestamp and an array of `commands`, each with `namespace`, `command`, `fullCommand`, `description`, `argumentHint`, `allowedTools`, and `filePath`.
+The response includes a `lastScanned` timestamp and an array of `commands`, each with `namespace`, `command`, `fullCommand`, `description`, `argumentHint`, `aliases` (other names that also trigger this command, like `/cost` and `/stats` both meaning `/usage`), `allowedTools`, and `filePath`.
 
 ## Next Steps
 

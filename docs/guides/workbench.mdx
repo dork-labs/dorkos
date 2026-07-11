@@ -1,0 +1,120 @@
+---
+title: Workbench
+description: The panel next to chat where you browse files, edit code, run a terminal, and preview a browser, all without leaving DorkOS
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Workbench
+
+Chat is where you talk to your agent. The workbench is where you can see and touch what it's actually doing: the files it's editing, a shell to run commands in, and a browser to check its work in.
+
+It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canvas**, and **Terminal**. Open a session and they're right there, no setup needed.
+
+## Quick Win: Open a File in 5 Seconds
+
+1. Open a session (any project you've added to DorkOS works).
+2. Click the **Files** tab in the right panel.
+3. Click any file in the tree.
+
+It opens in the **Canvas** tab, in a viewer built for what it is: code gets an editor, images get zoom, PDFs get a reader. You just went from "where's that file" to reading it, in three clicks.
+
+## Files: Browse, Create, Rename, Move, Delete
+
+The Files tab shows a tree rooted at your session's working directory. If that directory is a git checkout, a small branch badge tells you which one, so you always know which workspace you're looking at.
+
+- **Browse**: folders expand on click, loading their contents as you go (large projects stay fast because DorkOS only loads what's on screen).
+- **Create**: the New File and New Folder buttons in the tab's toolbar add an entry inside the selected folder (or the root, if nothing's selected).
+- **Rename**: right-click a file or folder (or long-press on touch) and choose Rename. The name field opens inline with the base name pre-selected, so typing replaces it and the extension survives untouched.
+- **Move**: drag a file onto a folder to move it there.
+- **Delete**: right-click and choose Delete.
+
+Two more toolbar buttons round it out: an eye icon toggles hidden files (dotfiles) on and off, and a refresh button re-reads the tree from disk, in case something changed outside DorkOS.
+
+If a create, rename, or delete fails (a name collision, a permission problem), a toast tells you why. Nothing silently disappears.
+
+## Viewers: The Right Tool for Every File
+
+Click a file and DorkOS picks the viewer that fits it:
+
+| File type                       | What you get                                             |
+| ------------------------------- | -------------------------------------------------------- |
+| Code and text                   | A real code editor (CodeMirror) with syntax highlighting |
+| Markdown                        | The same rich editor used for agent-authored documents   |
+| Images                          | Click to zoom and pan                                    |
+| PDF                             | Your browser's native PDF reader                         |
+| 3D models (glTF, GLB, STL, OBJ) | Orbit and zoom around the model                          |
+| CSV                             | A scrollable table                                       |
+
+Code and markdown files open read-only by default. Click the pencil icon to start editing; it turns into a checkmark you click to stop and save. While you're editing, DorkOS holds back any agent update to that specific file, so your keystrokes and the agent's writes never collide. Every other open file keeps updating live.
+
+If the file changed on disk while you had it open (say, the agent edited it too), DorkOS tells you before your save could clobber it, with a choice to reload the new version or overwrite it with yours.
+
+<Callout type="warn">
+  A [config field](#for-the-curious) lets you override which viewer opens for a given file
+  extension. Most people never need to touch it: the built-in mapping just works for the file types
+  above.
+</Callout>
+
+## Terminal: A Real Shell, Right There
+
+Open the Terminal tab and you get an actual shell, running in your session's working directory. No extra window, no `cd`-ing back to where you were.
+
+- **Multiple tabs**: click the `+` to open another terminal; each gets its own numbered tab.
+- **Survives a refresh**: close the browser tab or hit reload, and your terminals are still running when you come back. DorkOS reattaches to the same live shell instead of starting a fresh one.
+- **Web cockpit only, for now**: the terminal needs a server-side process to run your shell in, so it's not available in the Obsidian plugin today.
+
+<Callout type="warn">
+  A terminal runs real commands with your permissions, the same way an agent's shell tool already
+  does. Treat it like any other shell: don't paste commands you don't understand.
+</Callout>
+
+## Embedded Browser: Preview Without Leaving the Cockpit
+
+Open the Canvas tab and navigate to a URL, or click a local HTML file from the Files tab, and it renders inline with real browser chrome: back, forward, reload, and an address bar you can type into.
+
+- **Local HTML files** and **localhost dev servers** render right in the canvas, relative links and assets included.
+- **External sites** are framed too, when the site allows it. When a site refuses (many do, for security), DorkOS shows an "Open in system browser" button instead of a blank frame.
+- Each browser tab keeps its own back/forward history, so switching between an open file and an open browser tab never mixes up your navigation.
+
+## Multi-Document Tabs
+
+The Canvas holds more than one document at a time. Open a file, then a browser preview, then another file, and each gets its own tab across the top, exactly like a code editor. Click a tab to switch, click its `x` to close it.
+
+If you (or the agent) open something that's already open, DorkOS switches to that existing tab instead of opening a duplicate.
+
+## Agents Can Drive the Workbench for You
+
+An agent isn't limited to describing what it did in text. It can act directly on the workbench you're looking at:
+
+- **Open a file** it just edited, so you're looking at exactly what changed.
+- **Open a terminal**, if it wants you to see (or run) something in a live shell.
+- **Navigate the embedded browser** to a page it wants you to check, like a dev server it just started.
+
+This only reaches into the session you're actively viewing. An agent running unattended in the background can't reach into a workbench you have open elsewhere.
+
+## For the Curious
+
+Two settings live under `workbench` in your [config file](/docs/getting-started/configuration):
+
+- `workbench.defaultViewers`: an object mapping a file extension to the viewer that should open it (for example, forcing `.csv` files into the plain code editor instead of the table view). Empty by default, which means every file type above uses its standard viewer.
+- `workbench.terminalGraceTtlMinutes`: how long a terminal's shell stays alive after every browser tab pointed at it disconnects, so a refresh can reattach instead of losing the shell. Defaults to 10 minutes.
+
+Neither field is something most people ever need to touch.
+
+## Next Steps
+
+<Cards>
+  <Card title="Generative UI" href="/docs/guides/generative-ui">
+    See how agents render widgets in chat and push documents into this same canvas.
+  </Card>
+  <Card title="Tool Approval" href="/docs/guides/tool-approval">
+    Workbench control tools are auto-approved, so an agent opening a file never interrupts you with
+    a prompt.
+  </Card>
+  <Card title="Workspaces" href="/docs/guides/workspaces">
+    Give each agent its own isolated working directory, so the Files tab and terminal never step on
+    another agent's checkout.
+  </Card>
+</Cards>

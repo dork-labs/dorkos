@@ -9,14 +9,14 @@ description: Architecture overview for DorkOS contributors
 
 DorkOS uses a hexagonal (ports & adapters) architecture that lets the same React client run in two modes:
 
-1. **Standalone web** — Express server with HTTP/SSE communication
-2. **Obsidian plugin** — In-process services, no server or network required
+1. **Standalone web**: Express server with HTTP/SSE communication
+2. **Obsidian plugin**: In-process services, no server or network required
 
 This guide explains how the pieces fit together.
 
 ## Monorepo Structure
 
-DorkOS is a Turborepo monorepo with five apps and nine shared packages:
+DorkOS is a Turborepo monorepo. The apps and the packages that matter most for this guide:
 
 <Files>
   <Folder name="dorkos" defaultOpen>
@@ -59,28 +59,28 @@ DorkOS is a Turborepo monorepo with five apps and nine shared packages:
 
 ## The Transport Interface
 
-The core abstraction is the **Transport** interface (`packages/shared/src/transport.ts`). It defines all client-server communication — session management, messaging, tool interaction, Tasks, Relay, Mesh, and agent identity.
+The core abstraction is the **Transport** interface (`packages/shared/src/transport.ts`). It defines all client-server communication: session management, messaging, tool interaction, Tasks, Relay, Mesh, and agent identity.
 
-A condensed view of the core methods:
+A condensed view of the core methods (there is no separate `createSession`; posting a message with a fresh client-generated session id creates it on first send):
 
 ```typescript
 interface Transport {
-  createSession(opts): Promise<Session>
-  listSessions(cwd?)       → Promise<Session[]>
+  listSessions(cwd?)       → Promise<SessionListResponse>
   getSession(id, cwd?)     → Promise<Session>
-  getMessages(sessionId)   → Promise<{ messages: HistoryMessage[] }>
+  getMessages(sessionId, cwd?) → Promise<{ messages: HistoryMessage[] }>
   getSessionSnapshot(sessionId, cwd?) → Promise<SessionSnapshot>
   subscribeSession(sessionId, sinceCursor?, cwd?, signal?) → AsyncIterable<SessionEvent>
   subscribeSessionList()   → AsyncIterable<SessionListEvent>
-  postMessage(id, content, cwd?, options?) → Promise<{ sessionId: string }>
-  // trigger-only (202); options: { clientMessageId?: string; uiState?: UiState }
+  postMessage(sessionId, content, cwd?, options?) → Promise<{ sessionId: string }>
+  // trigger-only (202); resolves to the canonical session id, which may
+  // differ from the id passed in on session creation
   stopTask(sessionId, taskId) → Promise<{ success: boolean; taskId: string }>
-  approveTool(sessionId, toolCallId)  → Promise<{ ok: boolean }>
-  denyTool(sessionId, toolCallId)     → Promise<{ ok: boolean }>
+  approveTool(sessionId, toolCallId, alwaysAllow?) → Promise<{ ok: boolean }>
+  denyTool(sessionId, toolCallId) → Promise<{ ok: boolean }>
   getCommands(refresh?)    → Promise<CommandRegistry>
-  getModels()              → Promise<ModelOption[]>
+  getModels(opts?)         → Promise<ModelOption[]>
   getCapabilities()        → Promise<{ capabilities, defaultRuntime }>
-  health()                 → Promise<{ status, version, uptime }>
+  health()                 → Promise<HealthResponse>
 }
 ```
 
@@ -167,7 +167,7 @@ The Express server (`apps/server/`) is organized into routes and services.
 
 ### Routes
 
-Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegistry.getDefault()`:
+Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegistry.getDefault()`. The most load-bearing routes (not exhaustive; see `apps/server/src/routes/` for the full list):
 
 <TypeTable
   type={{
@@ -215,35 +215,36 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
 
 ### Services
 
+The services behind those routes, grouped by domain (also not exhaustive):
+
 <TypeTable
   type={{
     'runtime-registry.ts': {
       type: 'core',
       description:
-        'Registry of AgentRuntime instances keyed by type — default, per-session (first-write-wins), and per-agent resolution',
+        'Registry of AgentRuntime instances keyed by type: default, per-session (first-write-wins), and per-agent resolution',
     },
     'claude-code-runtime.ts': {
       type: 'runtime',
-      description:
-        'ClaudeCodeRuntime — the default AgentRuntime, encapsulates the Claude Agent SDK',
+      description: 'ClaudeCodeRuntime: the default AgentRuntime, encapsulates the Claude Agent SDK',
     },
     'codex/codex-runtime.ts': {
       type: 'runtime',
-      description: 'CodexRuntime — maps DorkOS sessions to Codex SDK threads (@openai/codex-sdk)',
+      description: 'CodexRuntime: maps DorkOS sessions to Codex SDK threads (@openai/codex-sdk)',
     },
     'opencode/opencode-runtime.ts': {
       type: 'runtime',
       description:
-        'OpenCodeRuntime — drives a managed `opencode serve` sidecar via @opencode-ai/sdk',
+        'OpenCodeRuntime: drives a managed `opencode serve` sidecar via @opencode-ai/sdk',
     },
     'sessions/transcript-reader.ts': {
       type: 'runtime',
-      description:
-        'Reads SDK JSONL transcript files — source of truth for Claude Code session data',
+      description: 'Reads SDK JSONL transcript files: source of truth for Claude Code session data',
     },
-    'sessions/session-broadcaster.ts': {
-      type: 'runtime',
-      description: 'Watches JSONL files for changes, broadcasts sync events to connected clients',
+    'session/session-list-broadcaster.ts': {
+      type: 'core',
+      description:
+        'Fans every runtime session-list stream onto the global GET /api/events SSE feed',
     },
     'stream-adapter.ts': {
       type: 'core',
@@ -269,12 +270,12 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
     'mcp-server.ts': {
       type: 'core',
       description:
-        'External MCP server factory — Streamable HTTP transport, stateless, optional API key auth',
+        'External MCP server factory: Streamable HTTP transport, stateless, optional API key auth',
     },
     'marketplace-installer.ts': {
       type: 'marketplace',
       description:
-        '8-stage install orchestrator — resolves package, previews permissions, runs per-kind flow, commits via atomic transaction engine (see ADR-0231)',
+        '8-stage install orchestrator: resolves package, previews permissions, runs per-kind flow, commits via atomic transaction engine (see ADR-0231)',
     },
     'marketplace-cache.ts': {
       type: 'marketplace',
@@ -282,7 +283,7 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
     },
     'marketplace-source-manager.ts': {
       type: 'marketplace',
-      description: 'Source CRUD — reads/writes marketplaces.json on disk',
+      description: 'Source CRUD: reads/writes marketplaces.json on disk',
     },
     'ensure-core-extensions.ts': {
       type: 'core-extensions',
@@ -292,7 +293,7 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
     'extension-manager.ts': {
       type: 'extensions',
       description:
-        'Extension lifecycle management — load, enable/disable, compile, and hot-reload extensions',
+        'Extension lifecycle management: load, enable/disable, compile, and hot-reload extensions',
     },
     'extension-compiler.ts': {
       type: 'extensions',
@@ -305,7 +306,7 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
     'ui-tools.ts': {
       type: 'mcp-tools',
       description:
-        'MCP tools for agent UI control — controlUI dispatches UI commands, get_ui_state returns current UI state',
+        'MCP tools for agent UI control: control_ui dispatches UI commands, get_ui_state returns current UI state',
     },
     'extension-tools.ts': {
       type: 'mcp-tools',
@@ -318,15 +319,15 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
 ### Session Storage: Runtime-Owned
 
 <Callout type="info">
-  Sessions are **not** stored in a unified DorkOS database — each runtime owns its store, and `GET
+  Sessions are **not** stored in a unified DorkOS database: each runtime owns its store, and `GET
   /api/sessions` aggregates across all registered runtimes, tagging every session with its `runtime`
   type. A failing runtime degrades to partial results plus a warning, never a failed request.
 </Callout>
 
-- **Claude Code** — `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All sessions are visible regardless of which client created them (CLI, DorkOS, or otherwise); `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients.
-- **Codex** — one DorkOS session per Codex SDK thread; the session-to-thread map lives in the `codex_threads` SQLite table.
-- **OpenCode** — sessions live in the sidecar's own store, read via `@opencode-ai/sdk`.
-- No delete endpoint — sessions persist in each runtime's storage.
+- **Claude Code**: `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All sessions are visible regardless of which client created them (CLI, DorkOS, or otherwise); `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients.
+- **Codex**: one DorkOS session per Codex SDK thread; the session-to-thread map lives in the `codex_threads` SQLite table.
+- **OpenCode**: sessions live in the sidecar's own store, read via `@opencode-ai/sdk`.
+- No delete endpoint: sessions persist in each runtime's storage.
 - A session's runtime is fixed when it starts (persisted first-write-wins in `session_metadata`).
 
 ## Client Architecture
@@ -365,9 +366,9 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 
 ### State Management
 
-- **Zustand** for UI state (sidebar, theme, etc.) — `layers/shared/model/app-store.ts`
+- **Zustand** for UI state (sidebar, theme, etc.): `layers/shared/model/app-store.ts`
 - **TanStack Query** for server state (sessions, messages, commands, schedules)
-- **URL Parameters** (standalone mode) — `?session=` and `?dir=` persist state in the URL
+- **URL Parameters** (standalone mode): `?session=` and `?dir=` persist state in the URL
 
 ## Data Flow: Message from UI to Claude and Back
 
@@ -450,6 +451,14 @@ Runtimes yield internal `StreamEvent` objects; the per-session projector normali
     subagent_update: { type: 'SessionEvent', description: 'Background subagent lifecycle update' },
     hook_update: { type: 'SessionEvent', description: 'Hook lifecycle update' },
     memory_recall: { type: 'SessionEvent', description: 'Memories surfaced into the turn' },
+    compact_boundary: {
+      type: 'SessionEvent',
+      description: 'Context-window compaction happened (tokens summarized)',
+    },
+    system_status: {
+      type: 'SessionEvent',
+      description: 'Transient operational status (e.g. compacting context, hook progress)',
+    },
     turn_end: {
       type: 'SessionEvent',
       description: 'Assistant turn finished (with terminal reason)',
@@ -459,7 +468,7 @@ Runtimes yield internal `StreamEvent` objects; the per-session projector normali
 
 ## Session Event Stream
 
-All session state is delivered on a durable per-session SSE stream: `GET /api/sessions/:id/events`. A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect, `Last-Event-ID` resumes from the last applied `seq` and the server replays the gap — or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: CLI writes and turns triggered by other clients appear in the DorkOS UI automatically.
+All session state is delivered on a durable per-session SSE stream: `GET /api/sessions/:id/events`. A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect, `Last-Event-ID` resumes from the last applied `seq` and the server replays the gap, or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: CLI writes and turns triggered by other clients appear in the DorkOS UI automatically.
 
 The session list stays live via the global `GET /api/events` stream (`session_upserted` / `session_removed` / `session_status`), with no polling.
 
@@ -490,13 +499,13 @@ This pattern provides type safety and explicit test setup without global mocks.
 
 ## Key Design Properties
 
-- **Same React app, two deployment modes** — Transport abstraction enables full code reuse
-- **No network required for Obsidian** — DirectTransport runs entirely in-process
-- **Type-safe end-to-end** — Zod schemas generate both TypeScript types and OpenAPI specs
-- **Testable** — Mock Transport objects make testing React hooks and components straightforward
-- **Real-time sync** — durable, resumable SSE streams keep all clients in sync
-- **Runtime-owned storage** — each runtime keeps its own session store; DorkOS aggregates instead of duplicating (no unified transcript database)
-- **Runtime-agnostic core** — Claude Code, Codex, and OpenCode all implement the same `AgentRuntime` contract, proven by a shared conformance suite
+- **Same React app, two deployment modes**: Transport abstraction enables full code reuse
+- **No network required for Obsidian**: DirectTransport runs entirely in-process
+- **Type-safe end-to-end**: Zod schemas generate both TypeScript types and OpenAPI specs
+- **Testable**: Mock Transport objects make testing React hooks and components straightforward
+- **Real-time sync**: durable, resumable SSE streams keep all clients in sync
+- **Runtime-owned storage**: each runtime keeps its own session store; DorkOS aggregates instead of duplicating (no unified transcript database)
+- **Runtime-agnostic core**: Claude Code, Codex, and OpenCode all implement the same `AgentRuntime` contract, proven by a shared conformance suite
 
 ## Next Steps
 

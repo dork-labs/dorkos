@@ -5,7 +5,7 @@ description: Run DorkOS in a Docker container with persistent data, custom confi
 
 # Docker
 
-Run DorkOS as a container. The official image bundles Node.js, the DorkOS CLI, and the built client — no host dependencies beyond Docker.
+Run DorkOS as a container. The official image bundles Node.js, the DorkOS CLI, and the built client, so Docker is the only thing you need on the host.
 
 ## Quick Start
 
@@ -48,21 +48,21 @@ The image is built for both `linux/amd64` and `linux/arm64`. Docker automaticall
 - **Apple Silicon (M1/M2/M3) via Docker Desktop**: `linux/arm64`
 - **ARM servers (AWS Graviton, Ampere)**: `linux/arm64`
 
-No configuration is needed — `docker pull` selects the right platform automatically.
+You don't need to configure anything: `docker pull` selects the right platform automatically.
 
 ## Supply Chain Verification
 
-Every published image includes a [SLSA](https://slsa.dev/) provenance attestation, verifying it was built from the expected source commit in the `dork-labs/dorkos` repository. Verify any image with the GitHub CLI:
+Every published image includes a [SLSA](https://slsa.dev/) attestation (a signed record of exactly which source commit built it) proving it came from the `dork-labs/dorkos` repository, not a fork. Verify any image with the GitHub CLI:
 
 ```bash
 gh attestation verify oci://ghcr.io/dork-labs/dorkos:0.12.0 --owner dork-labs
 ```
 
-This confirms the image was built by GitHub Actions from the official repository — not from a fork or local machine.
+A passing check confirms GitHub Actions built the image, not someone's laptop.
 
 ## Configuration
 
-Pass environment variables with `-e` or an env file. All [standard environment variables](/docs/self-hosting/deployment#environment-variables) are supported.
+Pass environment variables with `-e` or an env file. DorkOS reads the same variables whether it's running in Docker or [installed directly](/docs/self-hosting/deployment).
 
 <TypeTable
   type={{
@@ -74,7 +74,7 @@ Pass environment variables with `-e` or an env file. All [standard environment v
     },
     DORKOS_HOST: {
       type: 'string',
-      description: 'Bind address — always 0.0.0.0 in Docker (set automatically by the image)',
+      description: 'Bind address: always 0.0.0.0 in Docker (set automatically by the image)',
       default: "'0.0.0.0'",
     },
     DORKOS_DEFAULT_CWD: {
@@ -153,7 +153,7 @@ docker run -d --name dorkos \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
-Useful for backup or inspection — the data directory is directly accessible on the host.
+Useful for backup or inspection, since the data directory is directly accessible on the host.
 
 </Tab>
 
@@ -161,7 +161,7 @@ Useful for backup or inspection — the data directory is directly accessible on
 
 ### Mounting a project directory
 
-By default, agents running inside the container can only see the container's own filesystem — they have no access to your code on the host machine. To let agents read and write files in one of your projects, bind-mount the project directory into the container and tell DorkOS to use it as the default working directory:
+By default, agents running inside the container can only see the container's own filesystem. They have no access to your code on the host machine. To let agents read and write files in one of your projects, mount the project directory into the container and tell DorkOS to use it as the default working directory:
 
 ```bash
 docker run -d --name dorkos \
@@ -181,7 +181,7 @@ docker run -d --name dorkos \
 
 ## Docker Compose
 
-The `docker run` commands above work fine for trying DorkOS out, but they're unwieldy to maintain — you end up with long shell commands that are easy to mistype and hard to version control. Docker Compose captures the full configuration in a declarative file, making it reproducible, easy to update, and simple to tear down with `docker compose down`.
+The `docker run` commands above work fine for trying DorkOS out, but they're unwieldy to maintain. You end up with long shell commands that are easy to mistype and hard to version control. Docker Compose captures the full configuration in one file, so it's reproducible, easy to update, and simple to tear down with `docker compose down`.
 
 ```yaml title="docker-compose.yml"
 services:
@@ -213,9 +213,9 @@ docker compose up -d
 
 ### With a reverse proxy
 
-The standalone Compose setup above serves DorkOS over plain HTTP on port 4242. That's fine for local use, but if you're exposing DorkOS over the internet — on a VPS, a home server with a domain, or any machine where others will connect — you need HTTPS. Browsers will block mixed content, credentials travel in the clear, and SSE streams are vulnerable to interception without TLS.
+The standalone Compose setup above serves DorkOS over plain HTTP on port 4242. That's fine for local use. But if you're exposing DorkOS over the internet (a VPS, a home server with a domain, or any machine other people will connect to), you need HTTPS. Without TLS, browsers block mixed content, credentials travel in the clear, and SSE streams (the live updates DorkOS uses to stream agent output) can be intercepted.
 
-A reverse proxy sits in front of DorkOS, terminates TLS, and forwards requests. Caddy is the simplest option because it obtains and renews Let's Encrypt certificates automatically — no manual cert management. It also handles the SSE-specific buffering settings that DorkOS requires.
+A reverse proxy sits in front of DorkOS, handles HTTPS, and forwards requests to the container. Caddy is the simplest option: it obtains and renews Let's Encrypt certificates automatically, so there's no manual cert management. It also handles the buffering settings SSE needs.
 
 Add Caddy to the Compose file for automatic HTTPS:
 

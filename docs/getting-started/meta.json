@@ -1,5 +1,5 @@
 {
   "title": "Getting Started",
-  "pages": ["installation", "quickstart", "configuration", "uninstall"],
+  "pages": ["what-is-dorkos", "installation", "quickstart", "configuration", "troubleshooting", "uninstall"],
   "defaultOpen": true
 }

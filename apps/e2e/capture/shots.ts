@@ -67,12 +67,12 @@ export interface Shot {
  * `consumers` and simply do not surface on `/features`.
  */
 export const SHOTS: readonly Shot[] = [
-  // --- Desktop stills (marketing) ---
-  { id: 'cockpit', kind: 'still', frame: 'desktop', consumers: ['marketing'] },
-  { id: 'agents', kind: 'still', frame: 'desktop', consumers: ['marketing'] },
-  { id: 'tasks', kind: 'still', frame: 'desktop', consumers: ['marketing'] },
-  { id: 'marketplace', kind: 'still', frame: 'desktop', consumers: ['marketing'] },
-  { id: 'tool-approval', kind: 'still', frame: 'desktop', consumers: ['marketing'] },
+  // --- Desktop stills (marketing; several also embed in the docs) ---
+  { id: 'cockpit', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  { id: 'agents', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  { id: 'tasks', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  { id: 'marketplace', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  { id: 'tool-approval', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   // --- Desktop loops (marketing) ---
   { id: 'topology', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
   { id: 'chat-streaming', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
@@ -82,7 +82,8 @@ export const SHOTS: readonly Shot[] = [
   // canvas is also embedded in the docs (docs/guides/generative-ui.mdx).
   { id: 'canvas', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'canvas-editing', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
-  { id: 'agent-discovery', kind: 'loop', frame: 'desktop', consumers: ['marketing'] },
+  // agent-discovery is also embedded in the docs (docs/guides/agent-discovery.mdx).
+  { id: 'agent-discovery', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   // gen-ui-widgets is also embedded in the docs (docs/guides/generative-ui.mdx).
   { id: 'gen-ui-widgets', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   // gen-ui-tictactoe is also embedded in the docs (docs/guides/generative-ui.mdx).

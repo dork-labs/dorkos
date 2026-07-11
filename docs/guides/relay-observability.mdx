@@ -1,6 +1,6 @@
 ---
 title: Relay Observability
-description: Track message delivery, inspect traces, monitor metrics, and debug failures
+description: Find out what happened to a message between your agents, and what to do when delivery fails
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -10,13 +10,31 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Relay Observability
 
-Relay tracks every message from publish to final delivery. The tracing system records timing, budget consumption, and error details for each delivery attempt. Aggregate metrics give you a snapshot of bus health, and the dead letter queue captures messages that could not be delivered.
+When your agents talk to each other through Relay, most messages just arrive. When one doesn't, you need answers: did it fail, time out, or never reach anywhere at all? Relay keeps a full paper trail of every message, from the moment it's published to the moment it's delivered, so you can find out.
 
-## Message Tracing
+<Callout type="info">
+  Multi-agent coordination through Relay is a newer part of DorkOS. It works, but we're still
+  hardening it end to end, so treat delivery guarantees as "strong, not bulletproof" while it
+  matures.
+</Callout>
 
-Every message published through Relay gets a trace ID. Each delivery to an endpoint creates a **span** — a complete record of that delivery attempt: when it was sent, when it arrived, when processing completed, and whether it succeeded.
+Haven't turned Relay on yet? Start with [Relay Messaging](/docs/guides/relay-messaging) to enable it and register your first adapter.
 
-### Trace Span Fields
+## The Fastest Way to Check Delivery Health
+
+Open the **Relay** tab in the DorkOS sidebar. The Delivery Metrics Dashboard there shows how many messages delivered, failed, or landed in the dead letter queue, no terminal required. For most people, that's as deep as you'll ever need to go.
+
+Everything below this point is deep reference: raw API calls, JSON shapes, and internals for anyone debugging a stuck message by hand.
+
+## Reference: Tracing and Metrics
+
+### Message Tracing
+
+Every message published through Relay gets a trace ID. Each delivery to an endpoint creates a **span**, a complete record of that one delivery attempt: when it was sent, when it arrived, when processing finished, and whether it succeeded.
+
+Trace and message IDs are [ULIDs](/docs/glossary) (sortable, unique IDs that look like `01HXABC123`).
+
+#### Trace Span Fields
 
 <TypeTable
   type={{
@@ -42,7 +60,7 @@ Every message published through Relay gets a trace ID. Each delivery to an endpo
   }}
 />
 
-### Looking Up a Trace
+#### Looking Up a Trace
 
 ```bash
 curl http://localhost:4242/api/relay/messages/01HX.../trace
@@ -72,7 +90,7 @@ The response includes every span in the trace chain, ordered by `sentAt` ascendi
 
 For messages that fan out to multiple endpoints, the trace contains one span per endpoint.
 
-### Trace Statuses
+#### Trace Statuses
 
 | Status      | Meaning                                                                                                        |
 | ----------- | -------------------------------------------------------------------------------------------------------------- |
@@ -83,7 +101,7 @@ For messages that fan out to multiple endpoints, the trace contains one span per
 
 A healthy message moves from `sent` to `delivered`. The time between `sentAt` and `deliveredAt` is delivery latency. The time between `deliveredAt` and `processedAt` is processing latency, which includes the time the adapter (e.g., Claude Code) takes to handle the message.
 
-### Using MCP Tools
+#### Using MCP Tools
 
 Agents can inspect traces without HTTP calls using the built-in MCP tools:
 
@@ -94,11 +112,11 @@ relay_get_metrics   Get aggregate delivery metrics for the bus
 
 `relay_get_trace` accepts a `messageId` and returns the same trace data as the REST endpoint. Use this when an agent needs to verify a message was delivered before proceeding.
 
-## Delivery Metrics
+### Delivery Metrics
 
-Relay computes aggregate delivery metrics from the trace store using live SQL aggregates. These give you a summary of bus health without inspecting individual traces.
+Relay computes aggregate delivery metrics straight from the trace store, so they always reflect the current state of the database. These give you a summary of bus health without inspecting individual traces.
 
-### Fetching Metrics
+#### Fetching Metrics
 
 ```bash
 curl http://localhost:4242/api/relay/trace/metrics
@@ -122,7 +140,7 @@ curl http://localhost:4242/api/relay/trace/metrics
 }
 ```
 
-### Metrics Fields
+#### Metrics Fields
 
 <TypeTable
   type={{
@@ -142,8 +160,7 @@ curl http://localhost:4242/api/relay/trace/metrics
     },
     p95DeliveryLatencyMs: {
       type: 'number | null',
-      description:
-        '95th percentile delivery latency. Currently returns null — not yet implemented.',
+      description: '95th percentile delivery latency. Currently returns null, not yet implemented.',
     },
     activeEndpoints: {
       type: 'number',
@@ -151,11 +168,13 @@ curl http://localhost:4242/api/relay/trace/metrics
     },
     'budgetRejections.hopLimit': {
       type: 'number',
-      description: 'Messages rejected for exceeding the maximum hop count',
+      description:
+        'Messages rejected for exceeding the maximum hop count (how many agent-to-agent hops a message is allowed to make)',
     },
     'budgetRejections.ttlExpired': {
       type: 'number',
-      description: 'Messages rejected because their TTL expired before delivery',
+      description:
+        'Messages rejected because their TTL (time to live: how long a message is allowed to wait before it expires) expired before delivery',
     },
     'budgetRejections.cycleDetected': {
       type: 'number',
@@ -168,25 +187,23 @@ curl http://localhost:4242/api/relay/trace/metrics
   }}
 />
 
-### Interpreting the Numbers
+#### Interpreting the Numbers
 
 A healthy bus has a high delivered-to-total ratio and low dead letter counts.
 
-- **High `deadLetteredCount`** relative to total — Check budget rejections. A spike in `hopLimit` rejections often indicates a message loop between two agents. TTL expirations may mean agents are too slow to process within the 1-hour window.
-
-- **Rising `failedCount`** — Subscriber handlers are throwing errors. Check individual traces for the `errorMessage` field. The circuit breaker automatically stops delivering to endpoints with 5 consecutive failures.
-
-- **High `avgDeliveryLatencyMs`** — A single slow endpoint can pull up the mean. Inspect traces filtered by endpoint to find the bottleneck.
+- **High `deadLetteredCount` relative to total**: Check budget rejections. A spike in `hopLimit` rejections usually means two agents stuck replying to each other in a loop (it happens to the best of us). TTL expirations may mean agents are too slow to process within the 1-hour window.
+- **Rising `failedCount`**: Subscriber handlers are throwing errors. Check individual traces for the `errorMessage` field. The circuit breaker (a safety switch that stops sending to an endpoint that keeps failing) automatically stops delivering to endpoints with 5 consecutive failures.
+- **High `avgDeliveryLatencyMs`**: A single slow endpoint can pull up the mean. Inspect traces filtered by endpoint to find the bottleneck.
 
 <Callout type="info">
   Relay metrics reflect the full history of the current database, not a recent time window.
-  `p95DeliveryLatencyMs` currently returns `null` and `budgetRejections` counters return `0` — these
-  are tracked at the RelayCore level but not yet aggregated into trace store metrics.
+  `p95DeliveryLatencyMs` currently returns `null` and `budgetRejections` counters return `0` in this
+  endpoint. They're tracked at the RelayCore level but not yet aggregated into trace store metrics.
 </Callout>
 
-The DorkOS client includes a Delivery Metrics Dashboard in the Relay panel. Access it from the Relay tab in the sidebar when Relay is enabled.
+## When a Message Goes Missing
 
-## Debugging Failed Deliveries
+Work through these steps in order. Each one rules out a different cause.
 
 <Steps>
 <Step>
@@ -200,12 +217,11 @@ curl http://localhost:4242/api/relay/dead-letters
 
 Each dead letter includes the original envelope with subject, payload, and budget. Common reasons:
 
-- **No matching endpoints** — The subject has no registered endpoints. Verify with `GET /api/relay/endpoints`.
-- **Budget exceeded** — The message's hop count, TTL, or call budget was exhausted.
-- **Access denied** — The sender lacks permission to publish to the target subject. Check `access-rules.json`.
+- **No matching endpoints**: The subject has no registered endpoints. Verify with `GET /api/relay/endpoints`.
+- **Budget exceeded**: The message's hop count, TTL, or call budget was exhausted.
+- **Access denied**: The sender lacks permission to publish to the target subject. Check `access-rules.json`.
 
 </Step>
-
 <Step>
 ### Inspect the message trace
 
@@ -218,18 +234,16 @@ curl http://localhost:4242/api/relay/messages/{messageId}/trace
 Check `status` and `errorMessage` on each span. A `failed` status with an error message tells you exactly what went wrong. For Claude Code adapter failures, the error typically includes the Agent SDK error message.
 
 </Step>
-
 <Step>
 ### Check endpoint health
 
 If deliveries are being rejected, the endpoint's circuit breaker may be open. The circuit breaker opens after 5 consecutive failures (configurable in `~/.dork/relay/config.json`). After a 30-second cooldown, it allows a single probe through. If the probe succeeds, normal delivery resumes.
 
 </Step>
-
 <Step>
 ### Check rate limits and backpressure
 
-If a sender is publishing too quickly, messages are rejected by the rate limiter. The default allows 100 messages per 60-second window per sender. If an endpoint's mailbox has too many unprocessed messages, backpressure triggers at 80% capacity (warning) and 100% capacity (rejection).
+If a sender is publishing too quickly, messages are rejected by the rate limiter. The default allows 100 messages per 60-second window per sender. If an endpoint's mailbox (its inbox of unprocessed messages) has too many unprocessed messages, backpressure triggers at 80% capacity (warning) and 100% capacity (rejection).
 
 Both settings are tunable in `~/.dork/relay/config.json` and hot-reloaded without a restart.
 
@@ -257,7 +271,7 @@ The stream emits four event types:
 
 <Callout type="warn">
   The SSE stream is for debugging and monitoring. Long-lived SSE connections consume server
-  resources — close them when no longer needed. For production monitoring, use the REST API or the
+  resources, so close them when no longer needed. For production monitoring, use the REST API or the
   UI dashboard.
 </Callout>
 

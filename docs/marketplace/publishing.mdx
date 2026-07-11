@@ -1,0 +1,275 @@
+---
+title: Publishing a package
+description: Build an agent, plugin, skill pack, or adapter and share it through the DorkOS Marketplace.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+# Publishing a package
+
+This page is for people building something to share, not just installing what's already there. If you want to browse and install packages instead, see [Marketplace](/docs/marketplace).
+
+A DorkOS package is a folder with a manifest and some content: skills, hooks, commands, or an agent definition. You scaffold it with the CLI, validate it locally, then either keep it private or submit it to the public registry.
+
+## What you can publish
+
+Every package is exactly one of four types:
+
+- **Agent** - a reusable agent identity: a persona, suggested traits, and starter skills or tasks.
+- **Plugin** - a Claude Code extension: slash commands, hooks, and DorkOS UI extensions (sidebar widgets, dashboard cards, and the like).
+- **Skill pack** - a bundle of `SKILL.md` files that teach an agent how to do something, with no commands or hooks attached.
+- **Adapter** - a bridge to an external system, like a relay transport for a chat platform or a mesh discovery backend.
+
+Pick the type based on what the package actually does. Defining an agent's identity means `agent`. Adding commands or UI means `plugin`. Just teaching a skill means `skill-pack`. Bridging an outside service means `adapter`.
+
+<Callout type="warn" title="Claude Code compatibility, honestly">
+  DorkOS packages are built to be a superset of Claude Code plugins: the registry format and
+  validator are designed so a package that passes DorkOS validation also passes Claude Code's own
+  `claude plugin validate`. We haven't verified every Claude Code feature end to end inside DorkOS,
+  including every hook type and every MCP (the protocol that lets AI tools call external servers)
+  option. If your package leans on a specific Claude Code feature, test it in both DorkOS and plain
+  Claude Code before you publish.
+</Callout>
+
+## Anatomy of a package
+
+Every package needs a `.dork/manifest.json`. This is the file DorkOS reads to know what your package is and what it does.
+
+```jsonc
+// .dork/manifest.json
+{
+  "schemaVersion": 1,
+  "name": "my-package", // kebab-case, must match the folder name
+  "version": "1.0.0", // semver: MAJOR.MINOR.PATCH
+  "type": "plugin", // "agent" | "plugin" | "skill-pack" | "adapter"
+  "description": "What it does, one to two sentences.",
+  "displayName": "My Package", // optional, shown instead of `name` in the UI
+  "author": "Your Name",
+  "license": "MIT",
+  "tags": ["review", "ci"],
+  "category": "code-quality",
+  "icon": "🔍",
+}
+```
+
+`name`, `version`, `type`, and `description` are required. Everything else is optional. A few fields worth knowing about:
+
+| Field              | What it's for                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `repository`       | A URL to your source, shown as a link in the package detail sheet.                                                          |
+| `homepage`         | A URL to docs or a project page, shown the same way.                                                                        |
+| `minDorkosVersion` | The oldest DorkOS version your package needs, if it depends on a recent feature.                                            |
+| `layers`           | Which content categories the package contributes: `skills`, `hooks`, `commands`, and so on. Used to filter the browse grid. |
+| `requires`         | Other packages this one depends on, as `<type>:<name>` (for example `adapter:slack`).                                       |
+| `featured`         | Set by the registry maintainers, not by you. Ignore it when authoring.                                                      |
+
+Each type adds its own fields on top of the base manifest:
+
+- **`plugin`** adds `extensions`: an array of extension IDs your package registers with the DorkOS extension API (for sidebar widgets, dashboard cards, and similar UI slots).
+- **`agent`** adds `agentDefaults`: an optional `persona` string describing the agent, a `capabilities` list, and `traits` (each scored 1 to 5): `verbosity`, `autonomy`, `chaos`, `creativity`, `humor`, and `spice`.
+- **`adapter`** adds `adapterType`, required: a short identifier for what it bridges to, like `"discord"` or `"slack"`.
+- **`skill-pack`** adds nothing. The manifest is the whole story.
+
+Packages of every type except `agent` also need a `.claude-plugin/plugin.json`, the manifest Claude Code itself reads:
+
+```json
+// .claude-plugin/plugin.json
+{
+  "name": "my-package",
+  "version": "1.0.0",
+  "description": "What it does."
+}
+```
+
+Keep the name, version, and description in sync with `.dork/manifest.json`. If your package also defines Claude Code commands, hooks, or MCP servers, add those fields following Claude Code's own plugin manifest format.
+
+Any skills you write live in a directory-based `SKILL.md` file, with frontmatter naming the skill and describing what it does:
+
+```markdown
+---
+name: my-skill
+description: One line describing what this skill does.
+kind: skill
+---
+
+# My Skill
+
+The instructions your agent follows when it uses this skill.
+```
+
+## Scaffolding a new package
+
+The `dorkos` CLI can generate the starting files for you:
+
+```bash
+dorkos package init my-package --type plugin
+```
+
+```
+Created package at: /path/to/my-package
+Files written:
+  - .dork/manifest.json
+  - .claude-plugin/plugin.json
+  - README.md
+```
+
+`--type` accepts `agent`, `plugin`, `skill-pack`, or `adapter` (defaults to `plugin` if you leave it out). A few more flags:
+
+```bash
+dorkos package init my-adapter \
+  --type adapter \
+  --parent-dir ./packages \
+  --description "Bridges DorkOS to Discord" \
+  --author "Your Name" \
+  --adapter-type discord
+```
+
+`--parent-dir` chooses where the package folder is created (defaults to your current directory). `--adapter-type` only matters for adapter packages; it defaults to the package name if you skip it.
+
+<Callout type="info">
+  If you're chatting with an agent connected to DorkOS instead of using a terminal, it can scaffold
+  a package for you into your personal marketplace (see below) using the same scaffolder under the
+  hood. Either path produces the same files.
+</Callout>
+
+## Validating locally
+
+Before you go further, check that the manifest and any skills are well-formed:
+
+```bash
+dorkos package validate
+```
+
+```
+Package: my-package@1.0.0 (plugin)
+✓ Package is valid
+```
+
+If something's wrong, you get one line per issue with a code you can look up, like `MANIFEST_SCHEMA_INVALID` or `SKILL_INVALID`. Warnings (for example, a package folder whose name doesn't match `manifest.name`) don't block you; errors do. Run it from inside the package folder, or pass a path:
+
+```bash
+dorkos package validate ./packages/my-package
+```
+
+## Trying it out before you publish
+
+Every DorkOS install has a personal marketplace at `~/.dork/personal-marketplace/`, created automatically the first time the server starts. It's registered as a source named `personal`, so anything you drop into its `packages/` folder (or scaffold there) is installable right away, without touching the public registry:
+
+```bash
+dorkos install my-package@personal
+```
+
+This is the fastest loop for iterating: scaffold, edit, validate, install, repeat. Nothing leaves your machine.
+
+You can also register any git repo as your own private source, which is useful for sharing a package across a team before (or instead of) submitting it publicly:
+
+```bash
+# Add a source pointing at your repo
+dorkos marketplace add https://github.com/your-team/marketplace --name your-team
+
+# Confirm it shows up
+dorkos marketplace list
+
+# Install a package from it
+dorkos install my-package@your-team
+```
+
+A source is just a git repo with a `marketplace.json` at its root, listing one or more packages. `dorkos install <name>@<marketplace>` looks up `<name>` in that specific source; leave off the `@<marketplace>` part and DorkOS searches every source you have enabled.
+
+## Publishing to the public registry
+
+The official marketplace lives in the [`dork-labs/marketplace`](https://github.com/dork-labs/marketplace) repo. Packages there are listed in two files that work together: `marketplace.json` (the Claude-Code-standard registry format) and a `dorkos.json` sidecar next to it (DorkOS-specific extras like `type`, `layers`, and `icon`, which Claude Code's schema doesn't allow inline).
+
+<Steps>
+
+<Step>
+
+### Fork and add your package
+
+Fork the repo, then add your package under `plugins/<your-package-name>/`.
+
+</Step>
+
+<Step>
+
+### Register it in both files
+
+Add an entry to `.claude-plugin/marketplace.json`:
+
+```jsonc
+{
+  "name": "my-package",
+  "source": "./plugins/my-package", // must start with "./plugins/"
+  "description": "What it does",
+  "author": { "name": "Your Name" },
+  "license": "MIT",
+}
+```
+
+And a matching entry in `.claude-plugin/dorkos.json`:
+
+```jsonc
+{
+  "my-package": {
+    "type": "plugin",
+    "layers": ["skills", "extensions"],
+    "icon": "🔍",
+  },
+}
+```
+
+</Step>
+
+<Step>
+
+### Validate the registry, not just your package
+
+```bash
+dorkos package validate ./plugins/my-package
+dorkos marketplace validate ./.claude-plugin/marketplace.json
+```
+
+The second command checks the whole registry file: your entry's shape, that reserved names weren't used, and that the file still passes Claude Code's own strict schema. Exit code `2` means your entry works for DorkOS but would fail Claude Code's plugin validator, so move the offending field into the `dorkos.json` sidecar and try again.
+
+</Step>
+
+<Step>
+
+### Open a pull request
+
+Open a PR against `main` with both files updated. Once it merges, your package is live: anyone with the `dorkos-community` source enabled (the default) can find and install it.
+
+</Step>
+
+</Steps>
+
+## Testing end to end
+
+Before you open that PR, run through the install as a stranger would:
+
+1. Point a clean DorkOS instance (or one where you've removed the package) at your fork: `dorkos marketplace add https://github.com/you/your-fork --name test`.
+2. Install it: `dorkos install my-package@test`.
+3. Confirm the permission preview shown before install matches what your package actually does. If it asks for less (or more) than expected, that's a manifest problem, not a DorkOS bug.
+4. Open a session and confirm your skills, commands, or hooks actually run.
+5. If you shipped a plugin with extensions, check that it shows up in the right sidebar or dashboard slot.
+
+<Callout type="info">
+  A package that only validates but was never actually installed and run is not a tested package.
+  The validator checks shape; only a real install checks behavior.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card title="Marketplace" href="/docs/marketplace">
+    Browse, install, and manage packages from the consumer side.
+  </Card>
+  <Card title="Building Relay Adapters" href="/docs/integrations/building-relay-adapters">
+    A deeper walkthrough for adapter packages specifically.
+  </Card>
+  <Card title="CLI Usage" href="/docs/guides/cli-usage">
+    Every `dorkos` command, including the full `package` and `marketplace` namespaces.
+  </Card>
+</Cards>

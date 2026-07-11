@@ -16,6 +16,8 @@ DorkOS supports keyboard shortcuts for navigation and for responding to Claude's
   buttons.
 </Callout>
 
+The one to learn first: press `⌘K` (or `Ctrl+K`) from anywhere to open the command palette and jump straight to an agent, a command, or a setting. Everything below is the full reference.
+
 ## Navigation
 
 These shortcuts work at any time.
@@ -35,7 +37,7 @@ These shortcuts work at any time.
 
 ## Command Palette
 
-The global command palette (`⌘K` / `Ctrl+K`) provides access to agents, features, commands, and quick actions.
+Press `⌘K` / `Ctrl+K` from anywhere to jump to an agent, a command, or a quick action, no clicking required.
 
 <TypeTable
   type={{
@@ -75,6 +77,11 @@ When Claude asks to run a tool (like a shell command or file write):
   type={{
     Enter: {
       description: 'Approve the tool call.',
+      type: 'key',
+    },
+    'Shift+Enter': {
+      description:
+        'Approve the tool call and skip the confirmation next time this tool is used (only shown when DorkOS has a suggestion to remember).',
       type: 'key',
     },
     Escape: {
@@ -134,19 +141,15 @@ When Claude asks multiple questions at once:
 
 ### Free-Text Responses
 
-When you select "Other" to type a custom answer, most shortcuts are suppressed so you can type freely. Only `Enter` remains active to submit.
+Typing a custom answer turns off the other shortcuts so you can type freely, no accidental option toggles. When you select "Other," only `Enter` remains active, to submit your answer.
 
 ## Visual Indicators
 
-When shortcuts are active, you'll see:
-
-- **Amber border ring** around the active request
-- **Key hints** next to buttons (e.g., `Enter`, `Esc`, `1`, `2`)
-- **Highlighted option** when navigating with arrow keys
+The active request gets an amber border, and its buttons show their key (`Enter`, `Esc`, `1`, `2`, and so on), so you always know what a keypress will do before you press it. Arrow-key navigation highlights the option in focus.
 
 ## Multiple Pending Requests
 
-If Claude issues multiple approvals or questions simultaneously, only the first pending request responds to keyboard shortcuts. Resolving it automatically activates the next one.
+If Claude issues multiple approvals or questions at once, keyboard shortcuts only respond to the first one. They queue politely instead of all shouting for your attention at the same time. Resolve it and the next one takes over automatically.
 
 ## Next Steps
 

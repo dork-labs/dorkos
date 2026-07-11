@@ -7,15 +7,26 @@ description: Create custom clients using the DorkOS Transport interface
 
 DorkOS uses a hexagonal (ports & adapters) architecture centered on the **Transport** interface. Build custom clients by implementing this interface or by calling the REST/SSE API directly.
 
+```
+                 ┌───────────────────────┐
+   Browser  ───▶ │                       │ ───▶  HttpTransport ───▶ Express (HTTP + SSE)
+                 │   Transport interface │
+   Obsidian ───▶ │                       │ ───▶  DirectTransport ─▶ in-process services
+                 └───────────────────────┘
+```
+
+Both adapters implement the same interface, so every hook and component that consumes a Transport works unmodified against either one.
+
 ## The Transport Interface
 
-The Transport interface (`packages/shared/src/transport.ts`) defines all client-server communication:
+The Transport interface (`packages/shared/src/transport.ts`) defines all client-server communication. It is large (100+ methods spanning sessions, tasks, relay, mesh, and marketplace) and still evolving alongside the product, so treat it as an internal contract rather than a versioned public API: method signatures can change between releases without a deprecation cycle. All request and response types are exported from `@dorkos/shared`.
+
+Here is the session-and-tool slice, the part most custom clients touch first:
 
 ```typescript
 interface Transport {
   // Sessions
-  createSession(opts: CreateSessionRequest): Promise<Session>;
-  listSessions(cwd?: string): Promise<Session[]>;
+  listSessions(cwd?: string): Promise<SessionListResponse>;
   getSession(id: string, cwd?: string): Promise<Session>;
   updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session>;
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
@@ -23,10 +34,16 @@ interface Transport {
   subscribeSession(sessionId, sinceCursor?, cwd?, signal?): AsyncIterable<SessionEvent>;
   subscribeSessionList(): AsyncIterable<SessionListEvent>;
   postMessage(sessionId, content, cwd?, options?): Promise<{ sessionId: string }>;
-  // options: { clientMessageId?: string; uiState?: UiState }
+  // options: { clientMessageId?: string; context?: ClientContext; runtime?: string }
+  // A brand-new session is created implicitly on its first postMessage() call
+  // (pass a client-generated UUID as sessionId): there is no separate createSession.
 
   // Tool interaction
-  approveTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
+  approveTool(
+    sessionId: string,
+    toolCallId: string,
+    alwaysAllow?: boolean
+  ): Promise<{ ok: boolean }>;
   denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
   submitAnswers(sessionId, toolCallId, answers): Promise<{ ok: boolean }>;
   stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }>;
@@ -40,13 +57,13 @@ interface Transport {
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;
 
   // Commands & config
-  getCommands(refresh?: boolean, cwd?: string): Promise<CommandRegistry>;
+  getCommands(refresh?: boolean, cwd?: string, opts?): Promise<CommandRegistry>;
   health(): Promise<HealthResponse>;
   getConfig(): Promise<ServerConfig>;
   updateConfig(patch: Record<string, unknown>): Promise<void>;
 
   // Runtime
-  getModels(): Promise<ModelOption[]>;
+  getModels(opts?): Promise<ModelOption[]>;
   getCapabilities(): Promise<{
     capabilities: Record<string, RuntimeCapabilities>;
     defaultRuntime: string;
@@ -74,7 +91,7 @@ interface Transport {
 }
 ```
 
-The full interface also covers Tasks, Relay, Mesh, and agent identity operations. See `packages/shared/src/transport.ts` for the complete definition.
+The full interface also covers Tasks (`listTasks`, `createTask`, `triggerTask`, `listTaskRuns`, and friends), Relay, Mesh, and agent identity operations. See `packages/shared/src/transport.ts` for the complete definition.
 
 ## Built-in Implementations
 
@@ -132,35 +149,55 @@ Content-Type: application/json
 ```
 
 <Callout type="info">
-  The full REST API is documented interactively at `/api/docs` (Scalar UI) when the server is running, or see the [API Reference](/docs/api).
+  The full REST API is documented interactively at `/api/docs` (Scalar UI) when the server is
+  running, or see the [API Reference](/docs/api).
 </Callout>
+
+**Authentication.** By default, local login is off (`auth.enabled: false`), so a local DorkOS instance accepts these requests with no credentials, same as the web cockpit talking to its own server. If you turn local login on, every `/api/*` and `/mcp` request needs either a Better Auth session cookie or a per-user API key sent as `Authorization: Bearer <key>`. The separate external MCP server at `/mcp` can also be locked down independently with a static `MCP_API_KEY`, which is the option to reach for in headless or CI deployments.
+
 </Tab>
 
 <Tab value="Custom Transport">
-Implement the Transport interface for deeper integration:
+Implement the Transport interface for deeper integration. Most methods are thin wrappers around the same REST endpoints shown above, so a first pass can just forward to `fetch()`:
 
 ```typescript
 import type { Transport } from '@dorkos/shared/transport';
 
 class MyCustomTransport implements Transport {
-  async listSessions() {
-    // Your implementation
+  constructor(private baseUrl: string) {}
+
+  async listSessions(cwd?: string) {
+    const url = new URL(`${this.baseUrl}/api/sessions`);
+    if (cwd) url.searchParams.set('cwd', cwd);
+    const res = await fetch(url);
+    return res.json();
   }
 
-  async postMessage(sessionId, content, cwd, options) {
-    // Trigger the turn; return the canonical session id
+  async postMessage(sessionId: string, content: string, cwd?: string, options?) {
+    const res = await fetch(`${this.baseUrl}/api/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, cwd, ...options }),
+    });
+    return res.json(); // { sessionId }, events arrive on subscribeSession
   }
 
-  async *subscribeSession(sessionId, sinceCursor, cwd, signal) {
-    // Yield SessionEvent objects with monotonic seq
+  async *subscribeSession(
+    sessionId: string,
+    sinceCursor?: number,
+    cwd?: string,
+    signal?: AbortSignal
+  ) {
+    // Open GET /api/sessions/:id/events as an EventSource and yield each
+    // parsed SessionEvent here. See the SSE Protocol page for the wire format.
   }
 
-  // ... implement remaining methods
+  // ... implement the remaining methods the same way
 }
 ```
 
 <Callout type="warn">
-  All methods in the Transport interface must be implemented. TypeScript will report compile-time errors for any missing methods. The interface is large — see the source for the complete list.
+  All methods in the Transport interface must be implemented. TypeScript reports a compile error for every missing one, and it will not let up until the interface is complete.
 </Callout>
 </Tab>
 

@@ -9,11 +9,19 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Configuration
 
-DorkOS is configured via environment variables and a persistent config file at `~/.dork/config.json`. CLI flags take highest precedence; built-in defaults apply when nothing else is set.
+DorkOS works out of the box. Most people never open this page again after their first session: no ports to pick, no files to edit, nothing to tune. This page exists for the day you need to change one specific thing, a port conflict, a tunnel so you can check on an agent from your phone, a different AI provider.
+
+The one setting worth knowing on day one is `ANTHROPIC_API_KEY`, and the [Installation guide](/docs/getting-started/installation) already walks you through setting it. Everything below is reference: skip to the section you need and ignore the rest.
+
+DorkOS reads settings from three places, in this order: CLI flags (what you type when you start DorkOS), environment variables (settings you export in your terminal, or put in a `.env` file next to where you run DorkOS), and the config file at `~/.dork/config.json` (DorkOS writes this itself; you rarely need to touch it by hand). If a setting appears in more than one place, the first one found wins. For example, to try a different port for one run without changing anything permanent:
+
+```bash
+DORKOS_PORT=5000 dorkos
+```
 
 <Callout type="info">
-  Config precedence: CLI flags &gt; environment variables &gt; `~/.dork/config.json` &gt; built-in
-  defaults.
+  Setting order: CLI flags win first, then environment variables, then `~/.dork/config.json`, then
+  DorkOS's built-in defaults.
 </Callout>
 
 ## Required
@@ -37,27 +45,32 @@ DorkOS is configured via environment variables and a persistent config file at `
       default: '4242',
     },
     DORKOS_DEFAULT_CWD: {
-      description: 'Default working directory for new sessions.',
+      description:
+        'The folder DorkOS treats as its working directory for new sessions. Defaults to the folder you run `dorkos` from.',
       type: 'string',
       default: 'Current directory',
     },
     DORKOS_BOUNDARY: {
       description:
-        'Directory boundary root. Restricts all filesystem access to this path and below.',
+        'A directory boundary: DorkOS refuses to read or write anywhere outside this folder and its subfolders. Defaults to your home directory.',
       type: 'string',
       default: 'Home directory',
     },
-    LOG_LEVEL: {
-      description: 'Log verbosity level.',
-      type: '"fatal" | "error" | "warn" | "info" | "debug" | "trace"',
-      default: '"info"',
+    DORKOS_LOG_LEVEL: {
+      description:
+        'Log verbosity, as a number from 0 (quietest) to 5 (noisiest). Leave it unset unless you are debugging.',
+      type: 'number (0-5)',
     },
   }}
 />
 
-## Tunnel Configuration
+## Reference
 
-DorkOS supports ngrok tunnels for remote access from any device. See the [Tunnel Setup](/docs/guides/tunnel-setup) guide for full details.
+Everything below is deep reference. Most people never touch it, it's here for the day you need it.
+
+### Tunnel Configuration
+
+DorkOS supports ngrok tunnels (a service that gives your local machine a public URL) for remote access from any device. See the [Tunnel Setup](/docs/self-hosting/tunnel-setup) guide for full details.
 
 <TypeTable
   type={{
@@ -86,7 +99,7 @@ DorkOS supports ngrok tunnels for remote access from any device. See the [Tunnel
   tunnel URL can access your sessions.
 </Callout>
 
-## Relay Configuration
+### Relay Configuration
 
 Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external channels. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.
 
@@ -101,9 +114,9 @@ Relay is the messaging layer that lets agents reach you on Telegram, notify each
   }}
 />
 
-## Tasks Configuration
+### Tasks Configuration
 
-Tasks schedules agent jobs on a cron — independently, without keeping a terminal open. See the [Task Scheduler guide](/docs/guides/task-scheduler) for setup details.
+Tasks runs agent jobs on a schedule (like "every night at 2am"), on their own, without you keeping a terminal open. See the [Task Scheduler guide](/docs/guides/task-scheduler) for setup details.
 
 <TypeTable
   type={{
@@ -115,7 +128,7 @@ Tasks schedules agent jobs on a cron — independently, without keeping a termin
   }}
 />
 
-## A2A Gateway
+### A2A Gateway
 
 The A2A gateway exposes your DorkOS agents to external A2A-compatible clients (other agent frameworks, orchestrators, or tools that speak Google's Agent-to-Agent protocol). Requires Relay to be enabled.
 
@@ -130,13 +143,13 @@ The A2A gateway exposes your DorkOS agents to external A2A-compatible clients (o
   }}
 />
 
-## Mesh
+### Mesh
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.
 
-## Extensions
+### Extensions
 
-Extensions add UI, commands, and behavior to DorkOS. Core extensions ship with DorkOS and appear in Settings → Extensions under a "Core extensions" section, each with an enable/disable toggle. User-installed extensions appear under "Installed extensions". Toggling in the UI is all most people need — the underlying state lives in `~/.dork/config.json` under the `extensions` key.
+Extensions add UI, commands, and behavior to DorkOS. Core extensions ship with DorkOS and appear in Settings → Extensions under a "Core extensions" section, each with an enable or disable toggle. Extensions you install yourself appear under "Installed extensions". Toggling in the UI is all most people need. The underlying state lives in `~/.dork/config.json` under the `extensions` key.
 
 DorkOS records only your **deviations** from each extension's default state, across two lists:
 
@@ -160,13 +173,13 @@ DorkOS records only your **deviations** from each extension's default state, acr
 An extension absent from both lists uses its default: ships-on extensions stay on, ships-off extensions stay off. To turn a ships-on extension off, add its id to `disabled`; to turn a ships-off extension on, add its id to `enabled`.
 
 <Callout type="warn">
-  Adding a ships-on extension's id to `enabled` does nothing — it is already on. To disable it, add
-  the id to `disabled` instead.
+  Adding a ships-on extension's id to `enabled` does nothing, since it's already on. To disable it,
+  add the id to `disabled` instead.
 </Callout>
 
-## Runtimes
+### Runtimes
 
-DorkOS runs three agent runtimes — Claude Code (default), Codex, and OpenCode. The `runtimes` block in `~/.dork/config.json` controls which are available and how their binaries are found. See the [Runtimes guide](/docs/guides/runtimes) for connecting and choosing runtimes.
+DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode. The `runtimes` block in `~/.dork/config.json` controls which ones are available and how their binaries are found. Running multiple runtimes side by side is shipped, but still getting real-world mileage, so treat multi-runtime setups as an area to watch rather than a fully settled feature. See the [Runtimes guide](/docs/guides/runtimes) for connecting and choosing runtimes.
 
 <TypeTable
   type={{
@@ -226,15 +239,17 @@ DorkOS runs three agent runtimes — Claude Code (default), Codex, and OpenCode.
 
 <Callout type="info">
   DorkOS stores credentials **by reference**, never as plaintext in `config.json`. The top-level
-  `providers` block maps a provider id to a reference — `keychain:<id>` (OS keychain), `env:<VAR>`
-  (process env), or `file:<name>` (a DorkOS-owned AES-256-GCM secret store). The reference resolves
-  to a real key at each runtime’s env-injection seam; a dangling reference surfaces honestly
-  rather than sending an empty key. Claude reads `providers.anthropic`; OpenCode reads the provider
-  selected by `runtimes.opencode.provider`. Codex never receives its key via a subprocess env var,
-  so `runtimes.codex.credentialRef` feeds the delegated `codex login` path.
+  `providers` block maps a provider id to a reference: `keychain:<id>` (your operating system's
+  built-in password manager), `env:<VAR>` (a process environment variable), or `file:<name>` (a
+  DorkOS-owned encrypted secret store). The reference resolves to a real key at each runtime's
+  startup, and a broken reference fails loudly instead of quietly sending an empty key. Claude
+  reads `providers.anthropic`; OpenCode reads the provider selected by
+  `runtimes.opencode.provider`. Codex never receives its key via a subprocess environment
+  variable, so `runtimes.codex.credentialRef` feeds the delegated `codex login` path instead. Net
+  effect: your API key never sits in a plain text file waiting to be read.
 </Callout>
 
-## Harness Sync
+### Harness Sync
 
 Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.
 
@@ -249,7 +264,7 @@ Harness Sync projects your `.agents/` definitions and installed marketplace plug
   }}
 />
 
-## Local login
+### Local login
 
 DorkOS runs with no login by default: no login screen, no user concept, instant start. Turning on local login creates an owner account (email + password) that is required to use the instance. The first registered user becomes the owner; further sign-ups are rejected until a future invites release reopens registration.
 
@@ -266,15 +281,15 @@ DorkOS runs with no login by default: no login screen, no user concept, instant 
 
 Session cookies are signed by Better Auth. Production deployments should set the `BETTER_AUTH_SECRET` environment variable so sessions survive server restarts.
 
-## Cloud link
+### Cloud link
 
-Linking this instance to a DorkOS account lets the account see and manage it. Run `dorkos cloud login` to link (it prints a code to approve in your browser, and works headless), `dorkos cloud status` to check the link, and `dorkos cloud logout` to unlink. Local login and the cloud link are independent — either can exist without the other.
+Linking this instance to a DorkOS account lets the account see and manage it. Run `dorkos cloud login` to link (it prints a code to approve in your browser, and works even with no browser on the same machine), `dorkos cloud status` to check the link, and `dorkos cloud logout` to unlink. Local login and the cloud link are independent: either can exist without the other.
 
 <TypeTable
   type={{
     'cloud.instanceToken': {
       description:
-        'The scoped instance API key issued by the cloud when this instance is linked. Sensitive — the CLI and API warn when it is set by hand. null when not linked.',
+        'The scoped instance API key issued by the cloud when this instance is linked. Sensitive: the CLI and API warn when it is set by hand. null when not linked.',
       type: 'string | null',
       default: 'null',
     },
@@ -292,11 +307,36 @@ Linking this instance to a DorkOS account lets the account see and manage it. Ru
   }}
 />
 
-Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). While linked, the instance heartbeats the cloud on startup and every 15 minutes; if the account revokes the instance, the next heartbeat clears the local token and the instance is unlinked.
+Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). While linked, the instance checks in with the cloud on startup and every 15 minutes. If the account revokes the instance, the next check-in clears the local token and the instance is unlinked.
 
-## Config Directory
+### Uploads
 
-DorkOS creates `~/.dork/` on startup for configuration and state storage. Structured logs are written to `~/.dork/logs/dorkos.log` as NDJSON.
+Uploaded files (from chat, workbench, or anywhere else you attach a file) are stored under `.dork/.temp/uploads/` in your working directory, with limits you can adjust:
+
+<TypeTable
+  type={{
+    'uploads.maxFileSize': {
+      description: 'Maximum size for a single uploaded file, in bytes.',
+      type: 'number',
+      default: '10485760 (10 MB)',
+    },
+    'uploads.maxFiles': {
+      description: 'Maximum number of files in a single upload.',
+      type: 'number',
+      default: '10',
+    },
+    'uploads.allowedTypes': {
+      description:
+        'File types allowed for upload, as MIME type patterns. `["*/*"]` allows everything.',
+      type: 'string[]',
+      default: '["*/*"]',
+    },
+  }}
+/>
+
+### Config Directory
+
+DorkOS creates `~/.dork/` on startup for configuration and state storage. Structured logs are written to `~/.dork/logs/dorkos.log`, one JSON entry per line.
 
 Use `dorkos config path` to print the path to your config file, and `dorkos config list` to view all active settings.
 
@@ -306,7 +346,7 @@ Use `dorkos config path` to print the path to your config file, and `dorkos conf
   <Card title="CLI Usage" href="/docs/guides/cli-usage">
     Manage config via CLI subcommands: get, set, list, reset, edit.
   </Card>
-  <Card title="Tunnel Setup" href="/docs/guides/tunnel-setup">
+  <Card title="Tunnel Setup" href="/docs/self-hosting/tunnel-setup">
     Access DorkOS remotely via ngrok tunnel.
   </Card>
   <Card title="Quickstart" href="/docs/getting-started/quickstart">
