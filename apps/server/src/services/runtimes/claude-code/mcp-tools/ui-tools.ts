@@ -122,6 +122,14 @@ export interface UiToolSession {
    * server-derived `from` rather than trusting the LLM.
    */
   cwd?: string;
+  /**
+   * The session's canonical SDK id, seeded to the request id at creation and
+   * updated when the SDK init assigns the real id (see `session-store.ts`).
+   * The DevTools read tools resolve it at READ time so a first-turn rekey
+   * (`rekeyProjector` → `rekeySession`) never strands them on the stale
+   * request UUID.
+   */
+  sdkSessionId?: string;
 }
 
 /**

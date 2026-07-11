@@ -58,6 +58,10 @@ interface InternalBuffer {
   updatedAt: number;
   /** Running approximate byte total across both rings. */
   approxBytes: number;
+  /** True once the console ring dropped an entry (count cap OR byte budget). */
+  consoleEvicted: boolean;
+  /** True once the network ring dropped an entry (count cap OR byte budget). */
+  networkEvicted: boolean;
 }
 
 /** One session's capture buffer, as read by callers. */
@@ -78,6 +82,15 @@ export interface CaptureBuffer {
   updatedAt: number;
   /** Approximate retained bytes across both rings (serialized-JSON chars). */
   approxBytes: number;
+  /**
+   * True once the console ring evicted an entry — by the count cap OR the byte
+   * budget. The read tools fold this into their `truncated` signal; a count-only
+   * check would lie when large entries byte-evict below the count cap. Cleared
+   * at a navigation boundary (`reset`), because the new page starts clean.
+   */
+  consoleEvicted: boolean;
+  /** Network-ring counterpart of {@link CaptureBuffer.consoleEvicted}. */
+  networkEvicted: boolean;
 }
 
 /** A read-only snapshot of a session's buffer for callers that only inspect it. */
@@ -133,6 +146,8 @@ export class DevtoolsCaptureStore {
         lastSeq: 0,
         updatedAt: 0,
         approxBytes: 0,
+        consoleEvicted: false,
+        networkEvicted: false,
       };
       this.buffers.set(sessionId, buffer);
     }
@@ -141,6 +156,10 @@ export class DevtoolsCaptureStore {
       buffer.console = [];
       buffer.network = [];
       buffer.approxBytes = 0;
+      // A navigation boundary starts the new page clean — prior-page eviction
+      // must not make the next read claim this page's capture is incomplete.
+      buffer.consoleEvicted = false;
+      buffer.networkEvicted = false;
     }
     if (batch.documentId !== undefined) buffer.documentId = batch.documentId;
     if (batch.logicalUrl !== undefined) buffer.logicalUrl = batch.logicalUrl;
@@ -149,13 +168,13 @@ export class DevtoolsCaptureStore {
       const incoming = sized(batch.console);
       buffer.console.push(...incoming);
       buffer.approxBytes += bytesOf(incoming);
-      this.trimCount(buffer, buffer.console, WORKBENCH.DEVTOOLS_CONSOLE_BUFFER);
+      this.trimCount(buffer, 'console', WORKBENCH.DEVTOOLS_CONSOLE_BUFFER);
     }
     if (batch.network.length > 0) {
       const incoming = sized(batch.network);
       buffer.network.push(...incoming);
       buffer.approxBytes += bytesOf(incoming);
-      this.trimCount(buffer, buffer.network, WORKBENCH.DEVTOOLS_NETWORK_BUFFER);
+      this.trimCount(buffer, 'network', WORKBENCH.DEVTOOLS_NETWORK_BUFFER);
     }
     this.trimBytes(buffer);
 
@@ -181,6 +200,8 @@ export class DevtoolsCaptureStore {
       lastSeq: buffer.lastSeq,
       updatedAt: buffer.updatedAt,
       approxBytes: buffer.approxBytes,
+      consoleEvicted: buffer.consoleEvicted,
+      networkEvicted: buffer.networkEvicted,
     };
   }
 
@@ -219,26 +240,36 @@ export class DevtoolsCaptureStore {
     this.buffers.clear();
   }
 
-  /** Drop a ring's oldest entries past its count cap, keeping bytes in sync. */
-  private trimCount<T>(buffer: InternalBuffer, ring: Sized<T>[], capCount: number): void {
-    if (ring.length <= capCount) return;
-    const dropped = ring.splice(0, ring.length - capCount);
+  /**
+   * Drop a ring's oldest entries past its count cap, keeping bytes in sync and
+   * flagging the ring as evicted so readers can report an honest `truncated`.
+   */
+  private trimCount(buffer: InternalBuffer, ring: 'console' | 'network', capCount: number): void {
+    // Widened so splice's union-of-arrays result satisfies bytesOf's generic.
+    const entries: Sized<unknown>[] = buffer[ring];
+    if (entries.length <= capCount) return;
+    const dropped = entries.splice(0, entries.length - capCount);
     buffer.approxBytes -= bytesOf(dropped);
+    buffer[ring === 'console' ? 'consoleEvicted' : 'networkEvicted'] = true;
   }
 
   /**
    * Enforce the per-session byte budget, evicting oldest-first: whichever ring's
    * head entry is older (by capture timestamp) loses it, until under budget.
+   * Flags the losing ring as evicted (see {@link CaptureBuffer.consoleEvicted}).
    */
   private trimBytes(buffer: InternalBuffer): void {
     while (buffer.approxBytes > WORKBENCH.DEVTOOLS_SESSION_MAX_BYTES) {
       const c = buffer.console[0];
       const n = buffer.network[0];
       if (!c && !n) break; // unreachable: bytes track ring contents
-      const ring =
-        c && (!n || c.entry.timestamp <= n.entry.timestamp) ? buffer.console : buffer.network;
+      const fromConsole = Boolean(c && (!n || c.entry.timestamp <= n.entry.timestamp));
+      const ring = fromConsole ? buffer.console : buffer.network;
       const dropped = ring.shift();
-      if (dropped) buffer.approxBytes -= dropped.bytes;
+      if (dropped) {
+        buffer.approxBytes -= dropped.bytes;
+        buffer[fromConsole ? 'consoleEvicted' : 'networkEvicted'] = true;
+      }
     }
   }
 
