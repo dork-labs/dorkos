@@ -423,6 +423,61 @@ export function createReadNetworkHandler(
 }
 
 /**
+ * Magic-byte signatures for the screenshot mime whitelist. SVG is deliberately
+ * absent — it is scriptable markup, not pixels, and has no magic bytes anyway.
+ */
+function magicBytesMatch(mimeType: string, bytes: Buffer): boolean {
+  switch (mimeType) {
+    case 'image/png':
+      return (
+        bytes.length >= 8 &&
+        bytes[0] === 0x89 &&
+        bytes[1] === 0x50 && // P
+        bytes[2] === 0x4e && // N
+        bytes[3] === 0x47 && // G
+        bytes[4] === 0x0d &&
+        bytes[5] === 0x0a &&
+        bytes[6] === 0x1a &&
+        bytes[7] === 0x0a
+      );
+    case 'image/jpeg':
+      return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    case 'image/gif':
+      return bytes.length >= 6 && bytes.toString('latin1', 0, 4) === 'GIF8';
+    case 'image/webp':
+      return (
+        bytes.length >= 12 &&
+        bytes.toString('latin1', 0, 4) === 'RIFF' &&
+        bytes.toString('latin1', 8, 12) === 'WEBP'
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Parse and validate an untrusted screenshot data URL into MCP image-block
+ * parts, or `null` when anything about it is off. Three gates, because the
+ * value originates inside the (untrusted) preview page: a raster-only mime
+ * whitelist (png/jpeg/webp/gif — never `image/svg+xml`, which is scriptable
+ * markup), a plausible-base64 payload, and decoded magic bytes matching the
+ * claimed type. A hostile page may only ever lie to the agent with a wrong
+ * picture — it must never produce an image block the model API rejects,
+ * which would break the agent's turn.
+ *
+ * @param dataUrl - The `data:` URL relayed from the in-page shim.
+ */
+export function parseScreenshotDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
+  const match = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) return null;
+  const mimeType = `image/${match[1]}`;
+  const data = match[2];
+  const bytes = Buffer.from(data, 'base64');
+  if (!magicBytesMatch(mimeType, bytes)) return null;
+  return { mimeType, data };
+}
+
+/**
  * Create the `browser_screenshot` handler.
  *
  * Resolves the session id per call, then drives the on-demand round-trip: push
@@ -483,10 +538,14 @@ export function createBrowserScreenshotHandler(
       });
     }
 
-    // Split the data URL into MCP image content. The shim always produces
-    // image/png; parse defensively so a malformed relay degrades to a note.
-    const match = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(outcome.screenshot.dataUrl);
-    if (!match) {
+    // Validate the data URL before it becomes an MCP image block. The shim
+    // always produces image/png, but the value crossed the untrusted preview:
+    // a hostile page may only ever LIE to the agent (a wrong picture), never
+    // break its turn with an API-rejected image block — so the mime is
+    // whitelisted (never svg+xml: scriptable), the payload must be plausible
+    // base64, and the decoded bytes must carry the claimed type's magic bytes.
+    const image = parseScreenshotDataUrl(outcome.screenshot.dataUrl);
+    if (!image) {
       return jsonContent({
         ...bufferHeader(buffer),
         captured: false,
@@ -495,7 +554,7 @@ export function createBrowserScreenshotHandler(
     }
     return {
       content: [
-        { type: 'image' as const, data: match[2], mimeType: match[1] },
+        { type: 'image' as const, data: image.data, mimeType: image.mimeType },
         {
           type: 'text' as const,
           text: JSON.stringify(

@@ -186,6 +186,10 @@ export function useDevtoolsBridge({
           const batch: DevtoolsIngest = {
             documentId: documentIdRef.current,
             logicalUrl: logicalUrlRef.current,
+            // Reuses the last shim batch seq: `seq` tracks the console/network
+            // stream (both arrays are empty here), and the screenshot result is
+            // correlated by requestId, not seq. A gap-detection reader should
+            // treat this as a repeat of the current watermark, not a new batch.
             seq: lastSeq.current,
             console: [],
             network: [],
@@ -218,6 +222,14 @@ export function useDevtoolsBridge({
   // first use — see `load-rasterizer.ts`); on a load failure the request is
   // forwarded without it so the shim fails fast with an error result instead of
   // letting the tool time out.
+  //
+  // KNOWN v1 LIMITATION (multi-preview race): this hook mounts once per open
+  // browser document, and the capture request carries no document target, so
+  // with several previews open EVERY bridge forwards it and the first ingest
+  // wins nondeterministically (single screenshot slot, latest write retained;
+  // the awaiting tool resolves on the first result). Acceptable for v1 — a
+  // follow-up should target the request by documentId so the agent can choose
+  // which preview to capture.
   useEffect(() => {
     return streamManager.subscribeSessionEvent((_sessionId, event) => {
       if (event.type !== 'devtools_capture_request') return;

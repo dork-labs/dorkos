@@ -46,9 +46,12 @@ const CORE_TOOLS = [
   // UI control tools are always available — they mutate client UI, not the system
   'mcp__dorkos__control_ui',
   'mcp__dorkos__get_ui_state',
-  // DevTools tools (DOR-213) — read-only views of the session's own preview
-  // (console/network buffer + on-demand screenshot); no feature gate, always
-  // available like the UI tools.
+  // DevTools tools (DOR-213) — views of the session's own preview, never the
+  // system. The two reads are inert buffer lookups; browser_screenshot is NOT
+  // inert — it drives an active round-trip (SSE event → client postMessage →
+  // rasterizer script injection inside the preview frame) — but its blast
+  // radius is still confined to the session's own preview. No feature gate,
+  // always available like the UI tools.
   'mcp__dorkos__browser_read_console',
   'mcp__dorkos__browser_read_network',
   'mcp__dorkos__browser_screenshot',

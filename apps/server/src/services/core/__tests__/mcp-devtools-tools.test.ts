@@ -509,24 +509,49 @@ describe('browser_screenshot handler', () => {
     expect(result.note).toMatch(/CSP/i);
   });
 
-  it('degrades to a note on a malformed data URL', async () => {
-    const store = seededStore([]);
-    const session = makeSession();
-    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 5_000);
-    const pending = handler();
-    const requestId = enqueuedRequestId(session);
+  // A hostile page may only ever LIE to the agent (a wrong picture) — it must
+  // never produce an image block the model API rejects, breaking the turn. So
+  // anything that fails the mime-whitelist / base64 / magic-byte gates
+  // degrades to the same structured note.
+  const malformedDataUrls: Array<{ name: string; dataUrl: string }> = [
+    { name: 'not a data URL at all', dataUrl: 'not-a-data-url' },
+    {
+      // Scriptable markup, not pixels — must never reach an image block even
+      // though it matches a naive `image/*` pattern.
+      name: 'an SVG mime (scriptable, not on the raster whitelist)',
+      dataUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmciLz4=',
+    },
+    {
+      name: 'a non-base64 payload',
+      dataUrl: 'data:image/png;base64,!!!not-base64-at-all!!!',
+    },
+    {
+      // '/9j/4A==' decodes to JPEG magic bytes (FF D8 FF E0) — claimed PNG.
+      name: 'a mime/magic-byte mismatch (claims PNG, carries JPEG bytes)',
+      dataUrl: 'data:image/png;base64,/9j/4A==',
+    },
+  ];
 
-    store.ingest(SESSION_ID, {
-      seq: 2,
-      console: [],
-      network: [],
-      screenshot: { requestId, dataUrl: 'not-a-data-url' },
+  for (const { name, dataUrl } of malformedDataUrls) {
+    it(`degrades to a note on ${name}`, async () => {
+      const store = seededStore([]);
+      const session = makeSession();
+      const handler = createBrowserScreenshotHandler(resolveSession, store, session, 5_000);
+      const pending = handler();
+      const requestId = enqueuedRequestId(session);
+
+      store.ingest(SESSION_ID, {
+        seq: 2,
+        console: [],
+        network: [],
+        screenshot: { requestId, dataUrl },
+      });
+
+      const result = parse(await pending);
+      expect(result.captured).toBe(false);
+      expect(result.note).toMatch(/malformed/i);
     });
-
-    const result = parse(await pending);
-    expect(result.captured).toBe(false);
-    expect(result.note).toMatch(/malformed/i);
-  });
+  }
 
   it('returns the session-less error when the resolver yields no id', async () => {
     const store = new DevtoolsCaptureStore();
