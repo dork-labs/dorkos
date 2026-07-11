@@ -1770,6 +1770,29 @@
               "type",
               "command"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "devtools_capture_request"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "requestId"
+            ]
           }
         ]
       },
@@ -2143,6 +2166,25 @@
                 "type": "string",
                 "enum": [
                   "open_file"
+                ]
+              },
+              "sourcePath": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "action",
+              "sourcePath"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "open_diff"
                 ]
               },
               "sourcePath": {
@@ -2580,6 +2622,35 @@
               "type",
               "url"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "diff"
+                ]
+              },
+              "sourcePath": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mediaKind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "image"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sourcePath"
+            ]
           }
         ]
       },
@@ -2931,6 +3002,7 @@
                   "model3d",
                   "csv",
                   "browser",
+                  "diff",
                   null
                 ]
               }
@@ -5407,6 +5479,29 @@
                         "seq",
                         "type",
                         "command"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_capture_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId"
                       ]
                     }
                   ],

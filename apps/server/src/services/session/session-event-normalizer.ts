@@ -255,6 +255,20 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return uiCommand;
     }
 
+    // A server→client screenshot request (the `browser_screenshot` MCP tool,
+    // DOR-213 Phase 3). Same transient, side-effecting class as `ui_command`:
+    // forwards live to the attached client (which relays it into the preview
+    // frame) and clears with the turn — never re-projected from a snapshot.
+    case 'devtools_capture_request': {
+      const requestId = data.requestId;
+      if (requestId === undefined) return null;
+      const captureRequest: RawOf<'devtools_capture_request'> = {
+        type: 'devtools_capture_request',
+        requestId: String(requestId),
+      };
+      return captureRequest;
+    }
+
     // A typed turn error, adapter-yielded or server-injected (guardTurnErrors
     // on a throw, the stall watchdog). Optionals are forwarded only when
     // present so a lean adapter error stays lean.

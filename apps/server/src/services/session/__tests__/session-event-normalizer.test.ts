@@ -508,6 +508,19 @@ describe('toRawSessionEvent', () => {
       input: { type: 'ui_command', data: {} } as unknown as StreamEvent,
       expected: null,
     },
+    {
+      name: 'devtools_capture_request → devtools_capture_request (carries the requestId)',
+      input: {
+        type: 'devtools_capture_request',
+        data: { requestId: 'req-123' },
+      } as unknown as StreamEvent,
+      expected: { type: 'devtools_capture_request', requestId: 'req-123' },
+    },
+    {
+      name: 'devtools_capture_request with no requestId → null (defensive)',
+      input: { type: 'devtools_capture_request', data: {} } as unknown as StreamEvent,
+      expected: null,
+    },
   ];
 
   for (const { name, input, expected } of cases) {

@@ -133,9 +133,10 @@ describe('buildAllowedTools', () => {
     expect(result).toContain('mcp__dorkos__get_agent');
     expect(result).toContain('mcp__dorkos__control_ui');
     expect(result).toContain('mcp__dorkos__get_ui_state');
-    // DevTools read tools (DOR-213) are core — always allowed, never gated.
+    // DevTools tools (DOR-213) are core — always allowed, never gated.
     expect(result).toContain('mcp__dorkos__browser_read_console');
     expect(result).toContain('mcp__dorkos__browser_read_network');
+    expect(result).toContain('mcp__dorkos__browser_screenshot');
   });
 
   it('excludes tasks tools when tasks=false', () => {
@@ -228,8 +229,9 @@ describe('buildAllowedTools', () => {
 
   it('returns only core tools when all domains are disabled', () => {
     const result = buildAllowedTools({ tasks: false, relay: false, mesh: false, adapter: false })!;
-    // Should be exactly the 8 core tools (4 original + 2 UI control + 2 DevTools read)
-    expect(result).toHaveLength(8);
+    // Should be exactly the 9 core tools (4 original + 2 UI control + 3 DevTools)
+    expect(result).toHaveLength(9);
+    expect(result).toContain('mcp__dorkos__browser_screenshot');
     expect(result).toContain('mcp__dorkos__ping');
     expect(result).toContain('mcp__dorkos__get_server_info');
     expect(result).toContain('mcp__dorkos__get_session_count');

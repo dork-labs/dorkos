@@ -17,8 +17,14 @@
  *   (`app-store.sessionId`) and no other, so one session's preview can never feed
  *   another session's buffer.
  *
+ * It also drives the `browser_screenshot` round-trip (DOR-213 Phase 3): a
+ * `devtools_capture_request` on the attached session's event stream is
+ * forwarded into the frame (with the lazy-loaded rasterizer source riding
+ * along), and the shim's `capture-result` is ingested immediately, tagged with
+ * its `requestId`, resolving the awaiting tool call server-side.
+ *
  * Idle-cheap: one window listener, and no timer runs until a batch actually
- * arrives.
+ * arrives; the rasterizer chunk downloads only on the first capture request.
  *
  * @module features/canvas/model/use-devtools-bridge
  */
@@ -29,17 +35,25 @@ import type {
   DevtoolsNetworkEntry,
 } from '@dorkos/shared/schemas';
 import { DEVTOOLS_CONSOLE_BATCH_MAX, DEVTOOLS_NETWORK_BATCH_MAX } from '@dorkos/shared/schemas';
+import { streamManager } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
+import { loadRasterizerSource } from '../lib/load-rasterizer';
 
 /** How long to coalesce shim batches before one ingest POST. */
 const FLUSH_DEBOUNCE_MS = 300;
 
 /** A message the shim posts to the parent. */
 interface DevtoolsMessage {
-  __dorkosDevtools?: 'hello' | 'batch' | 'navigated';
+  __dorkosDevtools?: 'hello' | 'batch' | 'navigated' | 'capture-result';
   seq?: number;
   console?: DevtoolsConsoleEntry[];
   network?: DevtoolsNetworkEntry[];
+  /** `capture-result`: the round-trip id echoed from the capture request. */
+  requestId?: unknown;
+  /** `capture-result`: the rendered PNG data URL on success. */
+  dataUrl?: unknown;
+  /** `capture-result`: the shim's failure reason when rasterization failed. */
+  error?: unknown;
 }
 
 /** Inputs to {@link useDevtoolsBridge}. */
@@ -165,6 +179,25 @@ export function useDevtoolsBridge({
           cap(pendingNetwork.current, DEVTOOLS_NETWORK_BATCH_MAX);
           schedule();
           return;
+        case 'capture-result': {
+          // A `browser_screenshot` round-trip result. Ingested IMMEDIATELY (no
+          // debounce) — the tool call is awaiting this requestId server-side.
+          if (typeof data.requestId !== 'string') return;
+          const batch: DevtoolsIngest = {
+            documentId: documentIdRef.current,
+            logicalUrl: logicalUrlRef.current,
+            seq: lastSeq.current,
+            console: [],
+            network: [],
+            screenshot: {
+              requestId: data.requestId,
+              ...(typeof data.dataUrl === 'string' ? { dataUrl: data.dataUrl } : {}),
+              ...(typeof data.error === 'string' ? { error: data.error } : {}),
+            },
+          };
+          void transport.ingestDevtoolsCapture(sid, batch);
+          return;
+        }
       }
     }
 
@@ -177,4 +210,28 @@ export function useDevtoolsBridge({
       }
     };
   }, [transport, iframeRef]);
+
+  // Forward `browser_screenshot` capture requests into the preview frame. The
+  // stream manager already gates `subscribeSessionEvent` to the ATTACHED
+  // session, so a background agent can never trigger a capture of the preview
+  // the operator is watching. The rasterizer source rides along (lazy-loaded on
+  // first use — see `load-rasterizer.ts`); on a load failure the request is
+  // forwarded without it so the shim fails fast with an error result instead of
+  // letting the tool time out.
+  useEffect(() => {
+    return streamManager.subscribeSessionEvent((_sessionId, event) => {
+      if (event.type !== 'devtools_capture_request') return;
+      const target = iframeRef.current?.contentWindow;
+      if (!target) return;
+      const forward = (lib?: string): void => {
+        // Re-read the ref: the frame may have re-rendered while the lazy
+        // rasterizer chunk loaded.
+        iframeRef.current?.contentWindow?.postMessage(
+          { __dorkosDevtools: 'capture-request', requestId: event.requestId, lib },
+          '*'
+        );
+      };
+      loadRasterizerSource().then(forward, () => forward(undefined));
+    });
+  }, [iframeRef]);
 }

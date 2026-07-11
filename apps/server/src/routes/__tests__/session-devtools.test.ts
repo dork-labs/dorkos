@@ -115,4 +115,36 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
       .send({ seq: 1, console: [], network: [] });
     expect(res.status).toBe(400);
   });
+
+  it('accepts a screenshot result (204) and stores it in the buffer slot', async () => {
+    const id = crypto.randomUUID();
+    const res = await ingest(
+      {
+        seq: 1,
+        console: [],
+        network: [],
+        screenshot: { requestId: 'r1', dataUrl: 'data:image/png;base64,AAAA' },
+      },
+      id
+    );
+    expect(res.status).toBe(204);
+    expect(devtoolsCaptureStore.read(id)?.screenshot?.requestId).toBe('r1');
+  });
+
+  it('rejects an oversized screenshot data URL with 413 — a hostile page cannot park megabytes', async () => {
+    const id = crypto.randomUUID();
+    const res = await ingest(
+      {
+        seq: 1,
+        console: [],
+        network: [],
+        // One char over DEVTOOLS_SCREENSHOT_MAX_CHARS (900_000).
+        screenshot: { requestId: 'r1', dataUrl: 'x'.repeat(900_001) },
+      },
+      id
+    );
+    expect(res.status).toBe(413);
+    expect(res.body.code).toBe('BATCH_TOO_LARGE');
+    expect(devtoolsCaptureStore.read(id)).toBeUndefined();
+  });
 });

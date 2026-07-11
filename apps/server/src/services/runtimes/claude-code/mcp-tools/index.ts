@@ -73,9 +73,11 @@ export { createControlUiHandler, createGetUiStateHandler, type UiToolSession } f
 export {
   createReadConsoleHandler,
   createReadNetworkHandler,
+  createBrowserScreenshotHandler,
   getDevtoolsTools,
   type DevtoolsReadStore,
   type DevtoolsSessionResolver,
+  type DevtoolsEventSession,
 } from './devtools-tools.js';
 export {
   createListExtensionsHandler,
@@ -92,10 +94,12 @@ export {
  * Called per SDK query (via `mcpServerFactory`) so each query gets a fresh
  * MCP server instance. When `session` is provided, UI tools emit real SSE
  * events and read actual state; without it, they use stubs (external MCP only).
- * The DevTools read tools resolve their capture-buffer key at READ time — the
+ * The DevTools tools resolve their capture-buffer key at READ time — the
  * live session's `sdkSessionId`, falling back to the trigger `sessionId` —
  * because the first-turn canonical rekey moves the buffer mid-turn; without a
- * session or id those tools return a session-less error.
+ * session or id those tools return a session-less error. `browser_screenshot`
+ * additionally rides the session's event queue (the `ui_command` seam) to
+ * reach the attached client with its capture request.
  *
  * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.)
  * @param session - Per-query session for UI tool event emission and state access
@@ -130,7 +134,7 @@ export function createDorkOsToolServer(
       ...getMeshTools(deps),
       ...getAgentTools(deps),
       ...getUiTools(deps, session),
-      ...getDevtoolsTools(deps, resolveDevtoolsSessionId),
+      ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
       ...getExtensionTools(deps),
     ],
   });

@@ -20,10 +20,11 @@ import { parseSessionId, sendError } from '../lib/route-utils.js';
 
 /**
  * Express handler for `POST /api/sessions/:id/devtools/ingest`. Zod-validated and
- * size-capped: a batch over a per-array entry limit — or a console entry over its
- * serialized `args` size cap — is a `413` (distinct from a malformed `400`), so an
- * oversized relay is a clear, debuggable outcome. Accepts any well-formed session
- * id without an existence check — see the inline posture note.
+ * size-capped: a batch over a per-array entry limit, a console entry over its
+ * serialized `args` size cap, or a screenshot data URL over
+ * `DEVTOOLS_SCREENSHOT_MAX_CHARS` is a `413` (distinct from a malformed `400`),
+ * so an oversized relay is a clear, debuggable outcome. Accepts any well-formed
+ * session id without an existence check — see the inline posture note.
  *
  * @param req - The Express request (`:id` route param + `DevtoolsIngest` body).
  * @param res - The Express response (204 sink / 400 / 413).
@@ -36,7 +37,8 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
   if (!parsed.success) {
     const overCap = parsed.error.issues.some(
       (i) =>
-        (i.code === 'too_big' && (i.path[0] === 'console' || i.path[0] === 'network')) ||
+        (i.code === 'too_big' &&
+          (i.path[0] === 'console' || i.path[0] === 'network' || i.path[0] === 'screenshot')) ||
         // The console entry `args` serialized-size refine (DEVTOOLS_ARGS_MAX_CHARS)
         // reports a `custom` issue at an entry's `args` path. Matched structurally
         // (never on the message text) so a reworded message can't silently

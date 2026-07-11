@@ -49,10 +49,19 @@ export const WORKBENCH = {
    */
   DEVTOOLS_SESSION_MAX_BYTES: 1_048_576,
   /**
-   * Screenshots are single-slot (latest wins). The slot exists now; the capture
-   * round-trip that fills it lands with `browser_screenshot` in a follow-up.
+   * Screenshots are single-slot (latest wins), filled by the on-demand
+   * `browser_screenshot` round-trip. Size-bounded by its own ingest cap
+   * (`DEVTOOLS_SCREENSHOT_MAX_CHARS` in `@dorkos/shared`), not the shared
+   * session byte budget.
    */
   DEVTOOLS_SCREENSHOT_BUFFER: 1,
+  /**
+   * How long `browser_screenshot` waits (ms) for the capture round-trip
+   * (SSE → client → frame rasterize → ingest) before returning a structured
+   * "couldn't capture" note. Rasterizing a large page takes ~1-3 s; 8 s leaves
+   * headroom without letting the agent's tool call hang noticeably.
+   */
+  DEVTOOLS_SCREENSHOT_TIMEOUT_MS: 8_000,
   /**
    * Max sessions holding a live capture buffer. A side store keyed by session id
    * is dropped on session close, but this caps it against leaks (a client that

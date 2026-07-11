@@ -344,14 +344,92 @@ function installDevtoolsShim(serialize: (value: unknown) => unknown): void {
     window.addEventListener('pagehide', navigated);
     window.addEventListener('beforeunload', navigated);
 
-    // --- Handshake: ack from the parent starts delivery; retry hello until then ---
+    // --- Screenshot: on-demand rasterization (browser_screenshot, DOR-213 P3) ---
+    // The parent DELIVERS the rasterizer source (html-to-image UMD) with each
+    // capture request; the shim injects it once as a runtime inline <script> —
+    // the same CSP class as this shim itself, so any page that ran the shim can
+    // load it, with no cross-origin fetch and zero cost until the first capture.
+    // Literals (not shared imports — this function is serialized standalone):
+    // 1568 = long-edge cap, the model-vision sweet spot; 900000 mirrors
+    // DEVTOOLS_SCREENSHOT_MAX_CHARS (the ingest cap, sized to the server's
+    // 1 MB JSON body limit).
+    const SCREENSHOT_MAX_EDGE = 1568;
+    const SCREENSHOT_MAX_CHARS = 900_000;
+    type Rasterizer = {
+      toPng: (node: HTMLElement, opts: Record<string, unknown>) => Promise<string>;
+    };
+    function ensureRasterizer(lib: unknown): Rasterizer | null {
+      const g = window as unknown as { htmlToImage?: Rasterizer };
+      if (!g.htmlToImage && typeof lib === 'string' && lib.length > 0) {
+        try {
+          const s = document.createElement('script');
+          s.textContent = lib;
+          (document.head || document.documentElement).appendChild(s);
+          s.remove(); // executed synchronously; keep the DOM clean
+        } catch {
+          /* fall through to the null check */
+        }
+      }
+      return g.htmlToImage && typeof g.htmlToImage.toPng === 'function' ? g.htmlToImage : null;
+    }
+    function captureScreenshot(requestId: string, lib: unknown): void {
+      function fail(error: unknown): void {
+        post({
+          __dorkosDevtools: 'capture-result',
+          requestId,
+          error: clamp(error instanceof Error ? error.message : error, 2_000),
+        });
+      }
+      try {
+        const hti = ensureRasterizer(lib);
+        if (!hti) {
+          fail('the rasterizer failed to load — the page CSP may block injected scripts');
+          return;
+        }
+        const el = document.documentElement;
+        const w = Math.max(el.scrollWidth, el.clientWidth, 1);
+        const h = Math.max(el.scrollHeight, el.clientHeight, 1);
+        const render = (scale: number): Promise<string> =>
+          hti.toPng(el, {
+            canvasWidth: Math.max(1, Math.round(w * scale)),
+            canvasHeight: Math.max(1, Math.round(h * scale)),
+            pixelRatio: 1,
+          });
+        const scale = Math.min(1, SCREENSHOT_MAX_EDGE / Math.max(w, h));
+        render(scale)
+          // One downscale retry when a graphics-heavy page renders over the
+          // ingest cap; a second miss is reported honestly instead of looping.
+          .then((dataUrl) =>
+            dataUrl.length <= SCREENSHOT_MAX_CHARS ? dataUrl : render(scale * 0.6)
+          )
+          .then((dataUrl) => {
+            if (dataUrl.length > SCREENSHOT_MAX_CHARS) {
+              fail('the rendered screenshot exceeds the size cap even after downscaling');
+            } else {
+              post({ __dorkosDevtools: 'capture-result', requestId, dataUrl });
+            }
+          })
+          .catch(fail);
+      } catch (err) {
+        fail(err);
+      }
+    }
+
+    // --- Handshake + parent requests: ack starts delivery; capture-request
+    // rasterizes on demand. Source identity (ev.source === parent) is the guard.
     window.addEventListener('message', (ev: MessageEvent) => {
       if (ev.source !== parent) return;
-      const d = ev.data as { __dorkosDevtools?: string } | null;
-      if (!d || d.__dorkosDevtools !== 'ack') return;
-      if (!acked) {
-        acked = true;
-        scheduleFlush();
+      const d = ev.data as { __dorkosDevtools?: string; requestId?: unknown; lib?: unknown } | null;
+      if (!d || typeof d.__dorkosDevtools !== 'string') return;
+      if (d.__dorkosDevtools === 'ack') {
+        if (!acked) {
+          acked = true;
+          scheduleFlush();
+        }
+        return;
+      }
+      if (d.__dorkosDevtools === 'capture-request' && typeof d.requestId === 'string') {
+        captureScreenshot(d.requestId, d.lib);
       }
     });
     let tries = 0;

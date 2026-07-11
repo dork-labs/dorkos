@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { DevtoolsConsoleEntry, DevtoolsNetworkEntry } from '@dorkos/shared/schemas';
 import {
+  createBrowserScreenshotHandler,
   createReadConsoleHandler,
   createReadNetworkHandler,
   getDevtoolsTools,
+  type DevtoolsEventSession,
 } from '../../runtimes/claude-code/mcp-tools/devtools-tools.js';
+import type { StreamEvent } from '@dorkos/shared/types';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { DevtoolsCaptureStore } from '../../session/devtools-capture-store.js';
 
@@ -335,13 +338,17 @@ describe('browser_read_network handler', () => {
 describe('getDevtoolsTools registration', () => {
   const emptyDeps = {} as McpToolDeps;
 
-  it('registers exactly browser_read_console and browser_read_network', () => {
+  it('registers exactly the console, network, and screenshot tools', () => {
     const tools = getDevtoolsTools(
       emptyDeps,
       resolveSession,
       new DevtoolsCaptureStore()
     ) as unknown as MockTool[];
-    expect(tools.map((t) => t.name)).toEqual(['browser_read_console', 'browser_read_network']);
+    expect(tools.map((t) => t.name)).toEqual([
+      'browser_read_console',
+      'browser_read_network',
+      'browser_screenshot',
+    ]);
   });
 
   it('returns a session-less error when no resolver is bound', async () => {
@@ -384,5 +391,163 @@ describe('getDevtoolsTools registration', () => {
     ) as unknown as MockTool[];
     const parsed = JSON.parse((await readConsole.handler({})).content[0].text);
     expect((parsed.entries as DevtoolsConsoleEntry[])[0].text).toBe('live');
+  });
+});
+
+describe('browser_screenshot handler', () => {
+  const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUg==';
+  const PNG_DATA_URL = `data:image/png;base64,${PNG_B64}`;
+
+  function makeSession(): DevtoolsEventSession & { eventQueueNotify: ReturnType<typeof vi.fn> } {
+    return { eventQueue: [] as StreamEvent[], eventQueueNotify: vi.fn() };
+  }
+
+  /** The requestId the handler stamped on its enqueued capture request. */
+  function enqueuedRequestId(session: DevtoolsEventSession): string {
+    const event = session.eventQueue[0] as unknown as {
+      type: string;
+      data: { requestId: string };
+    };
+    expect(event.type).toBe('devtools_capture_request');
+    expect(typeof event.data.requestId).toBe('string');
+    return event.data.requestId;
+  }
+
+  it('returns the no-preview note immediately when no capture buffer exists', async () => {
+    const store = new DevtoolsCaptureStore();
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 5);
+    const result = parse(await handler());
+
+    expect(result.captured).toBe(false);
+    expect(result.note).toMatch(/browser_navigate/i);
+    // No pointless round-trip was started.
+    expect(session.eventQueue).toHaveLength(0);
+  });
+
+  it('enqueues a devtools_capture_request on the session event stream and notifies', async () => {
+    const store = seededStore([]);
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 10);
+    const pending = handler();
+    expect(enqueuedRequestId(session)).toBeTruthy();
+    expect(session.eventQueueNotify).toHaveBeenCalledTimes(1);
+    await pending; // times out quickly; this test only asserts the enqueue
+  });
+
+  it('resolves with MCP image content when the matching ingest arrives', async () => {
+    const store = seededStore([]);
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 5_000);
+    const pending = handler();
+    const requestId = enqueuedRequestId(session);
+
+    store.ingest(SESSION_ID, {
+      seq: 2,
+      console: [],
+      network: [],
+      screenshot: { requestId, dataUrl: PNG_DATA_URL },
+    });
+
+    const result = (await pending) as {
+      content: { type: string; data?: string; mimeType?: string; text?: string }[];
+    };
+    expect(result.content[0]).toEqual({ type: 'image', data: PNG_B64, mimeType: 'image/png' });
+    const meta = JSON.parse(result.content[1].text!);
+    expect(meta.documentUrl).toBe('http://localhost:3000/');
+    expect(typeof meta.capturedAt).toBe('number');
+  });
+
+  it('resolves even when the ingest lands under a rekeyed (canonical) session id', async () => {
+    const store = seededStore([]);
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 5_000);
+    const pending = handler();
+    const requestId = enqueuedRequestId(session);
+
+    // First-turn rekey: the client now ingests under the canonical id.
+    store.rekeySession(SESSION_ID, 'canonical');
+    store.ingest('canonical', {
+      seq: 2,
+      console: [],
+      network: [],
+      screenshot: { requestId, dataUrl: PNG_DATA_URL },
+    });
+
+    const result = (await pending) as { content: { type: string }[] };
+    expect(result.content[0].type).toBe('image');
+  });
+
+  it('times out cleanly with a structured note — never hangs', async () => {
+    const store = seededStore([]);
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 20);
+    const result = parse(await handler());
+
+    expect(result.captured).toBe(false);
+    expect(result.note).toMatch(/didn't return a screenshot/i);
+    expect(result.note).toMatch(/browser_navigate/i);
+  });
+
+  it('surfaces a shim-side rasterization error as a note', async () => {
+    const store = seededStore([]);
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 5_000);
+    const pending = handler();
+    const requestId = enqueuedRequestId(session);
+
+    store.ingest(SESSION_ID, {
+      seq: 2,
+      console: [],
+      network: [],
+      screenshot: { requestId, error: 'the page CSP may block injected scripts' },
+    });
+
+    const result = parse(await pending);
+    expect(result.captured).toBe(false);
+    expect(result.note).toMatch(/could not be rasterized/i);
+    expect(result.note).toMatch(/CSP/i);
+  });
+
+  it('degrades to a note on a malformed data URL', async () => {
+    const store = seededStore([]);
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 5_000);
+    const pending = handler();
+    const requestId = enqueuedRequestId(session);
+
+    store.ingest(SESSION_ID, {
+      seq: 2,
+      console: [],
+      network: [],
+      screenshot: { requestId, dataUrl: 'not-a-data-url' },
+    });
+
+    const result = parse(await pending);
+    expect(result.captured).toBe(false);
+    expect(result.note).toMatch(/malformed/i);
+  });
+
+  it('returns the session-less error when the resolver yields no id', async () => {
+    const store = new DevtoolsCaptureStore();
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(() => undefined, store, session, 5);
+    const result = await handler();
+
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toMatch(/require an attached interactive session/i);
+  });
+
+  it('registers session-less when no session object is available', async () => {
+    // A resolver alone is not enough: the tool needs the event queue to reach
+    // the client, so getDevtoolsTools without a session registers the error stub.
+    const tools = getDevtoolsTools(
+      {} as McpToolDeps,
+      resolveSession,
+      new DevtoolsCaptureStore()
+    ) as unknown as MockTool[];
+    const screenshot = tools.find((t) => t.name === 'browser_screenshot')!;
+    const result = await screenshot.handler({});
+    expect(result.isError).toBe(true);
   });
 });

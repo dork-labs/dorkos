@@ -20,6 +20,10 @@ describe('DEVTOOLS_AGENT_SCRIPT — the injected shim source', () => {
     expect(DEVTOOLS_AGENT_SCRIPT).toContain('postMessage');
     expect(DEVTOOLS_AGENT_SCRIPT).toContain('__dorkosDevtools');
     expect(DEVTOOLS_AGENT_SCRIPT).toContain('unhandledrejection');
+    // The browser_screenshot round-trip (DOR-213 Phase 3): the shim answers
+    // parent capture requests with rendered results, all over postMessage.
+    expect(DEVTOOLS_AGENT_SCRIPT).toContain('capture-request');
+    expect(DEVTOOLS_AGENT_SCRIPT).toContain('capture-result');
   });
 });
 

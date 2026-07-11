@@ -46,10 +46,12 @@ const CORE_TOOLS = [
   // UI control tools are always available — they mutate client UI, not the system
   'mcp__dorkos__control_ui',
   'mcp__dorkos__get_ui_state',
-  // DevTools read tools (DOR-213) — read-only reads of the session's own preview
-  // capture buffer; no feature gate, always available like the UI tools.
+  // DevTools tools (DOR-213) — read-only views of the session's own preview
+  // (console/network buffer + on-demand screenshot); no feature gate, always
+  // available like the UI tools.
   'mcp__dorkos__browser_read_console',
   'mcp__dorkos__browser_read_network',
+  'mcp__dorkos__browser_screenshot',
 ] as const;
 
 const TASKS_TOOLS = [

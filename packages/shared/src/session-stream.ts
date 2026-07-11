@@ -380,6 +380,18 @@ export const SessionEventSchema = z
     // state is restored from localStorage, not by replaying the command. The
     // command's own discriminated union is carried whole.
     z.object({ ...seqShape, type: z.literal('ui_command'), ...UiCommandEventSchema.shape }),
+    // A server→client screenshot request (the `browser_screenshot` MCP tool,
+    // DOR-213 Phase 3). Transient and side-effecting like `ui_command`: the
+    // attached client forwards it into the preview frame, the in-page shim
+    // rasterizes its own document, and the result returns via the devtools
+    // ingest route tagged with this `requestId` — resolving the awaiting tool.
+    // Never re-projected from a cold snapshot (a reconnect must not re-trigger
+    // a stale capture; the tool's timeout has long since fired).
+    z.object({
+      ...seqShape,
+      type: z.literal('devtools_capture_request'),
+      requestId: z.string(),
+    }),
   ])
   .openapi('SessionEvent');
 

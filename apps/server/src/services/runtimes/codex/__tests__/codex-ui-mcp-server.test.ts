@@ -89,6 +89,7 @@ describe('createCodexUiMcpServer', () => {
     // must return data in-result. They must never appear here.
     expect(tools.map((t) => t.name)).not.toContain('browser_read_console');
     expect(tools.map((t) => t.name)).not.toContain('browser_read_network');
+    expect(tools.map((t) => t.name)).not.toContain('browser_screenshot');
     expect(tools[0]!.description!.length).toBeGreaterThan(0);
   });
 

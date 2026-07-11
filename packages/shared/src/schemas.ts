@@ -68,6 +68,7 @@ export const StreamEventTypeSchema = z
     'hook_progress',
     'hook_response',
     'ui_command',
+    'devtools_capture_request',
     'session_state_changed',
     'context_usage',
     'elicitation_prompt',
@@ -3013,11 +3014,38 @@ export const DEVTOOLS_CONSOLE_BATCH_MAX = 500;
 export const DEVTOOLS_NETWORK_BATCH_MAX = 200;
 
 /**
+ * Size cap (in data-URL characters) for one ingested screenshot — ~675 KB of
+ * decoded PNG. Sized to fit the server's 1 MB JSON body limit with envelope
+ * headroom. The shim caps its render dimensions (long edge ≤ 1568 px, the
+ * sweet spot for model vision) and downscale-retries once when a render still
+ * exceeds this, so a well-behaved preview rarely trips it — the cap exists so
+ * a hostile page cannot POST an unbounded "screenshot" into server memory.
+ */
+export const DEVTOOLS_SCREENSHOT_MAX_CHARS = 900_000;
+
+/**
+ * The outcome of one `browser_screenshot` capture round-trip, relayed by the
+ * client from the in-page shim. Exactly one of `dataUrl` (success) or `error`
+ * (the shim could not rasterize — e.g. the page's CSP blocked the rasterizer)
+ * is expected; `requestId` ties the result back to the awaiting tool call.
+ */
+export const DevtoolsScreenshotResultSchema = z
+  .object({
+    requestId: z.string().max(128),
+    dataUrl: z.string().max(DEVTOOLS_SCREENSHOT_MAX_CHARS).optional(),
+    error: z.string().max(2_048).optional(),
+  })
+  .openapi('DevtoolsScreenshotResult');
+
+export type DevtoolsScreenshotResult = z.infer<typeof DevtoolsScreenshotResultSchema>;
+
+/**
  * The ingest batch the DorkOS client posts to
  * `POST /api/sessions/:id/devtools/ingest`. `seq` is the shim's monotonic
  * counter (lets the buffer detect gaps); `reset` marks a navigation boundary
  * (the preview navigated, so the prior page's console/network is cleared before
- * these append).
+ * these append); `screenshot` carries a capture round-trip result (success or
+ * shim-side error) tagged with its `requestId`.
  */
 export const DevtoolsIngestSchema = z
   .object({
@@ -3027,6 +3055,7 @@ export const DevtoolsIngestSchema = z
     reset: z.boolean().optional(),
     console: z.array(DevtoolsConsoleEntrySchema).max(DEVTOOLS_CONSOLE_BATCH_MAX),
     network: z.array(DevtoolsNetworkEntrySchema).max(DEVTOOLS_NETWORK_BATCH_MAX),
+    screenshot: DevtoolsScreenshotResultSchema.optional(),
   })
   .openapi('DevtoolsIngest');
 

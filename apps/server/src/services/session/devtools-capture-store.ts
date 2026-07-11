@@ -22,15 +22,15 @@ import type {
 import { WORKBENCH } from '../../config/constants.js';
 
 /**
- * A rendered screenshot of the preview. Single-slot (latest wins). The slot is
- * defined now; the on-demand capture round-trip that fills it lands with the
- * `browser_screenshot` tool in a follow-up phase.
+ * A rendered screenshot of the preview. Single-slot (latest wins), filled by
+ * the `browser_screenshot` capture round-trip (DOR-213 Phase 3).
  *
- * NOTE (Phase 3): the screenshot slot is currently EXCLUDED from `approxBytes` —
- * nothing writes it yet, so there is nothing to account. When the capture
- * round-trip lands, its PNG data URL (potentially hundreds of KB) must be folded
- * into the byte accounting (or bounded by its own dimension/size cap) so the
- * per-session budget stays honest.
+ * Deliberately EXCLUDED from `approxBytes` and bounded by its OWN cap instead:
+ * the ingest schema rejects a data URL past `DEVTOOLS_SCREENSHOT_MAX_CHARS`
+ * (413), and the slot is single, so the per-session screenshot retention is
+ * hard-capped at that constant. Folding it into the shared byte budget would
+ * let one screenshot evict the console/network history the read tools exist to
+ * surface — a worse trade than the separate, tighter bound.
  */
 export interface DevtoolsScreenshotEntry {
   /** PNG data URL of the rendered preview. */
@@ -40,6 +40,16 @@ export interface DevtoolsScreenshotEntry {
   /** The `requestId` of the round-trip that produced it, when applicable. */
   requestId?: string;
 }
+
+/**
+ * The resolution the `browser_screenshot` tool awaits: the shim's capture
+ * result for one `requestId` — a stored screenshot on success, or the shim's
+ * error string when the page could not be rasterized (e.g. its CSP blocked the
+ * injected rasterizer).
+ */
+export type ScreenshotOutcome =
+  | { ok: true; screenshot: DevtoolsScreenshotEntry }
+  | { ok: false; error: string };
 
 /** An entry retained with its approximate serialized size (byte accounting). */
 interface Sized<T> {
@@ -124,6 +134,12 @@ function bytesOf<T>(entries: Sized<T>[]): number {
  */
 export class DevtoolsCaptureStore {
   private readonly buffers = new Map<string, InternalBuffer>();
+  /**
+   * Pending `browser_screenshot` round-trips, keyed by requestId (session-
+   * agnostic — see the rekey note in {@link ingest}). Entries are removed on
+   * resolution or timeout, so the map never outgrows the in-flight captures.
+   */
+  private readonly screenshotWaiters = new Map<string, (outcome: ScreenshotOutcome) => void>();
 
   /**
    * Append an ingest batch to a session's buffer, creating it on first ingest.
@@ -178,8 +194,51 @@ export class DevtoolsCaptureStore {
     }
     this.trimBytes(buffer);
 
+    if (batch.screenshot) {
+      const { requestId, dataUrl, error } = batch.screenshot;
+      let outcome: ScreenshotOutcome;
+      if (dataUrl) {
+        const entry: DevtoolsScreenshotEntry = { dataUrl, capturedAt: Date.now(), requestId };
+        buffer.screenshot = entry; // single slot, latest wins
+        outcome = { ok: true, screenshot: entry };
+      } else {
+        outcome = { ok: false, error: error ?? 'The preview returned no screenshot data.' };
+      }
+      // Waiters are keyed by requestId ALONE (not session id) so the
+      // first-turn canonical rekey — the client may ingest under the canonical
+      // id while the tool requested under the request UUID — can never strand
+      // an awaiting `browser_screenshot` call.
+      const resolve = this.screenshotWaiters.get(requestId);
+      if (resolve) {
+        this.screenshotWaiters.delete(requestId);
+        resolve(outcome);
+      }
+    }
+
     buffer.lastSeq = Math.max(buffer.lastSeq, batch.seq);
     buffer.updatedAt = Date.now();
+  }
+
+  /**
+   * Await the capture outcome for one `browser_screenshot` round-trip. Resolves
+   * when an ingest batch carrying `screenshot.requestId === requestId` arrives
+   * (success or shim-side error), or with `undefined` after `timeoutMs` —
+   * never hangs. One waiter per requestId; requestIds are single-use UUIDs.
+   *
+   * @param requestId - The round-trip id the tool stamped on its capture request.
+   * @param timeoutMs - How long to wait before giving up.
+   */
+  awaitScreenshot(requestId: string, timeoutMs: number): Promise<ScreenshotOutcome | undefined> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.screenshotWaiters.delete(requestId);
+        resolve(undefined);
+      }, timeoutMs);
+      this.screenshotWaiters.set(requestId, (outcome) => {
+        clearTimeout(timer);
+        resolve(outcome);
+      });
+    });
   }
 
   /**
