@@ -25,6 +25,12 @@ import { WORKBENCH } from '../../config/constants.js';
  * A rendered screenshot of the preview. Single-slot (latest wins). The slot is
  * defined now; the on-demand capture round-trip that fills it lands with the
  * `browser_screenshot` tool in a follow-up phase.
+ *
+ * NOTE (Phase 3): the screenshot slot is currently EXCLUDED from `approxBytes` —
+ * nothing writes it yet, so there is nothing to account. When the capture
+ * round-trip lands, its PNG data URL (potentially hundreds of KB) must be folded
+ * into the byte accounting (or bounded by its own dimension/size cap) so the
+ * per-session budget stays honest.
  */
 export interface DevtoolsScreenshotEntry {
   /** PNG data URL of the rendered preview. */

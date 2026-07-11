@@ -1,28 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 
 // Config/tunnel are stubbed so createApp builds without a live server, and the
 // session gate is a pass-through (auth disabled) — the ingest route relies on the
-// app-wide gate exactly as the other /api/sessions routes do. The runtime
-// registry is mocked so session existence (the 404 posture) is controllable.
-
-let fakeRuntime: FakeAgentRuntime;
-
-vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getDefault: vi.fn(() => fakeRuntime),
-    get: vi.fn(() => fakeRuntime),
-    getAllCapabilities: vi.fn(() => ({})),
-    getDefaultType: vi.fn(() => 'fake'),
-    resolveForSession: vi.fn(async () => fakeRuntime),
-    getSessionRuntimeType: vi.fn(async () => 'fake'),
-    persistSessionRuntime: vi.fn(async () => {}),
-    getSessionSettings: vi.fn(async () => null),
-    has: vi.fn(() => true),
-  },
-  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
-}));
-
+// app-wide gate exactly as the other /api/sessions routes do.
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
@@ -42,11 +22,6 @@ function ingest(body: unknown, id = crypto.randomUUID()) {
   return request(app).post(`/api/sessions/${id}/devtools/ingest`).send(body);
 }
 
-beforeEach(() => {
-  fakeRuntime = new FakeAgentRuntime();
-  // Sessions exist by default; the 404 test flips this off.
-  fakeRuntime.hasSession.mockReturnValue(true);
-});
 afterEach(() => devtoolsCaptureStore.clear());
 
 describe('POST /api/sessions/:id/devtools/ingest', () => {
@@ -73,6 +48,23 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
     const buf = devtoolsCaptureStore.read(id);
     expect(buf?.console[0].text).toBe('boom');
     expect(buf?.network[0].status).toBe(404);
+  });
+
+  it('accepts a well-formed id with NO session-existence check (deliberate posture)', async () => {
+    // Mirrors the durable event stream's posture (session-events-handler.ts,
+    // DOR-74): hasSession() is in-memory only, so a restarted server or a
+    // historical session reopened from disk is "unknown" exactly when the
+    // rehydrated preview's page-load captures arrive. A 404 here would silently
+    // drop the page-load errors Phase 2's browser_read_console exists to
+    // surface. Containment lives in the store (byte budget + session LRU cap),
+    // which is what makes this permissive posture safe.
+    const id = crypto.randomUUID(); // never seen by any runtime
+    const res = await ingest(
+      { seq: 1, console: [{ level: 'error', text: 'page-load error', timestamp: 1 }], network: [] },
+      id
+    );
+    expect(res.status).toBe(204);
+    expect(devtoolsCaptureStore.read(id)?.console[0].text).toBe('page-load error');
   });
 
   it('rejects a malformed batch with 400', async () => {
@@ -114,18 +106,6 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
     expect(res.status).toBe(413);
     expect(res.body.code).toBe('BATCH_TOO_LARGE');
     // Nothing lands in the buffer for a rejected batch.
-    expect(devtoolsCaptureStore.read(id)).toBeUndefined();
-  });
-
-  it('rejects an unknown session with 404 and never creates a buffer for it', async () => {
-    fakeRuntime.hasSession.mockReturnValue(false);
-    const id = crypto.randomUUID();
-    const res = await ingest(
-      { seq: 1, console: [{ level: 'log', text: 'probe', timestamp: Date.now() }], network: [] },
-      id
-    );
-    expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_NOT_FOUND');
     expect(devtoolsCaptureStore.read(id)).toBeUndefined();
   });
 

@@ -15,7 +15,6 @@
  */
 import type { Request, Response } from 'express';
 import { DevtoolsIngestSchema } from '@dorkos/shared/schemas';
-import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { devtoolsCaptureStore } from '../services/session/index.js';
 import { parseSessionId, sendError } from '../lib/route-utils.js';
 
@@ -23,12 +22,11 @@ import { parseSessionId, sendError } from '../lib/route-utils.js';
  * Express handler for `POST /api/sessions/:id/devtools/ingest`. Zod-validated and
  * size-capped: a batch over a per-array entry limit — or a console entry over its
  * serialized `args` size cap — is a `413` (distinct from a malformed `400`), so an
- * oversized relay is a clear, debuggable outcome. Unknown sessions 404 (mirroring
- * `/ui-action`): a capture can only exist because an existing session's preview
- * produced it, so a made-up id must never accumulate a buffer.
+ * oversized relay is a clear, debuggable outcome. Accepts any well-formed session
+ * id without an existence check — see the inline posture note.
  *
  * @param req - The Express request (`:id` route param + `DevtoolsIngest` body).
- * @param res - The Express response (204 sink / 400 / 404 / 413).
+ * @param res - The Express response (204 sink / 400 / 413).
  */
 export async function sessionDevtoolsIngestHandler(req: Request, res: Response): Promise<void> {
   const sessionId = parseSessionId(req.params.id);
@@ -39,8 +37,11 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
     const overCap = parsed.error.issues.some(
       (i) =>
         (i.code === 'too_big' && (i.path[0] === 'console' || i.path[0] === 'network')) ||
-        // The console entry `args` serialized-size refine (DEVTOOLS_ARGS_MAX_CHARS).
-        (i.code === 'custom' && i.message.includes('size cap'))
+        // The console entry `args` serialized-size refine (DEVTOOLS_ARGS_MAX_CHARS)
+        // reports a `custom` issue at an entry's `args` path. Matched structurally
+        // (never on the message text) so a reworded message can't silently
+        // downgrade the oversized outcome to a generic 400.
+        (i.code === 'custom' && i.path.at(-1) === 'args')
     );
     if (overCap) {
       return sendError(res, 413, 'DevTools ingest batch too large', 'BATCH_TOO_LARGE');
@@ -48,13 +49,17 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
     return sendError(res, 400, 'Invalid DevTools ingest batch', 'VALIDATION_ERROR');
   }
 
-  // A capture belongs to a session the operator has open; an unknown id is a
-  // client bug (or a probe) — never create-on-ingest. Same posture as /ui-action.
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  if (!runtime.hasSession(sessionId)) {
-    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
-  }
-
+  // Deliberately NO session-existence check: like the durable event stream
+  // (`session-events-handler.ts`, DOR-74 requirement #1), this sink accepts any
+  // WELL-FORMED session id. `hasSession()` is in-memory only — after a server
+  // restart, or when a historical session is reopened from its on-disk JSONL,
+  // the session isn't tracked until the first turn calls ensureSession, yet the
+  // rehydrated preview's PAGE-LOAD captures arrive exactly then. Gating on
+  // hasSession would silently drop the page-load errors that Phase 2's
+  // `browser_read_console` exists to surface. The permissive posture is safe
+  // because the store already bounds abuse: a ~1 MB per-session byte budget and
+  // a 50-session LRU cap limit what any made-up id can retain, and buffers are
+  // in-memory only. A malformed id is still rejected (400) above.
   devtoolsCaptureStore.ingest(sessionId, parsed.data);
   res.status(204).end();
 }
