@@ -89,8 +89,20 @@ export function MarketingFooter({
           {email}
         </a>
 
-        {/* Legal */}
-        <nav className="mt-6 flex justify-center gap-6">
+        {/* Trust and legal */}
+        <nav className="mt-6 flex flex-wrap justify-center gap-6">
+          <Link
+            href="/pricing"
+            className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
+          >
+            Pricing
+          </Link>
+          <Link
+            href="/security"
+            className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
+          >
+            Security
+          </Link>
           <Link
             href="/privacy"
             className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
@@ -102,12 +114,6 @@ export function MarketingFooter({
             className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
           >
             Terms
-          </Link>
-          <Link
-            href="/security"
-            className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
-          >
-            Security
           </Link>
           <Link
             href="/cookies"
