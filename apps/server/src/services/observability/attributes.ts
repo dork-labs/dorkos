@@ -30,7 +30,12 @@ export const SPAN = {
  * export seam.
  */
 export const ATTR = {
-  /** Opaque session id (random UUID / run id) for correlating spans in a file. */
+  /**
+   * Opaque session id (random UUID / run id) for correlating spans in a file.
+   * The one allowlisted key carrying an id rather than a count/enum: it MUST
+   * stay an opaque identifier — never a filesystem-derived or otherwise
+   * content-bearing value — which is a precondition on any future runtime.
+   */
   SESSION_ID: 'dorkos.session_id',
   /** Runtime type, e.g. `'claude-code'` | `'codex'` | `'opencode'`. */
   RUNTIME: 'dorkos.runtime',

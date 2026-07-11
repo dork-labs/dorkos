@@ -88,3 +88,78 @@ describe('traceRuntime — wraps sendMessage without leaking content', () => {
     });
   });
 });
+
+describe('traceRelay — records the dispatch shape, never the subject or payload', () => {
+  it('records subject_kind + delivered_to only; the raw subject and payload never reach the file', async () => {
+    const home = tmpHome();
+    const file = await initObservability({ debug: true, dorkHome: home, version: '1.0.0' });
+
+    let publishCalls = 0;
+    const relay = {
+      // The real publish receives the sensitive subject + payload; the proxy
+      // never reads them, so they cannot reach the trace file.
+      publish: async (_subject: string, _payload: unknown, _options: unknown) => {
+        publishCalls++;
+        return { messageId: 'msg-1', deliveredTo: 2 };
+      },
+    } as unknown as RelayCore;
+    const traced = traceRelay(relay);
+
+    // Subject names a sensitive target (a telegram chat id / agent id); payload
+    // carries secret-looking content.
+    const subject = 'relay.agent.telegram.chat-987654321';
+    const payload = {
+      text: 'API key sk-ant-0xdeadbeef, path /Users/dorian/.ssh/id_rsa',
+      recipient: '@dorian',
+    };
+    const result = await traced.publish(subject, payload, { from: 'relay.agent.sender' });
+    expect(result.deliveredTo).toBe(2); // pass-through intact
+    expect(publishCalls).toBe(1); // real relay was invoked
+
+    await shutdownObservability();
+
+    const raw = fs.readFileSync(file!, 'utf-8');
+    // The raw subject, the sensitive target id, and every payload secret are absent.
+    for (const secret of [
+      'chat-987654321',
+      'telegram',
+      'sk-ant',
+      '/Users/dorian',
+      'id_rsa',
+      '@dorian',
+    ]) {
+      expect(raw).not.toContain(secret);
+    }
+    const span = raw
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .find((s) => s.name === SPAN.RELAY_DISPATCH);
+    // Only the coarse bucket + the delivered count survive.
+    expect(span!.attributes).toEqual({
+      [ATTR.SUBJECT_KIND]: 'agent',
+      [ATTR.DELIVERED_TO]: 2,
+    });
+  });
+
+  it('buckets a system subject as "system"', async () => {
+    const home = tmpHome();
+    const file = await initObservability({ debug: true, dorkHome: home, version: '1.0.0' });
+    const relay = {
+      publish: async () => ({ messageId: 'm', deliveredTo: 0 }),
+    } as unknown as RelayCore;
+
+    await traceRelay(relay).publish('relay.system.tasks.abc-123', { prompt: 'secret' }, {});
+    await shutdownObservability();
+
+    const raw = fs.readFileSync(file!, 'utf-8');
+    expect(raw).not.toContain('abc-123');
+    expect(raw).not.toContain('secret');
+    const span = raw
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .find((s) => s.name === SPAN.RELAY_DISPATCH);
+    expect(span!.attributes).toMatchObject({ [ATTR.SUBJECT_KIND]: 'system' });
+  });
+});
