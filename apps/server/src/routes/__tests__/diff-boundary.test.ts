@@ -123,4 +123,119 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     expect(res.body.current).toBe('const a = 2;\n');
     expect(res.body.capturedFrom).toBe('pre-tool');
   });
+  // --- Chunk B: baseline image bytes + whole-file revert -------------------
+
+  const PNG_V1 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+  const PNG_V2 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]);
+
+  it('GET /baseline/raw through a symlinked parent cannot read outside cwd (403)', async () => {
+    await fs.writeFile(path.join(outside, 'secret.png'), PNG_V1);
+    const res = await request(app)
+      .get('/api/diff/baseline/raw')
+      .query({ cwd, path: 'link/secret.png', sessionId: SESSION });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+  });
+
+  it('GET /baseline/raw with a ../ path is rejected (403)', async () => {
+    const res = await request(app)
+      .get('/api/diff/baseline/raw')
+      .query({ cwd, path: '../outside/secret.png', sessionId: SESSION });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+  });
+
+  it('GET /baseline/raw rejects a null-byte path (400)', async () => {
+    const qs = `cwd=${encodeURIComponent(cwd)}&path=a%00b.png&sessionId=${SESSION}`;
+    const res = await request(app).get(`/api/diff/baseline/raw?${qs}`);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('NULL_BYTE');
+  });
+
+  it('GET /baseline/raw serves ONLY media types (415 for .ts)', async () => {
+    await fs.writeFile(path.join(cwd, 'app.ts'), 'code\n');
+    await editBaselineStore.captureFromDisk(SESSION, path.join(cwd, 'app.ts'));
+    const res = await request(app)
+      .get('/api/diff/baseline/raw')
+      .query({ cwd, path: 'app.ts', sessionId: SESSION });
+    expect(res.status).toBe(415);
+    expect(res.body.code).toBe('UNSUPPORTED_TYPE');
+  });
+
+  it('GET /baseline/raw is 404 when no baseline exists', async () => {
+    await fs.writeFile(path.join(cwd, 'logo.png'), PNG_V2);
+    const res = await request(app)
+      .get('/api/diff/baseline/raw')
+      .query({ cwd, path: 'logo.png', sessionId: SESSION });
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('NO_BASELINE');
+  });
+
+  it('GET /baseline/raw streams the snapshot bytes with the files/raw security posture', async () => {
+    const file = path.join(cwd, 'logo.png');
+    await fs.writeFile(file, PNG_V1);
+    await editBaselineStore.captureFromDisk(SESSION, file);
+    await fs.writeFile(file, PNG_V2);
+
+    const res = await request(app)
+      .get('/api/diff/baseline/raw')
+      .query({ cwd, path: 'logo.png', sessionId: SESSION })
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-disposition']).toBe('inline');
+    expect((res.body as Buffer).equals(PNG_V1)).toBe(true);
+  });
+
+  it('GET /baseline/raw serves SVGs under the script-neutering CSP sandbox', async () => {
+    const file = path.join(cwd, 'icon.svg');
+    await fs.writeFile(file, '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    await editBaselineStore.captureFromDisk(SESSION, file);
+    const res = await request(app)
+      .get('/api/diff/baseline/raw')
+      .query({ cwd, path: 'icon.svg', sessionId: SESSION });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-security-policy']).toContain('sandbox');
+  });
+
+  it('POST /revert through a symlinked parent cannot write outside cwd (403)', async () => {
+    await fs.writeFile(path.join(outside, 'victim.png'), PNG_V2);
+    const res = await request(app)
+      .post('/api/diff/revert')
+      .send({ cwd, path: 'link/victim.png', sessionId: SESSION });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    // The outside file is untouched.
+    expect((await fs.readFile(path.join(outside, 'victim.png'))).equals(PNG_V2)).toBe(true);
+  });
+
+  it('POST /revert restores the snapshot bytes to disk (control: happy path)', async () => {
+    const file = path.join(cwd, 'logo.png');
+    await fs.writeFile(file, PNG_V1);
+    await editBaselineStore.captureFromDisk(SESSION, file);
+    await fs.writeFile(file, PNG_V2);
+
+    const res = await request(app)
+      .post('/api/diff/revert')
+      .send({ cwd, path: 'logo.png', sessionId: SESSION });
+    expect(res.status).toBe(200);
+    expect((await fs.readFile(file)).equals(PNG_V1)).toBe(true);
+  });
+
+  it('POST /revert is 404 when nothing is restorable (never deletes)', async () => {
+    const file = path.join(cwd, 'new.png');
+    await fs.writeFile(file, PNG_V2);
+    const res = await request(app)
+      .post('/api/diff/revert')
+      .send({ cwd, path: 'new.png', sessionId: SESSION });
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('NO_BASELINE');
+    expect((await fs.readFile(file)).equals(PNG_V2)).toBe(true);
+  });
 });

@@ -10,3 +10,5 @@ export { gitShowHead } from './git-baseline.js';
 export { reconstructPreImage } from './reconstruct.js';
 export { resolveTextBaseline } from './resolve-baseline.js';
 export type { ResolveBaselineResult, ResolveBaselineError } from './resolve-baseline.js';
+export { resolveBaselineBytes, revertToBaseline } from './baseline-bytes.js';
+export type { BaselineBytes } from './baseline-bytes.js';

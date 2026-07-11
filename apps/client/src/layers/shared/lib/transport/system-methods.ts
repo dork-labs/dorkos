@@ -152,6 +152,20 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
+    /** Baseline image bytes URL for the image-diff "before" layer (DOR-212 Chunk B). */
+    diffBaselineMediaUrl(cwd: string, filePath: string, sessionId: string): string | null {
+      const params = new URLSearchParams({ cwd, path: filePath, sessionId });
+      return `${baseUrl}/diff/baseline/raw?${params}`;
+    },
+
+    /** Restore a file's baseline bytes to disk, whole-file (image-diff reject; DOR-212 Chunk B). */
+    async revertDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void> {
+      await fetchJSON<{ ok: true }>(baseUrl, '/diff/revert', {
+        method: 'POST',
+        body: JSON.stringify({ cwd, path: filePath, sessionId }),
+      });
+    },
+
     /** Create a file or directory; rejects (409) if the target already exists. */
     createEntry(
       cwd: string,

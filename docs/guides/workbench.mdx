@@ -99,7 +99,9 @@ If the file changes underneath you — say the agent edits it again while you're
 
 Sometimes DorkOS has no snapshot from when the agent started — for example, if the server restarted mid-session. When that happens the header says so plainly and compares against your last commit instead. In that state, **Reject all** asks you to confirm first, because it would also undo edits you made yourself before the session.
 
-Reviewing an image isn't available here yet — a changed image opens on its own instead. Diff review works in the web app and the Obsidian plugin; the image tools, when they arrive, will be web-only.
+Changed images get their own comparison, in the style you may know from GitHub: **2-up** shows before and after side by side, **Swipe** puts them in the same frame with a divider you drag, and **Onion skin** blends between them with a slider. Because an image changes as a whole, the review is whole-file: **Restore previous** puts the old image back on disk (it asks you to confirm first), and **Mark reviewed** keeps the new one. An image the agent just created has no previous version — the panel says so instead of pretending there's something to compare.
+
+Text diff review works in the web app and the Obsidian plugin; the image comparison is web-only.
 
 You can turn the automatic open off with `workbench.autoOpenDiff` in your [config file](/docs/getting-started/configuration) — the agent can still bring up a diff on purpose.
 
