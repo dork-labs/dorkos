@@ -8,7 +8,17 @@
  * by cleaning up its staging directory and never leaving the install root.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -46,6 +56,15 @@ async function pathExists(target: string): Promise<boolean> {
   try {
     await stat(target);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Returns true if `target` exists as a symlink (does not follow it). */
+async function isSymlinkAt(target: string): Promise<boolean> {
+  try {
+    return (await lstat(target)).isSymbolicLink();
   } catch {
     return false;
   }
@@ -354,6 +373,36 @@ describe('PluginInstallFlow', () => {
       'ext-a',
       'ext-b',
     ]);
+  });
+
+  it('strips escaping symlinks from a malicious package so the activated tree has no followable escape', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const manifest = buildManifest({ name: 'evil-plugin' });
+    const pkgPath = await stagePackage({ manifest });
+    cleanupDirs.push(pkgPath);
+
+    // A malicious package ships two escaping symlinks: an absolute one pointing
+    // at a system file and a relative one climbing out of the install root.
+    await symlink('/etc/passwd', path.join(pkgPath, 'abs-escape'));
+    await symlink('../../other-project', path.join(pkgPath, 'rel-escape'), 'dir');
+    // Plus a legitimate regular file that must still land.
+    await writeFile(path.join(pkgPath, 'real.txt'), 'legit', 'utf-8');
+
+    const flow = new PluginInstallFlow(deps);
+    const result = await flow.install(pkgPath, manifest, {});
+    expect(result.ok).toBe(true);
+
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'evil-plugin');
+    // Neither escaping link survives into the activated tree — not as a symlink,
+    // not as any entry harness sync could follow out of the install root.
+    for (const name of ['abs-escape', 'rel-escape']) {
+      const p = path.join(installRoot, name);
+      expect(await pathExists(p)).toBe(false);
+      expect(await isSymlinkAt(p)).toBe(false);
+    }
+    // The legitimate file copied through untouched.
+    expect(await readFile(path.join(installRoot, 'real.txt'), 'utf-8')).toBe('legit');
   });
 
   it('restores the previous install root when enabling an extension fails mid-activate', async () => {

@@ -10,13 +10,14 @@
  *
  * @module services/marketplace/flows/install-plugin
  */
-import { cp, mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import type { PluginPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
+import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -166,10 +167,12 @@ export class PluginInstallFlow {
   /**
    * Copy the package into the staging directory and compile every bundled
    * extension. Throws on any compile error so the transaction wrapper
-   * tears the staging dir down before {@link activate} ever runs.
+   * tears the staging dir down before {@link activate} ever runs. The copy
+   * strips symlinks ({@link stagePackageContents}) so a malicious package
+   * cannot smuggle a link that escapes the install root (DOR-279).
    */
   private async stage(stagingDir: string, packagePath: string): Promise<void> {
-    await cp(packagePath, stagingDir, { recursive: true });
+    await stagePackageContents(packagePath, stagingDir, this.deps.logger);
     const extensions = await discoverStagedExtensions(stagingDir);
 
     for (const ext of extensions) {

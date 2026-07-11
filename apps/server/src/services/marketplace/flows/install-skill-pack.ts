@@ -10,13 +10,14 @@
  *
  * @module services/marketplace/flows/install-skill-pack
  */
-import { cp, mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SkillPackPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { SkillFrontmatterSchema } from '@dorkos/skills';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { atomicMove } from '../lib/atomic-move.js';
+import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -59,7 +60,7 @@ export class SkillPackInstallFlow {
     await runTransaction({
       name: `install-skill-pack-${manifest.name}`,
       target: installRoot,
-      stage: (staging) => stageSkillPack(packagePath, staging.path),
+      stage: (staging) => stageSkillPack(packagePath, staging.path, this.deps.logger),
       activate: (staging) => activateSkillPack(staging.path, installRoot),
     });
     return buildInstallResult(manifest, installRoot);
@@ -87,12 +88,18 @@ function computeInstallRoot(
 /**
  * Copy the package into the staging directory, then re-validate every
  * SKILL.md against the `@dorkos/skills` parser. Throws a clear error
- * naming the offending file if any frontmatter fails validation.
+ * naming the offending file if any frontmatter fails validation. The copy
+ * strips symlinks ({@link stagePackageContents}) so a malicious package cannot
+ * smuggle a link that escapes the install root (DOR-279).
  *
  * @internal
  */
-async function stageSkillPack(packagePath: string, stagingPath: string): Promise<void> {
-  await cp(packagePath, stagingPath, { recursive: true });
+async function stageSkillPack(
+  packagePath: string,
+  stagingPath: string,
+  logger: Logger
+): Promise<void> {
+  await stagePackageContents(packagePath, stagingPath, logger);
   const skillFiles = await findSkillFiles(stagingPath);
   for (const absFile of skillFiles) {
     await validateSkillFile(absFile);

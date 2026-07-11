@@ -13,12 +13,13 @@
  *
  * @module services/marketplace/flows/install-agent
  */
-import { cp, mkdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { createAgentWorkspace } from '../../core/agent-creator.js';
 import { atomicMove } from '../lib/atomic-move.js';
+import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -79,7 +80,7 @@ export class AgentInstallFlow {
     const transactionResult = await runTransaction({
       name: `install-agent-${manifest.name}`,
       target: targetDir,
-      stage: (staging) => stageAgentPackage(packagePath, staging.path),
+      stage: (staging) => stageAgentPackage(packagePath, staging.path, this.deps.logger),
       activate: (staging) => this.activate(staging.path, targetDir, manifest),
     });
 
@@ -145,13 +146,19 @@ function computeTargetDir(
 }
 
 /**
- * Copy the package source into the staging directory. Wrapped in a helper
- * so the transaction's `stage` callback stays a single statement.
+ * Copy the package source into the staging directory, stripping symlinks so a
+ * malicious package cannot smuggle a link that escapes the install root
+ * (DOR-279). Wrapped in a helper so the transaction's `stage` callback stays a
+ * single statement.
  *
  * @internal
  */
-async function stageAgentPackage(packagePath: string, stagingPath: string): Promise<void> {
-  await cp(packagePath, stagingPath, { recursive: true });
+async function stageAgentPackage(
+  packagePath: string,
+  stagingPath: string,
+  logger: Logger
+): Promise<void> {
+  await stagePackageContents(packagePath, stagingPath, logger);
 }
 
 /**
