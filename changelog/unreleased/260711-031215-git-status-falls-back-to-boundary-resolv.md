@@ -1,3 +1,3 @@
 ### Fixed
 
-- Git status falls back to boundary-resolved cwd; refresh stale OpenAPI text (PR #220 follow-up)
+- The git status panel now uses your workspace's real default folder when none is picked, instead of wherever the server process happened to start
