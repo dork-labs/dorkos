@@ -104,6 +104,12 @@ export function MarketingFooter({
             Terms
           </Link>
           <Link
+            href="/security"
+            className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
+          >
+            Security
+          </Link>
+          <Link
             href="/cookies"
             className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
           >

@@ -270,24 +270,27 @@ async function writeCommunityFixture(): Promise<string> {
     metadata: {
       description: 'Test community marketplace',
     },
+    // Sources use https URLs (not file://): search/recommend/list only need the
+    // entries to parse and index — the installer is stubbed, nothing is cloned —
+    // and the source schema now rejects file:// as an unsafe git transport.
     plugins: [
       {
         name: 'sentry-monitor',
-        source: { source: 'url', url: `file://${dir}/sentry-monitor` },
+        source: { source: 'url', url: 'https://example.test/community/sentry-monitor.git' },
         description: 'Track errors and exceptions across your Next.js app',
         category: 'observability',
         tags: ['errors', 'monitoring', 'nextjs'],
       },
       {
         name: 'log-pretty',
-        source: { source: 'url', url: `file://${dir}/log-pretty` },
+        source: { source: 'url', url: 'https://example.test/community/log-pretty.git' },
         description: 'Pretty-print structured logs in the terminal',
         category: 'devex',
         tags: ['logging', 'terminal'],
       },
       {
         name: 'planner-agent',
-        source: { source: 'url', url: `file://${dir}/planner-agent` },
+        source: { source: 'url', url: 'https://example.test/community/planner-agent.git' },
         description: 'Autonomous planning agent for multi-step tasks',
         category: 'productivity',
         tags: ['planning', 'autonomous'],

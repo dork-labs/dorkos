@@ -109,6 +109,14 @@ describe('mcpApiKeyAuth', () => {
       expect(res.statusCode).toBe(401);
     });
 
+    it('rejects a same-length wrong token (constant-time compare stays closed)', async () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'abcdef';
+      const res = createMockRes();
+      await mcpApiKeyAuth(createMockReq('Bearer ghijkl') as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(401);
+    });
+
     it('env override wins even when a per-user identity would also resolve', async () => {
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
       vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'u1' });

@@ -86,4 +86,18 @@ describe('resolveBetterAuthSecret', () => {
     expect(secret).toMatch(/^[0-9a-f]{64}$/);
     expect(fs.existsSync(path.join(tmpDir, SECRET_FILE))).toBe(true);
   });
+
+  it('tightens a group/world-readable persisted secret back to 0600 on read', () => {
+    // Simulate a file restored from a lax-permission backup or synced dotfiles.
+    if (process.platform === 'win32') return; // POSIX mode bits do not apply
+    const existing = 'd'.repeat(64);
+    const secretPath = path.join(tmpDir, SECRET_FILE);
+    fs.writeFileSync(secretPath, existing, { mode: 0o644 });
+    expect(fs.statSync(secretPath).mode & 0o777).toBe(0o644);
+
+    // The secret is still returned (we repair, never lock the owner out)...
+    expect(resolveBetterAuthSecret(tmpDir)).toBe(existing);
+    // ...and the file is now owner-only.
+    expect(fs.statSync(secretPath).mode & 0o777).toBe(0o600);
+  });
 });

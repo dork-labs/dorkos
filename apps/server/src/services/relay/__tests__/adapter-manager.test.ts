@@ -9,6 +9,7 @@ vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
   mkdir: vi.fn().mockResolvedValue(undefined),
   rename: vi.fn().mockResolvedValue(undefined),
+  chmod: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock chokidar
@@ -278,7 +279,7 @@ describe('AdapterManager', () => {
       expect(writeFile).toHaveBeenCalledWith(
         `${configPath}.tmp`,
         expect.stringContaining('"enabled": true'),
-        'utf-8'
+        { encoding: 'utf-8', mode: 0o600 }
       );
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       expect(registry.register).toHaveBeenCalledWith(expect.objectContaining({ id: 'wh-github' }));
@@ -303,7 +304,7 @@ describe('AdapterManager', () => {
       expect(writeFile).toHaveBeenCalledWith(
         `${configPath}.tmp`,
         expect.stringContaining('"enabled": false'),
-        'utf-8'
+        { encoding: 'utf-8', mode: 0o600 }
       );
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       expect(registry.unregister).toHaveBeenCalledWith('tg-main');
@@ -851,7 +852,7 @@ describe('AdapterManager', () => {
       expect(writeFile).toHaveBeenCalledWith(
         `${configPath}.tmp`,
         expect.stringContaining('"wh-new"'),
-        'utf-8'
+        { encoding: 'utf-8', mode: 0o600 }
       );
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       const adapters = manager.listAdapters();
@@ -1422,8 +1423,11 @@ describe('AdapterManager', () => {
         outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
       });
 
-      // writeFile should write to tmp path
-      expect(writeFile).toHaveBeenCalledWith(`${configPath}.tmp`, expect.any(String), 'utf-8');
+      // writeFile should write to tmp path, owner-only (holds bot tokens)
+      expect(writeFile).toHaveBeenCalledWith(`${configPath}.tmp`, expect.any(String), {
+        encoding: 'utf-8',
+        mode: 0o600,
+      });
       // rename should move tmp to final path
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
 

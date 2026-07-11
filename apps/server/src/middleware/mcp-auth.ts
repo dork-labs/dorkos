@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { env } from '../env.js';
 import { configManager } from '../services/core/config-manager.js';
@@ -41,7 +42,7 @@ export async function mcpApiKeyAuth(
   const authEnabled = configManager.get('auth')?.enabled === true;
 
   // 1. Static env override — exact match, highest priority, un-revocable.
-  if (envKey && token === envKey) {
+  if (envKey && token && constantTimeEquals(token, envKey)) {
     next();
     return;
   }
@@ -54,7 +55,7 @@ export async function mcpApiKeyAuth(
   }
 
   // 3. Legacy compat window — the not-yet-seeded global config key.
-  if (legacyKey && token === legacyKey) {
+  if (legacyKey && token && constantTimeEquals(token, legacyKey)) {
     next();
     return;
   }
@@ -74,6 +75,18 @@ export async function mcpApiKeyAuth(
     },
     id: null,
   });
+}
+
+/**
+ * Compare two secrets in constant time so a wrong key cannot be recovered by
+ * timing the response. Length differences are handled without an early return
+ * by comparing same-length byte buffers.
+ */
+function constantTimeEquals(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
 }
 
 /** Extract the token from an `Authorization: Bearer <token>` header, or `null`. */

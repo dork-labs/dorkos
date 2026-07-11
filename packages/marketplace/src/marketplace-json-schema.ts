@@ -47,6 +47,29 @@ export const RESERVED_MARKETPLACE_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Transports an author-supplied git URL (`url` and `git-subdir` sources) may
+ * use. Anything else — notably git's `ext::` and `file::` command helpers — is
+ * rejected at parse time, because these URLs are handed to `git clone` /
+ * `git ls-remote` at *preview* time, before any install consent. `z.string().url()`
+ * is not enough: it accepts `ext::sh -c id`, `file:///etc`, and `fd::0/foo`.
+ *
+ * Accepts `https://`, `git://`, `ssh://`, and scp-style `git@host:path`.
+ */
+const SAFE_GIT_URL_RE = /^(https:\/\/|git:\/\/|ssh:\/\/|git@[\w.-]+:)/;
+
+/**
+ * True when `url` is a git remote we are willing to hand to `git`. Rejects any
+ * value beginning with `-` (git would read it as an option) and any transport
+ * outside {@link SAFE_GIT_URL_RE}.
+ */
+function isSafeGitUrl(url: string): boolean {
+  return !url.startsWith('-') && SAFE_GIT_URL_RE.test(url);
+}
+
+/** Shared refinement message for the safe-git-URL check. */
+const SAFE_GIT_URL_MESSAGE = 'must be an https, git, or ssh URL (no ext::/file:: transports)';
+
+/**
  * Relative-path source form: a bare string starting with `./`. Resolved
  * against the marketplace root (optionally joined with `metadata.pluginRoot`).
  * Must not contain `..` traversals.
@@ -77,7 +100,10 @@ const GithubSourceSchema = z.object({
  */
 const UrlSourceSchema = z.object({
   source: z.literal('url'),
-  url: z.string().url(),
+  // Confine the author-supplied clone URL to safe transports. `z.string().url()`
+  // accepts `ext::sh -c id`, `file:///etc`, and `fd::` — all of which reach
+  // `git clone` at preview time (before consent). Same guard as `git-subdir`.
+  url: z.string().refine(isSafeGitUrl, `url source url ${SAFE_GIT_URL_MESSAGE}`),
   ref: z.string().optional(),
   sha: z
     .string()
@@ -93,8 +119,17 @@ const UrlSourceSchema = z.object({
  */
 const GitSubdirSourceSchema = z.object({
   source: z.literal('git-subdir'),
-  url: z.string(),
-  path: z.string().min(1),
+  // Confine the author-supplied remote URL to safe transports. A bare string
+  // reaches `git clone`/`git ls-remote` at preview time (before install
+  // consent), where git's `ext::`/`file::` helpers would run arbitrary
+  // commands. Accept only https/git/ssh URLs and scp-style `git@host:path`;
+  // reject anything starting with `-` (git would read it as an option).
+  url: z.string().refine(isSafeGitUrl, `git-subdir url ${SAFE_GIT_URL_MESSAGE}`),
+  // Mirror the relative-path resolver: no `..` escaping the sparse-clone root.
+  path: z
+    .string()
+    .min(1)
+    .refine((s) => !s.includes('..'), 'git-subdir path must not contain ".."'),
   ref: z.string().optional(),
   sha: z
     .string()

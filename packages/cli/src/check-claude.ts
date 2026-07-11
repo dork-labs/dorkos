@@ -21,7 +21,7 @@ const SDK_PKG = '@anthropic-ai/claude-agent-sdk';
  * which this standalone CLI utility can't import without coupling to the server
  * module graph. Keep the two in sync.
  */
-function resolveClaudeBinary(): string | null {
+export function findClaudeBinary(): string | null {
   const { platform, arch } = process;
   const ext = platform === 'win32' ? '.exe' : '';
   // Only one variant is ever installed on a given host; try each, take the first.
@@ -52,6 +52,26 @@ function resolveClaudeBinary(): string | null {
 }
 
 /**
+ * Verify a resolved Claude Code binary actually launches (`--version` exits 0),
+ * without printing anything.
+ *
+ * Shared by {@link checkClaude} (which adds a warning) and `dorkos doctor`
+ * (which renders its own checklist line).
+ *
+ * @returns true if a Claude Code binary was found and launches, false otherwise
+ */
+export function claudeCliLaunches(): boolean {
+  const binary = findClaudeBinary();
+  if (!binary) return false;
+  try {
+    execFileSync(binary, ['--version'], { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Verify a runnable Claude Code binary is available (bundled native binary or PATH).
  *
  * Prints a warning when missing but does NOT exit — the onboarding flow provides
@@ -60,15 +80,7 @@ function resolveClaudeBinary(): string | null {
  * @returns true if a Claude Code binary was found and launches, false otherwise
  */
 export function checkClaude(): boolean {
-  const binary = resolveClaudeBinary();
-  if (binary) {
-    try {
-      execFileSync(binary, ['--version'], { stdio: 'pipe' });
-      return true;
-    } catch {
-      /* resolved but failed to launch — fall through to the warning */
-    }
-  }
+  if (claudeCliLaunches()) return true;
 
   const yellow = '\x1b[33m';
   const reset = '\x1b[0m';
