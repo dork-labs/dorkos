@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 2 / 7
+**Tasks Completed:** 3 / 7
 
 ## Session
 
@@ -20,6 +20,7 @@
 
 - Task #1.1: Build the floating-panel primitive (drag, resize, clamp, chrome, a11y) — Petra/Opus, DONE (13 tests)
 - Task #1.2: Add the PIP state slice with persisted geometry — Sable/Sonnet, DONE (7 tests; app-store suite 69/69 green)
+- Task #2.1: Build the PipHost content-routing feature — Hollis/Opus, DONE (6 tests; batch-1 regression green; node-identity remount test instead of mount-spy, deliberate)
 
 ## Files Modified/Created
 
