@@ -913,6 +913,34 @@ export const OperationStateSchema = z.enum(['started', 'done', 'failed']).openap
 export type OperationState = z.infer<typeof OperationStateSchema>;
 
 /**
+ * Base object shape for {@link OperationProgressEventSchema}, WITHOUT the
+ * cross-field refinement. Exists only so the durable-stream `SessionEvent`
+ * member can reuse the fields via `.shape` — a `discriminatedUnion` member must
+ * be a plain object, and `.superRefine()` returns a `ZodEffects` with no
+ * `.shape`. Validate through {@link OperationProgressEventSchema}, never this.
+ *
+ * @internal Reused by `session-stream.ts`; not the authoritative contract.
+ */
+export const OperationProgressEventShapeSchema = z.object({
+  /** Which operation this progress is for (extensible union). */
+  operation: OperationKindSchema,
+  /** Lifecycle phase: `started` opens the treatment, `done`/`failed` resolve it. */
+  state: OperationStateSchema,
+  /**
+   * Whether `percent` is meaningful. `false` → render an indeterminate bar
+   * (the runtime cannot report completion fraction — e.g. SDK compaction
+   * exposes none, so parity with the CLI's own indeterminate bar is honest).
+   */
+  determinate: z.boolean(),
+  /** Completion fraction 0–100, present iff `determinate` is true. */
+  percent: z.number().min(0).max(100).optional(),
+  /** Optional human-readable operation label (e.g. "Compacting context…"). */
+  message: z.string().optional(),
+  /** Human-readable failure reason; present only when `state` is `failed`. */
+  error: z.string().optional(),
+});
+
+/**
  * Runtime-agnostic progress for a named long-running operation (DOR-110). The
  * single structured contract that replaces per-runtime, stringly-typed progress
  * signals (the old `system_status` `compactResult`/`compacting` fields the
@@ -926,27 +954,40 @@ export type OperationState = z.infer<typeof OperationStateSchema>;
  * `message` is optional operation-labelling copy (e.g. "Compacting context…")
  * the producer supplies, so the client never has to synthesize or string-match
  * copy from a status token.
+ *
+ * The field invariants are ENFORCED, not merely documented — this schema is the
+ * authoritative contract future runtimes are onboarded against, so an adapter
+ * that violates them fails wire validation rather than relying on defensive
+ * consumers:
+ * - `percent` is present iff `determinate` is true (a determinate phase must
+ *   carry a fraction; an indeterminate one must not claim one), and
+ * - `error` is present only when `state` is `failed`.
  */
-export const OperationProgressEventSchema = z
-  .object({
-    /** Which operation this progress is for (extensible union). */
-    operation: OperationKindSchema,
-    /** Lifecycle phase: `started` opens the treatment, `done`/`failed` resolve it. */
-    state: OperationStateSchema,
-    /**
-     * Whether `percent` is meaningful. `false` → render an indeterminate bar
-     * (the runtime cannot report completion fraction — e.g. SDK compaction
-     * exposes none, so parity with the CLI's own indeterminate bar is honest).
-     */
-    determinate: z.boolean(),
-    /** Completion fraction 0–100, present only when `determinate` is true. */
-    percent: z.number().min(0).max(100).optional(),
-    /** Optional human-readable operation label (e.g. "Compacting context…"). */
-    message: z.string().optional(),
-    /** Human-readable failure reason; present only when `state` is `failed`. */
-    error: z.string().optional(),
-  })
-  .openapi('OperationProgressEvent');
+export const OperationProgressEventSchema = OperationProgressEventShapeSchema.superRefine(
+  (value, ctx) => {
+    if (value.determinate && value.percent === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['percent'],
+        message: 'percent is required when determinate is true',
+      });
+    }
+    if (!value.determinate && value.percent !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['percent'],
+        message: 'percent must be omitted when determinate is false',
+      });
+    }
+    if (value.error !== undefined && value.state !== 'failed') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['error'],
+        message: "error is only allowed when state is 'failed'",
+      });
+    }
+  }
+).openapi('OperationProgressEvent');
 
 export type OperationProgressEvent = z.infer<typeof OperationProgressEventSchema>;
 

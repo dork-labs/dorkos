@@ -37,7 +37,7 @@ import {
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
   SystemStatusEventSchema,
-  OperationProgressEventSchema,
+  OperationProgressEventShapeSchema,
   UiCommandEventSchema,
   ErrorEventSchema,
   UsageStatusSchema,
@@ -330,7 +330,11 @@ export const SessionEventSchema = z
     z.object({
       ...seqShape,
       type: z.literal('operation_progress'),
-      ...OperationProgressEventSchema.shape,
+      // The base object shape (not the refined schema — a discriminatedUnion
+      // member must be a plain object). The cross-field invariants are enforced
+      // upstream on the StreamEvent's OperationProgressEventSchema; this member
+      // carries data already validated there via the normalizer.
+      ...OperationProgressEventShapeSchema.shape,
     }),
     // A typed turn error, adapter-yielded (a runtime's `error` StreamEvent) or
     // server-injected (`guardTurnErrors` on a throw, the stall watchdog). It

@@ -45,6 +45,13 @@ Introduce a single runtime-agnostic `operation_progress` StreamEvent (and its
   } }
 ```
 
+The field invariants are enforced by a Zod `.superRefine()`, not merely
+documented — an adapter that emits `percent` on an indeterminate phase, omits it
+on a determinate one, or attaches `error` to a non-`failed` phase fails wire
+validation. This schema is the authoritative contract future runtimes are
+onboarded against, so the guarantees must hold at the boundary rather than
+relying on defensive consumers.
+
 Each runtime maps its native signal onto this shape and degrades honestly:
 
 - **claude-code** maps `status: 'compacting'` → `started` (indeterminate — the
