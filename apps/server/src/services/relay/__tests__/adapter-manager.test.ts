@@ -1708,5 +1708,58 @@ describe('AdapterManager', () => {
       // Both adapters should have been attempted
       expect(registry.register).toHaveBeenCalledTimes(2);
     });
+
+    it('a dangling credential reference isolates to one adapter — the relay stays up (DOR-280)', async () => {
+      // tg-ok has a resolvable token; tg-broken points at a file: reference
+      // whose secret is absent (host.key rotated, secret deleted, etc).
+      const configWithBrokenSecret = JSON.stringify({
+        adapters: [
+          {
+            id: 'tg-broken',
+            type: 'telegram',
+            enabled: true,
+            config: { token: 'file:relay-adapter-tg-broken-token', mode: 'polling' },
+          },
+          {
+            id: 'tg-ok',
+            type: 'telegram',
+            enabled: true,
+            config: { token: 'bot-token-ok', mode: 'polling' },
+          },
+        ],
+      });
+      vi.mocked(readFile).mockResolvedValue(configWithBrokenSecret);
+
+      const mockEventRecorder = { insertAdapterEvent: vi.fn() };
+      const brokenManager = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        eventRecorder: mockEventRecorder,
+      });
+
+      // initialize() must NOT throw — a single unresolvable secret cannot abort
+      // the whole relay init.
+      await expect(brokenManager.initialize()).resolves.toBeUndefined();
+
+      // Only the healthy adapter is registered; the broken one is skipped.
+      expect(registry.register).toHaveBeenCalledTimes(1);
+      const registered = vi.mocked(registry.register).mock.calls[0][0];
+      expect(registered.id).toBe('tg-ok');
+
+      // The broken adapter surfaces a descriptive, secret-free error event.
+      const errorCall = mockEventRecorder.insertAdapterEvent.mock.calls.find(
+        (c) => c[0] === 'tg-broken' && c[1] === 'adapter.error'
+      );
+      expect(errorCall).toBeDefined();
+      expect(errorCall![2]).toContain('Failed to resolve credential');
+      expect(errorCall![2]).toContain("'tg-broken'");
+      expect(errorCall![2]).toContain("'token'");
+
+      // The healthy adapter still connects.
+      expect(mockEventRecorder.insertAdapterEvent).toHaveBeenCalledWith(
+        'tg-ok',
+        'adapter.connected',
+        expect.any(String)
+      );
+    });
   });
 });

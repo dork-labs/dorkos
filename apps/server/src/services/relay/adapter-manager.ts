@@ -297,6 +297,13 @@ export class AdapterManager {
     const oldNames = new Map([...oldConfigIds].map((id) => [id, this.resolveAdapterName(id)]));
     this.configs = await loadAdapterConfig(this.configPath);
 
+    // Migrate any cleartext token a user hand-added to adapters.json into the
+    // encrypted store, so every load path — not just initialize() and the API
+    // persist funnel — leaves references at rest (DOR-280).
+    if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) {
+      await saveAdapterConfig(this.configPath, this.configs);
+    }
+
     // Stop adapters that are no longer in config or are now disabled
     for (const id of oldConfigIds) {
       const newConfig = this.configs.find((c) => c.id === id);
@@ -666,21 +673,24 @@ export class AdapterManager {
       if (!config.enabled) continue;
       if (this.registry.get(config.id)) continue; // Already running
 
-      const adapter = await this.buildAdapter(config);
-      if (adapter) {
-        try {
-          await this.registry.register(adapter);
-          this.deps.eventRecorder?.insertAdapterEvent(
-            config.id,
-            'adapter.connected',
-            'Connected to relay'
-          );
-          await this.emitAdapterLifecycle(config.id, 'connected');
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          this.deps.eventRecorder?.insertAdapterEvent(config.id, 'adapter.error', message);
-          logger.warn(`[AdapterManager] Failed to start adapter '${config.id}':`, err);
-        }
+      // buildAdapter is inside the try: resolving a credential reference can
+      // throw (a dangling `file:`/`keychain:` secret — DOR-280), and one
+      // adapter's missing secret must never abort the whole relay. Isolate it
+      // as an adapter.error event and keep starting the rest.
+      try {
+        const adapter = await this.buildAdapter(config);
+        if (!adapter) continue;
+        await this.registry.register(adapter);
+        this.deps.eventRecorder?.insertAdapterEvent(
+          config.id,
+          'adapter.connected',
+          'Connected to relay'
+        );
+        await this.emitAdapterLifecycle(config.id, 'connected');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.eventRecorder?.insertAdapterEvent(config.id, 'adapter.error', message);
+        logger.warn(`[AdapterManager] Failed to start adapter '${config.id}':`, err);
       }
     }
   }
