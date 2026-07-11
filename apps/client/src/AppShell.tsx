@@ -348,7 +348,9 @@ export function AppShell() {
                         {/* ── Right panel toggle — far right, hides when no contributions ── */}
                         <RightPanelToggle />
                       </header>
-                      <main className="flex-1 overflow-hidden">
+                      {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
+                          routed content above the 64px bar — nothing occluded. */}
+                      <main className="flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">
                         <PanelGroup direction="horizontal" autoSaveId="app-shell-right-panel">
                           <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
                             <Outlet />

@@ -41,3 +41,9 @@ One plain-language sentence in each of the two docs pages; one changelog fragmen
 1.1 → 1.2 → 2.1 → {3.1 ∥ 3.2 ∥ 3.3} → 1.3 (browser gate) → batch verification (`pnpm --filter @dorkos/client typecheck && lint`, targeted vitest, full `pnpm test -- --run` at the end).
 
 No task reaches the sub-issue threshold (all small/medium) — everything stays checklist-only.
+
+## Phase 4 — Minimize model (Amendment 2, incremental decompose 2026-07-11)
+
+### Task 4.1: Minimized mini-bar state + layout dock hook
+
+Three-state mobile model per Amendment 2: `pipMinimized` store flag, `PipMiniBar` (64px docked bar, restore/close), PipSheet drag-below-peek remapped to minimize + chevron button, `--pip-dock` padding hook consumed by both shells, desktop-to-mobile crossing lands minimized. (depends: 2.1)

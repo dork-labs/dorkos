@@ -114,7 +114,7 @@ function setViewport(width: number, height: number): void {
 
 function resetStore() {
   act(() => {
-    useAppStore.setState({ pipContent: null, pipGeometry: null });
+    useAppStore.setState({ pipContent: null, pipGeometry: null, pipMinimized: false });
   });
 }
 
@@ -254,15 +254,93 @@ describe('PipHost', () => {
     expect(useAppStore.getState().pipGeometry).toBeNull();
   });
 
-  it('renders nothing and closes an open panel when the viewport is mobile', () => {
+  it('renders the mobile sheet presenter (not the floating panel) when the viewport is mobile', () => {
     vi.mocked(useIsMobile).mockReturnValue(true);
     act(() => {
-      useAppStore.getState().openPip({ kind: 'demo', title: 'Should close' });
+      useAppStore.getState().openPip({ kind: 'demo', title: 'On a phone' });
     });
     render(<PipHost />);
+    // The sheet hosts the same rendered content, but never the desktop panel.
+    // The title shows in the sheet header AND the demo body, hence getAllByText.
     expect(screen.queryByTestId('floating-panel')).not.toBeInTheDocument();
-    // The mobile-guard effect calls closePip(), clearing the content.
-    expect(useAppStore.getState().pipContent).toBeNull();
+    expect(screen.getAllByText('On a phone').length).toBeGreaterThan(0);
+    // No force-close: the content stays open on the mobile presenter.
+    expect(useAppStore.getState().pipContent).not.toBeNull();
+  });
+
+  it('renders nothing on mobile when pipContent is null', () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    const { container } = render(<PipHost />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByTestId('floating-panel')).not.toBeInTheDocument();
+  });
+
+  it('keeps content and swaps presenters across a mobile→desktop→mobile flip (no force-close)', () => {
+    act(() => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Survivor' });
+    });
+
+    // Start mobile: sheet presenter, no panel.
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    const { rerender } = render(<PipHost />);
+    expect(screen.queryByTestId('floating-panel')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Survivor').length).toBeGreaterThan(0);
+    expect(useAppStore.getState().pipContent).not.toBeNull();
+
+    // Cross to desktop: floating panel appears, content intact.
+    vi.mocked(useIsMobile).mockReturnValue(false);
+    rerender(<PipHost />);
+    expect(screen.getByTestId('floating-panel')).toHaveAttribute('data-title', 'Survivor');
+    expect(useAppStore.getState().pipContent).not.toBeNull();
+
+    // Cross back to mobile: still no force-close, but the desktop->mobile
+    // rising edge lands MINIMIZED (Amendment 2) - the mini-bar, not the sheet,
+    // so a rotation never suddenly covers half the screen.
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    rerender(<PipHost />);
+    expect(screen.queryByTestId('floating-panel')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="pip-minibar"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="pip-sheet"]')).toBeNull();
+    expect(screen.getAllByText('Survivor').length).toBeGreaterThan(0);
+    expect(useAppStore.getState().pipContent).not.toBeNull();
+    expect(useAppStore.getState().pipMinimized).toBe(true);
+  });
+
+  it('renders the mini-bar (not the sheet) on mobile when pipMinimized is set', () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    act(() => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Tucked away' });
+      useAppStore.getState().minimizePip();
+    });
+    render(<PipHost />);
+    expect(document.querySelector('[data-slot="pip-minibar"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="pip-sheet"]')).toBeNull();
+    expect(screen.queryByTestId('floating-panel')).not.toBeInTheDocument();
+  });
+
+  it('restores from the mini-bar to the sheet when the restore region is tapped', () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    act(() => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Bring me back' });
+      useAppStore.getState().minimizePip();
+    });
+    render(<PipHost />);
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Bring me back/ }));
+    });
+    expect(useAppStore.getState().pipMinimized).toBe(false);
+    expect(document.querySelector('[data-slot="pip-sheet"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="pip-minibar"]')).toBeNull();
+  });
+
+  it('ignores pipMinimized on desktop and renders the floating panel', () => {
+    act(() => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Desktop ignores' });
+      useAppStore.getState().minimizePip();
+    });
+    render(<PipHost />);
+    expect(screen.getByTestId('floating-panel')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="pip-minibar"]')).toBeNull();
   });
 
   it('wires the close control to closePip', () => {

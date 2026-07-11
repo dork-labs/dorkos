@@ -5,6 +5,8 @@ import { useAppStore, useIsMobile, type PipContent } from '@/layers/shared/model
 import { McpAppFrame } from '@/layers/features/mcp-apps';
 import { LiveSessionWidget } from '@/layers/features/gen-ui';
 import { DemoPipContent } from './DemoPipContent';
+import { PipMiniBar } from './PipMiniBar';
+import { PipSheet } from './PipSheet';
 
 /** Default panel size and edge margin used to dock in the bottom-right corner. */
 const DEFAULT_WIDTH = 360;
@@ -106,25 +108,32 @@ function renderPipContent(content: PipContent): React.ReactNode {
 }
 
 /**
- * Singleton host that routes the current serializable {@link PipContent}
- * descriptor to its renderer inside the shared floating-panel primitive. Mounts
- * once at the tail of each client shell, outside the router-swapped subtree, so
- * a floating panel survives navigation.
+ * Desktop presenter: routes the descriptor into the shared floating-panel
+ * primitive. Owns every geometry concern (the persisted/default dock and the
+ * re-pin-on-resize effect) — all desktop-only, so none of it runs on mobile
+ * where {@link PipHost} takes the sheet branch instead.
  *
  * The panel conditionally renders INSIDE an always-mounted `AnimatePresence`
- * boundary so the primitive's ~150ms exit animation plays on close; the mobile
- * guard sits outside it on purpose — crossing the breakpoint closes instantly
- * (ideation D2), the animated exit matters for the normal close affordance.
+ * boundary so the primitive's ~150ms exit animation plays on close. The
+ * boundary must stay mounted even when `content` is null-adjacent, so this
+ * component is only ever mounted on the desktop path and never behind a
+ * higher-up conditional that would unmount `AnimatePresence` outright.
  *
  * Geometry persistence rides the primitive's single end-of-gesture callback
  * wired straight to `setPipGeometry`, so no throttling is needed here.
+ *
+ * @param props.content - The descriptor to present, or null to play the exit.
+ * @param props.onClose - Close handler, wired to `closePip`.
  */
-export function PipHost(): React.ReactNode {
-  const pipContent = useAppStore((s) => s.pipContent);
+function DesktopPip({
+  content,
+  onClose,
+}: {
+  content: PipContent | null;
+  onClose: () => void;
+}): React.ReactNode {
   const pipGeometry = useAppStore((s) => s.pipGeometry);
-  const closePip = useAppStore((s) => s.closePip);
   const setPipGeometry = useAppStore((s) => s.setPipGeometry);
-  const isMobile = useIsMobile();
 
   // The default bottom-right dock, used until the user's first drag/resize
   // commits a real geometry to the store. Held in state (not recomputed per
@@ -151,26 +160,17 @@ export function PipHost(): React.ReactNode {
     return () => window.removeEventListener('resize', repin);
   }, [pipGeometry]);
 
-  // Crossing the mobile breakpoint while a panel is open closes it, instead of
-  // leaving stale content behind an invisible (null-rendering) host.
-  React.useEffect(() => {
-    if (isMobile && pipContent !== null) closePip();
-  }, [isMobile, pipContent, closePip]);
-
-  // Instant, unanimated removal below the breakpoint by design (see TSDoc).
-  if (isMobile) return null;
-
   const geometry = pipGeometry ?? dockGeometry;
 
   return (
     <AnimatePresence>
-      {pipContent !== null && (
+      {content !== null && (
         <FloatingPanel
           key="pip-panel"
-          title={pipContent.title}
+          title={content.title}
           geometry={geometry}
           onGeometryChange={setPipGeometry}
-          onClose={closePip}
+          onClose={onClose}
           // onRestore is intentionally omitted for every v1 kind. `demo` has no
           // restore target; `mcp_app` and `widget` both keep their inline block
           // live in the transcript (popping out never removes it, dual-live
@@ -178,9 +178,82 @@ export function PipHost(): React.ReactNode {
           // to "send back" to. A future kind that owns its only instance would
           // wire a restore target here.
         >
-          {renderPipContent(pipContent)}
+          {renderPipContent(content)}
         </FloatingPanel>
       )}
     </AnimatePresence>
   );
+}
+
+/**
+ * Singleton host that routes the current serializable {@link PipContent}
+ * descriptor to the presenter for the active viewport. Mounts once at the tail
+ * of each client shell, outside the router-swapped subtree, so PIP survives
+ * navigation.
+ *
+ * Presenters share one descriptor: {@link DesktopPip} floats it in the shared
+ * floating-panel primitive at ≥768px; below 768px it docks as a non-modal
+ * bottom sheet ({@link PipSheet}) or, when minimized (Amendment 2), the
+ * {@link PipMiniBar}. Crossing the breakpoint swaps presenters with the
+ * content intact — no force-close (ideation D2) — and desktop→mobile lands
+ * MINIMIZED, so a rotation never suddenly covers half the screen. The swap
+ * remounts the content (accepted: a `widget` replays its pinned stream
+ * gap-free and the fence latch prevents skeleton flicker; an `mcp_app`
+ * reloads its frame, the same cost as a pop-out). Geometry is desktop-only
+ * and never crosses over; the minimized flag is mobile-only and desktop
+ * ignores it.
+ *
+ * Both branches keep an always-mounted `AnimatePresence` boundary with the
+ * presenter conditionally inside, so each presenter's exit plays on close: the
+ * panel's ~150ms fade+scale inside `DesktopPip`, the sheet/bar slide-down here.
+ */
+export function PipHost(): React.ReactNode {
+  const pipContent = useAppStore((s) => s.pipContent);
+  const pipMinimized = useAppStore((s) => s.pipMinimized);
+  const closePip = useAppStore((s) => s.closePip);
+  const minimizePip = useAppStore((s) => s.minimizePip);
+  const restorePip = useAppStore((s) => s.restorePip);
+  const isMobile = useIsMobile();
+
+  // Desktop→mobile rising edge with content open lands minimized: a rotation
+  // or window shrink must never suddenly cover half the screen with the sheet.
+  // (Opening ON mobile still presents the sheet — openPip resets the flag.)
+  const wasMobileRef = React.useRef(isMobile);
+  React.useEffect(() => {
+    if (isMobile && !wasMobileRef.current && pipContent !== null) minimizePip();
+    wasMobileRef.current = isMobile;
+  }, [isMobile, pipContent, minimizePip]);
+
+  if (isMobile) {
+    // Sheet or mini-bar renders conditionally INSIDE the boundary (same shape
+    // as the desktop path) so the slide-down exit plays when content clears
+    // or the presenters swap.
+    return (
+      <AnimatePresence>
+        {pipContent !== null &&
+          (pipMinimized ? (
+            <PipMiniBar
+              key="pip-minibar"
+              content={pipContent}
+              onRestore={restorePip}
+              onClose={closePip}
+            />
+          ) : (
+            <PipSheet
+              key="pip-sheet"
+              content={pipContent}
+              onClose={closePip}
+              onMinimize={minimizePip}
+            >
+              {renderPipContent(pipContent)}
+            </PipSheet>
+          ))}
+      </AnimatePresence>
+    );
+  }
+
+  // Desktop: DesktopPip stays mounted even when content is null so its
+  // always-mounted AnimatePresence can play the panel's exit animation on
+  // close (an early null-return here would unmount the boundary and kill it).
+  return <DesktopPip content={pipContent} onClose={closePip} />;
 }

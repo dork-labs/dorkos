@@ -229,3 +229,49 @@ None new: same content renderers, same MCP consent flow inside `McpAppFrame`, no
 - Linear DOR-299; specs `pip-panel`, `gen-ui-pip`; PRs #241/#244/#245 (the trio).
 - vaul docs (snap points, non-modal): https://vaul.emilkowal.ski/
 - `contributing/design-system.md` (Calm Tech), `.claude/rules/components.md`.
+
+---
+
+## Amendment 1 — vaul rejected at the validation gate (2026-07-11)
+
+The Phase-1 browser gate (task 1.3) **failed** on the load-bearing mechanism, exactly the scenario D8 staged for. Findings from the live playground run at 390×844:
+
+- Snap mechanics, z-40, no overlay, background pointer events, and background focus all worked.
+- **Disqualifying defect:** with the sheet open, Radix applies `aria-hidden="true"` to `#root` — the entire app disappears from assistive technology while a "non-modal" PIP is open. Root cause (verified in `vaul@1.1.2` `dist/index.mjs`): vaul creates its Radix `DialogPrimitive.Root` with only `open`/`defaultOpen`/`onOpenChange` and **never forwards `modal`**, so Radix runs fully modal and calls `hideOthers`; vaul only counteracts the pointer-events side manually. Not fixable with props; no released vaul version fixes it; stripping `aria-hidden` by hand desyncs Radix's counter bookkeeping the moment a real modal (the mobile sidebar Sheet, dialogs) stacks above the open sheet and closes.
+
+**Resolution — mechanism swap, UX contract unchanged.** Neither recorded option is taken as-is: the modal+pill contingency would abandon the glanceable contract, and the surgical `aria-hidden` patch is unsound (above). Instead the sheet becomes **cockpit-native**, the same philosophy as `FloatingPanel` (ADR 260711-150550): a `createPortal`'d plain `motion.div` with no portal-modality machinery at all, so there is nothing to un-hide and nothing to lock.
+
+Revised `PipSheet` contract (supersedes Detailed Design §2's vaul composition; everything the host/affordances/store see is unchanged):
+
+- **Container:** `createPortal` to `document.body` (mirroring `floating-panel.tsx:196`): `fixed inset-x-0 bottom-0 z-40` `bg-background` `border-t rounded-t-lg shadow-modal` flex column, `role="complementary"` + `aria-label={content.title}` (FloatingPanel's exact semantics — ambient, non-modal), height `min(94dvh, …)` sized to the expanded snap.
+- **Snap model:** `SNAP_POINTS = [0.5, 0.94]` as fractions of `window.innerHeight`, unchanged. The sheet is a fixed-height (expanded-size) container animated on `y`: expanded → `y = 0`, peek → `y = (0.94 − 0.5) × innerHeight`. Opens at peek (component-local state, resets every open — unchanged).
+- **Gestures:** `motion` drag — `drag="y"`, `dragListener={false}` + `useDragControls` started from the handle/header `onPointerDown` only (content region scrolls/taps freely; iframe never fights the sheet), `dragConstraints {top: 0, bottom: dismissOffset}`, `dragMomentum={false}`. `onDragEnd` picks by offset+velocity: nearest snap, or **dismiss → `onClose()`** when released clearly below peek (offset past ~40% of the peek height or a strong downward flick).
+- **Chrome:** hand-rolled handle bar (`h-2 w-[100px] rounded-full bg-muted mx-auto mt-4`, same look as the drawer wrapper's) + the same header row (truncated title, X close, `aria-label="Close"`) + `min-h-0 flex-1 overflow-y-auto p-3` body. Everything below the header is identical to the original contract.
+- **Entry/exit:** entry animates `y` from off-screen to peek (spring, Calm-Tech 100-300ms feel). Exit: the host's mobile branch may wrap the sheet in `AnimatePresence` for a slide-down exit if trivial; otherwise the accepted v1 instant unmount stands.
+- **Explicitly dropped vaul niceties (accepted):** keyboard `repositionInputs`, iOS rubber-band physics, ESC-to-close (X + drag-dismiss suffice; FloatingPanel has no ESC either).
+- **Reverted:** the `DrawerContent` `overlay` opt-out (Detailed Design §1) and its tests — no consumer remains, and the no-dead-code rule applies. `shared/ui/drawer.tsx` returns to its pre-feature state.
+- **Tests:** PipSheet unit tests keep the structural assertions (title/children render, X → onClose, `role="complementary"`), add a regression that **no `[aria-hidden]`/`[data-aria-hidden]` appears anywhere** after mounting the sheet, and drop the vaul-specific `onOpenChange` path. Drag/snap mechanics remain browser-gate territory.
+
+ADR 260711-211905 is updated in place (the decision — a non-modal snap-point bottom sheet — stands; the mechanism paragraph now records vaul's rejection with the root cause).
+
+## Amendment 2 — minimized mini-bar state (2026-07-11, operator UX review)
+
+Operator review during EXECUTE surfaced the occlusion problem: at peek the sheet covers exactly the two highest-value zones of a chat surface — the composer and the newest (bottom-anchored) messages. To type, the user had to dismiss, and dismiss meant close. Placement alternatives (top sheet, iOS-style floating thumbnail, split layout) were considered and rejected (top sheets fight nav and gesture language; scaled interactive content is untappable; split layouts tax the shell). Resolution: a three-state mini-player model (the Spotify pattern), which also answers "minimize without closing."
+
+**State model.** The pip slice gains `pipMinimized: boolean` (ephemeral like `pipContent`, never persisted) with `minimizePip()` / `restorePip()`. `openPip` and `closePip` both reset it to `false` (a fresh pop-out always presents the sheet at peek). Desktop ignores the flag entirely.
+
+**Presenters (mobile branch of PipHost).** `pipMinimized ? PipMiniBar : PipSheet`, both inside the existing always-mounted `AnimatePresence` (keys `pip-minibar` / `pip-sheet`; sheet exits down as shipped, bar enters/exits from below, spring in the Calm-Tech 100-300ms band).
+
+**Gesture remap in PipSheet.** New `onMinimize` prop. Drag released clearly below peek → `onMinimize()` (was `onClose`) — the most casual gesture now takes the least destructive path. A chevron-down button (`aria-label="Minimize"`) joins the header before the X. The X remains the only close.
+
+**PipMiniBar (new, `features/pip-panel/ui/PipMiniBar.tsx`).** Fixed `inset-x-0 bottom-0 z-40`, height 64px (`h-16`), `bg-background border-t shadow-elevated`, `role="complementary"` + `aria-label={content.title}`. Structure: a flex row where the restore region is one full-width button (live-pulse dot `size-2 rounded-full bg-primary animate-pulse`, truncated `text-sm font-medium` title, `ChevronUp` hint icon; tap anywhere restores to the sheet at peek) plus a separate X button (`aria-label="Close"`). Keyboard-accessible by construction (two real buttons).
+
+**Layout dock hook (the occlusion fix).** While the mini-bar is mounted it sets `--pip-dock: 64px` on `document.documentElement` (effect cleanup removes it). The app shells consume it: the main content wrapper in `AppShell.tsx` and embedded `App.tsx` gets `paddingBottom: var(--pip-dock, 0px)`, so ALL page content — including the session composer — lifts above the bar and the bar covers nothing. The sheet deliberately sets no dock padding (it is an overlay state entered on purpose).
+
+**Breakpoint crossings.** Desktop→mobile with content open now lands MINIMIZED (a rotation must never suddenly cover half the screen): PipHost watches the `isMobile` rising edge and calls `minimizePip()`. Mobile→desktop: FloatingPanel as before; the flag is left as-is and simply ignored.
+
+**Known caveat (accepted, documented):** with the on-screen keyboard open, mobile browsers are inconsistent about fixed-bottom elements riding the visual viewport; the bar may sit behind the keyboard while typing. Follow-up territory (visualViewport tracking), not v1.
+
+**Tests.** Store: minimize/restore transitions; `openPip`/`closePip` reset the flag. PipHost: minimized+mobile renders the bar (not the sheet); desktop→mobile crossing with content open lands minimized; mobile→desktop still renders FloatingPanel. PipMiniBar: title renders; restore-region click → restore; X → close; `--pip-dock` set on mount and removed on unmount. PipSheet: chevron → `onMinimize` (drag mechanics remain browser-gate territory). Docs + changelog fragment updated to mention minimize.
+
+**Gate additions (browser re-run).** Bar: covers ≈64px only and the playground content lifts above it (`--pip-dock` visible in computed padding); tap bar → sheet at peek; chevron → bar; drag-below-peek → bar (NOT closed, content still set); X from both states → closed; desktop→mobile resize lands minimized.

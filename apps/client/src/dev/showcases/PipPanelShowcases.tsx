@@ -50,6 +50,14 @@ export function PipPanelShowcases() {
               afterward to confirm the position survives: geometry persists to localStorage, the
               same way it does in the real app.
             </p>
+            <p className="text-muted-foreground text-sm">
+              Mobile: narrow the viewport below 768px (DevTools device toolbar) and the same demo
+              button opens the PIP as a non-modal bottom sheet instead of a floating panel. It opens
+              at the 0.5 peek snap; drag the handle up to the 0.94 expanded snap, or drag down past
+              peek to minimize into the 64px mini-bar (tap it to restore; its X closes). The content
+              behind the sheet stays scrollable and clickable (no overlay, no background scaling),
+              and the mini-bar pads the page bottom via --pip-dock so nothing is covered.
+            </p>
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

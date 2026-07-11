@@ -19,7 +19,9 @@ The PIP panel shipped desktop-only (pip-panel ideation D2): below 768px the host
 
 ## Decision
 
-Below 768px, `PipHost` swaps the presenter: the same serializable `PipContent` descriptor renders in a **non-modal vaul bottom sheet** (`modal={false}`, no overlay, `shouldScaleBackground={false}`) with two snap points (peek ≈ half screen, expanded ≈ 94%), opening at peek. The page behind stays fully interactive. Dragging below peek dismisses the sheet, which maps to `closePip` — safe because popped-out content is dual-live (the inline instance remains in the transcript). The sheet sits at `z-40`, deliberately below every modal surface (`z-50`). Content survives breakpoint crossings (the force-close effect is removed); the presenter swap remounts content, which the durable-stream replay and fence latching absorb. The modal-plus-pill variant is recorded as the contingency if vaul's non-modal mode proves unsound in validation.
+Below 768px, `PipHost` swaps the presenter: the same serializable `PipContent` descriptor renders in a **non-modal bottom sheet** with two snap points (peek ≈ half screen, expanded ≈ 94%), opening at peek. The page behind stays fully interactive. Dragging below peek dismisses the sheet, which maps to `closePip` — safe because popped-out content is dual-live (the inline instance remains in the transcript). The sheet sits at `z-40`, deliberately below every modal surface (`z-50`). Content survives breakpoint crossings (the force-close effect is removed); the presenter swap remounts content, which the durable-stream replay and fence latching absorb.
+
+The sheet is **cockpit-native** — a `createPortal`'d, `motion`-driven div with hand-rolled snap and dismiss gestures, the same philosophy as the desktop `FloatingPanel` (ADR 260711-150550) — **not** a vaul Drawer. vaul was the planned mechanism (this ADR's original form) but failed the validation gate: `vaul@1.1.2` never forwards `modal` to its underlying Radix Dialog Root, so Radix runs fully modal and applies `aria-hidden` to the entire app behind the sheet — a screen-reader blackout that contradicts non-modality. It is unfixable via props (verified in vaul's dist), and stripping the attributes by hand desyncs Radix's `hideOthers` counter bookkeeping the moment a real modal (the mobile sidebar Sheet, any dialog) stacks above the open sheet and closes. The modal-plus-pill contingency was rejected too: it abandons the glanceable contract the feature exists for. Spec amendment: `specs/pip-mobile-sheet/02-specification.md` Amendment 1.
 
 ## Consequences
 
@@ -32,6 +34,6 @@ Below 768px, `PipHost` swaps the presenter: the same serializable `PipContent` d
 
 ### Negative
 
-- Non-modal + snap points is vaul's least-traveled configuration; it must be validated in the dev playground before feature work stacks on it (contingency recorded).
-- The sheet closes without an exit animation in v1 (the host unmounts the branch when content clears); drag-down provides its own motion, but X-button closes are instant.
+- Hand-rolled gestures mean we own the snap/dismiss physics and forgo vaul's platform niceties (keyboard input repositioning, iOS rubber-banding); acceptable for tap-first PIP content, revisit if form-heavy widgets land.
+- The sheet closes without an exit animation in v1 unless the host's mobile branch wraps it in `AnimatePresence`; drag-down provides its own motion either way.
 - Breakpoint crossings remount content: `widget` re-pins its stream (gap-free replay), `mcp_app` reloads its iframe.

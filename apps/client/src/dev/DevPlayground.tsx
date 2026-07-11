@@ -324,7 +324,10 @@ function DevPlaygroundShell() {
             <ThemeToggle />
           </Sidebar>
 
-          <SidebarInset className="overflow-y-auto">
+          {/* --pip-dock (set by the mobile PIP mini-bar) lifts playground
+              content above the 64px bar — the PIP showcase invites mobile
+              testing on these routes. */}
+          <SidebarInset className="overflow-y-auto pb-[var(--pip-dock,0px)]">
             <header className="flex h-9 shrink-0 items-center gap-2 border-b px-2">
               <SidebarTrigger className="-ml-0.5" />
               <Separator orientation="vertical" className="mr-1 h-4" />

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { PictureInPicture2 } from 'lucide-react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
-import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { useAppStore } from '@/layers/shared/model';
 import { parseWidget } from '../model/parse-widget';
 import { WidgetRenderer } from './WidgetRenderer';
 import { WidgetErrorCard } from './WidgetErrorCard';
@@ -60,7 +60,6 @@ export function WidgetFence({
   // shifts with parse state (an early return before these would violate the
   // rules of hooks once the pop-out affordance needs them).
   const openPip = useAppStore((s) => s.openPip);
-  const isMobile = useIsMobile();
 
   if (!isIncomplete) {
     const result = parseWidget(code);
@@ -99,10 +98,10 @@ export function WidgetFence({
         />
         {/* A sibling of the widget tree, never a descendant — so it can never
             intercept a click meant for the widget's own interactive content
-            (e.g. a board cell). Hidden below 768px, where the PIP host renders
-            nothing (mirrors McpAppBlock's own pop-out guard), and hidden with
-            no sessionId (no valid `openPip` target). */}
-        {sessionId && !isMobile && (
+            (e.g. a board cell). Always visible on touch (no hover below `md`,
+            where the PIP host docks a bottom sheet — DOR-299) and hover-revealed
+            on desktop. Hidden with no sessionId (no valid `openPip` target). */}
+        {sessionId && (
           <button
             type="button"
             onClick={(event) => {
@@ -111,7 +110,7 @@ export function WidgetFence({
             }}
             aria-label="Pop out into a floating window"
             title="Pop out"
-            className="text-muted-foreground hover:bg-muted hover:text-foreground bg-background/80 focus-ring absolute top-1 right-1 rounded-md p-1 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground bg-background/80 focus-ring absolute top-1 right-1 rounded-md p-1 opacity-100 backdrop-blur-sm transition-opacity focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
           >
             <PictureInPicture2 className="size-3.5" />
           </button>

@@ -233,6 +233,7 @@ export const useAppStore = create<AppState>()(
             rightPanelLayoutKey: null,
             pipContent: null,
             pipGeometry: null,
+            pipMinimized: false,
           });
         },
 
