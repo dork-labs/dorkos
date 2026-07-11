@@ -516,20 +516,36 @@ export class RelayCore {
    * conversation is never swept out from under its participants (M3).
    */
   private startTtlSweeper(): void {
-    this.ttlSweepInterval = setInterval(async () => {
-      const now = Date.now();
-      const registry = this.endpointDeps.endpointRegistry;
-      for (const endpoint of registry.listEndpoints()) {
-        if (inferEndpointType(endpoint.subject) === 'dispatch') {
-          const lastActivity =
-            registry.getLastActivityMs(endpoint.subject) ?? Date.parse(endpoint.registeredAt);
-          if (now - lastActivity > this.dispatchInboxTtlMs) {
-            await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
-          }
-        }
-      }
+    this.ttlSweepInterval = setInterval(() => {
+      void this.runTtlSweep();
     }, this.ttlSweepIntervalMs);
     this.ttlSweepInterval.unref();
+  }
+
+  /**
+   * Run one TTL sweep of dispatch inboxes, unregistering any whose
+   * inactivity window has elapsed. Exposed (mirroring {@link runGcSweep})
+   * so callers — chiefly tests — can trigger a deterministic sweep instead
+   * of racing the periodic timer, which can lag under event-loop load.
+   *
+   * @returns The subjects unregistered by this sweep.
+   */
+  async runTtlSweep(): Promise<string[]> {
+    if (this.closed) return [];
+    const now = Date.now();
+    const registry = this.endpointDeps.endpointRegistry;
+    const swept: string[] = [];
+    for (const endpoint of registry.listEndpoints()) {
+      if (inferEndpointType(endpoint.subject) === 'dispatch') {
+        const lastActivity =
+          registry.getLastActivityMs(endpoint.subject) ?? Date.parse(endpoint.registeredAt);
+        if (now - lastActivity > this.dispatchInboxTtlMs) {
+          await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
+          swept.push(endpoint.subject);
+        }
+      }
+    }
+    return swept;
   }
 
   /**

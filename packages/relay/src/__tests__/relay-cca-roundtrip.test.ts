@@ -74,6 +74,16 @@ function createMockAgentManager(): AgentRuntimeLike {
 // Test suite
 // ---------------------------------------------------------------------------
 
+/**
+ * Timeout for tests that wait on a handful of short REAL setTimeout delays
+ * (TTL-sweeper inactivity tests below; chokidar rules out fake timers here).
+ * Under severe event-loop starvation — several concurrent package suites on
+ * one box — a real setTimeout can fire far later than its nominal delay, and
+ * vitest's 5s default test timeout was itself observed to trip. The waits
+ * these tests use are tens of milliseconds nominal; this budget is slack.
+ */
+const REAL_TIMER_TEST_TIMEOUT_MS = 15_000;
+
 describe('relay → CCA round-trip', () => {
   let tmpDir: string;
   let relay: RelayCore;
@@ -382,26 +392,38 @@ describe('relay → CCA round-trip', () => {
     expect(toolSteps.length).toBeGreaterThan(0);
   });
 
-  it('TTL sweeper unregisters dispatch inboxes after configured TTL', async () => {
-    // Purpose: guard against TTL sweeper regression — dispatch inboxes must auto-expire.
-    // Uses real timers with a very short TTL to avoid chokidar/fake-timer conflicts.
-    const shortRelay = new RelayCore({
-      dataDir: path.join(tmpDir, 'ttl-test'),
-      dispatchInboxTtlMs: 10, // 10ms TTL
-      ttlSweepIntervalMs: 5, // 5ms sweep
-      adapterRegistry: new SingleAdapterRegistry(cca),
-    });
+  it(
+    'TTL sweeper unregisters dispatch inboxes after configured TTL',
+    async () => {
+      // Purpose: guard against TTL sweeper regression — dispatch inboxes must auto-expire.
+      // Uses real timers (chokidar needs them) but drives the sweep directly via
+      // runTtlSweep() instead of racing the periodic interval, which can lag
+      // under event-loop load and made this test ~50% flaky under the full suite.
+      // Deliberately does NOT set ttlSweepIntervalMs: the periodic timer defaults
+      // to 5 minutes, far outside this test's lifetime, so it cannot ALSO fire
+      // and race the manual sweep below (an earlier version of this fix set a
+      // fast interval "for realism" and reintroduced the exact same race one
+      // level up — the background timer sweeping the endpoint out from under
+      // an in-flight readInbox()/runTtlSweep() call).
+      const shortRelay = new RelayCore({
+        dataDir: path.join(tmpDir, 'ttl-test'),
+        dispatchInboxTtlMs: 10, // 10ms TTL
+        adapterRegistry: new SingleAdapterRegistry(cca),
+      });
 
-    await shortRelay.registerEndpoint('relay.inbox.dispatch.ttl-test-uuid');
-    expect(shortRelay.listEndpoints()).toHaveLength(1);
+      await shortRelay.registerEndpoint('relay.inbox.dispatch.ttl-test-uuid');
+      expect(shortRelay.listEndpoints()).toHaveLength(1);
 
-    // Wait for TTL (10ms) + two sweep intervals (10ms) + buffer — well under 100ms
-    await new Promise((resolve) => setTimeout(resolve, 60));
+      // Let the TTL (10ms) elapse, then sweep deterministically.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await shortRelay.runTtlSweep();
 
-    expect(shortRelay.listEndpoints()).toHaveLength(0);
+      expect(shortRelay.listEndpoints()).toHaveLength(0);
 
-    await shortRelay.close();
-  });
+      await shortRelay.close();
+    },
+    REAL_TIMER_TEST_TIMEOUT_MS
+  );
 
   it('a failed detached delivery settles a waiting send_and_wait caller via a reply-inbox failure notice', async () => {
     // Mimic relay_send_and_wait: register + subscribe the reply inbox BEFORE
@@ -458,32 +480,45 @@ describe('relay → CCA round-trip', () => {
     expect((events[0].data as Record<string, unknown>)?.message).toContain('agent boom');
   });
 
-  it('TTL sweeper keeps an actively-polled dispatch inbox alive, then reaps it once polling stops', async () => {
-    // Purpose: inactivity-based sweep (M3) — an inbox being drained mid-
-    // conversation must not be swept out from under its poller.
-    const shortRelay = new RelayCore({
-      dataDir: path.join(tmpDir, 'inactivity-test'),
-      dispatchInboxTtlMs: 50,
-      ttlSweepIntervalMs: 10,
-      adapterRegistry: new SingleAdapterRegistry(cca),
-    });
+  it(
+    'TTL sweeper keeps an actively-polled dispatch inbox alive, then reaps it once polling stops',
+    async () => {
+      // Purpose: inactivity-based sweep (M3) — an inbox being drained mid-
+      // conversation must not be swept out from under its poller.
+      // Drives the sweep directly via runTtlSweep() rather than waiting on the
+      // periodic timer, which can lag under event-loop load: the real-timer
+      // sweep previously did not reliably land inside the assertion window
+      // under full-suite parallelism (~50% failure rate, DOR-267). See
+      // REAL_TIMER_TEST_TIMEOUT_MS for why this test also needs a wider budget.
+      // Deliberately does NOT set ttlSweepIntervalMs — see the sibling TTL
+      // test above for why the periodic timer must stay at its 5-minute
+      // default here (it would otherwise race the manual sweep).
+      const shortRelay = new RelayCore({
+        dataDir: path.join(tmpDir, 'inactivity-test'),
+        dispatchInboxTtlMs: 50,
+        adapterRegistry: new SingleAdapterRegistry(cca),
+      });
 
-    const inboxSubject = 'relay.inbox.dispatch.active-uuid';
-    await shortRelay.registerEndpoint(inboxSubject);
+      const inboxSubject = 'relay.inbox.dispatch.active-uuid';
+      await shortRelay.registerEndpoint(inboxSubject);
 
-    // Poll well past the TTL — each read refreshes last-activity.
-    for (let i = 0; i < 6; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      await shortRelay.readInbox(inboxSubject, { status: 'unread' });
-    }
-    expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(true);
+      // Poll well past the TTL — each read refreshes last-activity.
+      for (let i = 0; i < 6; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await shortRelay.readInbox(inboxSubject, { status: 'unread' });
+      }
+      await shortRelay.runTtlSweep();
+      expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(true);
 
-    // Stop polling — after the inactivity window elapses it is swept.
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(false);
+      // Stop polling — once the inactivity window has elapsed, a sweep reaps it.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await shortRelay.runTtlSweep();
+      expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(false);
 
-    await shortRelay.close();
-  });
+      await shortRelay.close();
+    },
+    REAL_TIMER_TEST_TIMEOUT_MS
+  );
 
   it('budget-exhausted message never dispatches a live agent turn (DOR-260)', async () => {
     // Regression: with callBudgetRemaining 0 the mailbox copy was correctly
