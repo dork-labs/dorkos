@@ -21,7 +21,20 @@ interface EditPair {
   replace_all?: boolean;
 }
 
-/** Replace occurrences of `find` with `replace` in `haystack` (first-only unless `all`). */
+/**
+ * Replace occurrences of `find` with `replace` in `haystack` (first-only unless
+ * `all`).
+ *
+ * Caveat: the first-only path reverses at the FIRST `indexOf` match of
+ * `new_string`, but the original Edit replaced the first occurrence of
+ * `old_string` — when `new_string` also occurs EARLIER in the post-edit text
+ * than the edited site, the reversal picks the wrong occurrence and the
+ * reconstructed pre-image is off. Accepted: this is the last-resort fallback
+ * rung (only reached with no pre-tool snapshot), the tool's own uniqueness
+ * requirement on `old_string` makes ambiguous cases rare, and a wrong base can
+ * only produce a confusing diff — never a bad write (rejects stay hash-
+ * conditioned against disk).
+ */
 function applyReplace(
   haystack: string,
   find: string,

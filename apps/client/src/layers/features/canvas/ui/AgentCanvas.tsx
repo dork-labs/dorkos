@@ -98,9 +98,12 @@ function CanvasRenderer({
         </Suspense>
       );
     case 'diff':
+      // Key per source file so review state (hunk count, side-by-side toggle,
+      // armed confirms) never leaks between two open diff tabs that share the
+      // same tree position on a tab switch.
       return (
         <Suspense fallback={<CanvasLoading />}>
-          <CanvasDiffContent documentId={documentId} content={content} />
+          <CanvasDiffContent key={content.sourcePath} documentId={documentId} content={content} />
         </Suspense>
       );
   }

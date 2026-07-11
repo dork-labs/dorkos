@@ -82,6 +82,15 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     expect(res.status).toBe(403);
   });
 
+  it('GET /baseline returns 400 for a directory target (never a 500)', async () => {
+    await fs.mkdir(path.join(cwd, 'subdir'));
+    const res = await request(app)
+      .get('/api/diff/baseline')
+      .query({ cwd, path: 'subdir', sessionId: SESSION });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('NOT_A_FILE');
+  });
+
   it('GET /baseline returns 415 for a binary file', async () => {
     await fs.writeFile(path.join(cwd, 'logo.bin'), Buffer.from([0x00, 0x01, 0x02, 0x00]));
     const res = await request(app)

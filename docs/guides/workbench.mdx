@@ -95,7 +95,9 @@ Every changed block (a "hunk") has two controls in the margin:
 
 Above the diff you can **Reject all** (undo every change to the file at once) or **Mark reviewed** (you're happy — later edits will diff from here). On a wide screen, a toggle switches between the stacked inline view and a side-by-side before/after. A second toggle compares against your **last commit** instead of the session's starting point, if you'd rather see it that way.
 
-If the file changes underneath you — say the agent edits it again while you're reviewing — you get a calm "this file changed" notice with a Refresh button, never a silent overwrite.
+If the file changes underneath you — say the agent edits it again while you're reviewing — you get a calm "this file changed" notice with a Refresh button, never a silent overwrite. A change that fails to write (a permissions problem, a dropped connection) tells you so too, so you can try again.
+
+Sometimes DorkOS has no snapshot from when the agent started — for example, if the server restarted mid-session. When that happens the header says so plainly and compares against your last commit instead. In that state, **Reject all** asks you to confirm first, because it would also undo edits you made yourself before the session.
 
 Reviewing an image isn't available here yet — a changed image opens on its own instead. Diff review works in the web app and the Obsidian plugin; the image tools, when they arrive, will be web-only.
 

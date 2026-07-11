@@ -103,4 +103,32 @@ describe('resolveTextBaseline — resolution ladder', () => {
     expect(res.response.current).toBe('');
     expect(res.response.baseline).toBe('was here\n');
   });
+  it('rejects a directory target with NOT_A_FILE (never a 500)', async () => {
+    const sub = path.join(dir, 'subdir');
+    await fs.mkdir(sub);
+    const res = await resolveTextBaseline(dir, sub, SESSION, 'session');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toBe('NOT_A_FILE');
+  });
+
+  it('an oversize snapshot marker degrades to HEAD (disclosed), never an empty fake base', async () => {
+    const file = path.join(dir, 'a.ts');
+    await initGitRepo(dir, 'a.ts', 'HEAD version\n');
+    // Simulate a capture that hit the size cap: marker stored, no bytes.
+    editBaselineStore.set(SESSION, file, {
+      bytes: Buffer.alloc(0),
+      capturedAt: Date.now(),
+      capturedFrom: 'pre-tool',
+      oversize: true,
+    });
+    await fs.writeFile(file, 'current version\n');
+
+    const res = await resolveTextBaseline(dir, file, SESSION, 'session');
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // NOT the marker's empty bytes presented as a session base.
+    expect(res.response.baseline).toBe('HEAD version\n');
+    expect(res.response.capturedFrom).toBe('head');
+  });
 });

@@ -18,7 +18,7 @@ import { editBaselineStore } from './edit-baseline.js';
 import { gitShowHead } from './git-baseline.js';
 
 /** A coded reason the text diff can't be produced, mapped to an HTTP status by the route. */
-export type ResolveBaselineError = 'TOO_LARGE' | 'BINARY_FILE';
+export type ResolveBaselineError = 'TOO_LARGE' | 'BINARY_FILE' | 'NOT_A_FILE';
 
 /** Outcome of {@link resolveTextBaseline} — the DTO, or a coded failure. */
 export type ResolveBaselineResult =
@@ -28,7 +28,8 @@ export type ResolveBaselineResult =
 /**
  * Read the file's current on-disk text, or a coded failure. A missing file
  * (deleted by the agent) resolves to empty text so the diff shows a full
- * removal; an oversize or binary file is rejected (the text diff isn't for those).
+ * removal; a directory, oversize, or binary target is rejected (the text diff
+ * isn't for those).
  */
 async function readCurrentText(
   absPath: string
@@ -36,6 +37,7 @@ async function readCurrentText(
   let buffer: Buffer;
   try {
     const stat = await fs.stat(absPath);
+    if (!stat.isFile()) return { ok: false, error: 'NOT_A_FILE' };
     if (stat.size > FILE_LIMITS.MAX_TEXT_FILE_BYTES) return { ok: false, error: 'TOO_LARGE' };
     buffer = await fs.readFile(absPath);
   } catch (err) {
@@ -53,7 +55,10 @@ async function resolveSessionBaseline(
   sessionId: string
 ): Promise<{ text: string; origin: DiffBaselineOrigin }> {
   const snapshot = editBaselineStore.get(sessionId, absPath);
-  if (snapshot) {
+  // An `oversize` marker means the pre-image was deliberately not buffered —
+  // fall through to HEAD/empty (whose origin the client discloses) rather than
+  // present the marker's empty bytes as a real session base.
+  if (snapshot && !snapshot.oversize) {
     return { text: snapshot.bytes.toString('utf8'), origin: snapshot.capturedFrom };
   }
   const head = await gitShowHead(cwd, absPath);

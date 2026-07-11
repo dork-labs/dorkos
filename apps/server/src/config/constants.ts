@@ -75,6 +75,17 @@ export const GIT = {
   STATUS_TIMEOUT_MS: 5000,
 } as const;
 
+export const DIFF = {
+  /**
+   * Total bytes of pre-edit baselines one session may hold in memory (DOR-212).
+   * Individual files are already capped at `FILE_LIMITS.MAX_TEXT_FILE_BYTES`;
+   * this bounds the aggregate when an agent edits many files. Past the budget
+   * the OLDEST baselines are evicted — their later diffs degrade to the
+   * (disclosed) git-HEAD/empty base instead of growing the server without bound.
+   */
+  MAX_SESSION_BASELINE_BYTES: 32 * 1024 * 1024,
+} as const;
+
 export const SSE = {
   /** Max SSE clients connected to a single session. */
   MAX_CLIENTS_PER_SESSION: 10,

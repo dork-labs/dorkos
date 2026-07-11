@@ -54,6 +54,10 @@ export function useDiffReview({ cwd, sourcePath, sessionId }: UseDiffReviewArgs)
   const [mode, setMode] = useState<DiffCompareMode>('session');
   // A reject/write hit a changed-on-disk conflict — the banner owns recovery.
   const [conflict, setConflict] = useState(false);
+  // A revert/advance genuinely FAILED (network, permissions) — shown as its own
+  // banner so a failed write is never a silent no-op ("never silent" is the
+  // feature's contract, same as the 409 path).
+  const [writeFailed, setWriteFailed] = useState(false);
   const [writing, setWriting] = useState(false);
 
   const canQuery = cwd !== null && sessionId !== null;
@@ -77,10 +81,11 @@ export function useDiffReview({ cwd, sourcePath, sessionId }: UseDiffReviewArgs)
     });
   }, [queryClient, canQuery, cwd, sourcePath, sessionId, mode]);
 
-  // Operator-initiated refresh (the conflict banner's "Refresh"): clears the
-  // conflict and recomputes.
+  // Operator-initiated refresh (the banners' "Refresh"/"Dismiss"): clears the
+  // conflict + failure notices and recomputes.
   const refresh = useCallback(() => {
     setConflict(false);
+    setWriteFailed(false);
     revalidate();
   }, [revalidate]);
 
@@ -100,6 +105,7 @@ export function useDiffReview({ cwd, sourcePath, sessionId }: UseDiffReviewArgs)
         });
         if (result.ok) {
           setConflict(false);
+          setWriteFailed(false);
           revalidate();
           return 'ok';
         }
@@ -109,6 +115,11 @@ export function useDiffReview({ cwd, sourcePath, sessionId }: UseDiffReviewArgs)
         revalidate();
         return 'conflict';
       } catch {
+        // The revert never landed (network/permissions). Surface it — a failed
+        // write must never look like a successful one — and resync the doc with
+        // disk so the editor's optimistic rejectChunk mutation doesn't linger.
+        setWriteFailed(true);
+        revalidate();
         return 'error';
       } finally {
         setWriting(false);
@@ -140,11 +151,18 @@ export function useDiffReview({ cwd, sourcePath, sessionId }: UseDiffReviewArgs)
    */
   const markReviewed = useCallback(async () => {
     if (!canQuery) return;
-    if (mode === 'session') {
-      await transport.advanceDiffBaseline(cwd as string, sourcePath, sessionId as string);
+    try {
+      if (mode === 'session') {
+        await transport.advanceDiffBaseline(cwd as string, sourcePath, sessionId as string);
+      }
+      refresh();
+    } catch {
+      // The advance never landed — surface it (the review is NOT finished) and
+      // resync so the diff still reflects reality.
+      setWriteFailed(true);
+      revalidate();
     }
-    refresh();
-  }, [transport, canQuery, mode, cwd, sourcePath, sessionId, refresh]);
+  }, [transport, canQuery, mode, cwd, sourcePath, sessionId, refresh, revalidate]);
 
   return {
     /** The resolved baseline DTO, or `undefined` while loading / on error. */
@@ -156,6 +174,8 @@ export function useDiffReview({ cwd, sourcePath, sessionId }: UseDiffReviewArgs)
     setMode,
     /** True after a reject hit a changed-on-disk conflict (banner shown). */
     conflict,
+    /** True after a revert/advance write genuinely failed (its own banner). */
+    writeFailed,
     /** True while a reject/revert write is in flight. */
     writing,
     rejectHunk,

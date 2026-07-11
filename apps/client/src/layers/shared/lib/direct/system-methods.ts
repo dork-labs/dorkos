@@ -369,9 +369,16 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       const sha = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
       const { root, resolved } = await confineWithin(cwd, filePath);
 
-      // Current disk text (a deleted file reads as empty → full removal).
+      // Current disk text (a deleted file reads as empty → full removal). Same
+      // guards as readFileContent: a directory, oversize, or binary target is
+      // rejected with the coded errors the diff surface maps to friendly copy.
       let current = '';
       try {
+        const stat = await fs.stat(resolved);
+        if (!stat.isFile()) throw codedError('Not a regular file', 'NOT_A_FILE');
+        if (stat.size > MAX_TEXT_FILE_BYTES) {
+          throw codedError('File too large to diff here', 'TOO_LARGE');
+        }
         const buf = await fs.readFile(resolved);
         if (buf.includes(0))
           throw codedError('Binary files cannot be diffed as text', 'BINARY_FILE');

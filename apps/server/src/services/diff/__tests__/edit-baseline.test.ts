@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EditBaselineStore } from '../edit-baseline.js';
+import { FILE_LIMITS } from '../../../config/constants.js';
 
 describe('EditBaselineStore', () => {
   let dir: string;
@@ -102,5 +103,71 @@ describe('EditBaselineStore', () => {
       content: 'whatever\n',
     });
     expect(store.get('s1', file)).toBeUndefined();
+  });
+  it('stores an oversize marker (no bytes) for a file past the text cap', async () => {
+    const file = path.join(dir, 'huge.txt');
+    // Sparse-extend past the 5 MB cap without materializing the bytes.
+    const handle = await fs.open(file, 'w');
+    await handle.truncate(FILE_LIMITS.MAX_TEXT_FILE_BYTES + 1);
+    await handle.close();
+
+    await store.captureFromDisk('s1', file);
+    const baseline = store.get('s1', file);
+    expect(baseline?.oversize).toBe(true);
+    // The pre-image was deliberately NOT buffered.
+    expect(baseline?.bytes.length).toBe(0);
+  });
+
+  it('an oversize entry is always pending (agent touched it; bytes are uncomparable)', async () => {
+    const file = path.join(dir, 'huge.txt');
+    const handle = await fs.open(file, 'w');
+    await handle.truncate(FILE_LIMITS.MAX_TEXT_FILE_BYTES + 1);
+    await handle.close();
+
+    await store.captureFromDisk('s1', file);
+    expect(await store.listPending('s1')).toContain(file);
+  });
+
+  it('skips capture for a directory target (falls back to the resolve ladder)', async () => {
+    const sub = path.join(dir, 'subdir');
+    await fs.mkdir(sub);
+    expect(await store.captureFromDisk('s1', sub)).toBe(false);
+    expect(store.get('s1', sub)).toBeUndefined();
+  });
+
+  it('enforces the per-session byte budget by evicting the OLDEST baselines', async () => {
+    const budgeted = new EditBaselineStore(10);
+    const a = path.join(dir, 'a.txt');
+    const b = path.join(dir, 'b.txt');
+    await fs.writeFile(a, 'aaaaaa'); // 6 bytes
+    await fs.writeFile(b, 'bbbbbb'); // 6 bytes -> 12 total, over the 10-byte budget
+
+    await budgeted.captureFromDisk('s1', a);
+    // Ensure a strictly later capturedAt for the second capture.
+    await new Promise((r) => setTimeout(r, 2));
+    await budgeted.captureFromDisk('s1', b);
+
+    // The oldest (a) was evicted; the newest (b) survives.
+    expect(budgeted.get('s1', a)).toBeUndefined();
+    expect(budgeted.get('s1', b)?.bytes.toString('utf8')).toBe('bbbbbb');
+  });
+
+  it('budget accounting survives advance (replaced bytes are re-counted, not leaked)', async () => {
+    const budgeted = new EditBaselineStore(20);
+    const a = path.join(dir, 'a.txt');
+    await fs.writeFile(a, 'aaaaaaaaaaaaaaa'); // 15 bytes
+    await budgeted.captureFromDisk('s1', a);
+
+    // Shrink the file, advance -- accounting drops to 3 bytes, so a later
+    // 15-byte capture fits without evicting `a`.
+    await fs.writeFile(a, 'aaa');
+    await budgeted.advance('s1', a);
+
+    const b = path.join(dir, 'b.txt');
+    await fs.writeFile(b, 'bbbbbbbbbbbbbbb'); // 15 bytes -> 18 total <= 20
+    await budgeted.captureFromDisk('s1', b);
+
+    expect(budgeted.get('s1', a)?.bytes.toString('utf8')).toBe('aaa');
+    expect(budgeted.get('s1', b)?.bytes.toString('utf8')).toBe('bbbbbbbbbbbbbbb');
   });
 });

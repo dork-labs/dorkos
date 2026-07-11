@@ -57,6 +57,9 @@ router.get('/baseline', async (req, res) => {
       if (result.error === 'TOO_LARGE') {
         return res.status(413).json({ error: 'File too large to diff here', code: 'TOO_LARGE' });
       }
+      if (result.error === 'NOT_A_FILE') {
+        return res.status(400).json({ error: 'Not a regular file', code: 'NOT_A_FILE' });
+      }
       return res
         .status(415)
         .json({ error: 'Binary files cannot be diffed as text', code: 'BINARY_FILE' });

@@ -102,6 +102,65 @@ describe('useDiffReview', () => {
     expect(advanceDiffBaseline).toHaveBeenCalledWith('/work', 'src/App.tsx', 'sess-1');
   });
 
+  it('surfaces a visible failure when a reject write throws (never a silent no-op)', async () => {
+    writeFile.mockRejectedValue(new Error('network down'));
+    const { result } = renderHook(() => useDiffReview(ARGS), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await result.current.rejectHunk('const a = 1;\n');
+    });
+
+    expect(outcome).toBe('error');
+    await waitFor(() => expect(result.current.writeFailed).toBe(true));
+    // The doc resyncs with disk after the failed write.
+    expect(readDiffBaseline.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('surfaces a visible failure when reject-all throws', async () => {
+    writeFile.mockRejectedValue(new Error('EACCES'));
+    const { result } = renderHook(() => useDiffReview(ARGS), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await result.current.rejectAll();
+    });
+
+    expect(outcome).toBe('error');
+    await waitFor(() => expect(result.current.writeFailed).toBe(true));
+  });
+
+  it('surfaces a visible failure when mark-reviewed cannot advance the baseline', async () => {
+    advanceDiffBaseline.mockRejectedValue(new Error('network down'));
+    const { result } = renderHook(() => useDiffReview(ARGS), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+
+    await act(async () => {
+      await result.current.markReviewed();
+    });
+
+    await waitFor(() => expect(result.current.writeFailed).toBe(true));
+  });
+
+  it('a later successful write clears the failure notice', async () => {
+    writeFile.mockRejectedValueOnce(new Error('flaky'));
+    writeFile.mockResolvedValue({ ok: true, hash: 'newhash' });
+    const { result } = renderHook(() => useDiffReview(ARGS), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+
+    await act(async () => {
+      await result.current.rejectHunk('const a = 1;\n');
+    });
+    await waitFor(() => expect(result.current.writeFailed).toBe(true));
+
+    await act(async () => {
+      await result.current.rejectHunk('const a = 1;\n');
+    });
+    await waitFor(() => expect(result.current.writeFailed).toBe(false));
+  });
+
   it('does not advance the baseline in git-HEAD compare mode', async () => {
     const { result } = renderHook(() => useDiffReview(ARGS), { wrapper });
     await waitFor(() => expect(result.current.data).toBeDefined());
