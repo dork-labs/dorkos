@@ -11,12 +11,13 @@
  *
  * @module services/marketplace/flows/install-adapter
  */
-import { cp, mkdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { AdapterPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { atomicMove } from '../lib/atomic-move.js';
+import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -66,7 +67,7 @@ export class AdapterInstallFlow {
       name: `install-adapter:${manifest.name}`,
       target: installPath,
       stage: async (staging) => {
-        await stageAdapterPackage(packagePath, staging.path);
+        await stageAdapterPackage(packagePath, staging.path, logger);
       },
       activate: async (staging) => {
         await activateAdapterPackage(staging.path, installPath);
@@ -90,13 +91,19 @@ export class AdapterInstallFlow {
 }
 
 /**
- * Copy the package source into the staging directory. Wrapped in a
- * helper so the transaction's `stage` callback stays a single statement.
+ * Copy the package source into the staging directory, stripping symlinks so a
+ * malicious package cannot smuggle a link that escapes the install root
+ * (DOR-279). Wrapped in a helper so the transaction's `stage` callback stays a
+ * single statement.
  *
  * @internal
  */
-async function stageAdapterPackage(packagePath: string, stagingPath: string): Promise<void> {
-  await cp(packagePath, stagingPath, { recursive: true });
+async function stageAdapterPackage(
+  packagePath: string,
+  stagingPath: string,
+  logger: Logger
+): Promise<void> {
+  await stagePackageContents(packagePath, stagingPath, logger);
 }
 
 /**
