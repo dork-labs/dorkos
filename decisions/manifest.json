@@ -2512,6 +2512,15 @@
       "created": "2026-07-11",
       "extractedFrom": null,
       "specSlug": null
+    },
+    {
+      "id": "260711-175416",
+      "slug": "pip-liveness-via-pinned-background-stream-slot",
+      "title": "PIP liveness via a pinned background session-stream slot, not a per-session connection pool",
+      "status": "proposed",
+      "created": "2026-07-11",
+      "extractedFrom": "gen-ui-pip",
+      "specSlug": "gen-ui-pip"
     }
   ]
 }
