@@ -13,7 +13,7 @@
  * @module features/mcp-apps/ui/McpAppBlock
  */
 import { AppWindow, Maximize2, PictureInPicture2 } from 'lucide-react';
-import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { useAppStore } from '@/layers/shared/model';
 import { McpAppFrame } from './McpAppFrame';
 import { useRenderConsent } from '../model/render-consent';
 
@@ -41,7 +41,6 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
   const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
   const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
   const openPip = useAppStore((s) => s.openPip);
-  const isMobile = useIsMobile();
 
   const openFullscreen = () => {
     openCanvasDocument({ type: 'mcp_app', serverName, uri, title });
@@ -86,19 +85,18 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
           <span className="truncate">{title ?? `App · ${serverName}`}</span>
         </div>
         <div className="flex items-center gap-1">
-          {/* Hidden below 768px: the PIP host renders nothing there, so the
-              affordance would be a no-op. Canvas (maximize) still works. */}
-          {!isMobile && (
-            <button
-              type="button"
-              onClick={popOut}
-              aria-label="Pop out into a floating window"
-              title="Pop out"
-              className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
-            >
-              <PictureInPicture2 className="size-3.5" />
-            </button>
-          )}
+          {/* Below 768px the PIP host docks a bottom sheet instead of a floating
+              window (DOR-299), so the affordance works on touch too. Canvas
+              (maximize) still works everywhere. */}
+          <button
+            type="button"
+            onClick={popOut}
+            aria-label="Pop out into a floating window"
+            title="Pop out"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
+          >
+            <PictureInPicture2 className="size-3.5" />
+          </button>
           <button
             type="button"
             onClick={openFullscreen}

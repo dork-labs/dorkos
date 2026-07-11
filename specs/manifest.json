@@ -6,7 +6,7 @@
       "slug": "pip-mobile-sheet",
       "title": "Mobile PIP: dock the floating panel to a bottom sheet below 768px",
       "created": "2026-07-11",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260711-175135",

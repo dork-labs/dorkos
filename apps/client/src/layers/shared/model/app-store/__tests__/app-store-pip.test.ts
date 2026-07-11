@@ -6,7 +6,7 @@ import type { PipContent } from '../app-store-pip';
 describe('PipSlice', () => {
   beforeEach(() => {
     localStorage.clear();
-    useAppStore.setState({ pipContent: null, pipGeometry: null });
+    useAppStore.setState({ pipContent: null, pipGeometry: null, pipMinimized: false });
   });
 
   it('openPip sets pipContent to the given descriptor', () => {
@@ -68,6 +68,37 @@ describe('PipSlice', () => {
       const key = localStorage.key(i)!;
       expect(localStorage.getItem(key)).not.toContain('secret title');
     }
+  });
+
+  describe('pipMinimized (Amendment 2 mini-bar state)', () => {
+    it('minimizePip and restorePip toggle the flag without touching pipContent', () => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Demo' });
+
+      useAppStore.getState().minimizePip();
+      expect(useAppStore.getState().pipMinimized).toBe(true);
+      expect(useAppStore.getState().pipContent).toEqual({ kind: 'demo', title: 'Demo' });
+
+      useAppStore.getState().restorePip();
+      expect(useAppStore.getState().pipMinimized).toBe(false);
+      expect(useAppStore.getState().pipContent).toEqual({ kind: 'demo', title: 'Demo' });
+    });
+
+    it('openPip resets pipMinimized so a fresh pop-out always presents the sheet', () => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'First' });
+      useAppStore.getState().minimizePip();
+
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Second' });
+      expect(useAppStore.getState().pipMinimized).toBe(false);
+    });
+
+    it('closePip resets pipMinimized', () => {
+      useAppStore.getState().openPip({ kind: 'demo', title: 'Demo' });
+      useAppStore.getState().minimizePip();
+
+      useAppStore.getState().closePip();
+      expect(useAppStore.getState().pipMinimized).toBe(false);
+      expect(useAppStore.getState().pipContent).toBeNull();
+    });
   });
 
   describe('readPipGeometry validation', () => {

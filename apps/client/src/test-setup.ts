@@ -28,6 +28,7 @@ const MOTION_PROPS = new Set([
   'whileInView',
   'drag',
   'dragConstraints',
+  'dragControls',
   'dragElastic',
   'dragMomentum',
   'dragTransition',
@@ -125,6 +126,14 @@ vi.mock('motion/react', () => ({
   MotionConfig: ({ children }: { children: React.ReactNode }) => children,
   useReducedMotion: () => false,
   useAnimate: () => [{ current: document.createElement('div') }, vi.fn()],
+  // Inert drag/animation controls: gesture and imperative-animation mechanics
+  // are browser territory, not jsdom's.
+  useDragControls: () => ({ start: vi.fn() }),
+  useAnimationControls: () => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+    set: vi.fn(),
+  }),
   // Imperative animate: settle to the target immediately so counted values show
   // their final state synchronously in tests.
   animate: (_from: unknown, to: unknown, opts?: { onUpdate?: (v: unknown) => void }) => {

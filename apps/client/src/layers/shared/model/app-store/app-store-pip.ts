@@ -10,6 +10,11 @@
  * clamping a stale, off-screen geometry back into the viewport is the
  * floating-panel primitive's job on mount (task 1.1), not this slice's.
  *
+ * `pipMinimized` (spec `pip-mobile-sheet` Amendment 2) is the mobile mini-bar
+ * state: ephemeral like `pipContent`, never persisted. Both `openPip` and
+ * `closePip` reset it, so a fresh pop-out always presents the sheet at peek.
+ * Desktop ignores the flag entirely.
+ *
  * @module shared/model/app-store-pip
  */
 import type { StateCreator } from 'zustand';
@@ -59,10 +64,19 @@ export interface PipSlice {
    * `PipHost`).
    */
   pipGeometry: FloatingPanelGeometry | null;
-  /** Open the panel with `content`, replacing whatever is already showing (D3). */
+  /**
+   * Whether mobile PIP is tucked into the mini-bar instead of the sheet
+   * (Amendment 2). Ephemeral, never persisted; desktop ignores it.
+   */
+  pipMinimized: boolean;
+  /** Open the panel with `content`, replacing whatever is already showing (D3). Resets {@link pipMinimized}. */
   openPip: (content: PipContent) => void;
-  /** Close the panel. Leaves {@link pipGeometry} untouched so position survives close/reopen. */
+  /** Close the panel. Leaves {@link pipGeometry} untouched so position survives close/reopen. Resets {@link pipMinimized}. */
   closePip: () => void;
+  /** Tuck mobile PIP into the mini-bar (content stays set and live). */
+  minimizePip: () => void;
+  /** Bring mobile PIP back from the mini-bar to the sheet (opens at peek). */
+  restorePip: () => void;
   /**
    * Update and persist the panel's geometry. The floating-panel primitive
    * (task 1.1) calls this exactly once per drag/resize gesture, at pointerup —
@@ -81,9 +95,12 @@ export const createPipSlice: StateCreator<AppState, [['zustand/devtools', never]
 ) => ({
   pipContent: null,
   pipGeometry: readPipGeometry(),
+  pipMinimized: false,
 
-  openPip: (content) => set({ pipContent: content }),
-  closePip: () => set({ pipContent: null }),
+  openPip: (content) => set({ pipContent: content, pipMinimized: false }),
+  closePip: () => set({ pipContent: null, pipMinimized: false }),
+  minimizePip: () => set({ pipMinimized: true }),
+  restorePip: () => set({ pipMinimized: false }),
   setPipGeometry: (g) => {
     writePipGeometry(g);
     set({ pipGeometry: g });

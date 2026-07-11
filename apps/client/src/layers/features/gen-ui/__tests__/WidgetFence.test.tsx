@@ -6,16 +6,9 @@ import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
-import { TransportProvider, useAppStore, useIsMobile } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { WidgetFence } from '../ui/WidgetFence';
-
-// Keep the real store (so openPip actually runs) but let each test control the
-// mobile flag directly — same pattern as PipHost.test.tsx / McpAppBlock.test.tsx.
-vi.mock('@/layers/shared/model', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return { ...actual, useIsMobile: vi.fn(() => false) };
-});
 
 afterEach(cleanup);
 
@@ -105,7 +98,6 @@ describe('WidgetFence streaming stability', () => {
 describe('WidgetFence pop-out (PIP) affordance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(useIsMobile).mockReturnValue(false);
     useAppStore.setState({ pipContent: null });
   });
 
@@ -122,13 +114,12 @@ describe('WidgetFence pop-out (PIP) affordance', () => {
     expect(screen.queryByRole('button', { name: POP_OUT_LABEL })).not.toBeInTheDocument();
   });
 
-  it('hides the pop-out button on mobile, where the PIP host renders nothing', () => {
-    vi.mocked(useIsMobile).mockReturnValue(true);
+  it('shows the pop-out button whenever a sessionId is present, with no viewport gate (mobile docks a bottom sheet, DOR-299)', () => {
     render(<WidgetFence code={WEATHER} isIncomplete={false} sessionId="s1" />, {
       wrapper: Wrapper,
     });
     expect(screen.getByText('Temp')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: POP_OUT_LABEL })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: POP_OUT_LABEL })).toBeInTheDocument();
   });
 
   it('hides the pop-out button before a successful parse (skeleton, no latched document yet)', () => {

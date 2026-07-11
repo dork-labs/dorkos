@@ -147,7 +147,9 @@ export function App({ transformContent }: AppProps) {
               )}
             </AnimatePresence>
 
-            <main className="h-full flex-1 overflow-hidden">
+            {/* --pip-dock (set by the mobile PIP mini-bar) lifts the chat —
+                including the composer — above the 64px bar. */}
+            <main className="h-full flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">
               <ChatPanel sessionId={activeSessionId} transformContent={transformContent} />
             </main>
           </div>
