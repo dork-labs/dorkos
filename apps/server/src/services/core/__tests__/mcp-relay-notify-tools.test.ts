@@ -299,6 +299,22 @@ describe('relay_notify_user', () => {
       expect(deps.relayCore!.publish).not.toHaveBeenCalled();
     });
 
+    it('excludes paused bindings entirely (enabled=false never routes a notify)', async () => {
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: true, enabled: false })]),
+        }) as unknown as McpToolDeps['bindingStore'],
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Should never arrive' });
+
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.sent).toBe(false);
+      // With its only binding paused, the agent has no channel to notify through.
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+
     it('allows the send when the resolved binding has canInitiate=true', async () => {
       const deps = makeMockDeps({
         bindingStore: makeMockBindingStore({

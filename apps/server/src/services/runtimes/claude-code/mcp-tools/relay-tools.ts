@@ -365,7 +365,10 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
     }
 
     const allBindings = deps.bindingStore.getAll();
-    let myBindings = allBindings.filter((b) => b.agentId === agentId);
+    // Paused bindings (enabled === false) are excluded up front: the schema
+    // documents `enabled` as skipping both inbound delivery and agent-initiated
+    // publishes, and the client UI promises "Paused — no messages routing".
+    let myBindings = allBindings.filter((b) => b.agentId === agentId && b.enabled !== false);
 
     if (args.channel) {
       const channel = args.channel.toLowerCase();
