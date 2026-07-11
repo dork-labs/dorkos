@@ -78,8 +78,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly claudeCliPath: string | undefined;
 
   // Injected dependencies
-  private mcpServerFactory: ((session: AgentSession) => Record<string, McpServerConfig>) | null =
-    null;
+  private mcpServerFactory:
+    | ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>)
+    | null = null;
   private meshCore: AgentRegistryPort | null = null;
   private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
@@ -185,7 +186,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** Register a factory that creates fresh MCP tool server configs per query() call. */
-  setMcpServerFactory(factory: (session: AgentSession) => Record<string, McpServerConfig>): void {
+  setMcpServerFactory(
+    factory: (session: AgentSession, sessionId: string) => Record<string, McpServerConfig>
+  ): void {
     this.mcpServerFactory = factory;
   }
 
@@ -936,6 +939,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       lastActivity: Date.now(),
       hasStarted: false,
     } as unknown as AgentSession;
-    return this.mcpServerFactory(stubSession);
+    // Empty session id: introspection only, so the DevTools read tools register
+    // as their session-less variants (no live preview buffer to bind to).
+    return this.mcpServerFactory(stubSession, '');
   }
 }
