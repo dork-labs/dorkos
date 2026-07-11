@@ -2,6 +2,22 @@
   "version": 1,
   "specs": [
     {
+      "id": "260711-142048",
+      "slug": "diff-viewer",
+      "title": "Diff viewer — per-hunk review surface (fast-follow)",
+      "created": "2026-07-11",
+      "status": "specified",
+      "linearIssue": "DOR-212"
+    },
+    {
+      "id": "260711-142034",
+      "slug": "devtools-bridge",
+      "title": "DevTools Bridge — expose browser console/network/screenshots to the agent (v2)",
+      "created": "2026-07-11",
+      "status": "specified",
+      "linearIssue": "DOR-213"
+    },
+    {
       "id": "260711-031801",
       "slug": "task-completion-notifications",
       "title": "Automatic task-completion notifications (\"your agent finished\")",

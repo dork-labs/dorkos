@@ -1,0 +1,10 @@
+{
+  "id": "260711-142048",
+  "slug": "diff-viewer",
+  "title": "Diff viewer — per-hunk review surface (fast-follow)",
+  "created": "2026-07-11",
+  "status": "specified",
+  "linearIssue": "DOR-212",
+  "parent": "right-panel-workbench",
+  "project": "Right-Panel Workbench"
+}
