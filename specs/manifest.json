@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260711-211617",
+      "slug": "pip-mobile-sheet",
+      "title": "Mobile PIP: dock the floating panel to a bottom sheet below 768px",
+      "created": "2026-07-11",
+      "status": "specified"
+    },
+    {
       "id": "260711-175135",
       "slug": "gen-ui-pip",
       "title": "Live gen-UI widgets in PIP — play tic-tac-toe while you work",

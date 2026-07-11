@@ -58,7 +58,7 @@
     {
       "id": "260707-231641",
       "slug": "changelog-fragments",
-      "title": "Changelog fragments — one file per change, compiled at release",
+      "title": "Changelog fragments \u2014 one file per change, compiled at release",
       "status": "accepted",
       "created": "2026-07-07"
     },
@@ -249,7 +249,7 @@
     {
       "number": 303,
       "slug": "harness-sync-multi-source-projection",
-      "title": "Harness Sync is a multi-source projector — marketplace plugins project automatically, agent-native assets adopt explicitly",
+      "title": "Harness Sync is a multi-source projector \u2014 marketplace plugins project automatically, agent-native assets adopt explicitly",
       "status": "accepted",
       "extractedFrom": "harness-sync",
       "created": "2026-06-29",
@@ -432,7 +432,7 @@
     {
       "number": 283,
       "slug": "workspace-provider-hexagonal-port",
-      "title": "WorkspaceProvider — a hexagonal port for server-managed isolated workspaces",
+      "title": "WorkspaceProvider \u2014 a hexagonal port for server-managed isolated workspaces",
       "status": "accepted",
       "created": "2026-06-16",
       "extractedFrom": "workspace-manager",
@@ -667,7 +667,7 @@
     {
       "number": 256,
       "slug": "runtime-capabilities-shape-booleans-plus-structured-plus-features",
-      "title": "RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point",
+      "title": "RuntimeCapabilities Shape \u2014 Booleans + Structured Permission Modes + `features` Extension Point",
       "status": "accepted",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
@@ -858,7 +858,7 @@
     {
       "number": 233,
       "slug": "marketplace-update-is-advisory-by-default",
-      "title": "Marketplace Update Is Advisory by Default — Never Auto-Apply",
+      "title": "Marketplace Update Is Advisory by Default \u2014 Never Auto-Apply",
       "created": "2026-04-06",
       "status": "accepted",
       "extractedFrom": "marketplace-02-install",
@@ -1138,7 +1138,7 @@
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -1165,7 +1165,7 @@
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -1936,7 +1936,7 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
+      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
       "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
@@ -1990,7 +1990,7 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "accepted",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
@@ -2116,7 +2116,7 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
+      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
       "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",
@@ -2395,7 +2395,7 @@
     {
       "id": "260708-111459",
       "slug": "two-tier-generative-ui",
-      "title": "Two-tier generative UI — declarative widget catalog plus MCP Apps",
+      "title": "Two-tier generative UI \u2014 declarative widget catalog plus MCP Apps",
       "status": "accepted",
       "created": "2026-07-08",
       "specSlug": "gen-ui-tier1"
@@ -2427,7 +2427,7 @@
     {
       "id": "260708-185518",
       "slug": "multi-document-canvas-model",
-      "title": "Multi-document canvas model — openDocuments[] + activeDocumentId replaces the single content slot",
+      "title": "Multi-document canvas model \u2014 openDocuments[] + activeDocumentId replaces the single content slot",
       "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
@@ -2445,7 +2445,7 @@
     {
       "id": "260708-185521",
       "slug": "embedded-terminal-pty-architecture",
-      "title": "Embedded terminal — xterm.js + node-pty over WebSocket, web-only, confined to session cwd",
+      "title": "Embedded terminal \u2014 xterm.js + node-pty over WebSocket, web-only, confined to session cwd",
       "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
@@ -2454,7 +2454,7 @@
     {
       "id": "260708-185522",
       "slug": "mime-viewer-registry-config-overrides",
-      "title": "First-party mime→viewer registry with config-choosable defaults; third-party viewers route to MCP Apps",
+      "title": "First-party mime\u2192viewer registry with config-choosable defaults; third-party viewers route to MCP Apps",
       "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
@@ -2521,6 +2521,15 @@
       "created": "2026-07-11",
       "extractedFrom": "gen-ui-pip",
       "specSlug": "gen-ui-pip"
+    },
+    {
+      "id": "260711-211905",
+      "slug": "mobile-pip-as-non-modal-snap-point-bottom-sheet",
+      "title": "Mobile PIP presents as a non-modal snap-point bottom sheet",
+      "status": "proposed",
+      "created": "2026-07-11",
+      "extractedFrom": "pip-mobile-sheet",
+      "specSlug": "pip-mobile-sheet"
     }
   ]
 }
