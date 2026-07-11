@@ -1,7 +1,7 @@
 ---
 id: 260711-211905
 title: Mobile PIP presents as a non-modal snap-point bottom sheet
-status: proposed
+status: accepted
 created: 2026-07-11
 spec: pip-mobile-sheet
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -2526,7 +2526,7 @@
       "id": "260711-211905",
       "slug": "mobile-pip-as-non-modal-snap-point-bottom-sheet",
       "title": "Mobile PIP presents as a non-modal snap-point bottom sheet",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-11",
       "extractedFrom": "pip-mobile-sheet",
       "specSlug": "pip-mobile-sheet"
