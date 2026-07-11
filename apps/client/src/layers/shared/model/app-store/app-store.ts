@@ -1,12 +1,13 @@
 /**
  * App store — global Zustand store for the DorkOS client.
  *
- * Composed from five slices, each responsible for a distinct domain:
+ * Composed from six slices, each responsible for a distinct domain:
  *   - CoreSlice        : sidebar, session, navigation, streaming status, context files
  *   - PanelsSlice      : transient dialog / panel open-close state
  *   - PreferencesSlice : persisted boolean settings, font, and promo
  *   - CanvasSlice      : per-session canvas UI state
  *   - RightPanelSlice  : shell-level right panel open/tab state
+ *   - PipSlice         : floating picture-in-picture panel content + persisted geometry
  *
  * @module shared/model/app-store
  */
@@ -33,6 +34,7 @@ import { createPanelsSlice } from './app-store-panels';
 import { createPreferencesSlice } from './app-store-preferences';
 import { createCanvasSlice } from './app-store-canvas';
 import { createRightPanelSlice } from './app-store-right-panel';
+import { createPipSlice } from './app-store-pip';
 import type { AppState } from './app-store-types';
 
 export type { AppState } from './app-store-types';
@@ -211,6 +213,7 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem(STORAGE_KEYS.PINNED_AGENTS);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
+            localStorage.removeItem(STORAGE_KEYS.PIP_PANEL_STATE);
           } catch {}
           document.documentElement.style.setProperty('--user-font-scale', '1');
           const defaultConfig = getFontConfig(DEFAULT_FONT);
@@ -228,6 +231,8 @@ export const useAppStore = create<AppState>()(
             rightPanelOpen: false,
             activeRightPanelTab: null,
             rightPanelLayoutKey: null,
+            pipContent: null,
+            pipGeometry: null,
           });
         },
 
@@ -236,6 +241,7 @@ export const useAppStore = create<AppState>()(
         ...createPreferencesSlice(...a),
         ...createCanvasSlice(...a),
         ...createRightPanelSlice(...a),
+        ...createPipSlice(...a),
       };
     },
     { name: 'app-store' }

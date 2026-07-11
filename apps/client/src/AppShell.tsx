@@ -42,6 +42,7 @@ import {
 } from '@/layers/shared/ui';
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
 import { CreateAgentDialog } from '@/layers/features/agent-creation';
+import { PipHost } from '@/layers/features/pip-panel';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
 import { PanelGroup, Panel } from 'react-resizable-panels';
 import {
@@ -367,6 +368,7 @@ export function AppShell() {
         <CreateAgentDialog />
         <ShortcutsPanel />
         <Toaster />
+        <PipHost />
       </MotionConfig>
     </TooltipProvider>
   );

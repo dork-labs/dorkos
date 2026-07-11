@@ -7,6 +7,7 @@ import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
 import { MeshShowcases } from '../showcases/MeshShowcases';
 import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
+import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 
 /** Feature component showcase page for the dev playground. */
 export function FeaturesPage() {
@@ -23,6 +24,7 @@ export function FeaturesPage() {
       <AdapterWizardShowcases />
       <MeshShowcases />
       <TasksShowcases />
+      <PipPanelShowcases />
     </PlaygroundPageLayout>
   );
 }

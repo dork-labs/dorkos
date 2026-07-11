@@ -17,6 +17,7 @@ import {
 } from '@/layers/shared/ui';
 import { Kbd } from '@/layers/shared/ui/kbd';
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
+import { PipHost } from '@/layers/features/pip-panel';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
 import { useRightPanelShortcut, useAgentProfileShortcut } from '@/layers/features/right-panel';
 
@@ -154,6 +155,7 @@ export function App({ transformContent }: AppProps) {
         <CommandPaletteDialog />
         <ShortcutsPanel />
         <Toaster />
+        <PipHost />
       </MotionConfig>
     </TooltipProvider>
   );

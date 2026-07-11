@@ -5,6 +5,7 @@
  */
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { STORAGE_KEYS, MAX_CANVAS_SESSIONS, MAX_RIGHT_PANEL_LAYOUTS } from '@/layers/shared/lib';
+import type { FloatingPanelGeometry } from '@/layers/shared/ui';
 
 /** Read a boolean from localStorage with try/catch safety. */
 export function readBool(key: string, defaultValue: boolean): boolean {
@@ -311,5 +312,54 @@ export function writeRightPanelLayout(agentKey: string | null, entry: RightPanel
     } else {
       localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS, JSON.stringify(map));
     }
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// PIP panel persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the persisted PIP panel geometry from localStorage. Returns null when
+ * the value is missing, corrupt, or not geometry-shaped (all four fields must
+ * be finite numbers) — the host then falls back to the default dock. Validated
+ * but deliberately unclamped: the floating-panel primitive re-clamps against
+ * the current viewport on mount, so a stale geometry from a resized window
+ * self-corrects the instant the panel renders instead of the slice duplicating
+ * that clamp math.
+ */
+export function readPipGeometry(): FloatingPanelGeometry | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PIP_PANEL_STATE);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed == null || typeof parsed !== 'object') return null;
+    const { x, y, width, height } = parsed as Record<string, unknown>;
+    // Reject any non-finite field: a wrong-shaped value (this key has no
+    // version migration) would otherwise yield NaN geometry, and NaN !== NaN
+    // makes the primitive's mount/resize reclamp effect see "changed" geometry
+    // on every pass, recommitting in an endless loop.
+    if (
+      typeof x !== 'number' ||
+      typeof y !== 'number' ||
+      typeof width !== 'number' ||
+      typeof height !== 'number' ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(width) ||
+      !Number.isFinite(height)
+    ) {
+      return null;
+    }
+    return { x, y, width, height };
+  } catch {
+    return null;
+  }
+}
+
+/** Write the PIP panel geometry to localStorage. Silently fails on quota errors. */
+export function writePipGeometry(g: FloatingPanelGeometry): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PIP_PANEL_STATE, JSON.stringify(g));
   } catch {}
 }
