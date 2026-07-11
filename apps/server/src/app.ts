@@ -25,6 +25,7 @@ import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
+import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { resolveTrustedOrigins } from './lib/trusted-origins.js';
 import { testControlRouter } from './routes/test-control.js';
@@ -88,6 +89,13 @@ export function createApp() {
   // guard only skips the mount in unit tests that build the app without auth.
   const auth = getAuth();
   if (auth) {
+    // Defense-in-depth brute-force throttle on sign-in/sign-up (DOR-281),
+    // mounted BEFORE the auth handler so it sheds attempts first. App-wide with
+    // an internal `skip` (like `sessionGate`) so it counts only credential POSTs
+    // and never touches session-check GETs or non-auth routes. This layers over
+    // Better Auth's own built-in throttle, which is production-only and
+    // short-windowed — see `middleware/auth-rate-limit.ts`.
+    app.use(buildAuthRateLimiter({ maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT }));
     app.all('/api/auth/*splat', toNodeHandler(auth));
   }
 

@@ -42,6 +42,10 @@ const serverEnvSchema = z.object({
   // (default 60) and the card discovery endpoints (default 300).
   DORKOS_A2A_RPC_RATE_LIMIT: z.coerce.number().int().min(1).optional(),
   DORKOS_A2A_CARD_RATE_LIMIT: z.coerce.number().int().min(1).optional(),
+  // Sign-in brute-force limiter — max sign-in/sign-up attempts per IP per window
+  // (default 10 / 15 min). A knob for a dev/QA loop or a locked-out owner to
+  // relax the limit without a restart; mirrors the A2A override knobs (DOR-281).
+  DORKOS_AUTH_SIGNIN_RATE_LIMIT: z.coerce.number().int().min(1).optional(),
   DORKOS_TASKS_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
