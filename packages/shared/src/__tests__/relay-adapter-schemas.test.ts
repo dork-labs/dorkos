@@ -1,10 +1,52 @@
 import { describe, it, expect } from 'vitest';
 import {
   AdapterBindingSchema,
+  AdapterSecretSchema,
   ConfigFieldSchema,
   AdapterManifestSchema,
   SlackAdapterConfigSchema,
+  TelegramAdapterConfigSchema,
 } from '../relay-adapter-schemas.js';
+
+describe('AdapterSecretSchema — credential references (DOR-280)', () => {
+  it('accepts a keychain: credential reference (the at-rest form)', () => {
+    expect(AdapterSecretSchema.safeParse('keychain:relay-adapter-telegram-1-token').success).toBe(
+      true
+    );
+  });
+
+  it('accepts env: and file: credential references', () => {
+    expect(AdapterSecretSchema.safeParse('env:TELEGRAM_BOT_TOKEN').success).toBe(true);
+    expect(AdapterSecretSchema.safeParse('file:relay-adapter-slack-1-botToken').success).toBe(true);
+  });
+
+  it('still accepts a raw pasted token (in-transit / legacy form) so migration never breaks a bound bot', () => {
+    expect(AdapterSecretSchema.safeParse('123456789:ABCdef-raw-telegram-token').success).toBe(true);
+  });
+
+  it('rejects an empty secret', () => {
+    expect(AdapterSecretSchema.safeParse('').success).toBe(false);
+  });
+});
+
+describe('TelegramAdapterConfigSchema — token as credential reference', () => {
+  it('accepts a file: reference for the bot token', () => {
+    const result = TelegramAdapterConfigSchema.safeParse({
+      token: 'file:relay-adapter-telegram-1-token',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a raw pasted bot token', () => {
+    const result = TelegramAdapterConfigSchema.safeParse({ token: '123:ABC' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an empty token', () => {
+    const result = TelegramAdapterConfigSchema.safeParse({ token: '' });
+    expect(result.success).toBe(false);
+  });
+});
 
 describe('AdapterBindingSchema', () => {
   const baseBinding = {

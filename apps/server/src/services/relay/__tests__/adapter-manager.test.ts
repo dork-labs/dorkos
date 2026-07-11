@@ -158,6 +158,32 @@ function createMockRegistry(): AdapterRegistry {
   } as unknown as AdapterRegistry;
 }
 
+/**
+ * In-memory credential store + provider so the manager can materialize/resolve
+ * adapter secrets (DOR-280) without the process-wide singletons that only
+ * `initCredentialProvider` sets up in production.
+ */
+const secretStore = new Map<string, string>();
+const mockCredentialStore = {
+  put: vi.fn(async (name: string, secret: string) => {
+    secretStore.set(name, secret);
+    return `file:${name}`;
+  }),
+  get: vi.fn(async (name: string) => secretStore.get(name) ?? null),
+  delete: vi.fn(async (name: string) => {
+    secretStore.delete(name);
+  }),
+};
+const mockCredentialProvider = {
+  resolve: vi.fn(async (ref: string) => {
+    const name = ref.slice(ref.indexOf(':') + 1);
+    const secret = secretStore.get(name);
+    return secret != null
+      ? ({ ok: true, secret } as const)
+      : ({ ok: false, reason: 'unresolved', ref, message: 'missing' } as const);
+  }),
+};
+
 const mockDeps: AdapterManagerDeps = {
   agentManager: {
     ensureSession: vi.fn(),
@@ -167,6 +193,8 @@ const mockDeps: AdapterManagerDeps = {
     insertSpan: vi.fn(),
     updateSpan: vi.fn(),
   },
+  credentialStore: mockCredentialStore,
+  credentialProvider: mockCredentialProvider,
 };
 
 describe('AdapterManager', () => {
@@ -176,6 +204,7 @@ describe('AdapterManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    secretStore.clear();
     registry = createMockRegistry();
     manager = new AdapterManager(registry, configPath, mockDeps);
   });
@@ -1320,11 +1349,14 @@ describe('AdapterManager', () => {
       expect(config.token).toBe('***');
       expect(config.mode).toBe('webhook');
 
-      // Verify preservation by checking the persisted config still has original token
+      // The original secret is preserved — but at rest it is a credential
+      // reference (DOR-280), and the encrypted store still resolves to the
+      // original token, so the bound bot keeps working.
       const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
       const savedAdapters = JSON.parse(savedJson).adapters;
       const savedTg = savedAdapters.find((a: { id: string }) => a.id === 'tg-main');
-      expect(savedTg.config.token).toBe('bot-token-123');
+      expect(savedTg.config.token).toBe('file:relay-adapter-tg-main-token');
+      expect(secretStore.get('relay-adapter-tg-main-token')).toBe('bot-token-123');
     });
 
     it('preserves password fields when *** submitted', async () => {
@@ -1338,11 +1370,12 @@ describe('AdapterManager', () => {
       const config = adapter!.config.config as Record<string, unknown>;
       expect(config.token).toBe('***');
 
-      // Verify preservation by checking persisted config
+      // Preserved, and stored as a reference that still resolves (DOR-280).
       const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
       const savedAdapters = JSON.parse(savedJson).adapters;
       const savedTg = savedAdapters.find((a: { id: string }) => a.id === 'tg-main');
-      expect(savedTg.config.token).toBe('bot-token-123');
+      expect(savedTg.config.token).toBe('file:relay-adapter-tg-main-token');
+      expect(secretStore.get('relay-adapter-tg-main-token')).toBe('bot-token-123');
     });
 
     it('preserves nested password fields (e.g., inbound.secret)', async () => {
@@ -1363,12 +1396,18 @@ describe('AdapterManager', () => {
       expect(config.inbound.subject).toBe('relay.webhook.new');
       expect(config.outbound.url).toBe('https://new.com');
 
-      // Verify preservation by checking persisted config
+      // Nested secrets are preserved too, each as a resolvable reference (DOR-280).
       const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
       const savedAdapters = JSON.parse(savedJson).adapters;
       const savedWh = savedAdapters.find((a: { id: string }) => a.id === 'wh-github');
-      expect(savedWh.config.inbound.secret).toBe('a-very-long-secret-16');
-      expect(savedWh.config.outbound.secret).toBe('another-long-secret-16');
+      expect(savedWh.config.inbound.secret).toBe('file:relay-adapter-wh-github-inbound-secret');
+      expect(savedWh.config.outbound.secret).toBe('file:relay-adapter-wh-github-outbound-secret');
+      expect(secretStore.get('relay-adapter-wh-github-inbound-secret')).toBe(
+        'a-very-long-secret-16'
+      );
+      expect(secretStore.get('relay-adapter-wh-github-outbound-secret')).toBe(
+        'another-long-secret-16'
+      );
     });
 
     it('restarts adapter after config change', async () => {
@@ -1668,6 +1707,59 @@ describe('AdapterManager', () => {
 
       // Both adapters should have been attempted
       expect(registry.register).toHaveBeenCalledTimes(2);
+    });
+
+    it('a dangling credential reference isolates to one adapter — the relay stays up (DOR-280)', async () => {
+      // tg-ok has a resolvable token; tg-broken points at a file: reference
+      // whose secret is absent (host.key rotated, secret deleted, etc).
+      const configWithBrokenSecret = JSON.stringify({
+        adapters: [
+          {
+            id: 'tg-broken',
+            type: 'telegram',
+            enabled: true,
+            config: { token: 'file:relay-adapter-tg-broken-token', mode: 'polling' },
+          },
+          {
+            id: 'tg-ok',
+            type: 'telegram',
+            enabled: true,
+            config: { token: 'bot-token-ok', mode: 'polling' },
+          },
+        ],
+      });
+      vi.mocked(readFile).mockResolvedValue(configWithBrokenSecret);
+
+      const mockEventRecorder = { insertAdapterEvent: vi.fn() };
+      const brokenManager = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        eventRecorder: mockEventRecorder,
+      });
+
+      // initialize() must NOT throw — a single unresolvable secret cannot abort
+      // the whole relay init.
+      await expect(brokenManager.initialize()).resolves.toBeUndefined();
+
+      // Only the healthy adapter is registered; the broken one is skipped.
+      expect(registry.register).toHaveBeenCalledTimes(1);
+      const registered = vi.mocked(registry.register).mock.calls[0][0];
+      expect(registered.id).toBe('tg-ok');
+
+      // The broken adapter surfaces a descriptive, secret-free error event.
+      const errorCall = mockEventRecorder.insertAdapterEvent.mock.calls.find(
+        (c) => c[0] === 'tg-broken' && c[1] === 'adapter.error'
+      );
+      expect(errorCall).toBeDefined();
+      expect(errorCall![2]).toContain('Failed to resolve credential');
+      expect(errorCall![2]).toContain("'tg-broken'");
+      expect(errorCall![2]).toContain("'token'");
+
+      // The healthy adapter still connects.
+      expect(mockEventRecorder.insertAdapterEvent).toHaveBeenCalledWith(
+        'tg-ok',
+        'adapter.connected',
+        expect.any(String)
+      );
     });
   });
 });

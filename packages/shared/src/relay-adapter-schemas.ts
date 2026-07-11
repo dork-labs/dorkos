@@ -13,6 +13,32 @@ extendZodWithOpenApi(z);
 
 // === Adapter Configuration Schemas ===
 
+/**
+ * A secret-bearing adapter field — a bot token (Telegram, Slack) or other
+ * sensitive credential.
+ *
+ * The value is one of two things depending on where it lives (DOR-280):
+ *
+ * - **At rest** (`~/.dork/relay/adapters.json`): always a credential
+ *   *reference* — `keychain:<id>`, `env:<VAR>`, or `file:<name>` (see
+ *   {@link CredentialReferenceSchema}), never a raw secret. The server
+ *   materializes any pasted token into an encrypted `file:` reference before
+ *   the config touches disk, so a bot token is never persisted in cleartext.
+ * - **In transit** (the create/test API, or a legacy pre-DOR-280 file): may be
+ *   a raw secret. The schema stays permissive so a founder can paste a token
+ *   and so an already-bound bot's cleartext file still parses and can be
+ *   migrated — the server converts it to a reference on the next write and
+ *   resolves references back to the real secret only in memory at adapter
+ *   construction.
+ *
+ * A reference *is* a non-empty string, so the schema is a plain
+ * `z.string().min(1)`: making it reject cleartext would break both the
+ * paste-a-token flow and the migration of an existing cleartext config.
+ */
+export const AdapterSecretSchema = z.string().min(1);
+
+export type AdapterSecret = z.infer<typeof AdapterSecretSchema>;
+
 export const AdapterTypeSchema = z
   .enum(['telegram', 'webhook', 'claude-code', 'slack', 'plugin'])
   .openapi('AdapterType');
@@ -35,11 +61,13 @@ export type PluginSource = z.infer<typeof PluginSourceSchema>;
 
 export const TelegramAdapterConfigSchema = z
   .object({
-    token: z.string().min(1),
+    /** Bot token — a credential reference at rest (see {@link AdapterSecretSchema}). */
+    token: AdapterSecretSchema,
     mode: z.enum(['polling', 'webhook']).default('polling'),
     webhookUrl: z.string().url().optional(),
     webhookPort: z.number().int().positive().optional(),
-    webhookSecret: z.string().min(1).optional(),
+    /** Webhook validation secret — a credential reference at rest (see {@link AdapterSecretSchema}). */
+    webhookSecret: AdapterSecretSchema.optional(),
     streaming: z.boolean().default(true),
   })
   .openapi('TelegramAdapterConfig');
@@ -81,9 +109,12 @@ export type WebhookAdapterConfigZ = WebhookAdapterConfig;
 
 export const SlackAdapterConfigSchema = z
   .object({
-    botToken: z.string().min(1),
-    appToken: z.string().min(1),
-    signingSecret: z.string().min(1),
+    /** Bot token (`xoxb-…`) — a credential reference at rest (see {@link AdapterSecretSchema}). */
+    botToken: AdapterSecretSchema,
+    /** App-level token (`xapp-…`) — a credential reference at rest (see {@link AdapterSecretSchema}). */
+    appToken: AdapterSecretSchema,
+    /** Signing secret — a credential reference at rest (see {@link AdapterSecretSchema}). */
+    signingSecret: AdapterSecretSchema,
     streaming: z.boolean().default(true),
     nativeStreaming: z.boolean().default(true),
     typingIndicator: z.enum(['none', 'reaction']).default('reaction'),
