@@ -94,9 +94,10 @@ describe('SessionEventSchema', () => {
     expect(parsed).toMatchObject({ startedAt: 1_700_000_000_000, remainingMs: 25_000 });
   });
 
-  it('parses the compaction fidelity members (DOR-118)', () => {
+  it('parses the compaction fidelity members (DOR-110)', () => {
     // Purpose: the compaction members reuse the StreamEvent shapes and ride the
-    // seq stream like any other fidelity member.
+    // seq stream like any other fidelity member — the durable `compact_boundary`
+    // row and the runtime-agnostic `operation_progress` lifecycle.
     const boundary = {
       seq: 4,
       type: 'compact_boundary',
@@ -106,14 +107,15 @@ describe('SessionEventSchema', () => {
     };
     expect(SessionEventSchema.parse(boundary)).toEqual(boundary);
 
-    const status = {
+    const progress = {
       seq: 6,
-      type: 'system_status',
-      message: 'Status: compacting',
-      compactResult: 'failed',
-      compactError: 'boom',
+      type: 'operation_progress',
+      operation: 'compaction',
+      state: 'failed',
+      determinate: false,
+      error: 'boom',
     };
-    expect(SessionEventSchema.parse(status)).toEqual(status);
+    expect(SessionEventSchema.parse(progress)).toEqual(progress);
   });
 
   it('parses an error event with optional code/category/details', () => {

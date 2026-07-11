@@ -1,14 +1,20 @@
 /**
  * Store write actions for a single chat session.
  *
- * Extracts the 11 per-session `useSessionChatStore.updateSession` callbacks from
+ * Extracts the 12 per-session `useSessionChatStore.updateSession` callbacks from
  * `useChatSession` so the orchestrating hook stays focused on wiring.  Each setter
  * is stable across renders (deps: only `sid`).
  */
 import { useCallback } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
 import { useSessionChatStore } from '@/layers/entities/session';
-import type { ChatMessage, ChatStatus, TransportErrorInfo, SystemStatusState } from './chat-types';
+import type {
+  ChatMessage,
+  ChatStatus,
+  TransportErrorInfo,
+  SystemStatusState,
+  OperationProgressState,
+} from './chat-types';
 
 // ---------------------------------------------------------------------------
 // Return type (exported so callers can be typed without reconstructing it)
@@ -26,6 +32,8 @@ export interface SessionStoreActions {
   setIsTextStreaming: (streaming: boolean) => void;
   /** Writes the per-session systemStatus field. */
   setSystemStatus: (payload: SystemStatusState | null) => void;
+  /** Writes the per-session operationProgress field (DOR-110). */
+  setOperationProgress: (payload: OperationProgressState | null) => void;
   setPromptSuggestions: (suggestions: string[]) => void;
 }
 
@@ -137,6 +145,14 @@ export function useSessionStoreActions(
     [sid]
   );
 
+  const setOperationProgress = useCallback(
+    (payload: OperationProgressState | null) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { operationProgress: payload });
+    },
+    [sid]
+  );
+
   const setPromptSuggestions = useCallback(
     (suggestions: string[]) => {
       if (!sid) return;
@@ -156,6 +172,7 @@ export function useSessionStoreActions(
     setStreamStartTime,
     setIsTextStreaming,
     setSystemStatus,
+    setOperationProgress,
     setPromptSuggestions,
   };
 }

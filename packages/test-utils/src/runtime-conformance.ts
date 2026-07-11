@@ -19,7 +19,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import { ErrorEventSchema, StreamEventSchema, UsageStatusSchema } from '@dorkos/shared/schemas';
+import {
+  ErrorEventSchema,
+  OperationProgressEventSchema,
+  StreamEventSchema,
+  UsageStatusSchema,
+} from '@dorkos/shared/schemas';
 import type { HistoryMessage, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -53,6 +58,16 @@ export interface RuntimeConformanceOpts {
    */
   makeFailingRuntime?: () => AgentRuntime;
   /**
+   * Factory producing a runtime whose next `sendMessage` turn emits a
+   * COMPACTION operation via the standardized `operation_progress` contract
+   * (DOR-110). When provided, the suite additionally asserts the progress
+   * contract: the turn yields at least one `operation_progress` for
+   * `operation: 'compaction'`, and a resolving phase (`done`/`failed`) appears.
+   * Omit for runtimes with no compaction concept (codex, test-mode) — honest
+   * degradation, not a weakened assertion.
+   */
+  makeCompactingRuntime?: () => AgentRuntime;
+  /**
    * Provided ONLY by LOG-BACKED runtimes (codex, opencode, test-mode) that
    * declare `logBackedHistory` and persist their completed turns to the durable
    * session-event store (DOR-189). Given a runtime, a fresh session id, and the
@@ -85,6 +100,27 @@ const BOOLEAN_CAPABILITY_FLAGS = [
   'supportsPlugins',
 ] as const satisfies readonly (keyof RuntimeCapabilities)[];
 
+/**
+ * Assert one `operation_progress` event satisfies the DOR-110 contract: it
+ * parses against the shared schema and `percent` is present ONLY when the phase
+ * is `determinate` (an indeterminate phase must carry no fraction).
+ *
+ * @param event - A StreamEvent whose `type` is `'operation_progress'`.
+ */
+function assertOperationProgress(event: StreamEvent): void {
+  const parsed = OperationProgressEventSchema.safeParse(event.data);
+  expect(
+    parsed.success,
+    `malformed operation_progress: ${parsed.success ? '' : parsed.error.message}`
+  ).toBe(true);
+  if (parsed.success && !parsed.data.determinate) {
+    expect(
+      parsed.data.percent,
+      'an indeterminate operation must not report a percent'
+    ).toBeUndefined();
+  }
+}
+
 let sessionCounter = 0;
 
 /** Unique per-test session id so tests never observe each other's state. */
@@ -115,6 +151,7 @@ export function runtimeConformance(
     expectHistory = false,
     messageContent = 'conformance ping',
     makeFailingRuntime,
+    makeCompactingRuntime,
     durableHistory,
   } = opts;
 
@@ -238,7 +275,64 @@ export function runtimeConformance(
           }
         }
       });
+
+      it('any `operation_progress` yielded is a well-formed OperationProgressEvent', async () => {
+        // Self-gating on the standardized progress contract (DOR-110): a runtime
+        // with no long-running operation emits none; a runtime that reports one
+        // must parse against the shared schema, with `percent` only on a
+        // determinate phase. Compaction lifecycle ordering is asserted by the
+        // dedicated `makeCompactingRuntime` block below.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts());
+
+        const events = await drainTurn(runtime, sessionId);
+
+        for (const event of events) {
+          if (event.type !== 'operation_progress') continue;
+          assertOperationProgress(event);
+        }
+      });
     });
+
+    if (makeCompactingRuntime) {
+      describe('operation progress (compaction, DOR-110)', () => {
+        it('reports compaction via the standardized operation_progress contract', async () => {
+          const runtime = makeCompactingRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts());
+
+          const events = await drainTurn(runtime, sessionId);
+
+          const progress = events.filter((event) => event.type === 'operation_progress');
+          expect(
+            progress.length,
+            'a compacting turn must yield at least one operation_progress event'
+          ).toBeGreaterThan(0);
+
+          for (const event of progress) assertOperationProgress(event);
+
+          const compaction = progress.filter(
+            (event) => (event.data as { operation?: string }).operation === 'compaction'
+          );
+          expect(
+            compaction.length,
+            "a compacting turn must report operation 'compaction'"
+          ).toBeGreaterThan(0);
+
+          // Compaction must resolve — a `done` or `failed` phase always arrives so
+          // the client's progress treatment can never get stuck open.
+          const resolved = compaction.some((event) => {
+            const state = (event.data as { state?: string }).state;
+            return state === 'done' || state === 'failed';
+          });
+          expect(resolved, 'a compacting turn must resolve (done or failed)').toBe(true);
+
+          // The stream still ends on the terminal event, compaction notwithstanding.
+          expect(events[events.length - 1]!.type).toBe(TERMINAL_EVENT_TYPE);
+        });
+      });
+    }
 
     if (makeFailingRuntime) {
       describe('turn failure', () => {

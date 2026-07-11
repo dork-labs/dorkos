@@ -478,8 +478,15 @@ describe('mapOpenCodeEvent', () => {
       expect(mapOpenCodeEvent(messageUpdated(userMessage(OC)), makeContext())).toEqual([]);
     });
 
-    it('maps session.compacted to a compact_boundary marker', () => {
+    it('maps session.compacted to operation_progress done + a compact_boundary marker (DOR-110)', () => {
+      // OpenCode reports compaction as a single post-hoc completion — honest
+      // degradation is a lone operation_progress `done` (no start/percent) plus
+      // the durable boundary row.
       expect(mapOpenCodeEvent(sessionCompacted(OC), makeContext())).toEqual([
+        {
+          type: 'operation_progress',
+          data: { operation: 'compaction', state: 'done', determinate: false },
+        },
         { type: 'compact_boundary', data: {} },
       ]);
     });

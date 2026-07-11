@@ -153,23 +153,34 @@ export function StatusShowcases() {
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>System message: compacting</ShowcaseLabel>
+        <ShowcaseLabel>Operation progress: compaction (indeterminate bar)</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
-            status="idle"
-            streamStartTime={null}
+            status="streaming"
+            streamStartTime={streamStart}
             estimatedTokens={0}
-            systemStatus={{ message: 'Compacting context...', status: null }}
+            systemStatus={null}
+            operationProgress={{
+              operation: 'compaction',
+              determinate: false,
+              message: 'Compacting context…',
+            }}
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>System message: permission change</ShowcaseLabel>
+        <ShowcaseLabel>Operation progress: determinate bar (percent)</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
-            status="idle"
-            streamStartTime={null}
+            status="streaming"
+            streamStartTime={streamStart}
             estimatedTokens={0}
-            systemStatus={{ message: 'Permission mode changed to plan', status: null }}
+            systemStatus={null}
+            operationProgress={{
+              operation: 'compaction',
+              determinate: true,
+              percent: 65,
+              message: 'Compacting context…',
+            }}
           />
         </ShowcaseDemo>
 
@@ -179,7 +190,7 @@ export function StatusShowcases() {
             status="streaming"
             streamStartTime={streamStart}
             estimatedTokens={0}
-            systemStatus={{ message: 'Running hook "format"…', status: null }}
+            systemStatus={{ message: 'Running hook "format"…' }}
           />
         </ShowcaseDemo>
 

@@ -4,7 +4,7 @@
  * @module features/chat/ui/status
  */
 export { ChatStatusSection } from './ChatStatusSection';
-export { ChatStatusStrip, deriveStripState, deriveSystemIcon } from './ChatStatusStrip';
+export { ChatStatusStrip, deriveStripState } from './ChatStatusStrip';
 export type { StripState } from './ChatStatusStrip';
 export { DragHandle } from './DragHandle';
 export { TerminalReasonChip } from './TerminalReasonChip';

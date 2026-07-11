@@ -12,6 +12,7 @@ import type {
   HookPart,
   CompactMetadata,
   MessageType,
+  OperationKind,
 } from '@dorkos/shared/types';
 
 export interface ChatMessage {
@@ -93,15 +94,30 @@ export interface TransportErrorInfo {
 export type ChatStatus = 'idle' | 'streaming' | 'error';
 
 /**
- * Per-session system-status payload surfaced on the chat store.
- *
- * `message` is the human-readable fallback used by the `system-message` rung's
- * renderer. `status` is the raw SDK discriminator (SDK 0.2.108+) used by the
- * renderer to pick status-aware copy. Both may be present independently.
+ * Per-session system-status payload surfaced on the chat store — a transient
+ * informational flash (e.g. a session hook running). `message` is the copy the
+ * `system-message` rung renders. Operation lifecycle (compaction) is NOT here;
+ * it rides {@link OperationProgressState}.
  */
 export interface SystemStatusState {
   /** Human-readable body. Always set when the record is non-null. */
   message: string;
-  /** Raw SDK status value (e.g. `'requesting'`, `'compacting'`). Optional. */
-  status: string | null;
+}
+
+/**
+ * Per-session live operation-progress payload surfaced on the chat store — the
+ * active phase of a named long-running operation (DOR-110), held only while the
+ * operation is in progress (a `done`/`failed` phase clears it to `null`). Drives
+ * the status strip's progress treatment: an indeterminate bar when
+ * `determinate` is false, a `percent` bar when true.
+ */
+export interface OperationProgressState {
+  /** Which operation is in progress (extensible union). */
+  operation: OperationKind;
+  /** Whether `percent` is meaningful; `false` → indeterminate bar. */
+  determinate: boolean;
+  /** Completion fraction 0–100, present only when `determinate` is true. */
+  percent?: number;
+  /** Optional operation label (e.g. "Compacting context…"). */
+  message?: string;
 }

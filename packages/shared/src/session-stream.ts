@@ -37,6 +37,7 @@ import {
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
   SystemStatusEventSchema,
+  OperationProgressEventShapeSchema,
   UiCommandEventSchema,
   ErrorEventSchema,
   UsageStatusSchema,
@@ -313,15 +314,27 @@ export const SessionEventSchema = z
       type: z.literal('compact_boundary'),
       ...CompactBoundaryEventSchema.shape,
     }),
-    // A transient operational status (SDK status messages — "Compacting context…",
-    // hook progress) plus the compaction resolution (`compactResult`/`compactError`).
-    // Drives the client's transient status strip — NOT the durable SessionStatus
-    // projection — so it rides the turn like a fidelity member; the client folds a
-    // failed compaction into an inline error surface.
+    // A transient operational status (SDK status messages — hook progress, a raw
+    // `status` token). Drives the client's transient status strip — NOT the
+    // durable SessionStatus projection — so it rides the turn like a fidelity
+    // member. Operation lifecycle (compaction) rides `operation_progress` instead.
     z.object({
       ...seqShape,
       type: z.literal('system_status'),
       ...SystemStatusEventSchema.shape,
+    }),
+    // Runtime-agnostic progress for a named long-running operation (DOR-110 —
+    // compaction start → done/failed). Fidelity member: drives the status strip's
+    // progress treatment and, on `failed`, the inline compaction error row; no
+    // durable status projection. A runtime with no such operation emits nothing.
+    z.object({
+      ...seqShape,
+      type: z.literal('operation_progress'),
+      // The base object shape (not the refined schema — a discriminatedUnion
+      // member must be a plain object). The cross-field invariants are enforced
+      // upstream on the StreamEvent's OperationProgressEventSchema; this member
+      // carries data already validated there via the normalizer.
+      ...OperationProgressEventShapeSchema.shape,
     }),
     // A typed turn error, adapter-yielded (a runtime's `error` StreamEvent) or
     // server-injected (`guardTurnErrors` on a throw, the stall watchdog). It

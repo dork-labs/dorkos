@@ -57,6 +57,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     isRateLimited,
     rateLimitRetryAfter,
     systemStatus,
+    operationProgress,
     promptSuggestions,
   } = useSessionChatState(sid);
 
@@ -128,12 +129,18 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Store write actions
   // ---------------------------------------------------------------------------
 
-  const { setMessages, setInput, setError, setSessionBusy, setSystemStatus } =
+  const { setMessages, setInput, setError, setSessionBusy, setSystemStatus, setOperationProgress } =
     useSessionStoreActions(sid, isAliveRef, mountGenerationMapRef);
 
-  // Drive the status strip's "Compacting context…" state from projected
-  // system_status events — its legacy in-band producer was retired (DOR-118).
-  useSystemStatusEvents(sessionId, streamState.inProgressTurn, setSystemStatus);
+  // Drive the status strip's operation-progress (compaction) and hook-flash
+  // states from the projected turn — the legacy in-band producers were retired
+  // (DOR-110 operation_progress, DOR-118/DOR-125).
+  useSystemStatusEvents(
+    sessionId,
+    streamState.inProgressTurn,
+    setOperationProgress,
+    setSystemStatus
+  );
 
   // ---------------------------------------------------------------------------
   // Session initialisation
@@ -273,6 +280,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     isRateLimited,
     rateLimitRetryAfter,
     systemStatus,
+    operationProgress,
     promptSuggestions,
     syncConnectionState,
     // Exposed so the queue path (useChatQueue) can intercept native commands at

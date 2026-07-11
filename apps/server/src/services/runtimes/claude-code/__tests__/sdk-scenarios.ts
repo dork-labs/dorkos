@@ -179,6 +179,39 @@ export async function* sdkToolCall(
 }
 
 /**
+ * Produces a context-window compaction sequence: an in-flight `status:
+ * 'compacting'`, the `compact_boundary` marker, then the resolving status
+ * carrying `compact_result: 'success'`. Drives the `operation_progress`
+ * started→done contract (DOR-110) end-to-end through the runtime.
+ */
+export async function* sdkCompaction(): AsyncGenerator<SDKMessage> {
+  yield makeInit();
+  yield {
+    type: 'system',
+    subtype: 'status',
+    status: 'compacting',
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as SDKMessage;
+  yield {
+    type: 'system',
+    subtype: 'compact_boundary',
+    compact_metadata: { trigger: 'auto', pre_tokens: 120000, post_tokens: 24000, duration_ms: 900 },
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as SDKMessage;
+  yield {
+    type: 'system',
+    subtype: 'status',
+    status: 'idle',
+    compact_result: 'success',
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as SDKMessage;
+  yield makeResult();
+}
+
+/**
  * Produces a TodoWrite tool call followed by a tool_use_summary.
  *
  * @param tasks - Task items to create (id, content, status)

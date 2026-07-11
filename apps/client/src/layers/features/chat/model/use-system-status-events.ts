@@ -1,118 +1,143 @@
 /**
- * Drive the chat status strip's `system_status` state from the projected
- * in-progress turn (DOR-118 compaction; DOR-125 session hooks).
+ * Drive the chat status strip's transient signals from the projected in-progress
+ * turn: operation progress (DOR-110 compaction) and session-hook flashes
+ * (DOR-125).
  *
- * Under the durable `/events` contract the SDK's status messages land in the
+ * Under the durable `/events` contract the runtime's transient events land in the
  * stream store's `inProgressTurn` (the bubble projection correctly skips them).
- * The strip renders from the per-session `systemStatus` store field, whose
- * producer was retired with the legacy in-band pipeline — so these states stopped
- * showing. This hook re-derives them from the projected turn and writes
- * `setSystemStatus`.
+ * The strip renders from the per-session `operationProgress` and `systemStatus`
+ * store fields; this hook re-derives them from the projected turn and writes both.
  *
  * The strip is a PURE FUNCTION of the turn: {@link deriveStripFromTurn} folds the
- * turn's events to the state to show. Two non-overlapping signals are surfaced:
+ * turn's events to the two states to show. Two non-overlapping signals:
  *
- * - **Compaction** (durable): an unresolved `status: 'compacting'` shows
- *   "Compacting context…"; a resolving `compactResult` (success OR failure) or
- *   the turn ending clears it. A failed compaction's detail is surfaced inline by
- *   the bubble projection, so the strip just clears here.
+ * - **Operation progress** (durable): a `operation_progress` `started` shows the
+ *   strip's progress treatment (an indeterminate/percent bar); the matching
+ *   `done`/`failed`, or the turn ending, clears it. A failed operation's detail is
+ *   surfaced inline by the bubble projection, so the strip just clears here.
  * - **Session hooks** (transient): a non-tool hook emits a `system_status` with a
- *   `message` and no `status` ("Running hook \"X\"…"). It shows until the next
- *   turn event (the model resuming) clears it — so it flashes for exactly as long
- *   as the hook runs, then yields to the streaming verb instead of clobbering it
- *   for the whole turn.
+ *   `message` ("Running hook \"X\"…"). It shows until the next turn event (the
+ *   model resuming) clears it — so it flashes for exactly as long as the hook
+ *   runs, then yields to the streaming verb instead of clobbering it for the turn.
  *
  * Because state is re-derived from `inProgressTurn` on every change, it is correct
  * across reconnect with no extra bookkeeping: a snapshot taken mid-signal re-shows
  * it, and one taken after it resolved clears it — the strip can never get stuck.
  * Writes are gated on a real change to avoid render churn.
  *
- * `status: 'requesting'` ("Thinking…") is deliberately NOT surfaced: the crafted
- * rotating-verb animation already covers the thinking phase for the entire
- * streaming turn, and a system-message outranks streaming in `deriveStripState`,
- * so forwarding it would freeze the verb to a static word (DOR-125).
- *
  * @module features/chat/model/use-system-status-events
  */
 import { useEffect, useRef } from 'react';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import type { SystemStatusState } from './chat-types';
+import type { SystemStatusState, OperationProgressState } from './chat-types';
+
+/** The two transient strip states folded from one in-progress turn. */
+interface StripSignals {
+  operationProgress: OperationProgressState | null;
+  systemStatus: SystemStatusState | null;
+}
 
 /**
- * Fold a turn's events to the strip state they imply. Pure and order-sensitive.
+ * Fold a turn's events to the transient strip signals they imply. Pure and
+ * order-sensitive.
  *
- * Compaction is durable: an unresolved `status: 'compacting'` is shown until a
- * later `compactResult` (success OR failure) or the turn ending clears it. A
- * session hook (`system_status` with a `message` and no `status`) is transient:
- * it is shown until the next turn event — the model resuming — clears it. Any
- * other status (notably `'requesting'`) is ignored; see the module doc.
+ * Operation progress is durable: a `operation_progress` `started` is held until a
+ * later matching `done`/`failed` (or the turn ending) clears it. A session hook
+ * (`system_status` with a `message`) is transient: it is shown until the next
+ * turn event — the model resuming — clears it.
  *
  * @param turn - The in-progress turn's events, in seq order.
  */
-function deriveStripFromTurn(turn: SessionEvent[]): SystemStatusState | null {
-  let payload: SystemStatusState | null = null;
-  // A hook flash is cleared by the next turn event (the model moving on);
-  // compaction is durable and ignores that.
-  let payloadIsTransientHook = false;
+function deriveStripFromTurn(turn: SessionEvent[]): StripSignals {
+  let operationProgress: OperationProgressState | null = null;
+  let systemStatus: SystemStatusState | null = null;
   for (const event of turn) {
-    if (event.type === 'system_status') {
-      if (event.compactResult !== undefined) {
-        payload = null;
-        payloadIsTransientHook = false;
-      } else if (event.status === 'compacting') {
-        payload = { message: event.message, status: 'compacting' };
-        payloadIsTransientHook = false;
-      } else if (!event.status) {
-        // Non-tool hook progress ("Running hook \"X\"…"): message, no status.
-        payload = { message: event.message, status: null };
-        payloadIsTransientHook = true;
-      }
-      // Any other status (e.g. 'requesting') is intentionally not surfaced.
+    if (event.type === 'operation_progress') {
+      operationProgress =
+        event.state === 'started'
+          ? {
+              operation: event.operation,
+              determinate: event.determinate,
+              ...(event.percent !== undefined ? { percent: event.percent } : {}),
+              ...(event.message !== undefined ? { message: event.message } : {}),
+            }
+          : null;
       continue;
     }
-    // A non-status event after a hook flash means the turn moved on → clear it.
-    if (payloadIsTransientHook) {
-      payload = null;
-      payloadIsTransientHook = false;
+    if (event.type === 'system_status') {
+      // A non-tool hook flash ("Running hook \"X\"…") is a message with no raw
+      // `status`. A generic status token (e.g. `'requesting'`, whose thinking
+      // phase the rotating verb already owns) is deliberately NOT surfaced —
+      // skip it so it neither shows nor clears a running hook flash.
+      if (!event.status) systemStatus = { message: event.message };
+      continue;
     }
+    // Any other turn event after a hook flash means the turn moved on → clear it.
+    // Operation progress is durable and is NOT cleared by unrelated events.
+    systemStatus = null;
   }
-  return payload;
+  return { operationProgress, systemStatus };
 }
 
-/** Whether two strip payloads are equivalent (both null, or same message+status). */
-function sameStrip(a: SystemStatusState | null, b: SystemStatusState | null): boolean {
+/** Whether two operation-progress payloads are equivalent. */
+function sameOperation(
+  a: OperationProgressState | null,
+  b: OperationProgressState | null
+): boolean {
+  if (a === null || b === null) return a === b;
   return (
-    (a?.status ?? null) === (b?.status ?? null) && (a?.message ?? null) === (b?.message ?? null)
+    a.operation === b.operation &&
+    a.determinate === b.determinate &&
+    a.percent === b.percent &&
+    a.message === b.message
   );
 }
 
+/** Whether two system-status payloads are equivalent (both null, or same message). */
+function sameStrip(a: SystemStatusState | null, b: SystemStatusState | null): boolean {
+  return (a?.message ?? null) === (b?.message ?? null);
+}
+
 /**
- * Keep the chat status strip's `system_status` state in sync with the projected
+ * Keep the chat status strip's transient signals in sync with the projected
  * in-progress turn.
  *
  * @param sessionId - The active session, or `null`.
  * @param inProgressTurn - The stream store's projected turn events (seq order).
- * @param setSystemStatus - Writes the per-session `systemStatus` store field.
+ * @param setOperationProgress - Writes the per-session `operationProgress` field.
+ * @param setSystemStatus - Writes the per-session `systemStatus` field.
  */
 export function useSystemStatusEvents(
   sessionId: string | null,
   inProgressTurn: SessionEvent[],
+  setOperationProgress: (payload: OperationProgressState | null) => void,
   setSystemStatus: (payload: SystemStatusState | null) => void
 ): void {
   // The last value written per session — gates redundant store writes (which
   // would otherwise re-render the strip on every projected-turn change).
-  const lastWrittenRef = useRef<Map<string, SystemStatusState | null>>(new Map());
+  const lastOperationRef = useRef<Map<string, OperationProgressState | null>>(new Map());
+  const lastStatusRef = useRef<Map<string, SystemStatusState | null>>(new Map());
+  const setOperationProgressRef = useRef(setOperationProgress);
   const setSystemStatusRef = useRef(setSystemStatus);
   useEffect(() => {
+    setOperationProgressRef.current = setOperationProgress;
     setSystemStatusRef.current = setSystemStatus;
   });
 
   useEffect(() => {
     if (!sessionId) return;
-    const derived = deriveStripFromTurn(inProgressTurn);
-    const prev = lastWrittenRef.current.get(sessionId) ?? null;
-    if (sameStrip(prev, derived)) return;
-    setSystemStatusRef.current(derived);
-    lastWrittenRef.current.set(sessionId, derived);
+    const { operationProgress, systemStatus } = deriveStripFromTurn(inProgressTurn);
+
+    const prevOperation = lastOperationRef.current.get(sessionId) ?? null;
+    if (!sameOperation(prevOperation, operationProgress)) {
+      setOperationProgressRef.current(operationProgress);
+      lastOperationRef.current.set(sessionId, operationProgress);
+    }
+
+    const prevStatus = lastStatusRef.current.get(sessionId) ?? null;
+    if (!sameStrip(prevStatus, systemStatus)) {
+      setSystemStatusRef.current(systemStatus);
+      lastStatusRef.current.set(sessionId, systemStatus);
+    }
   }, [sessionId, inProgressTurn]);
 }

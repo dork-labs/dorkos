@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, MessageSquare, Info, RefreshCw } from 'lucide-react';
+import { Shield, MessageSquare, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PermissionMode } from '@dorkos/shared/types';
 import { useElapsedTime } from '@/layers/shared/model';
 import { DEFAULT_THEME, type IndicatorTheme } from './inference-themes';
 import { BYPASS_INFERENCE_VERBS } from './inference-verbs';
 import { useRotatingVerb } from '../../model/use-rotating-verb';
-import type { SystemStatusState } from '../../model/chat-types';
+import type { SystemStatusState, OperationProgressState } from '../../model/chat-types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,6 +17,12 @@ import type { SystemStatusState } from '../../model/chat-types';
 export type StripState =
   | { type: 'rate-limited'; countdown: number | null; elapsed: string }
   | { type: 'waiting'; waitingType: 'approval' | 'question'; elapsed: string }
+  | {
+      type: 'operation-progress';
+      message: string;
+      determinate: boolean;
+      percent: number | null;
+    }
   | { type: 'system-message'; message: string; icon: LucideIcon }
   | {
       type: 'streaming';
@@ -38,6 +44,7 @@ export interface StripStateInput {
   countdown: number | null;
   isWaitingForUser: boolean;
   waitingType: 'approval' | 'question';
+  operationProgress: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
   elapsed: string;
   verb: string;
@@ -54,42 +61,6 @@ export interface StripStateInput {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Maps system message content to a contextual icon.
- *
- * @internal Exported for testing.
- */
-export function deriveSystemIcon(message: string): LucideIcon {
-  const lower = message.toLowerCase();
-  if (lower.includes('compact')) return RefreshCw;
-  if (lower.includes('permission')) return Shield;
-  return Info;
-}
-
-/**
- * Map raw SDK status to calm, deliberate copy. Unknown values return null so the
- * caller can fall back to the human-readable message. Forward-compat by design —
- * adding SDK statuses becomes a one-line `case` here, not a regex ladder in
- * `deriveSystemIcon`.
- *
- * `'requesting'` is intentionally absent: the rotating-verb animation already
- * covers the thinking phase, so it is never surfaced to the strip (DOR-125). The
- * producer (`use-system-status-events`) drops it before it reaches here.
- *
- * @param status - Raw SDK status discriminator (e.g. `'compacting'`).
- * @returns Calm copy for known statuses, or `null` to signal a fallback.
- *
- * @internal Exported for testing.
- */
-export function deriveStatusCopy(status: string | null | undefined): string | null {
-  switch (status) {
-    case 'compacting':
-      return 'Compacting context\u2026';
-    default:
-      return null;
-  }
-}
-
 /** Format a token count for display (e.g. 3200 -> "~3.2k tokens"). */
 export function formatTokens(count: number): string {
   if (count >= 1000) {
@@ -104,10 +75,11 @@ export function formatTokens(count: number): string {
  * Priority stack (first match wins):
  * 1. rate-limited — user needs to know they're waiting
  * 2. waiting-for-user — user action required to continue
- * 3. system-message — SDK operational event, informational
- * 4. streaming — normal inference in progress
- * 5. complete — post-stream summary, auto-dismisses
- * 6. idle — nothing to show
+ * 3. operation-progress — a long-running operation (e.g. compaction) is running
+ * 4. system-message — runtime operational event (e.g. a hook), informational
+ * 5. streaming — normal inference in progress
+ * 6. complete — post-stream summary, auto-dismisses
+ * 7. idle — nothing to show
  */
 export function deriveStripState(input: StripStateInput): StripState {
   // Priority 1: Rate-limited
@@ -120,18 +92,29 @@ export function deriveStripState(input: StripStateInput): StripState {
     return { type: 'waiting', waitingType: input.waitingType, elapsed: input.elapsed };
   }
 
-  // Priority 3: System message (shown regardless of streaming status)
-  if (input.systemStatus) {
-    const { message, status } = input.systemStatus;
-    const copy = deriveStatusCopy(status) ?? message;
+  // Priority 3: Operation progress (compaction) — the structured, runtime-agnostic
+  // progress treatment (DOR-110), shown regardless of streaming status. The
+  // producer supplies the label copy, so there is no status string to match.
+  if (input.operationProgress) {
+    const { message, determinate, percent } = input.operationProgress;
     return {
-      type: 'system-message',
-      message: copy,
-      icon: deriveSystemIcon(copy),
+      type: 'operation-progress',
+      message: message ?? 'Working…',
+      determinate,
+      percent: percent ?? null,
     };
   }
 
-  // Priority 4: Streaming
+  // Priority 4: System message (shown regardless of streaming status)
+  if (input.systemStatus) {
+    return {
+      type: 'system-message',
+      message: input.systemStatus.message,
+      icon: Info,
+    };
+  }
+
+  // Priority 5: Streaming
   if (input.status === 'streaming') {
     return {
       type: 'streaming',
@@ -145,12 +128,12 @@ export function deriveStripState(input: StripStateInput): StripState {
     };
   }
 
-  // Priority 5: Complete (auto-dismisses after 8s)
+  // Priority 6: Complete (auto-dismisses after 8s)
   if (input.showComplete) {
     return { type: 'complete', elapsed: input.lastElapsed, tokens: input.lastTokens };
   }
 
-  // Priority 6: Idle
+  // Priority 7: Idle
   return { type: 'idle' };
 }
 
@@ -167,6 +150,7 @@ interface UseStripStateInput {
   waitingType: 'approval' | 'question';
   isRateLimited: boolean;
   rateLimitRetryAfter: number | null;
+  operationProgress: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
   theme: IndicatorTheme;
 }
@@ -244,6 +228,7 @@ function useStripState(input: UseStripStateInput): StripState {
     countdown,
     isWaitingForUser: input.isWaitingForUser,
     waitingType: input.waitingType,
+    operationProgress: input.operationProgress,
     systemStatus: input.systemStatus,
     elapsed,
     verb,
@@ -355,6 +340,40 @@ function RateLimitedContent({ state }: { state: Extract<StripState, { type: 'rat
   );
 }
 
+function OperationProgressContent({
+  state,
+}: {
+  state: Extract<StripState, { type: 'operation-progress' }>;
+}) {
+  return (
+    <div
+      className="flex flex-col gap-1.5 px-4 py-2 md:items-start"
+      data-testid="chat-status-strip-operation-progress"
+      data-determinate={state.determinate}
+    >
+      <span className="text-muted-foreground/60 text-xs">{state.message}</span>
+      <div className="bg-muted/60 relative h-0.5 w-full overflow-hidden rounded-full">
+        {state.determinate ? (
+          <motion.div
+            className="bg-muted-foreground/50 absolute inset-y-0 left-0 rounded-full"
+            initial={false}
+            animate={{ width: `${state.percent ?? 0}%` }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          />
+        ) : (
+          // Indeterminate: a short segment sweeps the track — parity with the
+          // runtime's own indeterminate bar when no completion fraction exists.
+          <motion.div
+            className="bg-muted-foreground/50 absolute inset-y-0 w-1/3 rounded-full"
+            animate={{ x: ['-100%', '400%'] }}
+            transition={{ duration: 1.4, ease: 'easeInOut', repeat: Infinity }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SystemMessageContent({
   state,
 }: {
@@ -393,6 +412,8 @@ function renderContent(state: StripState): React.ReactNode {
       return <WaitingContent state={state} />;
     case 'rate-limited':
       return <RateLimitedContent state={state} />;
+    case 'operation-progress':
+      return <OperationProgressContent state={state} />;
     case 'system-message':
       return <SystemMessageContent state={state} />;
     case 'complete':
@@ -415,6 +436,7 @@ interface ChatStatusStripProps {
   waitingType?: 'approval' | 'question';
   isRateLimited?: boolean;
   rateLimitRetryAfter?: number | null;
+  operationProgress?: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
   theme?: IndicatorTheme;
 }
@@ -435,6 +457,7 @@ export function ChatStatusStrip({
   waitingType = 'approval',
   isRateLimited = false,
   rateLimitRetryAfter = null,
+  operationProgress = null,
   systemStatus,
   theme = DEFAULT_THEME,
 }: ChatStatusStripProps) {
@@ -447,6 +470,7 @@ export function ChatStatusStrip({
     waitingType,
     isRateLimited,
     rateLimitRetryAfter,
+    operationProgress,
     systemStatus,
     theme,
   });

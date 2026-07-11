@@ -23,6 +23,7 @@ import type {
   ChatStatus,
   TransportErrorInfo,
   SystemStatusState,
+  OperationProgressState,
 } from '@/layers/shared/model/chat-message-types';
 
 /** Maximum number of sessions retained in the store before LRU eviction. */
@@ -66,6 +67,7 @@ export interface SessionState {
   rateLimitRetryAfter: number | null;
   isRateLimited: boolean;
   systemStatus: SystemStatusState | null;
+  operationProgress: OperationProgressState | null;
   promptSuggestions: string[];
 
   // --- Lifecycle flags ---
@@ -107,6 +109,7 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   rateLimitRetryAfter: null,
   isRateLimited: false,
   systemStatus: null,
+  operationProgress: null,
   promptSuggestions: [],
   historySeeded: false,
   retryCount: 0,

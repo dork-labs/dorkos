@@ -237,8 +237,17 @@ export function mapOpenCodeEvent(
       // The authoritative turn terminal (see module doc, TURN-END VERDICT).
       return [{ type: 'done', data: { sessionId: ctx.sessionId } }];
     case 'session.compacted':
-      // No metadata upstream — an empty boundary still renders the marker.
-      return [{ type: 'compact_boundary', data: {} }];
+      // OpenCode reports compaction as a single post-hoc completion — it exposes
+      // no start signal and no percent, so honest degradation is a lone
+      // `operation_progress` `done` (DOR-110) plus the durable `compact_boundary`
+      // row. No metadata upstream — an empty boundary still renders the marker.
+      return [
+        {
+          type: 'operation_progress',
+          data: { operation: 'compaction', state: 'done', determinate: false },
+        },
+        { type: 'compact_boundary', data: {} },
+      ];
     case 'session.error':
       return mapSessionError(event.properties.error);
     case 'todo.updated':

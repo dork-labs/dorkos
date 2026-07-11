@@ -5,6 +5,7 @@ import {
   CompactMetadataSchema,
   MemoryRecallPartSchema,
   MessagePartSchema,
+  OperationProgressEventSchema,
   PendingInteractionDTOSchema,
   SessionSchema,
   SessionStatusEventSchema,
@@ -147,6 +148,89 @@ describe('CompactBoundaryPartSchema (DOR-118)', () => {
   it('integrates into MessagePartSchema discriminated union', () => {
     const result = MessagePartSchema.safeParse({ type: 'compact_boundary', trigger: 'auto' });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('OperationProgressEventSchema invariants (DOR-110)', () => {
+  const base = { operation: 'compaction' as const };
+
+  // --- Valid shapes ---
+  it('accepts an indeterminate started phase with no percent', () => {
+    const result = OperationProgressEventSchema.safeParse({
+      ...base,
+      state: 'started',
+      determinate: false,
+      message: 'Compacting context…',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a determinate phase carrying a percent', () => {
+    const result = OperationProgressEventSchema.safeParse({
+      ...base,
+      state: 'started',
+      determinate: true,
+      percent: 65,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a failed phase carrying an error', () => {
+    const result = OperationProgressEventSchema.safeParse({
+      ...base,
+      state: 'failed',
+      determinate: false,
+      error: 'context too large to summarize',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a done phase with no error', () => {
+    const result = OperationProgressEventSchema.safeParse({
+      ...base,
+      state: 'done',
+      determinate: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // --- Enforced invariants (the docstring is now the contract) ---
+  it('rejects percent on an indeterminate phase', () => {
+    const result = OperationProgressEventSchema.safeParse({
+      ...base,
+      state: 'started',
+      determinate: false,
+      percent: 50,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['percent']);
+    }
+  });
+
+  it('rejects a determinate phase with no percent', () => {
+    const result = OperationProgressEventSchema.safeParse({
+      ...base,
+      state: 'started',
+      determinate: true,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['percent']);
+    }
+  });
+
+  it('rejects error on a non-failed phase', () => {
+    const result = OperationProgressEventSchema.safeParse({
+      ...base,
+      state: 'done',
+      determinate: false,
+      error: 'should not be here',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['error']);
+    }
   });
 });
 
