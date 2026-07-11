@@ -1,0 +1,124 @@
+---
+title: Threat Model
+description: What DorkOS trusts, what changes when you expose it, and how to reason about the risks of running an agent cockpit
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Threat Model
+
+DorkOS is a cockpit for autonomous agents that run on your own machine. That is powerful, and power is worth reasoning about. This page lays out what DorkOS trusts, what each choice changes, and where the sharp edges are, so you can decide what is safe for your setup. It is written to be read, not to reassure. No "bank-grade" claims here.
+
+<Callout type="info">
+  DorkOS is a fast-moving alpha. This page describes how it works today. When the model changes,
+  this page changes with it.
+</Callout>
+
+## The one idea to hold on to
+
+**Your machine is the trust boundary.** By default DorkOS has no login and listens on localhost only. Anything already running as your user can reach it, the same way it could reach any other developer tool you run. DorkOS does not try to defend you from software you already chose to run as yourself. It defends the line between your machine and everyone else.
+
+Everything below is a variation on that one idea.
+
+## The local, single-user default
+
+Out of the box:
+
+- No accounts, no sign-in screen. Instant start.
+- The server binds to `localhost`, so only your own machine can reach it.
+- Your sessions, agent chats, and code stay in files on your disk. There is no cloud copy.
+
+This is the right default for a tool on your own laptop, and it is also the reason the next section matters so much: **the moment you want to reach DorkOS from another device, the rules change.**
+
+## What enabling the tunnel (or a public bind) changes
+
+Reaching DorkOS from your phone or another machine means exposing it, either by starting a tunnel or by binding to a public network interface. That flips DorkOS from "single-user local tool" to "networked service," so DorkOS requires a real login before it will do it.
+
+<Callout type="warn">
+  Exposing DorkOS **requires an owner account**. Starting a tunnel with login off routes you into
+  creating one first. Binding to a non-loopback host with no login configured refuses to start. This
+  is enforced in code, not a suggestion.
+</Callout>
+
+Once exposed:
+
+- Remote visitors get the sign-in screen. Static assets load so the page renders, but every API call needs a valid session.
+- Registration is **owner-only**. The first account is the owner and further sign-ups are closed, because anyone who can drive agents effectively has your machine's file access and spends your AI quota. A viewer/operator role that safely admits more people is planned, not shipped.
+- You can add a second factor at the tunnel edge (ngrok basic auth) on top of login.
+
+<Callout type="info">
+  One deliberate escape hatch: a container that owns its own network boundary can set
+  `DORKOS_ALLOW_INSECURE_BIND=true` to bind publicly without login. It is off by default and logs a
+  loud warning. Do not set it on a real machine. Copying a container's environment onto bare metal
+  is the mistake to avoid, because it turns off the exposure guard.
+</Callout>
+
+See [Securing your instance](/docs/self-hosting/securing-your-instance) for the how-to.
+
+## What the MCP and agent endpoints expose
+
+DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive it. What it exposes depends entirely on whether you have exposed the server:
+
+- **On localhost with no key set** (the default), the endpoint is open to your own machine, the same as the rest of the local app. That includes tools that install packages, create agents, and run extension code. In the local trust model this is fine, because those callers already run as you.
+- **The instant you expose the server, that endpoint is gated** by the same login the rest of the API uses, plus per-user API keys and optional rate limits. The exposure guard means the open-on-localhost surface can never be reached from the network, because the server refuses to bind publicly without login.
+
+<Callout type="warn">
+  Because localhost MCP tools include package installs and extension code, treat any local software
+  you do not trust as able to drive your fleet. That is the same risk you take with any local tool
+  that has a control socket. If that matters for your setup, set an `MCP_API_KEY` and require it.
+</Callout>
+
+The A2A agent endpoints follow the same rule: unauthenticated only on a loopback bind, gated the moment you go wider.
+
+## Agent-to-agent messaging and budgets
+
+Agents can talk to each other and to you through the relay. Two controls keep that from running away:
+
+- **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
+- **Identity cannot be spoofed.** An agent's "from" address is resolved by the server from the session, not taken from the tool call, so one agent cannot impersonate another.
+- **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on a channel like Telegram is a per-connection setting you control.
+
+## Marketplace package trust
+
+This is the sharpest edge, so it gets its own rule:
+
+<Callout type="error">
+  **Installing a marketplace package runs its code.** A plugin's bundled extensions are compiled and
+  loaded into the DorkOS server process. Install packages the way you would run any script from the
+  internet: only from authors you trust.
+</Callout>
+
+What DorkOS does on your behalf:
+
+- Package sources are fetched over safe git transports only. A booby-trapped source link cannot run a command on your machine at browse or preview time.
+- Installs are transactional. A failed install rolls back and leaves your existing setup untouched.
+- Browsing and previewing the marketplace does not execute package code. Installing does.
+
+What DorkOS does not do yet: it does not verify a package signature or pin it to a content hash by default. Treat the marketplace as trust-on-first-use, and prefer packages from sources you know.
+
+## What is out of scope
+
+Being honest about the edges:
+
+- DorkOS does not defend against other software running as your own user. That is your machine's job.
+- It is not a multi-tenant server. One instance is one operator's cockpit.
+- The local edition sends no email and has no "forgot password" flow. Password recovery is a command you run on the machine, because machine access already implies owner trust.
+
+## Found something?
+
+If you believe you have found a vulnerability, please report it privately. See [SECURITY.md](https://github.com/dork-labs/dorkos/blob/main/SECURITY.md) for how.
+
+## Next steps
+
+<Cards>
+  <Card title="Securing your instance" href="/docs/self-hosting/securing-your-instance">
+    Turn on login, expose safely, and issue API keys
+  </Card>
+  <Card title="Reverse proxy" href="/docs/self-hosting/reverse-proxy">
+    Put DorkOS behind nginx or Caddy
+  </Card>
+  <Card title="MCP server" href="/docs/integrations/mcp-server">
+    How the tool endpoint works and how to secure it
+  </Card>
+</Cards>

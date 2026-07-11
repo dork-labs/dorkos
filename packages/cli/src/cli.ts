@@ -255,6 +255,17 @@ if (process.argv[2] === 'marketplace') {
 // main command flow below.
 const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
 
+// `doctor` runs a read-only setup checklist. Intercept before the top-level
+// parseArgs so it isn't treated as an unknown command, and place it after
+// DORK_HOME is resolved (it reads config) but before any server boot — doctor
+// changes nothing and needs no running server. Dispatch + help live in
+// commands/doctor.ts.
+if (process.argv[2] === 'doctor') {
+  process.env.DORK_HOME = DORK_HOME;
+  const { runDoctor } = await import('./commands/doctor.js');
+  process.exit(await runDoctor(DORK_HOME, process.argv.slice(3)));
+}
+
 // `auth` subcommand has its own flag namespace (`--email`, `--password`).
 // Intercept before the top-level parseArgs call so those flags aren't rejected
 // as unknown options. Operates directly on the local SQLite database and
@@ -344,6 +355,7 @@ Commands:
   cloud login          Link this instance to a DorkOS account
   cloud logout         Unlink this instance from its DorkOS account
   cloud status         Show the linked account, or 'not linked'
+  doctor               Check your setup and report problems in plain words
   cleanup              Remove all DorkOS data
 
 Options:
