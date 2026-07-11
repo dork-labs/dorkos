@@ -1,4 +1,4 @@
-CREATE TABLE "instance_heartbeats" (
+CREATE TABLE IF NOT EXISTS "instance_heartbeats" (
 	"id" bigserial PRIMARY KEY NOT NULL,
 	"instance_id" uuid NOT NULL,
 	"dorkos_version" text NOT NULL,
@@ -13,4 +13,10 @@ CREATE TABLE "instance_heartbeats" (
 	CONSTRAINT "instance_heartbeats_instance_id_unique" UNIQUE("instance_id")
 );
 --> statement-breakpoint
-CREATE INDEX "idx_heartbeats_received" ON "instance_heartbeats" USING btree ("received_at" DESC NULLS LAST);
+DO $$ BEGIN
+	IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'instance_heartbeats_instance_id_unique') THEN
+		ALTER TABLE "instance_heartbeats" ADD CONSTRAINT "instance_heartbeats_instance_id_unique" UNIQUE ("instance_id");
+	END IF;
+END $$;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_heartbeats_received" ON "instance_heartbeats" USING btree ("received_at" DESC NULLS LAST);
