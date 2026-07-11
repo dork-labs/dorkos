@@ -22,6 +22,7 @@ import {
 } from '@/layers/shared/ui';
 import { useTunnelStatus } from '@/layers/entities/tunnel';
 import { TunnelDialog } from '@/layers/features/settings';
+import { HelpMenu } from '@/layers/features/report-issue';
 import { isNewer, isFeatureUpdate } from '@/layers/features/status';
 import { SidebarUpgradeCard } from './SidebarUpgradeCard';
 
@@ -257,6 +258,7 @@ export function SidebarFooterBar() {
               </button>
             );
           })}
+          <HelpMenu />
         </div>
       </div>
 

@@ -1912,6 +1912,12 @@ export const ServerConfigSchema = z
     uptime: z.number(),
     workingDirectory: z.string(),
     nodeVersion: z.string(),
+    platform: z.string().openapi({
+      description: 'Host operating system and architecture, e.g. "darwin-arm64"',
+    }),
+    runtimes: z.array(z.string()).openapi({
+      description: 'Agent runtimes configured on the host, e.g. ["claude-code", "codex"]',
+    }),
     claudeCliPath: z.string().nullable(),
     tunnel: TunnelStatusSchema,
     tasks: z

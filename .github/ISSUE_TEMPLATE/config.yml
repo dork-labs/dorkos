@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report from inside DorkOS
+    url: https://dorkos.ai/docs
+    about: >-
+      In the app, open the command palette (Cmd/Ctrl+K) and pick "Report an
+      issue", or run "dorkos feedback". DorkOS fills in your version, OS,
+      runtimes, and settings for you. No secrets or file paths are included.
+  - name: Report a security problem
+    url: https://github.com/dork-labs/dorkos/blob/main/SECURITY.md
+    about: Please report security issues privately, not as a public issue.

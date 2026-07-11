@@ -21,6 +21,10 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./feedback": {
+      "types": "./src/feedback.ts",
+      "default": "./dist/feedback.js"
+    },
     "./config-schema": {
       "types": "./src/config-schema.ts",
       "default": "./dist/config-schema.js"

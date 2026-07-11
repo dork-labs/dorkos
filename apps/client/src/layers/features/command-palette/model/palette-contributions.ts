@@ -102,6 +102,14 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
     category: 'quick-action',
     priority: 7,
   },
+  {
+    id: 'report-issue',
+    label: 'Report an issue',
+    icon: 'Bug',
+    action: 'reportIssue',
+    category: 'quick-action',
+    priority: 8,
+  },
 ];
 
 /** Dev-only palette items. Registered conditionally in init-extensions.ts. */

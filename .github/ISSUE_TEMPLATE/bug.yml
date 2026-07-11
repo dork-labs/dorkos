@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in DorkOS is broken or behaves the wrong way.
+labels: ['bug', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thanks for taking the time to report a bug. The fastest way to file one
+        is from inside the app: open the command palette (Cmd/Ctrl+K) and pick
+        "Report an issue", or run "dorkos feedback". That fills in your version,
+        OS, runtimes, and settings for you. You can still use this form by hand.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Tell us what went wrong.
+      placeholder: When I did X, DorkOS did Y instead of Z.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: Tell us what you thought would happen.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the steps so we can see the bug ourselves.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See the error
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DorkOS version
+      description: Find it at the bottom of the sidebar, or run "dorkos --version".
+      placeholder: 0.45.1
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and architecture
+      placeholder: macOS 15 (arm64), Ubuntu 24.04 (x64), Windows 11
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Which runtime were you using?
+      description: The agent runtime the session was running on, if it matters.
+      options:
+        - Not sure / not relevant
+        - Claude Code
+        - Codex
+        - OpenCode
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: >-
+        Paste any error text or add a screenshot. Please remove anything
+        private first, like tokens or file paths you would rather not share.
+      render: shell
+    validations:
+      required: false

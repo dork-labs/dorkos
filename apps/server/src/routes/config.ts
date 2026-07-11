@@ -72,6 +72,20 @@ function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   return keys;
 }
 
+/**
+ * List the agent runtimes configured on this host.
+ *
+ * claude-code is always available; codex and opencode are included unless a user
+ * has explicitly disabled them in config (both default to enabled).
+ */
+function configuredRuntimes(): string[] {
+  const runtimes = ['claude-code'];
+  const config = configManager.get('runtimes');
+  if (config?.codex?.enabled !== false) runtimes.push('codex');
+  if (config?.opencode?.enabled !== false) runtimes.push('opencode');
+  return runtimes;
+}
+
 router.get('/', async (_req, res) => {
   let claudeCliPath: string | null = null;
   try {
@@ -93,6 +107,8 @@ router.get('/', async (_req, res) => {
     port: env.DORKOS_PORT,
     uptime: process.uptime(),
     workingDirectory: process.cwd(),
+    platform: `${process.platform}-${process.arch}`,
+    runtimes: configuredRuntimes(),
     boundary: getBoundary(),
     // Set by index.ts at startup before routes are registered — always present at request time
     dorkHome: process.env.DORK_HOME!,

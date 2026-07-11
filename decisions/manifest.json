@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260711-143626",
+      "slug": "feedback-rails-prefilled-github-issues",
+      "title": "Feedback rails open prefilled GitHub issues from a shared, sanitized URL builder",
+      "status": "accepted",
+      "created": "2026-07-11",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
       "id": "260711-143246",
       "slug": "devtools-bridge-postmessage-capture-channel",
       "title": "DevTools bridge capture architecture: in-page shim over postMessage, server-buffered, Claude-Code read tools",

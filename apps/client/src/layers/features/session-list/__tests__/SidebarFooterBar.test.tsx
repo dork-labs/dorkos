@@ -117,6 +117,10 @@ vi.mock('@/layers/features/status', () => ({
   },
 }));
 
+vi.mock('@/layers/features/report-issue', () => ({
+  HelpMenu: () => null,
+}));
+
 import { SidebarFooterBar } from '../ui/SidebarFooterBar';
 
 describe('SidebarFooterBar', () => {

@@ -1,0 +1,61 @@
+name: Runtime issue (Claude Code, Codex, OpenCode)
+description: A problem tied to a specific agent runtime.
+labels: ['bug', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Use this when the problem is about a specific runtime: a session will
+        not start, output looks wrong, or a runtime behaves differently from the
+        others. Running "dorkos feedback --runtime" fills in most of this for
+        you.
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Which runtime?
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Tell us what the runtime did wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a session on this runtime
+        2. Send ...
+        3. See the problem
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DorkOS version
+      placeholder: 0.45.1
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and architecture
+      placeholder: macOS 15 (arm64), Ubuntu 24.04 (x64), Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: >-
+        Paste any error text. Please remove tokens or private file paths first.
+      render: shell
+    validations:
+      required: false
