@@ -506,17 +506,27 @@ export class StreamManager {
     // session-bound, so re-targeting which field holds it is pure bookkeeping
     // (no close/connect). The pin becomes shared again (`pinnedConnection`
     // null, honoring the invariant). The outgoing active connection is torn
-    // down; it is neither shared with nor the pinned connection.
+    // down; it is neither shared with nor the pinned connection. Adoption is
+    // only sound when the caller's cwd matches the pin's: the stream URL
+    // (including `?cwd=`) is immutable per connection, so a DIVERGENT cwd must
+    // take the re-open path below instead (this method's changed-cwd contract).
     if (sessionId === this.pinnedSessionId && this.pinnedConnection) {
-      this.closeSessionStream();
-      this.sessionConnection = this.pinnedConnection;
+      if (nextCwd === this.pinnedCwd) {
+        this.closeSessionStream();
+        this.sessionConnection = this.pinnedConnection;
+        this.pinnedConnection = null;
+        this.attachedSessionId = sessionId;
+        this.attachedCwd = this.pinnedCwd;
+        this.notifyAttachedChange(sessionId);
+        return;
+      }
+      // Divergent cwd: the pinned connection reads the OLD cwd's history, so
+      // adopting it would silently serve the wrong project. Destroy it and fall
+      // through to the normal re-open — the pin then shares the fresh
+      // connection (one-owner invariant) and `pinnedCwd` follows `nextCwd` in
+      // the shared-cwd sync below.
+      this.pinnedConnection.destroy();
       this.pinnedConnection = null;
-      this.attachedSessionId = sessionId;
-      // The adopted connection is bound to the pinned cwd's URL — keep the
-      // active cwd honest with the connection it now holds.
-      this.attachedCwd = this.pinnedCwd;
-      this.notifyAttachedChange(sessionId);
-      return;
     }
 
     // TRANSFER-OUT (row 1): the outgoing active connection is SHARED with the

@@ -81,19 +81,19 @@ export function WidgetFence({
   }
 
   if (lastDocRef.current) {
-    const document = lastDocRef.current;
+    const latchedDocument = lastDocRef.current;
     // Popping out never touches this document's own agent-action dispatch, so
     // define it here rather than lifting it — closing over the latched
     // document by value keeps the panel's title pinned to what was actually
     // popped, even if a later stream update latches a new one in place.
     const popOut = () => {
       if (!sessionId) return;
-      openPip({ kind: 'widget', sessionId, title: document.title ?? 'Widget' });
+      openPip({ kind: 'widget', sessionId, title: latchedDocument.title ?? 'Widget' });
     };
     return (
       <div className="group relative my-2">
         <WidgetRenderer
-          document={document}
+          document={latchedDocument}
           sessionId={sessionId}
           isLatestMessage={isLatestMessage}
         />

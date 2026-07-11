@@ -1,3 +1,4 @@
+import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionStreamState } from '@/layers/entities/session';
 
 /** The newest ` ```dorkos-ui ` fence found in a session's projected message stream. */
@@ -40,6 +41,48 @@ interface VirtualMessage {
 }
 
 /**
+ * `SessionEvent` types that UNCONDITIONALLY fold into a renderable part of the
+ * trailing in-progress assistant bubble.
+ *
+ * PARITY SOURCE: mirrors (without importing — `fsd-layers.md` forbids
+ * cross-feature model imports) `projectInProgressTurn` + `buildInProgressMessage`
+ * in `features/chat/model/stream/project-session-turn.ts`. Keep this set in sync
+ * when that fold gains or loses part-producing event types. Deliberately absent:
+ * `hook_update` and `interaction_resolved` only mutate parts OTHER events
+ * created (or are buffered/dropped), so they never independently create the
+ * bubble; `operation_progress` is conditional (see
+ * {@link eventProducesRenderablePart}); `turn_start`, `turn_end`,
+ * `status_change`, `todo_update`, and `system_status` carry no renderable part.
+ */
+const RENDERABLE_TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
+  'text_delta',
+  'thinking_delta',
+  'tool_call',
+  'tool_result',
+  'tool_progress',
+  'approval_required',
+  'question_prompt',
+  'elicitation_prompt',
+  'subagent_update',
+  'memory_recall',
+  'compact_boundary',
+  'error',
+]);
+
+/**
+ * Whether a single in-progress-turn event folds into a renderable part in the
+ * inline projection. `operation_progress` produces a part only for a FAILED
+ * compaction (its other phases drive the transient status strip, not the
+ * bubble) — mirrors `foldOperationProgress` in `project-session-turn.ts`.
+ */
+function eventProducesRenderablePart(event: SessionEvent): boolean {
+  if (event.type === 'operation_progress') {
+    return event.operation === 'compaction' && event.state === 'failed';
+  }
+  return RENDERABLE_TURN_EVENT_TYPES.has(event.type);
+}
+
+/**
  * Re-derive, locally within `gen-ui`, the minimal oldest-first slice of
  * `projectSessionMessages`'s composition this scanner needs: completed history,
  * then the optimistic user message, then the folded in-progress assistant text.
@@ -65,7 +108,18 @@ function buildVirtualMessages(state: SessionStreamState): VirtualMessage[] {
     .filter((event) => event.type === 'text_delta')
     .map((event) => event.text)
     .join('');
-  if (inProgressText.length > 0) {
+  // The inline projection appends the trailing assistant bubble whenever the
+  // turn folds ANY renderable part (thinking, tool calls, subagents, ...) or a
+  // pending interaction card — not only text (parity: `buildInProgressMessage`
+  // + `foldPendingInteractions` in `project-session-turn.ts`). A text-less
+  // bubble still occupies the newest-message SLOT, so it must supersede an
+  // older board here too; the scanner only ever searches the TEXT for fences,
+  // and an empty-content entry simply carries none.
+  const turnRendersBubble =
+    inProgressText.length > 0 ||
+    state.pendingInteractions.length > 0 ||
+    state.inProgressTurn.some(eventProducesRenderablePart);
+  if (turnRendersBubble) {
     virtualMessages.push({
       key: IN_PROGRESS_TURN_KEY,
       content: inProgressText,
@@ -76,10 +130,16 @@ function buildVirtualMessages(state: SessionStreamState): VirtualMessage[] {
   return virtualMessages;
 }
 
+/** Strip a single trailing `\r` (CRLF transcripts) so code lines come out clean. */
+function stripTrailingCr(line: string): string {
+  return line.endsWith('\r') ? line.slice(0, -1) : line;
+}
+
 /**
  * Extract the LAST ` ```dorkos-ui ` fence body within a single message's content.
- * The body runs from the end of the marker's line up to the next line that is
- * exactly a closing ` ``` ` fence, or end-of-string if none follows.
+ * The body runs from the end of the marker's line up to the next line that is a
+ * closing ` ``` ` fence (compared after `trimEnd()`, so CRLF line endings and
+ * trailing whitespace don't hide the close), or end-of-string if none follows.
  */
 function extractLastFenceBody(content: string): { code: string; isIncomplete: boolean } {
   const markerIndex = content.lastIndexOf(FENCE_OPEN_MARKER);
@@ -88,11 +148,12 @@ function extractLastFenceBody(content: string): { code: string; isIncomplete: bo
   const body = content.slice(bodyStart);
 
   const lines = body.split('\n');
-  const closeLineIndex = lines.indexOf(FENCE_CLOSE_LINE);
-  if (closeLineIndex === -1) {
-    return { code: body, isIncomplete: true };
-  }
-  return { code: lines.slice(0, closeLineIndex).join('\n'), isIncomplete: false };
+  const closeLineIndex = lines.findIndex((line) => line.trimEnd() === FENCE_CLOSE_LINE);
+  const codeLines = closeLineIndex === -1 ? lines : lines.slice(0, closeLineIndex);
+  return {
+    code: codeLines.map(stripTrailingCr).join('\n'),
+    isIncomplete: closeLineIndex === -1,
+  };
 }
 
 /**

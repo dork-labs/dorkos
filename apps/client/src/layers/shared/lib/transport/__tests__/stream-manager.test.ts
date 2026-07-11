@@ -768,6 +768,30 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     expect(onUiCommand).toHaveBeenCalledWith({ action: 'close_canvas' });
   });
 
+  it('row 2 with a DIVERGENT cwd: attachSession(A, newCwd) re-opens instead of adopting the stale-URL pinned connection', () => {
+    // Real failure mode: the pinned connection's URL is bound to the OLD cwd, so
+    // adopting it on a cwd change would silently serve the wrong project's
+    // history — contradicting attachSession's changed-cwd re-open contract.
+    const { manager, connections } = setup();
+    manager.attachSession('B'); // connections[0] active B
+    manager.pinSession('A', '/old'); // connections[1] pinned A, URL bound to /old
+
+    manager.attachSession('A', '/new'); // divergent cwd → no adopt
+
+    expect(manager.getAttachedSessionId()).toBe('A');
+    expect(manager.getPinnedSessionId()).toBe('A'); // pin state survives, now shared
+    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1); // outgoing active B torn down
+    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1); // stale-cwd pinned conn torn down
+    expect(connections).toHaveLength(3); // fresh connection against the NEW cwd
+    expect(connections[2]!.url).toBe('/api/sessions/A/events?cwd=%2Fnew');
+    expect(connections[2]!.connect).toHaveBeenCalledTimes(1);
+    // One-owner invariant: the pin shares the fresh active connection, so a later
+    // unpin must NOT close the active stream.
+    manager.unpinSession();
+    expect(connections[2]!.destroy).not.toHaveBeenCalled();
+    expect(manager.getAttachedSessionId()).toBe('A');
+  });
+
   it('row 3: pinned A + attached B, attachSession(C) re-targets the active slot B→C and leaves the pinned connection untouched', () => {
     const { manager, connections } = setup();
     manager.attachSession('B'); // connections[0] active B

@@ -138,6 +138,104 @@ describe('findLatestWidgetFence', () => {
     expect(result?.isStreaming).toBe(true);
   });
 
+  it('a thinking-only in-progress turn supersedes a history board (parity with buildInProgressMessage)', () => {
+    // Regression (review finding 1): the inline projection appends the trailing
+    // bubble for ANY renderable part, not just text — a thinking-only turn must
+    // freeze the history board here too, or PIP stays clickable while inline froze.
+    const inProgressTurn: SessionEvent[] = [
+      { type: 'turn_start', seq: 1 },
+      { type: 'thinking_delta', seq: 2, text: 'pondering the next move...' },
+    ];
+    const state = streamState({
+      messages: [historyMessage('m1', `board here\n${BOARD_A}`)],
+      inProgressTurn,
+    });
+
+    const result = findLatestWidgetFence(state);
+
+    expect(result?.sourceMessageKey).toBe('m1');
+    expect(result?.isLatest).toBe(false);
+  });
+
+  it('a tool-call-only in-progress turn supersedes a history board (parity with buildInProgressMessage)', () => {
+    const inProgressTurn: SessionEvent[] = [
+      { type: 'turn_start', seq: 1 },
+      { type: 'tool_call', seq: 2, toolCallId: 't1', toolName: 'Bash', status: 'running' },
+    ];
+    const state = streamState({
+      messages: [historyMessage('m1', `board here\n${BOARD_A}`)],
+      inProgressTurn,
+    });
+
+    const result = findLatestWidgetFence(state);
+
+    expect(result?.sourceMessageKey).toBe('m1');
+    expect(result?.isLatest).toBe(false);
+  });
+
+  it('a turn with only non-renderable events does NOT supersede the history board', () => {
+    // turn_start and a non-failed operation_progress fold no bubble part in the
+    // inline projection, so no phantom trailing message may claim the latest slot.
+    const inProgressTurn: SessionEvent[] = [
+      { type: 'turn_start', seq: 1 },
+      {
+        type: 'operation_progress',
+        seq: 2,
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
+      },
+    ];
+    const state = streamState({
+      messages: [historyMessage('m1', `board here\n${BOARD_A}`)],
+      inProgressTurn,
+    });
+
+    const result = findLatestWidgetFence(state);
+
+    expect(result?.sourceMessageKey).toBe('m1');
+    expect(result?.isLatest).toBe(true);
+  });
+
+  it('pending interactions alone occupy the trailing bubble slot (history board isLatest false)', () => {
+    // The inline projection folds snapshot-recovered pendingInteractions into the
+    // trailing bubble even with an EMPTY turn (foldPendingInteractions parity).
+    const state = streamState({
+      messages: [historyMessage('m1', `board here\n${BOARD_A}`)],
+      pendingInteractions: [
+        {
+          type: 'approval',
+          id: 'i1',
+          startedAt: 0,
+          remainingMs: 60_000,
+          toolName: 'Bash',
+          input: '{}',
+          hasSuggestions: false,
+        },
+      ],
+    });
+
+    const result = findLatestWidgetFence(state);
+
+    expect(result?.sourceMessageKey).toBe('m1');
+    expect(result?.isLatest).toBe(false);
+  });
+
+  it('tolerates CRLF line endings: a fence closed with "```\\r" still counts as complete', () => {
+    const crlfContent = 'before\r\n```dorkos-ui\r\n{"kind":"board","id":"a"}\r\n```\r\nafter';
+    const state = streamState({ messages: [historyMessage('m1', crlfContent)] });
+
+    const result = findLatestWidgetFence(state);
+
+    expect(result).toEqual({
+      code: '{"kind":"board","id":"a"}',
+      isIncomplete: false,
+      sourceMessageKey: 'm1',
+      isLatest: true,
+      isStreaming: false,
+    });
+  });
+
   it('a completed message AFTER a fence-bearing one but with no fence still supersedes it (positional rule)', () => {
     const state = streamState({
       messages: [
