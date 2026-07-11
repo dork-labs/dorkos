@@ -37,18 +37,18 @@
 - [x] 2026-07-11 DOR-99 usage status item — Jul 19 · PR #211: usage now fetched from the SDK at every turn end; utilization/window/reset render truthfully; API-key sessions stay cost-only
 - [ ] DOR-75 identical sidebar titles — Jul 19 · _assessed 2026-07-11: not a papercut — real fix needs a title-generation/divergence design across runtime-owned stores; analysis on the issue, stays Backlog_
 - [x] 2026-07-11 DOR-122 dead marketplace toggle — Jul 26 · interim honest fix shipped in PR #211 (canDisable:false renders the Required lock; stale disabled entries self-heal); make-it-a-real-extension refactor stays Backlog
-- [ ] DOR-110 operation_progress standardization — Aug 2
+- [x] 2026-07-11 DOR-110 operation_progress standardization — Aug 2 · **shipped PR #234**: standardized `operation_progress` event across all runtimes (honest per-runtime degradation), removed the legacy string-matched compaction path, `superRefine` enforces the contract, runtime conformance extended. ADR 260711-144122
 - [x] 2026-07-11 DOR-164 status-strip fix + DOR-168 Vitest CVE unification — Jul 26 · DOR-164 verified + CSS cleanup in PR #214; DOR-168 in PR #217 (19 installs unified on vitest 4.1.10, ~230 mock migrations): `pnpm audit` criticals 2 → 0
 
 ### Instrumentation (`09` Part 3)
 
 - [x] 2026-07-11 PostHog events + funnels + UTM discipline (site) — Jul 12 · PR #221 (DOR-268): typed funnel events ($pageview → hero_install_copy, docs_visit, marketplace_browse, github_click, newsletter_signup), UTM first-touch verified live, outbound GitHub links tagged; also fixed the latent env.ts bug that kept every NEXT_PUBLIC var out of client bundles. **Founder to flip live: add the PostHog key AND re-enable the cookie banner (consent-gated)**
 - [x] Resend Broadcasts + email capture surfaces (footer, /newsletter, post-install line) — Jul 19 · already shipped 2026-07-07 in PR #103 (DOR-195: double opt-in with hash-only tokens, enumeration-safe route, one-time CLI tip line); verified 2026-07-11, tracker was stale. RSS-to-email remains open as DOR-198
-- [ ] Opt-in telemetry heartbeat + `/telemetry` page (incl. tunnel/multi-instance fields) — Jul 26
-- [ ] Opt-in error reporting (Sentry or GlitchTip) — Jul 26
-- [ ] OTel spans + debug exporter — Jul 26
-- [ ] Weekly metrics-scorecard Task live (agent-run) — Jul 26
-- [ ] Feedback rails: in-app "Report an issue" + `dorkos feedback` + issue templates + DorkBot triage (`09` §3.7) — Jul 26
+- [x] 2026-07-11 Opt-in telemetry heartbeat + `/telemetry` page (incl. tunnel/multi-instance fields) — Jul 26 · **shipped PR #233** (DOR-293 PR-A): anonymous weekly heartbeat, OFF by default, first-run consent banner shows the payload verbatim; upsert-bounded Neon ingest, header-blind (no IP/cookie/UA), tunnel + multi-instance fields; shared telemetry consent namespace (userHasDecided + install/heartbeat/errorReporting channels, 0.46.0 migration, never auto-enrolls existing opters). Double-review caught + fixed an unbounded ingest endpoint and a deploy-time migration collision before merge. **Nothing sends until a user opts in**
+- [x] 2026-07-11 Opt-in error reporting (Sentry or GlitchTip) — Jul 26 · **shipped PR #239** (DOR-293 PR-B): server + CLI crash capture as a **separate** explicit opt-in (never bundled into the anonymous-data banner, since it's third-party egress); fires only when `telemetry.errorReporting=true` AND `SENTRY_DSN` set (default off). Dependency-free Sentry-envelope client (Sentry + GlitchTip compatible), allowlist-by-construction: raw message never sent, stack scrubbed to repo-relative, `server_name`/`user`/`request` omitted. Review caught + fixed a CLI crash-semantics regression, dropped fatal-path reports, and an eval-frame path leak. **Founder to flip live: set `SENTRY_DSN` + `errorReporting=true`**
+- [x] 2026-07-11 OTel spans + debug exporter — Jul 26 · **shipped PR #238** (DOR-294): OpenTelemetry spans at session-turn / runtime-call / relay-dispatch / task-run seams, exporter OFF by default; `--debug-trace` writes a local sanitized NDJSON trace file (never phones home). Privacy by construction (static span names + attribute allowlist + drop everything off-list); `@opentelemetry/*` ESLint-confined. Review confirmed both no-emit-when-off and no-PII hold structurally
+- [ ] Weekly metrics-scorecard Task live (agent-run) — Jul 26 · **held (founder-data-gated)**: needs live sources (PostHog key, Resend, telemetry actives) that aren't flowing yet — building it now is a hollow shell. Unblocks once PostHog + telemetry are flipped live
+- [x] 2026-07-11 Feedback rails: in-app "Report an issue" + `dorkos feedback` + issue templates + DorkBot triage (`09` §3.7) — Jul 26 · **shipped PR #235** (DOR-292): command-palette + help-menu "Report an issue" and a `dorkos feedback` CLI both open a PREFILLED GitHub issue URL (version/OS/runtimes/surface/sanitized flags) the user submits — nothing phones home. Positive-allowlist sanitization (security-reviewed against poisoned configs), `.github/ISSUE_TEMPLATE` (bug/feature/runtime), DorkBot triage skill scaffold delivered OFF (live bot needs a founder token)
 
 ### Security (pre-traction requirement)
 
@@ -61,9 +61,9 @@
 - [x] 2026-07-09 — GitHub repo description + topics fixed — Jul 8 (description per `06` tactic #1; swapped 4 stack topics for codex/opencode/orchestration/meta-harness at the 20-topic cap)
 - [x] 2026-07-11 README overhaul (positioning, 5-min path, honest alpha status) — Jul 19 · positioning PR #156; 5-min path verified + fixed PR #224 (DOR-276): removed the ANTHROPIC_API_KEY footgun that broke Claude-Code-authed users, corrected the cross-project-sessions overclaim, added the alpha-status note + prerequisites; applied to repo + npm READMEs. Live walkthrough: cockpit reachable in seconds
 - [x] 2026-07-06 — Site fixes wave 1: 14 docsUrl 404s, Slack contradiction, FAQ corrections (`07` §1) — Jul 26 (PR #92)
-- [ ] Social-profile coherence (X bio, org page, footer) — Jul 12
+- [~] Social-profile coherence (X bio, org page, footer) — Jul 12 · **footer done** (PR #231: Pricing/Security/Privacy/Terms coherent, `/security` added to sitemap); **X bio + GitHub org copy drafted** for the founder (`meta/positioning-202607/12-founder-copy-draft.md`, nothing posted) — **FOUNDER ACTION: post the X bio + org description**
 - [ ] GitHub Sponsors live — Jul 12
-- [ ] Pricing-philosophy page (what stays free forever) (`07` §4.7) — Jul 26
+- [x] 2026-07-11 Pricing-philosophy page (what stays free forever) (`07` §4.7) — Jul 26 · **shipped PR #231** (DOR-295): `/pricing` — the free-forever core in writing, the fence rule (paid = our servers or multi-human coordination, gated on feature not headcount), the rug-pull-vaccine promise; content-reviewed against `11-revenue-model.md`, competitors unnamed per the brand rule, specific price figures deliberately withheld until R1. Footer coherence + founder-copy draft shipped alongside
 - [ ] Awesome-list + directory submissions (agent-drafted PRs) — Jul 26
 - [ ] First build-in-public X post ("5 stars, 44 releases, we never launched") — Jul 10
 
