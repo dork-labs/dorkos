@@ -1,5 +1,7 @@
 import { useRef } from 'react';
+import { PictureInPicture2 } from 'lucide-react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
+import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import { parseWidget } from '../model/parse-widget';
 import { WidgetRenderer } from './WidgetRenderer';
 import { WidgetErrorCard } from './WidgetErrorCard';
@@ -54,6 +56,11 @@ export function WidgetFence({
   isStreaming = false,
 }: WidgetFenceProps) {
   const lastDocRef = useRef<WidgetDocument | null>(null);
+  // Called unconditionally, ahead of the branches below, so hook order never
+  // shifts with parse state (an early return before these would violate the
+  // rules of hooks once the pop-out affordance needs them).
+  const openPip = useAppStore((s) => s.openPip);
+  const isMobile = useIsMobile();
 
   if (!isIncomplete) {
     const result = parseWidget(code);
@@ -74,13 +81,41 @@ export function WidgetFence({
   }
 
   if (lastDocRef.current) {
+    const document = lastDocRef.current;
+    // Popping out never touches this document's own agent-action dispatch, so
+    // define it here rather than lifting it — closing over the latched
+    // document by value keeps the panel's title pinned to what was actually
+    // popped, even if a later stream update latches a new one in place.
+    const popOut = () => {
+      if (!sessionId) return;
+      openPip({ kind: 'widget', sessionId, title: document.title ?? 'Widget' });
+    };
     return (
-      <div className="my-2">
+      <div className="group relative my-2">
         <WidgetRenderer
-          document={lastDocRef.current}
+          document={document}
           sessionId={sessionId}
           isLatestMessage={isLatestMessage}
         />
+        {/* A sibling of the widget tree, never a descendant — so it can never
+            intercept a click meant for the widget's own interactive content
+            (e.g. a board cell). Hidden below 768px, where the PIP host renders
+            nothing (mirrors McpAppBlock's own pop-out guard), and hidden with
+            no sessionId (no valid `openPip` target). */}
+        {sessionId && !isMobile && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              popOut();
+            }}
+            aria-label="Pop out into a floating window"
+            title="Pop out"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground bg-background/80 focus-ring absolute top-1 right-1 rounded-md p-1 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          >
+            <PictureInPicture2 className="size-3.5" />
+          </button>
+        )}
       </div>
     );
   }
