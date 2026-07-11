@@ -161,6 +161,15 @@ describe('ALL /api/workbench/proxy/:token/*', () => {
         res.end('p{color:blue}');
         return;
       }
+      // A page declaring a non-UTF-8 charset: 0xE9 is 'é' in latin-1 but an
+      // invalid byte sequence in UTF-8 — a UTF-8 decode would corrupt it.
+      if (req.url?.endsWith('/latin1.html')) {
+        res.setHeader('Content-Type', 'text/html; charset=iso-8859-1');
+        res.end(
+          Buffer.from([...Buffer.from('<html><body>caf'), 0xe9, ...Buffer.from('</body></html>')])
+        );
+        return;
+      }
       // A dev server that would refuse framing — the proxy must strip these.
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
@@ -207,6 +216,42 @@ describe('ALL /api/workbench/proxy/:token/*', () => {
     // Composes with the framing transform — both apply on the same HTML branch.
     expect(res.headers['content-security-policy']).not.toContain('frame-ancestors');
     expect(Number(res.headers['content-length'])).toBe(Buffer.byteLength(res.text));
+  });
+
+  it('sends injected HTML with an explicit charset=utf-8 content-type', async () => {
+    // The upstream declared no charset. The ~8 KB shim can push an in-document
+    // <meta charset> past the browser's 1024-byte prescan, so the response we DO
+    // inject into must declare its (UTF-8) encoding on the header.
+    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+    const res = await request(app).get(`/api/workbench/proxy/${token}/`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('__dorkosDevtools');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+  });
+
+  it('relays non-UTF-8 HTML byte-for-byte UNINSTRUMENTED, keeping its charset header', async () => {
+    // A UTF-8 text() decode would corrupt latin-1 bytes while the header still
+    // claimed iso-8859-1 — so the proxy must not inject here at all.
+    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+    const res = await request(app)
+      .get(`/api/workbench/proxy/${token}/latin1.html`)
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('iso-8859-1');
+    const body = res.body as Buffer;
+    const original = Buffer.concat([
+      Buffer.from('<html><body>caf'),
+      Buffer.from([0xe9]),
+      Buffer.from('</body></html>'),
+    ]);
+    // Byte-for-byte: the 0xE9 latin-1 byte survives and no shim was inserted.
+    expect(body.equals(original)).toBe(true);
+    expect(body.toString('latin1')).not.toContain('__dorkosDevtools');
   });
 
   it('streams a proxied non-HTML asset byte-for-byte unchanged (no shim)', async () => {

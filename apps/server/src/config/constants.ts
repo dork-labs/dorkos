@@ -40,6 +40,15 @@ export const WORKBENCH = {
   DEVTOOLS_CONSOLE_BUFFER: 500,
   DEVTOOLS_NETWORK_BUFFER: 200,
   /**
+   * Approximate per-session byte budget across both capture rings (measured as
+   * serialized-JSON chars of the retained entries). The count caps alone don't
+   * bound memory — the schema permits ~56 KB per console entry, so 500 max-size
+   * entries would retain ~28 MB. Past the budget, the oldest entries evict
+   * first. A typical noisy page retains a few hundred KB at most, so 1 MB never
+   * trims legitimate captures.
+   */
+  DEVTOOLS_SESSION_MAX_BYTES: 1_048_576,
+  /**
    * Screenshots are single-slot (latest wins). The slot exists now; the capture
    * round-trip that fills it lands with `browser_screenshot` in a follow-up.
    */

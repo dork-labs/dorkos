@@ -133,14 +133,23 @@ export function useDevtoolsBridge({
       const data = ev.data as DevtoolsMessage | null;
       if (!data || typeof data !== 'object' || typeof data.__dorkosDevtools !== 'string') return;
 
-      // Participate only for the attached session — never feed another's buffer.
+      switch (data.__dorkosDevtools) {
+        case 'hello':
+          // Ack unconditionally — the handshake carries no captured data, and the
+          // shim stops retrying after ~5s, so gating the ack on session attach
+          // would leave a preview that loads first permanently un-instrumented.
+          // The attached-session gate below still keeps unattached CAPTURES from
+          // ever relaying.
+          frame.contentWindow?.postMessage({ __dorkosDevtools: 'ack' }, '*');
+          return;
+      }
+
+      // Relay captures only for the attached session — never feed another's
+      // buffer (and drop them entirely while no session is attached).
       const sid = sessionIdRef.current;
       if (!sid) return;
 
       switch (data.__dorkosDevtools) {
-        case 'hello':
-          frame.contentWindow?.postMessage({ __dorkosDevtools: 'ack' }, '*');
-          return;
         case 'navigated':
           // Mark a navigation boundary and drop stale, not-yet-flushed captures.
           pendingReset.current = true;

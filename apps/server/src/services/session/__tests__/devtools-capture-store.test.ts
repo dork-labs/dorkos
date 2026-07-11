@@ -96,6 +96,53 @@ describe('DevtoolsCaptureStore', () => {
     expect(store.read('canonical')?.console[0].text).toBe('carried');
   });
 
+  it('enforces the per-session byte budget, evicting oldest console entries first', () => {
+    const store = new DevtoolsCaptureStore();
+    // 100 entries of ~19 KB text each ≈ 1.9 MB — well under the 500-entry count
+    // cap but roughly double the 1 MB byte budget, so the count cap alone would
+    // retain everything and only byte accounting trims.
+    const big = (i: number): DevtoolsConsoleEntry => ({
+      level: 'log',
+      text: `${i}:${'x'.repeat(19_000)}`,
+      timestamp: i,
+    });
+    store.ingest('s1', batch({ console: Array.from({ length: 100 }, (_, i) => big(i)) }));
+
+    const buf = store.read('s1');
+    expect(buf).toBeDefined();
+    expect(buf!.approxBytes).toBeLessThanOrEqual(WORKBENCH.DEVTOOLS_SESSION_MAX_BYTES);
+    expect(buf!.console.length).toBeLessThan(100); // oldest evicted by bytes…
+    expect(buf!.console.length).toBeGreaterThan(0); // …but not everything
+    // Oldest-first: the survivors are the newest entries.
+    expect(buf!.console[0].text.startsWith('0:')).toBe(false);
+    expect(buf!.console.at(-1)!.text.startsWith('99:')).toBe(true);
+  });
+
+  it('frees the byte budget on a navigation reset', () => {
+    const store = new DevtoolsCaptureStore();
+    const big: DevtoolsConsoleEntry = { level: 'log', text: 'y'.repeat(19_000), timestamp: 1 };
+    store.ingest('s1', batch({ console: Array.from({ length: 50 }, () => ({ ...big })) }));
+    expect(store.read('s1')!.approxBytes).toBeGreaterThan(0);
+
+    store.ingest('s1', batch({ reset: true, console: [consoleEntry('fresh')] }));
+    const buf = store.read('s1')!;
+    expect(buf.console).toHaveLength(1);
+    // approxBytes reflects only the post-reset entry, not the cleared page's.
+    expect(buf.approxBytes).toBeLessThan(1_000);
+  });
+
+  it('keeps byte accounting in sync through count-cap trims', () => {
+    const store = new DevtoolsCaptureStore();
+    const cap = WORKBENCH.DEVTOOLS_NETWORK_BUFFER;
+    store.ingest(
+      's1',
+      batch({ network: Array.from({ length: cap + 50 }, (_, i) => networkEntry(`/${i}`)) })
+    );
+    const buf = store.read('s1')!;
+    const actual = buf.network.reduce((sum, e) => sum + JSON.stringify(e).length, 0);
+    expect(buf.approxBytes).toBe(actual);
+  });
+
   it('evicts the least-recently-updated buffer past the session cap', () => {
     const store = new DevtoolsCaptureStore();
     const max = WORKBENCH.DEVTOOLS_MAX_SESSIONS;

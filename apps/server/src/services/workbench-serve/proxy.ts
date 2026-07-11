@@ -57,6 +57,22 @@ export function stripFrameAncestors(csp: string): string | null {
 }
 
 /**
+ * Whether a `Content-Type` value declares UTF-8 or no charset at all — the only
+ * cases the DevTools injection path may buffer-and-decode. Any other declared
+ * charset (e.g. `iso-8859-1`, `shift_jis`) would be corrupted by a UTF-8 decode,
+ * so those responses relay byte-for-byte uninstrumented (DOR-213).
+ *
+ * @param contentType - The upstream `Content-Type` header value.
+ * @returns `true` when decoding as UTF-8 is faithful.
+ */
+export function isUtf8OrUnspecified(contentType: string): boolean {
+  const match = /charset\s*=\s*"?([^";]+)"?/i.exec(contentType);
+  if (!match) return true;
+  const charset = match[1].trim().toLowerCase();
+  return charset === 'utf-8' || charset === 'utf8';
+}
+
+/**
  * Proxy a GET/HEAD request to a localhost dev server and relay the response with
  * framing headers stripped. Any non-loopback target is impossible by
  * construction (the host is hard-coded to `127.0.0.1`).
@@ -146,8 +162,16 @@ export async function proxyToLocalhost(
   // HTML body, insert the inline shim, relay with a recomputed Content-Length.
   // Every other content-type streams byte-for-byte unchanged. Composes with the
   // frame-ancestors stripping above — both are transforms on the same HTML branch.
+  //
+  // Charset honesty: `upstream.text()` always decodes as UTF-8, so a page that
+  // declares any other charset would be mis-decoded while still carrying its
+  // original charset header. Such pages relay byte-for-byte UNINSTRUMENTED — the
+  // same disclosed-degradation posture as a page whose CSP refuses inline
+  // scripts. The pages we do inject into get an explicit `charset=utf-8`,
+  // because the ~8 KB shim can push an in-document `<meta charset>` past the
+  // browser's 1024-byte prescan window.
   const contentType = upstream.headers.get('content-type');
-  if (contentType?.includes('text/html')) {
+  if (contentType?.includes('text/html') && isUtf8OrUnspecified(contentType)) {
     let injected: string;
     try {
       injected = injectDevtoolsScript(await upstream.text());
@@ -156,6 +180,7 @@ export async function proxyToLocalhost(
       if (!res.headersSent) res.status(502).json({ error: 'Proxy stream failed' });
       return;
     }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Length', Buffer.byteLength(injected));
     res.end(injected);
     return;

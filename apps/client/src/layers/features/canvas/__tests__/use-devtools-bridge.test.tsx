@@ -99,6 +99,26 @@ describe('useDevtoolsBridge — handshake', () => {
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
     expect(postSpy).toHaveBeenCalledWith({ __dorkosDevtools: 'ack' }, '*');
   });
+
+  it('acks a hello even before a session is attached (the shim stops retrying)', () => {
+    // A preview can finish loading before session attach; the shim gives up
+    // after ~15 hello retries, so a gated ack would leave that page load
+    // permanently un-instrumented. The ack carries no captured data — the
+    // attached-session gate applies to CAPTURES only.
+    mockState.sessionId = null;
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    expect(postSpy).toHaveBeenCalledWith({ __dorkosDevtools: 'ack' }, '*');
+  });
+
+  it('never acks a hello from a foreign frame, attached or not', () => {
+    mockState.sessionId = null;
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    postFrom(foreignFrame.contentWindow, { __dorkosDevtools: 'hello' });
+    expect(postSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('useDevtoolsBridge — relay', () => {

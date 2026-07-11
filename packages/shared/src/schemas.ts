@@ -2712,6 +2712,15 @@ export const DevtoolsConsoleLevelSchema = z
 export type DevtoolsConsoleLevel = z.infer<typeof DevtoolsConsoleLevelSchema>;
 
 /**
+ * Serialized-size cap (in JSON characters) for one console entry's `args`.
+ * The `args` elements are `unknown`, so field-level `.max()` caps alone cannot
+ * bound them — without this, a hand-crafted batch bypassing the shim's own caps
+ * could park ~1 MB per entry in the server ring. Together with the `text` and
+ * `stack` string caps, a whole serialized entry is bounded to ~56 KB.
+ */
+export const DEVTOOLS_ARGS_MAX_CHARS = 16_384;
+
+/**
  * A single captured console line (or an uncaught error / unhandled rejection,
  * both recorded at `error` level). `text` is the joined, size-capped rendering
  * the shim produced; `args` carries the structured-clone-safe, depth-capped
@@ -2727,6 +2736,19 @@ export const DevtoolsConsoleEntrySchema = z
     timestamp: z.number(),
     /** `filename:line:col` for an uncaught error, when the runtime provided it. */
     source: z.string().max(2_048).optional(),
+  })
+  .superRefine((entry, ctx) => {
+    // Byte-bound the open-shaped `args` (the body already passed JSON.parse, so
+    // stringify cannot recurse or throw here). A well-behaved shim never trips
+    // this; it exists to reject hand-crafted oversized batches. The ingest route
+    // maps this issue (by its message) to a 413 alongside the count caps.
+    if (entry.args !== undefined && JSON.stringify(entry.args).length > DEVTOOLS_ARGS_MAX_CHARS) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `args exceed the serialized size cap (${DEVTOOLS_ARGS_MAX_CHARS} chars)`,
+        path: ['args'],
+      });
+    }
   })
   .openapi('DevtoolsConsoleEntry');
 
