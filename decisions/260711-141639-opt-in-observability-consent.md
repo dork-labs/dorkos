@@ -69,6 +69,25 @@ OpenTelemetry's exporter is local-first and off by default, so it needs no conse
 writes a local file; if a remote exporter is ever added it becomes a peer flag here under the same
 rules.
 
+### Bounding the public ingest endpoint
+
+The heartbeat sink (`POST /api/telemetry/heartbeat`) is public and unauthenticated, like the
+existing install-telemetry sink. To keep it from growing an unbounded table on the launch database,
+the `instance_heartbeats` table has a **UNIQUE constraint on `instanceId`** and the route
+**upserts** (last-seen semantics): a first ping inserts a row, every later ping from the same
+install updates that one row's payload and `receivedAt`. This bounds legitimate storage to the
+number of distinct installs and makes the row count a true distinct-instance metric — exactly what
+"known weekly-active instances" (`receivedAt >= now() - 7 days`) wants.
+
+**Residual risk (accepted, honest note):** upsert dedupes legitimate repeat pings, but a spray of
+random valid UUIDs still creates one row per distinct UUID. A robust per-IP rate limit is not clean
+on the stateless Vercel Edge runtime without adding a KV/Redis store, which the telemetry
+architecture deliberately forbids (`contributing/marketplace-telemetry.md` §3, "one ORM, one
+mental model"). We do **not** force a fragile guard. The guardrails are the Zod size/shape cap on
+the payload and the upsert; the metric is already "best-effort, undercounting accepted", so
+inflation via spray is treated as spam to be pruned, not a correctness guarantee. This matches the
+posture of the shipped install-telemetry endpoint.
+
 ## Consequences
 
 - **Positive.** One mental model and one public page for "what leaves my machine". PR-B ships error

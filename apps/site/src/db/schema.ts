@@ -98,8 +98,13 @@ export type MarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferSele
 export type NewMarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferInsert;
 
 /**
- * `instance_heartbeats` — append-only log for the opt-in weekly heartbeat
- * (DOR-293). One row per ping lets us count "known weekly-active instances".
+ * `instance_heartbeats` — one row per DorkOS installation for the opt-in weekly
+ * heartbeat (DOR-293). **Last-seen semantics via upsert**: the receive route
+ * upserts on `instanceId`, so a given install has exactly one row whose
+ * `receivedAt` and payload reflect its most recent ping. This bounds the table
+ * to the number of distinct instances (not the number of pings) and makes the
+ * row count a true distinct-instance metric. "Weekly-active" is then a
+ * `receivedAt >= now() - 7 days` filter over distinct rows.
  *
  * The columns below are the **complete allowed set**. Like
  * `marketplace_install_events`, this table is the privacy contract: the schema
@@ -115,10 +120,11 @@ export const instanceHeartbeats = pgTable(
     /**
      * Random per-install UUID (shared with install telemetry). Identifies one
      * DorkOS installation so we can de-duplicate to weekly-active counts — NOT
-     * a user, and never joined to any account table.
+     * a user, and never joined to any account table. **Unique**: the receive
+     * route upserts on this column, so repeated pings update the same row.
      */
-    instanceId: uuid('instance_id').notNull(),
-    /** DorkOS version that produced the heartbeat (e.g. `0.46.0`). */
+    instanceId: uuid('instance_id').notNull().unique(),
+    /** DorkOS version from the most recent heartbeat (e.g. `0.46.0`). */
     dorkosVersion: text('dorkos_version').notNull(),
     /** Platform and CPU architecture, e.g. `darwin-arm64`. */
     os: text('os').notNull(),
@@ -134,13 +140,10 @@ export const instanceHeartbeats = pgTable(
     countTasks: integer('count_tasks').notNull(),
     /** Rough count of configured relay adapters. */
     countRelayAdapters: integer('count_relay_adapters').notNull(),
-    /** Server-side receive timestamp. Trust this, never the client clock. */
+    /** Timestamp of the most recent heartbeat. Server clock, never the client's. */
     receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    index('idx_heartbeats_instance_received').on(t.instanceId, t.receivedAt.desc()),
-    index('idx_heartbeats_received').on(t.receivedAt.desc()),
-  ]
+  (t) => [index('idx_heartbeats_received').on(t.receivedAt.desc())]
 );
 
 /** A row read from `instance_heartbeats`. */

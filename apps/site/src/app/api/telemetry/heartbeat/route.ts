@@ -2,8 +2,22 @@
  * `POST /api/telemetry/heartbeat` — opt-in weekly heartbeat sink (DOR-293).
  *
  * Runs as a Vercel Edge Function. Validates the incoming heartbeat with Zod,
- * then inserts a single row into `instance_heartbeats` via Drizzle — no Redis,
- * no queue, no background job, mirroring the install-telemetry pipeline.
+ * then **upserts** a single row into `instance_heartbeats` keyed on
+ * `instanceId` via Drizzle — no Redis, no queue, no background job, mirroring
+ * the install-telemetry pipeline.
+ *
+ * Why upsert (last-seen), not append-only: the endpoint is public and
+ * unauthenticated. Keying on `instanceId` means each real installation owns
+ * exactly one row (its latest ping), so legitimate weekly pings do not grow the
+ * table without bound and the row count is a true distinct-instance metric.
+ *
+ * Residual abuse note: a spray of random valid UUIDs still creates one row per
+ * distinct UUID. A robust per-IP rate limit is not available on the stateless
+ * Edge runtime without adding a KV/Redis store, which the telemetry
+ * architecture deliberately forbids (see contributing/marketplace-telemetry.md
+ * §3). We accept this: the metric is already "best-effort, undercounting by
+ * design", and inflation via spray is spam to be pruned, not a correctness
+ * guarantee. The size/shape cap below plus the upsert are the guardrails.
  *
  * Privacy contract:
  *   - The validated schema below is the **complete** set of fields the handler
@@ -18,6 +32,7 @@
  * @module app/api/telemetry/heartbeat
  */
 
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { getDb } from '@/db/client';
@@ -80,14 +95,16 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 /**
- * Insert one validated heartbeat into Neon Postgres. Errors are caught and
- * logged so a database hiccup never propagates to the client — graceful
- * degradation is part of the privacy contract.
+ * Upsert one validated heartbeat into Neon Postgres, keyed on `instanceId`
+ * (last-seen semantics): a first ping inserts a row, and every later ping from
+ * the same install updates that one row's payload and `receivedAt`. Errors are
+ * caught and logged so a database hiccup never propagates to the client —
+ * graceful degradation is part of the privacy contract.
  */
 async function persistHeartbeat(heartbeat: Heartbeat): Promise<void> {
   try {
     const db = getDb();
-    await db.insert(instanceHeartbeats).values({
+    const row = {
       instanceId: heartbeat.instanceId,
       dorkosVersion: heartbeat.dorkosVersion,
       os: heartbeat.os,
@@ -97,9 +114,26 @@ async function persistHeartbeat(heartbeat: Heartbeat): Promise<void> {
       countAgents: heartbeat.counts.agents,
       countTasks: heartbeat.counts.tasks,
       countRelayAdapters: heartbeat.counts.relayAdapters,
-    });
+    };
+    await db
+      .insert(instanceHeartbeats)
+      .values(row)
+      .onConflictDoUpdate({
+        target: instanceHeartbeats.instanceId,
+        set: {
+          dorkosVersion: row.dorkosVersion,
+          os: row.os,
+          runtimesConfigured: row.runtimesConfigured,
+          tunnelEnabled: row.tunnelEnabled,
+          cloudLinked: row.cloudLinked,
+          countAgents: row.countAgents,
+          countTasks: row.countTasks,
+          countRelayAdapters: row.countRelayAdapters,
+          receivedAt: sql`now()`,
+        },
+      });
   } catch (error) {
-    console.error('[api/telemetry/heartbeat] insert failed', {
+    console.error('[api/telemetry/heartbeat] upsert failed', {
       error: error instanceof Error ? error.message : String(error),
     });
   }

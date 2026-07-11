@@ -9,8 +9,8 @@ CREATE TABLE "instance_heartbeats" (
 	"count_agents" integer NOT NULL,
 	"count_tasks" integer NOT NULL,
 	"count_relay_adapters" integer NOT NULL,
-	"received_at" timestamp with time zone DEFAULT now() NOT NULL
+	"received_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "instance_heartbeats_instance_id_unique" UNIQUE("instance_id")
 );
 --> statement-breakpoint
-CREATE INDEX "idx_heartbeats_instance_received" ON "instance_heartbeats" USING btree ("instance_id","received_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "idx_heartbeats_received" ON "instance_heartbeats" USING btree ("received_at" DESC NULLS LAST);

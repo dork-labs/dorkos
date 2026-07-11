@@ -1,5 +1,5 @@
 {
-  "id": "d3290024-17a0-4ec2-91f0-0138d456e5af",
+  "id": "2552f507-f8c0-4452-b5c7-5a8cdea4f759",
   "prevId": "c68e7cbf-e039-4f1a-a4aa-959323ed96b7",
   "version": "7",
   "dialect": "postgresql",
@@ -580,27 +580,6 @@
         }
       },
       "indexes": {
-        "idx_heartbeats_instance_received": {
-          "name": "idx_heartbeats_instance_received",
-          "columns": [
-            {
-              "expression": "instance_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "received_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_heartbeats_received": {
           "name": "idx_heartbeats_received",
           "columns": [
@@ -619,7 +598,13 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "instance_heartbeats_instance_id_unique": {
+          "name": "instance_heartbeats_instance_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["instance_id"]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

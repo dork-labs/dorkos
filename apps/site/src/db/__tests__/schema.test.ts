@@ -206,6 +206,13 @@ describe('instanceHeartbeats schema', () => {
     expect(getTableConfig(instanceHeartbeats).foreignKeys).toHaveLength(0);
   });
 
+  it('enforces one row per instance via a UNIQUE constraint on instance_id', () => {
+    // The unique constraint is what makes the receive route's upsert bound the
+    // table to distinct instances (last-seen semantics) rather than append-only.
+    // Column-level `.unique()` surfaces as `isUnique` on the column.
+    expect(instanceHeartbeats.instanceId.isUnique).toBe(true);
+  });
+
   it('carries no user/account reference columns', () => {
     const accountRefColumns = ['userId', 'user_id', 'accountId', 'account_id', 'sessionId'];
     for (const col of accountRefColumns) {
