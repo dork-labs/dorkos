@@ -31,6 +31,7 @@ import {
   workbenchTokenSigner,
   WorkbenchTokenError,
   proxyToLocalhost,
+  injectDevtoolsScript,
 } from '../services/workbench-serve/index.js';
 
 const router = Router();
@@ -194,13 +195,30 @@ async function handleServe(req: Request, res: Response) {
 
   const contentType = SERVE_CONTENT_TYPES[path.extname(resolved).toLowerCase()];
   res.setHeader('Content-Type', contentType ?? 'application/octet-stream');
-  res.setHeader('Content-Length', size);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
   // Defense-in-depth: the signed bearer token lives in the URL path, so never
   // let it leak to any onward navigation/subresource via the Referer header.
   res.setHeader('Referrer-Policy', 'no-referrer');
 
+  // Inject the DevTools capture shim into HTML only (DOR-213): read the (small)
+  // document, insert the inline shim as the first <head> child, and send it with
+  // a recomputed Content-Length. Every other content-type streams byte-for-byte
+  // unchanged. A page whose own CSP forbids inline scripts simply refuses ours.
+  if (contentType?.startsWith('text/html')) {
+    let injected: string;
+    try {
+      injected = injectDevtoolsScript(await fs.readFile(resolved, 'utf8'));
+    } catch (err) {
+      logger.error('[workbench-serve] serve read/inject failed', { err, resolved });
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+    res.setHeader('Content-Length', Buffer.byteLength(injected));
+    res.end(injected);
+    return;
+  }
+
+  res.setHeader('Content-Length', size);
   const stream = createReadStream(resolved);
   stream.on('error', (err) => {
     logger.error('[workbench-serve] serve stream failed', { err, resolved });

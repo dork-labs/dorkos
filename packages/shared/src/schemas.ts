@@ -2694,3 +2694,90 @@ export const UiStateSchema = z
   .openapi('UiState');
 
 export type UiState = z.infer<typeof UiStateSchema>;
+
+// === DevTools Bridge capture (DOR-213) ===
+//
+// The workbench embedded browser (DOR-216) renders a preview in an opaque-origin
+// sandbox. An injected in-page shim captures that page's console + network and
+// posts it to the DorkOS client (window.parent, never `/api/*`); the client — the
+// only credentialed, same-origin party — forwards it here via
+// `POST /api/sessions/:id/devtools/ingest`. These schemas validate that wire
+// batch. The read tools that expose the buffer to the agent land in a follow-up.
+
+/** Console severity captured from the preview's wrapped `console.*` calls. */
+export const DevtoolsConsoleLevelSchema = z
+  .enum(['log', 'info', 'warn', 'error', 'debug'])
+  .openapi('DevtoolsConsoleLevel');
+
+export type DevtoolsConsoleLevel = z.infer<typeof DevtoolsConsoleLevelSchema>;
+
+/**
+ * A single captured console line (or an uncaught error / unhandled rejection,
+ * both recorded at `error` level). `text` is the joined, size-capped rendering
+ * the shim produced; `args` carries the structured-clone-safe, depth-capped
+ * serialization of the original arguments; `stack` is present for errors.
+ */
+export const DevtoolsConsoleEntrySchema = z
+  .object({
+    level: DevtoolsConsoleLevelSchema,
+    text: z.string().max(20_000),
+    args: z.array(z.unknown()).max(50).optional(),
+    stack: z.string().max(20_000).optional(),
+    /** Epoch ms when the line was emitted in the page. */
+    timestamp: z.number(),
+    /** `filename:line:col` for an uncaught error, when the runtime provided it. */
+    source: z.string().max(2_048).optional(),
+  })
+  .openapi('DevtoolsConsoleEntry');
+
+export type DevtoolsConsoleEntry = z.infer<typeof DevtoolsConsoleEntrySchema>;
+
+/**
+ * A single captured `fetch`/XHR request. Bodies are never captured in v1 (size +
+ * secret-leak surface); `responseSize` is the `content-length` header when the
+ * server sent one.
+ */
+export const DevtoolsNetworkEntrySchema = z
+  .object({
+    method: z.string().max(16),
+    url: z.string().max(2_048),
+    status: z.number(),
+    ok: z.boolean(),
+    durationMs: z.number(),
+    responseSize: z.number().optional(),
+    /** Epoch ms when the request started in the page. */
+    timestamp: z.number(),
+    initiator: z.enum(['fetch', 'xhr']).optional(),
+  })
+  .openapi('DevtoolsNetworkEntry');
+
+export type DevtoolsNetworkEntry = z.infer<typeof DevtoolsNetworkEntrySchema>;
+
+/**
+ * Per-batch entry caps. A batch that exceeds either is rejected with `413` (not a
+ * generic `400`) so an oversized relay is a distinct, debuggable outcome. The
+ * shim caps its own outbound batch to these same numbers, so a well-behaved
+ * preview never trips the limit.
+ */
+export const DEVTOOLS_CONSOLE_BATCH_MAX = 500;
+export const DEVTOOLS_NETWORK_BATCH_MAX = 200;
+
+/**
+ * The ingest batch the DorkOS client posts to
+ * `POST /api/sessions/:id/devtools/ingest`. `seq` is the shim's monotonic
+ * counter (lets the buffer detect gaps); `reset` marks a navigation boundary
+ * (the preview navigated, so the prior page's console/network is cleared before
+ * these append).
+ */
+export const DevtoolsIngestSchema = z
+  .object({
+    documentId: z.string().max(256).optional(),
+    logicalUrl: z.string().max(2_048).optional(),
+    seq: z.number(),
+    reset: z.boolean().optional(),
+    console: z.array(DevtoolsConsoleEntrySchema).max(DEVTOOLS_CONSOLE_BATCH_MAX),
+    network: z.array(DevtoolsNetworkEntrySchema).max(DEVTOOLS_NETWORK_BATCH_MAX),
+  })
+  .openapi('DevtoolsIngest');
+
+export type DevtoolsIngest = z.infer<typeof DevtoolsIngestSchema>;

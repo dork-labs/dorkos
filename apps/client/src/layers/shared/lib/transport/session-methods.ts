@@ -17,6 +17,7 @@ import type {
   UiActionRequest,
   McpAppResourceRequest,
   McpAppResourceResponse,
+  DevtoolsIngest,
 } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { fetchJSON, buildQueryString } from './http-client';
@@ -216,6 +217,27 @@ export function createSessionMethods(
       // /events; the body carries the SDK-canonical id.
       const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
       return { sessionId: data.sessionId ?? sessionId };
+    },
+
+    // ── DevTools Bridge capture (DOR-213) ─────────────────────────────────
+
+    /**
+     * Relay a preview capture batch to `POST /sessions/:id/devtools/ingest`.
+     * Fire-and-forget: the response is a 204 sink and errors are swallowed — a
+     * dropped batch must never surface in, or slow, the preview. The injected
+     * shim never calls `/api/*`; this same-origin, authenticated client does.
+     */
+    async ingestDevtoolsCapture(sessionId: string, batch: DevtoolsIngest): Promise<void> {
+      try {
+        await fetch(`${baseUrl}/sessions/${sessionId}/devtools/ingest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(batch),
+        });
+      } catch {
+        /* best-effort capture — never disturb the preview */
+      }
     },
 
     // ── MCP Apps (SEP-1865) ────────────────────────────────────────────────

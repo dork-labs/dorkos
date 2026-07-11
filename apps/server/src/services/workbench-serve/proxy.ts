@@ -20,6 +20,7 @@ import { Readable } from 'stream';
 import type { Request, Response } from 'express';
 import { WORKBENCH } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
+import { injectDevtoolsScript } from './devtools-inject.js';
 
 /** Response headers we never relay: framing guards and hop-by-hop headers. */
 const STRIPPED_RESPONSE_HEADERS = new Set([
@@ -138,6 +139,25 @@ export async function proxyToLocalhost(
 
   if (req.method === 'HEAD' || !upstream.body) {
     res.end();
+    return;
+  }
+
+  // Inject the DevTools capture shim into HTML only (DOR-213): buffer the (small)
+  // HTML body, insert the inline shim, relay with a recomputed Content-Length.
+  // Every other content-type streams byte-for-byte unchanged. Composes with the
+  // frame-ancestors stripping above — both are transforms on the same HTML branch.
+  const contentType = upstream.headers.get('content-type');
+  if (contentType?.includes('text/html')) {
+    let injected: string;
+    try {
+      injected = injectDevtoolsScript(await upstream.text());
+    } catch (err) {
+      logger.error('[workbench-serve] proxy read/inject failed', { err, port });
+      if (!res.headersSent) res.status(502).json({ error: 'Proxy stream failed' });
+      return;
+    }
+    res.setHeader('Content-Length', Buffer.byteLength(injected));
+    res.end(injected);
     return;
   }
 
