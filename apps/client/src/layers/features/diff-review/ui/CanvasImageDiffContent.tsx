@@ -6,6 +6,7 @@ import { cn } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useImageDiffReview } from '../model/use-image-diff-review';
+import { useAgentEditRefresh } from '../model/use-agent-edit-refresh';
 import { Banner, ModeButton, DiffMessage, ArmedButton } from './diff-chrome';
 
 interface CanvasImageDiffContentProps {
@@ -42,6 +43,10 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
   const [currentState, setCurrentState] = useState<LayerState>('loading');
 
   const review = useImageDiffReview({ cwd, sourcePath: content.sourcePath, sessionId });
+  // A repeated agent edit re-activates this document WITHOUT remounting it —
+  // bump the cache-busting version so the "After" layer refetches and the
+  // operator never judges a stale current image.
+  useAgentEditRefresh(cwd, content.sourcePath, review.bumpVersion);
 
   if (cwd === null || sessionId === null) {
     return <DiffMessage>Open a session to review changes.</DiffMessage>;
@@ -210,7 +215,17 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
   );
 }
 
-/** One image layer with load/error reporting. */
+/**
+ * One image layer with load/error reporting.
+ *
+ * Known trade-off: `<img>` `onError` exposes no status code, so a transient
+ * network failure is indistinguishable from the baseline route's 404
+ * `NO_BASELINE` — a blip can briefly read as "New image". Accepted for v1: the
+ * state is display-only (restore is simply not offered, nothing destructive),
+ * and the operator's Refresh re-probes and self-corrects. Distinguishing the
+ * two would need a `fetch()` probe with credentials duplicated alongside the
+ * `<img>` load.
+ */
 function Layer({
   url,
   alt,

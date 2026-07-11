@@ -222,6 +222,15 @@ router.get('/baseline/raw', async (req, res) => {
  * (`NO_BASELINE`) when nothing is restorable — a file the agent created this
  * session has no previous version, and the revert never deletes files. The path
  * is confined to `cwd`; a `..`/symlink escape is rejected (403).
+ *
+ * Deliberately NOT restricted to the media allowlist (unlike `GET
+ * /baseline/raw`, whose allowlist exists so a READ route can never become an
+ * arbitrary-file reader): whole-file restore is path-type-agnostic and safe for
+ * any file, because the only bytes it can ever write are the file's OWN
+ * baseline from the server-held snapshot/HEAD ladder — semantically identical
+ * to the text surface's reject-all, with no client-supplied payload to abuse.
+ * Restricting it would just fork revert semantics by extension for no security
+ * gain.
  */
 router.post('/revert', async (req, res) => {
   const parsed = RevertDiffBaselineRequestSchema.safeParse(req.body);

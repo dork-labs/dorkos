@@ -43,6 +43,15 @@ export function useImageDiffReview({ cwd, sourcePath, sessionId }: UseImageDiffR
     setVersion((v) => v + 1);
   }, []);
 
+  /**
+   * Reload both image layers WITHOUT clearing the failure notice — the
+   * agent-edit live-refresh path (a banner the operator hasn't acted on must
+   * survive background reloads, unlike the operator's own Refresh).
+   */
+  const bumpVersion = useCallback(() => {
+    setVersion((v) => v + 1);
+  }, []);
+
   /** Restore the baseline bytes to disk (whole-file reject). */
   const restore = useCallback(async () => {
     if (!canAct) return;
@@ -81,5 +90,6 @@ export function useImageDiffReview({ cwd, sourcePath, sessionId }: UseImageDiffR
     restore,
     markReviewed,
     refresh,
+    bumpVersion,
   };
 }

@@ -6,6 +6,7 @@ import { diffMediaKindForPath } from '@dorkos/shared/viewer-registry';
 import { useAppStore, useIsMobile, useTheme } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useDiffReview } from '../model/use-diff-review';
+import { useAgentEditRefresh } from '../model/use-agent-edit-refresh';
 import { Banner, ModeButton, DiffMessage, ArmedButton } from './diff-chrome';
 import { CanvasImageDiffContent } from './CanvasImageDiffContent';
 
@@ -94,6 +95,10 @@ function TextDiffReview({ content }: CanvasDiffContentProps) {
   const [hunkCount, setHunkCount] = useState<number | null>(null);
 
   const review = useDiffReview({ cwd, sourcePath: content.sourcePath, sessionId });
+  // A repeated agent edit re-activates this document WITHOUT remounting it, and
+  // the baseline query would otherwise sit on its stale cache — revalidate so
+  // the hunks track the latest disk state live (banners are preserved).
+  useAgentEditRefresh(cwd, content.sourcePath, review.revalidate);
 
   if (cwd === null || sessionId === null) {
     return <DiffMessage>Open a session to review changes.</DiffMessage>;

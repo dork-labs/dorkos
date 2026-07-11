@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { afterEach } from 'vitest';
 
 const transport = {
@@ -19,6 +19,25 @@ vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ selectedCwd: '/work', sessionId: 'sess-1' }),
   useTransport: () => transport,
+}));
+
+type SessionEventHandler = (sessionId: string, event: Record<string, unknown>) => void;
+const streamMocks = vi.hoisted(() => ({
+  handler: { current: null as SessionEventHandler | null },
+}));
+
+// The component tree pulls `cn` and (via useAgentEditRefresh) `streamManager`
+// from the shared lib barrel — mock both so tests can fire session events.
+vi.mock('@/layers/shared/lib', () => ({
+  cn: (...inputs: unknown[]) => inputs.flat(Infinity).filter(Boolean).join(' '),
+  streamManager: {
+    subscribeSessionEvent: (handler: SessionEventHandler) => {
+      streamMocks.handler.current = handler;
+      return () => {
+        streamMocks.handler.current = null;
+      };
+    },
+  },
 }));
 
 import { CanvasImageDiffContent } from '../ui/CanvasImageDiffContent';
@@ -112,5 +131,34 @@ describe('CanvasImageDiffContent', () => {
       'assets/logo.png',
       'sess-1'
     );
+  });
+  it('cache-busts both layers when the agent edits the image again while open', () => {
+    vi.useFakeTimers();
+    try {
+      render(<CanvasImageDiffContent content={CONTENT} />);
+      const current = screen.getByAltText('Current version') as HTMLImageElement;
+      expect(current.src).toContain('v=0');
+
+      // A repeated agent edit re-activates the open diff doc WITHOUT a remount
+      // — the live-refresh subscriber must bump the version so the "After"
+      // layer refetches instead of showing a stale image.
+      act(() => {
+        streamMocks.handler.current!('sess-1', {
+          type: 'tool_call',
+          status: 'complete',
+          toolName: 'Write',
+          input: JSON.stringify({ file_path: 'assets/logo.png' }),
+        });
+      });
+      act(() => {
+        vi.advanceTimersByTime(450); // past the burst debounce
+      });
+
+      const refreshed = screen.getByAltText('Current version') as HTMLImageElement;
+      expect(refreshed.src).toContain('v=1');
+      expect((screen.getByAltText('Previous version') as HTMLImageElement).src).toContain('v=1');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
