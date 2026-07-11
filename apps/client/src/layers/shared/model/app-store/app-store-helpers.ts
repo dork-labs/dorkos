@@ -320,17 +320,38 @@ export function writeRightPanelLayout(agentKey: string | null, entry: RightPanel
 // ---------------------------------------------------------------------------
 
 /**
- * Read the persisted PIP panel geometry from localStorage. Returns null if
- * missing or corrupt. Deliberately unclamped — the floating-panel primitive
- * re-clamps against the current viewport on mount (task 1.1), so a stale
- * geometry from a resized window self-corrects the instant the panel renders
- * instead of the slice duplicating that clamp math.
+ * Read the persisted PIP panel geometry from localStorage. Returns null when
+ * the value is missing, corrupt, or not geometry-shaped (all four fields must
+ * be finite numbers) — the host then falls back to the default dock. Validated
+ * but deliberately unclamped: the floating-panel primitive re-clamps against
+ * the current viewport on mount, so a stale geometry from a resized window
+ * self-corrects the instant the panel renders instead of the slice duplicating
+ * that clamp math.
  */
 export function readPipGeometry(): FloatingPanelGeometry | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.PIP_PANEL_STATE);
     if (!raw) return null;
-    return JSON.parse(raw) as FloatingPanelGeometry;
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed == null || typeof parsed !== 'object') return null;
+    const { x, y, width, height } = parsed as Record<string, unknown>;
+    // Reject any non-finite field: a wrong-shaped value (this key has no
+    // version migration) would otherwise yield NaN geometry, and NaN !== NaN
+    // makes the primitive's mount/resize reclamp effect see "changed" geometry
+    // on every pass, recommitting in an endless loop.
+    if (
+      typeof x !== 'number' ||
+      typeof y !== 'number' ||
+      typeof width !== 'number' ||
+      typeof height !== 'number' ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(width) ||
+      !Number.isFinite(height)
+    ) {
+      return null;
+    }
+    return { x, y, width, height };
   } catch {
     return null;
   }

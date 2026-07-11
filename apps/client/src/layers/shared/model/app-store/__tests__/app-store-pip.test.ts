@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAppStore } from '../app-store';
+import { readPipGeometry } from '../app-store-helpers';
 import type { PipContent } from '../app-store-pip';
 
 describe('PipSlice', () => {
@@ -69,6 +70,53 @@ describe('PipSlice', () => {
     }
   });
 
+  describe('readPipGeometry validation', () => {
+    it('returns null for corrupt (non-JSON) data', () => {
+      localStorage.setItem('dorkos-pip-panel-state', 'not-json');
+      expect(readPipGeometry()).toBeNull();
+    });
+
+    it('returns null for valid JSON with a wrong shape (missing fields)', () => {
+      localStorage.setItem('dorkos-pip-panel-state', JSON.stringify({ x: 5 }));
+      expect(readPipGeometry()).toBeNull();
+    });
+
+    it('returns null for non-object JSON values', () => {
+      localStorage.setItem('dorkos-pip-panel-state', JSON.stringify([1, 2, 3, 4]));
+      expect(readPipGeometry()).toBeNull();
+      localStorage.setItem('dorkos-pip-panel-state', 'null');
+      expect(readPipGeometry()).toBeNull();
+      localStorage.setItem('dorkos-pip-panel-state', '42');
+      expect(readPipGeometry()).toBeNull();
+    });
+
+    it('returns null when a field is non-numeric', () => {
+      localStorage.setItem(
+        'dorkos-pip-panel-state',
+        JSON.stringify({ x: '5', y: 10, width: 300, height: 200 })
+      );
+      expect(readPipGeometry()).toBeNull();
+    });
+
+    it('returns null when a field is NaN or Infinity', () => {
+      // JSON.stringify turns NaN/Infinity into null, so craft raw strings that
+      // JSON.parse would never produce but a buggy writer or manual edit could.
+      localStorage.setItem(
+        'dorkos-pip-panel-state',
+        JSON.stringify({ x: null, y: 10, width: 300, height: 200 })
+      );
+      expect(readPipGeometry()).toBeNull();
+      localStorage.setItem('dorkos-pip-panel-state', '{"x":1e999,"y":10,"width":300,"height":200}');
+      expect(readPipGeometry()).toBeNull();
+    });
+
+    it('returns the geometry when all four fields are finite numbers', () => {
+      const geometry = { x: 5, y: 10, width: 300, height: 200 };
+      localStorage.setItem('dorkos-pip-panel-state', JSON.stringify(geometry));
+      expect(readPipGeometry()).toEqual(geometry);
+    });
+  });
+
   describe('hydration', () => {
     beforeEach(() => {
       vi.resetModules();
@@ -83,6 +131,19 @@ describe('PipSlice', () => {
 
       const { useAppStore: freshStore } = await import('../app-store');
       expect(freshStore.getState().pipGeometry).toEqual(staleGeometry);
+    });
+
+    it.each([
+      ['corrupt JSON', 'not-json'],
+      ['wrong shape', JSON.stringify({ x: 5 })],
+      ['non-numeric field', JSON.stringify({ x: '5', y: 10, width: 300, height: 200 })],
+      ['non-finite field', '{"x":1e999,"y":10,"width":300,"height":200}'],
+    ])('falls back to null pipGeometry when the persisted value is %s', async (_label, raw) => {
+      localStorage.clear();
+      localStorage.setItem('dorkos-pip-panel-state', raw);
+
+      const { useAppStore: freshStore } = await import('../app-store');
+      expect(freshStore.getState().pipGeometry).toBeNull();
     });
   });
 });
