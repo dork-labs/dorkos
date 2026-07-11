@@ -49,6 +49,7 @@ import {
 import { createRelayRouter } from './routes/relay.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
+import { createInitiateConsentGate } from './services/relay/initiate-consent.js';
 import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
@@ -532,6 +533,15 @@ async function start() {
       const bindingStore = adapterManager.getBindingStore();
       if (claudeRuntime && bindingRouter && bindingStore) {
         claudeRuntime.setRelayBindingContext(bindingRouter, bindingStore, adapterManager);
+      }
+
+      // Enforce the DOR-239 "agent may start conversations" consent at the relay
+      // delivery layer (DOR-277). This is the authoritative gate: every
+      // agent-initiated send to a bound human channel — relay_send*, A2A, or any
+      // other publish path — is denied unless the binding is enabled and
+      // canInitiate. Without a binding store there is no consent to resolve.
+      if (bindingStore) {
+        relayCore.setInitiateConsentGate(createInitiateConsentGate({ bindingStore }));
       }
 
       logger.info('[Relay] AdapterManager initialized');

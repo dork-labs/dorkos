@@ -20,6 +20,7 @@ import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
+import { isConsentExemptPrincipal } from '../services/relay/initiate-consent.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readManifest } from '@dorkos/shared/manifest';
 import { createAdapterRouter } from './relay-adapters.js';
@@ -186,6 +187,23 @@ export function createRelayRouter(
         .status(400)
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
+
+    // This route takes a client-supplied `from`. It must not let an untrusted
+    // caller assert a principal the initiate-consent gate trusts as exempt
+    // (reply-forwarding, system, inbound adapter echo) — doing so would let a
+    // local caller deliver to a bound human channel with `canInitiate` off,
+    // bypassing DOR-277. Server-injected principals never travel this route, so
+    // rejecting them here is safe. Ordinary principals (`relay.human.console`,
+    // `relay.agent.*`, …) still flow and remain subject to the gate.
+    if (isConsentExemptPrincipal(result.data.from)) {
+      return res.status(403).json({
+        error:
+          `Sender "${result.data.from}" is a reserved server principal and cannot be ` +
+          `asserted by a client. Send from your own principal (e.g. relay.human.console).`,
+        code: 'RESERVED_SENDER',
+      });
+    }
+
     try {
       const publishResult = await relayCore.publish(result.data.subject, result.data.payload, {
         from: result.data.from,

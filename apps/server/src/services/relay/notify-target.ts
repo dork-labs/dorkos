@@ -12,6 +12,7 @@
  * @module services/relay/notify-target
  */
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+import { bindingAllowsInitiate } from './initiate-consent.js';
 
 /** Minimal binding-store surface the resolver reads. */
 export interface NotifyTargetBindingStore {
@@ -106,23 +107,14 @@ export function resolveNotifyTarget(agentId: string, deps: NotifyTargetDeps): No
   }
 
   let best: {
-    bindingId: string;
+    binding: AdapterBinding;
     chatId: string;
-    adapterId: string;
-    canInitiate: boolean;
-    notifyOnTaskComplete: boolean;
   } | null = null;
   for (const binding of myBindings) {
     const sessions = bindingRouter.getSessionsByBinding(binding.id);
     if (sessions.length > 0) {
       const latest = sessions[sessions.length - 1]!;
-      best = {
-        chatId: latest.chatId,
-        bindingId: binding.id,
-        adapterId: binding.adapterId,
-        canInitiate: binding.canInitiate,
-        notifyOnTaskComplete: binding.notifyOnTaskComplete,
-      };
+      best = { binding, chatId: latest.chatId };
     }
   }
 
@@ -134,30 +126,33 @@ export function resolveNotifyTarget(agentId: string, deps: NotifyTargetDeps): No
     };
   }
 
-  // A proactive notification always INITIATES — a false canInitiate on the
-  // resolved binding unconditionally blocks it (DOR-239). Reply routing is a
-  // separate, automatic path that this gate never touches.
-  if (!best.canInitiate) {
+  // A proactive notification always INITIATES. The resolved binding must be
+  // enabled and consent to agent-initiated messages (DOR-239) — evaluated
+  // through the same shared predicate the delivery-layer gate uses (DOR-277),
+  // so there is one consent decision. Reply routing is a separate, automatic
+  // path (the `agent:` principal) that neither this resolver nor the gate
+  // touches.
+  if (!bindingAllowsInitiate(best.binding)) {
     return {
       ok: false,
       reason: 'INITIATE_NOT_ALLOWED',
-      bindingId: best.bindingId,
-      adapterId: best.adapterId,
+      bindingId: best.binding.id,
+      adapterId: best.binding.adapterId,
     };
   }
 
   const adapters = adapterManager?.listAdapters() ?? [];
-  const adapter = adapters.find((a) => a.config.id === best!.adapterId);
+  const adapter = adapters.find((a) => a.config.id === best!.binding.adapterId);
   const adapterType = adapter?.config?.type ?? 'unknown';
-  const subject = `relay.human.${adapterType}.${best.adapterId}.${best.chatId}`;
+  const subject = `relay.human.${adapterType}.${best.binding.adapterId}.${best.chatId}`;
 
   return {
     ok: true,
     subject,
-    adapterId: best.adapterId,
+    adapterId: best.binding.adapterId,
     adapterType,
     chatId: best.chatId,
-    bindingId: best.bindingId,
-    notifyOnTaskComplete: best.notifyOnTaskComplete,
+    bindingId: best.binding.id,
+    notifyOnTaskComplete: best.binding.notifyOnTaskComplete,
   };
 }

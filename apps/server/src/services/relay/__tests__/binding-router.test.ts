@@ -237,43 +237,8 @@ describe('BindingRouter', () => {
     expect(mockBindingStore.resolve).toHaveBeenCalledWith('tg-bot', '12345', undefined);
   });
 
-  describe('parseSubject with instance-aware format', () => {
-    it('extracts adapterId from instance ID segment', () => {
-      const result = router['parseSubject']('relay.human.telegram.my-bot.123456');
-      expect(result.adapterId).toBe('my-bot');
-      expect(result.chatId).toBe('123456');
-      expect(result.channelType).toBeUndefined();
-    });
-
-    it('extracts group channel type with instance ID', () => {
-      const result = router['parseSubject']('relay.human.telegram.my-bot.group.-789');
-      expect(result.adapterId).toBe('my-bot');
-      expect(result.chatId).toBe('-789');
-      expect(result.channelType).toBe('group');
-    });
-
-    it('handles slack instance-aware subjects', () => {
-      const result = router['parseSubject']('relay.human.slack.slack-1.C12345');
-      expect(result.adapterId).toBe('slack-1');
-      expect(result.chatId).toBe('C12345');
-    });
-
-    it('returns empty for subjects without instance ID', () => {
-      const result = router['parseSubject']('relay.human.telegram');
-      expect(result.adapterId).toBeUndefined();
-    });
-
-    it('handles chat IDs with dots', () => {
-      const result = router['parseSubject']('relay.human.telegram.my-bot.123.456');
-      expect(result.adapterId).toBe('my-bot');
-      expect(result.chatId).toBe('123.456');
-    });
-
-    it('returns empty for non-relay subjects', () => {
-      const result = router['parseSubject']('some.other.subject');
-      expect(result).toEqual({});
-    });
-  });
+  // Subject parsing lives in the shared `parseHumanSubject` helper
+  // (services/relay/human-subject.ts) and is covered by human-subject.test.ts.
 
   describe('session strategies', () => {
     const makeBinding = (strategy: string) => ({

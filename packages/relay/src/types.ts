@@ -89,6 +89,41 @@ export interface AccessResult {
   matchedRule?: RelayAccessRule;
 }
 
+/**
+ * Decision returned by an {@link InitiateConsentGate}.
+ *
+ * `allowed:false` carries a machine `code` (surfaced to the caller as the
+ * publish rejection reason) and a human `reason` for the dead-letter record.
+ */
+export interface InitiateConsentDecision {
+  allowed: boolean;
+  /** Stable code for the denial (used as the publish rejection reason). */
+  code?: 'INITIATE_NOT_ALLOWED' | 'NO_BINDING';
+  /** Human-readable reason recorded on the dead letter. */
+  reason?: string;
+}
+
+/**
+ * Authoritative agent→human initiate-consent gate (DOR-277).
+ *
+ * Injected into the publish pipeline by the host (the relay package itself is
+ * binding-unaware). Evaluated on every publish, so the per-binding "agent may
+ * start conversations" consent (DOR-239) is enforced at the delivery layer,
+ * covering all publish paths — `relay_send*`, A2A, binding-router re-dispatch,
+ * and the HTTP publish route — rather than only the two proactive-notify tool
+ * handlers. Returns `allowed:true` for paths that are not an agent-initiated
+ * send to a human channel (replies, system principals, inbound adapter echoes).
+ *
+ * The gate keys on `from`, so its guarantee is only as strong as the host's
+ * control over that principal. The host is responsible for injecting `from` on
+ * trusted surfaces and rejecting client-asserted exempt principals on any
+ * surface that accepts a caller-supplied `from` (see the host's consent module).
+ *
+ * @param from - The publish `from` principal.
+ * @param subject - The target subject.
+ */
+export type InitiateConsentGate = (from: string, subject: string) => InitiateConsentDecision;
+
 export interface DeadLetter {
   envelope: RelayEnvelope;
   reason: string;
@@ -282,7 +317,12 @@ export interface PublishResult {
   /** Endpoints that rejected the message, with structured reasons. */
   rejected?: Array<{
     endpointHash: string;
-    reason: 'backpressure' | 'circuit_open' | 'rate_limited' | 'budget_exceeded';
+    reason:
+      | 'backpressure'
+      | 'circuit_open'
+      | 'rate_limited'
+      | 'budget_exceeded'
+      | 'initiate_denied';
   }>;
 
   /** Per-endpoint pressure ratios for proactive signaling (0.0-1.0). */
