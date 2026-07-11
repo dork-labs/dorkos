@@ -10,6 +10,11 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Agent Discovery
 
+<ProductShot
+  id="agent-discovery"
+  alt="The Mesh tab scanning for agent projects and registering them one by one into a growing network view"
+/>
+
 Mesh is DorkOS's agent discovery system. It scans your computer for AI agent projects (Claude Code, Cursor, Codex, and others), registers each one with a short profile called a manifest, and shows them all in one place: the Mesh tab.
 
 If you run more than one agent across more than one project, Mesh is how you stop losing track of them.
@@ -76,10 +81,10 @@ The rest of this page is for scripting registration, building an integration, or
 
 DorkOS keeps two separate lists of agents. They answer different questions, so don't conflate them.
 
-| Registry                  | Where agents live                                                   | Who populates it                        | Scanner                                                     | API                               |
-| -------------------------- | ------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------ | ---------------------------------- |
-| **Marketplace-installed** | `~/.dork/plugins/*` and `~/.dork/agents/*`                          | The marketplace install pipeline         | `apps/server/src/services/marketplace/installed-scanner.ts` | `GET /api/marketplace/installed`  |
-| **Mesh-discovered**       | Any directory you scan, typically project folders anywhere on disk | You, via scan from UI / MCP / CLI / API | `packages/mesh/src/discovery/unified-scanner.ts`            | `GET /api/mesh/agents`            |
+| Registry                  | Where agents live                                                  | Who populates it                        | Scanner                                                     | API                              |
+| ------------------------- | ------------------------------------------------------------------ | --------------------------------------- | ----------------------------------------------------------- | -------------------------------- |
+| **Marketplace-installed** | `~/.dork/plugins/*` and `~/.dork/agents/*`                         | The marketplace install pipeline        | `apps/server/src/services/marketplace/installed-scanner.ts` | `GET /api/marketplace/installed` |
+| **Mesh-discovered**       | Any directory you scan, typically project folders anywhere on disk | You, via scan from UI / MCP / CLI / API | `packages/mesh/src/discovery/unified-scanner.ts`            | `GET /api/mesh/agents`           |
 
 - **"What did I install from the marketplace?"** → `GET /api/marketplace/installed`. Narrow provenance question: packages that came through the managed install pipeline with their `.dork/install-metadata.json` sidecar intact.
 - **"What agents does my system know about right now?"** → `GET /api/mesh/agents`. The full fleet: every directory with a `.dork/agent.json` manifest that Mesh has been pointed at, whether via marketplace install, manual registration, or a discovery scan.
@@ -111,17 +116,17 @@ Manifest write-through semantics (the file on disk is authoritative, the SQLite 
 Mesh ships with ten detection strategies covering the major AI coding agents:
 
 | Strategy        | Filesystem markers                                                                                   | Runtime       |
-| ---------------- | ------------------------------------------------------------------------------------------------------ | ------------- |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
 | **claude-code** | `CLAUDE.md` or `AGENTS.md` at the project root. Extracts a description from the first paragraph.     | `claude-code` |
-| **cursor**      | `.cursor/` directory or `.cursorrules` file at the project root.                                       | `cursor`      |
-| **codex**       | `.codex/` directory at the project root.                                                                | `codex`       |
-| **windsurf**    | `.windsurfrules` file or `.windsurf/` directory at the project root.                                   | `windsurf`    |
-| **gemini**      | `GEMINI.md` file or `.gemini/` directory at the project root.                                          | `gemini`      |
-| **cline**       | `.clinerules` file or directory at the project root.                                                    | `cline`       |
-| **roo-code**    | `.roo/` directory or `.roorules` file at the project root.                                              | `roo-code`    |
-| **copilot**     | Copilot-specific files within `.github/` (`copilot-instructions.md`, `instructions/`, or `agents/`).   | `copilot`     |
-| **amazon-q**    | `.amazonq/` directory at the project root.                                                              | `amazon-q`    |
-| **continue**    | `.continue/` directory at the project root.                                                             | `continue`    |
+| **cursor**      | `.cursor/` directory or `.cursorrules` file at the project root.                                     | `cursor`      |
+| **codex**       | `.codex/` directory at the project root.                                                             | `codex`       |
+| **windsurf**    | `.windsurfrules` file or `.windsurf/` directory at the project root.                                 | `windsurf`    |
+| **gemini**      | `GEMINI.md` file or `.gemini/` directory at the project root.                                        | `gemini`      |
+| **cline**       | `.clinerules` file or directory at the project root.                                                 | `cline`       |
+| **roo-code**    | `.roo/` directory or `.roorules` file at the project root.                                           | `roo-code`    |
+| **copilot**     | Copilot-specific files within `.github/` (`copilot-instructions.md`, `instructions/`, or `agents/`). | `copilot`     |
+| **amazon-q**    | `.amazonq/` directory at the project root.                                                           | `amazon-q`    |
+| **continue**    | `.continue/` directory at the project root.                                                          | `continue`    |
 
 The `AgentRuntime` enum also includes placeholder values for agents that don't yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
 

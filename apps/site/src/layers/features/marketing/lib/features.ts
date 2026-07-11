@@ -774,7 +774,7 @@ export const features: Feature[] = [
       'Scan a QR code to open it on your phone instantly',
       'Works with Relay, so you can approve actions remotely too',
     ],
-    docsUrl: '/docs/guides/tunnel-setup',
+    docsUrl: '/docs/self-hosting/tunnel-setup',
     relatedFeatures: ['cli', 'relay-message-bus'],
     sortOrder: 3,
   },

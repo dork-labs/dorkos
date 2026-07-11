@@ -58,6 +58,11 @@ Explain the structure of this project
 
 When Claude needs to read files, run commands, or make edits, a tool approval card appears. Review the action and click **Approve** or **Deny**, the same way you'd review a coworker's first pull request.
 
+<ProductShot
+  id="tool-approval"
+  alt="A tool approval card in the chat, showing what Claude wants to run with Approve and Deny buttons"
+/>
+
 <Callout type="warn">
   Always review tool calls before approving, especially write operations and shell commands.
 </Callout>
@@ -71,7 +76,9 @@ When Claude needs to read files, run commands, or make edits, a tool approval ca
 <Tabs items={["Working Directory", "Sessions", "Slash Commands"]}>
 
 <Tab value="Working Directory">
-  DorkOS works out of a **working directory**, the folder on your computer it reads and edits in. By default that's the folder you ran `dorkos` from. Use the **directory picker** in the sidebar to switch to a different project without restarting.
+  DorkOS works out of a **working directory**, the folder on your computer it reads and edits in. By
+  default that's the folder you ran `dorkos` from. Use the **directory picker** in the sidebar to
+  switch to a different project without restarting.
 </Tab>
 
 <Tab value="Sessions">
@@ -87,8 +94,8 @@ If you also use the Obsidian plugin, note that it's an early, still-hardening su
 
 <Tab value="Slash Commands">
   Type `/` in the chat input to open the **command palette**. Slash commands load from
-  `.claude/commands/` in your working directory (see above) and inject predefined prompts or workflows into the
-  conversation.
+  `.claude/commands/` in your working directory (see above) and inject predefined prompts or
+  workflows into the conversation.
 </Tab>
 
 </Tabs>
@@ -97,14 +104,14 @@ If you also use the Obsidian plugin, note that it's an early, still-hardening su
 
 Most people never touch these flags after the first launch. Here they are if you need them; see [Configuration](/docs/getting-started/configuration) for the matching environment variables and persistent settings.
 
-| Flag                  | Short | Description                                                            | Default           |
-| ---------------------- | ----- | ------------------------------------------------------------------------ | ------------------ |
-| `--port <port>`       | `-p`  | Server port                                                             | `4242`            |
-| `--dir <path>`        | `-d`  | Working directory                                                       | Current directory |
-| `--boundary <path>`   | `-b`  | Boundary: the folders on your computer DorkOS is allowed to touch       | Home directory     |
-| `--tunnel`            | `-t`  | Enable ngrok tunnel                                                     | Off                |
-| `--no-open`           |       | Don't open the browser on startup                                      | Off (opens browser)|
-| `--log-level <level>` | `-l`  | Log verbosity (`fatal` through `trace`)                                 | `info`             |
+| Flag                  | Short | Description                                                       | Default             |
+| --------------------- | ----- | ----------------------------------------------------------------- | ------------------- |
+| `--port <port>`       | `-p`  | Server port                                                       | `4242`              |
+| `--dir <path>`        | `-d`  | Working directory                                                 | Current directory   |
+| `--boundary <path>`   | `-b`  | Boundary: the folders on your computer DorkOS is allowed to touch | Home directory      |
+| `--tunnel`            | `-t`  | Enable ngrok tunnel                                               | Off                 |
+| `--no-open`           |       | Don't open the browser on startup                                 | Off (opens browser) |
+| `--log-level <level>` | `-l`  | Log verbosity (`fatal` through `trace`)                           | `info`              |
 
 ## Next Steps
 
