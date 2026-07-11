@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getGitStatus } from '../services/core/git-status.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
@@ -20,7 +21,7 @@ router.get('/status', async (req, res) => {
     if (parsed.data.dir) {
       validatedDir = await validateBoundary(parsed.data.dir);
     }
-    const cwd = validatedDir || process.cwd();
+    const cwd = validatedDir || DEFAULT_CWD;
     const result = await getGitStatus(cwd);
     res.json(result);
   } catch (err) {
