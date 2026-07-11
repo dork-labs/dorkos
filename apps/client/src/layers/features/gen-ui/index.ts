@@ -7,6 +7,7 @@
  */
 export { WidgetRenderer } from './ui/WidgetRenderer';
 export { WidgetFence } from './ui/WidgetFence';
+export { LiveSessionWidget, type LiveSessionWidgetProps } from './ui/LiveSessionWidget';
 export { WidgetErrorCard } from './ui/WidgetErrorCard';
 export { WidgetSkeleton } from './ui/WidgetSkeleton';
 export { UiActionChip } from './ui/UiActionChip';
