@@ -54,7 +54,7 @@ function approvalEvent(seq: number, id: string): SessionEvent {
 
 describe('useSessionStreamStore', () => {
   beforeEach(() => {
-    useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
+    useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
   });
 
   it('getSession returns the default state for an unknown id', () => {
@@ -452,6 +452,60 @@ describe('useSessionStreamStore', () => {
       const source = useSessionStreamStore.getState().getSession('request-uuid');
       expect(source.messages).toEqual([MESSAGE]);
       expect(source.lastAppliedSeq).toBe(5);
+    });
+  });
+
+  describe('setPinnedSession / pinned LRU eviction (DOR-298 PIP)', () => {
+    /** Mirrors `MAX_RETAINED_SESSIONS` in session-stream-store.ts (not exported). */
+    const RETENTION_LIMIT = 20;
+
+    /** Seed `count` idle (no `inProgressTurn`) sessions, oldest id first. */
+    function seedIdleSessions(
+      store: ReturnType<typeof useSessionStreamStore.getState>,
+      count: number
+    ) {
+      for (let i = 0; i < count; i++) {
+        store.ensureSession(`s-${i}`);
+      }
+    }
+
+    it('a pinned session survives eviction even when idle and past the retention limit', () => {
+      // Real failure mode this guards: a popped-out widget board sits idle (no
+      // inProgressTurn) while the operator works in other sessions — without the
+      // pin, ordinary LRU eviction would drop its projection out from under the
+      // still-live StreamManager connection (task 1.1), and the PIP panel would
+      // go blank even though the stream itself is fine.
+      const store = useSessionStreamStore.getState();
+      seedIdleSessions(store, RETENTION_LIMIT); // s-0 (oldest) .. s-19 (newest)
+      store.setPinnedSession('s-0'); // the oldest — first in line for eviction
+
+      store.ensureSession('s-20'); // pushes past the limit, triggers touchAndGet's eviction loop
+
+      const after = useSessionStreamStore.getState();
+      expect(after.sessions['s-0']).toBeDefined();
+      expect(after.sessionAccessOrder).toContain('s-0');
+    });
+
+    it('unpinning makes the session evictable again on the next over-limit pass', () => {
+      const store = useSessionStreamStore.getState();
+      seedIdleSessions(store, RETENTION_LIMIT);
+      store.setPinnedSession('s-0');
+      store.ensureSession('s-20'); // survives, still pinned
+
+      store.setPinnedSession(null);
+      store.ensureSession('s-21'); // one more over-limit pass, now unpinned
+
+      const after = useSessionStreamStore.getState();
+      expect(after.sessions['s-0']).toBeUndefined();
+      expect(after.sessionAccessOrder).not.toContain('s-0');
+    });
+
+    it('setPinnedSession updates pinnedSessionId, and clears it back to null', () => {
+      expect(useSessionStreamStore.getState().pinnedSessionId).toBeNull();
+      useSessionStreamStore.getState().setPinnedSession(SID);
+      expect(useSessionStreamStore.getState().pinnedSessionId).toBe(SID);
+      useSessionStreamStore.getState().setPinnedSession(null);
+      expect(useSessionStreamStore.getState().pinnedSessionId).toBeNull();
     });
   });
 });

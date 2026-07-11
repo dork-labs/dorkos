@@ -12,3 +12,4 @@ export { WidgetSkeleton } from './ui/WidgetSkeleton';
 export { UiActionChip } from './ui/UiActionChip';
 export { parseWidget, validateWidgetDocument, type ParseWidgetResult } from './model/parse-widget';
 export { parseUiActionMessage, type ParsedUiAction } from './lib/ui-action-parse';
+export { findLatestWidgetFence, type LatestWidgetFence } from './lib/find-latest-widget-fence';

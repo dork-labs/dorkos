@@ -6,7 +6,7 @@
       "slug": "gen-ui-pip",
       "title": "Live gen-UI widgets in PIP — play tic-tac-toe while you work",
       "created": "2026-07-11",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260711-150300",
