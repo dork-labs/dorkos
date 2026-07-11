@@ -59,6 +59,17 @@ export interface Shot {
    * hardware demo). The override still runs through the same optimization path.
    */
   readonly skipAuto?: boolean;
+  /**
+   * Which frame of the encoded loop becomes the dark poster (loops only).
+   * `first` (the default) uses frame 0, so the poster→autoplay handoff is
+   * pixel-identical. `settled` uses the last clean frame before the end-seam
+   * crossfade — for loops that open on a build-up (streaming text, a loading
+   * skeleton) whose money state only exists near the end. The handoff then
+   * jumps from the settled poster back to the opening frame; that trade is
+   * deliberate, because the poster is also what GitHub release notes and docs
+   * embed as a still, and a skeleton there reads as a broken screenshot.
+   */
+  readonly posterFrame?: 'first' | 'settled';
 }
 
 /**
@@ -85,9 +96,23 @@ export const SHOTS: readonly Shot[] = [
   // agent-discovery is also embedded in the docs (docs/guides/agent-discovery.mdx).
   { id: 'agent-discovery', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
   // gen-ui-widgets is also embedded in the docs (docs/guides/generative-ui.mdx).
-  { id: 'gen-ui-widgets', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  // Both gen-ui loops open on streaming text + a loading skeleton (the reveal
+  // is the money), so their posters come from the settled end state instead.
+  {
+    id: 'gen-ui-widgets',
+    kind: 'loop',
+    frame: 'desktop',
+    consumers: ['marketing', 'docs'],
+    posterFrame: 'settled',
+  },
   // gen-ui-tictactoe is also embedded in the docs (docs/guides/generative-ui.mdx).
-  { id: 'gen-ui-tictactoe', kind: 'loop', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  {
+    id: 'gen-ui-tictactoe',
+    kind: 'loop',
+    frame: 'desktop',
+    consumers: ['marketing', 'docs'],
+    posterFrame: 'settled',
+  },
   // --- Mobile stills (marketing) ---
   { id: 'mobile-sessions', kind: 'still', frame: 'mobile', consumers: ['marketing'] },
   { id: 'mobile-approval', kind: 'still', frame: 'mobile', consumers: ['marketing'] },
