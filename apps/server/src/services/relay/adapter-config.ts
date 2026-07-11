@@ -6,7 +6,7 @@
  *
  * @module services/relay/adapter-config
  */
-import { readFile, writeFile, mkdir, rename, chmod } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, chmod, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { z } from 'zod';
@@ -80,6 +80,10 @@ function stripRemovedAdapterTypes(raw: unknown): unknown {
 export async function loadAdapterConfig(configPath: string): Promise<AdapterConfig[]> {
   try {
     const raw = await readFile(configPath, 'utf-8');
+    // The file holds bot tokens in cleartext. If an instance wrote it before we
+    // enforced 0600, or it was restored from a lax backup, tighten it on read so
+    // the secrets stop being world-readable without waiting for the next save.
+    await repairAdapterConfigPermissions(configPath);
     const sanitized = stripRemovedAdapterTypes(JSON.parse(raw));
     const parsed = AdaptersConfigFileSchema.safeParse(sanitized);
     if (parsed.success) {
@@ -108,6 +112,31 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
  * readable by other local users.
  */
 const ADAPTER_CONFIG_MODE = 0o600;
+
+/**
+ * Tighten `adapters.json` to owner-only if a read finds it group/world-readable.
+ *
+ * Mirrors the session-secret repair in `services/core/auth/secret.ts`: repair
+ * rather than reject, warn once, and never let a stat/chmod failure break the
+ * load. No-op on Windows, where POSIX mode bits do not apply.
+ *
+ * @param configPath - Absolute path to adapters.json.
+ */
+async function repairAdapterConfigPermissions(configPath: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  try {
+    const mode = (await stat(configPath)).mode & 0o777;
+    if ((mode & 0o077) !== 0) {
+      await chmod(configPath, ADAPTER_CONFIG_MODE);
+      logger.warn(
+        `[AdapterConfig] adapters.json was readable by other users (mode ${mode.toString(8)}); tightened it to owner-only (0600)`
+      );
+    }
+  } catch (err) {
+    // A stat/chmod failure must never break loading the config.
+    logger.warn('[AdapterConfig] Could not verify permissions on adapters.json:', err);
+  }
+}
 
 /**
  * Persist adapter configs to disk using atomic write (tmp + rename).

@@ -150,10 +150,18 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
     //    files are already on disk, we just log a warning so the user-visible
     //    result still reflects the successful scaffold.
     try {
+      // Reference the freshly-scaffolded package with a relative-path source
+      // (resolved by a local copy, no git clone). A `file://` url source would
+      // now be rejected by the marketplace schema, because url sources reach
+      // `git clone` at preview time and `file://` is an unsafe transport there.
+      const relFromRoot = path
+        .relative(personalMarketplaceRoot(deps.dorkHome), result.packagePath)
+        .split(path.sep)
+        .join('/');
       await registerInPersonalMarketplace(deps.dorkHome, {
         name: args.name,
         description: args.description,
-        source: { source: 'url', url: `file://${result.packagePath}` },
+        source: `./${relFromRoot}`,
       });
     } catch (err) {
       deps.logger.warn(
@@ -187,7 +195,8 @@ async function registerInPersonalMarketplace(
   entry: {
     name: string;
     description: string;
-    source: { source: 'url'; url: string };
+    /** A relative-path source string (`./packages/<name>`) or an object source form. */
+    source: string | { source: string; url: string };
   }
 ): Promise<void> {
   const manifestPath = path.join(personalMarketplaceRoot(dorkHome), 'marketplace.json');

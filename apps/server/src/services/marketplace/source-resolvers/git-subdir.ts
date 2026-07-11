@@ -28,7 +28,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { hardenedGitEnv } from './git-safety.js';
+import { hardenedGitEnv } from '../../../lib/git-safety.js';
 import type { Logger } from '@dorkos/shared/logger';
 import type { ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetchedPackage, FetchPackageOptions, FetcherDeps } from '../package-fetcher.js';

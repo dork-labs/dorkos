@@ -69,6 +69,33 @@ describe('PluginSourceSchema — five source forms', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects a url source using the ext:: transport (command execution)', () => {
+    // z.string().url() accepts this; the transport allowlist must not.
+    for (const url of ["ext::sh -c 'id > /tmp/pwned'", 'EXT::sh -c id']) {
+      expect(PluginSourceSchema.safeParse({ source: 'url', url }).success).toBe(false);
+    }
+  });
+
+  it('rejects a url source using the file:// transport', () => {
+    expect(PluginSourceSchema.safeParse({ source: 'url', url: 'file:///etc' }).success).toBe(false);
+  });
+
+  it('rejects a url source using the fd:: transport', () => {
+    expect(PluginSourceSchema.safeParse({ source: 'url', url: 'fd::0/foo' }).success).toBe(false);
+  });
+
+  it('rejects a url source that begins with a dash (git option injection)', () => {
+    expect(
+      PluginSourceSchema.safeParse({ source: 'url', url: '--upload-pack=touch /tmp/x' }).success
+    ).toBe(false);
+  });
+
+  it('accepts an scp-style url source (git@host:path)', () => {
+    expect(
+      PluginSourceSchema.safeParse({ source: 'url', url: 'git@gitlab.com:foo/bar.git' }).success
+    ).toBe(true);
+  });
+
   it('accepts a git-subdir source', () => {
     const result = PluginSourceSchema.safeParse({
       source: 'git-subdir',

@@ -14,7 +14,6 @@ describe('hardenedGitEnv', () => {
   });
 
   it('inherits the parent environment so git keeps its PATH', () => {
-    // eslint-disable-next-line no-restricted-syntax -- asserting inheritance of a real env var in a test
     expect(hardenedGitEnv().PATH).toBe(process.env.PATH);
   });
 });

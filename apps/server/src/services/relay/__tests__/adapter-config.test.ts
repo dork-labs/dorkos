@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { readFile, writeFile, chmod } from 'node:fs/promises';
+import { readFile, writeFile, chmod, stat } from 'node:fs/promises';
 import { loadAdapterConfig, saveAdapterConfig } from '../adapter-config.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -10,6 +10,7 @@ vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn().mockResolvedValue(undefined),
   rename: vi.fn().mockResolvedValue(undefined),
   chmod: vi.fn().mockResolvedValue(undefined),
+  stat: vi.fn().mockResolvedValue({ mode: 0o600 }),
 }));
 
 // Mock logger
@@ -80,6 +81,34 @@ describe('loadAdapterConfig — removed adapter types', () => {
 
     expect(configs).toHaveLength(1);
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadAdapterConfig — secret-file permissions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(stat).mockResolvedValue({ mode: 0o600 } as Awaited<ReturnType<typeof stat>>);
+  });
+
+  const skipOnWindows = process.platform === 'win32' ? it.skip : it;
+
+  skipOnWindows('tightens a group/world-readable adapters.json to 0600 on read', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+    vi.mocked(stat).mockResolvedValue({ mode: 0o644 } as Awaited<ReturnType<typeof stat>>);
+
+    await loadAdapterConfig(CONFIG_PATH);
+
+    expect(vi.mocked(chmod)).toHaveBeenCalledWith(CONFIG_PATH, 0o600);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('tightened it to owner-only'));
+  });
+
+  skipOnWindows('leaves an already-0600 adapters.json alone on read', async () => {
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+    vi.mocked(stat).mockResolvedValue({ mode: 0o600 } as Awaited<ReturnType<typeof stat>>);
+
+    await loadAdapterConfig(CONFIG_PATH);
+
+    expect(vi.mocked(chmod)).not.toHaveBeenCalled();
   });
 });
 

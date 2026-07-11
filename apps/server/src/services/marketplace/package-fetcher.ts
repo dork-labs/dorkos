@@ -43,7 +43,7 @@ import { relativePathResolver } from './source-resolvers/relative-path.js';
 import { githubResolver } from './source-resolvers/github.js';
 import { urlResolver } from './source-resolvers/url.js';
 import { gitSubdirResolver } from './source-resolvers/git-subdir.js';
-import { hardenedGitEnv } from './source-resolvers/git-safety.js';
+import { hardenedGitEnv } from '../../lib/git-safety.js';
 import { npmResolver } from './source-resolvers/npm.js';
 
 const execFileAsync = promisify(execFile);

@@ -217,7 +217,7 @@ describe('createCreatePackageHandler', () => {
       plugins: {
         name: string;
         description?: string;
-        source?: { source: string; url?: string };
+        source?: string | { source: string; url?: string };
       }[];
     };
 
@@ -227,10 +227,10 @@ describe('createCreatePackageHandler', () => {
     const entry = parsed.plugins[0];
     expect(entry?.name).toBe('registered-pkg');
     expect(entry?.description).toBe('A plugin that should be registered.');
-    expect(entry?.source).toEqual({
-      source: 'url',
-      url: `file://${payload.packagePath as string}`,
-    });
+    // A locally-scaffolded package is registered as a relative-path source
+    // (local copy, no git clone) — not a file:// url, which the schema rejects.
+    const pkgDir = (payload.packagePath as string).split('/').pop();
+    expect(entry?.source).toBe(`./packages/${pkgDir}`);
   });
 
   it('is idempotent when the same package name is registered twice', async () => {

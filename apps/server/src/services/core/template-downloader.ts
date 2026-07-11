@@ -12,6 +12,7 @@ import { EventEmitter } from 'node:events';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { logger } from '../../lib/logger.js';
+import { hardenedGitEnv } from '../../lib/git-safety.js';
 import { env } from '../../env.js';
 
 /** Progress callback invoked during git clone. */
@@ -40,6 +41,14 @@ export class TemplateDownloadError extends Error {
 }
 
 const GIGET_TIMEOUT_MS = 30_000;
+
+/**
+ * Wall-clock cap on a single `git clone`. Generous enough for large real
+ * repositories, but bounded so a hung transport (or a credential prompt that
+ * `GIT_TERMINAL_PROMPT=0` did not already prevent) cannot stall the install
+ * pipeline indefinitely. Node kills the process with `SIGTERM` on expiry.
+ */
+const GIT_CLONE_TIMEOUT_MS = 120_000;
 
 /**
  * Redact auth tokens from error messages to prevent credential leaks.
@@ -147,6 +156,12 @@ export function classifyGigetError(err: unknown): TemplateErrorCode {
  * Removes the `.git` directory after a successful clone. Injects auth
  * via the URL when a token is available.
  *
+ * The clone runs with {@link hardenedGitEnv}: `GIT_ALLOW_PROTOCOL` confines the
+ * author-supplied URL to safe transports (blocks the `ext::`/`file::` command
+ * helpers, which fire at preview time before install consent), and
+ * `GIT_TERMINAL_PROMPT=0` stops a private URL from hanging on a prompt. A
+ * wall-clock {@link GIT_CLONE_TIMEOUT_MS} caps a stalled clone.
+ *
  * @param url - Git clone URL
  * @param target - Target directory path
  * @param auth - Optional auth token to embed in URL
@@ -169,6 +184,10 @@ export async function execGitClone(
       ['clone', '--depth', '1', '--single-branch', '--progress', cloneUrl, target],
       {
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Confine git to safe transports so an author-controlled URL cannot
+        // reach the `ext::`/`file::` helpers and run arbitrary commands.
+        env: hardenedGitEnv(),
+        timeout: GIT_CLONE_TIMEOUT_MS,
       }
     );
 
