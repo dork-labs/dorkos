@@ -202,4 +202,61 @@ describe('DevtoolsCaptureStore', () => {
     expect(store.read('s0')).toBeUndefined();
     expect(store.read('overflow')).toBeDefined();
   });
+
+  describe('screenshot round-trip', () => {
+    const PNG = 'data:image/png;base64,AAAA';
+
+    it('stores an ingested screenshot in the single slot and exposes it on read', () => {
+      const store = new DevtoolsCaptureStore();
+      store.ingest('s1', batch({ screenshot: { requestId: 'r1', dataUrl: PNG } }));
+      const shot = store.read('s1')!.screenshot;
+      expect(shot?.dataUrl).toBe(PNG);
+      expect(shot?.requestId).toBe('r1');
+      expect(typeof shot?.capturedAt).toBe('number');
+    });
+
+    it('resolves an awaiting call when the matching ingest arrives', async () => {
+      const store = new DevtoolsCaptureStore();
+      const pending = store.awaitScreenshot('r1', 5_000);
+      store.ingest('s1', batch({ screenshot: { requestId: 'r1', dataUrl: PNG } }));
+      const outcome = await pending;
+      expect(outcome).toEqual({
+        ok: true,
+        screenshot: expect.objectContaining({ dataUrl: PNG, requestId: 'r1' }),
+      });
+    });
+
+    it('resolves with the shim error when rasterization failed (no slot write)', async () => {
+      const store = new DevtoolsCaptureStore();
+      const pending = store.awaitScreenshot('r1', 5_000);
+      store.ingest('s1', batch({ screenshot: { requestId: 'r1', error: 'CSP blocked' } }));
+      expect(await pending).toEqual({ ok: false, error: 'CSP blocked' });
+      expect(store.read('s1')!.screenshot).toBeNull();
+    });
+
+    it('resolves undefined after the timeout — never hangs', async () => {
+      const store = new DevtoolsCaptureStore();
+      expect(await store.awaitScreenshot('never', 20)).toBeUndefined();
+    });
+
+    it('ignores a non-matching requestId', async () => {
+      const store = new DevtoolsCaptureStore();
+      const pending = store.awaitScreenshot('r1', 30);
+      store.ingest('s1', batch({ screenshot: { requestId: 'other', dataUrl: PNG } }));
+      expect(await pending).toBeUndefined(); // timed out — 'other' never matched
+    });
+
+    it('resolves across a session rekey — the waiter is requestId-keyed', async () => {
+      // The tool requests under the request UUID; the first-turn rekey means
+      // the client may ingest under the CANONICAL id. The waiter must not care.
+      const store = new DevtoolsCaptureStore();
+      store.ingest('request-uuid', batch());
+      const pending = store.awaitScreenshot('r1', 5_000);
+      store.rekeySession('request-uuid', 'canonical');
+      store.ingest('canonical', batch({ screenshot: { requestId: 'r1', dataUrl: PNG } }));
+      const outcome = await pending;
+      expect(outcome?.ok).toBe(true);
+      expect(store.read('canonical')!.screenshot?.dataUrl).toBe(PNG);
+    });
+  });
 });

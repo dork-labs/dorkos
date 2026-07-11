@@ -1,15 +1,20 @@
 /**
- * DevTools bridge read tools (DOR-213, Phase 2) — the agent's eyes on the preview
- * it already opened.
+ * DevTools bridge agent tools (DOR-213) — the agent's eyes on the preview it
+ * already opened.
  *
  * `browser_read_console` and `browser_read_network` are data-returning,
  * session-bound in-process MCP tools shaped exactly like `get_ui_state`
  * ({@link ./ui-tools}): each is bound to a session at creation, reads that
  * session's server-side capture buffer synchronously, and returns structured
- * JSON. Together with `browser_navigate` (which opens the preview), they close
- * the loop that makes an agent trustworthy at frontend work: edit → preview →
- * read its own console errors and failed requests → fix, without a human relaying
- * "it's throwing a TypeError."
+ * JSON. `browser_screenshot` (Phase 3) adds the rendered pixels via an
+ * on-demand round-trip: it pushes a `devtools_capture_request` StreamEvent to
+ * the attached client (the `ui_command` seam), the client forwards it into the
+ * preview frame, the in-page shim rasterizes its own document, and the PNG
+ * returns through the normal ingest path tagged with the `requestId`. Together
+ * with `browser_navigate` (which opens the preview), these close the loop that
+ * makes an agent trustworthy at frontend work: edit → preview → read its own
+ * console errors, failed requests, and rendered layout → fix, without a human
+ * relaying "it's throwing a TypeError."
  *
  * The buffer is fed by the Phase 1 capture pipeline: an injected in-page shim
  * posts the preview's `console.*` + `fetch`/XHR activity to `window.parent`, the
@@ -43,9 +48,11 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/devtools-tools
  */
+import { randomUUID } from 'node:crypto';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { DevtoolsConsoleEntry, DevtoolsNetworkEntry } from '@dorkos/shared/schemas';
+import type { StreamEvent } from '@dorkos/shared/types';
 import {
   devtoolsCaptureStore,
   type CaptureBufferView,
@@ -85,20 +92,33 @@ const FIELD_ELIDE_CHARS = 2_048;
  */
 export type DevtoolsSessionResolver = () => string | undefined;
 
-/** The subset of {@link DevtoolsCaptureStore} these read tools depend on. */
-export type DevtoolsReadStore = Pick<DevtoolsCaptureStore, 'read'>;
+/** The subset of {@link DevtoolsCaptureStore} these tools depend on. */
+export type DevtoolsReadStore = Pick<DevtoolsCaptureStore, 'read' | 'awaitScreenshot'>;
+
+/**
+ * The subset of the live session `browser_screenshot` needs to reach the
+ * attached client: the SSE event queue it pushes its `devtools_capture_request`
+ * onto — the exact seam `control_ui` uses for `ui_command`.
+ */
+export interface DevtoolsEventSession {
+  /** The per-turn StreamEvent queue drained into the durable session stream. */
+  eventQueue: StreamEvent[];
+  /** Wakes the queue drainer after a push. */
+  eventQueueNotify?: () => void;
+}
 
 /**
  * Error result returned when no session can be resolved. Registering these
- * read tools without a bound session (an external MCP surface with no
- * interactive client) must not pretend to succeed — there is no session whose
- * preview buffer could be read.
+ * tools without a bound session (an external MCP surface with no interactive
+ * client) must not pretend to succeed — there is no session whose preview
+ * buffer could be read or asked for a screenshot.
  */
 const SESSIONLESS_DEVTOOLS_ERROR = {
-  error: 'browser_read_console and browser_read_network require an attached interactive session',
+  error:
+    'browser_read_console, browser_read_network, and browser_screenshot require an attached interactive session',
   detail:
-    'These tools read the console/network the current session captured from its live preview. ' +
-    'The current MCP surface has no session attached, so there is no preview buffer to read.',
+    'These tools read the console/network/screenshot the current session captured from its live ' +
+    'preview. The current MCP surface has no session attached, so there is no preview to reach.',
 };
 
 /** Note shown when the session has never received a capture (no preview opened). */
@@ -402,6 +422,155 @@ export function createReadNetworkHandler(
   };
 }
 
+/**
+ * Magic-byte signatures for the screenshot mime whitelist. SVG is deliberately
+ * absent — it is scriptable markup, not pixels, and has no magic bytes anyway.
+ */
+function magicBytesMatch(mimeType: string, bytes: Buffer): boolean {
+  switch (mimeType) {
+    case 'image/png':
+      return (
+        bytes.length >= 8 &&
+        bytes[0] === 0x89 &&
+        bytes[1] === 0x50 && // P
+        bytes[2] === 0x4e && // N
+        bytes[3] === 0x47 && // G
+        bytes[4] === 0x0d &&
+        bytes[5] === 0x0a &&
+        bytes[6] === 0x1a &&
+        bytes[7] === 0x0a
+      );
+    case 'image/jpeg':
+      return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    case 'image/gif':
+      return bytes.length >= 6 && bytes.toString('latin1', 0, 4) === 'GIF8';
+    case 'image/webp':
+      return (
+        bytes.length >= 12 &&
+        bytes.toString('latin1', 0, 4) === 'RIFF' &&
+        bytes.toString('latin1', 8, 12) === 'WEBP'
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Parse and validate an untrusted screenshot data URL into MCP image-block
+ * parts, or `null` when anything about it is off. Three gates, because the
+ * value originates inside the (untrusted) preview page: a raster-only mime
+ * whitelist (png/jpeg/webp/gif — never `image/svg+xml`, which is scriptable
+ * markup), a plausible-base64 payload, and decoded magic bytes matching the
+ * claimed type. A hostile page may only ever lie to the agent with a wrong
+ * picture — it must never produce an image block the model API rejects,
+ * which would break the agent's turn.
+ *
+ * @param dataUrl - The `data:` URL relayed from the in-page shim.
+ */
+export function parseScreenshotDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
+  const match = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) return null;
+  const mimeType = `image/${match[1]}`;
+  const data = match[2];
+  const bytes = Buffer.from(data, 'base64');
+  if (!magicBytesMatch(mimeType, bytes)) return null;
+  return { mimeType, data };
+}
+
+/**
+ * Create the `browser_screenshot` handler.
+ *
+ * Resolves the session id per call, then drives the on-demand round-trip: push
+ * a `devtools_capture_request` StreamEvent (with a fresh `requestId`) onto the
+ * session's event queue — the same seam `control_ui` uses — and await the
+ * matching ingest in the capture store. The attached client forwards the
+ * request into the preview frame, the in-page shim rasterizes its own document
+ * (the parent cannot canvas-read an opaque-origin frame), and the PNG data URL
+ * returns through the normal postMessage → ingest path tagged with the
+ * `requestId`. Times out with a structured note — never a hang.
+ *
+ * @param resolveSessionId - Read-time session-id resolver.
+ * @param store - The capture store to await the round-trip on (injectable for tests).
+ * @param session - The live session whose event queue reaches the attached client.
+ * @param timeoutMs - Round-trip timeout (injectable for tests).
+ */
+export function createBrowserScreenshotHandler(
+  resolveSessionId: DevtoolsSessionResolver,
+  store: DevtoolsReadStore,
+  session: DevtoolsEventSession,
+  timeoutMs: number = WORKBENCH.DEVTOOLS_SCREENSHOT_TIMEOUT_MS
+) {
+  return async () => {
+    const sessionId = resolveSessionId();
+    if (!sessionId) return jsonContent(SESSIONLESS_DEVTOOLS_ERROR, true);
+
+    // No capture buffer means no instrumented preview has ever connected —
+    // waiting the full timeout would be pointless; tell the agent what to do.
+    const buffer = store.read(sessionId);
+    if (!buffer) {
+      return jsonContent({ captured: false, note: NO_PREVIEW_NOTE });
+    }
+
+    const requestId = randomUUID();
+    session.eventQueue.push({
+      type: 'devtools_capture_request',
+      data: { requestId },
+    } as StreamEvent);
+    session.eventQueueNotify?.();
+
+    const outcome = await store.awaitScreenshot(requestId, timeoutMs);
+    if (outcome === undefined) {
+      return jsonContent({
+        ...bufferHeader(buffer),
+        captured: false,
+        note:
+          `The preview didn't return a screenshot within ${Math.round(timeoutMs / 1000)}s. ` +
+          'The preview tab may be closed or not visible, the client may be disconnected, or ' +
+          "the page's Content-Security-Policy may block the rasterizer. Confirm the preview " +
+          'is open (browser_navigate) and visible, then try again.',
+      });
+    }
+    if (!outcome.ok) {
+      return jsonContent({
+        ...bufferHeader(buffer),
+        captured: false,
+        note: `The preview could not be rasterized: ${outcome.error}`,
+      });
+    }
+
+    // Validate the data URL before it becomes an MCP image block. The shim
+    // always produces image/png, but the value crossed the untrusted preview:
+    // a hostile page may only ever LIE to the agent (a wrong picture), never
+    // break its turn with an API-rejected image block — so the mime is
+    // whitelisted (never svg+xml: scriptable), the payload must be plausible
+    // base64, and the decoded bytes must carry the claimed type's magic bytes.
+    const image = parseScreenshotDataUrl(outcome.screenshot.dataUrl);
+    if (!image) {
+      return jsonContent({
+        ...bufferHeader(buffer),
+        captured: false,
+        note: 'The preview returned malformed screenshot data. Try again.',
+      });
+    }
+    return {
+      content: [
+        { type: 'image' as const, data: image.data, mimeType: image.mimeType },
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            {
+              documentUrl: buffer.logicalUrl,
+              capturedAt: outcome.screenshot.capturedAt,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  };
+}
+
 const READ_CONSOLE_DESCRIPTION =
   "Read the console output your session's live preview captured — `console.*` lines plus " +
   'uncaught errors and unhandled promise rejections, with stack traces. Use it after ' +
@@ -417,34 +586,53 @@ const READ_NETWORK_DESCRIPTION =
   'errors (status 0) plus 4xx/5xx responses; redirects are not failures — and cap with ' +
   '`limit`. Returns a note when no preview is open or the page cannot be instrumented.';
 
+const SCREENSHOT_DESCRIPTION =
+  "Capture a screenshot of your session's live preview as it is rendered right now. Use it " +
+  'after browser_navigate to eyeball layout, styling, or a blank-screen failure your console ' +
+  'read cannot explain. The image is scaled to at most 1568px on its long edge. Works on ' +
+  'local previews the workbench serves or proxies; returns a note when no preview is open, ' +
+  'the page cannot be instrumented, or the capture times out.';
+
 /**
- * Returns the DevTools read-tool definitions for registration with the
- * claude-code in-process MCP server.
+ * Returns the DevTools tool definitions for registration with the claude-code
+ * in-process MCP server: the two buffer reads plus the on-demand
+ * `browser_screenshot` round-trip.
  *
  * When `resolveSessionId` is provided (the per-query in-process server), the
- * handlers resolve the session id on every call and read that session's live
- * preview buffer. Without one — an external MCP surface with no interactive
- * client — both tools return an MCP error rather than fabricating an empty
- * read, exactly as `get_ui_state` does. Codex never reaches this function (see
- * the module doc): it has its own scoped `dorkos_ui` server that exposes only
- * `control_ui`.
+ * handlers resolve the session id on every call and reach that session's live
+ * preview. Without one — an external MCP surface with no interactive client —
+ * all three tools return an MCP error rather than fabricating an empty result,
+ * exactly as `get_ui_state` does. `browser_screenshot` additionally needs the
+ * live `session` (its event queue reaches the attached client); without it the
+ * screenshot tool registers session-less too. Codex never reaches this function
+ * (see the module doc): it has its own scoped `dorkos_ui` server that exposes
+ * only `control_ui`.
  *
- * @param _deps - Shared tool dependencies (unused by the read tools).
+ * @param _deps - Shared tool dependencies (unused by the DevTools tools).
  * @param resolveSessionId - Read-time resolver for the bound session's id.
- * @param store - The capture store to read from (defaults to the process-wide singleton; injectable for tests).
+ * @param store - The capture store (defaults to the process-wide singleton; injectable for tests).
+ * @param session - The live session whose event queue carries the capture request.
  */
 export function getDevtoolsTools(
   _deps: McpToolDeps,
   resolveSessionId?: DevtoolsSessionResolver,
-  store: DevtoolsReadStore = devtoolsCaptureStore
+  store: DevtoolsReadStore = devtoolsCaptureStore,
+  session?: DevtoolsEventSession
 ) {
+  const sessionlessHandler = async () => jsonContent(SESSIONLESS_DEVTOOLS_ERROR, true);
+
   const readConsoleHandler = resolveSessionId
     ? createReadConsoleHandler(resolveSessionId, store)
-    : async () => jsonContent(SESSIONLESS_DEVTOOLS_ERROR, true);
+    : sessionlessHandler;
 
   const readNetworkHandler = resolveSessionId
     ? createReadNetworkHandler(resolveSessionId, store)
-    : async () => jsonContent(SESSIONLESS_DEVTOOLS_ERROR, true);
+    : sessionlessHandler;
+
+  const screenshotHandler =
+    resolveSessionId && session
+      ? createBrowserScreenshotHandler(resolveSessionId, store, session)
+      : sessionlessHandler;
 
   return [
     tool('browser_read_console', READ_CONSOLE_DESCRIPTION, READ_CONSOLE_INPUT, async (input) =>
@@ -453,5 +641,6 @@ export function getDevtoolsTools(
     tool('browser_read_network', READ_NETWORK_DESCRIPTION, READ_NETWORK_INPUT, async (input) =>
       readNetworkHandler(input)
     ),
+    tool('browser_screenshot', SCREENSHOT_DESCRIPTION, {}, async () => screenshotHandler()),
   ];
 }

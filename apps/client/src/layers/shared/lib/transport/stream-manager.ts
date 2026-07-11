@@ -129,6 +129,7 @@ const SESSION_EVENT_TYPES = [
   'turn_start',
   'turn_end',
   'ui_command',
+  'devtools_capture_request',
 ] as const;
 
 /** The 3 {@link SessionListEvent} `type` discriminants the global stream emits. */

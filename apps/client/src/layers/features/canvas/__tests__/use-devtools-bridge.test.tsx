@@ -18,6 +18,25 @@ vi.mock('@/layers/shared/model', () => {
   };
 });
 
+// Controllable stream-manager tap: tests emit session events by invoking the
+// registered listeners directly (the real manager gates to the attached session).
+const sessionEventListeners = new Set<(sessionId: string, event: unknown) => void>();
+vi.mock('@/layers/shared/lib', () => ({
+  streamManager: {
+    subscribeSessionEvent: (handler: (sessionId: string, event: unknown) => void) => {
+      sessionEventListeners.add(handler);
+      return () => sessionEventListeners.delete(handler);
+    },
+  },
+}));
+
+// Rasterizer-source loader stub — also proves lazy-import-only (never called
+// until a capture request actually arrives).
+const loadRasterizerSource = vi.fn(async () => 'RASTERIZER_SRC');
+vi.mock('../lib/load-rasterizer', () => ({
+  loadRasterizerSource: () => loadRasterizerSource(),
+}));
+
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 
 let iframe: HTMLIFrameElement;
@@ -53,6 +72,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   mockState.sessionId = 'session-1';
   ingestDevtoolsCapture.mockClear();
+  loadRasterizerSource.mockClear();
+  sessionEventListeners.clear();
   iframe = document.createElement('iframe');
   document.body.appendChild(iframe);
   foreignFrame = document.createElement('iframe');
@@ -183,5 +204,118 @@ describe('useDevtoolsBridge — relay', () => {
 describe('workbench sandbox regression (DOR-213 must not weaken DOR-216)', () => {
   it('keeps the isolated sandbox string byte-for-byte (no allow-same-origin)', () => {
     expect(WORKBENCH_SANDBOX_ISOLATED).toBe('allow-scripts allow-forms allow-popups allow-modals');
+  });
+});
+
+describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => {
+  function emitCaptureRequest(requestId: string): void {
+    for (const handler of sessionEventListeners) {
+      handler('session-1', { type: 'devtools_capture_request', requestId, seq: 1 });
+    }
+  }
+
+  /** Flush the loader promise chain under fake timers. */
+  async function flushAsync(): Promise<void> {
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('forwards a capture request into the frame with the rasterizer source', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitCaptureRequest('r1');
+    await flushAsync();
+
+    expect(postSpy).toHaveBeenCalledWith(
+      { __dorkosDevtools: 'capture-request', requestId: 'r1', lib: 'RASTERIZER_SRC' },
+      '*'
+    );
+  });
+
+  it('loads the rasterizer source lazily — never before the first request', async () => {
+    mount();
+    expect(loadRasterizerSource).not.toHaveBeenCalled();
+    emitCaptureRequest('r1');
+    await flushAsync();
+    expect(loadRasterizerSource).toHaveBeenCalledTimes(1);
+  });
+
+  it('still forwards the request when the rasterizer source fails to load', async () => {
+    // The shim then fails fast with an error result instead of the tool
+    // waiting out its full timeout.
+    loadRasterizerSource.mockRejectedValueOnce(new Error('chunk failed'));
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitCaptureRequest('r1');
+    await flushAsync();
+
+    expect(postSpy).toHaveBeenCalledWith(
+      { __dorkosDevtools: 'capture-request', requestId: 'r1', lib: undefined },
+      '*'
+    );
+  });
+
+  it('ignores other session events', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    for (const handler of sessionEventListeners) {
+      handler('session-1', { type: 'turn_start', seq: 1 });
+    }
+    await flushAsync();
+    expect(postSpy).not.toHaveBeenCalled();
+    expect(loadRasterizerSource).not.toHaveBeenCalled();
+  });
+
+  it('ingests a capture-result immediately (no debounce), tagged with its requestId', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: 'r1',
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+
+    // Immediate — the awaiting tool must not eat the 300ms batch debounce.
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(sid).toBe('session-1');
+    expect(batch.screenshot).toEqual({
+      requestId: 'r1',
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    expect(batch.console).toHaveLength(0);
+    expect(batch.network).toHaveLength(0);
+  });
+
+  it('relays a shim-side rasterization error result', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: 'r1',
+      error: 'CSP blocked the rasterizer',
+    });
+
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    const [, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(batch.screenshot).toEqual({ requestId: 'r1', error: 'CSP blocked the rasterizer' });
+  });
+
+  it('ignores a capture-result from a foreign frame (anti-spoofing)', () => {
+    mount();
+    postFrom(foreignFrame.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: 'r1',
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+  });
+
+  it('drops a capture-result when no session is attached', () => {
+    mockState.sessionId = null;
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: 'r1',
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
   });
 });
