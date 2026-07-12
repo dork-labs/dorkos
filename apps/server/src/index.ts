@@ -14,6 +14,7 @@ import {
 import {
   runtimeRegistry,
   applyConfiguredDefaultRuntime,
+  registerOptionalRuntime,
 } from './services/core/runtime-registry.js';
 import { initAuth, seedLegacyMcpApiKey } from './services/core/auth/index.js';
 import {
@@ -339,33 +340,44 @@ async function start() {
     // start() are not fanned into the global session-list stream.
     const codexConfig = configManager.get('runtimes').codex;
     if (codexConfig.enabled) {
-      const codexRuntime = new CodexRuntime({
-        // The thread map shares the consolidated Drizzle handle injected into
-        // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
-        threadMap: new CodexThreadMap(db),
-        binaryPath: codexConfig.binaryPath,
-        // Loopback URL of the scoped `dorkos_ui` MCP server mounted below at
-        // /codex-ui-mcp. Codex's MCP client sends no Origin header, so it clears
-        // validateMcpOrigin via the non-browser early return (not the allowlist).
-        // Exposes `control_ui` to Codex for canvas parity (the event-mapper turns
-        // the resulting mcp_tool_call into a ui_command).
-        mcpUiUrl: `http://127.0.0.1:${PORT}/codex-ui-mcp`,
-      });
-      // Durable per-session settings hydrate/write-through (ADR-0260), same
-      // port the Claude adapter uses.
-      codexRuntime.setSessionSettings(runtimeRegistry);
-      runtimeRegistry.register(codexRuntime);
-      // Non-blocking session hydration — re-seeds the in-memory registry from
-      // the durable `codex_threads` rows so past sessions survive a restart.
-      // The registry emits session_upserted per hydrated session, so the live
-      // list self-heals even when this completes after the broadcaster starts.
-      codexRuntime.hydrateSessions().catch((err) => {
-        logger.warn(
-          '[Startup] Codex session hydration failed — past sessions stay off the list until their next turn',
-          { err }
-        );
-      });
-      logger.info('[Runtime] CodexRuntime registered');
+      // Construction can throw synchronously (e.g. the Codex CLI binary isn't
+      // installed — the norm in the packaged desktop app, which bundles only
+      // the claude-code SDK). registerOptionalRuntime isolates that failure so
+      // it can't reject start() and kill the whole server process.
+      registerOptionalRuntime(
+        'CodexRuntime',
+        'install the Codex CLI or set runtimes.codex.enabled to false in config to silence this',
+        () => {
+          const codexRuntime = new CodexRuntime({
+            // The thread map shares the consolidated Drizzle handle injected into
+            // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
+            threadMap: new CodexThreadMap(db),
+            binaryPath: codexConfig.binaryPath,
+            // Loopback URL of the scoped `dorkos_ui` MCP server mounted below at
+            // /codex-ui-mcp. Codex's MCP client sends no Origin header, so it clears
+            // validateMcpOrigin via the non-browser early return (not the allowlist).
+            // Exposes `control_ui` to Codex for canvas parity (the event-mapper turns
+            // the resulting mcp_tool_call into a ui_command).
+            mcpUiUrl: `http://127.0.0.1:${PORT}/codex-ui-mcp`,
+          });
+          // Durable per-session settings hydrate/write-through (ADR-0260), same
+          // port the Claude adapter uses.
+          codexRuntime.setSessionSettings(runtimeRegistry);
+          runtimeRegistry.register(codexRuntime);
+          // Non-blocking session hydration — re-seeds the in-memory registry from
+          // the durable `codex_threads` rows so past sessions survive a restart.
+          // The registry emits session_upserted per hydrated session, so the live
+          // list self-heals even when this completes after the broadcaster starts.
+          codexRuntime.hydrateSessions().catch((err) => {
+            logger.warn(
+              '[Startup] Codex session hydration failed — past sessions stay off the list until their next turn',
+              { err }
+            );
+          });
+          logger.info('[Runtime] CodexRuntime registered');
+          return codexRuntime;
+        }
+      );
     }
 
     // --- OpenCode runtime (spec additional-agent-runtimes, ADR-0308) ---
@@ -374,17 +386,28 @@ async function start() {
     // lazily on first use; its shutdown is wired into shutdownServices().
     const openCodeConfig = configManager.get('runtimes').opencode;
     if (openCodeConfig.enabled) {
-      const openCodeRuntime = new OpenCodeRuntime({
-        provider: openCodeServerManager,
-        // Durable sessionId <-> OpenCode-session-id map on the shared Drizzle
-        // handle, so DorkOS-facing ids survive a server restart (DOR-251).
-        sessionMap: new OpenCodeSessionMap(db),
-      });
-      // Durable per-session settings hydrate/write-through (ADR-0260), same
-      // port the Claude adapter uses.
-      openCodeRuntime.setSessionSettings(runtimeRegistry);
-      runtimeRegistry.register(openCodeRuntime);
-      logger.info('[Runtime] OpenCodeRuntime registered');
+      // Same construct-can-throw exposure as Codex above — the sidecar's
+      // binary discovery can throw synchronously if it isn't installed.
+      // registerOptionalRuntime isolates the failure so it can't take the
+      // server down with it.
+      registerOptionalRuntime(
+        'OpenCodeRuntime',
+        'install the OpenCode CLI or set runtimes.opencode.enabled to false in config to silence this',
+        () => {
+          const openCodeRuntime = new OpenCodeRuntime({
+            provider: openCodeServerManager,
+            // Durable sessionId <-> OpenCode-session-id map on the shared Drizzle
+            // handle, so DorkOS-facing ids survive a server restart (DOR-251).
+            sessionMap: new OpenCodeSessionMap(db),
+          });
+          // Durable per-session settings hydrate/write-through (ADR-0260), same
+          // port the Claude adapter uses.
+          openCodeRuntime.setSessionSettings(runtimeRegistry);
+          runtimeRegistry.register(openCodeRuntime);
+          logger.info('[Runtime] OpenCodeRuntime registered');
+          return openCodeRuntime;
+        }
+      );
     }
 
     // Apply the user's configured default runtime (runtimes.default) once all
