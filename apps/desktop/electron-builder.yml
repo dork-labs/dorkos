@@ -9,6 +9,14 @@ mac:
   category: public.app-category.developer-tools
   # zip must accompany dmg: electron-updater (Squirrel.Mac) can only install
   # updates from the zip artifact; the dmg is the human-facing installer.
+  #
+  # arm64-only. The Claude Code binary ships as a per-arch optional dependency
+  # (see apps/desktop/package.json's optionalDependencies). If you add another
+  # arch/platform target below (mac x64, win, linux), you MUST also add the
+  # matching `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` package there
+  # AND an asarUnpack glob for it below — otherwise the packaged app for that
+  # arch silently ships without a runnable Claude Code (the bug this config
+  # fixes for arm64).
   target:
     - target: dmg
       arch:
@@ -60,6 +68,16 @@ asarUnpack:
   # better-sqlite3 its .node binary must be a real file for dlopen.
   - '**/node_modules/node-pty/**'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk/**'
+  # The SDK ships the actual `claude` executable as a per-platform optional
+  # dependency (@anthropic-ai/claude-agent-sdk-darwin-arm64). It must be a real
+  # file on disk — a Mach-O binary cannot execute from inside app.asar — so
+  # unpack it. server-process.ts hands the bundled server this unpacked path
+  # via DORKOS_CLAUDE_CLI_PATH, because the server's own require.resolve can't
+  # reach it (pnpm links the sibling only inside the SDK's store node_modules).
+  # Keep this package version-locked to @anthropic-ai/claude-agent-sdk in
+  # package.json (both 0.3.177) — a lone SDK bump would silently ship a skewed
+  # or missing binary here.
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/**'
   # express.static (app.ts's production SPA serving) cannot reliably read
   # range-requested static assets from inside app.asar — the packaged
   # window now loads the renderer via the bundled server's own

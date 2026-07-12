@@ -122,9 +122,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   constructor(dorkHome: string, cwd?: string) {
     this.cwd = cwd ?? DEFAULT_CWD;
+    this.claudeCliPath = resolveClaudeCliPath();
     this.cache = new RuntimeCache(dorkHome);
     this.cache.setDefaultCwd(this.cwd);
-    this.claudeCliPath = resolveClaudeCliPath();
+    // Warm-up spawns the SDK too; give it the same resolved binary path so it
+    // works in the packaged desktop app (see setClaudeCliPath's doc).
+    this.cache.setClaudeCliPath(this.claudeCliPath);
     this.transcriptReader = new TranscriptReader();
   }
 
