@@ -111,7 +111,11 @@ After clearing, a healthy launch shows Electron helpers within ~1s, a listening 
 
 ## 7. Signing, notarization & releasing
 
-Signing + notarization are **CI-driven**, gated on the `APPLE_DEVELOPER_CONFIGURED` repo variable in `.github/workflows/desktop-release.yml`. When configured, a build signs with the Developer ID cert (from `CSC_LINK`/`CSC_KEY_PASSWORD`), notarizes with Apple (`APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`), staples the ticket, and attaches the `.dmg` + `.zip` + `latest-mac.yml` to a GitHub Release.
+**The desktop build rides the unified product release.** There is no separate desktop tag scheme — the `.github/workflows/desktop-release.yml` workflow triggers on the `v*` product tags that `/system:release` creates. When that command bumps `VERSION` (and `apps/desktop/package.json` alongside it), tags `vX.Y.Z`, and pushes, the workflow builds the macOS app and **attaches** the `.dmg` + `.zip` + `latest-mac.yml` to the GitHub Release the command already created. It does not create its own release or rewrite the notes. To release the desktop app you just run `/system:release` — do **not** push a standalone tag. (For a manual/verification build without publishing, use the workflow's `workflow_dispatch` with `dry_run`.)
+
+Because the desktop build runs as a **separate workflow** from the release that `/system:release` cuts, a build or notarization failure can never block or unwind the product release — the release and its notes exist the moment the tag is pushed; the macOS assets attach later (or not, on failure). Fail-soft by construction. First-ever notarization can take ~30–65 min, so the DMG typically appears on the release minutes-to-an-hour after the CLI release is live; `dorkos.ai/download/mac` starts resolving to it once it attaches.
+
+Signing + notarization are **CI-driven**, gated on the `APPLE_DEVELOPER_CONFIGURED` repo variable in the same workflow. When configured, a build signs with the Developer ID cert (from `CSC_LINK`/`CSC_KEY_PASSWORD`), notarizes with Apple (`APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`), and staples the ticket.
 
 Gotchas worth knowing (details vary by machine; the setup itself lives with the maintainer's Apple account):
 

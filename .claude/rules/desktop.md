@@ -34,4 +34,4 @@ A real end user just clicks **Open** once and the app is trusted thereafter. Thi
 
 ## Signing & releasing
 
-Signing/notarization is CI-driven (`.github/workflows/desktop-release.yml`, `APPLE_DEVELOPER_CONFIGURED` path). Credentials, the `-legacy` p12 quirk, the ~65-min first-notarization delay, and the recovery steps are all in `contributing/desktop-app-development.md` §Signing.
+The desktop build rides the **unified `v*` product release** — `.github/workflows/desktop-release.yml` triggers on the `vX.Y.Z` tags `/system:release` creates and **attaches** the signed/notarized `.dmg` + `.zip` + `latest-mac.yml` to that same release. There is no `desktop-v*` tag scheme; `apps/desktop/package.json`'s version is bumped in lockstep by `/system:release`. Because it's a separate workflow run, a desktop build failure never blocks the product release (fail-soft). Signing/notarization is CI-driven, gated on `APPLE_DEVELOPER_CONFIGURED`. Credentials, the `-legacy` p12 quirk, the ~65-min first-notarization delay, and the recovery steps are all in `contributing/desktop-app-development.md` §Signing.
