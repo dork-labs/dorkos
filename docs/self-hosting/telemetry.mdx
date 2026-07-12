@@ -67,6 +67,21 @@ Before anything leaves your machine, home directories and full file paths are st
   Everything stays under your control.
 </Callout>
 
+## Debug tracing (a separate, local-only flag)
+
+`dorkos --debug-trace` is a diagnostics tool, not part of the telemetry above, and it isn't covered by the opt-in banner: it's a per-run flag you choose to add when you're troubleshooting something, most often because we asked you to when you report a bug.
+
+When it's on, DorkOS writes a local file recording how long things took: session turns, agent calls, relay messages, and task runs, plus counts. It never records your prompts, your code, file paths, or anything else you typed. The file is written to `~/.dork/traces/` and never leaves your machine unless you attach it to a bug report yourself; there is no network sender for it at all.
+
+```bash
+dorkos --debug-trace
+```
+
+<Callout type="info">
+  You can also set it with an environment variable: `DORKOS_OTEL_DEBUG=true`. Either way, it's off
+  by default and stays off unless you turn it on for that run.
+</Callout>
+
 ## How to turn it on or off
 
 The first time you open DorkOS, a banner asks whether to share anonymous data and shows you the payload above. Pick either option and it remembers your choice. To change it later, open settings, or edit `~/.dork/config.json`:

@@ -743,6 +743,22 @@ The `UiCommand` schema is defined in `packages/shared/src/schemas.ts` and valida
 
 The companion `get_ui_state` tool returns the current client UI state -- which panels are open, sidebar tab, canvas state, and active agent. Agents can call this after `control_ui` to verify the result, or to make UI-aware decisions.
 
+### DevTools Bridge Tools
+
+Three more in-process MCP tools (DOR-213) give the agent read access to what the embedded browser preview captured, so it can check its own work without a human relaying an error message. They live alongside `control_ui`/`get_ui_state` in `apps/server/src/services/runtimes/claude-code/mcp-tools/devtools-tools.ts`.
+
+| Tool                   | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_read_console` | Reads the session's captured `console.*` output plus uncaught errors and unhandled promise rejections, with stack traces. Optional `level` filter (`all` / `error` / `warn` / `info` / `log` / `debug`, default `all`) and `limit` (default 50, capped at the 500-entry server ring).                                                                                                                                           |
+| `browser_read_network` | Reads captured `fetch`/XHR calls: method, URL, status, timing, response size. Optional `status` filter (`all` / `failed` / `2xx` / `3xx` / `4xx` / `5xx`, default `all`; `failed` = network error (status 0) or 4xx/5xx — redirects don't count) and `limit` (default 50, capped at the 200-entry server ring).                                                                                                                 |
+| `browser_screenshot`   | Captures a screenshot of the live preview as currently rendered, scaled to at most 1568px on its long edge. On-demand round trip: pushes a `devtools_capture_request` StreamEvent to the client over the same seam `control_ui` uses, the in-page shim rasterizes its own document, and the PNG returns through the normal ingest path tagged with a request id. Times out after 8s with a structured note rather than hanging. |
+
+All three resolve their session id at call time (not registration time) and require an attached interactive session with a preview already open (`browser_navigate` opens one); without either, they return a structured error/note instead of fabricating a result. Results are bounded three ways so a chatty preview can't blow up the agent's context window: the per-call `limit`, a ~2KB per-field elision cap on oversized `text`/`stack`/`args`, and a ~64KB total serialized budget per result (newest entries win) — truncation is always reported via a `truncated` flag and an explanatory `note`.
+
+The capture buffer is fed by an injected in-page shim that posts the preview's `console.*` and `fetch`/XHR activity to `window.parent`, which the client relays to `POST /api/sessions/:id/devtools/ingest`; the per-session `DevtoolsCaptureStore` rings retain it. These three tools only **read** that store — they never touch the page or the injection path.
+
+**Claude Code only.** Codex reaches DorkOS through an external, session-less MCP server, so a tool there can't resolve which session's buffer to read — unlike the fire-and-forget `control_ui` write, a read tool must return the captured data in its result, which a session-less stub can't produce. These tools are registered only on the in-process claude-code tool server and are structurally absent from the Codex `dorkos_ui` server.
+
 ### Data Flow
 
 ```
