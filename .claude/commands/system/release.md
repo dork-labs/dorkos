@@ -479,7 +479,9 @@ If push fails: the commit and tag exist locally — report the error, retry with
 
 ### 6.11: GitHub Release notes
 
-Ask via AskUserQuestion (create a GitHub Release, or skip). If yes, generate **narrative release notes**, using the `writing-changelogs` skill for structure and the `writing-for-humans` skill for readability:
+**Create the GitHub Release now — this is required, not optional, under the unified release model.** The release is the canonical release artifact and the target the "Desktop Release" workflow attaches the macOS build to. That workflow is **attach-only**: pushing the tag in Phase 6.10 already started it, but it will not create the release itself — it polls for this release and **fails** if it never appears. Skipping this step therefore fails the desktop build and leaves `dorkos.ai/download/mac` with nothing to serve. Do it immediately after the push, before stepping away.
+
+Generate **narrative release notes**, using the `writing-changelogs` skill for structure and the `writing-for-humans` skill for readability:
 
 - **Theme** (1-2 sentences) and **Highlights** (2-3 significant changes with benefit explanations) are written fresh. The theme sentence must pass the **explain-back test** (a non-developer can read it once and say what the release does). Each highlight is **one idea, ≤2 sentences**, never a single run-on carrying three or four claims.
 - Embed the 1-3 hero shots selected in 6.6b, following the poster-PNG-plus-motion-link rules in 6.6d. A release with user-visible UI changes always includes at least one visual — do not skip this for a UI-affecting release.
@@ -492,7 +494,7 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "[narrative release notes]"
 
 If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
 
-**The GitHub Release is created here, first, with the notes above.** The macOS desktop assets (`.dmg` + `.zip` + `latest-mac.yml`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.10) already kicked off the "Desktop Release" workflow, which builds, signs, and notarizes the app and then upserts those files onto this same release. The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. The release and its notes are complete and published regardless — the desktop build attaching is a separate, fail-soft step.
+**The GitHub Release is created here, first, with the notes above.** The macOS desktop assets (`.dmg` + `.zip` + `latest-mac.yml`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.10) already kicked off the "Desktop Release" workflow, which builds, signs, and notarizes the app and then uploads those files onto this same release (attach-only — it never creates or re-drafts the release, so these notes are never clobbered). The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. The release and its notes are complete and published regardless — the desktop build attaching is a separate, fail-soft step, and a desktop build failure never unwinds this release.
 
 ---
 

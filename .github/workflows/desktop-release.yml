@@ -94,24 +94,51 @@ jobs:
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
 
-      # Attaches the macOS artifacts to the EXISTING vX.Y.Z release that
-      # /system:release already created. action-gh-release@v2 upserts these
-      # assets onto the release matched by the pushed tag — it does NOT create
-      # a draft (draft: false) and does NOT regenerate notes (no
-      # generate_release_notes), so the human-written narrative notes stay
-      # intact. The release must be published (non-draft) for
+      # Attaches the macOS artifacts to the vX.Y.Z release that /system:release
+      # created (Phase 6.11). This step is ATTACH-ONLY on purpose: `gh release
+      # upload` uploads assets to an existing release without ever creating one,
+      # touching the draft flag, or regenerating notes — so the human-written
+      # narrative notes always survive. It deliberately does NOT use
+      # action-gh-release, which would CREATE a release when none exists yet and
+      # could win a race against Phase 6.11, minting a bare, notes-less release.
+      #
+      # Ordering: /system:release pushes the tag (Phase 6.10, triggers this run)
+      # then creates the release (Phase 6.11) seconds-to-minutes later, while
+      # this job spends many minutes signing + notarizing before it reaches this
+      # step — so the release is normally already present. The poll below only
+      # covers a slow operator, and FAILS LOUDLY if the release is still absent
+      # (Phase 6.11 skipped): a red run is the correct signal, not a silent bare
+      # release. The release must be published (non-draft) for
       # dorkos.ai/download/mac to resolve the .dmg.
       #
       # The .zip must ship alongside the .dmg: latest-mac.yml points
       # electron-updater (Squirrel.Mac) at the zip as the update payload, so
       # a release without it 404s every auto-update check. The dmg is only
       # the human-facing installer.
-      - name: Publish to GitHub Release
+      - name: Attach macOS artifacts to the release
         if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.zip
-            apps/desktop/release/latest-mac.yml
-          draft: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          # Wait up to ~10 min for the release (created in /system:release
+          # Phase 6.11) to exist. Never create it here.
+          found=""
+          for attempt in $(seq 1 30); do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              found=1
+              break
+            fi
+            echo "Release $tag not found yet (attempt $attempt/30); waiting 20s…"
+            sleep 20
+          done
+          if [ -z "$found" ]; then
+            echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create the GitHub Release before the desktop build can attach to it; this workflow will not mint a bare release (it would drop the human-written notes)." >&2
+            exit 1
+          fi
+          gh release upload "$tag" \
+            apps/desktop/release/*.dmg \
+            apps/desktop/release/*.zip \
+            apps/desktop/release/latest-mac.yml \
+            --clobber
