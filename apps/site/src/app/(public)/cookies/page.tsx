@@ -12,7 +12,7 @@ export default function CookiePolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Cookie Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 10, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 12, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             This site is run by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
             we mean.
@@ -23,7 +23,8 @@ export default function CookiePolicyPage() {
           <h2 className="text-charcoal font-mono text-base font-semibold">The short version</h2>
           <p className="text-warm-gray leading-relaxed">
             We keep cookies to a minimum. We set a login cookie if you sign in, and a small cookie
-            that remembers UI preferences. We do not use ad cookies, and we do not sell cookie data.
+            that remembers UI preferences. We set analytics cookies only if you accept the consent
+            banner. We do not use ad cookies, and we do not sell cookie data.
           </p>
         </section>
 
@@ -57,10 +58,16 @@ export default function CookiePolicyPage() {
           <div className="space-y-3">
             <h3 className="text-charcoal text-lg font-medium">Analytics</h3>
             <p className="text-warm-gray leading-relaxed">
-              We do not run website analytics today, so we do not set analytics cookies. The site
-              has PostHog, a privacy-friendly analytics tool, wired in, but it stays completely off
-              until we configure it. If we turn it on, PostHog will only store anything in your
-              browser after you accept the consent banner, and we will update this page first.
+              We use PostHog, a privacy-friendly analytics tool, to understand how the website is
+              used. It stores nothing in your browser until you accept the consent banner. If you
+              decline, ignore the banner, or have Do Not Track switched on, PostHog stays off and
+              sets no cookies. When it is on, it uses cookies to count page visits and a few clicks,
+              like copying the install command. There is no session recording and no cross-site
+              tracking. See our{' '}
+              <Link href="/privacy" className="text-charcoal hover:text-brand-orange underline">
+                Privacy Policy
+              </Link>{' '}
+              for the full picture.
             </p>
           </div>
         </section>
