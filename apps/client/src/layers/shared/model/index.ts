@@ -12,6 +12,7 @@ export { useDialogTabState } from './use-dialog-tab-state';
 export { useTheme, type Theme } from './use-theme';
 export { useReportIssue } from './report-issue/use-report-issue';
 export { useIsMobile } from './use-is-mobile';
+export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';
 export { useDocumentTitle } from './use-document-title';
 export { useElapsedTime } from './use-elapsed-time';
