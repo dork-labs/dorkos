@@ -34,29 +34,35 @@ const mockAgent = {
   displayName: 'Test',
   description: 'A test agent',
   runtime: 'claude-code',
+  capabilities: [],
   traits: DEFAULT_TRAITS,
   conventions: { soul: true, nope: true, dorkosKnowledge: true },
 } as unknown as AgentManifest;
 
-function Wrapper({ children }: { children: React.ReactNode }) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const ctx: AgentHubContextValue = {
-    agent: mockAgent,
-    projectPath: '/test/project',
-    onUpdate: mockOnUpdate,
-    onPersonalityUpdate: vi.fn(),
-    previewColor: null,
-    onPreviewColor: vi.fn(),
-    isPickerOpen: false,
+/** Builds a Wrapper bound to a specific agent, for tests that need non-default agent data. */
+function createWrapper(agent: AgentManifest) {
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ctx: AgentHubContextValue = {
+      agent,
+      projectPath: '/test/project',
+      onUpdate: mockOnUpdate,
+      onPersonalityUpdate: vi.fn(),
+      previewColor: null,
+      onPreviewColor: vi.fn(),
+      isPickerOpen: false,
+    };
+    return (
+      <QueryClientProvider client={qc}>
+        <TransportProvider transport={mockTransport}>
+          <AgentHubProvider value={ctx}>{children}</AgentHubProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
   };
-  return (
-    <QueryClientProvider client={qc}>
-      <TransportProvider transport={mockTransport}>
-        <AgentHubProvider value={ctx}>{children}</AgentHubProvider>
-      </TransportProvider>
-    </QueryClientProvider>
-  );
 }
+
+const Wrapper = createWrapper(mockAgent);
 
 afterEach(cleanup);
 
@@ -80,9 +86,34 @@ describe('ConfigTab', () => {
     expect(screen.getByText('Directory')).toBeInTheDocument();
   });
 
-  it('renders tags section', () => {
+  it('renders capabilities section', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    expect(screen.getByText('Tags')).toBeInTheDocument();
+    expect(screen.getByText('Capabilities')).toBeInTheDocument();
+  });
+
+  it('renders each capability from the agent manifest', () => {
+    const agentWithCapabilities = { ...mockAgent, capabilities: ['read', 'write'] };
+    render(<ConfigTab />, { wrapper: createWrapper(agentWithCapabilities) });
+    expect(screen.getByText('read')).toBeInTheDocument();
+    expect(screen.getByText('write')).toBeInTheDocument();
+  });
+
+  it('adding a capability calls onUpdate with the appended capabilities list', () => {
+    const agentWithCapabilities = { ...mockAgent, capabilities: ['read'] };
+    render(<ConfigTab />, { wrapper: createWrapper(agentWithCapabilities) });
+    fireEvent.click(screen.getByText('Add'));
+    fireEvent.change(screen.getByPlaceholderText('capability name'), {
+      target: { value: 'write' },
+    });
+    fireEvent.keyDown(screen.getByPlaceholderText('capability name'), { key: 'Enter' });
+    expect(mockOnUpdate).toHaveBeenCalledWith({ capabilities: ['read', 'write'] });
+  });
+
+  it('removing a capability calls onUpdate with the filtered capabilities list', () => {
+    const agentWithCapabilities = { ...mockAgent, capabilities: ['read', 'write'] };
+    render(<ConfigTab />, { wrapper: createWrapper(agentWithCapabilities) });
+    fireEvent.click(screen.getByLabelText('Remove capability read'));
+    expect(mockOnUpdate).toHaveBeenCalledWith({ capabilities: ['write'] });
   });
 
   // --- Accordion sections ---
