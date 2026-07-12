@@ -92,6 +92,27 @@ describe('control_ui handler', () => {
     expect(parsed.action).toBe('open_canvas');
   });
 
+  it('returns success for open_pip and leaves uiState unprojected (no PIP field)', async () => {
+    const handler = createControlUiHandler(session);
+    const result = await handler({ action: 'open_pip', title: 'Tic-Tac-Toe' });
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.action).toBe('open_pip');
+    // The PIP panel has no member in the UiState snapshot, so the projection is
+    // a no-op: the canvas stays closed.
+    expect(session.uiState?.canvas).toEqual({ open: false, contentType: null });
+  });
+
+  it('returns success for close_pip', async () => {
+    const handler = createControlUiHandler(session);
+    const result = await handler({ action: 'close_pip' });
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.action).toBe('close_pip');
+  });
+
   it('returns success for set_theme', async () => {
     const handler = createControlUiHandler(session);
     const result = await handler({ action: 'set_theme', theme: 'dark' });

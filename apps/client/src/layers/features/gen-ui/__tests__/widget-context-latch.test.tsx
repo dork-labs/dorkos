@@ -13,7 +13,8 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
-import { TransportProvider } from '@/layers/shared/model';
+import type { WidgetAction } from '@dorkos/shared/ui-widget';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { WidgetActionProvider, useWidgetActions } from '../model/widget-context';
 
@@ -101,5 +102,41 @@ describe('widget action latch re-entrancy', () => {
     // First dispatch failed and un-latched — a retry click must go through.
     await user.click(button);
     await waitFor(() => expect(mockTransport.sendUiAction).toHaveBeenCalledTimes(2));
+  });
+});
+
+/** Fires a single `ui`-kind action from inside the provider. */
+function UiDispatcher({ action }: { action: WidgetAction }) {
+  const { onAction } = useWidgetActions();
+  return (
+    <button type="button" onClick={() => void onAction(action)}>
+      dispatch-ui
+    </button>
+  );
+}
+
+describe('widget ui-kind dispatch context', () => {
+  it('threads the widget sessionId so a ui open_pip command pops the panel instead of toasting', async () => {
+    // Regression (DOR-302 review): the ui-kind DispatcherContext omitted the
+    // in-scope sessionId, so a widget button firing open_pip wrongly degraded
+    // to the "needs an active session" toast.
+    const user = userEvent.setup();
+    const openPipSpy = vi.spyOn(useAppStore.getState(), 'openPip');
+    render(
+      <WidgetActionProvider sessionId="sess-1" widgetTitle="Board">
+        <UiDispatcher
+          action={{ kind: 'ui', command: { action: 'open_pip', title: 'Tic-Tac-Toe' } }}
+        />
+      </WidgetActionProvider>,
+      { wrapper: Wrapper }
+    );
+
+    await user.click(screen.getByRole('button', { name: 'dispatch-ui' }));
+
+    expect(openPipSpy).toHaveBeenCalledWith({
+      kind: 'widget',
+      sessionId: 'sess-1',
+      title: 'Tic-Tac-Toe',
+    });
   });
 });

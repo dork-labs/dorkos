@@ -1,6 +1,7 @@
 import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
 import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
+import type { PipContent } from '@/layers/shared/model';
 import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
 
 /**
@@ -52,6 +53,12 @@ export interface DispatcherStore {
   setActiveRightPanelTab: (tabId: string | null) => void;
   /** View-only tab setter — switches the visible tab WITHOUT persisting (DOR-227). */
   setActiveRightPanelTabView: (tabId: string | null) => void;
+
+  // PIP (floating panel)
+  /** Pop content into the floating picture-in-picture panel, replacing whatever it shows (DOR-302). */
+  openPip: (content: PipContent) => void;
+  /** Close the floating picture-in-picture panel. */
+  closePip: () => void;
 }
 
 /**
@@ -104,6 +111,13 @@ export interface DispatcherContext {
    * origin. Ignored by ambient celebration kinds (fireworks/cannons/rain).
    */
   celebrationOrigin?: CelebrationOrigin;
+  /**
+   * The session that issued an agent stream command. Threaded per-dispatch from
+   * the StreamManager's `ui_command` side effect so PIP commands know which
+   * session's live widget to pop out. Unset for palette/extension dispatches,
+   * which have no originating session — `open_pip` then degrades to a toast.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -218,6 +232,26 @@ export function executeUiCommand(
     case 'close_canvas':
       store.setCanvasOpen(false);
       store.setRightPanelOpen(false);
+      break;
+
+    // --- PIP (floating panel) ---
+    case 'open_pip':
+      // PIP follows a specific session's live widget fence, so it needs the
+      // originating session. Palette/extension dispatches carry none — degrade
+      // to a toast rather than popping an empty panel (mirrors open_terminal's
+      // graceful degrade). The panel then follows the session's newest
+      // `dorkos-ui` fence (LiveSessionWidget), so re-emitting the fence updates
+      // it live.
+      if (ctx.sessionId === undefined) {
+        toast.info('Picture-in-picture needs an active session', {
+          description: 'Open a chat session, then pop its widget out.',
+        });
+        break;
+      }
+      store.openPip({ kind: 'widget', sessionId: ctx.sessionId, title: command.title ?? 'Widget' });
+      break;
+    case 'close_pip':
+      store.closePip();
       break;
 
     // --- Toast ---

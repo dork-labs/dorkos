@@ -16,8 +16,13 @@ interface MessageItemProps {
   sessionId: string;
   isNew?: boolean;
   isStreaming?: boolean;
-  /** Whether this is the latest message in the conversation (supersedes older widgets). */
-  isLatestMessage?: boolean;
+  /**
+   * Whether no NEWER fence-bearing message exists — the fence-based supersede
+   * rule (DOR-302). A widget in this message goes inert only when a newer
+   * message carries a widget fence; trailing agent text never freezes a board.
+   * Defaults to `true` (surfaces with no list context render live widgets).
+   */
+  isLatestWidgetMessage?: boolean;
   /** The toolCallId of the currently active interactive tool (for keyboard shortcuts) */
   activeToolCallId?: string | null;
   /** Callback to register the active tool's imperative handle */
@@ -54,7 +59,7 @@ export function MessageItem({
   sessionId,
   isNew = false,
   isStreaming = false,
-  isLatestMessage = false,
+  isLatestWidgetMessage = true,
   activeToolCallId = null,
   onToolRef,
   focusedOptionIndex = -1,
@@ -93,7 +98,7 @@ export function MessageItem({
       value={{
         sessionId,
         isStreaming,
-        isLatestMessage,
+        isLatestWidgetMessage,
         activeToolCallId,
         onToolRef,
         focusedOptionIndex,

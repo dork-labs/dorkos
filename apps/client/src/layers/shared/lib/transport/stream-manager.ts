@@ -221,7 +221,7 @@ export class StreamManager {
   // side effect (e.g. open the canvas). App-layer wiring (`main.tsx`) owns the
   // DispatcherContext, so the side effect is an additive subscription rather
   // than a store fold.
-  private uiCommandListeners = new Set<(command: UiCommand) => void>();
+  private uiCommandListeners = new Set<(command: UiCommand, sessionId: string) => void>();
 
   // Multi-subscriber taps for the extension event bridge (features layer). They
   // mirror the `subscribeUiCommand` precedent: additive side-channel listeners
@@ -310,9 +310,11 @@ export class StreamManager {
    * last-seen seq, and snapshots arrive via `onSnapshot`, not here), so a
    * reconnect never re-fires a command — canvas state persists via localStorage.
    *
-   * @param handler - Callback invoked with the validated {@link UiCommand}.
+   * @param handler - Callback invoked with the validated {@link UiCommand} and
+   *   the attached session's id (so session-scoped commands like `open_pip` know
+   *   which session issued them).
    */
-  subscribeUiCommand(handler: (command: UiCommand) => void): () => void {
+  subscribeUiCommand(handler: (command: UiCommand, sessionId: string) => void): () => void {
     this.uiCommandListeners.add(handler);
     return () => {
       this.uiCommandListeners.delete(handler);
@@ -798,7 +800,7 @@ export class StreamManager {
     // ONLY for the attached (foreground) session so a background agent cannot
     // pop UI over the session the operator is watching.
     if (parsed.data.type === 'ui_command' && sessionId === this.attachedSessionId) {
-      for (const handler of this.uiCommandListeners) handler(parsed.data.command);
+      for (const handler of this.uiCommandListeners) handler(parsed.data.command, sessionId);
     }
     // Side-channel taps (extension event bridge) — gated to the attached
     // session, same rationale as `ui_command`.

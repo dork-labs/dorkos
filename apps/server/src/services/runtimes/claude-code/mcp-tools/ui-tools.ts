@@ -102,8 +102,10 @@ function applyUiCommandToState(state: UiState, command: UiCommand): UiState {
     case 'switch_agent':
       return { ...state, agent: { ...state.agent, cwd: command.cwd } };
     default:
-      // show_toast, set_theme, scroll_to_message, open_command_palette — no
-      // persistent UI-state effect to project.
+      // show_toast, set_theme, scroll_to_message, open_command_palette,
+      // celebrate, open_pip, close_pip — no server-projected UI-state field, so
+      // no deterministic effect to fold in (the floating PIP panel has no member
+      // in the UiState snapshot).
       return state;
   }
 }

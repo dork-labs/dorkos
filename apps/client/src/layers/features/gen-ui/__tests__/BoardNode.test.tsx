@@ -93,6 +93,41 @@ describe('BoardNode interaction latch', () => {
     });
   });
 
+  it('marks only the tapped cell when every cell reuses one action id (payload-scoped latch)', async () => {
+    // The real-session bug (DOR-302): agents reuse one id ("move") across all
+    // cells with distinct payloads. Keying the dispatch on the id alone marked
+    // EVERY same-id cell as dispatched from a single tap — the optimistic glyph
+    // filled the whole board. The dispatch key folds in the payload, so only the
+    // tapped cell reads as dispatched; its same-id siblings are latched-inert.
+    const user = userEvent.setup();
+    mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });
+    renderBoard({
+      type: 'board',
+      rows: [
+        [
+          { action: { kind: 'agent', id: 'move', payload: { glyph: 'X', cell: 0 } } },
+          { action: { kind: 'agent', id: 'move', payload: { glyph: 'X', cell: 1 } } },
+        ],
+      ],
+    });
+
+    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+
+    // The tapped cell shows its optimistic mark.
+    expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
+    // Its same-id sibling stays empty (NOT dispatched) and goes inert.
+    const sibling = screen.getByLabelText('Row 1, column 2: empty');
+    await waitFor(() => expect(sibling).toHaveAttribute('aria-disabled', 'true'));
+    expect(screen.queryByLabelText('Row 1, column 2: X')).not.toBeInTheDocument();
+    // Exactly one move posts back — the tapped cell's payload.
+    expect(mockTransport.sendUiAction).toHaveBeenCalledTimes(1);
+    expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
+      actionId: 'move',
+      payload: { glyph: 'X', cell: 0 },
+      widgetTitle: 'Tic-Tac-Toe',
+    });
+  });
+
   it('reverts the optimistic mark and un-latches when the POST fails', async () => {
     const user = userEvent.setup();
     const { toast } = await import('sonner');

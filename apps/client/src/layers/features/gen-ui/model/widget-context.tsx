@@ -34,7 +34,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { formatUiActionMessage, type WidgetAction } from '@dorkos/shared/ui-widget';
+import {
+  formatUiActionMessage,
+  type AgentWidgetAction,
+  type WidgetAction,
+} from '@dorkos/shared/ui-widget';
 import {
   executeUiCommand,
   TIMING,
@@ -47,6 +51,21 @@ import { useSessionStreamStore } from '@/layers/entities/session';
 
 /** Settle phase of the widget's single in-flight/settled `agent` dispatch. */
 export type DispatchStatus = 'idle' | 'pending' | 'sent';
+
+/**
+ * Dispatch identity for an `agent` action: its id plus a signature of its
+ * payload. Agents legitimately reuse one id (e.g. `move`) across many controls
+ * with distinct payloads — one per board cell — so keying the latch on the id
+ * alone marks every same-id control dispatched from a single tap. Folding the
+ * payload in scopes the "this one fired" state to the control that actually
+ * fired. Same-id-same-payload duplicates collapse to one key, which is correct:
+ * they are semantically the same move.
+ *
+ * @param action - The `agent` action a control fired or is about to render.
+ */
+function actionDispatchKey(action: AgentWidgetAction): string {
+  return action.id + ':' + JSON.stringify(action.payload ?? null);
+}
 
 /** The action surface exposed to interactive widget nodes. */
 export interface WidgetActionsValue {
@@ -71,8 +90,13 @@ export interface WidgetActionsValue {
   superseded: boolean;
   /** True once an `agent` action from this widget instance has been dispatched. */
   latched: boolean;
-  /** The id of the dispatched `agent` action, or `null`. */
-  dispatchedActionId: string | null;
+  /**
+   * The dispatch key (id + payload signature — see {@link actionDispatchKey}) of
+   * the dispatched `agent` action, or `null`. Keyed on payload so an agent that
+   * reuses one action id across many controls (e.g. `move` on every board cell)
+   * latches only the control that actually fired, not its same-id siblings.
+   */
+  dispatchedActionKey: string | null;
   /** Settle phase of the dispatched `agent` action. */
   dispatchStatus: DispatchStatus;
 }
@@ -84,7 +108,7 @@ const WidgetActionsContext = createContext<WidgetActionsValue>({
   agentActionsEnabled: false,
   superseded: false,
   latched: false,
-  dispatchedActionId: null,
+  dispatchedActionKey: null,
   dispatchStatus: 'idle',
 });
 
@@ -105,7 +129,8 @@ interface WidgetActionProviderProps {
 
 /** The provider's single dispatch record — which action fired and how far it got. */
 interface DispatchRecord {
-  actionId: string;
+  /** Dispatch key of the action that fired — see {@link actionDispatchKey}. */
+  key: string;
   status: DispatchStatus;
 }
 
@@ -141,11 +166,14 @@ export function WidgetActionProvider({
           // transport with no terminal (DirectTransport/Obsidian), matching the
           // agent-stream dispatch path. `celebrationOrigin` makes a `celebrate`
           // command erupt from the clicked control (origin-aware confetti).
+          // `sessionId` lets session-scoped commands (open_pip) target the
+          // widget's own session instead of degrading to the no-session toast.
           const ctx: DispatcherContext = {
             store: useAppStore.getState(),
             setTheme,
             supportsTerminal: transport.supportsTerminal,
             celebrationOrigin: opts?.origin,
+            sessionId,
           };
           // Origin 'user': widget actions only fire when the person clicks a
           // widget button, so a resulting tab switch is an explicit pick and
@@ -176,10 +204,11 @@ export function WidgetActionProvider({
             content: formatUiActionMessage(request),
           });
           streamStore.setTriggerPending(sessionId, true);
-          setDispatch({ actionId: action.id, status: 'pending' });
+          const dispatchKey = actionDispatchKey(action);
+          setDispatch({ key: dispatchKey, status: 'pending' });
           try {
             await transport.sendUiAction(sessionId, request);
-            setDispatch({ actionId: action.id, status: 'sent' });
+            setDispatch({ key: dispatchKey, status: 'sent' });
             // Watchdog: a 202 whose turn never materializes must not wedge the
             // composer in `streaming` — release the trigger latch if no
             // `turn_start` arrived. One-shot, reads live state, no-op once the
@@ -214,7 +243,7 @@ export function WidgetActionProvider({
       agentActionsEnabled: Boolean(sessionId),
       superseded: !isLatestMessage,
       latched: dispatch !== null,
-      dispatchedActionId: dispatch?.actionId ?? null,
+      dispatchedActionKey: dispatch?.key ?? null,
       dispatchStatus: dispatch?.status ?? 'idle',
     }),
     [onAction, sessionId, isLatestMessage, dispatch]
@@ -267,10 +296,13 @@ export interface AgentActionState {
  * @param action - The action a node is about to render a control for.
  */
 export function useAgentActionState(action: WidgetAction): AgentActionState {
-  const { agentActionsEnabled, superseded, latched, dispatchedActionId, dispatchStatus } =
+  const { agentActionsEnabled, superseded, latched, dispatchedActionKey, dispatchStatus } =
     useWidgetActions();
   const isAgent = action.kind === 'agent';
-  const isDispatched = isAgent && dispatchedActionId !== null && action.id === dispatchedActionId;
+  // Compare on the full dispatch key (id + payload), so a same-id sibling of the
+  // fired control reads as latched-not-dispatched rather than dispatched.
+  const actionKey = action.kind === 'agent' ? actionDispatchKey(action) : null;
+  const isDispatched = actionKey !== null && actionKey === dispatchedActionKey;
   const unavailable = isAgent && !agentActionsEnabled;
   const isSuperseded = isAgent && superseded;
   const isLatchedOther = isAgent && latched && !isDispatched;

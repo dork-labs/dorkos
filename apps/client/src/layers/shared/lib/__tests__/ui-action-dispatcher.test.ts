@@ -31,6 +31,8 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setRightPanelOpen: vi.fn(),
     setActiveRightPanelTab: vi.fn(),
     setActiveRightPanelTabView: vi.fn(),
+    openPip: vi.fn(),
+    closePip: vi.fn(),
     ...overrides,
   };
 }
@@ -202,6 +204,48 @@ describe('executeUiCommand — canvas commands', () => {
     executeUiCommand(ctx, { action: 'close_canvas' }, 'agent');
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(false);
     expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(false);
+  });
+});
+
+// --- PIP (floating panel) ---
+
+describe('executeUiCommand — pip commands', () => {
+  it('open_pip pops a widget descriptor for the issuing session', () => {
+    const ctx = { ...makeMockCtx(), sessionId: 'sess-1' };
+    executeUiCommand(ctx, { action: 'open_pip', title: 'Tic-Tac-Toe' }, 'agent');
+    expect(ctx.store.openPip).toHaveBeenCalledWith({
+      kind: 'widget',
+      sessionId: 'sess-1',
+      title: 'Tic-Tac-Toe',
+    });
+  });
+
+  it("open_pip falls back to 'Widget' when no title is given", () => {
+    const ctx = { ...makeMockCtx(), sessionId: 'sess-1' };
+    executeUiCommand(ctx, { action: 'open_pip' }, 'agent');
+    expect(ctx.store.openPip).toHaveBeenCalledWith({
+      kind: 'widget',
+      sessionId: 'sess-1',
+      title: 'Widget',
+    });
+  });
+
+  it('open_pip without a session degrades to a toast and does not open the panel', async () => {
+    const { toast } = await import('sonner');
+    vi.spyOn(toast, 'info');
+    const ctx = makeMockCtx(); // no sessionId (palette/extension dispatch)
+    executeUiCommand(ctx, { action: 'open_pip' }, 'agent');
+    expect(ctx.store.openPip).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalledWith(
+      'Picture-in-picture needs an active session',
+      expect.anything()
+    );
+  });
+
+  it('close_pip closes the floating panel', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'close_pip' }, 'agent');
+    expect(ctx.store.closePip).toHaveBeenCalled();
   });
 });
 

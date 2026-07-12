@@ -9,8 +9,11 @@ import type { InteractiveToolHandle } from './types';
 interface MessageContextValue {
   sessionId: string;
   isStreaming: boolean;
-  /** Whether this message is the latest in the conversation (supersedes older widgets). */
-  isLatestMessage: boolean;
+  /**
+   * Whether no NEWER fence-bearing message exists (fence-based supersede,
+   * DOR-302). Threaded to widget fences: only a newer widget fence stales one.
+   */
+  isLatestWidgetMessage: boolean;
   activeToolCallId: string | null;
   onToolRef: ((handle: InteractiveToolHandle | null) => void) | undefined;
   focusedOptionIndex: number;
@@ -42,7 +45,7 @@ export function MessageProvider({
     [
       value.sessionId,
       value.isStreaming,
-      value.isLatestMessage,
+      value.isLatestWidgetMessage,
       value.activeToolCallId,
       value.onToolRef,
       value.focusedOptionIndex,

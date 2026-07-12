@@ -2,7 +2,12 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { MessageList, computeGrouping, type MessageListHandle } from '../ui/MessageList';
+import {
+  MessageList,
+  computeGrouping,
+  findLastWidgetFenceIndex,
+  type MessageListHandle,
+} from '../ui/MessageList';
 import type { ChatMessage } from '../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 
@@ -145,6 +150,32 @@ describe('computeGrouping', () => {
       { position: 'only', groupIndex: 1 },
       { position: 'only', groupIndex: 2 },
     ]);
+  });
+});
+
+describe('findLastWidgetFenceIndex (fence-based supersede, DOR-302)', () => {
+  const fence = '```dorkos-ui\n{"version":1}\n```';
+
+  function msg(id: string, content: string): ChatMessage {
+    return { id, role: 'assistant', content, parts: [], timestamp: '' };
+  }
+
+  it('returns -1 when no message carries a widget fence', () => {
+    expect(findLastWidgetFenceIndex([msg('1', 'plain'), msg('2', 'text')])).toBe(-1);
+    expect(findLastWidgetFenceIndex([])).toBe(-1);
+  });
+
+  it('a fence-bearing message stays the last widget index across trailing TEXT-only messages', () => {
+    // The DOR-302 repro: the board (index 0) followed by the agent's plain
+    // reply must NOT be superseded — the fence index stays 0, so index 0
+    // renders live (index >= lastWidgetFenceIndex).
+    const messages = [msg('1', `board:\n${fence}`), msg('2', 'opened it for you!')];
+    expect(findLastWidgetFenceIndex(messages)).toBe(0);
+  });
+
+  it('a newer fence-bearing message takes over the last widget index (older board superseded)', () => {
+    const messages = [msg('1', `board:\n${fence}`), msg('2', `next turn:\n${fence}`)];
+    expect(findLastWidgetFenceIndex(messages)).toBe(1);
   });
 });
 
