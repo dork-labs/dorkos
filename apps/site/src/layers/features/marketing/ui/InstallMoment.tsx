@@ -142,6 +142,63 @@ function CopyableCommand({
 }
 
 /**
+ * The download hero's terminal peer — the install one-liner offered quietly,
+ * not as a form field. Borderless save for a whisper of warm tint, an orange
+ * `$` prompt echoing the main terminal, and a copy glyph that stays subtle
+ * until hover/focus. Always copies the real command with check confirmation;
+ * the long string scrolls within the chip rather than overflowing on mobile.
+ */
+function TerminalPeerCommand({
+  command,
+  method,
+  className,
+}: {
+  command: string;
+  method: InstallMethod;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    // Only confirm once the write lands — insecure contexts reject.
+    navigator.clipboard.writeText(command).then(
+      () => {
+        trackHeroInstallCopy(method);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      () => {}
+    );
+  }, [command, method]);
+
+  return (
+    <div
+      className={cn(
+        'group inline-flex max-w-full items-center gap-3 rounded-lg bg-[rgba(139,90,43,0.05)] px-4 py-2.5',
+        className
+      )}
+    >
+      <code className="text-charcoal min-w-0 overflow-x-auto font-mono text-[13px] whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span style={{ color: '#E85D04' }}>$ </span>
+        {command}
+      </code>
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={copied ? 'Command copied' : `Copy command: ${command}`}
+        className="text-warm-gray-light hover:text-brand-orange focus-visible:ring-brand-orange/40 shrink-0 rounded p-1 opacity-70 transition-all group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none"
+      >
+        {copied ? (
+          <Check size={13} style={{ color: '#228B22' }} />
+        ) : (
+          <Copy size={13} aria-hidden="true" />
+        )}
+      </button>
+    </div>
+  );
+}
+
+/**
  * Collapsed-by-default disclosure of the remaining install paths — npm (only
  * when it isn't already a primary tab) plus honest per-platform notes. A native
  * `<details>`/`<summary>` so it is keyboard-accessible and works without JS.
@@ -211,7 +268,7 @@ function DownloadHero() {
         <p className="text-warm-gray-light font-mono text-xs tracking-[0.04em]">
           Prefer the terminal?
         </p>
-        <CopyableCommand command={CURL_COMMAND} method="curl" className="w-full" />
+        <TerminalPeerCommand command={CURL_COMMAND} method="curl" />
         <p className="text-warm-gray-light font-mono text-[11px] tracking-[0.02em]">
           On an Intel Mac? This works everywhere.
         </p>
@@ -419,7 +476,7 @@ export function InstallMoment() {
 
         <motion.p
           variants={REVEAL}
-          className="text-brand-orange mb-10 font-mono text-[48px] leading-none font-bold tracking-[-0.03em] md:text-[72px]"
+          className="text-brand-orange mb-6 font-mono text-[48px] leading-none font-bold tracking-[-0.03em] md:text-[72px]"
         >
           Get started
           <span className="cursor-blink" aria-hidden="true" />.
