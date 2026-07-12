@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { createWindow } from './window-manager';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
@@ -24,7 +24,11 @@ let serverPort: number | null = null;
  * destroyed BrowserWindow.
  */
 function createTrackedWindow(): void {
-  mainWindow = createWindow();
+  // The renderer only loads via the server's localhost origin in a packaged
+  // build — dev keeps loading through electron-vite's ELECTRON_RENDERER_URL
+  // (createWindow checks that first regardless of this argument).
+  const rendererUrl = app.isPackaged && serverPort ? `http://localhost:${serverPort}` : undefined;
+  mainWindow = createWindow(rendererUrl);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -116,8 +120,24 @@ if (!gotTheLock) {
   });
 
   app.on('ready', async () => {
-    // 1. Start Express in a UtilityProcess on a free port
-    serverPort = await startServer();
+    // 1. Start Express in a UtilityProcess on a free port. A rejection here
+    // previously vanished silently — Electron doesn't surface a rejected
+    // async 'ready' handler anywhere — leaving the app running with zero
+    // windows and no way for the user to know why. showErrorBox is
+    // synchronous/blocking, so it's guaranteed to be seen before the app quits.
+    try {
+      serverPort = await startServer();
+    } catch (err) {
+      dialog.showErrorBox(
+        "DorkOS couldn't start",
+        "DorkOS couldn't start its background server, so it can't continue. " +
+          `Try restarting the app. If this keeps happening, check ~/Library/Logs/DorkOS for details.\n\n${
+            err instanceof Error ? err.message : String(err)
+          }`
+      );
+      app.quit();
+      return;
+    }
 
     // 2. Create the main window (the renderer fetches the server port via IPC)
     createTrackedWindow();

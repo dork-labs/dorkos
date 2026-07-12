@@ -141,23 +141,34 @@ export function shapeWindowState(win: BrowserWindow, previousState: WindowState)
 }
 
 /**
- * Is `url` the app's own renderer entry — the dev server
- * (`ELECTRON_RENDERER_URL`, set by electron-vite for HMR) or, once packaged,
- * a `file://` URL inside the app's own `renderer/` bundle (the built
- * `index.html` and its assets)?
+ * Is `url` the app's own renderer entry?
  *
- * Only that bundle counts: an arbitrary `file://` link (e.g. from
- * agent-generated markdown clicked without `target="_blank"`) must NOT pass —
- * it would steer the app window itself onto a raw local file with no way
- * back to the SPA.
+ * Three cases, checked in order:
+ * 1. The dev server (`ELECTRON_RENDERER_URL`, set by electron-vite for HMR).
+ * 2. `rendererUrl` — in a packaged build, the bundled server's own
+ *    `http://localhost:<port>` origin (see {@link createWindow}), which
+ *    serves the built renderer directly: the packaged app loads via the
+ *    server, not `file://`, so the server's CORS allowlist sees a real
+ *    origin instead of `null` (see the
+ *    `decisions/` ADR `desktop-renderer-served-from-localhost`).
+ * 3. A `file://` URL inside the app's own `renderer/` bundle — kept as a
+ *    fallback for `electron-vite preview` (no server, no dev URL), which
+ *    still loads the built renderer straight off disk.
+ *
+ * Only those count: an arbitrary `file://` link (e.g. from agent-generated
+ * markdown clicked without `target="_blank"`) must NOT pass — it would
+ * steer the app window itself onto a raw local file with no way back to
+ * the SPA.
  *
  * Used by the `will-navigate` guard in {@link createWindow} to tell in-app
  * routing apart from a stray link that should open in the system browser
  * instead of hijacking the app window.
  *
  * @param url - The URL a `will-navigate` event is about to load.
+ * @param rendererUrl - The app's own origin for this window, as passed to
+ *   {@link createWindow} (`http://localhost:<port>` in a packaged build).
  */
-export function isOwnOrigin(url: string): boolean {
+export function isOwnOrigin(url: string, rendererUrl?: string): boolean {
   let target: URL;
   try {
     target = new URL(url);
@@ -165,8 +176,8 @@ export function isOwnOrigin(url: string): boolean {
     return false;
   }
   if (target.protocol === 'file:') {
-    // Same layout as loadFile below: the built renderer lives in
-    // `../renderer` relative to the compiled main-process bundle.
+    // Same layout as the loadFile fallback below: the built renderer lives
+    // in `../renderer` relative to the compiled main-process bundle.
     const rendererDir = resolve(__dirname, '../renderer');
     try {
       const targetPath = resolve(fileURLToPath(target));
@@ -175,9 +186,10 @@ export function isOwnOrigin(url: string): boolean {
       return false;
     }
   }
-  if (!process.env.ELECTRON_RENDERER_URL) return false;
+  const ownOrigin = process.env.ELECTRON_RENDERER_URL || rendererUrl;
+  if (!ownOrigin) return false;
   try {
-    return target.origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+    return target.origin === new URL(ownOrigin).origin;
   } catch {
     return false;
   }
@@ -186,9 +198,13 @@ export function isOwnOrigin(url: string): boolean {
 /**
  * Create the main BrowserWindow with native macOS styling.
  *
+ * @param rendererUrl - The bundled server's own origin
+ *   (`http://localhost:<port>`), passed once {@link startServer} in
+ *   `server-process.ts` has resolved a port. Only used in a packaged build
+ *   with no dev server running — see the loading order below.
  * @returns The created BrowserWindow instance.
  */
-export function createWindow(): BrowserWindow {
+export function createWindow(rendererUrl?: string): BrowserWindow {
   const persisted = loadWindowState();
   const state = validateWindowState(persisted, screen.getAllDisplays(), screen.getPrimaryDisplay());
 
@@ -228,7 +244,7 @@ export function createWindow(): BrowserWindow {
   // is handed off to the system browser so the link still goes somewhere
   // useful.
   win.webContents.on('will-navigate', (event: Event<WebContentsWillNavigateEventParams>) => {
-    if (isOwnOrigin(event.url)) return;
+    if (isOwnOrigin(event.url, rendererUrl)) return;
     event.preventDefault();
     if (event.url.startsWith('http://') || event.url.startsWith('https://')) {
       void shell.openExternal(event.url);
@@ -237,10 +253,18 @@ export function createWindow(): BrowserWindow {
 
   if (state.isMaximized) win.maximize();
 
-  // In dev: electron-vite sets ELECTRON_RENDERER_URL for HMR
-  // In prod: load the built index.html from dist/renderer/
+  // In dev: electron-vite sets ELECTRON_RENDERER_URL for HMR.
+  // In a packaged build: load the renderer via the bundled server's own
+  // localhost origin (server-process.ts sets CLIENT_DIST_PATH so the server
+  // serves it) rather than file:// — the server's CORS allowlist and
+  // Better Auth's trusted-origins check both need a real origin, not
+  // `null`, and this makes the renderer's fetches same-origin besides.
+  // `electron-vite preview` (no server, no dev URL) falls back to loading
+  // the built index.html straight off disk.
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else if (rendererUrl) {
+    win.loadURL(rendererUrl);
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'));
   }

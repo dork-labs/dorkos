@@ -188,6 +188,38 @@ describe('createWindow (A2 integration)', () => {
   });
 });
 
+describe('createWindow — renderer loading', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('loads the built renderer via file:// when no dev server or rendererUrl is available (electron-vite preview)', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+
+    const win = createWindow();
+
+    expect(win.loadFile).toHaveBeenCalledTimes(1);
+    expect(win.loadURL).not.toHaveBeenCalled();
+  });
+
+  it("loads via the bundled server's localhost origin in a packaged build (rendererUrl passed, no dev server)", () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+
+    const win = createWindow('http://localhost:54321');
+
+    expect(win.loadURL).toHaveBeenCalledWith('http://localhost:54321');
+    expect(win.loadFile).not.toHaveBeenCalled();
+  });
+
+  it('prefers the dev server URL over rendererUrl when both are present', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+
+    const win = createWindow('http://localhost:54321');
+
+    expect(win.loadURL).toHaveBeenCalledWith('http://localhost:5173');
+  });
+});
+
 describe('isOwnOrigin', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -235,6 +267,25 @@ describe('isOwnOrigin', () => {
 
   it('rejects an unparseable URL', () => {
     expect(isOwnOrigin('not a url')).toBe(false);
+  });
+
+  it("treats the bundled server's localhost origin as own origin when passed explicitly (packaged build)", () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin('http://localhost:54321/agents', 'http://localhost:54321')).toBe(true);
+  });
+
+  it('rejects a foreign origin even when a rendererUrl is passed', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    expect(isOwnOrigin('https://example.com', 'http://localhost:54321')).toBe(false);
+  });
+
+  it('prefers ELECTRON_RENDERER_URL over rendererUrl when both are present', () => {
+    // Dev never passes rendererUrl in practice (see createWindow), but the
+    // precedence matters if it ever did: HMR's dev-server origin is the
+    // real own-origin, not the packaged-build fallback.
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+    expect(isOwnOrigin('http://localhost:5173/agents', 'http://localhost:54321')).toBe(true);
+    expect(isOwnOrigin('http://localhost:54321/agents', 'http://localhost:54321')).toBe(false);
   });
 });
 
@@ -297,6 +348,34 @@ describe('createWindow — external links and navigation guard (P2a)', () => {
 
       expect(preventDefault).not.toHaveBeenCalled();
       expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
+    it("allows navigation to the bundled server's localhost origin in a packaged build", async () => {
+      vi.stubEnv('ELECTRON_RENDERER_URL', '');
+      const win = createWindow('http://localhost:54321');
+      const preventDefault = vi.fn();
+
+      await win.webContents.emit('will-navigate', {
+        url: 'http://localhost:54321/agents',
+        preventDefault,
+      });
+
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
+    it('still blocks a foreign origin in a packaged build (rendererUrl set)', async () => {
+      vi.stubEnv('ELECTRON_RENDERER_URL', '');
+      const win = createWindow('http://localhost:54321');
+      const preventDefault = vi.fn();
+
+      await win.webContents.emit('will-navigate', {
+        url: 'https://example.com/evil',
+        preventDefault,
+      });
+
+      expect(preventDefault).toHaveBeenCalledTimes(1);
+      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/evil');
     });
   });
 });

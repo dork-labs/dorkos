@@ -266,3 +266,33 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
     expect(win.webContents.send).not.toHaveBeenCalled();
   });
 });
+
+describe('server start failure', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('shows an error dialog and quits instead of sitting windowless when startServer rejects', async () => {
+    const { app, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const serverProcess = await import('../server-process');
+    vi.mocked(serverProcess.startServer).mockRejectedValueOnce(new Error('utility process exited'));
+
+    const windowManager = await import('../window-manager');
+    vi.mocked(windowManager.createWindow).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+
+    expect(dialog.showErrorBox).toHaveBeenCalledTimes(1);
+    const [title, message] = vi.mocked(dialog.showErrorBox).mock.calls[0];
+    expect(title).toMatch(/couldn't start/i);
+    expect(message).toContain('utility process exited');
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    // No window, no menu/updater setup — the app must not proceed past the
+    // failed server start into a half-initialized, windowless state.
+    expect(windowManager.createWindow).not.toHaveBeenCalled();
+  });
+});

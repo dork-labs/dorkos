@@ -7,8 +7,13 @@ directories:
 
 mac:
   category: public.app-category.developer-tools
+  # zip must accompany dmg: electron-updater (Squirrel.Mac) can only install
+  # updates from the zip artifact; the dmg is the human-facing installer.
   target:
     - target: dmg
+      arch:
+        - arm64
+    - target: zip
       arch:
         - arm64
   hardenedRuntime: true
@@ -45,16 +50,41 @@ dmg:
 
 publish:
   provider: github
-  owner: dorkos
-  repo: core
+  owner: dork-labs
+  repo: dorkos
 
 asar: true
 asarUnpack:
   - '**/node_modules/better-sqlite3/**'
+  # node-pty backs the embedded terminal (services/terminal/); like
+  # better-sqlite3 its .node binary must be a real file for dlopen.
+  - '**/node_modules/node-pty/**'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk/**'
+  # express.static (app.ts's production SPA serving) cannot reliably read
+  # range-requested static assets from inside app.asar — the packaged
+  # window now loads the renderer via the bundled server's own
+  # http://localhost:<port> (see window-manager.ts) rather than file://, so
+  # these files must be real files on disk, not virtual asar entries.
+  - 'dist/renderer/**'
+  # ensureCoreExtensions's fs.cp() (staging bundled extensions into
+  # DORK_HOME) can't read this source tree from inside app.asar either —
+  # same class of read limitation as dist/renderer above.
+  - 'core-extensions/**'
 
 extraResources:
   - from: 'node_modules/better-sqlite3'
     to: 'node_modules/better-sqlite3'
 
-npmRebuild: true
+# electron-builder's own automated native-module rebuild (the historical
+# default for npmRebuild: true) was observed producing a better-sqlite3
+# binary that reported a plausible size/hash yet still failed to `dlopen` at
+# runtime with a misleading "wrong NODE_MODULE_VERSION" error — even with
+# `buildDependenciesFromSource: true` forcing a from-source compile. A
+# direct call to the same underlying `@electron/rebuild` CLI (not routed
+# through electron-builder's wrapper) reliably produces a working binary —
+# see scripts/rebuild-natives.ts, which the `pack`/`dist` scripts and the
+# desktop-release workflow run immediately before electron-builder (NOT
+# `pnpm build`, which must stay ABI-neutral for the rest of the monorepo).
+# Disabled here so electron-builder packages that already-correct binary
+# as-is instead of redoing (and re-breaking) the work.
+npmRebuild: false

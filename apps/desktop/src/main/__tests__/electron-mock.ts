@@ -193,6 +193,7 @@ export const screen = {
 
 export const dialog = {
   showMessageBox: vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false })),
+  showErrorBox: vi.fn(),
 };
 
 export const Menu = {
@@ -225,6 +226,7 @@ export function resetElectronMock(): void {
   screen.getPrimaryDisplay = vi.fn(() => PRIMARY_DISPLAY);
 
   dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+  dialog.showErrorBox = vi.fn();
 
   Menu.buildFromTemplate = vi.fn((template: unknown) => ({ template }));
   Menu.setApplicationMenu = vi.fn();
