@@ -9,7 +9,11 @@ vi.mock('../server-process', () => ({
 }));
 vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
 vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
-vi.mock('../auto-updater', () => ({ setupAutoUpdater: vi.fn() }));
+vi.mock('../auto-updater', () => ({
+  setupAutoUpdater: vi.fn(),
+  restartToUpdate: vi.fn(),
+  getLastUpdateStatus: vi.fn(() => null),
+}));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test
@@ -264,6 +268,75 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
 
     expect(win.focus).toHaveBeenCalledTimes(1);
     expect(win.webContents.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('update IPC handlers', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Look up the handler `../index` registered for `ipcMain.on(channel, ...)`. */
+  async function getOnHandler(channel: string): Promise<(...args: unknown[]) => unknown> {
+    const { ipcMain } = await getElectronMock();
+    const call = vi.mocked(ipcMain.on).mock.calls.find(([ch]) => ch === channel);
+    if (!call) throw new Error(`no ipcMain.on registered for "${channel}"`);
+    return call[1] as (...args: unknown[]) => unknown;
+  }
+
+  /** Look up the handler `../index` registered for `ipcMain.handle(channel, ...)`. */
+  async function getInvokeHandler(
+    channel: string
+  ): Promise<(event: Electron.IpcMainInvokeEvent) => unknown> {
+    const { ipcMain } = await getElectronMock();
+    const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === channel);
+    if (!call) throw new Error(`no ipcMain.handle registered for "${channel}"`);
+    return call[1] as (event: Electron.IpcMainInvokeEvent) => unknown;
+  }
+
+  it('update:restart routes to restartToUpdate', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const autoUpdater = await import('../auto-updater');
+    await import('../index');
+
+    const handler = await getOnHandler('update:restart');
+    handler();
+
+    expect(autoUpdater.restartToUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('get-update-status replays the last status to the tracked renderer, and rejects a stray sender', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    const autoUpdater = await import('../auto-updater');
+    vi.mocked(autoUpdater.getLastUpdateStatus).mockReturnValue({
+      state: 'downloaded',
+      version: '2.0.0',
+    });
+
+    await import('../index');
+    await app.emit('ready');
+
+    const handler = await getInvokeHandler('get-update-status');
+
+    // The tracked renderer recovers the downloaded status on mount.
+    expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toEqual({
+      state: 'downloaded',
+      version: '2.0.0',
+    });
+    // A stray webContents (devtools, an auxiliary window) gets nothing.
+    expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBeNull();
   });
 });
 

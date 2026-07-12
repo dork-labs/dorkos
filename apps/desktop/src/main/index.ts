@@ -3,7 +3,7 @@ import { createWindow } from './window-manager';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
-import { setupAutoUpdater } from './auto-updater';
+import { setupAutoUpdater, restartToUpdate, getLastUpdateStatus } from './auto-updater';
 import {
   parseDeepLink,
   registerReadinessReset,
@@ -45,6 +45,18 @@ function createTrackedWindow(): void {
  */
 function getMainWindow(): BrowserWindow | null {
   return mainWindow;
+}
+
+/**
+ * Whether an `invoke` came from the tracked main window's renderer. Guards the
+ * read-once/replay handlers (`get-pending-navigate`, `get-update-status`) so a
+ * stray invoke (devtools, a future auxiliary window) can't steal state meant
+ * for the primary renderer. `webContents.id` is unique per instance, so this
+ * naturally rejects a destroyed-then-recreated window's old id.
+ */
+function isTrackedRenderer(event: Electron.IpcMainInvokeEvent): boolean {
+  const win = getMainWindow();
+  return !!win && !win.isDestroyed() && event.sender.id === win.webContents.id;
 }
 
 /**
@@ -107,6 +119,25 @@ if (!gotTheLock) {
     event.returnValue = app.getVersion();
   });
 
+  // Update surface for the renderer's in-app card (see auto-updater.ts). The
+  // card triggers a restart-to-install; the updater pushes lifecycle events
+  // back on the `update:status` channel and retains the last actionable status
+  // for `get-update-status` to replay to a renderer that mounted after the
+  // event fired (macOS close→reopen). No-ops in dev (unpackaged builds can't
+  // apply updates).
+  ipcMain.on('update:restart', () => {
+    restartToUpdate();
+  });
+
+  // Replay the last `downloading`/`downloaded` status — called once by the
+  // client's useDesktopUpdater hook right after it subscribes on mount, so a
+  // window recreated after the event recovers a waiting update. Guarded to the
+  // tracked renderer like `get-pending-navigate`.
+  ipcMain.handle('get-update-status', (event) => {
+    if (!isTrackedRenderer(event)) return null;
+    return getLastUpdateStatus();
+  });
+
   // Renderer-readiness + pending-navigation pickup (see navigation.ts) —
   // called by the client's useElectronNavigate hook right after it
   // subscribes to `onNavigate` on mount. Only the tracked main window's
@@ -114,8 +145,7 @@ if (!gotTheLock) {
   // a future auxiliary window) must not steal the pending path or trick
   // requestNavigate into hot-path-sending to the wrong webContents.
   ipcMain.handle('get-pending-navigate', (event) => {
-    const win = getMainWindow();
-    if (!win || win.isDestroyed() || event.sender.id !== win.webContents.id) return null;
+    if (!isTrackedRenderer(event)) return null;
     return resolvePendingNavigate(event.sender.id);
   });
 
