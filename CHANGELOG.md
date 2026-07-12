@@ -13,6 +13,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.46.0] - 2026-07-12
+
+> The Mac desktop app finally works end to end and ships with its own downloadable installer. A new floating panel lets you pop a live widget or an MCP app out of the chat and keep it in view while you work elsewhere. You can review an agent's edits change by change, and your agent can now see its own preview (console errors, network requests, and a screenshot) to fix its own mistakes. Telemetry, crash reporting, and debug tracing are all new, and all opt-in. A security-hardening pass closes several real gaps, and the docs got a full plain-language rewrite.
+
+### Added
+
+**Desktop app**
+
+- There's now a stable download link for the DorkOS desktop app on Mac.
+- You can drag the desktop app window from the top of the sidebar and the header. The sidebar no longer hides behind the Mac window buttons, whether it's expanded or collapsed. Links you click in the app now open in your regular browser instead of popping up a broken, chrome-less extra window (DOR-253)
+
+**Pop things out into a floating window**
+
+- Pop an interactive app or a live widget, like a tic-tac-toe board, out of the chat into a small floating window that stays on top while you move around DorkOS. It keeps working there, even after you switch sessions, until you close it. Use the pop-out button, or let the app open itself that way (DOR-296, DOR-297, DOR-298)
+- On phones, popped-out widgets and apps dock to a bottom sheet instead: it opens at half height so you can glance at it, drags up for more room, and drags down to a small bar you can tap to bring it back or close (DOR-299)
+
+**Review your agent's edits**
+
+- Review your agent's edits change by change. When an agent edits a file, the workbench now opens a diff showing exactly what changed, and you can accept or reject each block on its own. Reject undoes just that block on disk and leaves the rest; accept keeps it. There's a reject-all, a mark-reviewed, a side-by-side view on wide screens, and a toggle to compare against your last commit instead. If the file changes while you're reviewing, you get a calm refresh notice, never a silent overwrite. Text diffs work in the web app and the Obsidian plugin; turn off the automatic open with `workbench.autoOpenDiff` (DOR-212)
+- Changed images get the same treatment, GitHub-style: see before and after side by side, drag a divider across them, or blend between them with a slider. Restore the previous image with one click, or mark the new one reviewed. A brand-new image says so honestly instead of pretending there's something to compare (DOR-212)
+
+**Your agent can see its own preview**
+
+- Your agent can now check its own work in the workbench browser. After it opens a page, it can read the console errors and failed network requests and take a screenshot of the rendered page, so it can catch a broken layout, a stray error, or a blank screen and fix it, all without you describing what went wrong (DOR-213)
+
+**Get notified**
+
+- Get a message when a scheduled task finishes, so you don't have to sit and watch it. Connect a channel like Telegram to the agent, then turn on "Message me when tasks finish." Failures always reach you; turn the switch off to skip the runs that succeed. One-time setup: message your bot once so it's allowed to text you back, and turn on "Agent can start conversations."
+
+**Opt-in telemetry, crash reports, and diagnostics**
+
+- DorkOS can now send an anonymous weekly heartbeat so the project can roughly count how many people are actively running it. It's off by default and asks once, on first run, showing you the exact data before you choose. It only ever sends a random install id, the version, your OS and chip type, which runtimes you have on, whether the tunnel and cloud link are enabled, and rough counts, never your prompts, code, file paths, or session content. See exactly what's collected at dorkos.ai/telemetry (DOR-293)
+- DorkOS can send a crash report to your own Sentry or self-hosted GlitchTip project when something breaks, so a bug can get fixed without anyone asking for your log files. It's off by default and is its own separate choice, never turned on by the telemetry banner. It sends only the error type and a cleaned-up stack trace (which function, file, and line), never the error message, your file paths, tokens, or anything from your sessions. Turn it on by setting `SENTRY_DSN` and flipping `telemetry.errorReporting` (DOR-293)
+- A new `dorkos --debug-trace` mode writes a local timing file you can send when reporting a bug. It records how long session turns, agent calls, relay messages, and task runs take, durations and counts only, never your prompts, file paths, or anything you typed. It's off unless you ask for it, and the file stays on your machine (DOR-294)
+
+**Setup and support**
+
+- New: `dorkos doctor` checks your setup and tells you what's wrong in plain words. It checks your Node version, whether your data folder is writable, whether the port is free, whether the Claude Code CLI is installed, whether extensions can compile, and whether your login and tunnel settings make sense. It reads your config and changes nothing.
+- Report a bug or ask for a feature without hunting down your setup details. Open the command palette (Cmd/Ctrl+K) and pick "Report an issue," use the new help menu at the bottom of the sidebar, or run `dorkos feedback` in your terminal. DorkOS opens a prefilled GitHub issue with your version, operating system, runtimes, and on/off settings already filled in. You see and edit everything before you submit; only safe on/off values are included, never tokens, file paths, or anything from your sessions (DOR-292)
+
+**Docs and pricing**
+
+- New docs pages: a plain-language "What is DorkOS?" intro for people who don't code, a troubleshooting and FAQ page, a glossary, a guide to the workbench (files, terminal, and browser next to your chat), and a guide to publishing your own marketplace packages. The Generative UI guide also picked up a real recording of tic-tac-toe in action.
+- New: a [Pricing](https://dorkos.ai/pricing) page that spells out our money plan before anything actually costs money. Everything DorkOS ships as free stays free, forever; money will only ever come from a future cloud service, and we'll always announce a real price here before you see a bill.
+
+**Small stuff**
+
+- Navigate tab strips with the keyboard: arrow keys move between tabs, Home/End jump to the ends, Delete closes the focused tab.
+- Celebrations now come in six styles instead of one: a bigger multi-stage burst, aerial fireworks, side cannons, a calm confetti drizzle, a golden star pop, or an emoji shower with any glyph you like. Agents can trigger any of them, and the Dev Playground has a new Celebrations showcase to try each one.
+- The workbench browser now keeps each document's back-and-forward history separate, so switching between browser tabs doesn't scramble your navigation history (DOR-252)
+
+### Changed
+
+- In the desktop app, most of the interface now reads like an app instead of a document: text in the sidebar and navigation is no longer selectable. Chat messages, code blocks, and other content you'd actually want to copy still are (DOR-253)
+- The little faces agents use to show how things are going got a real glow-up. Every face now has eyebrows and its own body language: a happy face bobs gently and breaks into a closed-eye smile every so often, a sad one sits heavy with a slow tear, a determined one furrows its brow while tiny steam wisps rise, a sheepish one blushes as a sweat bead slides down, a surprised one startles with its brows shooting up as its mouth pops open, a thinking face glances around while its dots ripple, heart-eyes pulse each to their own beat, and the celebrating face bounces with a happy squash on every landing. Blinks are more human too, with the occasional double-blink. Everything still matches your theme in light and dark; if you prefer reduced motion, the faces hold still but stay just as expressive.
+- X and O now have their own colors in board games like tic-tac-toe, X in blue and O in amber, so you can read the board at a glance. The colors stay distinct for colorblind players in both light and dark themes. If the agent styles a square itself, that styling still wins.
+- Friendlier wording on old game boards and buttons: an out-of-date board now says "This board is from an earlier turn, play on the newest one," and an old button says "This one's from an earlier message," instead of the jargon-y "Superseded" label.
+- The docs got a full makeover. Every page was rewritten in plain language, checked against the code, and organized around what you're trying to do. The sidebar now groups guides by activity (daily driving, making it yours, going autonomous, scaling to a fleet), and the landing page routes you by who you are instead of listing every page. Stale docs are gone: pages no longer describe commands, methods, or behaviors that don't exist anymore (#207)
+- The dorkos.ai privacy and cookie pages now spell out exactly what analytics would collect if we ever turn them on: page visits and a few clicks, no session recording, nothing until you accept the cookie banner. Analytics stays off, and with no key configured the site makes zero requests to PostHog (DOR-268)
+- The remote-access screens and the tunnel guide now tell you up front what setup takes: about 2 minutes, one time, to create your owner login and paste a free ngrok token. After that, approving from your phone really is one tap (DOR-244)
+- Your Telegram and Slack bot tokens are no longer saved as plain text. DorkOS now moves each token into your computer's encrypted store and keeps only a pointer to it in the settings file, so a leaked or shared config file no longer exposes your bots. Bots you already connected keep working; their tokens are moved for you the first time DorkOS starts, with nothing to reconfigure (DOR-280)
+- Telemetry consent is now one clear choice covering both the new heartbeat and the existing marketplace install stats, instead of a marketplace-only banner. Everything stays off until you say yes, and you can change your mind anytime in settings (DOR-293)
+- When an agent compacts its context to free up room, the status strip now shows a clean progress bar that starts when compaction begins and clears when it finishes, and it works the same way across every coding agent, not just one. If a compaction fails, you see the reason inline instead of a stuck indicator (DOR-110)
+
+### Fixed
+
+**Desktop app**
+
+- The desktop app now starts correctly when installed from the DMG. Before, its built-in server was missing from the package, so the app sat in the Dock with no window and no error; if the server ever fails to start now, the app tells you what went wrong instead of silently doing nothing. App updates now install correctly, and the embedded terminal works in the installed app.
+- The Mac desktop app now includes everything it needs to run Claude Code out of the box: the Claude Code program ships inside the app and starts up right away, so your agents can run without a separate install.
+- Extensions, including the built-in Linear dashboard and sidebar, now load in the desktop app. Before, every extension request went to the desktop window itself instead of the DorkOS server, so the extension system silently gave up on startup (DOR-243, DOR-255)
+- The update card no longer tells you to run `npm update -g dorkos`, a terminal command that updates the CLI, not the app you're using. When the desktop app has downloaded a new version, the sidebar now shows a simple "Update ready, restart to install" card, and the button restarts the app to finish the update.
+
+**Game boards (tic-tac-toe and friends)**
+
+- A very fast double-click, or any burst of clicks, on a game board can no longer send more than one move. The first click wins instantly; the rest are ignored. Before, clicks landing in the same instant could all slip through and corrupt the game.
+- Boards no longer treat a blank space as a real mark. Some agents write a space character for an empty square, which used to draw a phantom dot in every empty cell, garble the square's screen-reader name, and, on a completely empty board, declare victory with a stroke through a row of nothing. Blank squares are now truly blank.
+- The victory stroke is now what it was meant to be: a thin, softly translucent line through the winning squares, colored to match the win. It used to render as a thick black bar that buried the marks beneath it.
+- The board now always matches the agent's actual moves: it works out the new game state first, then draws from that state, so the two can't drift apart. If the agent's game record and what's drawn on screen ever disagree, even over a bit of padding or a stray blank line in how the agent wrote it down, the board trusts the record, draws any mark that's missing, and locks that square, without ever erasing or changing a mark you can already see.
+- Widgets no longer flash a "couldn't be rendered" error while they're still arriving. When the agent streams a widget, like a game board, the reply sometimes paused at just the wrong spot, showing an error card for a split second before the widget popped in. Now a widget that's mid-arrival keeps its calm loading shimmer until it's truly done; the error card only appears if the finished widget is genuinely broken.
+- Clicking a game-board square now keeps your mark on the board while the agent replies. Before, the mark vanished the instant you clicked and the whole widget flickered through its entrance animation again.
+
+**Claude Code, Codex, and OpenCode sessions**
+
+- Stop the stray "No response requested." reply that could appear before your message in a Claude Code session. Your messages now always run as the next turn, with nothing slipped in first.
+- DorkOS now finds your Claude Code sessions even when you use a custom Claude config folder (`CLAUDE_CONFIG_DIR`); sessions used to run and bill normally but never show up in your session list (DOR-250)
+- Installing a Claude Code plugin now actually puts its commands and skills where your agents can use them. Before, a project install would report success but quietly project zero files, so neither DorkOS sessions nor the `claude` CLI could see the plugin. The pre-configured official Anthropic marketplace works now too, and real published plugins like `hookify` are no longer rejected over a harmless naming quirk that Claude Code itself accepts.
+- Codex and OpenCode conversations now keep their history when the DorkOS server restarts. Every completed reply is saved to disk the moment its turn finishes, so the full conversation is right where you left it.
+- OpenCode sessions keep the same id after you restart the DorkOS server. Before, a restart quietly re-keyed every OpenCode conversation under a new id, so bookmarks and open tabs hit a dead "session not found" page while the same conversation reappeared in the list as a stranger (DOR-251)
+- Codex sessions no longer slowly fill your disk with logs; the Codex engine no longer writes endless debug records to its log database (DOR-188)
+- Sessions that don't belong to any project no longer get announced to every open cockpit. Before, a Codex or OpenCode session with no working directory could show up as a nameless ghost row under agents it had nothing to do with (DOR-202)
+- Enabling a coding agent whose command-line tool isn't installed no longer stops DorkOS from starting; that agent is skipped with a warning and everything else works.
+
+**Scheduled tasks and usage**
+
+- Scheduled task history now shows the truth: finished runs stay finished, even after a restart. Runs used to get stuck showing "running" forever even though they'd actually succeeded, and a server restart could rewrite that entire successful history to "failed" (DOR-248, DOR-249)
+- Creating a scheduled task now shows its next run time right away, instead of only after refreshing the task list.
+- The usage item in the status bar now actually shows your Claude subscription usage, including a less common weekly usage window some accounts have. It updates at the end of every reply with how much of your rate-limit window you've used and when it resets. Before, it stayed empty unless you were about to hit a limit (DOR-99)
+- The Marketplace card in Settings > Extensions now says "Required" instead of showing an on/off switch that did nothing. If you flipped that dead switch in the past, Marketplace turns itself back on (DOR-122)
+- A brand-new install no longer prints a scary "initial scan failed" warning at startup. Having no Claude Code sessions yet is normal, and the log now treats it that way (DOR-247)
+
+**Sign-in, working directories, and setup**
+
+- Signing in after `dorkos auth enable` now works on a fresh install. Before, turning on login and then signing in failed with a server error unless you happened to set a secret environment variable by hand, and nothing told you it was needed. DorkOS now creates and remembers that secret for you the first time you enable login, so sign-in just works. This also unblocks exposing your instance over a tunnel, which requires login first (DOR-242)
+- DorkOS installed from npm or the one-liner now correctly sets up its built-in extensions (Marketplace, Linear, Hello World) on first run, and the Marketplace tab itself now loads instead of failing; the published package was silently missing the files it needed (DOR-245, DOR-256)
+- Fixed the default working directory sometimes pointing outside the allowed folder, which could block opening a terminal or starting a new session. The git status panel now falls back to your workspace's real default folder when none is picked, instead of wherever the server process happened to start (DOR-266)
+- Building DorkOS from a fresh checkout now works on the first try; a naming collision between the root project and the CLI package used to make the build trip over its own files (DOR-190)
+- The docs, the install script, and the website now all correctly say DorkOS requires Node.js 22 or later, instead of the outdated "18 or later" that printed a wall of warnings on install (DOR-246)
+- Opening the same terminal in a second window no longer silently kills it in the first; the first window now shows a note that the session moved. Reconnecting after being away also tells you when some output was dropped (DOR-257)
+- The status bar no longer shows a stray thin scrollbar under its fade edge, and the chat message list hides its scrollbar the standard way (DOR-164)
+
+**Agent messaging safety**
+
+- Agent-to-agent call budgets now actually stop the spending, not just the mailbox copy. Before, a message that had run out of budget was correctly refused delivery, but the target agent still ran a full, paid turn anyway. The budget check now happens once, up front: an out-of-budget message is dead-lettered, no agent turn starts, and a caller waiting on a reply is told immediately instead of timing out (DOR-260)
+- The "agent can start conversations" switch on a channel now controls every way an agent could message you, not just the built-in "notify me" action. Before, an agent could still reach you on Telegram or Slack by addressing the raw channel directly even with the switch off. Replying to something you sent first, and your task-done notifications, keep working exactly as before (DOR-239, DOR-277)
+- Installing a marketplace package can no longer plant a shortcut that reaches outside where it's installed. A package could previously ship a symlink that, once copied and synced, let it read or write files outside its own folder. Every symlink is now dropped while the package is being staged, and each one is noted in the install log. Real packages are unaffected; they're plain files and folders, never shortcuts (DOR-279)
+
+**Docs media pipeline**
+
+- Product videos and screenshots in the docs now fill their frame edge to edge; before, they showed a gap at the top and were cut off at the sides.
+- Video previews in the docs and release notes now show the finished widget instead of a loading skeleton, and a botched capture can no longer publish a set with missing files. The capture pipeline itself now starts and stops cleanly between runs instead of occasionally hanging or recording against the wrong server.
+
+### Security
+
+- Hardening pass on the parts of DorkOS that decide what a package can do and who can reach it: marketplace installs can no longer be tricked into running a command through a booby-trapped source link, your login secret and any chat-bot tokens are now kept private on disk and readable only by you, and the key that protects the tool endpoint is checked in a way that gives nothing away. Full write-up in `research/20260711_security-hardening-audit.md`.
+- Sign-in and sign-up now slow down after too many tries from the same place, so no one can sit there guessing your password. A few mistyped tries still work fine (DOR-281)
+- Cleared the last critical security warning in our test tooling; `npm audit` on the DorkOS source no longer reports any critical findings (DOR-168)
+
 ## [0.45.1] - 2026-07-09
 
 > A same-day fix for widget interactions: clicks and form submits with bigger payloads no longer lose their data.
@@ -368,27 +496,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.38.0] - 2026-04-11
-
-> Agent creation polish and chat input reliability — new session navigation after agent creation, improved directory picker, and three fixes that ensure the textarea is always focused and typeable after switching agents.
-
-### Added
-
-- Navigate to new session after creating an agent
-- Add PathInput component, improve ConfigureStep layout, allow existing dirs
-
-### Fixed
-
-- Include session param in setDir navigation to fix chat input
-- Ensure session param on agent switch so textarea gets focus
-- Resolve textarea focus loss after interactive mode exit
-
 ---
 
 ---
 
----
+Older releases (v0.1.0 – v0.38.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.38.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.38.0.md).
 
-Older releases (v0.1.0 – v0.37.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.37.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.37.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.45.1...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.46.0...HEAD

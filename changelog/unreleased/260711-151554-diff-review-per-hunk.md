@@ -1,3 +1,0 @@
-### Added
-
-- Review your agent's edits change by change. When an agent edits a file, the workbench now opens a diff showing exactly what changed — and lets you accept or reject each block on its own. Reject undoes just that block on disk and leaves the rest; accept keeps it. There's a reject-all, a mark-reviewed, a side-by-side view on wide screens, and a toggle to compare against your last commit instead. If the file changes while you're reviewing, you get a calm refresh notice, never a silent overwrite. Text diffs work in the web app and the Obsidian plugin. Turn the automatic open off with `workbench.autoOpenDiff` (DOR-212)

@@ -1,0 +1,76 @@
+{
+  "label": "v0.46.0",
+  "archivedAt": "2026-07-12T19:21:29.453Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-07-12T19:20:56.790Z",
+    "runId": "20260712-141544"
+  },
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "gen-ui-widgets",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    }
+  ],
+  "count": 4,
+  "totalBytes": 1072860,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 90056,
+      "runId": "20260712-141544",
+      "capturedAt": "2026-07-12T19:19:26.479Z"
+    },
+    {
+      "source": "auto",
+      "file": "gen-ui-widgets-dark.png",
+      "surface": "gen-ui-widgets",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 64609,
+      "runId": "20260712-141544",
+      "capturedAt": "2026-07-12T19:19:26.479Z"
+    },
+    {
+      "source": "auto",
+      "file": "gen-ui-widgets-dark.webm",
+      "surface": "gen-ui-widgets",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 859694,
+      "durationMs": 7057,
+      "runId": "20260712-141544",
+      "capturedAt": "2026-07-12T19:19:26.479Z"
+    },
+    {
+      "source": "auto",
+      "file": "gen-ui-widgets-light.png",
+      "surface": "gen-ui-widgets",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 58501,
+      "runId": "20260712-141544",
+      "capturedAt": "2026-07-12T19:19:26.479Z"
+    }
+  ]
+}

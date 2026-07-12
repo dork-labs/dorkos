@@ -1,7 +1,22 @@
-# Changelog archive: v0.1.0 – v0.37.0
+# Changelog archive: v0.1.0 – v0.38.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.38.0] - 2026-04-11
+
+> Agent creation polish and chat input reliability — new session navigation after agent creation, improved directory picker, and three fixes that ensure the textarea is always focused and typeable after switching agents.
+
+### Added
+
+- Navigate to new session after creating an agent
+- Add PathInput component, improve ConfigureStep layout, allow existing dirs
+
+### Fixed
+
+- Include session param in setDir navigation to fix chat input
+- Ensure session param on agent switch so textarea gets focus
+- Resolve textarea focus loss after interactive mode exit
 
 ## [0.37.0] - 2026-04-11
 
