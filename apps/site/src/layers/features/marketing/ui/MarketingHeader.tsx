@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Download } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
 import { GITHUB_OUTBOUND_HREF } from '@/config/site';
-import { trackGithubClick } from '@/lib/analytics';
+import { trackGithubClick, trackHeroDownload } from '@/lib/analytics';
+import { usePlatform } from '../lib/use-platform';
 
 /** GitHub mark — lucide dropped its brand glyph, so inline the official path. */
 function GitHubMark() {
@@ -17,6 +19,13 @@ function GitHubMark() {
 
 export function MarketingHeader() {
   const [isScrolled, setIsScrolled] = useState(false);
+  const platform = usePlatform();
+
+  // OS-aware primary CTA. macOS visitors get a native download; everyone else
+  // (and the stable pre-hydration default) scrolls to the install section.
+  const isMac = platform === 'mac';
+  const ctaHref = isMac ? '/download/mac' : '#install';
+  const ctaLabel = isMac ? 'Download' : 'Get started';
 
   useEffect(() => {
     let ticking = false;
@@ -47,17 +56,21 @@ export function MarketingHeader() {
         paddingBottom: isScrolled ? '12px' : '20px',
       }}
     >
-      <div className="flex w-full items-center justify-between">
-        <a
-          href={GITHUB_OUTBOUND_HREF}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="DorkOS on GitHub"
-          onClick={() => trackGithubClick('header')}
-          className="text-warm-gray-light hover:text-brand-orange transition-smooth flex w-16 items-center"
-        >
-          <GitHubMark />
-        </a>
+      {/* Equal-width flanks (`flex-1`) keep the logo dead-center regardless of
+          how wide the right-hand CTA cluster grows. */}
+      <div className="flex w-full items-center justify-between gap-3">
+        <div className="flex flex-1 items-center">
+          <a
+            href={GITHUB_OUTBOUND_HREF}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="DorkOS on GitHub"
+            onClick={() => trackGithubClick('header')}
+            className="text-warm-gray-light hover:text-brand-orange transition-smooth flex items-center"
+          >
+            <GitHubMark />
+          </a>
+        </div>
         <Link href="/" className="flex flex-col items-center gap-1.5">
           <DorkLogo
             size={120}
@@ -75,12 +88,24 @@ export function MarketingHeader() {
             DorkOS
           </span>
         </Link>
-        <Link
-          href="/docs"
-          className="text-2xs text-warm-gray-light hover:text-brand-orange transition-smooth w-16 text-right font-mono tracking-[0.15em] uppercase"
-        >
-          Docs
-        </Link>
+        <div className="flex flex-1 items-center justify-end gap-4 sm:gap-5">
+          {/* Docs is duplicated in the bottom pill nav, so it yields on the
+              narrowest screens to keep the CTA from ever overflowing. */}
+          <Link
+            href="/docs"
+            className="text-2xs text-warm-gray-light hover:text-brand-orange transition-smooth hidden font-mono tracking-[0.15em] uppercase sm:inline"
+          >
+            Docs
+          </Link>
+          <a
+            href={ctaHref}
+            onClick={isMac ? () => trackHeroDownload('nav') : undefined}
+            className="bg-brand-orange text-cream-white text-2xs focus-visible:ring-brand-orange/50 inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 font-mono font-medium tracking-[0.08em] uppercase transition-colors hover:bg-[#C94E00] focus-visible:ring-2 focus-visible:outline-none"
+          >
+            {isMac && <Download size={12} aria-hidden="true" />}
+            {ctaLabel}
+          </a>
+        </div>
       </div>
     </header>
   );
