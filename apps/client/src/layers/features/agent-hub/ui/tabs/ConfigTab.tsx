@@ -67,11 +67,6 @@ function AccordionSection({
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Retrieve agent's tags from the manifest (field is not in base schema). */
-function getAgentTags(agent: AgentManifest): string[] {
-  return ((agent as Record<string, unknown>).tags as string[] | undefined) ?? [];
-}
-
 /** Server GET response augments manifest with convention file content. */
 type AgentWithConventions = AgentManifest & {
   soulContent?: string | null;
@@ -85,10 +80,10 @@ type AgentWithConventions = AgentManifest & {
 /**
  * Config tab for the Agent Hub panel.
  *
- * Renders agent metadata (description, runtime, directory, tags) at the top,
- * followed by collapsible accordion sections for Channels and Advanced
- * settings. Tools & MCP moved to the Toolkit tab. Personality editing
- * lives in the hero popover.
+ * Renders agent metadata (description, runtime, directory, capabilities) at
+ * the top, followed by collapsible accordion sections for Channels and
+ * Advanced settings. Tools & MCP moved to the Toolkit tab. Personality
+ * editing lives in the hero popover.
  */
 export function ConfigTab() {
   const { agent, projectPath, onUpdate, onPersonalityUpdate } = useAgentHubContext();
@@ -98,8 +93,8 @@ export function ConfigTab() {
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [newTag, setNewTag] = useState('');
-  const [showTagInput, setShowTagInput] = useState(false);
+  const [newCapability, setNewCapability] = useState('');
+  const [showCapabilityInput, setShowCapabilityInput] = useState(false);
 
   const startEditing = useCallback((field: string, currentValue: string) => {
     setEditingField(field);
@@ -116,28 +111,28 @@ export function ConfigTab() {
     [editValue, onUpdate]
   );
 
-  const handleAddTag = useCallback(() => {
-    const trimmed = newTag.trim();
+  const handleAddCapability = useCallback(() => {
+    const trimmed = newCapability.trim();
     if (!trimmed) return;
-    const currentTags = getAgentTags(agent);
-    if (!currentTags.includes(trimmed)) {
-      onUpdate({ tags: [...currentTags, trimmed] } as unknown as Partial<AgentManifest>);
+    const currentCapabilities = agent.capabilities ?? [];
+    if (!currentCapabilities.includes(trimmed)) {
+      onUpdate({ capabilities: [...currentCapabilities, trimmed] });
     }
-    setNewTag('');
-    setShowTagInput(false);
-  }, [newTag, agent, onUpdate]);
+    setNewCapability('');
+    setShowCapabilityInput(false);
+  }, [newCapability, agent, onUpdate]);
 
-  const handleRemoveTag = useCallback(
-    (tag: string) => {
-      const currentTags = getAgentTags(agent);
+  const handleRemoveCapability = useCallback(
+    (capability: string) => {
+      const currentCapabilities = agent.capabilities ?? [];
       onUpdate({
-        tags: currentTags.filter((t) => t !== tag),
-      } as unknown as Partial<AgentManifest>);
+        capabilities: currentCapabilities.filter((c) => c !== capability),
+      });
     },
     [agent, onUpdate]
   );
 
-  const tags = getAgentTags(agent);
+  const capabilities = agent.capabilities ?? [];
 
   return (
     <div className="flex flex-col">
@@ -206,47 +201,47 @@ export function ConfigTab() {
           </div>
         </div>
 
-        {/* Tags */}
+        {/* Capabilities */}
         <div className="space-y-1">
           <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
-            Tags
+            Capabilities
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            {tags.map((tag) => (
+            {capabilities.map((capability) => (
               <span
-                key={tag}
+                key={capability}
                 className="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
               >
-                {tag}
+                {capability}
                 <button
                   type="button"
-                  onClick={() => handleRemoveTag(tag)}
+                  onClick={() => handleRemoveCapability(capability)}
                   className="hover:text-destructive transition-colors"
-                  aria-label={`Remove tag ${tag}`}
+                  aria-label={`Remove capability ${capability}`}
                 >
                   <X className="size-3" />
                 </button>
               </span>
             ))}
-            {showTagInput ? (
+            {showCapabilityInput ? (
               <Input
                 autoFocus
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                onBlur={handleAddTag}
+                value={newCapability}
+                onChange={(e) => setNewCapability(e.target.value)}
+                onBlur={handleAddCapability}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddTag();
-                  if (e.key === 'Escape') setShowTagInput(false);
+                  if (e.key === 'Enter') handleAddCapability();
+                  if (e.key === 'Escape') setShowCapabilityInput(false);
                 }}
                 className="h-6 w-24 text-xs"
-                placeholder="tag name"
+                placeholder="capability name"
               />
             ) : (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowTagInput(true)}
+                onClick={() => setShowCapabilityInput(true)}
                 className="text-muted-foreground hover:text-foreground h-auto gap-0.5 px-1 py-0 text-xs"
               >
                 <Plus className="size-3" /> Add
