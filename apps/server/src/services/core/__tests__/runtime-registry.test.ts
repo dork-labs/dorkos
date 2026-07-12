@@ -1,12 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   RuntimeRegistry,
   RuntimeNotRegisteredError,
   applyConfiguredDefaultRuntime,
+  registerOptionalRuntime,
 } from '../runtime-registry.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
+import { logger } from '../../../lib/logger.js';
 
 // Minimal mock runtime for testing
 function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities>): AgentRuntime {
@@ -216,6 +218,91 @@ describe('RuntimeRegistry', () => {
 
       expect(applied).toBe(false);
       expect(registry.getDefaultType()).toBe('claude-code');
+    });
+  });
+
+  describe('registerOptionalRuntime', () => {
+    // Reproduces the launch-blocking crash: CodexRuntime/OpenCodeRuntime throw
+    // synchronously at construction when their CLI binary isn't found (the
+    // norm in the packaged desktop app, which bundles only the claude-code
+    // SDK). registerOptionalRuntime is the seam that isolates that failure.
+
+    it('returns the constructed runtime and registers it on success', () => {
+      const runtime = createMockRuntime('opencode');
+      const result = registerOptionalRuntime('OpenCodeRuntime', 'install the OpenCode CLI', () => {
+        registry.register(runtime);
+        return runtime;
+      });
+
+      expect(result).toBe(runtime);
+      expect(registry.has('opencode')).toBe(true);
+    });
+
+    it('swallows a synchronous construction throw, warns, and returns undefined', () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+
+      const result = registerOptionalRuntime('CodexRuntime', 'install the Codex CLI', () => {
+        throw new Error('Unable to locate Codex CLI binaries');
+      });
+
+      expect(result).toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [message, context] = warn.mock.calls[0]!;
+      expect(message).toContain('CodexRuntime');
+      expect(message).toContain('failed to initialize');
+      expect(message).toContain('install the Codex CLI');
+      expect((context as { err: Error }).err.message).toBe('Unable to locate Codex CLI binaries');
+
+      warn.mockRestore();
+    });
+
+    it('never registers a runtime whose constructor throws, so it stays unregistered', () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+
+      registerOptionalRuntime('CodexRuntime', 'install the Codex CLI', () => {
+        throw new Error('Unable to locate Codex CLI binaries');
+      });
+
+      expect(registry.has('codex')).toBe(false);
+      // applyConfiguredDefaultRuntime keeps tolerating this exact shape: a
+      // configured-but-unregistered default falls back to the built-in one
+      // rather than failing boot.
+      const applied = applyConfiguredDefaultRuntime(registry, 'codex');
+      expect(applied).toBe(false);
+      expect(registry.getDefaultType()).toBe('claude-code');
+
+      warn.mockRestore();
+    });
+
+    it('registers unaffected runtimes when a sibling runtime fails to construct', () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+      const claudeCode = createMockRuntime('claude-code');
+      registry.register(claudeCode);
+
+      // Codex fails to construct (missing CLI)...
+      const codexResult = registerOptionalRuntime('CodexRuntime', 'install the Codex CLI', () => {
+        throw new Error('Unable to locate Codex CLI binaries');
+      });
+
+      // ...but OpenCode, registered right after, still succeeds — one
+      // runtime's init failure never takes the others down with it.
+      const openCode = createMockRuntime('opencode');
+      const openCodeResult = registerOptionalRuntime(
+        'OpenCodeRuntime',
+        'install the OpenCode CLI',
+        () => {
+          registry.register(openCode);
+          return openCode;
+        }
+      );
+
+      expect(codexResult).toBeUndefined();
+      expect(openCodeResult).toBe(openCode);
+      expect(registry.has('claude-code')).toBe(true);
+      expect(registry.has('codex')).toBe(false);
+      expect(registry.has('opencode')).toBe(true);
+
+      warn.mockRestore();
     });
   });
 

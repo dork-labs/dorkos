@@ -366,5 +366,41 @@ export function applyConfiguredDefaultRuntime(
   return false;
 }
 
+/**
+ * Construct and register an optional runtime (Codex, OpenCode), tolerating a
+ * synchronous construction failure. The Codex and OpenCode SDKs resolve their
+ * CLI binary at `new` time and throw if it isn't found — the norm in the
+ * packaged desktop app, which bundles only the claude-code SDK. Left
+ * unguarded, that throw rejects `start()` and kills the whole server process
+ * (the launch-blocking crash this exists to prevent). Mirrors the "keep
+ * built-in default rather than fail boot" tolerance in
+ * {@link applyConfiguredDefaultRuntime} and the per-runtime degradation
+ * principle already established for session listing (ADR-0310): one optional
+ * runtime failing to initialize must never take the others — or the server —
+ * down with it.
+ *
+ * @param name - Human-readable runtime name for the warning log (e.g. `'CodexRuntime'`)
+ * @param remedy - Plain-language hint naming what to install or disable to silence the warning
+ * @param init - Synchronous callback that constructs, registers, and wires up the runtime; its return value passes through on success
+ * @returns The initialized runtime, or `undefined` if construction/registration failed
+ */
+export function registerOptionalRuntime<T>(
+  name: string,
+  remedy: string,
+  init: () => T
+): T | undefined {
+  try {
+    return init();
+  } catch (err) {
+    logger.warn(
+      `[Runtime] ${name} failed to initialize — this runtime is disabled for this session; ${remedy}`,
+      {
+        err,
+      }
+    );
+    return undefined;
+  }
+}
+
 /** Singleton — initialized at server startup. */
 export const runtimeRegistry = new RuntimeRegistry();
