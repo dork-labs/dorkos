@@ -87,6 +87,8 @@ export {
 // Hooks
 export { usePresentationMode } from './lib/use-presentation-mode';
 export { usePresentationContext } from './lib/presentation-context';
+export { usePlatform, detectPlatform } from './lib/use-platform';
+export type { Platform } from './lib/use-platform';
 
 // Types
 export type { NavLink } from './lib/types';
