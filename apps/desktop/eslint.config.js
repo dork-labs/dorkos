@@ -3,7 +3,10 @@ import nodeConfig from '@dorkos/eslint-config/node';
 import testConfig from '@dorkos/eslint-config/test';
 
 export default defineConfig([
-  { ignores: ['dist/**', 'release/**', '.turbo/**'] },
+  // core-extensions/ is build output copied by scripts/build-server.ts —
+  // raw apps/server source staged alongside dist/, not authored here
+  // (mirrors packages/cli's identical ignore for the same reason, DOR-245).
+  { ignores: ['dist/**', 'release/**', '.turbo/**', 'core-extensions/**'] },
   ...nodeConfig,
 
   // process.env carve-outs. The desktop app has no env.ts: the main process

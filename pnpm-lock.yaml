@@ -324,6 +324,12 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: 0.3.177
+        version: 0.3.177(@anthropic-ai/sdk@0.102.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
+      '@asteasolutions/zod-to-openapi':
+        specifier: ^8.5.0
+        version: 8.5.0(zod@4.4.3)
       '@dorkos/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -333,15 +339,57 @@ importers:
       '@dorkos/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@ngrok/ngrok':
+        specifier: ^1.7.0
+        version: 1.7.0
+      '@openai/codex':
+        specifier: 0.144.1
+        version: 0.144.1
+      '@openai/codex-sdk':
+        specifier: ~0.144.1
+        version: 0.144.1
+      '@opencode-ai/sdk':
+        specifier: ^1.17.13
+        version: 1.17.13
+      '@scalar/express-api-reference':
+        specifier: ^0.9.8
+        version: 0.9.8
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
+      conf:
+        specifier: ^15.1.0
+        version: 15.1.0
+      cors:
+        specifier: ^2.8.6
+        version: 2.8.6
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       electron-log:
         specifier: ^5.4.3
         version: 5.4.3
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      gray-matter:
+        specifier: ^4.0.3
+        version: 4.0.3
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
+      uuid:
+        specifier: ^13.0.0
+        version: 13.0.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@dorkos/client':
         specifier: workspace:*
@@ -373,6 +421,9 @@ importers:
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -11582,13 +11633,6 @@ packages:
       }
     engines: { node: '>=12' }
 
-  ip-address@10.1.0:
-    resolution:
-      {
-        integrity: sha512-XXADHxXmvT9+CRxhXg56LJovE+bmWnEWB78LB83VZTprKTmaC5QfruXocxzTZ2Kl0DNwKuBdlIhjL8LeY8Sf8Q==,
-      }
-    engines: { node: '>= 12' }
-
   ip-address@10.2.0:
     resolution:
       {
@@ -17681,7 +17725,7 @@ snapshots:
       node-gyp: 11.5.0
       ora: 5.4.1
       read-binary-file-arch: 1.0.6
-      semver: 7.7.4
+      semver: 7.8.5
       tar: 7.5.13
       yargs: 17.7.2
     transitivePeerDependencies:
@@ -24705,8 +24749,6 @@ snapshots:
 
   internmap@2.0.3: {}
 
-  ip-address@10.1.0: {}
-
   ip-address@10.2.0: {}
 
   ipaddr.js@1.9.1: {}
@@ -26054,7 +26096,7 @@ snapshots:
 
   node-abi@4.28.0:
     dependencies:
-      semver: 7.7.4
+      semver: 7.8.5
 
   node-addon-api@1.7.2:
     optional: true
@@ -26063,7 +26105,7 @@ snapshots:
 
   node-api-version@0.2.1:
     dependencies:
-      semver: 7.7.4
+      semver: 7.8.5
 
   node-exports-info@1.6.0:
     dependencies:
@@ -26086,9 +26128,9 @@ snapshots:
       make-fetch-happen: 14.0.3
       nopt: 8.1.0
       proc-log: 5.0.0
-      semver: 7.7.4
+      semver: 7.8.5
       tar: 7.5.13
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       which: 5.0.0
     transitivePeerDependencies:
       - supports-color
@@ -27429,7 +27471,7 @@ snapshots:
 
   socks@2.8.7:
     dependencies:
-      ip-address: 10.1.0
+      ip-address: 10.2.0
       smart-buffer: 4.2.0
 
   sonner@2.0.7(react-dom@19.2.5(react@19.2.5))(react@19.2.5):

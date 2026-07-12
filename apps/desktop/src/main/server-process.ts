@@ -2,6 +2,7 @@ import { utilityProcess, BrowserWindow, dialog, app } from 'electron';
 import { fork, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
+import log from 'electron-log';
 
 /**
  * Unified interface for server child process, abstracting the difference
@@ -78,6 +79,51 @@ function wrapChildProcess(proc: ChildProcess): ServerChild {
 }
 
 /**
+ * Resolve the server entry script for the current mode. Computed
+ * independently per mode rather than derived by string substitution — dev's
+ * `src/server-entry.ts` and prod's bundled `dist/server/server-entry.mjs`
+ * don't mirror each other's directory depth, so a naive dist→src swap would
+ * silently point at the wrong file.
+ *
+ * `__dirname` here is always `dist/main` — electron-vite compiles the main
+ * process to that fixed location in both dev and packaged builds.
+ */
+function resolveServerEntry(): string {
+  if (app.isPackaged) {
+    // Bundled by scripts/build-server.ts as ESM (`.mjs` — apps/server's
+    // source relies on `import.meta.url`, which esbuild can't polyfill for
+    // CJS output; see that script for why). Nested under dist/server/ (not
+    // flat dist/) so the bundle's own `__dirname`-relative reads — Drizzle
+    // migrations, core-extension source — land inside the desktop package
+    // instead of escaping it. See that script for the full layout rationale.
+    return path.join(__dirname, '../server/server-entry.mjs');
+  }
+  // Dev: run the original TypeScript source directly via tsx (system Node),
+  // not Electron's UtilityProcess — see spawnServer for why.
+  return path.resolve(__dirname, '../../src/server-entry.ts');
+}
+
+/**
+ * Forward a child's stdout/stderr to electron-log, line by line, so a crash
+ * is diagnosable from `~/Library/Logs` even when nothing is attached to the
+ * process (a packaged app has no terminal). Requires the child to have been
+ * spawned with `stdio: 'pipe'` for stdout/stderr — a `null` stream (any
+ * other stdio mode) is a silent no-op.
+ */
+function forwardOutputToLog(
+  stdout: NodeJS.ReadableStream | null,
+  stderr: NodeJS.ReadableStream | null
+): void {
+  const logLines = (level: 'info' | 'error') => (chunk: Buffer | string) => {
+    for (const line of chunk.toString().split('\n')) {
+      if (line.trim()) log[level]('[server]', line);
+    }
+  };
+  stdout?.on('data', logLines('info'));
+  stderr?.on('data', logLines('error'));
+}
+
+/**
  * Spawn the server process.
  *
  * In production (packaged app): uses Electron UtilityProcess (Electron's Node runtime).
@@ -89,24 +135,23 @@ function wrapChildProcess(proc: ChildProcess): ServerChild {
  */
 function spawnServer(entryPath: string, env: Record<string, string>): ServerChild {
   if (app.isPackaged) {
-    return wrapUtilityProcess(
-      utilityProcess.fork(entryPath, [], { env: { ...process.env, ...env } })
-    );
+    const proc = utilityProcess.fork(entryPath, [], {
+      env: { ...process.env, ...env },
+      stdio: 'pipe',
+    });
+    forwardOutputToLog(proc.stdout, proc.stderr);
+    return wrapUtilityProcess(proc);
   }
 
-  // Dev mode: use system Node via child_process.fork.
-  // The entry file is TypeScript — use tsx to run it. The production entry
-  // points at the compiled bundle (apps/desktop/dist/server-entry.js); in dev
-  // we run the original source instead, so map dist → src and .js → .ts.
-  const devEntry = entryPath
-    .replace(`${path.sep}dist${path.sep}`, `${path.sep}src${path.sep}`)
-    .replace(/\.js$/, '.ts');
+  // Dev mode: use system Node via child_process.fork. The entry file is
+  // TypeScript — use tsx to run it.
   const tsxBin = path.resolve(__dirname, '../../../../node_modules/.bin/tsx');
-  const cp = fork(devEntry, [], {
+  const cp = fork(entryPath, [], {
     execPath: tsxBin,
     env: { ...process.env, ...env },
-    stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   });
+  forwardOutputToLog(cp.stdout, cp.stderr);
   return wrapChildProcess(cp);
 }
 
@@ -120,18 +165,28 @@ export async function startServer(): Promise<number> {
   const port = await getFreePort();
   const dorkHome = path.join(app.getPath('home'), '.dork');
 
-  const serverEntry = path.join(__dirname, '../server-entry.js');
+  const serverEntry = resolveServerEntry();
   // In dev, electron-vite serves the renderer over HTTP (ELECTRON_RENDERER_URL,
   // e.g. http://localhost:5173). That cross-origin request is rejected by the
   // server's CORS allowlist, so whitelist the renderer origin explicitly. In a
-  // packaged build the renderer loads from file:// (no ELECTRON_RENDERER_URL),
-  // which the server already allows as an origin-less request.
+  // packaged build the renderer loads from the server's own localhost origin
+  // (see window-manager.ts's `createWindow`), which is same-origin — no CORS
+  // override needed there.
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+  // In production, point the server's SPA-serving fallback (app.ts's
+  // `finalizeApp`) at the packaged renderer assets. Those must be real files
+  // on disk, not virtual asar entries (electron-builder.yml unpacks
+  // dist/renderer/** for exactly this), hence `app.asar.unpacked`. Left
+  // unset in dev — the server isn't the one serving the renderer there.
+  const clientDistPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'renderer')
+    : undefined;
   child = spawnServer(serverEntry, {
     DORKOS_PORT: String(port),
     DORK_HOME: dorkHome,
     NODE_ENV: app.isPackaged ? 'production' : 'development',
     ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),
+    ...(clientDistPath ? { CLIENT_DIST_PATH: clientDistPath } : {}),
   });
 
   // Wait for the server to signal readiness

@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260712-005315",
+      "slug": "desktop-renderer-served-from-localhost",
+      "title": "Packaged desktop renderer is served by the bundled server over localhost",
+      "status": "accepted",
+      "created": "2026-07-12",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
       "id": "260711-154514",
       "slug": "otel-spans-local-debug-trace",
       "title": "OpenTelemetry spans are off by default and only ever export to a local debug-trace file",

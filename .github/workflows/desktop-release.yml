@@ -38,6 +38,14 @@ jobs:
       - name: Build desktop app
         run: pnpm --filter @dorkos/desktop build
 
+      # Flips better-sqlite3/node-pty to Electron's ABI right before
+      # packaging (electron-builder.yml has npmRebuild: false — see
+      # scripts/rebuild-natives.ts for why its built-in rebuild is bypassed).
+      # Deliberately NOT part of `pnpm build`: on a dev machine that flip
+      # poisons the shared pnpm store for plain-Node vitest monorepo-wide.
+      - name: Rebuild native modules for Electron
+        run: pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
+
       - name: Package DMG (unsigned)
         if: ${{ !vars.APPLE_DEVELOPER_CONFIGURED }}
         run: |
@@ -63,14 +71,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DorkOS-macOS-arm64
-          path: apps/desktop/release/*.dmg
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
 
+      # The .zip must ship alongside the .dmg: latest-mac.yml points
+      # electron-updater (Squirrel.Mac) at the zip as the update payload, so
+      # a release without it 404s every auto-update check. The dmg is only
+      # the human-facing installer.
       - name: Publish to GitHub Release
         if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
         uses: softprops/action-gh-release@v2
         with:
           files: |
             apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
             apps/desktop/release/latest-mac.yml
           draft: true
           generate_release_notes: true

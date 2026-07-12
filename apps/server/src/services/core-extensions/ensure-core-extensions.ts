@@ -27,6 +27,26 @@ import { logger } from '../../lib/logger.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
+ * When running from inside a packaged Electron `app.asar` archive, redirect
+ * to the real, unpacked sibling directory (`app.asar.unpacked/...`).
+ *
+ * Electron patches `fs` to make simple reads of `asarUnpack`'d files
+ * transparent, but that redirect doesn't reliably cover a recursive
+ * `fs.cp()` (this module's {@link copyDirectory}) from inside a
+ * UtilityProcess — the same class of limitation `app.ts` documents for
+ * `express.static`. The desktop app's `electron-builder.yml` unpacks
+ * `core-extensions/**`, so the real directory always exists at this
+ * substituted path when `.asar` appears at all; a no-op everywhere else
+ * (tsx dev, the tsc build, the CLI bundle) since none of those run from
+ * inside an asar archive.
+ *
+ * @param p - An absolute path, possibly pointing inside an `app.asar`.
+ */
+function resolveAsarUnpacked(p: string): string {
+  return p.replace(`.asar${path.sep}`, `.asar.unpacked${path.sep}`);
+}
+
+/**
  * Absolute path to the canonical core-extension source tree shipped with the
  * server.
  *
@@ -35,7 +55,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * `apps/server/dist/core-extensions/`. Asset files such as `extension.json`
  * are copied into the dist tree by the `build` script (tsc does not copy them).
  */
-const CORE_SOURCE_DIR = path.resolve(__dirname, '../../core-extensions');
+const CORE_SOURCE_DIR = resolveAsarUnpacked(path.resolve(__dirname, '../../core-extensions'));
 
 /** Read and parse a manifest file, returning `null` if it cannot be read or is invalid. */
 async function readManifest(manifestPath: string): Promise<ExtensionManifest | null> {
