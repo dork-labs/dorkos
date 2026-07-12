@@ -12,7 +12,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 10, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 12, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
             we mean.
@@ -28,7 +28,8 @@ export default function PrivacyPolicyPage() {
             </li>
             <li>
               This website collects almost nothing: your email if you subscribe, plus your name and
-              email if you choose to make an account.
+              email if you choose to make an account. If you accept the cookie banner, we also count
+              basic, anonymous page visits.
             </li>
             <li>
               We do not run ads, we do not sell your data, and we do not track you around the web.
@@ -126,16 +127,17 @@ export default function PrivacyPolicyPage() {
           <div className="space-y-3">
             <h3 className="text-charcoal text-lg font-medium">What about analytics and cookies?</h3>
             <p className="text-warm-gray leading-relaxed">
-              We do not run website analytics today. The site has PostHog, a privacy-friendly
-              analytics tool, wired in, but it stays completely off until we configure it. When it
-              is off, the site makes no requests to PostHog at all. If we turn it on, we will update
-              this page.
+              We use PostHog, a privacy-friendly analytics tool, to understand how the website is
+              used. Nothing is recorded until you accept the cookie banner: if you decline, or just
+              ignore it, we capture nothing at all. You can change your mind any time by clearing
+              the site&apos;s cookies.
             </p>
             <p className="text-warm-gray leading-relaxed">
-              If analytics are enabled, here is what that will mean: we count page visits and a few
-              clicks, like copying the install command. Nothing is recorded until you accept the
-              cookie banner. There is no session recording, we do not log what you type, and we
-              honor your browser&apos;s Do Not Track setting.
+              Here is what we count once you accept: page visits and a few clicks, like copying the
+              install command. That is it. There is no session recording, we do not log what you
+              type, we do not use tracking that follows you to other sites, and we honor your
+              browser&apos;s Do Not Track setting, which switches analytics off even if you
+              accepted.
             </p>
             <p className="text-warm-gray leading-relaxed">
               The cookies we set are the basic ones: a login cookie if you sign in, and a small

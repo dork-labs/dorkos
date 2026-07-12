@@ -15,8 +15,15 @@ export const siteConfig = {
   /**
    * Disable the cookie consent banner across the entire site.
    * Set to `true` to hide the banner completely.
+   *
+   * Keep this `false` while site analytics is live: the banner is the only
+   * opt-in path, and PostHog is opted out by default
+   * (`opt_out_capturing_by_default: true` in instrumentation-client.ts), so
+   * hiding the banner silently turns all capture off. See src/lib/analytics.ts.
+   * Only affects apps/site; the DorkOS app (server/client/desktop) collects no
+   * analytics from this setting.
    */
-  disableCookieBanner: true,
+  disableCookieBanner: false,
 } as const;
 
 export type SiteConfig = typeof siteConfig;
