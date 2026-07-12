@@ -1,7 +1,7 @@
 ---
 id: 260711-142049
 title: 'Diff base: per-session pre-edit snapshot over git working tree'
-status: proposed
+status: accepted
 created: 2026-07-11
 spec: diff-viewer
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 id: 260711-031624
 title: System-level task-completion notifications originate from a store terminal hook
-status: draft
+status: accepted
 created: 2026-07-10
 spec: task-completion-notifications
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: task-completion-notifications)
+Accepted
 
 ## Context
 

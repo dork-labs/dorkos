@@ -1,7 +1,7 @@
 ---
 id: 260711-175416
 title: PIP liveness via a pinned background session-stream slot, not a per-session connection pool
-status: proposed
+status: accepted
 created: 2026-07-11
 spec: gen-ui-pip
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

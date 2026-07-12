@@ -1,7 +1,7 @@
 ---
 id: 260710-024641
 title: Durable SQLite session-event store for log-backed runtimes
-status: draft
+status: accepted
 created: 2026-07-09
 spec: durable-event-log
 extractedFrom: durable-event-log
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: durable-event-log)
+Accepted
 
 ## Context
 

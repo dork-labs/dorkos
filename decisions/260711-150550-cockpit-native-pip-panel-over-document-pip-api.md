@@ -1,7 +1,7 @@
 ---
 id: 260711-150550
 title: Cockpit-native floating PIP panel instead of the browser Document Picture-in-Picture API
-status: proposed
+status: accepted
 created: 2026-07-11
 spec: pip-panel
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

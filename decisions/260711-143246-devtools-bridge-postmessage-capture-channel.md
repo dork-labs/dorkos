@@ -1,7 +1,7 @@
 ---
 id: 260711-143246
 title: 'DevTools bridge capture architecture: in-page shim over postMessage, server-buffered, Claude-Code read tools'
-status: proposed
+status: accepted
 created: 2026-07-11
 spec: devtools-bridge
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

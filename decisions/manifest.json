@@ -32,7 +32,7 @@
       "id": "260711-143246",
       "slug": "devtools-bridge-postmessage-capture-channel",
       "title": "DevTools bridge capture architecture: in-page shim over postMessage, server-buffered, Claude-Code read tools",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-11",
       "extractedFrom": "devtools-bridge",
       "specSlug": "devtools-bridge"
@@ -41,7 +41,7 @@
       "id": "260711-142049",
       "slug": "diff-base-session-snapshot-over-git-working-tree",
       "title": "Diff base: per-session pre-edit snapshot over git working tree",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-11",
       "extractedFrom": "diff-viewer",
       "specSlug": "diff-viewer"
@@ -50,7 +50,7 @@
       "id": "260711-031624",
       "slug": "system-level-task-completion-notifications",
       "title": "System-level task-completion notifications originate from a store terminal hook",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-07-10",
       "extractedFrom": "task-completion-notifications",
       "specSlug": "task-completion-notifications"
@@ -59,7 +59,7 @@
       "id": "260710-024641",
       "slug": "durable-session-event-store",
       "title": "Durable SQLite session-event store for log-backed runtimes",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-07-09",
       "extractedFrom": "durable-event-log",
       "specSlug": "durable-event-log"
@@ -2499,7 +2499,7 @@
       "id": "260711-150550",
       "slug": "cockpit-native-pip-panel-over-document-pip-api",
       "title": "Cockpit-native floating PIP panel instead of the browser Document Picture-in-Picture API",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-11",
       "extractedFrom": "pip-panel",
       "specSlug": "pip-panel"
@@ -2508,7 +2508,7 @@
       "id": "260711-150551",
       "slug": "pip-content-descriptors-routed-by-host-feature",
       "title": "PIP content as serializable descriptors routed by a host feature, not React nodes in the store",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-11",
       "extractedFrom": "pip-panel",
       "specSlug": "pip-panel"
@@ -2526,7 +2526,7 @@
       "id": "260711-175416",
       "slug": "pip-liveness-via-pinned-background-stream-slot",
       "title": "PIP liveness via a pinned background session-stream slot, not a per-session connection pool",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-11",
       "extractedFrom": "gen-ui-pip",
       "specSlug": "gen-ui-pip"

@@ -1,7 +1,7 @@
 ---
 id: 260711-150551
 title: PIP content as serializable descriptors routed by a host feature, not React nodes in the store
-status: proposed
+status: accepted
 created: 2026-07-11
 spec: pip-panel
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
