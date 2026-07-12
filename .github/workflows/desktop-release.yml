@@ -36,7 +36,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build desktop app
-        run: pnpm --filter @dorkos/desktop build
+        # Through turbo (not a bare pnpm --filter run) so workspace
+        # dependencies build first (^build): the renderer imports
+        # @dorkos/extension-api and friends, whose exports resolve to dist/
+        # — absent on a fresh runner unless the dependency graph builds.
+        run: pnpm exec turbo build --filter=@dorkos/desktop
 
       # Flips better-sqlite3/node-pty to Electron's ABI right before
       # packaging (electron-builder.yml has npmRebuild: false — see
