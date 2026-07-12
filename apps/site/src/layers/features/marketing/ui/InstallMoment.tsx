@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, useInView, useReducedMotion } from 'motion/react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Download } from 'lucide-react';
 import { trackHeroInstallCopy, type InstallMethod } from '@/lib/analytics';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
+import { usePlatform } from '../lib/use-platform';
 
 const SCRAMBLE_CHARS = '!@#$%&*_+-=<>?~';
 /** Frame cadence for the scramble effect. */
@@ -83,6 +84,8 @@ function useTextScramble(text: string, isActive: boolean) {
 export function InstallMoment() {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, amount: 0.3 });
+  const reducedMotion = useReducedMotion();
+  const platform = usePlatform();
   const [activeTab, setActiveTab] = useState('curl');
   const [copied, setCopied] = useState(false);
 
@@ -237,12 +240,62 @@ export function InstallMoment() {
         </motion.div>
 
         {/* "Run in terminal" hint + description */}
-        <motion.div variants={REVEAL} className="mb-10">
+        <motion.div variants={REVEAL} className="mb-6">
           <p className="text-warm-gray-light mb-1 font-mono text-xs tracking-[0.04em]">
             Run in your terminal
           </p>
           <p className="text-warm-gray-light font-mono text-sm">{activeMethod.description}</p>
         </motion.div>
+
+        {/*
+          OS-aware desktop download — a strong SECONDARY option, never a
+          replacement for the terminal install above. macOS visitors get a
+          real download card; everyone else gets a low-emphasis link. Hidden
+          until client-side platform detection settles (`'unknown'`) to avoid a
+          hydration mismatch and a content flash. The build is Apple-Silicon
+          only, so we say so plainly and point Intel Macs back at the terminal.
+        */}
+        {platform !== 'unknown' && (
+          <motion.div
+            key={platform}
+            initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="mb-10"
+          >
+            {platform === 'mac' ? (
+              <div className="flex flex-col items-center">
+                <a
+                  href="/download/mac"
+                  className="group inline-flex items-center gap-3 rounded-lg border border-[rgba(139,90,43,0.18)] bg-[rgba(255,255,255,0.55)] px-5 py-3 transition-all hover:-translate-y-px hover:border-[rgba(232,93,4,0.4)] hover:shadow-sm"
+                >
+                  <Download
+                    size={18}
+                    className="text-warm-gray-light group-hover:text-brand-orange transition-colors"
+                  />
+                  <span className="flex flex-col items-start leading-tight">
+                    <span className="text-charcoal text-sm font-medium">Download for Mac</span>
+                    <span className="text-warm-gray-light font-mono text-[11px] tracking-[0.02em]">
+                      Apple Silicon · no terminal needed
+                    </span>
+                  </span>
+                </a>
+                <p className="text-warm-gray-light mt-2 font-mono text-[11px] tracking-[0.02em]">
+                  On an Intel Mac? The install above works everywhere.
+                </p>
+              </div>
+            ) : (
+              <a
+                href="/download/mac"
+                className="text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1.5 font-mono text-xs tracking-[0.04em]"
+              >
+                <Download size={13} />
+                Desktop app for macOS
+                <span aria-hidden="true">→</span>
+              </a>
+            )}
+          </motion.div>
+        )}
 
         {/* Badges */}
         <motion.div
