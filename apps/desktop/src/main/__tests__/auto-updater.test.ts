@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
+import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('electron-updater', () => import('./electron-updater-mock'));
@@ -108,8 +108,30 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
   });
 
-  it('update-downloaded: Restart Now (response 0) calls quitAndInstall', async () => {
+  it('update-downloaded with a window present: suppresses the native dialog and pushes downloaded status to the renderer', async () => {
     const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const { setupAutoUpdater } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    autoUpdater.emit('update-downloaded', { version: '2.0.0' } as UpdateDownloadedEvent);
+
+    // The in-app card owns the restart affordance when a window exists.
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(win.webContents.send).toHaveBeenCalledWith('update:status', {
+      state: 'downloaded',
+      version: '2.0.0',
+    });
+  });
+
+  it('update-downloaded with no window: shows the native dialog; Restart Now (response 0) calls quitAndInstall', async () => {
+    const { app, dialog, resetElectronMock } = await getElectronMock();
     resetElectronMock();
     app.isPackaged = true;
     dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
@@ -117,12 +139,10 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     resetAutoUpdaterMock();
 
     const { setupAutoUpdater } = await import('../auto-updater');
-    const win = new BrowserWindow({ width: 1200, height: 800 });
-    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    setupAutoUpdater(() => null);
 
     autoUpdater.emit('update-downloaded', { version: '2.0.0' } as UpdateDownloadedEvent);
     expect(dialog.showMessageBox).toHaveBeenCalledWith(
-      win,
       expect.objectContaining({ buttons: ['Restart Now', 'Later'] })
     );
 
@@ -131,8 +151,8 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     });
   });
 
-  it('update-downloaded: Later (response 1) does not call quitAndInstall', async () => {
-    const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+  it('update-downloaded with no window: Later (response 1) does not call quitAndInstall', async () => {
+    const { app, dialog, resetElectronMock } = await getElectronMock();
     resetElectronMock();
     app.isPackaged = true;
     dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
@@ -140,8 +160,7 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     resetAutoUpdaterMock();
 
     const { setupAutoUpdater } = await import('../auto-updater');
-    const win = new BrowserWindow({ width: 1200, height: 800 });
-    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    setupAutoUpdater(() => null);
 
     autoUpdater.emit('update-downloaded', { version: '2.0.0' } as UpdateDownloadedEvent);
 
@@ -149,6 +168,49 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
       expect(dialog.showMessageBox).toHaveBeenCalled();
     });
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it('pushes lifecycle statuses to the renderer (checking / available / not-available / downloading / error)', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const { setupAutoUpdater } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(win.webContents.send).mockClear();
+
+    autoUpdater.emit('checking-for-update');
+    autoUpdater.emit('update-available', { version: '2.0.0' } as UpdateInfo);
+    autoUpdater.emit('download-progress', { percent: 42 } as ProgressInfo);
+    autoUpdater.emit('update-not-available', { version: '1.0.0' } as UpdateInfo);
+    autoUpdater.emit('error', new Error('boom'));
+
+    const send = vi.mocked(win.webContents.send);
+    expect(send).toHaveBeenCalledWith('update:status', { state: 'checking' });
+    expect(send).toHaveBeenCalledWith('update:status', { state: 'available', version: '2.0.0' });
+    expect(send).toHaveBeenCalledWith('update:status', { state: 'downloading', percent: 42 });
+    expect(send).toHaveBeenCalledWith('update:status', { state: 'not-available' });
+    expect(send).toHaveBeenCalledWith('update:status', { state: 'error', message: 'boom' });
+  });
+
+  it('restartToUpdate calls quitAndInstall when packaged, and no-ops otherwise', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const { restartToUpdate } = await import('../auto-updater');
+
+    app.isPackaged = false;
+    restartToUpdate();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+    app.isPackaged = true;
+    restartToUpdate();
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
   it('interactive error shows an error dialog', async () => {

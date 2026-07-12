@@ -1,4 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
+// Type-only import — erased at build time, so the preload bundle never pulls
+// in the main process's `electron-updater` dependency. The `update:status`
+// channel string is duplicated below rather than imported as a value for the
+// same reason.
+import type { UpdateStatus } from '../main/auto-updater';
+
+/** IPC channel the main process pushes {@link UpdateStatus} events on (mirrors `UPDATE_STATUS_CHANNEL` in auto-updater.ts). */
+const UPDATE_STATUS_CHANNEL = 'update:status';
 
 /**
  * Preload script — runs in a privileged context before the renderer loads.
@@ -36,4 +44,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * @returns The queued path, or `null` if nothing is pending.
    */
   getPendingNavigate: (): Promise<string | null> => ipcRenderer.invoke('get-pending-navigate'),
+  /**
+   * Ask the native updater to run a foreground check (the same path as the
+   * "Check for Updates…" menu item). Fire-and-forget: any outcome arrives via
+   * {@link onUpdateStatus}, and an "up to date" / error result is also shown
+   * as a native dialog. No-ops in an unpackaged dev build.
+   */
+  checkForUpdates: (): void => ipcRenderer.send('update:check'),
+  /**
+   * Restart the app to install a downloaded update — wired to the in-app
+   * card's "Restart to install" button. Only meaningful once an
+   * {@link onUpdateStatus} `downloaded` event has arrived.
+   */
+  restartToUpdate: (): void => ipcRenderer.send('update:restart'),
+  /**
+   * Subscribe to native updater lifecycle events (checking → available →
+   * downloading → downloaded, or not-available / error) so the in-app sidebar
+   * card can reflect them. `cb` receives a discriminated-union status.
+   *
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onUpdateStatus: (cb: (status: UpdateStatus) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: UpdateStatus): void => cb(status);
+    ipcRenderer.on(UPDATE_STATUS_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(UPDATE_STATUS_CHANNEL, listener);
+  },
 });

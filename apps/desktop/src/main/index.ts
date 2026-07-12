@@ -3,7 +3,7 @@ import { createWindow } from './window-manager';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
-import { setupAutoUpdater } from './auto-updater';
+import { setupAutoUpdater, checkForUpdatesInteractive, restartToUpdate } from './auto-updater';
 import {
   parseDeepLink,
   registerReadinessReset,
@@ -105,6 +105,18 @@ if (!gotTheLock) {
 
   ipcMain.on('get-app-version', (event) => {
     event.returnValue = app.getVersion();
+  });
+
+  // Update surface for the renderer's in-app card (see auto-updater.ts). The
+  // card triggers a foreground check or a restart-to-install; the updater
+  // pushes lifecycle events back on the `update:status` channel. Both handlers
+  // no-op in dev (unpackaged builds can't apply updates).
+  ipcMain.on('update:check', () => {
+    checkForUpdatesInteractive();
+  });
+
+  ipcMain.on('update:restart', () => {
+    restartToUpdate();
   });
 
   // Renderer-readiness + pending-navigation pickup (see navigation.ts) —

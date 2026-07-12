@@ -1,8 +1,28 @@
 import { autoUpdater } from 'electron-updater';
-import type { UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
+import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
 import { app, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
+
+/** The IPC channel the main process pushes {@link UpdateStatus} events to the renderer on. */
+export const UPDATE_STATUS_CHANNEL = 'update:status';
+
+/**
+ * The native updater's lifecycle, mirrored to the renderer so the in-app
+ * sidebar card can reflect it (the desktop counterpart to the web/npm upgrade
+ * card). Sent on {@link UPDATE_STATUS_CHANNEL} as a discriminated union.
+ *
+ * This type is re-declared as `DesktopUpdateStatus` in the client's
+ * `vite-env.d.ts` — the client package can't import from the desktop main
+ * process, so the two must be kept in sync by hand.
+ */
+export type UpdateStatus =
+  | { state: 'checking' }
+  | { state: 'available'; version: string }
+  | { state: 'not-available' }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string };
 
 /** How often to re-check for updates in the background once the app is running. */
 const BACKGROUND_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -43,11 +63,17 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   autoUpdater.logger = log;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateStatus({ state: 'checking' });
+  });
+
   autoUpdater.on('update-available', (info: UpdateInfo) => {
     log.info('Update available:', info.version);
+    sendUpdateStatus({ state: 'available', version: info.version });
   });
 
   autoUpdater.on('update-not-available', () => {
+    sendUpdateStatus({ state: 'not-available' });
     if (checkingInteractively) {
       void showMessageBox({
         type: 'info',
@@ -59,8 +85,22 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
     checkingInteractively = false;
   });
 
+  autoUpdater.on('download-progress', (progress: ProgressInfo) => {
+    sendUpdateStatus({ state: 'downloading', percent: progress.percent });
+  });
+
   autoUpdater.on('update-downloaded', (event: UpdateDownloadedEvent) => {
     checkingInteractively = false;
+    // The renderer's in-app card is the primary "restart to install" surface.
+    sendUpdateStatus({ state: 'downloaded', version: event.version });
+
+    // Avoid double-prompting: when a window is present, the in-app card owns
+    // the restart affordance, so suppress the native dialog. Only fall back to
+    // the native "Update Ready" dialog when there's no window to host the card
+    // (macOS keeps the app alive with zero windows open).
+    const win = getMainWindow?.();
+    if (win && !win.isDestroyed()) return;
+
     void showMessageBox({
       type: 'info',
       title: 'Update Ready',
@@ -75,6 +115,7 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   });
 
   autoUpdater.on('error', (err: Error) => {
+    sendUpdateStatus({ state: 'error', message: err.message });
     if (checkingInteractively) {
       void showMessageBox({
         type: 'error',
@@ -122,6 +163,26 @@ export function checkForUpdatesInteractive(): void {
       detail: err instanceof Error ? err.message : String(err),
     });
   });
+}
+
+/**
+ * Restart the app to apply a downloaded update, driven by the renderer's
+ * in-app card (the "Restart to install" button) via the `update:restart` IPC.
+ *
+ * Shares `autoUpdater.quitAndInstall()` with the native restart dialog, so
+ * both paths tear down the server cleanly through the `before-quit` dance in
+ * `index.ts`. No-ops when `!app.isPackaged`, matching {@link setupAutoUpdater}
+ * — an unpackaged build has no installer to run.
+ */
+export function restartToUpdate(): void {
+  if (!app.isPackaged) return;
+  autoUpdater.quitAndInstall();
+}
+
+/** Push an {@link UpdateStatus} to the tracked main window's renderer, mirroring how `navigation.ts` sends `navigate`. */
+function sendUpdateStatus(status: UpdateStatus): void {
+  const win = getMainWindow?.();
+  if (win && !win.isDestroyed()) win.webContents.send(UPDATE_STATUS_CHANNEL, status);
 }
 
 /** Show a message box anchored to the current main window, falling back to an unanchored dialog if none is tracked. */

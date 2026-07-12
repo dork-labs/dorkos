@@ -25,6 +25,8 @@ import { TunnelDialog } from '@/layers/features/settings';
 import { HelpMenu } from '@/layers/features/report-issue';
 import { isNewer, isFeatureUpdate } from '@/layers/features/status';
 import { SidebarUpgradeCard } from './SidebarUpgradeCard';
+import { DesktopUpdateCard } from './DesktopUpdateCard';
+import { useDesktopUpdater } from '../model/use-desktop-updater';
 
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system'];
 
@@ -62,6 +64,15 @@ export function SidebarFooterBar() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Desktop reflects the native updater (GitHub Releases) instead of the
+  // web/npm upgrade command — `npm update -g dorkos` updates the CLI, not the
+  // running `.app`. In the browser and Obsidian `isDesktop` is false.
+  const { isDesktop, status: desktopStatus, restart: restartDesktop } = useDesktopUpdater();
+  const desktopUpdateCardStatus =
+    desktopStatus?.state === 'downloading' || desktopStatus?.state === 'downloaded'
+      ? desktopStatus
+      : null;
+
   const version = serverConfig?.version;
   const latestVersion = serverConfig?.latestVersion ?? null;
   const isDevMode = serverConfig?.isDevMode ?? false;
@@ -70,8 +81,12 @@ export function SidebarFooterBar() {
     [serverConfig?.dismissedUpgradeVersions]
   );
 
+  // Web/npm upgrade detection applies off-desktop only.
   const hasUpdate =
-    latestVersion !== null && version !== undefined && isNewer(latestVersion, version);
+    !isDesktop &&
+    latestVersion !== null &&
+    version !== undefined &&
+    isNewer(latestVersion, version);
   const isFeature = hasUpdate && isFeatureUpdate(latestVersion!, version!);
   const isDismissed = hasUpdate && dismissedVersions.includes(latestVersion!);
 
@@ -120,15 +135,23 @@ export function SidebarFooterBar() {
   return (
     <div>
       <AnimatePresence>
-        {showCard && (
-          <SidebarUpgradeCard
-            key="upgrade-card"
-            currentVersion={version!}
-            latestVersion={latestVersion!}
-            isFeature={isFeature}
-            onDismiss={handleDismissVersion}
-          />
-        )}
+        {isDesktop
+          ? desktopUpdateCardStatus && (
+              <DesktopUpdateCard
+                key="desktop-update-card"
+                status={desktopUpdateCardStatus}
+                onRestart={restartDesktop}
+              />
+            )
+          : showCard && (
+              <SidebarUpgradeCard
+                key="upgrade-card"
+                currentVersion={version!}
+                latestVersion={latestVersion!}
+                isFeature={isFeature}
+                onDismiss={handleDismissVersion}
+              />
+            )}
       </AnimatePresence>
 
       <div className="flex items-center px-2 py-1.5">

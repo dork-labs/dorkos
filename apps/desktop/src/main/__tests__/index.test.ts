@@ -9,7 +9,11 @@ vi.mock('../server-process', () => ({
 }));
 vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
 vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
-vi.mock('../auto-updater', () => ({ setupAutoUpdater: vi.fn() }));
+vi.mock('../auto-updater', () => ({
+  setupAutoUpdater: vi.fn(),
+  checkForUpdatesInteractive: vi.fn(),
+  restartToUpdate: vi.fn(),
+}));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test
@@ -264,6 +268,48 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
 
     expect(win.focus).toHaveBeenCalledTimes(1);
     expect(win.webContents.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('update IPC handlers', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Look up the handler `../index` registered for `ipcMain.on(channel, ...)`. */
+  async function getOnHandler(channel: string): Promise<(...args: unknown[]) => unknown> {
+    const { ipcMain } = await getElectronMock();
+    const call = vi.mocked(ipcMain.on).mock.calls.find(([ch]) => ch === channel);
+    if (!call) throw new Error(`no ipcMain.on registered for "${channel}"`);
+    return call[1] as (...args: unknown[]) => unknown;
+  }
+
+  it('update:check routes to checkForUpdatesInteractive', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const autoUpdater = await import('../auto-updater');
+    await import('../index');
+
+    const handler = await getOnHandler('update:check');
+    handler();
+
+    expect(autoUpdater.checkForUpdatesInteractive).toHaveBeenCalledTimes(1);
+  });
+
+  it('update:restart routes to restartToUpdate', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const autoUpdater = await import('../auto-updater');
+    await import('../index');
+
+    const handler = await getOnHandler('update:restart');
+    handler();
+
+    expect(autoUpdater.restartToUpdate).toHaveBeenCalledTimes(1);
   });
 });
 
