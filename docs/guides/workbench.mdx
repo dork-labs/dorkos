@@ -115,6 +115,12 @@ An agent isn't limited to describing what it did in text. It can act directly on
 
 This only reaches into the session you're actively viewing. An agent running unattended in the background can't reach into a workbench you have open elsewhere.
 
+## Agents Can Check Their Own Work
+
+Once an agent has a preview open in the embedded browser, it isn't flying blind: it can read the same signals you'd check yourself. It can read the console for errors and warnings, check for network requests that failed (a missing asset, a broken API call), and take a screenshot to see exactly how the page rendered. That lets it catch a mistake and fix it before telling you it's done, instead of you having to open dev tools and relay the error back.
+
+This works on local previews DorkOS renders directly: a local HTML file or a localhost dev server. External sites, and pages with a strict security policy, aren't instrumented.
+
 ## For the Curious
 
 Two settings live under `workbench` in your [config file](/docs/getting-started/configuration):

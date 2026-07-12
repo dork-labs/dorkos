@@ -54,6 +54,11 @@ Most people never touch the flags, subcommands, and env vars below. They're here
       description: 'Log verbosity: fatal, error, warn, info, debug, trace',
       default: 'info',
     },
+    '--debug-trace': {
+      type: 'boolean',
+      description: 'Write a local timing trace file for bug reports (never sent anywhere)',
+      default: 'false',
+    },
   }}
 />
 
@@ -77,7 +82,17 @@ dorkos --tasks
 
 # Verbose logging
 dorkos --log-level debug
+
+# Write a local trace file for a bug report
+dorkos --debug-trace
 ```
+
+<Callout type="info">
+  `--debug-trace` is a diagnostics flag, not the anonymous telemetry heartbeat: the trace file it
+  writes never leaves your machine unless you choose to send it. See
+  [Telemetry](/docs/self-hosting/telemetry#debug-tracing-a-separate-local-only-flag) for what it
+  records.
+</Callout>
 
 ### Subcommands
 
