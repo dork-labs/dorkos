@@ -85,64 +85,7 @@ function useTextScramble(text: string, isActive: boolean) {
 }
 
 /**
- * A compact, still-copyable inline command line — the de-emphasized peer to a
- * primary CTA. Always copies the real command (never any display effect) and
- * gives a check-mark confirmation. Long commands scroll within the line rather
- * than break the layout.
- */
-function CopyableCommand({
-  command,
-  method,
-  className,
-}: {
-  command: string;
-  method: InstallMethod;
-  className?: string;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    // Only flip to "copied" when the write actually lands — an insecure context
-    // or denied permission rejects, and a false confirmation would be a lie.
-    navigator.clipboard.writeText(command).then(
-      () => {
-        trackHeroInstallCopy(method);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      },
-      () => {}
-    );
-  }, [command, method]);
-
-  return (
-    <div
-      className={cn(
-        'flex max-w-full items-center gap-2 rounded-md border border-[rgba(139,90,43,0.18)] bg-[rgba(255,255,255,0.55)] px-3 py-2',
-        className
-      )}
-    >
-      <code className="text-charcoal min-w-0 flex-1 overflow-x-auto font-mono text-[11px] whitespace-nowrap sm:text-xs">
-        <span style={{ color: '#7A756A' }}>$ </span>
-        {command}
-      </code>
-      <button
-        type="button"
-        onClick={handleCopy}
-        aria-label={copied ? 'Command copied' : `Copy command: ${command}`}
-        className="text-warm-gray-light hover:text-brand-orange focus-visible:ring-brand-orange/40 shrink-0 rounded p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
-      >
-        {copied ? (
-          <Check size={14} style={{ color: '#228B22' }} />
-        ) : (
-          <Copy size={14} aria-hidden="true" />
-        )}
-      </button>
-    </div>
-  );
-}
-
-/**
- * The download hero's terminal peer — the install one-liner offered quietly,
+ * A refined, still-copyable command chip — the install one-liner offered quietly,
  * not as a form field. Borderless save for a whisper of warm tint, an orange
  * `$` prompt echoing the main terminal, and a copy glyph that stays subtle
  * until hover/focus. Always copies the real command with check confirmation;
@@ -222,7 +165,7 @@ function OtherWaysToInstall({ showNpm }: { showNpm: boolean }) {
         {showNpm && (
           <div className="space-y-1.5">
             <p className="text-charcoal font-mono text-[11px] tracking-[0.08em] uppercase">npm</p>
-            <CopyableCommand command="npm install -g dorkos" method="npm" />
+            <TerminalPeerCommand command="npm install -g dorkos" method="npm" />
             <p className="text-warm-gray-light font-mono text-[11px]">Requires Node 22+.</p>
           </div>
         )}
