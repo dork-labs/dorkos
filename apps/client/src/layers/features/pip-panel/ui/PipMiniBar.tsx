@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { ChevronUp, X } from 'lucide-react';
-import type { PipContent } from '@/layers/shared/model';
+import { useVisualViewportBottomInset, type PipContent } from '@/layers/shared/model';
 
 /** Bar height in px — must match the `h-16` class and the `--pip-dock` value. */
 const BAR_HEIGHT = 64;
@@ -46,6 +46,14 @@ export function PipMiniBar({ content, onRestore, onClose }: PipMiniBarProps): Re
     };
   }, []);
 
+  // Keyboard-over-bar fix (DOR-300): the bar is fixed to the LAYOUT viewport,
+  // but a phone's software keyboard shrinks only the VISUAL viewport, so at
+  // `bottom: 0` the bar hides behind the keyboard exactly when the user types.
+  // Lift it by the visual-viewport bottom inset — 0 when there's no keyboard, so
+  // desktop and no-keyboard phones are unchanged. (`--pip-dock` stays 64px: that
+  // is layout-viewport padding for the shells, a separate concern.)
+  const keyboardInset = useVisualViewportBottomInset();
+
   return createPortal(
     <motion.div
       data-slot="pip-minibar"
@@ -55,6 +63,7 @@ export function PipMiniBar({ content, onRestore, onClose }: PipMiniBarProps): Re
       animate={{ y: 0 }}
       exit={{ y: BAR_HEIGHT }}
       transition={SPRING}
+      style={{ bottom: keyboardInset }}
       className="bg-background border-border shadow-elevated fixed inset-x-0 bottom-0 z-40 flex h-16 items-center border-t"
     >
       <button

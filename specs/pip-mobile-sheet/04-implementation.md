@@ -84,10 +84,18 @@ snap changes, and resize. Verified live post-fix (Gate 2 numbers above).
   that did not consume `--pip-dock`, so the mini-bar overlapped playground
   content by 64px on `/dev` routes — fixed in this commit (same
   `pb-[var(--pip-dock,0px)]` idiom as the shells).
-- **Keyboard over bar (accepted v1 caveat):** with the on-screen keyboard
-  open, mobile browsers are inconsistent about fixed-bottom elements riding
-  the visual viewport; the bar may sit behind the keyboard while typing.
-  Follow-up territory (visualViewport tracking).
+- **Keyboard over bar (resolved by DOR-300):** the mini-bar now lifts above
+  the software keyboard by offsetting `bottom` with the visual-viewport bottom
+  inset (`useVisualViewportBottomInset`, `shared/model`) — the keyboard shrinks
+  only the visual viewport, so a fixed-bottom bar rode behind it while typing.
+  The inset is 0 when there is no keyboard, when `visualViewport` is absent,
+  and under pinch-zoom (`scale > 1` also shrinks the visual viewport, which
+  would read as a phantom keyboard — the hook degrades to 0 by design), so
+  desktop and no-keyboard phones are unchanged. `--pip-dock` stays
+  64px — that is layout-viewport padding for the shells, a separate concern. A
+  real-device pass remains the honest final gate: desktop browsers cannot
+  summon a soft keyboard, so this is unit-tested against a mocked
+  `visualViewport`, not a live gate.
 - **vaul remains in the repo** for the seven modal Drawer consumers — only
   PIP dropped it. The `shared/ui/drawer.tsx` wrapper is byte-identical to
   its pre-feature state.

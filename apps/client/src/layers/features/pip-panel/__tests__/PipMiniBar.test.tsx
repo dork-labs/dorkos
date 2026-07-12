@@ -11,9 +11,31 @@ import { PipMiniBar } from '../ui/PipMiniBar';
 // animation props to a plain portalled div). Entry/exit motion is browser-gate
 // territory; these tests cover structure, wiring, and the --pip-dock hook.
 
+const HAD_VV = Object.prototype.hasOwnProperty.call(window, 'visualViewport');
+const ORIGINAL_VV_DESCRIPTOR = Object.getOwnPropertyDescriptor(window, 'visualViewport');
+
+/** Report a bottom inset by shrinking the visual viewport under innerHeight. */
+function setKeyboardInset(px: number) {
+  Object.defineProperty(window, 'visualViewport', {
+    value: {
+      height: window.innerHeight - px,
+      offsetTop: 0,
+      scale: 1, // unzoomed — the hook returns 0 under pinch-zoom (scale > 1)
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    configurable: true,
+  });
+}
+
 afterEach(() => {
   cleanup();
   document.documentElement.style.removeProperty('--pip-dock');
+  if (HAD_VV && ORIGINAL_VV_DESCRIPTOR) {
+    Object.defineProperty(window, 'visualViewport', ORIGINAL_VV_DESCRIPTOR);
+  } else {
+    delete (window as { visualViewport?: unknown }).visualViewport;
+  }
 });
 
 const WIDGET: PipContent = { kind: 'widget', sessionId: 's1', title: 'Tic-Tac-Toe' };
@@ -52,5 +74,16 @@ describe('PipMiniBar', () => {
 
     unmount();
     expect(document.documentElement.style.getPropertyValue('--pip-dock')).toBe('');
+  });
+
+  it('sits at bottom 0 when no keyboard inset is reported', () => {
+    render(<PipMiniBar content={WIDGET} onRestore={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole('complementary')).toHaveStyle({ bottom: '0px' });
+  });
+
+  it('lifts by the visual-viewport bottom inset when the keyboard is open', () => {
+    setKeyboardInset(300);
+    render(<PipMiniBar content={WIDGET} onRestore={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole('complementary')).toHaveStyle({ bottom: '300px' });
   });
 });
