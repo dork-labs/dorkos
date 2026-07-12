@@ -102,10 +102,16 @@ function CopyableCommand({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(command);
-    trackHeroInstallCopy(method);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // Only flip to "copied" when the write actually lands — an insecure context
+    // or denied permission rejects, and a false confirmation would be a lie.
+    navigator.clipboard.writeText(command).then(
+      () => {
+        trackHeroInstallCopy(method);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      () => {}
+    );
   }, [command, method]);
 
   return (
@@ -191,8 +197,7 @@ function DownloadHero() {
       <a
         href="/download/mac"
         onClick={() => trackHeroDownload('hero')}
-        className="marketing-btn inline-flex items-center gap-2.5"
-        style={{ background: '#E85D04', color: '#FFFEFB' }}
+        className="marketing-btn bg-brand-orange text-cream-white inline-flex items-center gap-2.5"
       >
         <Download size={18} aria-hidden="true" />
         Download for Mac
@@ -233,11 +238,16 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
   const displayText = useTextScramble(CURL_COMMAND, isInView && activeTab === 'curl');
 
   const handleCopy = useCallback(() => {
-    // Always copy the real command, never the scrambled display text.
-    navigator.clipboard.writeText(activeMethod.command);
-    trackHeroInstallCopy(activeMethod.id as InstallMethod);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // Always copy the real command, never the scrambled display text — and only
+    // confirm once the write actually succeeds (insecure contexts reject).
+    navigator.clipboard.writeText(activeMethod.command).then(
+      () => {
+        trackHeroInstallCopy(activeMethod.id as InstallMethod);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      () => {}
+    );
   }, [activeMethod.command, activeMethod.id]);
 
   return (
@@ -251,7 +261,7 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
               setActiveTab(method.id);
               setCopied(false);
             }}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs tracking-[0.06em] transition-all ${
+            className={`focus-visible:ring-brand-orange/40 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-xs tracking-[0.06em] transition-all focus-visible:ring-2 focus-visible:outline-none ${
               activeTab === method.id
                 ? 'bg-charcoal text-cream'
                 : 'text-warm-gray-light hover:text-charcoal'
@@ -308,7 +318,7 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
             </span>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-white/10"
+              className="focus-visible:ring-brand-orange/40 flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:outline-none"
               aria-label="Copy command"
             >
               {copied ? (
@@ -348,6 +358,7 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
       {/* Native download stays one subtle link away for anyone on the wrong machine. */}
       <a
         href="/download/mac"
+        onClick={() => trackHeroDownload('terminal_hero_link')}
         className="text-warm-gray-light hover:text-brand-orange transition-smooth inline-flex items-center gap-1.5 font-mono text-xs tracking-[0.04em]"
       >
         <Download size={13} aria-hidden="true" />

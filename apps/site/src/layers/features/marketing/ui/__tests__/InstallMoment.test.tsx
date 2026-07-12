@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { InstallMoment } from '../InstallMoment';
 
 // Keep analytics hermetic — the real module reaches for posthog + env.
@@ -27,15 +27,22 @@ class NoopIntersectionObserver {
   }
 }
 
-function stubNavigator(overrides: { userAgent?: string; platform?: string }): void {
+/** Stub navigator and return the clipboard `writeText` mock for copy assertions. */
+function stubNavigator(overrides: { userAgent?: string; platform?: string }): {
+  writeText: Mock;
+} {
+  const writeText = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('navigator', {
     userAgent: overrides.userAgent ?? '',
     platform: overrides.platform ?? '',
     maxTouchPoints: 0,
+    clipboard: { writeText },
   });
+  return { writeText };
 }
 
 const CURL_COMMAND = 'curl -fsSL https://dorkos.ai/install | bash';
+const NPM_COMMAND = 'npm install -g dorkos';
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', NoopIntersectionObserver);
@@ -48,11 +55,13 @@ afterEach(() => {
 
 describe('InstallMoment — OS-adaptive install hero', () => {
   describe('macOS visitor', () => {
+    let writeText: Mock;
+
     beforeEach(() => {
-      stubNavigator({
+      ({ writeText } = stubNavigator({
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/17.0 Safari/605.1.15',
         platform: 'MacIntel',
-      });
+      }));
     });
 
     it('leads with a prominent "Download for Mac" button pointing at /download/mac', async () => {
@@ -90,6 +99,37 @@ describe('InstallMoment — OS-adaptive install hero', () => {
     it('offers an "Other ways to install" disclosure', async () => {
       render(<InstallMoment />);
       await waitFor(() => expect(screen.getByText('Other ways to install')).toBeTruthy());
+    });
+
+    it('copies the real curl one-liner (never the scrambled display text) when the peer copy is clicked', async () => {
+      render(<InstallMoment />);
+
+      const copyButton = await waitFor(() => {
+        const found = screen
+          .getAllByRole('button')
+          .find((el) => el.getAttribute('aria-label')?.includes(CURL_COMMAND));
+        expect(found).toBeTruthy();
+        return found!;
+      });
+
+      fireEvent.click(copyButton);
+      expect(writeText).toHaveBeenCalledWith(CURL_COMMAND);
+    });
+
+    it('copies the exact npm command from the expanded disclosure', async () => {
+      render(<InstallMoment />);
+
+      // Native <details> keeps its children mounted even while collapsed.
+      const npmCopyButton = await waitFor(() => {
+        const found = screen
+          .getAllByRole('button')
+          .find((el) => el.getAttribute('aria-label')?.includes(NPM_COMMAND));
+        expect(found).toBeTruthy();
+        return found!;
+      });
+
+      fireEvent.click(npmCopyButton);
+      expect(writeText).toHaveBeenCalledWith(NPM_COMMAND);
     });
   });
 
