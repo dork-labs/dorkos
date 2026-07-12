@@ -26,8 +26,8 @@ my-plugin/
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "AI copilot sidebar powered by DorkOS",
-  "author": "DorkOS",
-  "authorUrl": "https://github.com/your-repo",
+  "author": "Dork Labs",
+  "authorUrl": "https://dorkos.ai",
   "isDesktopOnly": true
 }
 ```
