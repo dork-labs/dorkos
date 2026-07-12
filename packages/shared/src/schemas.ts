@@ -2780,9 +2780,9 @@ export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 18 variants covering panels, sidebar, canvas,
- * file/terminal/browser opening, notifications, theme, scroll, agent switching,
- * command palette, and celebration.
+ * Discriminated on `action` — 20 variants covering panels, sidebar, canvas,
+ * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
+ * switching, command palette, and celebration.
  */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
@@ -2807,6 +2807,21 @@ export const UiCommandSchema = z
       content: UiCanvasContentSchema,
     }),
     z.object({ action: z.literal('close_canvas') }),
+
+    // PIP (floating panel)
+    z.object({
+      /**
+       * Pop the session's NEWEST inline `dorkos-ui` widget into the floating
+       * picture-in-picture panel (a bottom sheet on phones). The panel follows
+       * the live fence, so the agent must emit the widget fence in a message
+       * BEFORE calling this — each subsequent re-emit of the fence updates the
+       * PIP in place.
+       */
+      action: z.literal('open_pip'),
+      title: z.string().optional(),
+    }),
+    z.object({ action: z.literal('close_pip') }),
+
     z.object({
       action: z.literal('open_file'),
       /**

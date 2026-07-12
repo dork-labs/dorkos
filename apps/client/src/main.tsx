@@ -297,8 +297,8 @@ const extensionDeps: ExtensionAPIDeps = {
 // subscription (singleton → singleton); intentionally never torn down.
 // Origin 'agent': autonomous control_ui commands must never persist over the
 // user's per-agent right-panel tab preference (DOR-227).
-streamManager.subscribeUiCommand((command) =>
-  executeUiCommand(extensionDeps.dispatcherContext, command, 'agent')
+streamManager.subscribeUiCommand((command, sessionId) =>
+  executeUiCommand({ ...extensionDeps.dispatcherContext, sessionId }, command, 'agent')
 );
 
 // Register all built-in features into the extension registry

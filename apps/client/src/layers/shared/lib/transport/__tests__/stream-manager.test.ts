@@ -137,7 +137,9 @@ describe('StreamManager', () => {
     const command = { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } };
     const event: SessionEvent = { type: 'ui_command', seq: 2, command } as SessionEvent;
     connections[0]!.push('ui_command', event);
-    expect(onUiCommand).toHaveBeenCalledWith(command);
+    // The subscriber receives the command AND the attached session id, so
+    // session-scoped commands (e.g. open_pip) know which session issued them.
+    expect(onUiCommand).toHaveBeenCalledWith(command, 'sess-a');
     expect(onSessionEvent).toHaveBeenCalledWith('sess-a', event);
   });
 
@@ -765,7 +767,7 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
       seq: 2,
       command: { action: 'close_canvas' },
     } as SessionEvent);
-    expect(onUiCommand).toHaveBeenCalledWith({ action: 'close_canvas' });
+    expect(onUiCommand).toHaveBeenCalledWith({ action: 'close_canvas' }, 'A');
   });
 
   it('row 2 with a DIVERGENT cwd: attachSession(A, newCwd) re-opens instead of adopting the stale-URL pinned connection', () => {

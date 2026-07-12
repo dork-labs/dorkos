@@ -45,11 +45,15 @@ describe('findLatestWidgetFence', () => {
     });
   });
 
-  it('an older message with a fence is superseded by a newer fence-less message (isLatest: false)', () => {
+  it('a fence followed by a later TEXT-only message stays live (fence-based supersede — the DOR-302 repro)', () => {
+    // The live repro: turn 1 emits the board, turn 2 is the agent's plain-text
+    // reply ("opened it!"). Under the retired positional rule the reply
+    // superseded the board and the PIP arrived dead; under the fence-based rule
+    // only a NEWER FENCE stales a board.
     const state = streamState({
       messages: [
         historyMessage('m1', `board here ${BOARD_A}`),
-        historyMessage('m2', 'no widget in this one'),
+        historyMessage('m2', 'no widget in this one — opened it for you!'),
       ],
     });
 
@@ -59,12 +63,27 @@ describe('findLatestWidgetFence', () => {
       code: '{"kind":"board","id":"a"}',
       isIncomplete: false,
       sourceMessageKey: 'm1',
-      isLatest: false,
+      isLatest: true,
       isStreaming: false,
     });
   });
 
-  it('the optimistic user message slot supersedes an earlier assistant board (isLatest: false)', () => {
+  it('a fence followed by a later FENCE-BEARING message returns the newer fence', () => {
+    const state = streamState({
+      messages: [
+        historyMessage('m1', `board here ${BOARD_A}`),
+        historyMessage('m2', `here is the next turn ${BOARD_B}`),
+      ],
+    });
+
+    const result = findLatestWidgetFence(state);
+
+    expect(result?.sourceMessageKey).toBe('m2');
+    expect(result?.code).toBe('{"kind":"board","id":"b"}');
+    expect(result?.isLatest).toBe(true);
+  });
+
+  it('the optimistic user message never supersedes an earlier assistant board (it carries no fence)', () => {
     const state = streamState({
       messages: [historyMessage('m1', `board here ${BOARD_A}`)],
       optimisticUserMessage: { id: 'u1', content: 'ok thanks' },
@@ -73,7 +92,7 @@ describe('findLatestWidgetFence', () => {
     const result = findLatestWidgetFence(state);
 
     expect(result?.sourceMessageKey).toBe('m1');
-    expect(result?.isLatest).toBe(false);
+    expect(result?.isLatest).toBe(true);
   });
 
   it('last-fence-within-message: a single message with two fences returns the second body', () => {
@@ -138,10 +157,10 @@ describe('findLatestWidgetFence', () => {
     expect(result?.isStreaming).toBe(true);
   });
 
-  it('a thinking-only in-progress turn supersedes a history board (parity with buildInProgressMessage)', () => {
-    // Regression (review finding 1): the inline projection appends the trailing
-    // bubble for ANY renderable part, not just text — a thinking-only turn must
-    // freeze the history board here too, or PIP stays clickable while inline froze.
+  it('a thinking-only in-progress turn does NOT stale a history board (no fence in the turn)', () => {
+    // Fence-based supersede: a turn that has streamed no fence-bearing text
+    // cannot supersede anything — the operator keeps playing while the agent
+    // thinks or runs tools.
     const inProgressTurn: SessionEvent[] = [
       { type: 'turn_start', seq: 1 },
       { type: 'thinking_delta', seq: 2, text: 'pondering the next move...' },
@@ -154,71 +173,25 @@ describe('findLatestWidgetFence', () => {
     const result = findLatestWidgetFence(state);
 
     expect(result?.sourceMessageKey).toBe('m1');
-    expect(result?.isLatest).toBe(false);
-  });
-
-  it('a tool-call-only in-progress turn supersedes a history board (parity with buildInProgressMessage)', () => {
-    const inProgressTurn: SessionEvent[] = [
-      { type: 'turn_start', seq: 1 },
-      { type: 'tool_call', seq: 2, toolCallId: 't1', toolName: 'Bash', status: 'running' },
-    ];
-    const state = streamState({
-      messages: [historyMessage('m1', `board here\n${BOARD_A}`)],
-      inProgressTurn,
-    });
-
-    const result = findLatestWidgetFence(state);
-
-    expect(result?.sourceMessageKey).toBe('m1');
-    expect(result?.isLatest).toBe(false);
-  });
-
-  it('a turn with only non-renderable events does NOT supersede the history board', () => {
-    // turn_start and a non-failed operation_progress fold no bubble part in the
-    // inline projection, so no phantom trailing message may claim the latest slot.
-    const inProgressTurn: SessionEvent[] = [
-      { type: 'turn_start', seq: 1 },
-      {
-        type: 'operation_progress',
-        seq: 2,
-        operation: 'compaction',
-        state: 'started',
-        determinate: false,
-      },
-    ];
-    const state = streamState({
-      messages: [historyMessage('m1', `board here\n${BOARD_A}`)],
-      inProgressTurn,
-    });
-
-    const result = findLatestWidgetFence(state);
-
-    expect(result?.sourceMessageKey).toBe('m1');
     expect(result?.isLatest).toBe(true);
   });
 
-  it('pending interactions alone occupy the trailing bubble slot (history board isLatest false)', () => {
-    // The inline projection folds snapshot-recovered pendingInteractions into the
-    // trailing bubble even with an EMPTY turn (foldPendingInteractions parity).
+  it('a fence streaming in the in-progress turn wins over a history fence (newest fence wins)', () => {
+    const inProgressTurn: SessionEvent[] = [
+      { type: 'turn_start', seq: 1 },
+      { type: 'text_delta', seq: 2, text: `fresh board:\n${BOARD_B}` },
+    ];
     const state = streamState({
       messages: [historyMessage('m1', `board here\n${BOARD_A}`)],
-      pendingInteractions: [
-        {
-          type: 'approval',
-          id: 'i1',
-          startedAt: 0,
-          remainingMs: 60_000,
-          toolName: 'Bash',
-          input: '{}',
-          hasSuggestions: false,
-        },
-      ],
+      inProgressTurn,
     });
 
     const result = findLatestWidgetFence(state);
 
-    expect(result?.sourceMessageKey).toBe('m1');
-    expect(result?.isLatest).toBe(false);
+    expect(result?.sourceMessageKey).toBe('__in_progress_turn__');
+    expect(result?.code).toBe('{"kind":"board","id":"b"}');
+    expect(result?.isStreaming).toBe(true);
+    expect(result?.isLatest).toBe(true);
   });
 
   it('tolerates CRLF line endings: a fence closed with "```\\r" still counts as complete', () => {
@@ -234,19 +207,5 @@ describe('findLatestWidgetFence', () => {
       isLatest: true,
       isStreaming: false,
     });
-  });
-
-  it('a completed message AFTER a fence-bearing one but with no fence still supersedes it (positional rule)', () => {
-    const state = streamState({
-      messages: [
-        historyMessage('m1', `board here ${BOARD_A}`),
-        historyMessage('m2', 'a plain follow-up with no widget at all'),
-      ],
-    });
-
-    const result = findLatestWidgetFence(state);
-
-    expect(result?.sourceMessageKey).toBe('m1');
-    expect(result?.isLatest).toBe(false);
   });
 });

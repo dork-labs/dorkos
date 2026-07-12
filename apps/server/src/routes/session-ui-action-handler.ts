@@ -9,9 +9,12 @@
  * widget action starts a FRESH turn — so this mirrors `/messages` exactly: it
  * validates, formats a runtime-neutral `<ui_action>` block as the user message,
  * and hands it to `triggerTurn` (trigger-only, 202; the turn streams solely over
- * `/events`, ADR-0264). Busy-session handling matches `/messages`: a lock held
- * by another turn 409s SESSION_LOCKED (there is no server-side message queue —
- * the client surfaces the busy state and lets the user retry).
+ * `/events`, ADR-0264). Like `/messages`, a session absent from the live map
+ * but present in runtime storage cold-starts (the map empties on restart and
+ * eviction — DOR-302); unlike `/messages`, this route never CREATES sessions,
+ * so an id that exists nowhere 404s. Busy-session handling matches `/messages`:
+ * a lock held by another turn 409s SESSION_LOCKED (there is no server-side
+ * message queue — the client surfaces the busy state and lets the user retry).
  *
  * @module routes/session-ui-action-handler
  */
@@ -20,8 +23,14 @@ import { UiActionRequestSchema } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { parseSessionId, sendError } from '../lib/route-utils.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
-import { getOrCreateProjector, rekeyProjector, triggerTurn } from '../services/session/index.js';
+import {
+  getOrCreateProjector,
+  peekProjector,
+  rekeyProjector,
+  triggerTurn,
+} from '../services/session/index.js';
 
 /**
  * Express handler for `POST /api/sessions/:id/ui-action`. Mounted by
@@ -43,10 +52,21 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
   }
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  // A widget can only exist because an existing session rendered it; an action
-  // for an unknown session is a client bug, not create-on-first-message.
+  // The live session map is process-local: it empties on a server restart and
+  // on session eviction, while the widget the user is clicking outlives both
+  // (DOR-302). Mirror /messages: `triggerTurn` → `sendMessage` cold-starts a
+  // map-less session from runtime storage, so a stored session proceeds. Only
+  // a session that exists NOWHERE — no live entry AND no stored session — is a
+  // client bug worth a 404 (a widget can only exist because a session rendered
+  // it; this route never creates sessions). Probe storage with the request
+  // cwd, else the projector's (minted by the /events connect with the
+  // session's real cwd), else the default root.
   if (!runtime.hasSession(sessionId)) {
-    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+    const probeCwd = parsed.data.cwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
+    const stored = await runtime.getSession(probeCwd, sessionId);
+    if (!stored) {
+      return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+    }
   }
 
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();

@@ -99,13 +99,13 @@ describe('StreamingText dorkos-ui fence', () => {
     expect(await screen.findByText("This widget couldn't be rendered")).toBeInTheDocument();
   });
 
-  it('keeps the widget mounted when isLatestMessage or isStreaming change', async () => {
+  it('keeps the widget mounted when isLatestWidgetMessage or isStreaming change', async () => {
     // Regression: the fence renderer was an inline closure recreated whenever
-    // isLatestMessage/isStreaming changed, so React saw a new component type and
-    // remounted the whole widget tree — destroying a board's in-flight dispatch
-    // state (the optimistic mark) at the exact moment a click superseded it.
+    // the supersede flag/isStreaming changed, so React saw a new component type
+    // and remounted the whole widget tree — destroying a board's in-flight
+    // dispatch state (the optimistic mark) at the exact moment it flipped.
     const { rerender } = render(
-      <StreamingText content={widgetFence} sessionId="s-1" isLatestMessage isStreaming />,
+      <StreamingText content={widgetFence} sessionId="s-1" isLatestWidgetMessage isStreaming />,
       { wrapper: Wrapper }
     );
     const stat = await screen.findByText('64°F');
@@ -114,12 +114,40 @@ describe('StreamingText dorkos-ui fence', () => {
       <StreamingText
         content={widgetFence}
         sessionId="s-1"
-        isLatestMessage={false}
+        isLatestWidgetMessage={false}
         isStreaming={false}
       />
     );
     // Same DOM node instance — the widget re-rendered, it did not remount.
     expect(screen.getByText('64°F')).toBe(stat);
+  });
+
+  it('threads the fence-based supersede flag: false renders board cells inert, absent stays live', async () => {
+    // DOR-302: the flag now means "no newer FENCE-BEARING message exists" and is
+    // computed by MessageList; here we verify it reaches the widget's actions.
+    const boardFence = [
+      '```dorkos-ui',
+      JSON.stringify({
+        version: 1,
+        root: {
+          type: 'board',
+          rows: [[{ action: { kind: 'agent', id: 'm-0-0', payload: { glyph: 'X' } } }]],
+        },
+      }),
+      '```',
+    ].join('\n');
+
+    // Superseded by a newer fence elsewhere → inert with the stale-board hint.
+    render(<StreamingText content={boardFence} sessionId="s-1" isLatestWidgetMessage={false} />, {
+      wrapper: Wrapper,
+    });
+    const staleCell = await screen.findByLabelText('Row 1, column 1: empty');
+    expect(staleCell).toHaveAttribute('aria-disabled', 'true');
+    cleanup();
+
+    // No flag (default) → live, playable board.
+    render(<StreamingText content={boardFence} sessionId="s-1" />, { wrapper: Wrapper });
+    expect(await screen.findByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
   });
 
   it('renders multiple dorkos-ui fences in one message independently', async () => {

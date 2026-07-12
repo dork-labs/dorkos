@@ -5,7 +5,7 @@
  * renders whatever {@link findLatestWidgetFence} reports as the newest
  * `dorkos-ui` board through the UNCHANGED {@link WidgetFence} pipeline — so PIP
  * interactivity (latch, optimistic `<ui_action>`, pending, celebrations,
- * supersede-on-newer-message) is byte-for-byte the inline behavior, never a fork.
+ * fence-based supersede) is byte-for-byte the inline behavior, never a fork.
  *
  * @module features/gen-ui/ui/LiveSessionWidget
  */
@@ -69,8 +69,15 @@ export function LiveSessionWidget({ sessionId }: LiveSessionWidgetProps): ReactN
     );
   }
 
+  // Key by the fence's source message: the action latch lives per
+  // WidgetFence/WidgetActionProvider instance, so a fence re-emitted in a NEW
+  // message must mount a fresh instance or the re-emitted board arrives
+  // pre-latched and never accepts another move (DOR-302). Mirrors inline,
+  // where each message renders its own fence instance; re-parses of the SAME
+  // message keep the instance — and its latch — intact.
   return (
     <WidgetFence
+      key={fence.sourceMessageKey}
       code={fence.code}
       isIncomplete={fence.isIncomplete}
       sessionId={sessionId}

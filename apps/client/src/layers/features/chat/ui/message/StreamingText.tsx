@@ -19,10 +19,12 @@ interface StreamingTextProps {
    */
   sessionId?: string;
   /**
-   * Whether the hosting message is the latest in the conversation. Threaded into
-   * widget fences so a superseded board renders its `agent` actions inert.
+   * Whether no NEWER fence-bearing message exists in the conversation
+   * (fence-based supersede, DOR-302). Threaded into widget fences as their
+   * `isLatestMessage` so a board superseded by a newer widget fence renders its
+   * `agent` actions inert — trailing plain text never freezes one.
    */
-  isLatestMessage?: boolean;
+  isLatestWidgetMessage?: boolean;
 }
 
 const linkSafety = {
@@ -33,6 +35,7 @@ const linkSafety = {
 /** The message-scoped values a `dorkos-ui` fence needs beyond its own code. */
 interface FenceContextValue {
   sessionId?: string;
+  /** Fence-level supersede flag — spread into `WidgetFence` under its contract name. */
   isLatestMessage?: boolean;
   isStreaming: boolean;
 }
@@ -41,11 +44,11 @@ interface FenceContextValue {
  * Carries the hosting message's session/supersede/streaming state to fence
  * renderers via context instead of closure props. The fence component's
  * IDENTITY must stay stable across renders: an inline closure recreated when
- * `isLatestMessage` or `isStreaming` changed made React unmount and remount the
- * entire widget tree at exactly the moments that matter — a click on a board
- * cell flips `isLatestMessage` (the optimistic user message supersedes the
- * widget), and the remount destroyed the in-flight dispatch state, erasing the
- * just-drawn optimistic mark and replaying every entrance animation.
+ * the supersede flag or `isStreaming` changed made React unmount and remount
+ * the entire widget tree at exactly the moments that matter — a newer widget
+ * fence flips the flag, and the remount destroyed the in-flight dispatch
+ * state, erasing the just-drawn optimistic mark and replaying every entrance
+ * animation.
  */
 const FenceContext = createContext<FenceContextValue>({ isStreaming: false });
 
@@ -75,13 +78,13 @@ export function StreamingText({
   isStreaming = false,
   textEffect = DEFAULT_TEXT_EFFECT,
   sessionId,
-  isLatestMessage,
+  isLatestWidgetMessage,
 }: StreamingTextProps) {
   const animatedConfig = resolveStreamdownAnimation(textEffect);
 
   const fenceContext = useMemo<FenceContextValue>(
-    () => ({ sessionId, isLatestMessage, isStreaming }),
-    [sessionId, isLatestMessage, isStreaming]
+    () => ({ sessionId, isLatestMessage: isLatestWidgetMessage, isStreaming }),
+    [sessionId, isLatestWidgetMessage, isStreaming]
   );
 
   return (

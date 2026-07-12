@@ -1,4 +1,3 @@
-import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionStreamState } from '@/layers/entities/session';
 
 /** The newest ` ```dorkos-ui ` fence found in a session's projected message stream. */
@@ -9,7 +8,14 @@ export interface LatestWidgetFence {
   isIncomplete: boolean;
   /** Stable identifier of the message the fence came from (for keying/testing). */
   sourceMessageKey: string;
-  /** True when the source message is the newest message in the session's projection. */
+  /**
+   * Whether this fence may still be played. Supersede is FENCE-based (DOR-302):
+   * a widget goes stale only when a NEWER fence-bearing message exists — plain
+   * trailing agent text ("your move!", a follow-up answer) never freezes it.
+   * The scanner returns the session's newest fence by construction, so this is
+   * always `true`; the field stays because the `WidgetFence` render contract
+   * consumes it (`isLatestMessage`).
+   */
   isLatest: boolean;
   /** True when the source message is the trailing in-progress (still-streaming) turn. */
   isStreaming: boolean;
@@ -27,8 +33,12 @@ const OPTIMISTIC_USER_KEY = '__optimistic_user__';
  */
 const IN_PROGRESS_TURN_KEY = '__in_progress_turn__';
 
-/** Opening fence marker for a `dorkos-ui` widget document. Any match is enough — no full markdown parse. */
-const FENCE_OPEN_MARKER = '```dorkos-ui';
+/**
+ * Opening fence marker for a `dorkos-ui` widget document. Any match is enough —
+ * no full markdown parse. Exported so the inline chat path (`MessageList`) can
+ * compute its newest-fence-bearing-message index with the same marker.
+ */
+export const WIDGET_FENCE_MARKER = '```dorkos-ui';
 
 /** A closing markdown fence line. */
 const FENCE_CLOSE_LINE = '```';
@@ -41,53 +51,12 @@ interface VirtualMessage {
 }
 
 /**
- * `SessionEvent` types that UNCONDITIONALLY fold into a renderable part of the
- * trailing in-progress assistant bubble.
- *
- * PARITY SOURCE: mirrors (without importing — `fsd-layers.md` forbids
- * cross-feature model imports) `projectInProgressTurn` + `buildInProgressMessage`
- * in `features/chat/model/stream/project-session-turn.ts`. Keep this set in sync
- * when that fold gains or loses part-producing event types. Deliberately absent:
- * `hook_update` and `interaction_resolved` only mutate parts OTHER events
- * created (or are buffered/dropped), so they never independently create the
- * bubble; `operation_progress` is conditional (see
- * {@link eventProducesRenderablePart}); `turn_start`, `turn_end`,
- * `status_change`, `todo_update`, and `system_status` carry no renderable part.
- */
-const RENDERABLE_TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
-  'text_delta',
-  'thinking_delta',
-  'tool_call',
-  'tool_result',
-  'tool_progress',
-  'approval_required',
-  'question_prompt',
-  'elicitation_prompt',
-  'subagent_update',
-  'memory_recall',
-  'compact_boundary',
-  'error',
-]);
-
-/**
- * Whether a single in-progress-turn event folds into a renderable part in the
- * inline projection. `operation_progress` produces a part only for a FAILED
- * compaction (its other phases drive the transient status strip, not the
- * bubble) — mirrors `foldOperationProgress` in `project-session-turn.ts`.
- */
-function eventProducesRenderablePart(event: SessionEvent): boolean {
-  if (event.type === 'operation_progress') {
-    return event.operation === 'compaction' && event.state === 'failed';
-  }
-  return RENDERABLE_TURN_EVENT_TYPES.has(event.type);
-}
-
-/**
  * Re-derive, locally within `gen-ui`, the minimal oldest-first slice of
  * `projectSessionMessages`'s composition this scanner needs: completed history,
- * then the optimistic user message, then the folded in-progress assistant text.
- * `fsd-layers.md` forbids importing `features/chat`'s model code from another
- * feature's model/lib, so this independently mirrors that same ordering instead.
+ * then the optimistic user message, then the in-progress assistant text (when
+ * any has streamed). `fsd-layers.md` forbids importing `features/chat`'s model
+ * code from another feature's model/lib, so this independently mirrors that
+ * same ordering instead.
  */
 function buildVirtualMessages(state: SessionStreamState): VirtualMessage[] {
   const virtualMessages: VirtualMessage[] = state.messages.map((message) => ({
@@ -108,18 +77,12 @@ function buildVirtualMessages(state: SessionStreamState): VirtualMessage[] {
     .filter((event) => event.type === 'text_delta')
     .map((event) => event.text)
     .join('');
-  // The inline projection appends the trailing assistant bubble whenever the
-  // turn folds ANY renderable part (thinking, tool calls, subagents, ...) or a
-  // pending interaction card — not only text (parity: `buildInProgressMessage`
-  // + `foldPendingInteractions` in `project-session-turn.ts`). A text-less
-  // bubble still occupies the newest-message SLOT, so it must supersede an
-  // older board here too; the scanner only ever searches the TEXT for fences,
-  // and an empty-content entry simply carries none.
-  const turnRendersBubble =
-    inProgressText.length > 0 ||
-    state.pendingInteractions.length > 0 ||
-    state.inProgressTurn.some(eventProducesRenderablePart);
-  if (turnRendersBubble) {
+  // Only the trailing turn's TEXT can carry a fence, so the streaming bubble
+  // joins the projection only when text exists. (Supersede is fence-based —
+  // DOR-302 — so a text-less bubble no longer matters here: it can neither
+  // carry a fence nor, by occupying the newest-message slot, freeze an older
+  // board the way the retired positional rule did.)
+  if (inProgressText.length > 0) {
     virtualMessages.push({
       key: IN_PROGRESS_TURN_KEY,
       content: inProgressText,
@@ -142,7 +105,7 @@ function stripTrailingCr(line: string): string {
  * trailing whitespace don't hide the close), or end-of-string if none follows.
  */
 function extractLastFenceBody(content: string): { code: string; isIncomplete: boolean } {
-  const markerIndex = content.lastIndexOf(FENCE_OPEN_MARKER);
+  const markerIndex = content.lastIndexOf(WIDGET_FENCE_MARKER);
   const markerLineEnd = content.indexOf('\n', markerIndex);
   const bodyStart = markerLineEnd === -1 ? content.length : markerLineEnd + 1;
   const body = content.slice(bodyStart);
@@ -161,14 +124,17 @@ function extractLastFenceBody(content: string): { code: string; isIncomplete: bo
  * the PIP view (task 2.2) can render "whatever board the agent posted most
  * recently" without duplicating `features/chat`'s message-array composition.
  *
- * Newest-message-wins: the search walks the locally-derived, oldest-first
- * virtual message list (completed history, then the optimistic user message,
- * then the folded in-progress assistant text — mirroring `MessageList.tsx`'s
- * positional `isLatestMessage` rule) newest-first, and returns the fence from
- * the first message that carries one, even if an older message also has one.
+ * Newest-fence-wins: the search walks the locally-derived, oldest-first virtual
+ * message list (completed history, then the optimistic user message, then the
+ * in-progress assistant text) newest-first, and returns the fence from the
+ * first message that carries one, even if an older message also has one.
  * Within that message, the LAST fence wins when more than one is present. A
  * fence with no closing delimiter yet (including one still streaming in via
  * `inProgressTurn`) is returned with `isIncomplete: true`.
+ *
+ * Supersede is fence-based (DOR-302, matching the inline chat path): only a
+ * newer FENCE-BEARING message stales a board, so a trailing text-only reply
+ * ("opened it!") never freezes the fence this returns — hence `isLatest: true`.
  *
  * @param state - The session's projected stream state (or the relevant slices of it).
  * @returns The newest fence found, or `null` when no virtual message contains one.
@@ -178,14 +144,16 @@ export function findLatestWidgetFence(state: SessionStreamState): LatestWidgetFe
 
   for (let index = virtualMessages.length - 1; index >= 0; index--) {
     const message = virtualMessages[index];
-    if (!message.content.includes(FENCE_OPEN_MARKER)) continue;
+    if (!message.content.includes(WIDGET_FENCE_MARKER)) continue;
 
     const { code, isIncomplete } = extractLastFenceBody(message.content);
     return {
       code,
       isIncomplete,
       sourceMessageKey: message.key,
-      isLatest: index === virtualMessages.length - 1,
+      // By construction the newest fence in the session — no newer fence can
+      // exist to supersede it (see the LatestWidgetFence.isLatest contract).
+      isLatest: true,
       isStreaming: message.key === IN_PROGRESS_TURN_KEY,
     };
   }

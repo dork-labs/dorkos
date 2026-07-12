@@ -134,20 +134,66 @@ describe('LiveSessionWidget', () => {
     expect(screen.queryByLabelText('Row 1, column 1: A')).not.toBeInTheDocument();
   });
 
-  it('a newer non-widget message supersedes the board (agent interaction disabled)', () => {
+  it('a newer TEXT-only message does NOT supersede the board (fence-based supersede, DOR-302)', () => {
+    // The live repro: the agent emits the board, then replies in a later turn
+    // ("opened it!"). Only a newer FENCE-BEARING message may stale a board —
+    // trailing plain text must leave it playable, or every PIP board whose
+    // fence has any follow-up exchange arrives dead.
     seedHistory([message('m1', boardFence(playableBoard('m-0-0')))]);
     render(<LiveSessionWidget sessionId={SID} />, { wrapper: Wrapper });
     // Live: the empty agent cell invites a move.
     expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
 
-    // A plain-text follow-up becomes the newest message — the board is stale.
+    // A plain-text follow-up becomes the newest message — the board stays live.
     seedHistory([
       message('m1', boardFence(playableBoard('m-0-0'))),
       message('m2', 'nice game, well played'),
     ]);
 
-    const cell = screen.getByLabelText('Row 1, column 1: empty');
-    expect(cell).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).not.toHaveAttribute(
+      'aria-disabled'
+    );
+  });
+
+  it('un-latches when the agent re-emits the board in a NEW message (fresh fence instance, DOR-302)', async () => {
+    // The PIP-latches-forever repro: the fence rendered UNKEYED, so one
+    // WidgetActionProvider instance survived fence re-emits and the agent's
+    // next board arrived pre-latched. Keying by sourceMessageKey mounts a
+    // fresh instance per fence-bearing message, mirroring inline where each
+    // message renders its own fence instance.
+    const user = userEvent.setup();
+    seedHistory([message('m1', boardFence(playableBoard('move')))]);
+    render(<LiveSessionWidget sessionId={SID} />, { wrapper: Wrapper });
+
+    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await waitFor(() => expect(mockTransport.sendUiAction).toHaveBeenCalledTimes(1));
+    // Latched: the tapped cell shows the optimistic mark.
+    expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
+
+    // The agent replies with a fresh board in a NEW message — playable again.
+    seedHistory([
+      message('m1', boardFence(playableBoard('move'))),
+      message('m2', boardFence(playableBoard('move'))),
+    ]);
+
+    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+  });
+
+  it('keeps the latch across a content update of the SAME message (same fence instance)', async () => {
+    const user = userEvent.setup();
+    seedHistory([message('m1', boardFence(playableBoard('move')))]);
+    render(<LiveSessionWidget sessionId={SID} />, { wrapper: Wrapper });
+
+    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await waitFor(() => expect(mockTransport.sendUiAction).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
+
+    // The same message's content updates in place (the streamdown re-parse
+    // class): same sourceMessageKey → same instance → latch and mark persist.
+    seedHistory([message('m1', `${boardFence(playableBoard('move'))}\ngood luck!`)]);
+
+    expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Row 1, column 1: empty — play here')).not.toBeInTheDocument();
   });
 
   it('runs a ui-kind action locally, off-route, without the transport', async () => {

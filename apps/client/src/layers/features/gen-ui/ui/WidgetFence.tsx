@@ -18,9 +18,11 @@ interface WidgetFenceProps {
    */
   sessionId?: string;
   /**
-   * Whether the message hosting this fence is the latest in the conversation.
-   * Threaded down so a superseded widget renders its `agent` actions inert.
-   * Defaults to `true` (surfaces with no message context are always live).
+   * Whether this fence is (in) the session's newest FENCE-BEARING message —
+   * the fence-based supersede rule (DOR-302). `false` means a newer widget
+   * fence exists, so this widget renders its `agent` actions inert; trailing
+   * plain agent text never supersedes a board. Defaults to `true` (surfaces
+   * with no message context are always live).
    */
   isLatestMessage?: boolean;
   /**

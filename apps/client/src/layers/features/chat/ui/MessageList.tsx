@@ -3,9 +3,24 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import type { ChatMessage, MessageGrouping } from '../model/use-chat-session';
 import type { TextEffectConfig } from '@/layers/shared/lib';
+import { WIDGET_FENCE_MARKER } from '@/layers/features/gen-ui';
 import { MessageItem } from './message';
 import type { InteractiveToolHandle } from './message';
 import { ScrollThumb } from './ScrollThumb';
+
+/**
+ * Index of the newest message whose content carries a `dorkos-ui` widget fence,
+ * or `-1` when none does. Drives the FENCE-based supersede rule (DOR-302): a
+ * widget goes stale only when a NEWER fence-bearing message exists — trailing
+ * agent text or a follow-up exchange never freezes a live board. A cheap marker
+ * scan is enough; parsing is owned by the fence renderer.
+ */
+export function findLastWidgetFenceIndex(messages: ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].content.includes(WIDGET_FENCE_MARKER)) return i;
+  }
+  return -1;
+}
 
 /** Computes positional grouping metadata for consecutive same-role messages. */
 export function computeGrouping(messages: ChatMessage[]): MessageGrouping[] {
@@ -71,6 +86,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 ) {
   const [historyCount, setHistoryCount] = useState<number | null>(null);
   const groupings = useMemo(() => computeGrouping(messages), [messages]);
+  const lastWidgetFenceIndex = useMemo(() => findLastWidgetFenceIndex(messages), [messages]);
 
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({
     resize: 'smooth',
@@ -150,9 +166,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const msg = messages[virtualRow.index];
             const isNew = historyCount !== null && virtualRow.index >= historyCount;
-            const isLatestMessage = virtualRow.index === messages.length - 1;
-            const isLastAssistant = isLatestMessage && msg.role === 'assistant';
+            const isLastAssistant =
+              virtualRow.index === messages.length - 1 && msg.role === 'assistant';
             const isStreaming = isLastAssistant && !!isTextStreaming;
+            // Fence-based supersede (DOR-302): a widget in this message is
+            // stale only when a NEWER fence-bearing message exists. Fence-less
+            // messages get `true` vacuously (they render no widget).
+            const isLatestWidgetMessage =
+              lastWidgetFenceIndex === -1 || virtualRow.index >= lastWidgetFenceIndex;
 
             return (
               <div
@@ -173,7 +194,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   sessionId={sessionId}
                   isNew={isNew}
                   isStreaming={isStreaming}
-                  isLatestMessage={isLatestMessage}
+                  isLatestWidgetMessage={isLatestWidgetMessage}
                   activeToolCallId={activeToolCallId}
                   onToolRef={onToolRef}
                   focusedOptionIndex={focusedOptionIndex}

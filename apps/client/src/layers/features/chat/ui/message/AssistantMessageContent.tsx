@@ -201,7 +201,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
   const {
     sessionId,
     isStreaming,
-    isLatestMessage,
+    isLatestWidgetMessage,
     activeToolCallId,
     onToolRef,
     focusedOptionIndex,
@@ -246,7 +246,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
             isStreaming={isStreaming && i === lastTextPartIndex}
             textEffect={textEffect}
             sessionId={sessionId}
-            isLatestMessage={isLatestMessage}
+            isLatestWidgetMessage={isLatestWidgetMessage}
           />
         </div>
       );

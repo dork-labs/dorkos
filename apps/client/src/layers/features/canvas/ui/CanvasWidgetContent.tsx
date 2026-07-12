@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { WidgetRenderer, WidgetErrorCard, validateWidgetDocument } from '@/layers/features/gen-ui';
 import { useSessionId } from '@/layers/entities/session';
@@ -22,10 +23,24 @@ interface CanvasWidgetContentProps {
 export function CanvasWidgetContent({ content }: CanvasWidgetContentProps) {
   const [sessionId] = useSessionId();
   const result = validateWidgetDocument(content.definition);
+  // Remount the widget subtree whenever the definition changes. The action
+  // latch (React state + a synchronous dispatchedRef) lives per
+  // WidgetActionProvider instance; an `update_canvas` push swaps `definition`
+  // in place, so without a changing key the new board arrives pre-latched and
+  // never accepts a move. A re-emitted board is a fresh turn and must arrive
+  // live — mirrors the inline chat path, where each message renders a new
+  // fence instance. Same definition → same key → no spurious remount. The full
+  // serialized definition is the key (React keys can be any length, and the
+  // string is collision-free — no hashing needed).
+  const contentKey = useMemo(() => JSON.stringify(content.definition), [content.definition]);
   return (
     <div className="p-4">
       {result.ok ? (
-        <WidgetRenderer document={result.document} sessionId={sessionId ?? undefined} />
+        <WidgetRenderer
+          key={contentKey}
+          document={result.document}
+          sessionId={sessionId ?? undefined}
+        />
       ) : (
         <WidgetErrorCard error={result.error} raw={result.raw} />
       )}

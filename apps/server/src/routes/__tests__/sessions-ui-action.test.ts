@@ -8,7 +8,7 @@
  * before any turn starts.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { Session, StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 vi.mock('../../lib/boundary.js', () => ({
@@ -154,8 +154,36 @@ describe('POST /api/sessions/:id/ui-action', () => {
     expect(fakeRuntime.releaseLock).not.toHaveBeenCalled();
   });
 
-  it('returns 404 when the session does not exist', async () => {
+  it('cold-starts a session absent from the live map but present in storage (202, action delivered)', async () => {
+    // The DOR-302 repro: after a server restart (or eviction) the in-memory
+    // session map is empty while the widget in the client still exists. The
+    // route must mirror /messages — trigger the turn and let the runtime
+    // cold-start from storage — not 404 every widget until the user types.
     fakeRuntime.hasSession.mockReturnValue(false);
+    fakeRuntime.getSession.mockResolvedValue({ id: SESSION_ID } as Session);
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/ui-action`)
+      .send({ actionId: 'move', payload: { cell: 4 } });
+
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ sessionId: SESSION_ID });
+
+    // The action reaches the (re-established) session as a <ui_action> turn.
+    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1));
+    const content = fakeRuntime.sendMessage.mock.calls[0]![1] as string;
+    expect(content).toContain('<ui_action>');
+    expect(content).toContain('Action: move');
+  });
+
+  it('returns 404 when the session exists nowhere (no live entry, no stored session)', async () => {
+    fakeRuntime.hasSession.mockReturnValue(false);
+    fakeRuntime.getSession.mockResolvedValue(null);
 
     const res = await request(app)
       .post(`/api/sessions/${SESSION_ID}/ui-action`)
@@ -163,6 +191,8 @@ describe('POST /api/sessions/:id/ui-action', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    // Storage was consulted before rejecting.
+    expect(fakeRuntime.getSession).toHaveBeenCalledWith(expect.any(String), SESSION_ID);
     expect(fakeRuntime.acquireLock).not.toHaveBeenCalled();
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });
