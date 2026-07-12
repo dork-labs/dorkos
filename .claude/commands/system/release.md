@@ -232,7 +232,9 @@ Include the current version (from VERSION) and last tag in the prompt. Parse the
 
 ## Phase 4: Present and Confirm
 
-Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
+Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
+
+Also note: pushing the `vX.Y.Z` tag triggers the "Desktop Release" workflow (`.github/workflows/desktop-release.yml`), which asynchronously builds, signs, and notarizes the arm64 macOS app and attaches the DMG + `.zip` + `latest-mac.yml` to this release. That runs in a separate workflow, so a desktop build failure can never block or unwind the product release created here.
 
 If `--dry-run`, **STOP** here.
 
@@ -293,7 +295,12 @@ cd packages/cli && npm version X.Y.Z --no-git-tag-version && cd ../..
 
 # Root package.json
 npm version X.Y.Z --no-git-tag-version
+
+# apps/desktop/package.json (the macOS desktop app)
+cd apps/desktop && npm version X.Y.Z --no-git-tag-version && cd ../..
 ```
+
+Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) and electron-updater's version comparison in lockstep with the product version — the macOS build rides the `vX.Y.Z` tag (see Phase 4 and the "Desktop Release" workflow).
 
 ### 6.4: Compile fragments into the changelog
 
@@ -423,7 +430,7 @@ The user can edit this post before the release commit.
 # Stage all version-related changes. If Check 6 scaffolded a config migration,
 # also stage apps/server/src/services/core/config-manager.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
-git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json package.json blog/ apps/site/public/product/archive/vX.Y.Z/
+git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
 
 git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z
@@ -485,11 +492,15 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "[narrative release notes]"
 
 If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
 
+**The GitHub Release is created here, first, with the notes above.** The macOS desktop assets (`.dmg` + `.zip` + `latest-mac.yml`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.10) already kicked off the "Desktop Release" workflow, which builds, signs, and notarizes the app and then upserts those files onto this same release. The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. The release and its notes are complete and published regardless — the desktop build attaching is a separate, fail-soft step.
+
 ---
 
 ## Phase 7: Report
 
 Summarize: version, tag, commit SHA, npm package link (`https://www.npmjs.com/package/dorkos`), GitHub tag/compare links, harness-maintenance outcomes (ADRs progressed, docs reconciled, deferred items), any Check 6 migration notes, and the media outcome from Phase 6.6 (whether a re-capture was required, which shots were archived under `archive/vX.Y.Z/`, any shipped feature noted as missing a shot, and the features.ts catalog decision). Mention that the Docker image publishes automatically to `ghcr.io/dork-labs/dorkos:{version}` on the tag push (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml`).
+
+Also tell the user the "Desktop Release" workflow is building the macOS app on the same tag push and will attach the DMG + `.zip` + `latest-mac.yml` to this release when it finishes (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/desktop-release.yml`). First-ever notarization can take ~30–65 min; minutes thereafter. Once the assets attach, `https://dorkos.ai/download/mac` starts resolving to the new DMG. A desktop build failure does not affect the already-published release — re-run the workflow from the tag if it fails.
 
 If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; check auth with `npm whoami` (see the token section above).
 

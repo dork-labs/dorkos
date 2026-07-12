@@ -1,9 +1,24 @@
 name: Desktop Release
 
+# Rides the unified `v*` product release tags (the same tags `/system:release`
+# creates). When that command bumps VERSION, commits, tags `vX.Y.Z`, and pushes,
+# this workflow builds + signs + notarizes the arm64 macOS app and ATTACHES the
+# .dmg + .zip + latest-mac.yml to the GitHub Release the command already created
+# — it never creates its own release or rewrites the human-written notes.
+#
+# Because this is a separate workflow run from the release that
+# `/system:release` cuts, a desktop build/notarization failure can never block
+# or unwind the already-created CLI/product release: the release and its notes
+# exist the moment the tag is pushed; the macOS assets simply attach later (or
+# not, on failure). Fail-soft by construction.
+#
+# `workflow_dispatch` (with `dry_run`) still builds the app without publishing,
+# for manual verification.
+
 on:
   push:
     tags:
-      - 'desktop-v*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -79,6 +94,14 @@ jobs:
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
 
+      # Attaches the macOS artifacts to the EXISTING vX.Y.Z release that
+      # /system:release already created. action-gh-release@v2 upserts these
+      # assets onto the release matched by the pushed tag — it does NOT create
+      # a draft (draft: false) and does NOT regenerate notes (no
+      # generate_release_notes), so the human-written narrative notes stay
+      # intact. The release must be published (non-draft) for
+      # dorkos.ai/download/mac to resolve the .dmg.
+      #
       # The .zip must ship alongside the .dmg: latest-mac.yml points
       # electron-updater (Squirrel.Mac) at the zip as the update payload, so
       # a release without it 404s every auto-update check. The dmg is only
@@ -91,5 +114,4 @@ jobs:
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
             apps/desktop/release/latest-mac.yml
-          draft: true
-          generate_release_notes: true
+          draft: false
