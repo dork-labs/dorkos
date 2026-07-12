@@ -1,8 +1,46 @@
 import { utilityProcess, BrowserWindow, dialog, app } from 'electron';
 import { fork, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import log from 'electron-log';
+
+/**
+ * Location of the Claude Code native binary inside a packaged build,
+ * relative to `process.resourcesPath` (`.../Contents/Resources`).
+ *
+ * The SDK ships `claude` as a per-platform optional dependency
+ * (`@anthropic-ai/claude-agent-sdk-darwin-arm64`). electron-builder collects
+ * it from the SDK's dependency tree; electron-builder.yml's `asarUnpack` keeps
+ * it as a real, code-signed file on disk (a Mach-O executable cannot run from
+ * inside app.asar), landing here.
+ */
+const PACKAGED_CLAUDE_BINARY_SUBPATH = path.join(
+  'app.asar.unpacked',
+  'node_modules',
+  '@anthropic-ai',
+  'claude-agent-sdk-darwin-arm64',
+  'claude'
+);
+
+/**
+ * Resolve the packaged Claude Code binary the bundled server should spawn.
+ *
+ * Only meaningful in a packaged build: there, the server bundle's own
+ * `require.resolve` cannot reach the SDK's per-platform optional dependency
+ * (pnpm links that sibling only inside the SDK's store `node_modules`, and an
+ * `app.asar/…` path is not spawnable anyway), so the main process hands the
+ * server the real unpacked path via `DORKOS_CLAUDE_CLI_PATH`. Returns `null`
+ * in dev or if the expected file is absent, leaving the server's own PATH-based
+ * resolution untouched.
+ *
+ * @returns Absolute path to the unpacked `claude` binary, or `null`.
+ */
+function resolvePackagedClaudeBinary(): string | null {
+  if (!app.isPackaged) return null;
+  const candidate = path.join(process.resourcesPath, PACKAGED_CLAUDE_BINARY_SUBPATH);
+  return existsSync(candidate) ? candidate : null;
+}
 
 /**
  * Unified interface for server child process, abstracting the difference
@@ -181,12 +219,24 @@ export async function startServer(): Promise<number> {
   const clientDistPath = app.isPackaged
     ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'renderer')
     : undefined;
+  // In a packaged build, point the server at the unpacked, signed Claude Code
+  // binary — the bundled server can't `require.resolve` it itself (see
+  // resolvePackagedClaudeBinary). Unset in dev, where the server resolves
+  // `claude` from PATH or the SDK's optional dependency as usual.
+  const claudeCliPath = resolvePackagedClaudeBinary();
+  if (app.isPackaged && !claudeCliPath) {
+    log.error(
+      '[server] Packaged Claude Code binary missing at',
+      path.join(process.resourcesPath, PACKAGED_CLAUDE_BINARY_SUBPATH)
+    );
+  }
   child = spawnServer(serverEntry, {
     DORKOS_PORT: String(port),
     DORK_HOME: dorkHome,
     NODE_ENV: app.isPackaged ? 'production' : 'development',
     ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),
     ...(clientDistPath ? { CLIENT_DIST_PATH: clientDistPath } : {}),
+    ...(claudeCliPath ? { DORKOS_CLAUDE_CLI_PATH: claudeCliPath } : {}),
   });
 
   // Wait for the server to signal readiness

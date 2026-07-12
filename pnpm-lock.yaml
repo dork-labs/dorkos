@@ -430,6 +430,10 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@7.3.6(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+    optionalDependencies:
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64':
+        specifier: 0.3.177
+        version: 0.3.177
 
   apps/e2e:
     devDependencies:

@@ -127,6 +127,7 @@ export class RuntimeCache {
   private warmupPromise: Promise<void> | null = null;
   private readonly cachePath: string;
   private defaultCwd: string = '';
+  private claudeCliPath: string | undefined;
   private static readonly TTL_MS = 86_400_000; // 24 hours
 
   constructor(dorkHome: string, runtimeType: string = 'claude-code') {
@@ -136,6 +137,20 @@ export class RuntimeCache {
   /** Set the default cwd for lazy warm-up fallback. */
   setDefaultCwd(cwd: string): void {
     this.defaultCwd = cwd;
+  }
+
+  /**
+   * Set the explicit Claude Code binary path the warm-up query should spawn.
+   *
+   * Mirrors {@link ClaudeCodeRuntime}'s own resolution: without this the
+   * warm-up `query()` lets the SDK self-resolve the binary, which breaks in the
+   * packaged desktop app — there the SDK resolves the executable to a path
+   * inside `app.asar` (an archive file, not a real directory) and `spawn`
+   * fails with `ENOTDIR`. Supplying the unpacked, on-disk path fixes warm-up
+   * there; unset in dev/CLI, where the SDK's self-resolution already works.
+   */
+  setClaudeCliPath(claudeCliPath: string | undefined): void {
+    this.claudeCliPath = claudeCliPath;
   }
 
   // ---------------------------------------------------------------------------
@@ -205,7 +220,13 @@ export class RuntimeCache {
       try {
         // eslint-disable-next-line @typescript-eslint/no-empty-function -- intentionally never yields
         const neverYield = (async function* () {})();
-        const agentQuery = query({ prompt: neverYield, options: { cwd } });
+        const agentQuery = query({
+          prompt: neverYield,
+          options: {
+            cwd,
+            ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
+          },
+        });
 
         const models = await agentQuery.supportedModels();
         this.cachedModels = models.map(mapSdkModelToModelOption);

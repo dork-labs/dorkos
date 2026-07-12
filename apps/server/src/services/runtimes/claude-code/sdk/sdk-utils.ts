@@ -8,6 +8,43 @@ const requireFrom = createRequire(import.meta.url);
 /** npm name of the SDK whose bundled native binary we spawn. */
 const SDK_PKG = '@anthropic-ai/claude-agent-sdk';
 
+/**
+ * Env override for an explicit Claude Code binary path.
+ *
+ * The packaged desktop app (Electron) sets this to the real, code-signed
+ * `claude` binary it unpacks from its asar (see apps/desktop's
+ * `server-process.ts`). There, `require.resolve` cannot find the SDK's
+ * per-platform optional dependency: pnpm links that sibling package only
+ * inside the SDK's own store `node_modules`, never at a top-level
+ * `node_modules/@anthropic-ai/` the bundled server can walk to — and even
+ * when electron-builder flattens it into the asar, the resolved `app.asar/…`
+ * path is not spawnable (it lives inside the archive file, not on disk). The
+ * main process therefore hands the server the real unpacked path directly.
+ * Read directly from `process.env` (not the parse-once `env.ts` snapshot)
+ * because this module is a shared seam also bundled into the CLI — the same
+ * carve-out `secret.ts` uses for `BETTER_AUTH_SECRET`. Unset in dev and in
+ * the npm CLI, so their resolution is unchanged.
+ */
+const CLAUDE_CLI_PATH_ENV = 'DORKOS_CLAUDE_CLI_PATH';
+
+/**
+ * An explicit, caller-provided Claude Code binary path from the environment.
+ *
+ * The path is trusted as given: we only confirm the file exists, not that it
+ * is a genuine `claude` executable — this is a deliberate escape hatch for a
+ * caller (the packaged desktop app) that already knows the exact binary it
+ * bundled, mirroring how the SDK itself trusts its resolved binary path.
+ *
+ * @returns The absolute path if {@link CLAUDE_CLI_PATH_ENV} is set to a file
+ *   that exists, otherwise `null`.
+ */
+function resolveClaudeBinaryFromEnv(): string | null {
+  // eslint-disable-next-line no-restricted-syntax -- reading an env override, not a homedir path
+  const override = process.env[CLAUDE_CLI_PATH_ENV];
+  if (override && existsSync(override)) return override;
+  return null;
+}
+
 /** A user prompt whose input stream stays open until {@link HeldUserPrompt.close}. */
 export interface HeldUserPrompt {
   /** AsyncIterable to pass as `query({ prompt })`. */
@@ -163,6 +200,10 @@ function findClaudeOnPath(): string | null {
  * Resolution order (Hybrid — keeps DorkOS working without a separate Claude Code
  * install, while staying resilient if the bundled binary failed to install):
  *
+ * 0. An explicit path from {@link CLAUDE_CLI_PATH_ENV} (the packaged desktop
+ *    app supplies its unpacked, signed binary this way — see that constant's
+ *    doc for why `require.resolve` can't reach it there). Unset in dev and the
+ *    npm CLI, so steps 1–3 are their unchanged resolution.
  * 1. The SDK's bundled, version-matched native binary (preferred — avoids the
  *    version skew of pointing at an unrelated global install).
  * 2. A `claude` on PATH — the SDK throws rather than falling back to PATH when
@@ -174,5 +215,7 @@ function findClaudeOnPath(): string | null {
  * so resolving it always failed.
  */
 export function resolveClaudeCliPath(): string | undefined {
-  return resolveBundledClaudeBinary() ?? findClaudeOnPath() ?? undefined;
+  return (
+    resolveClaudeBinaryFromEnv() ?? resolveBundledClaudeBinary() ?? findClaudeOnPath() ?? undefined
+  );
 }

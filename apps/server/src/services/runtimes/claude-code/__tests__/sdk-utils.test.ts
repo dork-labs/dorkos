@@ -1,12 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { resolveClaudeCliPath, createIdlePrompt, createHeldUserPrompt } from '../sdk/sdk-utils.js';
 
 // Mutable holder so each test can steer the three resolution primitives.
+// `exists` accepts either a flat boolean (every path exists / none do) or a
+// per-path predicate — the env-override tests need to say "the override path
+// is missing but the bundled one exists", which a single boolean can't express.
 const h = vi.hoisted(() => ({
   resolve: ((_s: string): string => {
     throw new Error('not found');
   }) as (s: string) => string,
-  exists: true,
+  exists: true as boolean | ((path: string) => boolean),
   which: null as string | null,
 }));
 
@@ -15,8 +18,11 @@ vi.mock('node:module', () => ({
 }));
 
 vi.mock('node:fs', () => ({
-  existsSync: () => h.exists,
+  existsSync: (path: string) => (typeof h.exists === 'function' ? h.exists(path) : h.exists),
 }));
+
+/** Env var the packaged desktop app sets to an explicit `claude` binary path. */
+const CLI_PATH_ENV = 'DORKOS_CLAUDE_CLI_PATH';
 
 vi.mock('node:child_process', () => ({
   execFileSync: () => {
@@ -26,12 +32,67 @@ vi.mock('node:child_process', () => ({
 }));
 
 describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
+  // Capture and clear the override env var so no test's setting can leak into
+  // the next (or into the pre-existing cases, which assume it is unset).
+  let savedEnv: string | undefined;
   beforeEach(() => {
+    savedEnv = process.env[CLI_PATH_ENV];
+    delete process.env[CLI_PATH_ENV];
     h.resolve = () => {
       throw new Error('not found');
     };
     h.exists = true;
     h.which = null;
+  });
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env[CLI_PATH_ENV];
+    else process.env[CLI_PATH_ENV] = savedEnv;
+  });
+
+  // Purpose: the packaged desktop app hands the server an explicit binary path
+  // (require.resolve can't reach the SDK's optional dep there) — it must win
+  // over the SDK's own bundled resolution, even when that would also succeed.
+  it('prefers the DORKOS_CLAUDE_CLI_PATH override over the bundled binary when the file exists', () => {
+    process.env[CLI_PATH_ENV] = '/opt/dorkos/claude';
+    h.exists = () => true; // both the override and the bundled path "exist"
+    h.resolve = () => '/pkgs/claude-agent-sdk/claude'; // present, but must be ignored
+    h.which = '/usr/local/bin/claude'; // present, but must be ignored
+
+    expect(resolveClaudeCliPath()).toBe('/opt/dorkos/claude');
+  });
+
+  // Purpose: an override that points at a missing file is not trusted — the
+  // existing bundled→PATH→undefined order must resume unchanged.
+  it('falls through to the bundled binary when the override path does not exist', () => {
+    process.env[CLI_PATH_ENV] = '/opt/dorkos/claude';
+    h.exists = (p) => p !== '/opt/dorkos/claude'; // override missing, bundled present
+    h.resolve = () => '/pkgs/claude-agent-sdk/claude';
+    h.which = null;
+
+    expect(resolveClaudeCliPath()).toBe('/pkgs/claude-agent-sdk/claude');
+  });
+
+  // Purpose: a missing override must not mask the terminal `undefined` — the
+  // whole order still resolves exactly as it would without the env var set.
+  it('with the override missing and nothing else resolvable, returns undefined', () => {
+    process.env[CLI_PATH_ENV] = '/opt/dorkos/claude';
+    h.exists = () => false; // override missing; bundled resolve throws below
+    h.resolve = () => {
+      throw new Error('not found');
+    };
+    h.which = null;
+
+    expect(resolveClaudeCliPath()).toBeUndefined();
+  });
+
+  // Purpose: with the override unset (the dev/CLI default), resolution is
+  // byte-for-byte the prior behavior — the bundled binary still wins.
+  it('ignores an unset override and resolves exactly as before (bundled wins)', () => {
+    // beforeEach already deletes the env var.
+    h.resolve = () => '/pkgs/claude-agent-sdk/claude';
+    h.which = '/usr/local/bin/claude';
+
+    expect(resolveClaudeCliPath()).toBe('/pkgs/claude-agent-sdk/claude');
   });
 
   // Purpose: prefer the SDK's version-matched bundled binary over an unrelated global install
