@@ -83,8 +83,8 @@ dorkos --log-level debug
 
 <Callout type="info">
   `install`, `uninstall`, `update`, `marketplace`, and `cache` all talk to a DorkOS server that's
-  already running. They don't start one for you, so run `dorkos` first in another terminal (or
-  make sure it's already running) before using them.
+  already running. They don't start one for you, so run `dorkos` first in another terminal (or make
+  sure it's already running) before using them.
 </Callout>
 
 #### Configuration
@@ -153,6 +153,17 @@ dorkos package validate <path>
 dorkos cache list                      # Show cache counts and total size
 dorkos cache prune [--keep-last-n <N>] # Remove older cached package versions (default: keep 1)
 dorkos cache clear                     # Wipe the entire cache
+```
+
+#### Feedback
+
+**`dorkos feedback`**: report a bug or request a feature. It opens a prefilled GitHub issue in your browser with your DorkOS version, operating system, runtimes, and on/off settings already filled in. You review and edit everything before submitting; DorkOS sends nothing on its own.
+
+```bash
+dorkos feedback              # Report a bug (the default)
+dorkos feedback --feature    # Request a feature
+dorkos feedback --runtime    # Report a runtime issue (Claude Code, Codex, or OpenCode)
+dorkos feedback --print      # Print the URL instead of opening a browser
 ```
 
 ### Config directory

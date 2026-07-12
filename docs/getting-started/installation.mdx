@@ -12,15 +12,16 @@ DorkOS gives you a browser tab where you run, schedule, and check on your coding
 <Callout type="info">
   Every install method needs a Claude API key (a key from
   [Anthropic](https://console.anthropic.com/) that lets DorkOS talk to Claude on your behalf). If
-  you don't have one yet, create it there first. Everything except Docker also needs
-  [Node.js](https://nodejs.org/) 22 or later, the JavaScript runtime DorkOS runs on.
+  you don't have one yet, create it there first. Everything except Docker and the macOS desktop app
+  also needs [Node.js](https://nodejs.org/) 22 or later, the JavaScript runtime DorkOS runs on. (The
+  desktop app and Docker bring their own, so you don't have to install anything else.)
 </Callout>
 
 ## Pick your install method
 
-Most people should use the one-liner: it's one command and it checks your setup for you. Already comfortable with npm? Use the npm tab. Running on a server, or don't want Node.js on your machine at all? Use Docker. Contributing to DorkOS itself? Use Self-Hosted.
+Most people should use the one-liner: it's one command and it checks your setup for you. Already comfortable with npm? Use the npm tab. On a Mac and want a real app in your dock, no terminal at all? Use the Desktop App. Running on a server, or don't want Node.js on your machine? Use Docker. Contributing to DorkOS itself? Use Self-Hosted.
 
-<Tabs items={['One-liner (Recommended)', 'npm', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner (Recommended)', 'npm', 'Desktop App (macOS)', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner (Recommended)">
 
@@ -132,6 +133,41 @@ DorkOS starts on port 4242 and opens your browser to the cockpit.
 <Callout type="info">
   Pass flags to customize startup: `dorkos --port 8080 --dir ~/projects/my-app`. Run `dorkos --help`
   for all options.
+</Callout>
+
+</Tab>
+
+<Tab value="Desktop App (macOS)">
+
+<Callout type="warn">
+  The desktop app is new. It runs on Macs with Apple Silicon (the M1 chip or later) and is under
+  active development, so expect a rough edge here and there. If you hit trouble, the web cockpit
+  from the tabs above is the most battle-tested way to run DorkOS today.
+</Callout>
+
+A real Mac app: it's the same DorkOS cockpit, in its own window and dock icon, with nothing to install in a terminal. It bundles everything it needs, including Claude Code, so you don't need Node.js.
+
+<Steps>
+<Step>
+
+### Download and install
+
+Download the app from [dorkos.ai/download/mac](https://dorkos.ai/download/mac), open the `.dmg`, and drag DorkOS to your Applications folder. The first time you open it, macOS asks you to confirm you want to run it; click **Open**.
+
+</Step>
+<Step>
+
+### Connect your agent
+
+On first launch, DorkOS walks you through connecting Claude: sign in to your Claude account, or paste your Anthropic API key. That's it, no environment variables to set.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  The desktop app updates itself. When a new version is out, it downloads in the background and
+  installs the next time you quit and reopen the app, so you're always current without lifting a
+  finger.
 </Callout>
 
 </Tab>
@@ -292,7 +328,7 @@ This starts the Express API server and Vite dev server together, with hot reload
 
 DorkOS checks for a newer version every time it starts. Here's how to update on each install method.
 
-<Tabs items={['One-liner / npm', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner / npm', 'Desktop App (macOS)', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner / npm">
 
@@ -323,6 +359,12 @@ Check your current version at any time:
 ```bash
 dorkos --version
 ```
+
+</Tab>
+
+<Tab value="Desktop App (macOS)">
+
+Nothing to do: the desktop app updates itself. It downloads new versions in the background and installs them the next time you quit and reopen the app.
 
 </Tab>
 
