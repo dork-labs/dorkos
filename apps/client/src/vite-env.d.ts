@@ -43,12 +43,6 @@ declare global {
      */
     getPendingNavigate(): Promise<string | null>;
     /**
-     * Ask the native updater to run a foreground check (the same path as the
-     * "Check for Updates…" menu item). Any outcome arrives via
-     * {@link onUpdateStatus}; "up to date" and errors also show a native dialog.
-     */
-    checkForUpdates(): void;
-    /**
      * Restart the app to install a downloaded update — wired to the in-app
      * card's "Restart to install" button. Only meaningful after an
      * {@link onUpdateStatus} `downloaded` event.
@@ -61,6 +55,13 @@ declare global {
      * @returns An unsubscribe function that removes the listener.
      */
     onUpdateStatus(cb: (status: DesktopUpdateStatus) => void): () => void;
+    /**
+     * Replay the last actionable update status (`downloading`/`downloaded`),
+     * or `null`. Called once on mount right after {@link onUpdateStatus} so a
+     * window recreated after `update-downloaded` fired still recovers a
+     * waiting update (macOS close→reopen).
+     */
+    getUpdateStatus(): Promise<DesktopUpdateStatus | null>;
   }
 
   interface Window {

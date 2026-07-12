@@ -58,12 +58,12 @@ describe('DesktopUpdateCard', () => {
     expect(card?.className).toContain('bg-amber-500/5');
   });
 
-  it('shows a subtle downloading state with no restart button', () => {
+  it('shows a subtle downloading state with percent and no restart button', () => {
     render(
-      <DesktopUpdateCard status={{ state: 'downloading', percent: 40 }} onRestart={vi.fn()} />
+      <DesktopUpdateCard status={{ state: 'downloading', percent: 41.6 }} onRestart={vi.fn()} />
     );
 
-    expect(screen.getByText('Downloading update…')).toBeInTheDocument();
+    expect(screen.getByText('Downloading update… 42%')).toBeInTheDocument();
     expect(screen.queryByLabelText('Restart to install the update')).not.toBeInTheDocument();
 
     const card = screen.getByTestId('motion-div');

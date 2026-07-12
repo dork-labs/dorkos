@@ -36,8 +36,16 @@ export function DesktopUpdateCard({ status, onRestart }: DesktopUpdateCardProps)
       )}
     >
       <div className="flex items-center gap-1.5 text-sm font-medium">
-        {isReady ? <ArrowUp className="size-3.5" /> : <Download className="size-3.5" />}
-        <span>{isReady ? `Update ready — v${status.version}` : 'Downloading update…'}</span>
+        {status.state === 'downloaded' ? (
+          <ArrowUp className="size-3.5" />
+        ) : (
+          <Download className="size-3.5" />
+        )}
+        <span>
+          {status.state === 'downloaded'
+            ? `Update ready — v${status.version}`
+            : `Downloading update… ${Math.round(status.percent)}%`}
+        </span>
       </div>
 
       <p className="text-muted-foreground mt-1 text-xs">

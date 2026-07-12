@@ -196,6 +196,32 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     expect(send).toHaveBeenCalledWith('update:status', { state: 'error', message: 'boom' });
   });
 
+  it('latches downloading/downloaded for replay; transient statuses do not clobber a stored downloaded', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const { setupAutoUpdater, getLastUpdateStatus } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+
+    expect(getLastUpdateStatus()).toBeNull();
+
+    autoUpdater.emit('download-progress', { percent: 30 } as ProgressInfo);
+    expect(getLastUpdateStatus()).toEqual({ state: 'downloading', percent: 30 });
+
+    autoUpdater.emit('update-downloaded', { version: '2.0.0' } as UpdateDownloadedEvent);
+    expect(getLastUpdateStatus()).toEqual({ state: 'downloaded', version: '2.0.0' });
+
+    // A background re-check (checking → not-available) must not erase the
+    // stored downloaded update.
+    autoUpdater.emit('checking-for-update');
+    autoUpdater.emit('update-not-available', { version: '1.0.0' } as UpdateInfo);
+    expect(getLastUpdateStatus()).toEqual({ state: 'downloaded', version: '2.0.0' });
+  });
+
   it('restartToUpdate calls quitAndInstall when packaged, and no-ops otherwise', async () => {
     const { app, resetElectronMock } = await getElectronMock();
     resetElectronMock();

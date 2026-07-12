@@ -41,6 +41,21 @@ let getMainWindow: (() => BrowserWindow | null) | null = null;
 let checkingInteractively = false;
 
 /**
+ * The last *actionable* update status (`downloading` / `downloaded`), retained
+ * so a renderer that mounts *after* the event fired can recover it via the
+ * `get-update-status` IPC — the analogue of `navigation.ts`'s pending-navigate
+ * replay. This matters on macOS: closing the window (`mainWindow` → null, app
+ * stays alive) then reopening mounts a fresh React tree that would otherwise
+ * never learn a `downloaded` update is waiting, stranding it with no in-app
+ * restart affordance (the native dialog having been suppressed).
+ *
+ * Only `downloading`/`downloaded` are stored — the transient
+ * `checking`/`available`/`not-available`/`error` states are not worth
+ * replaying and must never overwrite a stored `downloaded`.
+ */
+let lastStatus: UpdateStatus | null = null;
+
+/**
  * Set up automatic updates via GitHub Releases: checks on launch and every
  * 4 hours in the background, downloads silently, and prompts the user to
  * restart once an update is ready (see `checkForUpdatesInteractive` for the
@@ -179,8 +194,21 @@ export function restartToUpdate(): void {
   autoUpdater.quitAndInstall();
 }
 
+/**
+ * The last actionable status ({@link lastStatus}), for the `get-update-status`
+ * replay IPC. Returns `null` until a `downloading`/`downloaded` event fires.
+ */
+export function getLastUpdateStatus(): UpdateStatus | null {
+  return lastStatus;
+}
+
 /** Push an {@link UpdateStatus} to the tracked main window's renderer, mirroring how `navigation.ts` sends `navigate`. */
 function sendUpdateStatus(status: UpdateStatus): void {
+  // Latch only the actionable states for replay; transient ones must not clobber
+  // a stored `downloaded` (a background re-check emits checking→available).
+  if (status.state === 'downloading' || status.state === 'downloaded') {
+    lastStatus = status;
+  }
   const win = getMainWindow?.();
   if (win && !win.isDestroyed()) win.webContents.send(UPDATE_STATUS_CHANNEL, status);
 }

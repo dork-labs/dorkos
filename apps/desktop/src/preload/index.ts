@@ -45,13 +45,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   getPendingNavigate: (): Promise<string | null> => ipcRenderer.invoke('get-pending-navigate'),
   /**
-   * Ask the native updater to run a foreground check (the same path as the
-   * "Check for Updates…" menu item). Fire-and-forget: any outcome arrives via
-   * {@link onUpdateStatus}, and an "up to date" / error result is also shown
-   * as a native dialog. No-ops in an unpackaged dev build.
-   */
-  checkForUpdates: (): void => ipcRenderer.send('update:check'),
-  /**
    * Restart the app to install a downloaded update — wired to the in-app
    * card's "Restart to install" button. Only meaningful once an
    * {@link onUpdateStatus} `downloaded` event has arrived.
@@ -69,4 +62,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(UPDATE_STATUS_CHANNEL, listener);
     return () => ipcRenderer.removeListener(UPDATE_STATUS_CHANNEL, listener);
   },
+  /**
+   * Replay the last actionable update status (`downloading`/`downloaded`), or
+   * `null`. Called once on mount right after {@link onUpdateStatus}, so a
+   * window recreated after `update-downloaded` fired still recovers a waiting
+   * update (macOS close→reopen).
+   */
+  getUpdateStatus: (): Promise<UpdateStatus | null> => ipcRenderer.invoke('get-update-status'),
 });
