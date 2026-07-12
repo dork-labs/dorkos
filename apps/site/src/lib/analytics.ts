@@ -28,6 +28,7 @@
  * | --------------------- | --------------------------------------------------- |
  * | `$pageview` (default) | Every page load and client-side route change (see `capture_pageview: 'history_change'` in instrumentation-client.ts) |
  * | `hero_install_copy`   | Visitor copies the install one-liner in the hero terminal |
+ * | `hero_download`       | Visitor clicks a macOS desktop-download link (install hero or nav) |
  * | `docs_visit`          | Visitor lands on a `/docs` page                      |
  * | `marketplace_browse`  | Visitor lands on `/marketplace`                      |
  * | `github_click`        | Visitor clicks an outbound GitHub link (header, footer, or mobile hero CTA) |
@@ -92,6 +93,14 @@ export type InstallMethod = 'curl' | 'npm';
 /** Fires when a visitor copies the install one-liner in the hero terminal. */
 export function trackHeroInstallCopy(method: InstallMethod): void {
   capture('hero_install_copy', { method });
+}
+
+/** Where the macOS desktop-download link was clicked. */
+export type DownloadPlacement = 'hero' | 'nav';
+
+/** Fires when a visitor clicks a macOS desktop-download link (`/download/mac`). */
+export function trackHeroDownload(placement: DownloadPlacement): void {
+  capture('hero_download', { placement });
 }
 
 /** Fires when a visitor lands on a `/docs` page. */
