@@ -38,6 +38,15 @@ function batchCaptureUrl(): string {
 }
 
 /**
+ * Per-request cap on every PostHog call here (ms). Both callers sit inside
+ * latency-sensitive auth flows (the `/device/token` after-hook and the
+ * account-deletion `afterDelete` hook), so a hanging PostHog must abort fast
+ * rather than eat the Vercel function's time budget — the surrounding catch
+ * absorbs the resulting AbortError like any other failure.
+ */
+const POSTHOG_TIMEOUT_MS = 3000;
+
+/**
  * Merge an app instance's anonymous telemetry history into an account person by
  * emitting a server-side `$create_alias` (previous `instanceId` → account UUID).
  *
@@ -70,6 +79,7 @@ export async function aliasInstanceToAccount(args: {
   try {
     await fetch(batchCaptureUrl(), {
       method: 'POST',
+      signal: AbortSignal.timeout(POSTHOG_TIMEOUT_MS),
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         api_key: apiKey,
@@ -137,6 +147,7 @@ export async function deletePostHogPerson(distinctId: string): Promise<void> {
     // 1. Resolve the person's internal id from its distinct id.
     const lookup = await fetch(`${apiBase}/?distinct_id=${encodeURIComponent(distinctId)}`, {
       headers: authHeader,
+      signal: AbortSignal.timeout(POSTHOG_TIMEOUT_MS),
     });
     if (!lookup.ok) {
       console.error('[lib/posthog-server] person lookup failed', { status: lookup.status });
@@ -154,6 +165,7 @@ export async function deletePostHogPerson(distinctId: string): Promise<void> {
     const del = await fetch(`${apiBase}/${encodeURIComponent(personId)}/?delete_events=true`, {
       method: 'DELETE',
       headers: authHeader,
+      signal: AbortSignal.timeout(POSTHOG_TIMEOUT_MS),
     });
     if (!del.ok) {
       console.error('[lib/posthog-server] person delete failed', { status: del.status });

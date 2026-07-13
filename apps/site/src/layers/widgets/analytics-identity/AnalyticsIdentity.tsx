@@ -20,8 +20,9 @@ import { decideIdentity } from './identity-decision';
  * - When a visitor is **signed in and opted in** (cookies mode), it identifies
  *   them by their account UUID — merging their prior anonymous browser history
  *   into the account person.
- * - When they **log out**, it resets PostHog identity religiously, so a shared
- *   browser never carries one account's identified events into the next visitor.
+ * - When they **log out** — or a *different* account signs in on the same
+ *   browser — it resets PostHog identity religiously, so a shared browser never
+ *   carries one account's identified events into the next visitor.
  * - It never identifies an anonymous-floor visitor — the gate lives in
  *   {@link identifyAccount}, and the transition logic in {@link decideIdentity}.
  *
@@ -32,19 +33,27 @@ import { decideIdentity } from './identity-decision';
 export function AnalyticsIdentity() {
   const { data: session } = useSession();
   const userId = session?.user?.id ?? null;
-  // Whether the previous evaluation left us identified — drives the once-only
-  // identify and the logout-only reset (a ref so it never triggers a re-render).
-  const identifiedRef = useRef(false);
+  // WHICH account the previous evaluation left identified (null = none) —
+  // drives the once-only identify, the logout-only reset, and the direct A→B
+  // account-switch reset (a ref so it never triggers a re-render). An id, not a
+  // boolean: a boolean can't tell account A from account B, which would let B's
+  // events attribute to A on a shared browser.
+  const identifiedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     function sync() {
       const decision = decideIdentity({
         userId,
         optedOut: hasOptedOutCapturing(),
-        identified: identifiedRef.current,
+        identifiedUserId: identifiedUserIdRef.current,
       });
-      identifiedRef.current = decision.identified;
+      identifiedUserIdRef.current = decision.identifiedUserId;
       if (decision.action === 'identify' && userId) {
+        identifyAccount(userId);
+      } else if (decision.action === 'reset-then-identify' && userId) {
+        // Direct account switch (A→B without a logged-out tick in between):
+        // sever A's identity first so B's events never attribute to A.
+        resetIdentity();
         identifyAccount(userId);
       } else if (decision.action === 'reset') {
         resetIdentity();
