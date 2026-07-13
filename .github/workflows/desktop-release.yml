@@ -190,27 +190,21 @@ jobs:
       # (GitHub Actions runs it via the Git for Windows bash that ships on
       # windows-latest — no extra setup needed) to keep these steps
       # byte-for-byte comparable with the macOS job's steps.
+      #
+      # Unsigned for the alpha (see
+      # specs/desktop-windows-support/02-specification.md "Decision: signing").
+      # This is a SINGLE unconditional step on purpose: unlike the macOS job —
+      # whose signed/unsigned split carries a real behavioral difference
+      # (Apple codesign env vs CSC_IDENTITY_AUTO_DISCOVERY=false) — Windows has
+      # no signing wired yet, so a parallel "signed" branch here would be
+      # byte-for-byte identical to this one. That is a trap: flipping
+      # AZURE_SIGNING_CONFIGURED would run a step labeled "signed" that still
+      # emits an UNSIGNED artifact. So we keep one honest step now and leave
+      # the seam as this comment. The Azure Artifact Signing follow-up is a
+      # drop-in: add an `azure/login` OIDC step ahead of this one and a
+      # win.azureSignOptions block in electron-builder.yml, then electron-
+      # builder signs during packaging — no `if:` gymnastics needed.
       - name: Package Windows installer (unsigned)
-        if: ${{ !vars.AZURE_SIGNING_CONFIGURED }}
-        shell: bash
-        run: |
-          cd apps/desktop
-          npx electron-builder --win --x64 --config electron-builder.yml --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Inert placeholder mirroring the mac signed/unsigned split above, so
-      # the Azure Artifact Signing follow-up (see
-      # specs/desktop-windows-support/02-specification.md "Decision: signing")
-      # is a drop-in: flip AZURE_SIGNING_CONFIGURED to 'true' once Blaze
-      # Ventures, LLC is enrolled, then extend this step with an `azure/login`
-      # OIDC step ahead of it and the win.azureSignOptions block in
-      # electron-builder.yml (mirroring CSC_LINK/CSC_KEY_PASSWORD/APPLE_*
-      # above). Until then AZURE_SIGNING_CONFIGURED is never set, so this
-      # branch never runs and the command below is identical to the unsigned
-      # one on purpose — no real Azure signing is wired here.
-      - name: Package Windows installer (signed)
-        if: ${{ vars.AZURE_SIGNING_CONFIGURED == 'true' }}
         shell: bash
         run: |
           cd apps/desktop
