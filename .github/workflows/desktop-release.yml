@@ -2,18 +2,29 @@ name: Desktop Release
 
 # Rides the unified `v*` product release tags (the same tags `/system:release`
 # creates). When that command bumps VERSION, commits, tags `vX.Y.Z`, and pushes,
-# this workflow builds + signs + notarizes the arm64 macOS app and ATTACHES the
-# .dmg + .zip + latest-mac.yml to the GitHub Release the command already created
-# — it never creates its own release or rewrites the human-written notes.
+# this workflow builds two independent platform packages and ATTACHES their
+# assets to the GitHub Release the command already created — it never creates
+# its own release or rewrites the human-written notes:
 #
-# Because this is a separate workflow run from the release that
-# `/system:release` cuts, a desktop build/notarization failure can never block
-# or unwind the already-created CLI/product release: the release and its notes
-# exist the moment the tag is pushed; the macOS assets simply attach later (or
-# not, on failure). Fail-soft by construction.
+#   - macOS (build-macos): signs + notarizes the arm64 app, attaches
+#     .dmg + .zip + latest-mac.yml. electron-updater (Squirrel.Mac) reads the
+#     .zip as the update payload; the .dmg is the human-facing installer.
+#   - Windows (build-windows): packages an UNSIGNED x64 NSIS installer
+#     (signing is a business-gated follow-up — see
+#     specs/desktop-windows-support/02-specification.md "Decision: signing"),
+#     attaches .exe + latest.yml + .blockmap. electron-updater (NSIS updater)
+#     reads latest.yml to find the update payload; without it, update checks
+#     404. The .exe is the human-facing installer.
 #
-# `workflow_dispatch` (with `dry_run`) still builds the app without publishing,
-# for manual verification.
+# Because these are separate workflow jobs from the release that
+# `/system:release` cuts, a desktop build/sign/notarize failure on either
+# platform can never block or unwind the already-created CLI/product release,
+# nor block the other platform: the release and its notes exist the moment the
+# tag is pushed; each platform's assets simply attach later (or not, on
+# failure), independently. Fail-soft by construction.
+#
+# `workflow_dispatch` (with `dry_run`) still builds both apps without
+# publishing, for manual verification.
 
 on:
   push:
@@ -141,4 +152,112 @@ jobs:
             apps/desktop/release/*.dmg \
             apps/desktop/release/*.zip \
             apps/desktop/release/latest-mac.yml \
+            --clobber
+
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build desktop app
+        # Through turbo (not a bare pnpm --filter run) so workspace
+        # dependencies build first (^build): the renderer imports
+        # @dorkos/extension-api and friends, whose exports resolve to dist/
+        # — absent on a fresh runner unless the dependency graph builds.
+        run: pnpm exec turbo build --filter=@dorkos/desktop
+
+      # Flips better-sqlite3/node-pty to Electron's ABI right before
+      # packaging (electron-builder.yml has npmRebuild: false — see
+      # scripts/rebuild-natives.ts for why its built-in rebuild is bypassed).
+      # Deliberately NOT part of `pnpm build`: on a dev machine that flip
+      # poisons the shared pnpm store for plain-Node vitest monorepo-wide.
+      - name: Rebuild native modules for Electron
+        run: pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
+
+      # windows-latest's default `run:` shell is pwsh; the multi-line
+      # `cd && npx …` scripts below use POSIX syntax, so pin bash explicitly
+      # (GitHub Actions runs it via the Git for Windows bash that ships on
+      # windows-latest — no extra setup needed) to keep these steps
+      # byte-for-byte comparable with the macOS job's steps.
+      #
+      # Unsigned for the alpha (see
+      # specs/desktop-windows-support/02-specification.md "Decision: signing").
+      # This is a SINGLE unconditional step on purpose: unlike the macOS job —
+      # whose signed/unsigned split carries a real behavioral difference
+      # (Apple codesign env vs CSC_IDENTITY_AUTO_DISCOVERY=false) — Windows has
+      # no signing wired yet, so a parallel "signed" branch here would be
+      # byte-for-byte identical to this one. That is a trap: flipping
+      # AZURE_SIGNING_CONFIGURED would run a step labeled "signed" that still
+      # emits an UNSIGNED artifact. So we keep one honest step now and leave
+      # the seam as this comment. The Azure Artifact Signing follow-up is a
+      # drop-in: add an `azure/login` OIDC step ahead of this one and a
+      # win.azureSignOptions block in electron-builder.yml, then electron-
+      # builder signs during packaging — no `if:` gymnastics needed.
+      - name: Package Windows installer (unsigned)
+        shell: bash
+        run: |
+          cd apps/desktop
+          npx electron-builder --win --x64 --config electron-builder.yml --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DorkOS-windows-x64
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/latest.yml
+            apps/desktop/release/*.blockmap
+
+      # Attaches the Windows artifacts to the vX.Y.Z release that
+      # /system:release created (Phase 6.11), mirroring "Attach macOS
+      # artifacts to the release" above — same attach-only rationale, same
+      # poll-for-release loop, same fail-loud-if-release-absent behavior. See
+      # that step's comment for the full explanation; only the platform and
+      # asset globs differ here.
+      #
+      # latest.yml must ship alongside the .exe: it's electron-updater's
+      # (NSIS updater's) update manifest, and a release without it 404s every
+      # auto-update check on Windows — the .exe is only the human-facing
+      # installer. The .blockmap enables differential (delta) downloads for
+      # NSIS auto-updates.
+      - name: Attach Windows artifacts to the release
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          # Wait up to ~10 min for the release (created in /system:release
+          # Phase 6.11) to exist. Never create it here.
+          found=""
+          for attempt in $(seq 1 30); do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              found=1
+              break
+            fi
+            echo "Release $tag not found yet (attempt $attempt/30); waiting 20s…"
+            sleep 20
+          done
+          if [ -z "$found" ]; then
+            echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create the GitHub Release before the desktop build can attach to it; this workflow will not mint a bare release (it would drop the human-written notes)." >&2
+            exit 1
+          fi
+          gh release upload "$tag" \
+            apps/desktop/release/*.exe \
+            apps/desktop/release/latest.yml \
+            apps/desktop/release/*.blockmap \
             --clobber
