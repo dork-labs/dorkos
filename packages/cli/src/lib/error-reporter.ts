@@ -25,6 +25,7 @@ import {
   sendErrorEvent,
   FATAL_FLUSH_TIMEOUT_MS,
 } from '@dorkos/shared/error-report';
+import { isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
 
 /** A live CLI error reporter. `capture` is fire-and-forget and never throws. */
 export interface CliErrorReporter {
@@ -69,6 +70,11 @@ export function initCliErrorReporting(
   options: InitCliErrorReportingOptions
 ): CliErrorReporter | null {
   if (!readErrorReportingConsent(options.dorkHome)) return null;
+  // Env kill switch (DOR-312) beats config: DO_NOT_TRACK / DORKOS_TELEMETRY_DISABLED
+  // force every outbound channel off. Read process.env at call time, matching the
+  // CLI's imperative env convention (see cli.ts / the DSN read below).
+  // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
+  if (isTelemetryDisabledByEnv(process.env)) return null;
   // Read at call time, not from env.ts's import-time snapshot: the DSN is set by
   // the operator's shell right before running, and the CLI resolves its
   // environment imperatively (see the DORK_HOME convention in cli.ts).

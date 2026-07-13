@@ -40,6 +40,7 @@ describe('UserConfigSchema', () => {
         install: false,
         heartbeat: false,
         errorReporting: false,
+        lastPromptedVersion: null,
       },
       workspace: {
         enabled: true,
@@ -257,6 +258,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         install: false,
         heartbeat: false,
         errorReporting: false,
+        lastPromptedVersion: null,
       },
       workspace: {
         enabled: true,
@@ -449,6 +451,7 @@ describe('UserConfigSchema telemetry', () => {
     install: false,
     heartbeat: false,
     errorReporting: false,
+    lastPromptedVersion: null,
   };
 
   it('telemetry defaults to every channel off when omitted', () => {
@@ -471,6 +474,7 @@ describe('UserConfigSchema telemetry', () => {
       heartbeat: true,
       errorReporting: true,
       userHasDecided: true,
+      lastPromptedVersion: null,
     });
   });
 

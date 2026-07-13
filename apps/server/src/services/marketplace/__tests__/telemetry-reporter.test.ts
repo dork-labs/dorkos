@@ -107,6 +107,20 @@ describe('telemetry-reporter', () => {
       expect(typeof body.installId).toBe('string');
       expect((body.installId as string).length).toBeGreaterThan(0);
     });
+
+    it('in debug mode prints the payload to stderr and skips the network', async () => {
+      mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      registerDorkosCommunityTelemetry(true, DORK_HOME, DORKOS_VERSION, true);
+      await reportInstallEvent(sampleEvent);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      const printed = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(printed).toContain('DORKOS_TELEMETRY_DEBUG');
+      expect(printed).toContain('code-reviewer');
+      stderrSpy.mockRestore();
+    });
   });
 
   describe('buildPayload', () => {

@@ -43,23 +43,38 @@ export interface TelemetryPayload {
  * No-op when `consent` is false. Reads or generates a stable install ID stored
  * in dorkHome — this is per-machine, not per-user, and never sent with PII.
  *
+ * In debug mode (`DORKOS_TELEMETRY_DEBUG`), each install event's exact payload
+ * is printed to stderr and the network call is skipped, so a power user can
+ * audit the wire format for themselves.
+ *
  * @param consent - Whether the user has opted in via `config.telemetry.install`.
+ *   Must already fold in the env kill switch via `resolveTelemetryConsent`.
  * @param dorkHome - The resolved dorkHome path for storing the install ID.
  * @param dorkosVersion - The current DorkOS version string.
+ * @param debug - When true, print each payload to stderr instead of sending it.
  */
 export function registerDorkosCommunityTelemetry(
   consent: boolean,
   dorkHome: string,
-  dorkosVersion: string
+  dorkosVersion: string,
+  debug = false
 ): void {
   if (!consent) return;
 
   const reporter: TelemetryReporter = async (event) => {
     const installId = await getOrCreateInstanceId(dorkHome);
+    const payload = buildPayload(event, installId, dorkosVersion);
+    if (debug) {
+      process.stderr.write(
+        `[Telemetry] DORKOS_TELEMETRY_DEBUG: install event NOT sent. Would POST to ${TELEMETRY_ENDPOINT}:\n` +
+          `${JSON.stringify(payload, null, 2)}\n`
+      );
+      return;
+    }
     await fetch(TELEMETRY_ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(buildPayload(event, installId, dorkosVersion)),
+      body: JSON.stringify(payload),
     });
   };
 

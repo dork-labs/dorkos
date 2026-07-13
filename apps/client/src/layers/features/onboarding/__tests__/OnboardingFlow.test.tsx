@@ -37,6 +37,9 @@ const mockConfig = {
     defaultDirectory: '~/.dork/agents',
     defaultAgent: 'dorkbot',
   },
+  // Already decided by default so the completion-flow tests skip the consent
+  // step; the undecided path has its own dedicated test below.
+  telemetry: { userHasDecided: true },
 };
 
 vi.mock('../model/use-onboarding', () => ({
@@ -118,7 +121,16 @@ vi.mock('../ui/OnboardingComplete', () => ({
   ),
 }));
 
+vi.mock('../ui/OnboardingConsentStep', () => ({
+  OnboardingConsentStep: ({ onComplete }: { onComplete: () => void }) => (
+    <div data-testid="onboarding-consent">
+      <button onClick={onComplete}>Decide telemetry</button>
+    </div>
+  ),
+}));
+
 import { OnboardingFlow } from '../ui/OnboardingFlow';
+import { useOnboarding } from '../model/use-onboarding';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -241,6 +253,31 @@ describe('OnboardingFlow', () => {
     expect(screen.getByTestId('onboarding-complete')).toBeTruthy();
   });
 
+  it('asks the telemetry consent question before completing when undecided', () => {
+    // Undecided install: the consent step appears just before Complete.
+    vi.mocked(useOnboarding).mockReturnValueOnce({
+      shouldShowOnboarding: true,
+      state: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
+      config: { ...mockConfig, telemetry: { userHasDecided: false } },
+      completeStep: mockCompleteStep,
+      skipStep: mockSkipStep,
+      dismiss: mockDismiss,
+      startOnboarding: mockStartOnboarding,
+    } as unknown as ReturnType<typeof useOnboarding>);
+
+    render(<OnboardingFlow onComplete={vi.fn()} initialStep={2} />);
+
+    fireEvent.click(screen.getByText('Complete Tasks'));
+
+    // The consent screen is shown, not the completion screen yet.
+    expect(screen.getByTestId('onboarding-consent')).toBeTruthy();
+    expect(screen.queryByTestId('onboarding-complete')).toBeNull();
+
+    // Making the choice advances to completion.
+    fireEvent.click(screen.getByText('Decide telemetry'));
+    expect(screen.getByTestId('onboarding-complete')).toBeTruthy();
+  });
+
   it('Skip all calls dismiss and onComplete', async () => {
     const onComplete = vi.fn();
 
@@ -343,6 +380,7 @@ describe('OnboardingFlow', () => {
           defaultDirectory: '/custom/agents',
           defaultAgent: 'my-agent',
         },
+        telemetry: { userHasDecided: true },
       } as never,
       completeStep: mockCompleteStep,
       skipStep: mockSkipStep,

@@ -10,6 +10,7 @@ import { WelcomeStep } from './WelcomeStep';
 import { MeetDorkBotStep } from './MeetDorkBotStep';
 import { AgentDiscoveryStep } from './AgentDiscoveryStep';
 import { TaskTemplatesStep } from './TaskTemplatesStep';
+import { OnboardingConsentStep } from './OnboardingConsentStep';
 import { OnboardingComplete } from './OnboardingComplete';
 
 const STEPS = ['meet-dorkbot', 'discovery', 'tasks'] as const;
@@ -40,6 +41,7 @@ export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: Onboa
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [direction, setDirection] = useState(1);
   const [showComplete, setShowComplete] = useState(false);
+  const [showConsent, setShowConsent] = useState(false);
   const { completeStep, skipStep, dismiss, startOnboarding, config } = useOnboarding();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -52,16 +54,27 @@ export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: Onboa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Mark onboarding finished and show the completion screen. */
+  const finishOnboarding = useCallback(() => {
+    // Mark adapters as completed since we removed that step from the visible flow
+    completeStep('adapters');
+    setShowComplete(true);
+  }, [completeStep]);
+
   const goNext = useCallback(() => {
     if (currentStep < STEPS.length - 1) {
       setDirection(1);
       setCurrentStep((prev) => prev + 1);
+    } else if (!config?.telemetry?.userHasDecided) {
+      // Past the last numbered step: ask the telemetry consent question once,
+      // just before Complete. If the user already answered (via the standalone
+      // banner or a prior run), skip straight to finishing.
+      setDirection(1);
+      setShowConsent(true);
     } else {
-      // Mark adapters as completed since we removed that step from the visible flow
-      completeStep('adapters');
-      setShowComplete(true);
+      finishOnboarding();
     }
-  }, [currentStep, completeStep]);
+  }, [currentStep, config, finishOnboarding]);
 
   const goBack = useCallback(() => {
     if (currentStep > 0) {
@@ -125,6 +138,15 @@ export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: Onboa
     return (
       <div className="bg-background flex h-full w-full items-center justify-center">
         <OnboardingComplete onComplete={navigateToDefaultAgent} />
+      </div>
+    );
+  }
+
+  // Telemetry consent — shown once, just before the completion screen
+  if (showConsent) {
+    return (
+      <div className="bg-background flex h-full w-full items-center justify-center px-4">
+        <OnboardingConsentStep onComplete={finishOnboarding} />
       </div>
     );
   }

@@ -33,6 +33,10 @@
       "types": "./src/error-report.ts",
       "default": "./dist/error-report.js"
     },
+    "./telemetry-consent": {
+      "types": "./src/telemetry-consent.ts",
+      "default": "./dist/telemetry-consent.js"
+    },
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
       "default": "./dist/relay-schemas.js"

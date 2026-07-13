@@ -1,20 +1,5 @@
 import { Button } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
-
-/**
- * Example of the exact weekly heartbeat payload, shown verbatim so the user can
- * read every field before choosing. Kept in lockstep with the server payload in
- * `services/core/heartbeat-reporter.ts` and the public /telemetry page.
- */
-const HEARTBEAT_PAYLOAD_EXAMPLE = `{
-  "instanceId": "a1b2c3d4-...",   // random, not you
-  "dorkosVersion": "0.46.0",
-  "os": "darwin-arm64",
-  "runtimesConfigured": ["claude-code", "codex"],
-  "tunnelEnabled": false,
-  "cloudLinked": false,
-  "counts": { "agents": 4, "tasks": 2, "relayAdapters": 1 }
-}`;
+import { useConfig, useUpdateConfig, HEARTBEAT_PAYLOAD_EXAMPLE } from '@/layers/entities/config';
 
 /**
  * First-run telemetry consent banner. Surfaced app-wide until the user makes an

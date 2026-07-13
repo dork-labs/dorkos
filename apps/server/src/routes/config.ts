@@ -182,8 +182,11 @@ router.get('/', async (_req, res) => {
       };
     })(),
     telemetry: configManager.get('telemetry') ?? {
-      enabled: false,
       userHasDecided: false,
+      install: false,
+      heartbeat: false,
+      errorReporting: false,
+      lastPromptedVersion: null,
     },
     auth: configManager.get('auth') ?? { enabled: false },
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },

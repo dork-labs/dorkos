@@ -30,7 +30,13 @@ function configWithSecrets(): ServerConfig {
     relay: { enabled: false },
     logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
     mesh: { enabled: true },
-    telemetry: { enabled: false, userHasDecided: true },
+    telemetry: {
+      userHasDecided: true,
+      install: false,
+      heartbeat: true,
+      errorReporting: false,
+      lastPromptedVersion: null,
+    },
     auth: { enabled: true },
   } as unknown as ServerConfig;
 }

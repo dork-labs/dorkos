@@ -115,6 +115,7 @@ import {
   flushServerError,
   type ServerErrorReporter,
 } from './services/core/error-reporter.js';
+import { resolveTelemetryConsent, isTelemetryDebugEnabled } from '@dorkos/shared/telemetry-consent';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import {
   initObservability,
@@ -246,25 +247,39 @@ async function start() {
   const resolvedBoundary = await initBoundary(boundaryConfig);
   logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
 
+  // Env kill switches (DOR-312) fold into every channel's consent: DO_NOT_TRACK
+  // or DORKOS_TELEMETRY_DISABLED force all outbound telemetry off regardless of
+  // config (precedence: env > config). `DORKOS_TELEMETRY_DEBUG` makes the
+  // payload senders print to stderr instead of sending. Parsing lives in the
+  // shared helper so the CLI and server agree. Read from the parsed `env` (the
+  // sole place process.env is touched on the server).
+  const telemetryEnv = {
+    DO_NOT_TRACK: env.DO_NOT_TRACK,
+    DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
+    DORKOS_TELEMETRY_DEBUG: env.DORKOS_TELEMETRY_DEBUG,
+  };
+  const telemetryDebug = isTelemetryDebugEnabled(telemetryEnv);
+
   // Register the dorkos.ai marketplace telemetry reporter. This is a no-op
-  // unless `config.telemetry.install === true` — defaults to false. The
-  // reporter forwards `InstallEvent`s emitted by the marketplace install
-  // pipeline to https://dorkos.ai/api/telemetry/install with a stable
-  // per-machine install ID stored in dorkHome. Privacy contract:
+  // unless `config.telemetry.install === true` (default false) and no kill
+  // switch is set. The reporter forwards `InstallEvent`s emitted by the
+  // marketplace install pipeline to https://dorkos.ai/api/telemetry/install with
+  // a stable per-machine install ID stored in dorkHome. Privacy contract:
   // https://dorkos.ai/marketplace/privacy
   const telemetryConfig = configManager.get('telemetry');
-  registerDorkosCommunityTelemetry(telemetryConfig?.install ?? false, dorkHome, SERVER_VERSION);
-  if (telemetryConfig?.install) {
+  const installConsent = resolveTelemetryConsent(telemetryConfig?.install ?? false, telemetryEnv);
+  registerDorkosCommunityTelemetry(installConsent, dorkHome, SERVER_VERSION, telemetryDebug);
+  if (installConsent) {
     logger.info('[Telemetry] Marketplace install reporter registered (consent: opt-in)');
   }
 
   // Opt-in error reporting (DOR-293). A SEPARATE explicit opt-in from the
-  // anonymous-data channels: fires only when `telemetry.errorReporting` is true
-  // AND a `SENTRY_DSN` is set (third-party egress). `null` when off — the
-  // process error handlers below then send nothing. Scrubbing + message
-  // omission live in the shared error-report core.
+  // anonymous-data channels: fires only when `telemetry.errorReporting` is true,
+  // no kill switch is set, AND a `SENTRY_DSN` is set (third-party egress). `null`
+  // when off — the process error handlers below then send nothing. Scrubbing +
+  // message omission live in the shared error-report core.
   serverErrorReporter = initServerErrorReporting({
-    consent: telemetryConfig?.errorReporting ?? false,
+    consent: resolveTelemetryConsent(telemetryConfig?.errorReporting ?? false, telemetryEnv),
     dsn: env.SENTRY_DSN,
     version: SERVER_VERSION,
     environment: env.NODE_ENV,
@@ -1184,7 +1199,11 @@ async function start() {
       ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
     ];
     registerHeartbeat({
-      consent: configManager.get('telemetry')?.heartbeat ?? false,
+      consent: resolveTelemetryConsent(
+        configManager.get('telemetry')?.heartbeat ?? false,
+        telemetryEnv
+      ),
+      debug: telemetryDebug,
       dorkHome,
       dorkosVersion: SERVER_VERSION,
       runtimesConfigured,

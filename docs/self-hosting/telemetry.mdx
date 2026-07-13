@@ -82,9 +82,46 @@ dorkos --debug-trace
   by default and stays off unless you turn it on for that run.
 </Callout>
 
+## Turn everything off from the environment
+
+Two environment variables force **every** channel off, no matter what your config says. They beat the config, so they are the fastest way to silence DorkOS in a shared image, a CI runner, or a locked-down machine:
+
+- `DO_NOT_TRACK` is the universal, cross-tool convention. Set it to `1` (or `true`) and DorkOS sends nothing.
+- `DORKOS_TELEMETRY_DISABLED` does the same thing but only affects DorkOS.
+
+```bash
+export DO_NOT_TRACK=1
+# or
+export DORKOS_TELEMETRY_DISABLED=1
+```
+
+Either one on its own is enough. When a kill switch is set, no channel sends anything even if its config flag is `true`.
+
+## See and change it from the command line
+
+`dorkos telemetry` shows and controls the same channels without opening the app:
+
+```bash
+dorkos telemetry status                     # show each channel and any env override
+dorkos telemetry enable                      # turn on all channels
+dorkos telemetry disable                     # turn off all channels
+dorkos telemetry enable --channel heartbeat  # turn on just one (install | heartbeat | errors)
+dorkos telemetry disable --channel errors    # turn off just one
+```
+
+`status` tells you each channel's state, whether a kill switch is overriding it, and whether you have already made a choice. `enable` and `disable` write your choice to `~/.dork/config.json` so the first-run banner never asks again.
+
+## Preview the exact payload before it sends
+
+Set `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints the exact JSON payload for the heartbeat and install channels to your terminal (stderr) **instead of sending it**. Nothing goes over the network in debug mode, so you can read, word for word, what would leave your machine:
+
+```bash
+DORKOS_TELEMETRY_DEBUG=1 dorkos
+```
+
 ## How to turn it on or off
 
-The first time you open DorkOS, a banner asks whether to share anonymous data and shows you the payload above. Pick either option and it remembers your choice. To change it later, open settings, or edit `~/.dork/config.json`:
+The first time you open DorkOS, a banner asks whether to share anonymous data and shows you the payload above. Pick either option and it remembers your choice. To change it later, open settings (there's a **Privacy & Data** tab with a switch for each channel), use `dorkos telemetry` above, or edit `~/.dork/config.json`:
 
 ```json
 {

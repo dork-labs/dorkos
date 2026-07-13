@@ -10,6 +10,7 @@ import {
   Cpu,
   Cog,
   ShieldCheck,
+  Lock,
   Link2,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
@@ -24,6 +25,7 @@ import { ChannelsTab } from './ChannelsTab';
 import { AgentsTab } from './AgentsTab';
 import { SecurityTab } from './SecurityTab';
 import { CloudAccountTab } from './CloudAccountTab';
+import { PrivacyTab } from './PrivacyTab';
 import { AdvancedTab } from './AdvancedTab';
 import { RemoteAccessAction } from './RemoteAccessAction';
 import { TunnelDialog } from './TunnelDialog';
@@ -39,6 +41,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   { id: 'runtimes', label: 'Runtimes', icon: Cpu, component: RuntimesTab },
   { id: 'security', label: 'Security', icon: ShieldCheck, component: SecurityTab },
   { id: 'account', label: 'DorkOS account', icon: Link2, component: CloudAccountTab },
+  { id: 'privacy', label: 'Privacy & Data', icon: Lock, component: PrivacyTab },
   { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab },
 ];
 
