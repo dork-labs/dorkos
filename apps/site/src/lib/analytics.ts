@@ -28,7 +28,7 @@
  * | --------------------- | --------------------------------------------------- |
  * | `$pageview` (default) | Every page load and client-side route change (see `capture_pageview: 'history_change'` in instrumentation-client.ts) |
  * | `hero_install_copy`   | Visitor copies the install one-liner in the hero terminal |
- * | `hero_download`       | Visitor clicks a macOS desktop-download link (install hero, nav, or the off-Mac terminal-hero link) |
+ * | `hero_download`       | Visitor clicks a desktop-download link — macOS (install hero, nav, or the off-Mac terminal-hero link) or Windows (install hero, nav, or the "Other ways to install" link) |
  * | `docs_visit`          | Visitor lands on a `/docs` page                      |
  * | `marketplace_browse`  | Visitor lands on `/marketplace`                      |
  * | `github_click`        | Visitor clicks an outbound GitHub link (header, footer, or mobile hero CTA) |
@@ -95,10 +95,21 @@ export function trackHeroInstallCopy(method: InstallMethod): void {
   capture('hero_install_copy', { method });
 }
 
-/** Where the macOS desktop-download link was clicked. */
-export type DownloadPlacement = 'hero' | 'nav' | 'terminal_hero_link';
+/**
+ * Where a desktop-download link was clicked. The `windows_*` placements
+ * mirror their macOS counterparts (`hero`, `nav`); `windows_other_ways` is
+ * the Windows link inside the "Other ways to install" disclosure shown to
+ * non-Windows visitors.
+ */
+export type DownloadPlacement =
+  | 'hero'
+  | 'nav'
+  | 'terminal_hero_link'
+  | 'windows_hero'
+  | 'windows_nav'
+  | 'windows_other_ways';
 
-/** Fires when a visitor clicks a macOS desktop-download link (`/download/mac`). */
+/** Fires when a visitor clicks a desktop-download link (`/download/mac` or `/download/windows`). */
 export function trackHeroDownload(placement: DownloadPlacement): void {
   capture('hero_download', { placement });
 }

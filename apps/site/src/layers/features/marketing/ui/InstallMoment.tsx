@@ -7,7 +7,7 @@ import { Copy, Check, Download, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { trackHeroInstallCopy, trackHeroDownload, type InstallMethod } from '@/lib/analytics';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
-import { usePlatform } from '../lib/use-platform';
+import { usePlatform, type Platform } from '../lib/use-platform';
 
 const SCRAMBLE_CHARS = '!@#$%&*_+-=<>?~';
 /** Frame cadence for the scramble effect. */
@@ -146,10 +146,18 @@ function TerminalPeerCommand({
  * when it isn't already a primary tab) plus honest per-platform notes. A native
  * `<details>`/`<summary>` so it is keyboard-accessible and works without JS.
  *
- * Homebrew is intentionally absent: the `dorkos-ai/tap` tap doesn't exist yet,
- * so offering it would hand people a command that 404s.
+ * `currentPlatform` suppresses the note for whichever platform already has
+ * its own hero above (no point telling a Windows visitor to go download
+ * Windows). Homebrew is intentionally absent: the `dorkos-ai/tap` tap
+ * doesn't exist yet, so offering it would hand people a command that 404s.
  */
-function OtherWaysToInstall({ showNpm }: { showNpm: boolean }) {
+function OtherWaysToInstall({
+  showNpm,
+  currentPlatform,
+}: {
+  showNpm: boolean;
+  currentPlatform: Platform;
+}) {
   return (
     <details className="group mx-auto mt-8 w-full max-w-md text-left">
       <summary className="text-warm-gray-light hover:text-brand-orange focus-visible:ring-brand-orange/40 flex cursor-pointer list-none items-center justify-center gap-1.5 rounded font-mono text-xs tracking-[0.04em] transition-colors focus-visible:ring-2 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
@@ -171,10 +179,19 @@ function OtherWaysToInstall({ showNpm }: { showNpm: boolean }) {
         )}
 
         <ul className="space-y-2">
-          <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
-            <span className="text-charcoal">Windows</span> — desktop app coming soon; install via
-            the terminal today.
-          </li>
+          {currentPlatform !== 'windows' && (
+            <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
+              <span className="text-charcoal">Windows</span> —{' '}
+              <a
+                href="/download/windows"
+                onClick={() => trackHeroDownload('windows_other_ways')}
+                className="text-brand-orange hover:underline"
+              >
+                download the alpha installer
+              </a>
+              , or use the terminal today.
+            </li>
+          )}
           <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
             <span className="text-charcoal">Linux</span> — install with the one-liner or npm; the
             web cockpit runs the same everywhere.
@@ -217,16 +234,56 @@ function DownloadHero() {
         </p>
       </div>
 
-      <OtherWaysToInstall showNpm />
+      <OtherWaysToInstall showNpm currentPlatform="mac" />
     </div>
   );
 }
 
 /**
- * Non-Mac visitor's hero — and the stable pre-hydration default — where the
- * terminal one-liner leads inside the tabbed terminal mockup, since there is no
- * native download to offer them. A subtle "Desktop app for macOS" link stays
- * available for anyone browsing from the wrong machine.
+ * Windows visitor's hero — mirrors the Mac download hero: the desktop
+ * download leads, with the terminal one-liner a quiet, still-copyable peer
+ * directly below. The build is an unsigned early alpha with no verified
+ * end-to-end install yet (demo-claim gate, AGENTS.md), so the button carries
+ * a visible "alpha" tag and the subtitle says so plainly — SmartScreen will
+ * warn on first launch until the build is signed.
+ */
+function WindowsDownloadHero() {
+  return (
+    <div className="flex flex-col items-center">
+      <a
+        href="/download/windows"
+        onClick={() => trackHeroDownload('windows_hero')}
+        className="marketing-btn bg-brand-orange text-cream-white inline-flex items-center gap-2.5"
+      >
+        <Download size={18} aria-hidden="true" />
+        Download for Windows
+        <span className="text-cream-white rounded-sm bg-white/[0.18] px-1.5 py-0.5 text-[9px] tracking-[0.1em] uppercase">
+          alpha
+        </span>
+      </a>
+      <p className="text-warm-gray-light mt-3 font-mono text-xs tracking-[0.02em]">
+        Windows x64 · unsigned early alpha — SmartScreen may warn on first launch
+      </p>
+
+      {/* Terminal one-liner — a respected peer, not a footnote. */}
+      <div className="mt-10 flex w-full max-w-md flex-col items-center gap-2">
+        <p className="text-warm-gray-light font-mono text-xs tracking-[0.04em]">
+          Prefer the terminal?
+        </p>
+        <TerminalPeerCommand command={CURL_COMMAND} method="curl" />
+      </div>
+
+      <OtherWaysToInstall showNpm currentPlatform="windows" />
+    </div>
+  );
+}
+
+/**
+ * Visitor's hero on anything but Mac or Windows — and the stable
+ * pre-hydration default — where the terminal one-liner leads inside the
+ * tabbed terminal mockup, since there is no native download to offer them. A
+ * subtle "Desktop app for macOS" link stays available for anyone browsing
+ * from the wrong machine.
  *
  * @param isInView - Whether the section has scrolled into view (drives the scramble).
  */
@@ -366,17 +423,17 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
         <span aria-hidden="true">→</span>
       </a>
 
-      <OtherWaysToInstall showNpm={false} />
+      <OtherWaysToInstall showNpm={false} currentPlatform="other" />
     </div>
   );
 }
 
 /**
  * Combined install + close section — the "Get started." moment. OS-adaptive:
- * macOS visitors lead with the desktop download (terminal one-liner a respected
- * peer below); everyone else leads with the terminal one-liner in a mockup. The
- * pre-hydration render is the terminal hero (works for all), then it gracefully
- * enhances to the download hero once the platform resolves to macOS.
+ * macOS and Windows visitors lead with the desktop download (terminal one-liner
+ * a respected peer below); everyone else leads with the terminal one-liner in a
+ * mockup. The pre-hydration render is the terminal hero (works for all), then it
+ * gracefully enhances to the matching download hero once the platform resolves.
  */
 export function InstallMoment() {
   const ref = useRef<HTMLDivElement>(null);
@@ -428,18 +485,18 @@ export function InstallMoment() {
         {/*
           OS-adaptive hero. The terminal hero is the stable default rendered
           server-side and pre-hydration (`'unknown'`); once platform detection
-          settles to `'mac'`, it gracefully enhances to the download hero with a
-          gentle fade (reduced-motion respected). No content flash; the only
-          shift is this fade.
+          settles to `'mac'` or `'windows'`, it gracefully enhances to the
+          matching download hero with a gentle fade (reduced-motion respected).
+          No content flash; the only shift is this fade.
         */}
         <motion.div variants={REVEAL} className="mb-10">
-          {platform === 'mac' ? (
+          {platform === 'mac' || platform === 'windows' ? (
             <motion.div
               initial={reducedMotion ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
             >
-              <DownloadHero />
+              {platform === 'mac' ? <DownloadHero /> : <WindowsDownloadHero />}
             </motion.div>
           ) : (
             <TerminalHero isInView={isInView} />

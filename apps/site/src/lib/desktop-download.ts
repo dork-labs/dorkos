@@ -1,13 +1,14 @@
 /**
- * Desktop `.dmg` download lookup — resolves the newest published GitHub
- * release of dork-labs/dorkos that carries a `.dmg` asset, for the stable
- * human download link `GET /download/mac` redirects to.
+ * Desktop download lookup — resolves the newest published GitHub release of
+ * dork-labs/dorkos that carries a given asset suffix (`.dmg` for macOS,
+ * `.exe` for Windows), for the stable human download links `GET
+ * /download/mac` and `GET /download/windows` redirect to.
  *
  * The repo's `/releases/latest` is unsuitable as a direct link target: it is
  * whichever release GitHub considers latest by publish time, which may be a
  * CLI release with no desktop asset at all. This walks the release list
- * itself and picks the newest one that actually ships a `.dmg`, regardless
- * of what else is tagged "latest".
+ * itself and picks the newest one that actually ships the requested asset,
+ * regardless of what else is tagged "latest".
  *
  * @module lib/desktop-download
  */
@@ -30,8 +31,9 @@ interface GitHubRelease {
 }
 
 /**
- * Find the `browser_download_url` of the newest `.dmg` asset across all
- * published releases of dork-labs/dorkos.
+ * Find the `browser_download_url` of the newest release asset whose name
+ * ends with `assetSuffix` (e.g. `.dmg`, `.exe`) across all published
+ * releases of dork-labs/dorkos.
  *
  * Uses the unauthenticated GitHub REST API (list releases), which already
  * excludes draft releases for anonymous callers — a `!draft` filter is kept
@@ -39,13 +41,13 @@ interface GitHubRelease {
  * Prereleases ARE included: a release the team hasn't promoted to "latest"
  * yet may still be the only one that ships a desktop build.
  *
- * Cached for 5 minutes (Next.js fetch revalidation) so repeat visits to
- * `/download/mac` don't burn the unauthenticated GitHub rate limit.
+ * Cached for 5 minutes (Next.js fetch revalidation) so repeat visits to a
+ * `/download/*` route don't burn the unauthenticated GitHub rate limit.
  *
- * Returns `null` when no release with a `.dmg` asset exists yet (e.g. before
- * the first desktop build ships) or the GitHub API call fails.
+ * Returns `null` when no release with a matching asset exists yet (e.g.
+ * before the first desktop build ships) or the GitHub API call fails.
  */
-export async function findLatestDmgDownloadUrl(): Promise<string | null> {
+async function findLatestReleaseAssetUrl(assetSuffix: string): Promise<string | null> {
   let res: Response;
   try {
     res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=30`, {
@@ -64,7 +66,7 @@ export async function findLatestDmgDownloadUrl(): Promise<string | null> {
     return null;
   }
 
-  const withDmg = releases
+  const sorted = releases
     .filter((release) => !release.draft)
     .sort((a, b) => {
       const aDate = a.published_at ?? a.created_at;
@@ -72,10 +74,28 @@ export async function findLatestDmgDownloadUrl(): Promise<string | null> {
       return bDate.localeCompare(aDate);
     });
 
-  for (const release of withDmg) {
-    const dmg = release.assets.find((asset) => asset.name.endsWith('.dmg'));
-    if (dmg) return dmg.browser_download_url;
+  for (const release of sorted) {
+    const asset = release.assets.find((asset) => asset.name.endsWith(assetSuffix));
+    if (asset) return asset.browser_download_url;
   }
 
   return null;
+}
+
+/**
+ * Find the `browser_download_url` of the newest `.dmg` asset across all
+ * published releases of dork-labs/dorkos. See {@link findLatestReleaseAssetUrl}
+ * for the underlying lookup semantics.
+ */
+export async function findLatestDmgDownloadUrl(): Promise<string | null> {
+  return findLatestReleaseAssetUrl('.dmg');
+}
+
+/**
+ * Find the `browser_download_url` of the newest `.exe` (NSIS installer)
+ * asset across all published releases of dork-labs/dorkos. See
+ * {@link findLatestReleaseAssetUrl} for the underlying lookup semantics.
+ */
+export async function findLatestExeDownloadUrl(): Promise<string | null> {
+  return findLatestReleaseAssetUrl('.exe');
 }

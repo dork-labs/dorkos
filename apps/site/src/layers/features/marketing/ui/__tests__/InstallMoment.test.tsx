@@ -133,9 +133,86 @@ describe('InstallMoment — OS-adaptive install hero', () => {
     });
   });
 
-  describe('non-Mac visitor', () => {
+  describe('Windows visitor', () => {
+    let writeText: Mock;
+
     beforeEach(() => {
-      stubNavigator({ userAgent: 'Windows NT 10.0', platform: 'Win32' });
+      ({ writeText } = stubNavigator({
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        platform: 'Win32',
+      }));
+    });
+
+    it('leads with a prominent "Download for Windows" button pointing at /download/windows', async () => {
+      render(<InstallMoment />);
+
+      const link = await waitFor(() => {
+        const found = screen
+          .getAllByRole('link')
+          .find((el) => el.getAttribute('href') === '/download/windows');
+        expect(found).toBeTruthy();
+        return found!;
+      });
+
+      expect(link.textContent).toContain('Download for Windows');
+    });
+
+    it('marks the Windows build as an early alpha (honest, not hypey)', async () => {
+      render(<InstallMoment />);
+
+      // The hero button carries a visible "alpha" tag...
+      const link = await waitFor(() => {
+        const found = screen
+          .getAllByRole('link')
+          .find((el) => el.getAttribute('href') === '/download/windows');
+        expect(found).toBeTruthy();
+        return found!;
+      });
+      expect(link.textContent).toContain('alpha');
+      // ...and the subtitle sets honest expectations (unsigned, SmartScreen).
+      expect(screen.getByText(/unsigned early alpha/i)).toBeTruthy();
+    });
+
+    it('keeps the terminal one-liner a respected, still-copyable peer', async () => {
+      render(<InstallMoment />);
+
+      const copyButton = await waitFor(() => {
+        const found = screen
+          .getAllByRole('button')
+          .find((el) => el.getAttribute('aria-label')?.includes(CURL_COMMAND));
+        expect(found).toBeTruthy();
+        return found!;
+      });
+
+      fireEvent.click(copyButton);
+      expect(writeText).toHaveBeenCalledWith(CURL_COMMAND);
+    });
+
+    it('never promotes the Mac download to hero for a Windows visitor', async () => {
+      render(<InstallMoment />);
+      await waitFor(() => expect(screen.getByText('Download for Windows')).toBeTruthy());
+
+      expect(screen.queryByText('Download for Mac')).toBeNull();
+    });
+
+    it('suppresses the redundant Windows note in "Other ways" — the visitor already has the hero', async () => {
+      render(<InstallMoment />);
+      await waitFor(() => expect(screen.getByText('Download for Windows')).toBeTruthy());
+
+      // The "Other ways to install" Windows note ("download the alpha installer")
+      // is for non-Windows visitors; a Windows visitor already has the hero.
+      expect(screen.queryByText(/download the alpha installer/i)).toBeNull();
+    });
+  });
+
+  describe('non-Mac, non-Windows visitor', () => {
+    beforeEach(() => {
+      stubNavigator({
+        userAgent:
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        platform: 'Linux x86_64',
+      });
     });
 
     it('leads with the tabbed terminal install (one-liner recommended, npm alongside)', () => {
@@ -145,7 +222,7 @@ describe('InstallMoment — OS-adaptive install hero', () => {
       expect(screen.getByText('npm')).toBeTruthy();
     });
 
-    it('keeps a subtle "Desktop app for macOS" link and never promotes the download to hero', () => {
+    it('keeps a subtle "Desktop app for macOS" link and never promotes a download to hero', () => {
       render(<InstallMoment />);
 
       const link = screen
@@ -156,7 +233,19 @@ describe('InstallMoment — OS-adaptive install hero', () => {
 
       // The Mac download button and its Intel helper never render off-Mac.
       expect(screen.queryByText('Download for Mac')).toBeNull();
+      expect(screen.queryByText('Download for Windows')).toBeNull();
       expect(screen.queryByText(/Intel Mac/i)).toBeNull();
+    });
+
+    it('offers the Windows alpha as a real link inside "Other ways to install"', () => {
+      render(<InstallMoment />);
+
+      // Native <details> keeps its children mounted even while collapsed.
+      const winLink = screen
+        .getAllByRole('link')
+        .find((el) => el.getAttribute('href') === '/download/windows');
+      expect(winLink).toBeTruthy();
+      expect(winLink!.textContent).toContain('alpha');
     });
   });
 });
