@@ -23,6 +23,7 @@ import systemRoutes from './routes/system.js';
 import runtimesRoutes from './routes/runtimes.js';
 import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
+import errorRoutes from './routes/errors.js';
 import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -132,6 +133,7 @@ export function createApp() {
   app.use('/api/runtimes', runtimesRoutes);
   app.use('/api/uploads', uploadRoutes);
   app.use('/api/mcp-config', mcpConfigRoutes);
+  app.use('/api/errors', errorRoutes);
   app.use('/api/events', eventsRouter);
 
   // Test control routes — only mounted when DORKOS_TEST_RUNTIME=true.

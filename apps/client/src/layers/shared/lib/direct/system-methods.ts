@@ -13,7 +13,7 @@
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
-import type { UploadFile, WriteFileResult } from '@dorkos/shared/transport';
+import type { UploadFile, WriteFileResult, ClientErrorReport } from '@dorkos/shared/transport';
 import type {
   BrowseDirectoryResponse,
   HealthResponse,
@@ -725,6 +725,16 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     async getTemplates(): Promise<TemplateEntry[]> {
       const { DEFAULT_TEMPLATES } = await import('@dorkos/shared/template-catalog');
       return DEFAULT_TEMPLATES;
+    },
+
+    // ── Crash reporting ──────────────────────────────────────────────────────
+
+    // No-op in the embedded (Obsidian) host: crash reporting is a web-cockpit
+    // surface, and the in-process transport has no owned-ingest sender wired.
+    // Signature-matched to the Transport contract; the argument is intentionally
+    // unused.
+    async reportError(_report: ClientErrorReport): Promise<void> {
+      // Intentionally empty — see above.
     },
   };
 }

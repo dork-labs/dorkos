@@ -1,18 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildErrorEvent,
-  parseDsn,
+  buildExceptionEvent,
+  errorEventToExceptionProperties,
   raceWithTimeout,
   redactPaths,
   redactTokens,
   scrubFilename,
   scrubMessage,
   scrubStack,
-  sendErrorEvent,
+  sendExceptionEvent,
+  TELEMETRY_EVENTS_ENDPOINT,
   MAX_MESSAGE_LEN,
-  SDK_NAME,
-  type ErrorEvent,
 } from '../error-report.js';
 
 describe('redactPaths', () => {
@@ -119,28 +119,6 @@ describe('scrubStack', () => {
   });
 });
 
-describe('parseDsn', () => {
-  it('parses a standard Sentry DSN', () => {
-    const parsed = parseDsn('https://abc123@o1.ingest.sentry.io/456');
-    expect(parsed).toEqual({
-      ingestUrl: 'https://o1.ingest.sentry.io/api/456/envelope/',
-      publicKey: 'abc123',
-      projectId: '456',
-    });
-  });
-
-  it('parses a self-hosted GlitchTip DSN with a path prefix', () => {
-    const parsed = parseDsn('https://key@glitchtip.example.com/sub/7');
-    expect(parsed?.ingestUrl).toBe('https://glitchtip.example.com/sub/api/7/envelope/');
-  });
-
-  it('returns null for malformed or keyless DSNs', () => {
-    expect(parseDsn('not-a-url')).toBeNull();
-    expect(parseDsn('https://o1.ingest.sentry.io/456')).toBeNull(); // no public key
-    expect(parseDsn('https://key@host/')).toBeNull(); // no project id
-  });
-});
-
 const ALLOWED_EVENT_KEYS = [
   'event_id',
   'timestamp',
@@ -237,55 +215,132 @@ describe('buildErrorEvent — allowlist + no-leak (security-critical)', () => {
   });
 });
 
-describe('sendErrorEvent', () => {
-  let fetchSpy: ReturnType<typeof vi.fn>;
-  let originalFetch: typeof globalThis.fetch | undefined;
-  const event: ErrorEvent = buildErrorEvent({
+describe('errorEventToExceptionProperties — scrubbing preserved end-to-end', () => {
+  const base = {
+    release: 'dorkos@0.46.0',
+    environment: 'production',
+    os: 'darwin-arm64',
+    cwd: '/srv/dorkos',
+  };
+
+  it('maps a scrubbed ErrorEvent into a PostHog $exception property bag', () => {
+    const scrubbed = buildErrorEvent({
+      ...base,
+      surface: 'server',
+      error: (() => {
+        const e = new TypeError('boom');
+        e.stack = ['TypeError: boom', '    at fn (/srv/dorkos/apps/server/src/x.ts:3:1)'].join(
+          '\n'
+        );
+        return e;
+      })(),
+    });
+    const props = errorEventToExceptionProperties(scrubbed);
+
+    expect(props.$exception_level).toBe('error');
+    // Stays anonymous: no PostHog person is ever created for a crash event.
+    expect(props.$process_person_profile).toBe(false);
+    expect(props.surface).toBe('server');
+    expect(props.os).toBe('darwin-arm64');
+    expect(props.release).toBe('dorkos@0.46.0');
+    const value = props.$exception_list[0];
+    expect(value.type).toBe('TypeError');
+    // The raw message is NEVER carried — mirrors buildErrorEvent.
+    expect(value.value).toBe('');
+    expect(value.stacktrace.type).toBe('raw');
+    expect(value.stacktrace.frames[0]).toMatchObject({
+      platform: 'node:javascript',
+      filename: 'apps/server/src/x.ts',
+      function: 'fn',
+      in_app: true,
+    });
+  });
+
+  it('tags client-surface frames as web:javascript', () => {
+    const scrubbed = buildErrorEvent({ ...base, surface: 'client', error: new Error('x') });
+    const props = errorEventToExceptionProperties(scrubbed);
+    // Even with no frames, the surface classification is client.
+    expect(props.surface).toBe('client');
+  });
+
+  it('a poisoned error cannot leak paths or tokens through the $exception mapping', () => {
+    const HOME = '/Users/alice';
+    const TOKEN = 'sk-abcdef0123456789ABCDEF';
+    const poisoned = new Error(`failed for ${HOME}/notes.md with ${TOKEN}`);
+    poisoned.name = `Err_${HOME}`;
+    poisoned.stack = [
+      'Error: failed',
+      `    at h (${HOME}/work/secret-client/apps/server/src/x.ts:5:9)`,
+      `    at C:\\Users\\alice\\dev\\y.ts:3:2`,
+    ].join('\n');
+
+    const props = errorEventToExceptionProperties(
+      buildErrorEvent({
+        ...base,
+        surface: 'server',
+        cwd: `${HOME}/work/secret-client`,
+        error: poisoned,
+      })
+    );
+    const serialized = JSON.stringify(props);
+    expect(serialized).not.toContain('alice');
+    expect(serialized).not.toContain(TOKEN);
+    expect(serialized).not.toContain('secret-client');
+    expect(serialized).not.toContain('C:\\Users');
+    expect(props.$exception_list[0].value).toBe('');
+    for (const frame of props.$exception_list[0].stacktrace.frames) {
+      expect(frame.filename.startsWith('/')).toBe(false);
+      expect(/^[A-Za-z]:/.test(frame.filename)).toBe(false);
+    }
+  });
+});
+
+describe('sendExceptionEvent', () => {
+  const event = buildExceptionEvent({
     error: new Error('boom'),
     release: 'dorkos@0.46.0',
     environment: 'production',
     surface: 'cli',
     os: 'linux-x64',
     cwd: '/srv/dorkos',
+    distinctId: '11111111-1111-4111-8111-111111111111',
+    dorkosVersion: '0.46.0',
   });
 
-  beforeEach(() => {
-    fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    originalFetch = globalThis.fetch;
-    vi.stubGlobal('fetch', fetchSpy);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    if (originalFetch) globalThis.fetch = originalFetch;
-  });
-
-  it('POSTs a Sentry envelope to the DSN ingest URL with the auth header', async () => {
-    await sendErrorEvent(event, 'https://pub@o1.ingest.sentry.io/456');
+  it('POSTs a single-event batch to the owned ingest endpoint', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    await sendExceptionEvent(event, { fetchImpl: fetchSpy });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://o1.ingest.sentry.io/api/456/envelope/');
-    const headers = init.headers as Record<string, string>;
-    expect(headers['content-type']).toBe('application/x-sentry-envelope');
-    expect(headers['x-sentry-auth']).toContain('sentry_key=pub');
-    expect(headers['x-sentry-auth']).toContain(SDK_NAME);
-    // Envelope is three newline-delimited JSON lines.
-    const lines = (init.body as string).trim().split('\n');
-    expect(lines).toHaveLength(3);
-    expect(JSON.parse(lines[1])).toMatchObject({ type: 'event' });
+    expect(url).toBe(TELEMETRY_EVENTS_ENDPOINT);
+    expect((init.headers as Record<string, string>)['content-type']).toBe('application/json');
+    const body = JSON.parse(init.body as string) as { events: unknown[] };
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0]).toMatchObject({ event: '$exception' });
   });
 
-  it('is a no-op for a malformed DSN', async () => {
-    await sendErrorEvent(event, 'not-a-dsn');
+  it('honors a custom endpoint', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    await sendExceptionEvent(event, {
+      fetchImpl: fetchSpy,
+      endpoint: 'https://example.test/ingest',
+    });
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://example.test/ingest');
+  });
+
+  it('in debug mode prints and sends nothing', async () => {
+    const fetchSpy = vi.fn();
+    const writeSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    await sendExceptionEvent(event, { fetchImpl: fetchSpy, debug: true });
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('$exception'));
+    writeSpy.mockRestore();
   });
 
   it('swallows fetch failures', async () => {
-    fetchSpy.mockRejectedValueOnce(new Error('network down'));
-    await expect(
-      sendErrorEvent(event, 'https://pub@o1.ingest.sentry.io/456')
-    ).resolves.toBeUndefined();
+    const fetchSpy = vi.fn().mockRejectedValueOnce(new Error('network down'));
+    await expect(sendExceptionEvent(event, { fetchImpl: fetchSpy })).resolves.toBeUndefined();
   });
 });
 

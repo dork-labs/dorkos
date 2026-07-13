@@ -360,7 +360,7 @@ DorkOS shares a little anonymous data by default. Two channels are on: a daily h
     },
     'telemetry.errorReporting': {
       description:
-        'Send scrubbed crash reports to your own Sentry or self-hosted GlitchTip project. A separate opt-in from the anonymous channels; also needs a SENTRY_DSN env var. Sends the error type and a cleaned stack trace, never the message, paths, or session data. See the telemetry page.',
+        'Send scrubbed crash reports to dorkos.ai when something breaks, never a third party. A separate opt-in from the anonymous channels. Sends the error type and a cleaned stack trace, never the message, paths, or session data. See the telemetry page.',
       type: 'boolean',
       default: 'false',
     },

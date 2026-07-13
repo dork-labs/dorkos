@@ -26,6 +26,7 @@ export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
 export { HttpTransport, streamManager } from './transport';
 export { DirectTransport, type DirectTransportServices } from './direct-transport';
+export { reportClientError, installClientErrorHandlers } from './client-error-reporter';
 export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
 export { ToolArgumentsDisplay } from './tool-arguments-formatter';
 export {

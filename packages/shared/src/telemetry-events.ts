@@ -343,3 +343,102 @@ export function buildFeedbackEvent(
     timestamp,
   };
 }
+
+// ===========================================================================
+// Exception events (crash reporting) — ADR 260713-143958 Phase 6, DOR-318
+//
+// A DOCUMENTED CARVE-OUT from the `[object]_[verb]` convention above: the
+// PostHog-native `$exception` event. Its `$`-prefixed name and property keys
+// (`$exception_list`, `$exception_level`, `$process_person_profile`) are what
+// PostHog Error Tracking expects on the wire, so we mirror that shape verbatim
+// rather than renaming it into our convention. These events ride the SAME owned
+// ingest and envelope as the Tier 1 usage events above, but are gated by the
+// separate Tier 2 error-reporting opt-in (`telemetry.errorReporting`), not the
+// Tier 1 notice gate. The scrubbed payload is built by `@dorkos/shared/
+// error-report` (`buildExceptionEvent`); this section is only the wire schema.
+// Kept self-contained so it validates independently of the usage union.
+// ===========================================================================
+
+/** Max stack-frame filename / function length (repo-relative paths can exceed the 64-char cap). */
+const MAX_FRAME_STRING_LEN = 1024;
+
+/** Max stack depth accepted in one `$exception` (bounds an adversarial payload). */
+const MAX_STACK_FRAMES = 200;
+
+/**
+ * One scrubbed stack frame in PostHog's `raw` stacktrace shape: structural
+ * location only — never source lines, never locals, never an absolute path. The
+ * scrubber in `error-report.ts` guarantees `filename` is repo-relative.
+ */
+const ExceptionStackFrameSchema = z
+  .object({
+    /** Frame language/platform tag, e.g. `node:javascript` or `web:javascript`. */
+    platform: z.string().min(1).max(MAX_STRING_LEN),
+    /** Repo-relative filename (never absolute, never a home dir). */
+    filename: z.string().max(MAX_FRAME_STRING_LEN),
+    /** Function name, or `<anonymous>`. */
+    function: z.string().max(MAX_FRAME_STRING_LEN),
+    lineno: z.number().int().min(0).optional(),
+    colno: z.number().int().min(0).optional(),
+    /** Whether the frame is DorkOS/app code (vs a dependency under node_modules). */
+    in_app: z.boolean(),
+  })
+  .strict();
+
+/** One exception in `$exception_list`: type + (always-empty) value + a raw stacktrace. */
+const ExceptionValueSchema = z
+  .object({
+    /** The scrubbed error type (e.g. `TypeError`). */
+    type: z.string().max(MAX_FRAME_STRING_LEN),
+    /** Always the empty string — the raw message is never sent (see buildErrorEvent). */
+    value: z.string().max(MAX_STRING_LEN),
+    /** PostHog exception mechanism metadata. */
+    mechanism: z.object({ handled: z.boolean(), synthetic: z.boolean() }).strict(),
+    /** The raw (pre-scrubbed, no source-map) stacktrace. */
+    stacktrace: z
+      .object({
+        type: z.literal('raw'),
+        frames: z.array(ExceptionStackFrameSchema).max(MAX_STACK_FRAMES),
+      })
+      .strict(),
+  })
+  .strict();
+
+/**
+ * Strict allowlist of a `$exception` event's properties. `$process_person_profile`
+ * is pinned `false` so crash events never create a PostHog person (anonymous by
+ * construction); `surface`/`release`/`environment`/`os` mirror the old
+ * `ErrorEvent` fields so crashes stay filterable.
+ */
+export const ExceptionEventPropertiesSchema = z
+  .object({
+    $exception_list: z.array(ExceptionValueSchema).min(1).max(10),
+    $exception_level: z.literal('error'),
+    $process_person_profile: z.literal(false),
+    surface: z.string().min(1).max(MAX_STRING_LEN),
+    release: z.string().min(1).max(MAX_STRING_LEN),
+    environment: z.string().min(1).max(MAX_STRING_LEN),
+    os: z.string().min(1).max(MAX_STRING_LEN),
+  })
+  .strict();
+
+/** The `$exception` event property bag (built by `error-report.ts`'s mapper). */
+export type ExceptionEventProperties = z.infer<typeof ExceptionEventPropertiesSchema>;
+
+/**
+ * A single fully-enveloped `$exception` event — the crash-report wire shape.
+ * Shares {@link envelopeFields} (`distinctId`/`timestamp`/`dorkosVersion`) with
+ * the usage events, so it POSTs to the same `/api/telemetry/events` batch
+ * endpoint; the site route validates it against a route-local mirror of this
+ * schema and forwards it to PostHog Error Tracking.
+ */
+export const ExceptionEventSchema = z
+  .object({
+    event: z.literal('$exception'),
+    properties: ExceptionEventPropertiesSchema,
+    ...envelopeFields,
+  })
+  .strict();
+
+/** A registry-validated, fully-enveloped `$exception` crash event. */
+export type ExceptionEvent = z.infer<typeof ExceptionEventSchema>;

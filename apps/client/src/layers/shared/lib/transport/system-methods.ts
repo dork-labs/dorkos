@@ -30,6 +30,7 @@ import type {
   WriteFileResult,
   RuntimeProvisionProgress,
   RuntimeProvisionResult,
+  ClientErrorReport,
 } from '@dorkos/shared/transport';
 import type {
   StoreCredentialResult,
@@ -278,6 +279,22 @@ export function createSystemMethods(baseUrl: string) {
         method: 'PATCH',
         body: JSON.stringify(patch),
       });
+    },
+
+    async reportError(report: ClientErrorReport): Promise<void> {
+      // Fire-and-forget: crash reporting must never itself throw or block. We
+      // bypass fetchJSON (which throws on non-OK and flips auth state) and
+      // swallow everything — the server scrubs, gates, and always 202s anyway.
+      try {
+        await fetch(`${baseUrl}/errors`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(report),
+        });
+      } catch {
+        // Never surface a reporting failure to the user.
+      }
     },
 
     getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]> {

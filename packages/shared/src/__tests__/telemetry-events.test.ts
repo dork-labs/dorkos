@@ -14,7 +14,9 @@ import {
   TelemetryEventSchema,
   TelemetryEventBatchSchema,
   TelemetryEventInputSchema,
+  ExceptionEventSchema,
   type TelemetryEvent,
+  type ExceptionEvent,
 } from '../telemetry-events.js';
 
 const VALID_DISTINCT_ID = '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4';
@@ -140,6 +142,81 @@ describe('telemetry event registry', () => {
     it('rejects an unknown top-level batch key', () => {
       const res = TelemetryEventBatchSchema.safeParse({ events: [APP_STARTED], api_key: 'phc_x' });
       expect(res.success).toBe(false);
+    });
+  });
+
+  describe('ExceptionEventSchema ($exception carve-out)', () => {
+    const VALID_EXCEPTION: ExceptionEvent = {
+      event: '$exception',
+      properties: {
+        $exception_list: [
+          {
+            type: 'TypeError',
+            value: '',
+            mechanism: { handled: false, synthetic: false },
+            stacktrace: {
+              type: 'raw',
+              frames: [
+                {
+                  platform: 'node:javascript',
+                  filename: 'apps/server/src/x.ts',
+                  function: 'fn',
+                  lineno: 3,
+                  colno: 1,
+                  in_app: true,
+                },
+              ],
+            },
+          },
+        ],
+        $exception_level: 'error',
+        $process_person_profile: false,
+        surface: 'server',
+        release: 'dorkos@0.47.0',
+        environment: 'production',
+        os: 'darwin-arm64',
+      },
+      distinctId: VALID_DISTINCT_ID,
+      timestamp: VALID_TIMESTAMP,
+      dorkosVersion: '0.47.0',
+    };
+
+    it('accepts a valid $exception event', () => {
+      expect(ExceptionEventSchema.safeParse(VALID_EXCEPTION).success).toBe(true);
+    });
+
+    it('is NOT accepted by the usage union (kept separate)', () => {
+      expect(TelemetryEventSchema.safeParse(VALID_EXCEPTION).success).toBe(false);
+    });
+
+    it('rejects an unknown property key (strict allowlist)', () => {
+      const res = ExceptionEventSchema.safeParse({
+        ...VALID_EXCEPTION,
+        properties: { ...VALID_EXCEPTION.properties, cwd: '/Users/kai/secret' },
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('rejects an unknown stack-frame key (no source/locals can ride along)', () => {
+      const poisoned = structuredClone(VALID_EXCEPTION);
+      (
+        poisoned.properties.$exception_list[0].stacktrace.frames[0] as Record<string, unknown>
+      ).vars = { secret: 'x' };
+      expect(ExceptionEventSchema.safeParse(poisoned).success).toBe(false);
+    });
+
+    it('pins $process_person_profile to false (crashes stay anonymous)', () => {
+      const res = ExceptionEventSchema.safeParse({
+        ...VALID_EXCEPTION,
+        properties: { ...VALID_EXCEPTION.properties, $process_person_profile: true },
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('requires the raw stacktrace type', () => {
+      const poisoned = structuredClone(VALID_EXCEPTION);
+      (poisoned.properties.$exception_list[0].stacktrace as { type: string }).type = 'resolved';
+      expect(ExceptionEventSchema.safeParse(poisoned).success).toBe(false);
     });
   });
 });

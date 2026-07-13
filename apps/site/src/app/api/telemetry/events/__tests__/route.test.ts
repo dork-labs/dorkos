@@ -54,6 +54,41 @@ const VALID_FEATURE_REQUESTED = {
   timestamp: '2026-07-13T12:00:03.000Z',
 };
 
+const VALID_EXCEPTION = {
+  event: '$exception' as const,
+  properties: {
+    $exception_list: [
+      {
+        type: 'TypeError',
+        value: '',
+        mechanism: { handled: false, synthetic: false },
+        stacktrace: {
+          type: 'raw' as const,
+          frames: [
+            {
+              platform: 'node:javascript',
+              filename: 'apps/server/src/x.ts',
+              function: 'fn',
+              lineno: 3,
+              colno: 1,
+              in_app: true,
+            },
+          ],
+        },
+      },
+    ],
+    $exception_level: 'error' as const,
+    $process_person_profile: false as const,
+    surface: 'server',
+    release: 'dorkos@0.47.0',
+    environment: 'production',
+    os: 'darwin-arm64',
+  },
+  distinctId: '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+  timestamp: '2026-07-13T12:00:02.000Z',
+  dorkosVersion: '0.47.0',
+};
+
 let fetchSpy: ReturnType<typeof vi.spyOn>;
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -169,6 +204,39 @@ describe('POST /api/telemetry/events', () => {
       expect(res.status).toBe(200);
       expect((await readJson(res)).accepted).toBe(1);
       expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('$exception crash events (DOR-318)', () => {
+    beforeEach(() => {
+      env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+    });
+
+    it('accepts a valid $exception event alongside usage events (mixed batch)', async () => {
+      const res = await POST(makeRequest({ events: [VALID_APP_STARTED, VALID_EXCEPTION] }));
+      expect((await readJson(res)).accepted).toBe(2);
+    });
+
+    it('forwards $exception to PostHog with its error-tracking properties intact', async () => {
+      await POST(makeRequest({ events: [VALID_EXCEPTION] }));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const sent = JSON.parse(init.body as string) as {
+        batch: Array<{ event: string; properties: Record<string, unknown> }>;
+      };
+      expect(sent.batch[0].event).toBe('$exception');
+      expect(sent.batch[0].properties.$exception_list).toBeDefined();
+      expect(sent.batch[0].properties.$process_person_profile).toBe(false);
+    });
+
+    it('drops a $exception event with an unknown property (strict allowlist)', async () => {
+      const poisoned = {
+        ...VALID_EXCEPTION,
+        properties: { ...VALID_EXCEPTION.properties, cwd: '/Users/kai/secret' },
+      };
+      const res = await POST(makeRequest({ events: [poisoned] }));
+      expect((await readJson(res)).accepted).toBe(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 
