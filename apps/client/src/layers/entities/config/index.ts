@@ -10,3 +10,4 @@
 export { configKeys } from './api/query-keys';
 export { useConfig } from './model/use-config';
 export { useUpdateConfig } from './model/use-update-config';
+export { HEARTBEAT_PAYLOAD_EXAMPLE } from './lib/telemetry-payload';

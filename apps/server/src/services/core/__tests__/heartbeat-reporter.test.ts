@@ -29,6 +29,7 @@ import {
   registerHeartbeat,
   HEARTBEAT_ENDPOINT,
   HEARTBEAT_INTERVAL_MS,
+  LAST_SENT_FILENAME,
   type HeartbeatCounts,
   type HeartbeatOptions,
 } from '../heartbeat-reporter.js';
@@ -51,6 +52,7 @@ const counts: HeartbeatCounts = { agents: 4, tasks: 2, relayAdapters: 1 };
 function makeOptions(overrides: Partial<HeartbeatOptions> = {}): HeartbeatOptions {
   return {
     consent: true,
+    debug: false,
     dorkHome: DORK_HOME,
     dorkosVersion: DORKOS_VERSION,
     runtimesConfigured: ['claude-code', 'codex'],
@@ -105,6 +107,28 @@ describe('heartbeat-reporter', () => {
       expect(mockReadFile).not.toHaveBeenCalled();
       expect(setIntervalSpy).not.toHaveBeenCalled();
       setIntervalSpy.mockRestore();
+    });
+  });
+
+  describe('debug mode', () => {
+    it('prints the payload to stderr and skips the network + last-sent write', async () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      const sent = await maybeSendHeartbeat(makeOptions({ debug: true }));
+
+      expect(sent).toBe(true);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      // The instance-id file may still be created (a local id, not telemetry),
+      // but the cadence marker is never written in debug mode so it can be
+      // re-inspected on every start.
+      const wroteMarker = mockWriteFile.mock.calls.some((c) =>
+        String(c[0]).endsWith(LAST_SENT_FILENAME)
+      );
+      expect(wroteMarker).toBe(false);
+      const printed = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(printed).toContain('DORKOS_TELEMETRY_DEBUG');
+      expect(printed).toContain('runtimesConfigured');
+      stderrSpy.mockRestore();
     });
   });
 

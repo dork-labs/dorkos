@@ -2195,15 +2195,24 @@ export const ServerConfigSchema = z
       .openapi({ description: 'External MCP server access control status' }),
     telemetry: z
       .object({
-        enabled: z.boolean().openapi({
-          description: 'Whether marketplace install telemetry is opted in',
-        }),
         userHasDecided: z.boolean().openapi({
           description: 'True once the user has explicitly chosen (banner stops appearing)',
         }),
+        install: z.boolean().openapi({
+          description: 'Whether the marketplace install-events channel is opted in',
+        }),
+        heartbeat: z.boolean().openapi({
+          description: 'Whether the weekly anonymous heartbeat channel is opted in',
+        }),
+        errorReporting: z.boolean().openapi({
+          description: 'Whether the crash/error-report channel is opted in',
+        }),
+        lastPromptedVersion: z.string().nullable().optional().openapi({
+          description: 'DorkOS version whose consent notice this install last saw, or null',
+        }),
       })
       .optional()
-      .openapi({ description: 'Marketplace telemetry consent state' }),
+      .openapi({ description: 'Telemetry consent state (shared per-channel namespace)' }),
     auth: z
       .object({
         enabled: z.boolean().openapi({

@@ -111,9 +111,21 @@ export function isHeartbeatDue(lastSentMs: number | null, nowMs: number): boolea
  * POST a heartbeat payload to the endpoint. Errors are swallowed — telemetry
  * must never surface to the user or destabilize the server.
  *
+ * In debug mode (`DORKOS_TELEMETRY_DEBUG`), the exact payload is written to
+ * stderr and the network call is skipped, so a power user can audit the wire
+ * format for themselves.
+ *
  * @param payload - The anonymous payload to send.
+ * @param debug - When true, print the payload to stderr instead of sending it.
  */
-export async function sendHeartbeat(payload: HeartbeatPayload): Promise<void> {
+export async function sendHeartbeat(payload: HeartbeatPayload, debug = false): Promise<void> {
+  if (debug) {
+    process.stderr.write(
+      `[Telemetry] DORKOS_TELEMETRY_DEBUG: heartbeat NOT sent. Would POST to ${HEARTBEAT_ENDPOINT}:\n` +
+        `${JSON.stringify(payload, null, 2)}\n`
+    );
+    return;
+  }
   try {
     await fetch(HEARTBEAT_ENDPOINT, {
       method: 'POST',
@@ -148,8 +160,19 @@ async function writeLastSent(dorkHome: string, nowMs: number): Promise<void> {
 
 /** Options for {@link maybeSendHeartbeat} and {@link registerHeartbeat}. */
 export interface HeartbeatOptions {
-  /** Whether the user opted into the heartbeat (`config.telemetry.heartbeat`). */
+  /**
+   * Whether the user opted into the heartbeat. Must already fold in the env
+   * kill switch (`DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`) via
+   * `resolveTelemetryConsent` at the call site — this module treats it as the
+   * final word.
+   */
   consent: boolean;
+  /**
+   * Debug mode (`DORKOS_TELEMETRY_DEBUG`): print the exact payload to stderr
+   * instead of sending it, and do not persist the last-sent marker so it can be
+   * re-inspected on every start.
+   */
+  debug: boolean;
   /** Resolved dorkHome path (for the instance id and last-sent marker). */
   dorkHome: string;
   /** Current DorkOS version. */
@@ -175,7 +198,9 @@ export async function maybeSendHeartbeat(options: HeartbeatOptions): Promise<boo
 
   const now = Date.now();
   const lastSent = await readLastSent(options.dorkHome);
-  if (!isHeartbeatDue(lastSent, now)) return false;
+  // Debug mode always builds and prints the payload so it can be audited every
+  // start; a real send still honors the once-a-week cadence.
+  if (!options.debug && !isHeartbeatDue(lastSent, now)) return false;
 
   let counts: HeartbeatCounts = { agents: 0, tasks: 0, relayAdapters: 0 };
   try {
@@ -194,8 +219,12 @@ export async function maybeSendHeartbeat(options: HeartbeatOptions): Promise<boo
     counts,
   });
 
-  await sendHeartbeat(payload);
-  await writeLastSent(options.dorkHome, now);
+  await sendHeartbeat(payload, options.debug);
+  // Don't advance the cadence marker in debug mode — the payload was printed,
+  // not sent, so a real send is still due.
+  if (!options.debug) {
+    await writeLastSent(options.dorkHome, now);
+  }
   return true;
 }
 

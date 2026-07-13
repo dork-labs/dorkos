@@ -25,7 +25,9 @@ function rawFlagsFromConfig(config: ServerConfig): Record<string, unknown> {
     'relay.enabled': config.relay?.enabled,
     'mesh.enabled': config.mesh?.enabled,
     'mcp.enabled': config.mcp?.enabled,
-    'telemetry.enabled': config.telemetry?.enabled,
+    'telemetry.install': config.telemetry?.install,
+    'telemetry.heartbeat': config.telemetry?.heartbeat,
+    'telemetry.errorReporting': config.telemetry?.errorReporting,
     'auth.enabled': config.auth?.enabled,
     'logging.level': config.logging?.level,
   };

@@ -14,6 +14,7 @@ import {
   dropTunnelPasscodeAndSessionSecret,
   backfillProvidersDefaults,
   generalizeTelemetryConsent,
+  backfillTelemetryLastPromptedVersion,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -377,6 +378,49 @@ describe('generalizeTelemetryConsent migration', () => {
   it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     expect(() => generalizeTelemetryConsent(store)).not.toThrow();
+    expect(store.data.telemetry).toBeUndefined();
+  });
+});
+
+describe('backfillTelemetryLastPromptedVersion migration', () => {
+  it('backfills lastPromptedVersion: null on an existing telemetry block', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: true, install: true, heartbeat: false, errorReporting: false },
+    });
+    backfillTelemetryLastPromptedVersion(store);
+    expect(store.data.telemetry).toEqual({
+      userHasDecided: true,
+      install: true,
+      heartbeat: false,
+      errorReporting: false,
+      lastPromptedVersion: null,
+    });
+  });
+
+  it('never overwrites an existing lastPromptedVersion', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: true, lastPromptedVersion: '0.46.0' },
+    });
+    backfillTelemetryLastPromptedVersion(store);
+    expect((store.data.telemetry as Record<string, unknown>).lastPromptedVersion).toBe('0.46.0');
+  });
+
+  it('is idempotent — a fully-migrated block is untouched', () => {
+    const migrated = {
+      userHasDecided: false,
+      install: false,
+      heartbeat: false,
+      errorReporting: false,
+      lastPromptedVersion: null,
+    };
+    const store = createMockStore({ telemetry: { ...migrated } });
+    backfillTelemetryLastPromptedVersion(store);
+    expect(store.data.telemetry).toEqual(migrated);
+  });
+
+  it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillTelemetryLastPromptedVersion(store)).not.toThrow();
     expect(store.data.telemetry).toBeUndefined();
   });
 });

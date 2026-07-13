@@ -423,6 +423,33 @@ export function backfillWorkbenchAutoOpenDiff(store: {
   }
 }
 
+/**
+ * Migration body: backfill `telemetry.lastPromptedVersion` (the consent
+ * re-prompt anchor, DOR-312, ADR 260713-143958 Phase 1) onto an EXISTING
+ * `telemetry` block. conf merges top-level defaults SHALLOWLY, so a `telemetry`
+ * object already on disk never inherits the new nested default — this supplies
+ * it. Additive + idempotent: only writes when the field is absent, never
+ * overwrites a set value. Seeds `null` (never prompted), which preserves the
+ * consent-flip semantics: a never-answered install is not enrolled until a
+ * later phase shows the notice. The whole-object-absent case is handled by the
+ * schema default on read.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillTelemetryLastPromptedVersion(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry && typeof telemetry === 'object' && !('lastPromptedVersion' in telemetry)) {
+    store.set('telemetry', {
+      ...(telemetry as Record<string, unknown>),
+      lastPromptedVersion: null,
+    });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -489,6 +516,16 @@ const CONFIG_MIGRATIONS = {
     // `workbench.autoOpenDiff` (auto-open the diff review surface on agent
     // edits, DOR-212).
     backfillWorkbenchAutoOpenDiff(store);
+  },
+  // Authored on the next-ascending-release placeholder while on main;
+  // /system:release reconciles the key to the real release at tag time.
+  '0.47.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // Backfill `telemetry.lastPromptedVersion` (consent re-prompt anchor,
+    // DOR-312, ADR 260713-143958 Phase 1). Additive + idempotent; seeds `null`.
+    backfillTelemetryLastPromptedVersion(store);
   },
 } as const;
 

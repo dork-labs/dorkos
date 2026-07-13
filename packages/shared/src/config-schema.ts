@@ -240,12 +240,23 @@ export const UserConfigSchema = z.object({
        * exists now so that feature hangs off this same consent object.
        */
       errorReporting: z.boolean().default(false),
+      /**
+       * The DorkOS version whose consent notice this install last saw, or `null`
+       * if the user has never been prompted. Anchors the "re-prompt on a data
+       * policy change" idiom (mirroring `dismissedUpgradeVersions`): a future
+       * Tier-1 default flip only enrolls a never-answered install after the
+       * notice for that version has been shown. Nothing reads it yet beyond
+       * tests — it is written by the consent surfaces and consumed in a later
+       * phase. See ADR 260713-143958 (Phase 1).
+       */
+      lastPromptedVersion: z.string().nullable().default(null),
     })
     .default(() => ({
       userHasDecided: false,
       install: false,
       heartbeat: false,
       errorReporting: false,
+      lastPromptedVersion: null,
     })),
   workspace: z
     .object({

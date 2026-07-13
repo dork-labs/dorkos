@@ -363,8 +363,21 @@ DorkOS is private by default. Every telemetry channel is off until you opt in, a
       type: 'boolean',
       default: 'false',
     },
+    'telemetry.lastPromptedVersion': {
+      description:
+        'The DorkOS version whose consent notice this install last saw, or null if never prompted. Used internally to decide when to ask again after a data-policy change. Set by the consent surfaces.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
+
+<Callout type="info">
+  Two environment variables turn everything off no matter what these settings say: `DO_NOT_TRACK`
+  and `DORKOS_TELEMETRY_DISABLED`. Set either to `1` and DorkOS sends nothing. `dorkos telemetry
+  status` shows each channel and any override; `DORKOS_TELEMETRY_DEBUG=1` prints the exact payload
+  to your terminal instead of sending it. See the [telemetry page](/docs/self-hosting/telemetry).
+</Callout>
 
 ### Config Directory
 

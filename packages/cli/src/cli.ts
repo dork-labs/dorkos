@@ -318,6 +318,18 @@ if (process.argv[2] === 'cloud') {
   process.exit(await runCloudDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
 }
 
+// `telemetry` subcommand has its own subcommand namespace (`status`/`enable`/
+// `disable`) and flag (`--channel`). Intercept before the top-level parseArgs
+// call so its args aren't rejected as unknown options. Reads and writes
+// ~/.dork/config.json directly — no running server. Dispatch + help text live in
+// commands/telemetry/telemetry.ts (DOR-312).
+if (process.argv[2] === 'telemetry') {
+  process.env.DORK_HOME = DORK_HOME;
+  fs.mkdirSync(DORK_HOME, { recursive: true });
+  const { runTelemetryDispatcher } = await import('./commands/telemetry/telemetry.js');
+  process.exit(await runTelemetryDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
+}
+
 let values: ReturnType<typeof parseArgs>['values'];
 let positionals: ReturnType<typeof parseArgs>['positionals'];
 
@@ -384,6 +396,9 @@ Commands:
   cloud login          Link this instance to a DorkOS account
   cloud logout         Unlink this instance from its DorkOS account
   cloud status         Show the linked account, or 'not linked'
+  telemetry status     Show what anonymous data DorkOS sends, and env overrides
+  telemetry enable     Turn on telemetry channels (all, or --channel <c>)
+  telemetry disable    Turn off telemetry channels (all, or --channel <c>)
   doctor               Check your setup and report problems in plain words
   feedback             Report a bug or request a feature on GitHub
   cleanup              Remove all DorkOS data

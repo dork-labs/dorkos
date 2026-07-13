@@ -8,11 +8,12 @@ import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { TelemetryConsentBanner } from '../ui/TelemetryConsentBanner';
 
 // The banner reads from `useConfig` and writes via `useUpdateConfig`; both are
-// mocked so no TransportProvider or QueryClient is needed.
-vi.mock('@/layers/entities/config', () => ({
-  useConfig: vi.fn(),
-  useUpdateConfig: vi.fn(),
-}));
+// mocked so no TransportProvider or QueryClient is needed. Other exports
+// (HEARTBEAT_PAYLOAD_EXAMPLE) are preserved via importOriginal.
+vi.mock('@/layers/entities/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
+  return { ...actual, useConfig: vi.fn(), useUpdateConfig: vi.fn() };
+});
 
 interface TelemetryConfigState {
   userHasDecided?: boolean;

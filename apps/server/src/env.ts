@@ -22,6 +22,16 @@ const serverEnvSchema = z.object({
   CLIENT_DIST_PATH: z.string().optional(),
   // MCP external server — optional API key for authenticated access
   MCP_API_KEY: z.string().optional(),
+  // Telemetry kill switches (DOR-312) — force EVERY outbound channel off,
+  // beating config (precedence: env > config). `DO_NOT_TRACK` is the universal
+  // cross-tool convention; `DORKOS_TELEMETRY_DISABLED` is the DorkOS-scoped
+  // equivalent. Kept as raw strings; the '1'/'true' parsing + precedence live in
+  // `@dorkos/shared/telemetry-consent` so the server and CLI agree exactly.
+  DO_NOT_TRACK: z.string().optional(),
+  DORKOS_TELEMETRY_DISABLED: z.string().optional(),
+  // Telemetry debug mode (DOR-312) — when '1'/'true', the heartbeat and install
+  // senders print the exact JSON payload to stderr instead of sending it.
+  DORKOS_TELEMETRY_DEBUG: z.string().optional(),
   // Opt-in error reporting (DOR-293) — Sentry/GlitchTip DSN. Reports are only
   // sent when this is set AND `config.telemetry.errorReporting` is true. The DSN
   // contains a public ingest key, not a secret at rest; it lives in env, never
