@@ -107,6 +107,7 @@ import type {
   AddSourceInput,
 } from './marketplace-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
+import type { FeedbackSubmission } from './telemetry-events.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -1336,4 +1337,23 @@ export interface Transport {
   unlinkCloud(): Promise<{ ok: boolean }>;
   /** Read the settled linked/unlinked summary for the Settings panel's initial render. */
   getCloudStatus(): Promise<CloudLinkSummary>;
+
+  // --- Feedback (user-volunteered; DOR-317, ADR 260713-143958 Phase 5) ---
+
+  /**
+   * Send a piece of feedback the user deliberately wrote and submitted — general
+   * feedback, a bug report, or a feature idea. Unlike usage telemetry, this is a
+   * message the person chose to send, so it bypasses the telemetry consent
+   * channel and env kill switches entirely (see `@dorkos/shared/telemetry-events`
+   * for the reasoning). It still rides the one owned ingest.
+   *
+   * `HttpTransport` POSTs `/feedback` (the server fills surface/version/id and
+   * forwards to the ingest); `DirectTransport` forwards in-process. The result is
+   * an honest `{ ok }` so the UI can toast truthfully — a network failure resolves
+   * `{ ok: false }` rather than throwing, since best-effort delivery is not an
+   * error the user must handle.
+   *
+   * @param submission - The user-typed `{ kind, message, contact?, route? }`.
+   */
+  sendFeedback(submission: FeedbackSubmission): Promise<{ ok: boolean }>;
 }

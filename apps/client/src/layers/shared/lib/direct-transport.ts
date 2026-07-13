@@ -19,6 +19,7 @@ import { createDirectSessionMethods } from './direct/session-methods';
 import { createDirectSessionStreamMethods } from './direct/session-stream-methods';
 import { createDirectSystemMethods } from './direct/system-methods';
 import { createDirectMeshMethods } from './direct/mesh-methods';
+import { createDirectFeedbackMethods } from './direct/feedback-methods';
 import { createEmbeddedStubMethods } from './direct/stub-methods';
 
 export type { DirectTransportServices } from './direct/services';
@@ -39,6 +40,7 @@ export interface DirectTransport
     ReturnType<typeof createDirectSessionStreamMethods>,
     ReturnType<typeof createDirectSystemMethods>,
     ReturnType<typeof createDirectMeshMethods>,
+    ReturnType<typeof createDirectFeedbackMethods>,
     ReturnType<typeof createEmbeddedStubMethods> {}
 
 // ---------------------------------------------------------------------------
@@ -58,6 +60,7 @@ export class DirectTransport implements Transport {
       createDirectSessionStreamMethods(services),
       createDirectSystemMethods(services),
       createDirectMeshMethods(),
+      createDirectFeedbackMethods(),
       createEmbeddedStubMethods()
     );
   }

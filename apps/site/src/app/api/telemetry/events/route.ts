@@ -90,6 +90,67 @@ type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
 // --- end mirror ----------------------------------------------------------------
 
+// --- Route-local mirror of the FEEDBACK section of `@dorkos/shared/telemetry-events`
+// (ADR-0235; DOR-317). Self-contained: keep in lockstep with the shared registry's
+// feedback schemas. Feedback carries the ONLY free-text this ingest accepts —
+// `message`/`contact` are user-volunteered and deliberately submitted, so the
+// no-PII allowlist that governs usage events above does not apply to them.
+
+const MAX_FEEDBACK_MESSAGE_LEN = 4000;
+const MAX_FEEDBACK_CONTACT_LEN = 254;
+const MAX_FEEDBACK_ROUTE_LEN = 256;
+
+/** Mirrors `FeedbackSubmittedProperties` in the shared registry. */
+const FeedbackSubmittedProperties = z
+  .object({
+    kind: z.enum(['feedback', 'bug']),
+    message: z.string().min(1).max(MAX_FEEDBACK_MESSAGE_LEN),
+    contact: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
+    surface: z.enum(['cockpit', 'site']),
+    route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
+    dorkosVersion: z.string().min(1).max(MAX_STRING_LEN).optional(),
+  })
+  .strict();
+
+/** Mirrors `FeatureRequestedProperties` in the shared registry. */
+const FeatureRequestedProperties = z
+  .object({
+    message: z.string().min(1).max(MAX_FEEDBACK_MESSAGE_LEN),
+    contact: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
+    surface: z.enum(['cockpit', 'site']),
+    route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
+    dorkosVersion: z.string().min(1).max(MAX_STRING_LEN).optional(),
+  })
+  .strict();
+
+/** Mirrors the lighter feedback envelope (no envelope `dorkosVersion`, lenient id). */
+const feedbackEnvelopeFields = {
+  distinctId: z.string().min(1).max(200),
+  timestamp: z.string().datetime(),
+};
+
+/** Mirrors `FeedbackEventSchema` (strict, discriminated on `event`). */
+const FeedbackEventSchema = z.discriminatedUnion('event', [
+  z
+    .object({
+      event: z.literal('feedback_submitted'),
+      properties: FeedbackSubmittedProperties,
+      ...feedbackEnvelopeFields,
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal('feature_requested'),
+      properties: FeatureRequestedProperties,
+      ...feedbackEnvelopeFields,
+    })
+    .strict(),
+]);
+
+type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
+
+// --- end feedback mirror -------------------------------------------------------
+
 /**
  * Handle a usage-event batch POST. Always returns `200 { ok: true, accepted }`
  * — this is a fire-and-forget event stream and the app must never retry.
@@ -103,6 +164,18 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ ok: true, accepted: 0 });
   }
 
+  // Honeypot (DOR-317): the feedback forms include a hidden `website` field no
+  // human fills in. A non-empty value is a bot — accept (still 200, so it learns
+  // nothing) but drop the whole batch without forwarding anything.
+  if (
+    body != null &&
+    typeof body === 'object' &&
+    typeof (body as { website?: unknown }).website === 'string' &&
+    (body as { website: string }).website.trim() !== ''
+  ) {
+    return Response.json({ ok: true, accepted: 0 });
+  }
+
   // Accept a `{ events: [...] }` batch; anything else drops with zero accepted.
   const rawEvents =
     body != null && typeof body === 'object' && Array.isArray((body as { events?: unknown }).events)
@@ -110,17 +183,31 @@ export async function POST(request: Request): Promise<Response> {
       : [];
 
   const valid: TelemetryEvent[] = [];
+  const validFeedback: FeedbackEvent[] = [];
   for (const raw of rawEvents.slice(0, MAX_BATCH)) {
     const parsed = TelemetryEventSchema.safeParse(raw);
-    if (parsed.success) valid.push(parsed.data);
+    if (parsed.success) {
+      valid.push(parsed.data);
+      continue;
+    }
+    // Feedback events (user-volunteered) validate against their own schema and
+    // carry the only free-text this ingest accepts (DOR-317).
+    const feedback = FeedbackEventSchema.safeParse(raw);
+    if (feedback.success) {
+      validFeedback.push(feedback.data);
+      continue;
+    }
     // Invalid events are silently dropped (allowlist rejection), never persisted.
   }
 
   if (valid.length > 0) {
     await forwardToPostHog(valid);
   }
+  if (validFeedback.length > 0) {
+    await forwardFeedbackToPostHog(validFeedback);
+  }
 
-  return Response.json({ ok: true, accepted: valid.length });
+  return Response.json({ ok: true, accepted: valid.length + validFeedback.length });
 }
 
 /**
@@ -162,6 +249,46 @@ async function forwardToPostHog(events: TelemetryEvent[]): Promise<void> {
     });
   } catch (error) {
     console.error('[api/telemetry/events] PostHog forward failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Fan user-volunteered feedback events out to PostHog's `/batch/` endpoint
+ * (DOR-317). Mirrors {@link forwardToPostHog} but reads the feedback envelope,
+ * which keeps `dorkosVersion` in `properties` (optional) rather than the wire
+ * envelope. The volunteered `message`/`contact` ride along in `properties` on
+ * purpose — this is content the user chose to send. No-op when
+ * `POSTHOG_PROJECT_KEY` is unset; errors are swallowed (always-200 posture).
+ */
+async function forwardFeedbackToPostHog(events: FeedbackEvent[]): Promise<void> {
+  const apiKey = env.POSTHOG_PROJECT_KEY;
+  if (!apiKey) return; // Unconfigured deploy: accept, forward nothing.
+
+  const url = `${env.NEXT_PUBLIC_POSTHOG_HOST.replace(/\/+$/, '')}/batch/`;
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKey,
+        historical_migration: false,
+        batch: events.map((e) => ({
+          event: e.event,
+          distinct_id: e.distinctId,
+          timestamp: e.timestamp,
+          properties: {
+            ...e.properties,
+            // Marks these as owned-ingest events (vs the site's browser SDK).
+            $lib: 'dorkos-owned-ingest',
+          },
+        })),
+      }),
+    });
+  } catch (error) {
+    console.error('[api/telemetry/events] PostHog feedback forward failed', {
       error: error instanceof Error ? error.message : String(error),
     });
   }

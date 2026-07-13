@@ -29,6 +29,31 @@ const VALID_SESSION_CREATED = {
   dorkosVersion: '0.47.0',
 };
 
+// Feedback events use the lighter feedback envelope (no envelope dorkosVersion,
+// lenient distinctId) and carry user-volunteered free-text (DOR-317).
+const VALID_FEEDBACK_SUBMITTED = {
+  event: 'feedback_submitted' as const,
+  properties: {
+    kind: 'bug' as const,
+    message: 'The sidebar flickers when I switch sessions.',
+    contact: 'kai@example.com',
+    surface: 'site' as const,
+    route: '/feedback',
+  },
+  distinctId: 'ph_visitor_abc123',
+  timestamp: '2026-07-13T12:00:02.000Z',
+};
+
+const VALID_FEATURE_REQUESTED = {
+  event: 'feature_requested' as const,
+  properties: {
+    message: 'Please add a keyboard shortcut for the command palette.',
+    surface: 'site' as const,
+  },
+  distinctId: 'ph_visitor_abc123',
+  timestamp: '2026-07-13T12:00:03.000Z',
+};
+
 let fetchSpy: ReturnType<typeof vi.spyOn>;
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -178,6 +203,81 @@ describe('POST /api/telemetry/events', () => {
       for (const forbidden of ['cwd', 'email', 'prompt', 'path', 'hostname', 'username']) {
         expect(bodyStr).not.toContain(`"${forbidden}"`);
       }
+    });
+  });
+
+  describe('feedback events (user-volunteered; DOR-317)', () => {
+    it('accepts a valid feedback_submitted event', async () => {
+      const res = await POST(makeRequest({ events: [VALID_FEEDBACK_SUBMITTED] }));
+      expect((await readJson(res)).accepted).toBe(1);
+    });
+
+    it('accepts a valid feature_requested event', async () => {
+      const res = await POST(makeRequest({ events: [VALID_FEATURE_REQUESTED] }));
+      expect((await readJson(res)).accepted).toBe(1);
+    });
+
+    it('accepts a mixed usage + feedback batch (both branches)', async () => {
+      const res = await POST(
+        makeRequest({ events: [VALID_APP_STARTED, VALID_FEEDBACK_SUBMITTED] })
+      );
+      expect((await readJson(res)).accepted).toBe(2);
+    });
+
+    it('drops a feedback event with an unknown property', async () => {
+      const res = await POST(
+        makeRequest({
+          events: [
+            {
+              ...VALID_FEEDBACK_SUBMITTED,
+              properties: { ...VALID_FEEDBACK_SUBMITTED.properties, cwd: '/Users/kai' },
+            },
+          ],
+        })
+      );
+      expect((await readJson(res)).accepted).toBe(0);
+    });
+
+    it('forwards feedback (including the volunteered message/contact) to PostHog', async () => {
+      env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+      await POST(makeRequest({ events: [VALID_FEEDBACK_SUBMITTED] }));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('https://us.i.posthog.com/batch/');
+      const sent = JSON.parse(init.body as string) as {
+        batch: Array<{ event: string; distinct_id: string; properties: Record<string, unknown> }>;
+      };
+      expect(sent.batch[0].event).toBe('feedback_submitted');
+      expect(sent.batch[0].distinct_id).toBe('ph_visitor_abc123');
+      expect(sent.batch[0].properties.message).toBe(VALID_FEEDBACK_SUBMITTED.properties.message);
+      expect(sent.batch[0].properties.contact).toBe('kai@example.com');
+    });
+
+    it('does not forward feedback when POSTHOG_PROJECT_KEY is unset (accept-and-drop)', async () => {
+      env.POSTHOG_PROJECT_KEY = undefined;
+      const res = await POST(makeRequest({ events: [VALID_FEEDBACK_SUBMITTED] }));
+      expect((await readJson(res)).accepted).toBe(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('honeypot (bot trap; DOR-317)', () => {
+    beforeEach(() => {
+      env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+    });
+
+    it('drops the whole batch when the website field is non-empty', async () => {
+      const res = await POST(
+        makeRequest({ events: [VALID_FEEDBACK_SUBMITTED], website: 'http://spam.example' })
+      );
+      expect(res.status).toBe(200);
+      expect((await readJson(res)).accepted).toBe(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('ignores an empty/whitespace website field (real submissions pass)', async () => {
+      const res = await POST(makeRequest({ events: [VALID_FEEDBACK_SUBMITTED], website: '   ' }));
+      expect((await readJson(res)).accepted).toBe(1);
     });
   });
 });
