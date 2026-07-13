@@ -1,7 +1,34 @@
-# Changelog archive: v0.1.0 – v0.38.0
+# Changelog archive: v0.1.0 – v0.39.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.39.0] - 2026-04-12
+
+> Agent Hub reimagined — immersive hero design, Cosmic Nebula personality visualization, shell-level right panel infrastructure, and smooth panel animations across the platform.
+
+### Added
+
+- Animate right panel open/close and unify sidebar transition timing
+- Redesign Agent Hub with immersive hero, inline pickers, and shared panel header
+- Add Cosmic Nebula visualization to personality radar and onboarding
+- Redesign Agent Hub with Personality Theater and 3-tab layout
+- Add unified Agent Hub right-panel replacing AgentDialog modal
+- Add shell-level right panel infrastructure with canvas migration
+- Add displayName field to decouple display label from slug
+
+### Changed
+
+- Remove orphaned session.canvas slot and add right-panel to ExtensionPointId
+- Update extension slot references to include right-panel
+- Merge duplicate imports from @dorkos/marketplace
+
+### Fixed
+
+- Remove dead onClose prop from CanvasHeader and unused TabBar import
+- Sync animRef state when animated=false and rename stale testid
+- Register agent-hub right-panel contribution and fix 13 broken tests
+- Merge DorkOS sidecar in server aggregation and unify shared logic
 
 ## [0.38.0] - 2026-04-11
 

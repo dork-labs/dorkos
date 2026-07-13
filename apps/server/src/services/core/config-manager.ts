@@ -640,9 +640,11 @@ const CONFIG_MIGRATIONS = {
     // edits, DOR-212).
     backfillWorkbenchAutoOpenDiff(store);
   },
-  // Authored on the next-ascending-release placeholder while on main;
-  // /system:release reconciles the key to the real release at tag time.
-  '0.47.0': (store: {
+  // Reconciled from the `0.47.0` placeholder to `0.48.0` at release time
+  // (DOR-315 watch-item): a `v0.47.0` tag briefly existed on a divergent commit,
+  // so the telemetry backfills ship in 0.48.0 — keying them here guarantees
+  // every 0.46.0 -> 0.48.0 upgrade actually runs them.
+  '0.48.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
   }) => {

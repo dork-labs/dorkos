@@ -1,3 +1,0 @@
-### Fixed
-
-- Playing a game inside a widget now works the way you'd expect. Tapping one square marks only that square, instead of filling the whole board at once. A board stays playable even after the agent sends a follow-up message: only a newer board takes its place. And when the agent sends a fresh board (in the chat, the canvas, or the floating panel) it accepts your next move again rather than freezing. Widget buttons and game boards in your existing chats also keep working after the app's server restarts, instead of failing with "Couldn't send the move" until you type something. When you ask for a game or widget in the floating picture-in-picture view, the agent can now pop it out there directly instead of putting it in the side panel.

@@ -13,6 +13,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.48.0] - 2026-07-13
+
+> You can now download DorkOS for Windows as an early alpha, alongside the Mac app. This release also moves every bit of analytics onto DorkOS's own site, so no third-party tracker is ever bundled into the app, and it hands you real controls: a Privacy & Data settings tab, command-line switches, and two kill switches that force everything off. A small anonymous heartbeat and usage count are now on by default, but DorkOS shows you the exact data on first run and sends nothing until you have seen it. You can also send your own traces to any observability tool, get crash reports through DorkOS instead of a third party, and send feedback right from the app.
+
+### Added
+
+**Desktop app**
+
+- Download the macOS desktop app straight from dorkos.ai, no terminal required. On a Mac, the install section now shows a "Download for Mac" button (Apple Silicon); the recommended one-line terminal install is still right there for everyone, and Intel Macs use it too.
+- Windows desktop app (early alpha). DorkOS can now be built as a Windows installer for 64-bit PCs, with the bundled Claude Code, the built-in terminal, and `dorkos://` links all wired up the same way they are on Mac. It hasn't been confirmed on a real Windows machine yet, so treat it as experimental until we've tested it end to end. (#268)
+- Download DorkOS for Windows from dorkos.ai. On a Windows PC, the install section now leads with a "Download for Windows" button and the top navigation offers the download too; the one-line terminal install stays a click away, and other machines see a link to the Windows installer under "Other ways to install." This is an early alpha: the installer is unsigned, so Windows may show a "Windows protected your PC" warning on first launch, and we haven't yet confirmed it end to end on a real Windows machine. (#267)
+
+**See and control your data**
+
+- See and control what anonymous data DorkOS sends. A **Privacy & Data** tab in settings lets you flip each channel on or off, and the first-run onboarding shows you the exact data before anything is sent (DOR-312).
+- `dorkos telemetry status`, `dorkos telemetry enable`, and `dorkos telemetry disable` let you check and change telemetry from the command line. Use `--channel install|heartbeat|usage|errors` to change just one.
+- Two environment kill switches, `DO_NOT_TRACK` and `DORKOS_TELEMETRY_DISABLED`, force every channel off no matter what your config says. Set either to `1` and DorkOS sends nothing.
+- A debug mode: set `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints the exact JSON it would send to your terminal instead of sending it, so you can read every field for yourself.
+- DorkOS now shares a short list of anonymous feature-usage events so we can see which parts of the app get used and make the right things better. Like the heartbeat and install counts, the channel is on by default and sends nothing until the first-run notice has been shown; if you answered a telemetry prompt on an older version, it stays off for you. Only two events ship today: one when the server starts and one when you begin a new agent session. They carry counts and coarse facts (your platform, how many runtimes you have on, which runtime a session uses) and never your prompts, code, file paths, or anything from your sessions. Everything flows through dorkos.ai, so no tracking library is ever bundled into the app. You can see the full list on the [telemetry page](https://dorkos.ai/telemetry), preview the exact events with `DORKOS_TELEMETRY_DEBUG=1`, and turn the channel off in the Privacy & Data settings, with `dorkos telemetry disable --channel usage`, or with `DO_NOT_TRACK=1` (DOR-315).
+- Signed-in, opted-in analytics for DorkOS accounts (DOR-316). When you are signed in to your DorkOS account and have analytics turned on, we now tie your website activity to a random account ID (never your name or email) so we can see how signed-in people use DorkOS. If analytics is off, declined, or you are signed out, nothing is tied to you. Deleting your account also erases the analytics record tied to it.
+- When you link this install to a DorkOS account, you can now also connect its anonymous usage counts to your account, so you can see them when you are signed in on dorkos.ai. It is off by default: a checkbox in the account-link flow (Settings, DorkOS account) turns it on right before you link. No new data is collected, and the `DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED` kill switches turn it off too. It only takes effect at link time, so if you turn it on after linking, the connection happens the next time you link (DOR-320).
+
+**Bring your own observability**
+
+- Send DorkOS traces to your own observability stack (DOR-313). Set the standard `OTEL_EXPORTER_OTLP_ENDPOINT` and DorkOS ships its session, runtime, relay, and task spans to your own Jaeger, Grafana Tempo, Honeycomb, or any OTLP-compatible tool. The spans stay sanitized (durations and counts, never prompts, code, or file paths), and nothing goes to DorkOS: it is your data going to your tools. `OTEL_SDK_DISABLED=1` turns all tracing off. See the new [observability guide](https://dorkos.ai/docs/self-hosting/observability).
+- See AI run details in your own traces (DOR-319). When tracing is on, every agent turn's span now carries standard OpenTelemetry `gen_ai.*` metadata: which model ran, the token counts, and the cost. Any tool that reads LLM traces picks it up automatically, and it stays your data going to your own tools.
+- New opt-in setting to share AI run metadata with DorkOS (DOR-319). Turn on **Share AI run metadata** in the Privacy & Data tab (off by default) and DorkOS sends a small summary of each agent turn: the model, the runtime, token counts, timing, and cost. Never your prompts, your code, or your conversations.
+
+**Feedback**
+
+- Send feedback from the app. A new **Send feedback** button in the help menu opens a small form to tell the DorkOS team what works, what does not, or what you wish it did: general feedback, a bug, or an idea. It goes straight to us and is sent only when you press Send. The **Report a bug on GitHub** and **Request a feature on GitHub** options are still there for when you want a public thread (DOR-317).
+- A matching feedback form on the website at [dorkos.ai/feedback](https://dorkos.ai/feedback), linked from the footer.
+- Feedback is not telemetry: it is a message you choose to send, so it ignores the `DO_NOT_TRACK` and telemetry switches. Those turn off tracking, not the Send button.
+
+### Changed
+
+- On a Mac, the dorkos.ai install section and the top navigation now lead with the desktop app download. The terminal one-liner stays one step away, still front and center and one click to copy, and a new "Other ways to install" section holds npm and the Windows and Linux notes. On other machines, nothing changes: the terminal install still leads, with the Mac download a subtle link away.
+- DorkOS now shares a little anonymous data by default so we can see roughly how many people run it: a small heartbeat (now once a day instead of once a week) and anonymous marketplace install counts. It is anonymous, not personal. It only ever sends a random install id, the version, your OS and chip type, which runtimes you have on, whether the tunnel and cloud link are enabled, and rough counts, never your prompts, code, file paths, or session content. The first time you start DorkOS it prints a plain notice explaining this and sends nothing on that first run; if you do nothing, sharing begins on the next launch. Turn it off any time with `dorkos telemetry disable`, by setting `DO_NOT_TRACK=1`, or in the new Privacy & Data settings tab. If you had already made a telemetry choice, we keep it exactly as it was. Crash reporting is unchanged: it stays off until you turn it on. See exactly what's collected at [dorkos.ai/telemetry](https://dorkos.ai/telemetry) (DOR-314).
+- The dorkos.ai analytics now respect where you are and count everyone privately by default (DOR-311). In the EU, EEA, UK, and Switzerland you still get a banner and nothing is counted with cookies until you accept. Everywhere else, basic visit counting is on by default, and you can turn it off in one click on the Privacy page. Either way, if you decline or turn it off, we still count your visit anonymously: no cookies, no stored ID, and no way to link today's visit to tomorrow's. Do Not Track and Global Privacy Control browser signals are honored automatically, and the cookie banner no longer hides behind the bottom navigation.
+- Crash reports, if you turn them on, now go to dorkos.ai instead of a third-party service. They are scrubbed the same way as before (no error messages, no file paths, no code, no session content) and stay off until you switch them on. There is no longer anything to set up: the old `SENTRY_DSN` step is gone, so the single `telemetry.errorReporting` switch is all it takes. Crashes in the cockpit itself are now reported too, and you can preview a report any time with `DORKOS_TELEMETRY_DEBUG=1` (DOR-318).
+
+### Fixed
+
+- Playing a game inside a widget now works the way you'd expect. Tapping one square marks only that square, instead of filling the whole board at once. A board stays playable even after the agent sends a follow-up message: only a newer board takes its place. And when the agent sends a fresh board (in the chat, the canvas, or the floating panel) it accepts your next move again rather than freezing. Widget buttons and game boards in your existing chats also keep working after the app's server restarts, instead of failing with "Couldn't send the move" until you type something. When you ask for a game or widget in the floating picture-in-picture view, the agent can now pop it out there directly instead of putting it in the side panel (DOR-302).
+
 ## [0.46.0] - 2026-07-12
 
 > The Mac desktop app finally works end to end and ships with its own downloadable installer. A new floating panel lets you pop a live widget or an MCP app out of the chat and keep it in view while you work elsewhere. You can review an agent's edits change by change, and your agent can now see its own preview (console errors, network requests, and a screenshot) to fix its own mistakes. Telemetry, crash reporting, and debug tracing are all new, and all opt-in. A security-hardening pass closes several real gaps, and the docs got a full plain-language rewrite.
@@ -467,39 +512,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.39.0] - 2026-04-12
+Older releases (v0.1.0 – v0.39.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.39.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.39.0.md).
 
-> Agent Hub reimagined — immersive hero design, Cosmic Nebula personality visualization, shell-level right panel infrastructure, and smooth panel animations across the platform.
-
-### Added
-
-- Animate right panel open/close and unify sidebar transition timing
-- Redesign Agent Hub with immersive hero, inline pickers, and shared panel header
-- Add Cosmic Nebula visualization to personality radar and onboarding
-- Redesign Agent Hub with Personality Theater and 3-tab layout
-- Add unified Agent Hub right-panel replacing AgentDialog modal
-- Add shell-level right panel infrastructure with canvas migration
-- Add displayName field to decouple display label from slug
-
-### Changed
-
-- Remove orphaned session.canvas slot and add right-panel to ExtensionPointId
-- Update extension slot references to include right-panel
-- Merge duplicate imports from @dorkos/marketplace
-
-### Fixed
-
-- Remove dead onClose prop from CanvasHeader and unused TabBar import
-- Sync animRef state when animated=false and rename stale testid
-- Register agent-hub right-panel contribution and fix 13 broken tests
-- Merge DorkOS sidecar in server aggregation and unify shared logic
-
----
-
----
-
----
-
-Older releases (v0.1.0 – v0.38.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.38.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.38.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.46.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.48.0...HEAD

@@ -1,3 +1,0 @@
-### Changed
-
-- The dorkos.ai analytics now respect where you are and count everyone privately by default (DOR-311). In the EU, EEA, UK, and Switzerland you still get a banner and nothing is counted with cookies until you accept. Everywhere else, basic visit counting is on by default, and you can turn it off in one click on the Privacy page. Either way, if you decline or turn it off, we still count your visit anonymously: no cookies, no stored ID, and no way to link today's visit to tomorrow's. Do Not Track and Global Privacy Control browser signals are honored automatically, and the cookie banner no longer hides behind the bottom navigation.
