@@ -1,5 +1,5 @@
 /**
- * The exact weekly-heartbeat payload, shown verbatim on every consent surface
+ * The exact daily-heartbeat payload, shown verbatim on every consent surface
  * (first-run banner, onboarding step, Privacy & Data settings tab) so the user
  * can read every field before choosing. Kept in lockstep with the server payload
  * in `services/core/heartbeat-reporter.ts` and the public /telemetry page.

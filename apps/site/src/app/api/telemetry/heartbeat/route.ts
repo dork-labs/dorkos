@@ -1,5 +1,6 @@
 /**
- * `POST /api/telemetry/heartbeat` — opt-in weekly heartbeat sink (DOR-293).
+ * `POST /api/telemetry/heartbeat` — anonymous daily heartbeat sink (DOR-293;
+ * Tier 1 opt-out per ADR 260713-143958).
  *
  * Runs as a Vercel Edge Function. Validates the incoming heartbeat with Zod,
  * then **upserts** a single row into `instance_heartbeats` keyed on
@@ -8,7 +9,7 @@
  *
  * Why upsert (last-seen), not append-only: the endpoint is public and
  * unauthenticated. Keying on `instanceId` means each real installation owns
- * exactly one row (its latest ping), so legitimate weekly pings do not grow the
+ * exactly one row (its latest ping), so legitimate daily pings do not grow the
  * table without bound and the row count is a true distinct-instance metric.
  *
  * Residual abuse note: a spray of random valid UUIDs still creates one row per

@@ -202,59 +202,72 @@ export const UserConfigSchema = z.object({
       rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
     })),
   /**
-   * Shared opt-in consent namespace for everything DorkOS can send to
-   * dorkos.ai. Every channel below is a peer boolean that defaults to
-   * `false` — nothing leaves the machine until the user explicitly opts in.
-   * `userHasDecided` is the one shared gate: it records that the user has
-   * answered a consent prompt (opt-in or opt-out) so no channel re-prompts.
+   * Shared consent namespace for everything DorkOS can send to dorkos.ai, split
+   * into two tiers (ADR 260713-143958):
    *
-   * The namespace is deliberately per-channel so future work hangs off the
-   * same consent object without a schema redesign: error reporting (PR-B)
-   * flips `errorReporting`, and a later remote OpenTelemetry exporter can add
-   * its own peer flag here. See ADR 260711-141639 and the /telemetry page.
+   * - **Tier 1 — anonymous, opt-out:** `install` and `heartbeat` default to
+   *   `true`. These are genuinely anonymous aggregate signals (no IP, no
+   *   fingerprint, no content, no paths — only a random per-machine id), so they
+   *   collect by default, matching the Next.js/VS Code/Homebrew norm. They are
+   *   still gated by the notice-before-first-send rule (`hasTier1SendGate`): a
+   *   never-answered install sends nothing until its first-run notice has been
+   *   shown and `lastPromptedVersion` recorded.
+   * - **Tier 2 — identified/third-party, opt-in:** `errorReporting` defaults to
+   *   `false` and never turns on without an explicit choice.
+   *
+   * `userHasDecided` is the one shared gate: it records that the user has
+   * answered a consent prompt (kept sharing or turned off) so no channel
+   * re-prompts. The namespace is deliberately per-channel so future work hangs
+   * off the same object without a schema redesign. See the /telemetry page.
    */
   telemetry: z
     .object({
       /**
        * Shared consent gate. `true` once the user has answered a telemetry
-       * consent prompt either way (opt-in or opt-out), which stops the
+       * consent prompt either way (kept sharing or turned off), which stops the
        * first-run consent banner from reappearing for any channel.
        */
       userHasDecided: z.boolean().default(false),
       /**
-       * Channel: send anonymous marketplace install events to dorkos.ai so we
-       * can rank packages and spot install failures. Formerly `telemetry.enabled`.
-       * Privacy contract: https://dorkos.ai/marketplace/privacy
+       * Tier 1 channel (anonymous, opt-out): send anonymous marketplace install
+       * events to dorkos.ai so we can rank packages and spot install failures.
+       * Defaults `true`; a never-answered install still sends nothing until the
+       * first-run notice has been shown (see `hasTier1SendGate`). Formerly
+       * `telemetry.enabled`. Privacy contract: https://dorkos.ai/marketplace/privacy
        */
-      install: z.boolean().default(false),
+      install: z.boolean().default(true),
       /**
-       * Channel: send a weekly anonymous heartbeat to dorkos.ai (instance id,
-       * version, OS/arch, configured runtimes, tunnel + cloud-link flags,
-       * and rough counts — never prompts, code, paths, or session content).
-       * Payload documented verbatim at https://dorkos.ai/telemetry.
+       * Tier 1 channel (anonymous, opt-out): send a daily anonymous heartbeat to
+       * dorkos.ai (instance id, version, OS/arch, configured runtimes, tunnel +
+       * cloud-link flags, and rough counts — never prompts, code, paths, or
+       * session content). Defaults `true`; a never-answered install still sends
+       * nothing until the first-run notice has been shown (see
+       * `hasTier1SendGate`). Payload documented verbatim at
+       * https://dorkos.ai/telemetry.
        */
-      heartbeat: z.boolean().default(false),
+      heartbeat: z.boolean().default(true),
       /**
-       * Channel: send crash and error reports to dorkos.ai. RESERVED for the
-       * error-reporting work (PR-B) and not yet wired to any sender — it
-       * exists now so that feature hangs off this same consent object.
+       * Tier 2 channel (opt-in): send crash and error reports to a third-party
+       * sink (today's Sentry path). Defaults `false` and never turns on without
+       * an explicit opt-in AND a configured `SENTRY_DSN` — the notice-before-send
+       * gate does not apply to it.
        */
       errorReporting: z.boolean().default(false),
       /**
        * The DorkOS version whose consent notice this install last saw, or `null`
        * if the user has never been prompted. Anchors the "re-prompt on a data
-       * policy change" idiom (mirroring `dismissedUpgradeVersions`): a future
-       * Tier-1 default flip only enrolls a never-answered install after the
-       * notice for that version has been shown. Nothing reads it yet beyond
-       * tests — it is written by the consent surfaces and consumed in a later
-       * phase. See ADR 260713-143958 (Phase 1).
+       * policy change" idiom (mirroring `dismissedUpgradeVersions`): a
+       * never-answered install is only enrolled in the Tier 1 opt-out channels
+       * after the first-run notice for that version has been shown. Read by
+       * `hasTier1SendGate` to enforce notice-before-first-send. See ADR
+       * 260713-143958.
        */
       lastPromptedVersion: z.string().nullable().default(null),
     })
     .default(() => ({
       userHasDecided: false,
-      install: false,
-      heartbeat: false,
+      install: true,
+      heartbeat: true,
       errorReporting: false,
       lastPromptedVersion: null,
     })),

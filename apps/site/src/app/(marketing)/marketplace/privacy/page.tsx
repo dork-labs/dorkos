@@ -5,11 +5,11 @@ import { siteConfig } from '@/config/site';
 export const metadata: Metadata = {
   title: 'Marketplace privacy — DorkOS',
   description:
-    'How DorkOS handles install telemetry. Opt-in. No PII. Anonymous install IDs. Open source pipeline.',
+    'How DorkOS handles install telemetry. Anonymous and opt-out. No PII. Anonymous install IDs. Open source pipeline.',
   alternates: { canonical: '/marketplace/privacy' },
   openGraph: {
     title: 'Marketplace privacy — DorkOS',
-    description: 'How DorkOS handles install telemetry — opt-in, no PII, anonymous IDs.',
+    description: 'How DorkOS handles install telemetry: anonymous, opt-out, no PII, anonymous IDs.',
     url: '/marketplace/privacy',
     siteName: siteConfig.name,
   },
@@ -42,8 +42,9 @@ export default function MarketplacePrivacyPage() {
               </strong>
             </li>
             <li>
-              <strong className="text-charcoal font-semibold">Opt-in.</strong> Disabled by default.
-              You enable it explicitly in DorkOS settings.
+              <strong className="text-charcoal font-semibold">Anonymous and opt-out.</strong> On by
+              default, but genuinely anonymous. DorkOS shows a first-run notice and sends nothing on
+              that first run, and you can turn it off any time.
             </li>
             <li>
               <strong className="text-charcoal font-semibold">Aggregate counts only</strong>{' '}
@@ -57,9 +58,7 @@ export default function MarketplacePrivacyPage() {
         </div>
 
         <div className="space-y-4">
-          <h2 className="text-charcoal font-mono text-xl font-semibold">
-            What we collect when you opt in
-          </h2>
+          <h2 className="text-charcoal font-mono text-xl font-semibold">What we collect</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-2 text-base leading-relaxed">
             <li>The package name and marketplace it came from.</li>
             <li>The package type (agent, plugin, skill-pack, adapter).</li>
@@ -72,10 +71,13 @@ export default function MarketplacePrivacyPage() {
         </div>
 
         <div className="space-y-4">
-          <h2 className="text-charcoal font-mono text-xl font-semibold">How to opt in (or out)</h2>
+          <h2 className="text-charcoal font-mono text-xl font-semibold">How to turn it off</h2>
           <p className="text-warm-gray text-base leading-relaxed">
-            The toggle lives in DorkOS settings. The default is off. The DorkOS client never reports
-            telemetry until you flip the switch.
+            Install counts are on by default, but always anonymous. Turn them off any time: run{' '}
+            <span className="text-charcoal font-mono">dorkos telemetry disable</span>, set the
+            environment variable <span className="text-charcoal font-mono">DO_NOT_TRACK=1</span>, or
+            use the Privacy and Data tab in DorkOS settings. DorkOS also shows a first-run notice
+            and sends nothing on that first run.
           </p>
         </div>
 

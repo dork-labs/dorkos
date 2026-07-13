@@ -70,16 +70,16 @@ describe('TelemetryConsentBanner', () => {
 
     render(<TelemetryConsentBanner />);
 
-    expect(screen.getByText(/share anonymous usage data/i)).toBeInTheDocument();
+    expect(screen.getByText(/shares a little anonymous data/i)).toBeInTheDocument();
     expect(screen.getByText(/runtimesConfigured/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /no thanks/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /share anonymous data/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /turn off/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /keep sharing/i })).toBeInTheDocument();
   });
 
   it('renders defensively when config has not loaded yet', () => {
     setConfigState(null);
     render(<TelemetryConsentBanner />);
-    expect(screen.getByText(/share anonymous usage data/i)).toBeInTheDocument();
+    expect(screen.getByText(/shares a little anonymous data/i)).toBeInTheDocument();
   });
 
   it('does not render once the user has decided', () => {
@@ -88,12 +88,12 @@ describe('TelemetryConsentBanner', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('opting in turns on both channels and records the decision', async () => {
+  it('keeping sharing leaves both channels on and records the decision', async () => {
     const user = userEvent.setup();
     setConfigState({ userHasDecided: false });
 
     render(<TelemetryConsentBanner />);
-    await user.click(screen.getByRole('button', { name: /share anonymous data/i }));
+    await user.click(screen.getByRole('button', { name: /keep sharing/i }));
 
     expect(updateMutate).toHaveBeenCalledTimes(1);
     expect(updateMutate).toHaveBeenCalledWith({
@@ -101,12 +101,12 @@ describe('TelemetryConsentBanner', () => {
     });
   });
 
-  it('opting out leaves both channels off and records the decision', async () => {
+  it('turning off zeroes both channels and records the decision', async () => {
     const user = userEvent.setup();
     setConfigState({ userHasDecided: false });
 
     render(<TelemetryConsentBanner />);
-    await user.click(screen.getByRole('button', { name: /no thanks/i }));
+    await user.click(screen.getByRole('button', { name: /turn off/i }));
 
     expect(updateMutate).toHaveBeenCalledWith({
       telemetry: { install: false, heartbeat: false, userHasDecided: true },
@@ -129,7 +129,7 @@ describe('TelemetryConsentBanner', () => {
 
     render(<TelemetryConsentBanner />);
 
-    expect(screen.getByRole('button', { name: /no thanks/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /share anonymous data/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /turn off/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /keep sharing/i })).toBeDisabled();
   });
 });

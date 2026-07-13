@@ -116,6 +116,10 @@ import {
   type ServerErrorReporter,
 } from './services/core/error-reporter.js';
 import { resolveTelemetryConsent, isTelemetryDebugEnabled } from '@dorkos/shared/telemetry-consent';
+import {
+  decideTier1Boot,
+  formatFirstRunTelemetryNotice,
+} from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import {
   initObservability,
@@ -268,17 +272,41 @@ async function start() {
   };
   const telemetryDebug = isTelemetryDebugEnabled(telemetryEnv);
 
-  // Register the dorkos.ai marketplace telemetry reporter. This is a no-op
-  // unless `config.telemetry.install === true` (default false) and no kill
-  // switch is set. The reporter forwards `InstallEvent`s emitted by the
-  // marketplace install pipeline to https://dorkos.ai/api/telemetry/install with
-  // a stable per-machine install ID stored in dorkHome. Privacy contract:
-  // https://dorkos.ai/marketplace/privacy
+  // Tier 1 opt-out telemetry (ADR 260713-143958). The heartbeat + install
+  // channels default ON and are genuinely anonymous, but the Homebrew ordering
+  // rule requires a first-run notice before anything sends. `decideTier1Boot`
+  // reads the consent snapshot ONCE, here, and captures the send gate BEFORE the
+  // notice writes `lastPromptedVersion` — so nothing sends on the boot that first
+  // shows the notice, and both the install reporter (below) and the heartbeat
+  // (registered later, in the `server.listen` callback) share this one captured
+  // `tier1SendGate`. Sends begin on the next boot at the earliest.
   const telemetryConfig = configManager.get('telemetry');
-  const installConsent = resolveTelemetryConsent(telemetryConfig?.install ?? false, telemetryEnv);
+  const tier1Boot = decideTier1Boot(telemetryConfig, SERVER_VERSION);
+  const tier1SendGate = tier1Boot.sendGate;
+
+  // Register the dorkos.ai marketplace install reporter. No-op unless
+  // `config.telemetry.install` is on (default true), no env kill switch is set,
+  // AND the Tier 1 notice gate is open. The reporter forwards `InstallEvent`s
+  // emitted by the marketplace install pipeline to
+  // https://dorkos.ai/api/telemetry/install with a stable per-machine install ID
+  // stored in dorkHome. Privacy contract: https://dorkos.ai/marketplace/privacy
+  const installConsent =
+    resolveTelemetryConsent(telemetryConfig?.install ?? false, telemetryEnv) && tier1SendGate;
   registerDorkosCommunityTelemetry(installConsent, dorkHome, SERVER_VERSION, telemetryDebug);
   if (installConsent) {
-    logger.info('[Telemetry] Marketplace install reporter registered (consent: opt-in)');
+    logger.info('[Telemetry] Marketplace install reporter registered (Tier 1, anonymous)');
+  }
+
+  // First-run notice: print the plain-language disclosure and record
+  // `lastPromptedVersion` so the next boot's gate opens. The gate above was
+  // snapshotted BEFORE this write, guaranteeing this boot sends nothing.
+  if (tier1Boot.showNotice) {
+    logger.info(`[Telemetry] First-run notice\n${formatFirstRunTelemetryNotice()}`);
+    const current = configManager.get('telemetry');
+    configManager.set('telemetry', {
+      ...current,
+      lastPromptedVersion: tier1Boot.lastPromptedVersionToWrite,
+    });
   }
 
   // Opt-in error reporting (DOR-293). A SEPARATE explicit opt-in from the
@@ -1196,10 +1224,11 @@ async function start() {
       summary: 'DorkOS started',
     });
 
-    // Register the anonymous weekly heartbeat. No-op unless
-    // `config.telemetry.heartbeat === true` — defaults to false, so nothing is
-    // read or sent without explicit opt-in. Payload documented at
-    // https://dorkos.ai/telemetry (DOR-293).
+    // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
+    // `config.telemetry.heartbeat` defaults ON, but the send folds in the env
+    // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
+    // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
+    // Payload documented at https://dorkos.ai/telemetry (DOR-293).
     const runtimesConfig = configManager.get('runtimes');
     const runtimesConfigured = [
       'claude-code',
@@ -1207,10 +1236,8 @@ async function start() {
       ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
     ];
     registerHeartbeat({
-      consent: resolveTelemetryConsent(
-        configManager.get('telemetry')?.heartbeat ?? false,
-        telemetryEnv
-      ),
+      consent:
+        resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) && tier1SendGate,
       debug: telemetryDebug,
       dorkHome,
       dorkosVersion: SERVER_VERSION,

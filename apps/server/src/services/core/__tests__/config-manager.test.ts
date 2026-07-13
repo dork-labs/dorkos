@@ -15,6 +15,7 @@ import {
   backfillProvidersDefaults,
   generalizeTelemetryConsent,
   backfillTelemetryLastPromptedVersion,
+  applyTier1OptOutDefaults,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -421,6 +422,87 @@ describe('backfillTelemetryLastPromptedVersion migration', () => {
   it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     expect(() => backfillTelemetryLastPromptedVersion(store)).not.toThrow();
+    expect(store.data.telemetry).toBeUndefined();
+  });
+});
+
+describe('applyTier1OptOutDefaults migration', () => {
+  it('enrolls a never-answered install: install + heartbeat become true', () => {
+    const store = createMockStore({
+      telemetry: {
+        userHasDecided: false,
+        install: false,
+        heartbeat: false,
+        errorReporting: false,
+        lastPromptedVersion: null,
+      },
+    });
+    applyTier1OptOutDefaults(store);
+    expect(store.data.telemetry).toEqual({
+      userHasDecided: false,
+      install: true,
+      heartbeat: true,
+      errorReporting: false,
+      lastPromptedVersion: null,
+    });
+  });
+
+  it('never touches errorReporting when enrolling a never-answered install', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: false, install: false, heartbeat: false, errorReporting: true },
+    });
+    applyTier1OptOutDefaults(store);
+    // errorReporting is Tier 2 (opt-in) and must survive untouched.
+    expect((store.data.telemetry as Record<string, boolean>).errorReporting).toBe(true);
+    expect((store.data.telemetry as Record<string, boolean>).install).toBe(true);
+    expect((store.data.telemetry as Record<string, boolean>).heartbeat).toBe(true);
+  });
+
+  it('leaves an explicit prior "no" byte-identical (userHasDecided: true)', () => {
+    const decidedNo = {
+      userHasDecided: true,
+      install: false,
+      heartbeat: false,
+      errorReporting: false,
+      lastPromptedVersion: '0.46.0',
+    };
+    const store = createMockStore({ telemetry: { ...decidedNo } });
+    applyTier1OptOutDefaults(store);
+    expect(store.data.telemetry).toEqual(decidedNo);
+  });
+
+  it('leaves an explicit prior "yes" untouched (userHasDecided: true)', () => {
+    const decidedYes = {
+      userHasDecided: true,
+      install: true,
+      heartbeat: true,
+      errorReporting: true,
+      lastPromptedVersion: '0.46.0',
+    };
+    const store = createMockStore({ telemetry: { ...decidedYes } });
+    applyTier1OptOutDefaults(store);
+    expect(store.data.telemetry).toEqual(decidedYes);
+  });
+
+  it('is idempotent — an already-enrolled never-answered block is untouched', () => {
+    const enrolled = {
+      userHasDecided: false,
+      install: true,
+      heartbeat: true,
+      errorReporting: false,
+      lastPromptedVersion: null,
+    };
+    const store = createMockStore({ telemetry: { ...enrolled } });
+    applyTier1OptOutDefaults(store);
+    expect(store.data.telemetry).toEqual(enrolled);
+    // Second application is a no-op too.
+    applyTier1OptOutDefaults(store);
+    expect(store.data.telemetry).toEqual(enrolled);
+  });
+
+  it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => applyTier1OptOutDefaults(store)).not.toThrow();
     expect(store.data.telemetry).toBeUndefined();
   });
 });

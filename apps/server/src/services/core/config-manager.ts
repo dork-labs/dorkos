@@ -450,6 +450,41 @@ export function backfillTelemetryLastPromptedVersion(store: {
   }
 }
 
+/**
+ * Migration body: flip the Tier 1 telemetry channels (`install`, `heartbeat`) to
+ * the new opt-out default for never-answered installs (DOR-314, ADR
+ * 260713-143958 Phase 2). Operates on an EXISTING `telemetry` block:
+ *
+ * - If `userHasDecided === true`, the user made an explicit choice (either way) —
+ *   change NOTHING, so a prior "no" (or "yes") survives byte-identical.
+ * - Otherwise (never answered), set `install = true` and `heartbeat = true`,
+ *   enrolling the install in the anonymous opt-out channels. `errorReporting`
+ *   (Tier 2, opt-in) and every other field are left untouched.
+ *
+ * This only flips the config flags; the notice-before-first-send gate
+ * (`hasTier1SendGate`, evaluated at boot) still holds back every Tier 1 send
+ * until the first-run notice has been shown, so enrollment never means an
+ * immediate send. Idempotent: a fully-enrolled never-answered block, and any
+ * explicit-choice block, are left as-is. The whole-object-absent case is handled
+ * by the schema default on read (which already yields the new `true` defaults).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function applyTier1OptOutDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry == null || typeof telemetry !== 'object') return;
+  const t = telemetry as Record<string, unknown>;
+  // An explicit prior choice is never overridden.
+  if (t.userHasDecided === true) return;
+  // Idempotent short-circuit: already enrolled, nothing to write.
+  if (t.install === true && t.heartbeat === true) return;
+  store.set('telemetry', { ...t, install: true, heartbeat: true });
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -526,6 +561,10 @@ const CONFIG_MIGRATIONS = {
     // Backfill `telemetry.lastPromptedVersion` (consent re-prompt anchor,
     // DOR-312, ADR 260713-143958 Phase 1). Additive + idempotent; seeds `null`.
     backfillTelemetryLastPromptedVersion(store);
+    // Flip the Tier 1 channels (`install`, `heartbeat`) to opt-out for
+    // never-answered installs (DOR-314, ADR 260713-143958 Phase 2). Preserves an
+    // explicit prior choice; the notice-before-first-send gate still applies.
+    applyTier1OptOutDefaults(store);
   },
 } as const;
 

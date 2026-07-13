@@ -3,6 +3,7 @@ import {
   isTelemetryDisabledByEnv,
   isTelemetryDebugEnabled,
   resolveTelemetryConsent,
+  hasTier1SendGate,
   TELEMETRY_DISABLE_ENV_VARS,
   TELEMETRY_DEBUG_ENV_VAR,
 } from '../telemetry-consent.js';
@@ -70,5 +71,28 @@ describe('resolveTelemetryConsent (precedence: env > config)', () => {
   it('an off-valued kill switch does not disable an opted-in channel', () => {
     expect(resolveTelemetryConsent(true, { DO_NOT_TRACK: '0' })).toBe(true);
     expect(resolveTelemetryConsent(true, { DORKOS_TELEMETRY_DISABLED: 'false' })).toBe(true);
+  });
+});
+
+describe('hasTier1SendGate (notice-before-first-send)', () => {
+  it('is closed for a never-answered, never-prompted install', () => {
+    expect(hasTier1SendGate({ userHasDecided: false, lastPromptedVersion: null })).toBe(false);
+  });
+
+  it('opens once the user has explicitly decided', () => {
+    expect(hasTier1SendGate({ userHasDecided: true, lastPromptedVersion: null })).toBe(true);
+  });
+
+  it('opens once the first-run notice has been recorded', () => {
+    expect(hasTier1SendGate({ userHasDecided: false, lastPromptedVersion: '0.47.0' })).toBe(true);
+  });
+
+  it('is open when both conditions hold', () => {
+    expect(hasTier1SendGate({ userHasDecided: true, lastPromptedVersion: '0.47.0' })).toBe(true);
+  });
+
+  it('is closed for null/undefined config (defensive)', () => {
+    expect(hasTier1SendGate(null)).toBe(false);
+    expect(hasTier1SendGate(undefined)).toBe(false);
   });
 });

@@ -2,14 +2,14 @@ import { Button } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig, HEARTBEAT_PAYLOAD_EXAMPLE } from '@/layers/entities/config';
 
 /**
- * First-run telemetry consent banner. Surfaced app-wide until the user makes an
- * explicit choice. Everything is off until they opt in — the banner never
- * auto-enables anything. Choosing either option records the shared
- * `userHasDecided` flag so no telemetry prompt reappears.
+ * First-run telemetry disclosure. Surfaced app-wide until the user makes an
+ * explicit choice. DorkOS shares a small anonymous heartbeat and marketplace
+ * install counts by default (Tier 1, opt-out), so this banner discloses that
+ * default and shows the exact payload rather than asking permission. Turning it
+ * off is as easy as keeping it on. Either choice records the shared
+ * `userHasDecided` flag so the disclosure never reappears.
  *
- * Opting in turns on two anonymous channels to dorkos.ai: the weekly heartbeat
- * (payload shown verbatim below) and marketplace install events. Opting out
- * leaves both off. The full contract lives at https://dorkos.ai/telemetry.
+ * The full contract lives at https://dorkos.ai/telemetry.
  */
 export function TelemetryConsentBanner() {
   const { data: config } = useConfig();
@@ -17,13 +17,13 @@ export function TelemetryConsentBanner() {
 
   if (config?.telemetry?.userHasDecided) return null;
 
-  const decline = () => {
+  const turnOff = () => {
     updateConfig.mutate({
       telemetry: { install: false, heartbeat: false, userHasDecided: true },
     });
   };
 
-  const accept = () => {
+  const keepSharing = () => {
     updateConfig.mutate({
       telemetry: { install: true, heartbeat: true, userHasDecided: true },
     });
@@ -32,16 +32,15 @@ export function TelemetryConsentBanner() {
   return (
     <div
       role="region"
-      aria-label="Telemetry consent"
+      aria-label="Telemetry disclosure"
       className="border-border bg-muted/40 flex flex-col gap-3 border-b px-4 py-3"
     >
       <div className="min-w-0 space-y-1">
-        <h2 className="text-sm font-semibold">Share anonymous usage data?</h2>
+        <h2 className="text-sm font-semibold">DorkOS shares a little anonymous data</h2>
         <p className="text-muted-foreground text-sm">
-          DorkOS never phones home unless you say yes. Turn this on and it sends a small anonymous
-          ping about once a week, plus anonymous marketplace install events. No prompts, code, file
-          paths, or session content ever leave your machine. You can change your mind anytime in
-          settings.{' '}
+          To see roughly how many people run DorkOS, it sends a small anonymous heartbeat once a day
+          plus anonymous marketplace install counts. Here is exactly what is in it. No prompts,
+          code, file paths, or session content ever leave your machine. Turn it off any time.{' '}
           <a
             href="https://dorkos.ai/telemetry"
             target="_blank"
@@ -57,11 +56,11 @@ export function TelemetryConsentBanner() {
         <code>{HEARTBEAT_PAYLOAD_EXAMPLE}</code>
       </pre>
       <div className="flex flex-shrink-0 gap-2">
-        <Button variant="outline" size="sm" onClick={decline} disabled={updateConfig.isPending}>
-          No thanks
+        <Button variant="outline" size="sm" onClick={turnOff} disabled={updateConfig.isPending}>
+          Turn off
         </Button>
-        <Button size="sm" onClick={accept} disabled={updateConfig.isPending}>
-          Share anonymous data
+        <Button size="sm" onClick={keepSharing} disabled={updateConfig.isPending}>
+          Keep sharing
         </Button>
       </div>
     </div>
