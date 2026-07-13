@@ -3,6 +3,7 @@ import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import { siteConfig } from '@/config/site';
 import { Providers } from './providers';
 import { CookieConsentBanner } from '@/layers/widgets/cookie-consent';
+import { AnalyticsIdentity } from '@/layers/widgets/analytics-identity';
 import './globals.css';
 
 const ibmPlexSans = IBM_Plex_Sans({
@@ -78,6 +79,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           {children}
           <CookieConsentBanner />
+          <AnalyticsIdentity />
         </Providers>
       </body>
     </html>

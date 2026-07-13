@@ -187,16 +187,84 @@ export function hasOptedOutCapturing(): boolean {
   return posthog.has_opted_out_capturing();
 }
 
+/**
+ * Fired on `window` whenever the visitor's capture state flips (opt in/out), so
+ * decoupled listeners — e.g. the account-identity bridge in
+ * `src/layers/widgets/analytics-identity` — can re-evaluate identity without
+ * importing the banner or reaching into PostHog's internals. The banner
+ * reconcile, the /privacy toggle, and an explicit accept all flip capture state
+ * through {@link optInCapturing} / {@link optOutCapturing}, so dispatching here
+ * covers every path.
+ */
+export const CONSENT_CHANGED_EVENT = 'dorkos:consent-changed';
+
+/** Notify {@link CONSENT_CHANGED_EVENT} listeners that capture state changed. */
+function notifyConsentChanged(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(CONSENT_CHANGED_EVENT));
+}
+
 /** Opt into capturing. Mirrors `posthog.opt_in_capturing`; no-ops when disabled. */
 export function optInCapturing(options?: { captureEventName?: string | false }): void {
   if (!analyticsEnabled) return;
   posthog.opt_in_capturing(options);
+  notifyConsentChanged();
 }
 
 /** Opt out of capturing. Mirrors `posthog.opt_out_capturing`; no-ops when disabled. */
 export function optOutCapturing(): void {
   if (!analyticsEnabled) return;
   posthog.opt_out_capturing();
+  notifyConsentChanged();
+}
+
+// ─── Identified analytics (ADR 260713-143958 Phase 4, Tier 2 — opt-in) ─────────
+// A signed-in visitor who has *opted in* (cookies mode) is identified by their
+// Better Auth account UUID — a random, pseudonymous id, never their email or
+// name. Everything else on the site stays anonymous/cookieless. See the module
+// doc above and src/layers/widgets/analytics-identity for the login/logout wiring.
+
+/**
+ * Identify the current visitor as a DorkOS account, keyed by the account's
+ * Better Auth UUID (a random, pseudonymous id — **never** email/name/username).
+ *
+ * Gated on consent: this no-ops unless analytics is enabled **and** the visitor
+ * is opted in (cookies mode). Under the site's `cookieless_mode: 'on_reject'`,
+ * `has_opted_out_capturing()` is `true` for every undecided, declined, DNT/GPC,
+ * or cookieless-floor visitor, so the guard means an anonymous-floor visitor can
+ * never gain a person profile — the Tier 2 opt-in invariant.
+ *
+ * Verified against posthog-js 1.395.0: `identify()` itself does not check
+ * opt-out (it only refuses when `person_profiles: 'never'`); it calls
+ * `capture('$identify', { $anon_distinct_id })`, which merges the prior
+ * anonymous browser history into the identified person. We therefore gate here
+ * rather than rely on the SDK — belt (this guard) and suspenders (cookieless
+ * events carry no person profile server-side). The single `$set: { is_account:
+ * true }` flag is the only person property set; no PII is ever attached.
+ *
+ * Idempotent: PostHog dedupes a repeat identify with the same distinct id.
+ *
+ * @param accountId - The Better Auth account UUID to use as the distinct id.
+ */
+export function identifyAccount(accountId: string): void {
+  if (!analyticsEnabled) return;
+  if (posthog.has_opted_out_capturing()) return;
+  posthog.identify(accountId, { $set: { is_account: true } });
+}
+
+/**
+ * Reset PostHog identity — call on logout, religiously, so a shared browser
+ * never bleeds one account's identified events into the next visitor. Generates
+ * a fresh anonymous distinct id and clears the identified person link. No-ops
+ * when analytics is disabled.
+ *
+ * Only call this on a genuine login→logout transition, never on every render:
+ * `reset()` mints a new anonymous id each call, which would fragment anonymous
+ * analytics if spammed (see the analytics-identity bridge's transition guard).
+ */
+export function resetIdentity(): void {
+  if (!analyticsEnabled) return;
+  posthog.reset();
 }
 
 /**

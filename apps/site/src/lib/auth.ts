@@ -48,6 +48,7 @@ import { recordAudit } from '@/lib/audit-service';
 import { INSTANCE_PERMISSION_RESOURCE, parseInstanceDescriptor } from '@/lib/instance-descriptor';
 import { instanceRegistry } from '@/lib/instance-registry-plugin';
 import { createInstanceApiKey } from '@/lib/instance-service';
+import { aliasInstanceToAccount, deletePostHogPerson } from '@/lib/posthog-server';
 import {
   sendDeleteAccountVerification,
   sendResetPassword,
@@ -204,6 +205,12 @@ export function createAuth(database: AuthDatabase) {
           } catch {
             /* never block erasure on an audit write */
           }
+          // Erase the account's PostHog person (and, via merge, its app-telemetry
+          // data) as part of the DSR (ADR 260713-143958 Phase 4). Runs after the
+          // DB cascade has removed the account. Best-effort and self-swallowing:
+          // a PostHog outage or missing personal-key config must never fail the
+          // user's right to erasure — it logs and moves on.
+          await deletePostHogPerson(recipient.id);
         },
       },
     },
@@ -291,6 +298,16 @@ export function createAuth(database: AuthDatabase) {
         const rawScope = (returned as { scope?: unknown }).scope;
         const descriptor = parseInstanceDescriptor(typeof rawScope === 'string' ? rawScope : null);
         const { key } = await createInstanceApiKey(selfRef.current as Auth, { userId, descriptor });
+
+        // Device-link merge point (ADR 260713-143958 Phase 4). If the linking
+        // instance sent its anonymous telemetry id (its identified-opt-in
+        // signal), merge that anonymous app-usage history into the account
+        // person. No-op when absent or when PostHog is unconfigured; self-
+        // swallowing so a merge failure never fails the token exchange.
+        await aliasInstanceToAccount({
+          telemetryInstanceId: descriptor.telemetryInstanceId,
+          accountId: userId,
+        });
 
         // Discard the browser session the token route created — an instance must
         // hold only the API key. Best-effort: a lingering session is harmless
