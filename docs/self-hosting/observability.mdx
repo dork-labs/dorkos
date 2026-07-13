@@ -1,0 +1,89 @@
+---
+title: Observability
+description: See how your DorkOS instance is doing by piping its traces into your own tools, plus the live event streams you can build on
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+DorkOS can show you how your own instance is running: how long agent turns take, how often tasks fire, where time goes. This is your data, and it goes only where you tell it. Nothing on this page sends anything to DorkOS.
+
+<Callout type="info">
+  This is different from [telemetry](/docs/self-hosting/telemetry). Telemetry is the small, optional
+  heartbeat that can go to us. Observability is your instance's own traces going to your own tools.
+  We never receive them.
+</Callout>
+
+## What DorkOS traces
+
+When you turn tracing on, DorkOS records a span (a timed record of one operation) for the paths that matter:
+
+- **Session turns.** One span per turn you take with an agent.
+- **Runtime calls.** One span per call into a runtime like Claude Code, Codex, or OpenCode, with a count of the events it streamed back.
+- **Relay dispatch.** One span each time a message goes onto the agent message bus, with how many agents it reached.
+- **Task runs.** One span per scheduled or manual task, with whether it ran on a schedule or by hand.
+
+Each span carries only durations, counts, and coarse labels (like which runtime, or "scheduled" versus "manual"). It never carries your prompts, your code, file paths, tokens, your hostname, or anything from your sessions. There is a fixed allowlist of the fields a span may hold, enforced in code and tests, so content cannot leak in even by mistake. When something fails, the span is marked as an error, but the error message itself is dropped, because a message can contain anything.
+
+## Look at traces on your own machine
+
+The simplest option writes traces to a local file and sends nothing over the network. Start DorkOS with the debug flag:
+
+```bash
+dorkos --debug-trace
+```
+
+DorkOS writes one line of JSON per span to a file under `~/.dork/traces/`. This is the file we mean when we ask you to "run with `--debug-trace` and send us the trace" in a bug report. It stays on your machine until you choose to share it.
+
+<Callout type="info">
+  You can also turn this on with an environment variable: `DORKOS_OTEL_DEBUG=true`. Either way it is
+  off by default and only lasts for that run.
+</Callout>
+
+## Ship traces to your own stack
+
+To watch traces in a real tool, point DorkOS at any endpoint that speaks OTLP (the OpenTelemetry standard for sending traces). DorkOS reads the standard `OTEL_*` environment variables, so there is no DorkOS-specific setup. If you have used OpenTelemetry before, this works the way you expect.
+
+Here is a full example using [Jaeger](https://www.jaegertracing.io/), a free trace viewer you can run in Docker. Start it:
+
+```bash
+docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
+```
+
+Then start DorkOS pointed at it:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 dorkos
+```
+
+Open the Jaeger UI at `http://localhost:16686`, use DorkOS for a bit, and your session, runtime, task, and relay spans show up there. The same two-step pattern works for Grafana Tempo, Honeycomb, Datadog, or any other OTLP tool: run the collector, set the endpoint.
+
+The two modes are independent. Set the endpoint for OTLP, add `--debug-trace` for the local file, do both, or neither. The default (no flag, no endpoint) traces nothing, exactly as before.
+
+### Environment reference
+
+Most people set at most one of these. Here is the full list.
+
+| Variable                      | What it does                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Where to send traces, like `http://localhost:4318`. Setting it turns on OTLP export.                        |
+| `OTEL_EXPORTER_OTLP_HEADERS`  | Extra headers for your endpoint, like an API key. Format: `key1=value1,key2=value2`. Read by OpenTelemetry. |
+| `OTEL_SERVICE_NAME`           | The name your traces appear under. Defaults to `dorkos-server`.                                             |
+| `DORKOS_OTEL_DEBUG`           | Set to `true` to write the local trace file (same as `--debug-trace`).                                      |
+| `OTEL_SDK_DISABLED`           | The kill switch. Set it to `1` or `true` to turn off all tracing, even if the flags above are set.          |
+
+DorkOS also reads the other standard `OTEL_EXPORTER_OTLP_*` variables (for timeouts, protocol, and per-signal endpoints) straight from OpenTelemetry, so anything in the OpenTelemetry docs applies here too.
+
+## Build on the live event streams
+
+DorkOS also publishes live event streams over Server-Sent Events (SSE), a simple way for a web page or script to receive a running feed of updates. These are a supported way to build your own dashboards or automations on top of your instance.
+
+- `GET /api/events` is the instance-wide feed: sessions starting and finishing, and other lifecycle events.
+- `GET /api/sessions/:id/events` is the feed for one session: every event in that session's turns.
+
+Both streams are durable. Each event has a growing sequence number, and if your connection drops, you reconnect with a `Last-Event-ID` header to replay exactly what you missed with no gaps. That means a dashboard can go offline and come back without losing events.
+
+For the full request and response shapes, open your instance's live API docs at `/api/docs`.
+
+## Privacy, in one line
+
+Everything on this page is your instance's data going to your own tools. DorkOS receives none of it, and nothing leaves your machine unless you set an endpoint yourself.

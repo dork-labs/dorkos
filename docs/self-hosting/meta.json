@@ -8,6 +8,7 @@
     "securing-your-instance",
     "threat-model",
     "telemetry",
+    "observability",
     "dorkos-accounts"
   ]
 }
