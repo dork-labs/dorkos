@@ -279,6 +279,22 @@ export const UserConfigSchema = z.object({
        * https://dorkos.ai/telemetry.
        */
       usage: z.boolean().default(true),
+      /**
+       * Tier 2 channel (opt-in): when linking this install to a DorkOS account,
+       * also include the anonymous per-install telemetry `instanceId` in the
+       * device-link descriptor, so the cloud can merge this install's anonymous
+       * usage history onto the signed-in account person (DOR-320, ADR
+       * 260713-143958 Phase 4). Defaults `false` and turns on only by an explicit
+       * choice in the account-link flow (never the first-run banner); the env
+       * kill switches (`DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`) suppress it
+       * too. The app treats this flag as the sole opt-in signal: the id is
+       * threaded into the link descriptor ONLY when this is `true`, and its
+       * presence there is what the site reads to alias the anonymous history (see
+       * the app-side `cloud-link-client.ts` and the site's
+       * `aliasInstanceToAccount`). The alias fires at link time, so opting in
+       * after already linking only takes effect on a future re-link.
+       */
+      linkAnalyticsToAccount: z.boolean().default(false),
     })
     .default(() => ({
       userHasDecided: false,
@@ -287,6 +303,7 @@ export const UserConfigSchema = z.object({
       errorReporting: false,
       lastPromptedVersion: null,
       usage: true,
+      linkAnalyticsToAccount: false,
     })),
   workspace: z
     .object({

@@ -96,6 +96,43 @@ describe('runCloudLogin', () => {
     expect(client.sendHeartbeat).toHaveBeenCalledOnce();
   });
 
+  it('resolves the analytics opt-in and passes the id to buildInstanceDescriptor', async () => {
+    const buildInstanceDescriptor = vi.fn((telemetryInstanceId?: string) => ({
+      ...DESCRIPTOR,
+      ...(telemetryInstanceId ? { telemetryInstanceId } : {}),
+    }));
+    const client = fakeClient({ buildInstanceDescriptor });
+    const requestDeviceCode = vi.fn(async () => CODES);
+    client.requestDeviceCode = requestDeviceCode;
+
+    await runCloudLogin({
+      client,
+      configStore: memoryConfigStore(),
+      io: captureIo(),
+      isTty: false,
+      resolveTelemetryInstanceId: async () => 'inst-uuid-cli',
+    });
+
+    expect(buildInstanceDescriptor).toHaveBeenCalledWith('inst-uuid-cli');
+    // The id rides into the device-code request via the descriptor.
+    const descriptor = requestDeviceCode.mock.calls[0][0].descriptor;
+    expect(descriptor.telemetryInstanceId).toBe('inst-uuid-cli');
+  });
+
+  it('omits the telemetry id when no resolver is provided (default, opt-in off)', async () => {
+    const buildInstanceDescriptor = vi.fn(() => DESCRIPTOR);
+    const client = fakeClient({ buildInstanceDescriptor });
+
+    await runCloudLogin({
+      client,
+      configStore: memoryConfigStore(),
+      io: captureIo(),
+      isTty: false,
+    });
+
+    expect(buildInstanceDescriptor).toHaveBeenCalledWith(undefined);
+  });
+
   it('opens the pre-filled URL when attached to a TTY', async () => {
     const client = fakeClient();
     const openUrl = vi.fn();

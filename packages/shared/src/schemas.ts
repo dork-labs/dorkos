@@ -2216,6 +2216,10 @@ export const ServerConfigSchema = z
           description:
             'Whether the anonymous feature-usage events channel is on (Tier 1, anonymous, opt-out, default true)',
         }),
+        linkAnalyticsToAccount: z.boolean().optional().openapi({
+          description:
+            'Whether linking this install to a DorkOS account also merges its anonymous usage history onto the account person (Tier 2, opt-in, default false; set in the account-link flow)',
+        }),
       })
       .optional()
       .openapi({ description: 'Telemetry consent state (shared per-channel namespace)' }),

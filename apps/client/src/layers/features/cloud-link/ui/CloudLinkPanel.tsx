@@ -8,6 +8,7 @@ import {
   TriangleAlert,
   Unplug,
 } from 'lucide-react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,10 +20,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
   Button,
+  Checkbox,
   FieldCard,
   FieldCardContent,
   Skeleton,
 } from '@/layers/shared/ui';
+import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { cn, formatRelativeTime, useCopyFeedback } from '@/layers/shared/lib';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
 
@@ -130,22 +133,74 @@ function IdleState({
   starting: boolean;
   startError: string | null;
 }) {
+  const checkboxId = useId();
+  const { data: config } = useConfig();
+  const updateConfig = useUpdateConfig();
+  const persisted = config?.telemetry?.linkAnalyticsToAccount ?? false;
+  const [linkAnalytics, setLinkAnalytics] = useState(persisted);
+
+  // Mirror the persisted flag once config loads (or if it changes elsewhere), so
+  // a re-linking operator sees their prior choice pre-selected.
+  useEffect(() => {
+    setLinkAnalytics(persisted);
+  }, [persisted]);
+
+  const [consentError, setConsentError] = useState<string | null>(null);
+
+  // Persist the choice BEFORE starting the handshake: the descriptor is built
+  // server-side at link time, so the flag must be on disk first. Fail CLOSED on
+  // a write failure — never start the link. Proceeding would act on the stale
+  // persisted flag in both directions: an opt-in would silently skip the merge,
+  // and (worse) an unchecked box over a previously-persisted `true` would send
+  // the id against an explicit withdrawal.
+  const handleLink = useCallback(async () => {
+    setConsentError(null);
+    try {
+      await updateConfig.mutateAsync({ telemetry: { linkAnalyticsToAccount: linkAnalytics } });
+    } catch {
+      setConsentError("Couldn't save your choice. Try again.");
+      return;
+    }
+    await start();
+  }, [updateConfig, linkAnalytics, start]);
+
+  const busy = starting || updateConfig.isPending;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
         This instance is not linked to a DorkOS account.
       </p>
-      <Button onClick={() => void start()} disabled={starting}>
-        {starting ? (
+
+      <div className="flex items-start gap-2.5">
+        <Checkbox
+          id={checkboxId}
+          checked={linkAnalytics}
+          onCheckedChange={(v) => setLinkAnalytics(v === true)}
+          disabled={busy}
+          className="mt-0.5"
+        />
+        <label htmlFor={checkboxId} className="space-y-1 text-sm leading-snug">
+          <span className="font-medium">Also connect this app's usage data to my account</span>
+          <span className="text-muted-foreground block text-xs">
+            Links the anonymous usage counts from this install to your account so you can see them
+            signed in. Off by default. Takes effect at link time, so turning it on after linking
+            only applies the next time you link.
+          </span>
+        </label>
+      </div>
+
+      <Button onClick={() => void handleLink()} disabled={busy}>
+        {busy ? (
           <Loader2 className="mr-1.5 size-4 animate-spin" />
         ) : (
           <Link2 className="mr-1.5 size-4" />
         )}
-        {starting ? 'Starting…' : 'Link this instance'}
+        {busy ? 'Starting…' : 'Link this instance'}
       </Button>
-      {startError && (
+      {(consentError ?? startError) && (
         <p className="text-sm text-red-500" role="alert">
-          {startError}
+          {consentError ?? startError}
         </p>
       )}
     </div>

@@ -154,6 +154,78 @@ describe('CloudLinkPanel', () => {
     openSpy.mockRestore();
   });
 
+  it('opt-in checkbox writes telemetry.linkAnalyticsToAccount BEFORE the link handshake fires', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+    vi.mocked(transport.startCloudLink).mockResolvedValue({
+      userCode: 'WXYZ7890',
+      verificationUri: 'https://dorkos.ai/activate',
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    });
+    renderPanel(transport);
+
+    // The consent checkbox is off by default.
+    const checkbox = await screen.findByRole('checkbox', {
+      name: /connect this app's usage data/i,
+    });
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: /link this instance/i }));
+
+    // The flag was persisted with the opt-in value.
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        telemetry: { linkAnalyticsToAccount: true },
+      })
+    );
+    // And the config write landed BEFORE the link handshake (order matters: the
+    // descriptor is built server-side at link time).
+    const writeOrder = vi.mocked(transport.updateConfig).mock.invocationCallOrder[0];
+    const linkOrder = vi.mocked(transport.startCloudLink).mock.invocationCallOrder[0];
+    expect(writeOrder).toBeLessThan(linkOrder);
+  });
+
+  it('defaults the opt-in off and writes false when the box is left unchecked', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+    vi.mocked(transport.startCloudLink).mockResolvedValue({
+      userCode: 'WXYZ7890',
+      verificationUri: 'https://dorkos.ai/activate',
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    });
+    renderPanel(transport);
+
+    await user.click(await screen.findByRole('button', { name: /link this instance/i }));
+
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        telemetry: { linkAnalyticsToAccount: false },
+      })
+    );
+  });
+
+  it('fails closed when the consent write fails: no link starts and an error shows', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+    // The consent write fails (e.g. transient network error to the local server).
+    vi.mocked(transport.updateConfig).mockRejectedValue(new Error('write failed'));
+    renderPanel(transport);
+
+    await user.click(await screen.findByRole('button', { name: /link this instance/i }));
+
+    // The failure surfaces honestly and the handshake NEVER fires — proceeding
+    // would act on the stale persisted flag (worst case: a withdrawal that
+    // failed to persist would still send the id).
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't save your choice/i);
+    expect(transport.startCloudLink).not.toHaveBeenCalled();
+    // The user stays on the idle entry point, free to retry.
+    expect(screen.getByRole('button', { name: /link this instance/i })).toBeInTheDocument();
+  });
+
   it('shows a friendly error when starting the link fails', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

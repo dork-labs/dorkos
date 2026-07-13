@@ -20,6 +20,8 @@
  */
 import { configManager } from '../config-manager.js';
 import { logger, logError } from '../../../lib/logger.js';
+import { env } from '../../../env.js';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
 import {
   buildInstanceDescriptor,
   pollForToken,
@@ -30,6 +32,7 @@ import {
   type FetchLike,
   type InstanceDescriptor,
 } from './cloud-link-client.js';
+import { resolveLinkTelemetryInstanceId } from './link-telemetry.js';
 
 /** How often a linked instance heartbeats the cloud. */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +102,23 @@ function defaultConfigPort(): CloudConfigPort {
   };
 }
 
+/**
+ * Default telemetry-instance-id resolver backed by the live config + server env.
+ * Returns the anonymous per-install id only when the operator opted into linking
+ * analytics (`telemetry.linkAnalyticsToAccount`) and no env kill switch is set;
+ * otherwise `undefined`, so the descriptor omits it.
+ */
+function defaultResolveTelemetryInstanceId(): Promise<string | undefined> {
+  return resolveLinkTelemetryInstanceId({
+    linkAnalyticsToAccount: configManager.get('telemetry')?.linkAnalyticsToAccount ?? false,
+    dorkHome: resolveDorkHome(),
+    env: {
+      DO_NOT_TRACK: env.DO_NOT_TRACK,
+      DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
+    },
+  });
+}
+
 /** Injectable clock/transport hooks (real implementations by default). */
 export interface CloudLinkManagerOptions {
   fetchImpl?: FetchLike;
@@ -106,6 +126,12 @@ export interface CloudLinkManagerOptions {
   now?: () => number;
   config?: CloudConfigPort;
   heartbeatIntervalMs?: number;
+  /**
+   * Resolve the anonymous telemetry instance id to carry in the link descriptor
+   * (the analytics-merge opt-in). Injectable so tests drive the opt-in without
+   * touching config or the env; defaults to {@link defaultResolveTelemetryInstanceId}.
+   */
+  resolveTelemetryInstanceId?: () => Promise<string | undefined>;
 }
 
 /**
@@ -119,6 +145,7 @@ export class CloudLinkManager {
   private readonly sleep: ((ms: number) => Promise<void>) | undefined;
   private readonly now: () => number;
   private readonly heartbeatIntervalMs: number;
+  private readonly resolveTelemetryInstanceId: () => Promise<string | undefined>;
   private configPort: CloudConfigPort | undefined;
 
   private state: CloudLinkState = 'idle';
@@ -132,6 +159,8 @@ export class CloudLinkManager {
     this.sleep = options.sleep;
     this.now = options.now ?? Date.now;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
+    this.resolveTelemetryInstanceId =
+      options.resolveTelemetryInstanceId ?? defaultResolveTelemetryInstanceId;
     this.configPort = options.config;
   }
 
@@ -150,7 +179,11 @@ export class CloudLinkManager {
   async startLink(): Promise<StartLinkResult> {
     this.cancelPoll();
     const baseUrl = resolveCloudBaseUrl();
-    const descriptor = buildInstanceDescriptor();
+    // Resolve the analytics-merge opt-in HERE, at link time: the descriptor built
+    // now is what the cloud persists and reads to alias this install's anonymous
+    // history onto the account. Heartbeats deliberately never carry the id.
+    const telemetryInstanceId = await this.resolveTelemetryInstanceId();
+    const descriptor = buildInstanceDescriptor(telemetryInstanceId);
     const codes = await requestDeviceCode({ baseUrl, descriptor, fetchImpl: this.fetchImpl });
 
     this.setState('pending');

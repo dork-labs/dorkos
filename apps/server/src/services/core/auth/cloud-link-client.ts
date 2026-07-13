@@ -47,6 +47,18 @@ export interface InstanceDescriptor {
   platform: string;
   /** DorkOS version the instance is running. */
   dorkosVersion: string;
+  /**
+   * This install's anonymous per-install telemetry `instanceId` (DOR-320, ADR
+   * 260713-143958 Phase 4, the device-link merge point). **Optional and opt-in:**
+   * only populated when `telemetry.linkAnalyticsToAccount` is on AND no env kill
+   * switch is set (see {@link resolveLinkTelemetryInstanceId}); absent otherwise.
+   * Serialized into the `POST /device/code` `scope` only when present, so its
+   * presence on the wire is the app-side consent signal the cloud reads to alias
+   * this install's anonymous history onto the account person. Keep this contract
+   * in sync with the site's `lib/instance-descriptor.ts` and
+   * `aliasInstanceToAccount`.
+   */
+  telemetryInstanceId?: string;
 }
 
 /** The `POST /api/auth/device/code` success body (RFC 8628). */
@@ -87,9 +99,21 @@ export function resolveCloudBaseUrl(): string {
  * Build this instance's descriptor: hostname, platform, and the running DorkOS
  * version. Resolves the same in the server and the bundled CLI (both share
  * `lib/version.ts`).
+ *
+ * @param telemetryInstanceId - The anonymous per-install telemetry id to carry,
+ *   or `undefined` to omit it. Callers resolve this via
+ *   {@link resolveLinkTelemetryInstanceId} (config opt-in + env kill switches)
+ *   and pass it in only at link time; heartbeats never carry it.
  */
-export function buildInstanceDescriptor(): InstanceDescriptor {
-  return { name: hostname(), platform: process.platform, dorkosVersion: SERVER_VERSION };
+export function buildInstanceDescriptor(telemetryInstanceId?: string): InstanceDescriptor {
+  return {
+    name: hostname(),
+    platform: process.platform,
+    dorkosVersion: SERVER_VERSION,
+    // Included only when the caller opted in; keeps the wire shape unchanged
+    // (and the merge un-triggered) for every install without the opt-in.
+    ...(telemetryInstanceId ? { telemetryInstanceId } : {}),
+  };
 }
 
 /**
@@ -116,6 +140,12 @@ export async function requestDeviceCode(opts: {
         name: opts.descriptor.name,
         platform: opts.descriptor.platform,
         dorkosVersion: opts.descriptor.dorkosVersion,
+        // Only serialized when present (the app-side telemetry opt-in); its
+        // presence is what the cloud reads to merge this install's anonymous
+        // analytics onto the account person (site `aliasInstanceToAccount`).
+        ...(opts.descriptor.telemetryInstanceId
+          ? { telemetryInstanceId: opts.descriptor.telemetryInstanceId }
+          : {}),
       }),
     }),
   });

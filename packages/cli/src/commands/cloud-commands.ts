@@ -22,6 +22,12 @@ export interface InstanceDescriptor {
   name: string;
   platform: string;
   dorkosVersion: string;
+  /**
+   * Anonymous per-install telemetry id, included only when the operator opted
+   * into linking this install's analytics to their account (DOR-320). Absent
+   * otherwise; its presence on the wire is the opt-in signal the cloud reads.
+   */
+  telemetryInstanceId?: string;
 }
 
 /** The `POST /api/auth/device/code` success body (RFC 8628). */
@@ -53,7 +59,7 @@ export type HeartbeatResult =
  */
 export interface CloudFlowClient {
   resolveCloudBaseUrl(): string;
-  buildInstanceDescriptor(): InstanceDescriptor;
+  buildInstanceDescriptor(telemetryInstanceId?: string): InstanceDescriptor;
   requestDeviceCode(opts: {
     baseUrl: string;
     descriptor: InstanceDescriptor;
@@ -87,6 +93,13 @@ export interface CloudCommandDeps {
   openUrl?: (url: string) => void;
   /** Whether a TTY is attached; controls whether the browser is auto-opened. */
   isTty?: boolean;
+  /**
+   * Resolve the anonymous telemetry instance id to carry in the link descriptor
+   * (the analytics-merge opt-in, DOR-320). Returns `undefined` when the operator
+   * has not opted in or an env kill switch is set. Omitted in tests that don't
+   * exercise the opt-in (the descriptor then carries no id).
+   */
+  resolveTelemetryInstanceId?: () => Promise<string | undefined>;
 }
 
 /**
@@ -107,7 +120,12 @@ export async function runCloudLogin(deps: CloudCommandDeps): Promise<number> {
   }
 
   const baseUrl = client.resolveCloudBaseUrl();
-  const descriptor = client.buildInstanceDescriptor();
+  // Resolve the analytics-merge opt-in before building the descriptor: the id is
+  // included only when the operator opted in (and no env kill switch is set).
+  const telemetryInstanceId = deps.resolveTelemetryInstanceId
+    ? await deps.resolveTelemetryInstanceId()
+    : undefined;
+  const descriptor = client.buildInstanceDescriptor(telemetryInstanceId);
   const codes = await client.requestDeviceCode({ baseUrl, descriptor });
 
   io.log('');

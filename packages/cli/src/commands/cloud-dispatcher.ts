@@ -32,6 +32,7 @@ import {
   revokeInstanceKey,
   sendHeartbeat,
 } from '../../server/services/core/auth/cloud-link-client.js';
+import { resolveLinkTelemetryInstanceId } from '../../server/services/core/auth/link-telemetry.js';
 
 /** Help text rendered for `dorkos cloud` with no subcommand or `--help`. */
 export const HELP_TEXT = `
@@ -114,6 +115,15 @@ export async function runCloudDispatcher(
       io: consoleIo,
       openUrl: defaultOpenUrl,
       isTty: Boolean(process.stdin.isTTY),
+      // Resolve the analytics-merge opt-in from config + env at link time. Reads
+      // the per-install id from this dorkHome only when the operator opted in.
+      resolveTelemetryInstanceId: () =>
+        resolveLinkTelemetryInstanceId({
+          linkAnalyticsToAccount: Boolean(configStore.getDot('telemetry.linkAnalyticsToAccount')),
+          dorkHome,
+          // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention; the CLI has no env.ts)
+          env: process.env,
+        }),
     };
 
     if (subcommand === 'login') return await runCloudLogin(deps);
