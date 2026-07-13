@@ -1,5 +1,5 @@
 /**
- * `POST /api/telemetry/install` — opt-in marketplace install telemetry sink.
+ * `POST /api/telemetry/install` — anonymous (opt-out) marketplace install telemetry sink.
  *
  * Runs as a Vercel Edge Function. Validates the incoming event with Zod, then
  * inserts a single row into `marketplace_install_events` via Drizzle. There is

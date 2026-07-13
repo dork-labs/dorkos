@@ -9,7 +9,7 @@
  */
 export const HEARTBEAT_PAYLOAD_EXAMPLE = `{
   "instanceId": "a1b2c3d4-...",   // random, not you
-  "dorkosVersion": "0.46.0",
+  "dorkosVersion": "0.47.0",
   "os": "darwin-arm64",
   "runtimesConfigured": ["claude-code", "codex"],
   "tunnelEnabled": false,
