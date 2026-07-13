@@ -271,6 +271,131 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
   });
 });
 
+describe('Windows/Linux deep links (argv delivery)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Look up the handler `../index` registered for `ipcMain.handle(channel, ...)`. */
+  async function getHandler(
+    channel: string
+  ): Promise<(event: Electron.IpcMainInvokeEvent) => unknown> {
+    const { ipcMain } = await getElectronMock();
+    const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === channel);
+    if (!call) throw new Error(`no ipcMain.handle registered for "${channel}"`);
+    return call[1] as (event: Electron.IpcMainInvokeEvent) => unknown;
+  }
+
+  it('a warm second-instance carrying a dorkos:// arg routes the deep link', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    // Renderer marks itself ready (as the client hook does on mount) so the
+    // deep link takes the hot path rather than queuing.
+    const handler = await getHandler('get-pending-navigate');
+    handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent);
+
+    // Windows/Linux hand the second instance's command line to this event.
+    await app.emit('second-instance', {}, [
+      'C:\\Program Files\\DorkOS\\DorkOS.exe',
+      'dorkos://session?id=7',
+    ]);
+
+    expect(win.webContents.send).toHaveBeenCalledWith('navigate', '/session?id=7');
+  });
+
+  it('a warm second-instance with argv but no deep link just focuses the window', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    await app.emit('second-instance', {}, ['C:\\DorkOS\\DorkOS.exe', '--enable-logging']);
+
+    expect(win.focus).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('a cold-start deep link in process.argv is queued and delivered once the window is ready', async () => {
+    const originalPlatform = process.platform;
+    const originalArgv = process.argv;
+    // The cold-start argv scan only runs off macOS; pretend we booted on
+    // Windows with a deep link on the command line.
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    process.argv = ['C:\\Program Files\\DorkOS\\DorkOS.exe', 'dorkos://agents/42'];
+    try {
+      const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+      resetElectronMock();
+      app.requestSingleInstanceLock = vi.fn(() => true);
+
+      const windowManager = await import('../window-manager');
+      const win = new BrowserWindow({ width: 1200, height: 800 });
+      vi.mocked(windowManager.createWindow)
+        .mockReset()
+        .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+      // Importing index runs the cold-start scan immediately (before 'ready'):
+      // no window/server exists yet, so the path must be queued, not sent.
+      await import('../index');
+      expect(win.webContents.send).not.toHaveBeenCalled();
+
+      // The window is created once the app finishes starting up, and the
+      // renderer's on-mount pull picks up the queued path (read-once).
+      await app.emit('ready');
+      const handler = await getHandler('get-pending-navigate');
+      expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
+        '/agents/42'
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      process.argv = originalArgv;
+    }
+  });
+
+  it('does not register the macOS open-url handler when running off macOS', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    process.argv = ['C:\\DorkOS\\DorkOS.exe'];
+    try {
+      const { app, resetElectronMock } = await getElectronMock();
+      resetElectronMock();
+      app.requestSingleInstanceLock = vi.fn(() => true);
+      // `app.on` is a shared vi.fn the mock never re-creates, so its call log
+      // carries over from earlier tests — clear it so this assertion only sees
+      // the registrations `../index` makes on this (Windows) import.
+      vi.mocked(app.on).mockClear();
+
+      await import('../index');
+
+      const registeredEvents = vi.mocked(app.on).mock.calls.map(([event]) => event);
+      expect(registeredEvents).not.toContain('open-url');
+      // The cross-platform pieces are still wired.
+      expect(registeredEvents).toContain('second-instance');
+      expect(app.setAsDefaultProtocolClient).toHaveBeenCalledWith('dorkos');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
+  });
+});
+
 describe('update IPC handlers', () => {
   beforeEach(() => {
     vi.resetModules();

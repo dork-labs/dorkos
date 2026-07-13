@@ -10,13 +10,15 @@ mac:
   # zip must accompany dmg: electron-updater (Squirrel.Mac) can only install
   # updates from the zip artifact; the dmg is the human-facing installer.
   #
-  # arm64-only. The Claude Code binary ships as a per-arch optional dependency
-  # (see apps/desktop/package.json's optionalDependencies). If you add another
-  # arch/platform target below (mac x64, win, linux), you MUST also add the
-  # matching `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` package there
-  # AND an asarUnpack glob for it below — otherwise the packaged app for that
-  # arch silently ships without a runnable Claude Code (the bug this config
-  # fixes for arm64).
+  # mac is arm64-only. The Claude Code binary ships as a per-arch optional
+  # dependency (see apps/desktop/package.json's optionalDependencies). Every
+  # packaged platform/arch needs BOTH its matching
+  # `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` package there AND an
+  # asarUnpack glob for it below — otherwise the packaged app for that target
+  # silently ships without a runnable Claude Code (the bug this config fixes).
+  # Wired so far: darwin-arm64 (this block) and win32-x64 (the `win` block
+  # below). Adding another target (mac x64, win32-arm64, linux) means repeating
+  # both additions for it.
   target:
     - target: dmg
       arch:
@@ -56,6 +58,29 @@ dmg:
   sign: true
   artifactName: DorkOS-${version}-${arch}.dmg
 
+win:
+  # x64 only for now (win32-arm64 is a tracked follow-up). Unsigned for the
+  # alpha — no `certificateFile`/`azureSignOptions` here yet; adopting Azure
+  # Artifact Signing is the business-gated follow-up (see
+  # specs/desktop-windows-support). `dorkos://` deep links are registered at
+  # runtime via app.setAsDefaultProtocolClient (cross-platform, see
+  # src/main/index.ts), so no `protocols` block is needed here.
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  # Per-user install (perMachine: false) so first run needs no admin/UAC
+  # elevation — the right default for a developer tool a user installs for
+  # themselves. oneClick: false shows the install wizard rather than a silent
+  # one-click install, and lets the user pick the install directory.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: DorkOS-${version}-${arch}.exe
+
 publish:
   provider: github
   owner: dork-labs
@@ -78,6 +103,12 @@ asarUnpack:
   # package.json (both 0.3.177) — a lone SDK bump would silently ship a skewed
   # or missing binary here.
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/**'
+  # Windows counterpart of the darwin-arm64 binary above: the SDK ships the
+  # `claude.exe` executable as the win32-x64 optional dependency. A packaged
+  # Windows app can't execute it from inside app.asar either, so unpack it —
+  # server-process.ts resolves the per-platform path (…-win32-x64/claude.exe)
+  # and hands it to the bundled server via DORKOS_CLAUDE_CLI_PATH.
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**'
   # express.static (app.ts's production SPA serving) cannot reliably read
   # range-requested static assets from inside app.asar — the packaged
   # window now loads the renderer via the bundled server's own

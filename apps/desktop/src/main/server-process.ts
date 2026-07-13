@@ -7,20 +7,25 @@ import log from 'electron-log';
 
 /**
  * Location of the Claude Code native binary inside a packaged build,
- * relative to `process.resourcesPath` (`.../Contents/Resources`).
+ * relative to `process.resourcesPath` (`.../Contents/Resources` on macOS,
+ * `.../resources` on Windows), for the platform/arch this build runs on.
  *
- * The SDK ships `claude` as a per-platform optional dependency
- * (`@anthropic-ai/claude-agent-sdk-darwin-arm64`). electron-builder collects
- * it from the SDK's dependency tree; electron-builder.yml's `asarUnpack` keeps
- * it as a real, code-signed file on disk (a Mach-O executable cannot run from
- * inside app.asar), landing here.
+ * The SDK ships its executable as a per-platform optional dependency named
+ * `@anthropic-ai/claude-agent-sdk-<platform>-<arch>`, matching Node's
+ * `process.platform`/`process.arch` (e.g. `…-darwin-arm64`, `…-win32-x64`).
+ * The executable inside is `claude` everywhere except Windows, where it's
+ * `claude.exe`. electron-builder collects the package from the SDK's
+ * dependency tree; electron-builder.yml's `asarUnpack` keeps it as a real
+ * file on disk (a native executable cannot run from inside app.asar), landing
+ * here. Only the target's own binary is packaged — a macOS build has no
+ * win32-x64 sibling and vice versa — so this resolves exactly one path.
  */
 const PACKAGED_CLAUDE_BINARY_SUBPATH = path.join(
   'app.asar.unpacked',
   'node_modules',
   '@anthropic-ai',
-  'claude-agent-sdk-darwin-arm64',
-  'claude'
+  `claude-agent-sdk-${process.platform}-${process.arch}`,
+  process.platform === 'win32' ? 'claude.exe' : 'claude'
 );
 
 /**

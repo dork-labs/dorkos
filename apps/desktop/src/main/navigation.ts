@@ -64,6 +64,27 @@ export function parseDeepLink(url: string): string | null {
   return `/${parsed.hostname}${path}${parsed.search}`;
 }
 
+/**
+ * Find a `dorkos://` deep-link URL in a process argument vector.
+ *
+ * Only macOS delivers custom-scheme activations through Electron's `open-url`
+ * event. Windows (and Linux) deliver them as a command-line argument instead:
+ * on a cold start the URL lands in `process.argv`, and for an
+ * already-running instance it arrives as the `argv` passed to the
+ * `second-instance` event. Both are scanned through here; the caller feeds
+ * the returned URL to {@link parseDeepLink}.
+ *
+ * Returns the first argument beginning with the `dorkos://` scheme, or `null`
+ * if none is present — the normal case for an ordinary launch, and for the
+ * bare `second-instance` re-focus with no deep link attached.
+ *
+ * @param argv - A process argument vector (`process.argv`, or the
+ *   `second-instance` event's `argv`).
+ */
+export function findDeepLinkArg(argv: readonly string[]): string | null {
+  return argv.find((arg) => arg.startsWith('dorkos://')) ?? null;
+}
+
 // --- Pending-navigation handoff (Chunk D carryover from Chunk B review) ---
 //
 // `sendNavigate` alone drops a path in two cases: a cold-start deep link

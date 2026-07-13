@@ -50,11 +50,21 @@ function main(): void {
   console.log(
     `Rebuilding ${NATIVE_MODULES.join(', ')} for Electron ${electronPkg.version} (${process.arch})...`
   );
-  const cli = path.join(DESKTOP_PKG, 'node_modules/.bin/electron-rebuild');
+  // On Windows the `.bin` shim is `electron-rebuild.cmd`; the extensionless
+  // Unix shim doesn't exist there. Node also refuses to spawn a `.cmd` without
+  // `shell: true` (CVE-2024-27980 hardening), so opt into a shell on Windows
+  // only. The args are all trusted (a package.json version, a fixed arch, and
+  // a hardcoded module list) — no untrusted input reaches the shell.
+  const isWindows = process.platform === 'win32';
+  const cli = path.join(
+    DESKTOP_PKG,
+    'node_modules/.bin',
+    isWindows ? 'electron-rebuild.cmd' : 'electron-rebuild'
+  );
   execFileSync(
     cli,
     ['-f', '-v', electronPkg.version, '-a', process.arch, '-w', NATIVE_MODULES.join(',')],
-    { cwd: DESKTOP_PKG, stdio: 'inherit' }
+    { cwd: DESKTOP_PKG, stdio: 'inherit', shell: isWindows }
   );
   console.log('✓ Native addons rebuilt for Electron.');
 }

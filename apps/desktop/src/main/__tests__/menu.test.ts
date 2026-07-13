@@ -59,7 +59,7 @@ describe('setupMenu (B1)', () => {
     expect(Menu.setApplicationMenu).toHaveBeenCalledTimes(1);
   });
 
-  it('app menu has About, a gated Check for Updates…, and Settings… with Cmd+, accelerator', async () => {
+  it('app menu has About, a gated Check for Updates…, and Settings… with CmdOrCtrl+, accelerator', async () => {
     const { app, Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
     app.isPackaged = false;
@@ -79,7 +79,7 @@ describe('setupMenu (B1)', () => {
 
     const settingsItem = appMenu.find((item) => item.label === 'Settings…');
     expect(settingsItem).toBeDefined();
-    expect(settingsItem!.accelerator).toBe('Cmd+,');
+    expect(settingsItem!.accelerator).toBe('CmdOrCtrl+,');
   });
 
   it('Check for Updates… is enabled when packaged and disabled when not, and click triggers checkForUpdatesInteractive', async () => {
