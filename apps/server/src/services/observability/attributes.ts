@@ -49,6 +49,29 @@ export const ATTR = {
   TASK_TRIGGER: 'dorkos.task_trigger',
   /** Task dispatch path: `'relay'` | `'direct'`. */
   TASK_DISPATCH: 'dorkos.task_dispatch',
+
+  // --- OpenTelemetry GenAI semantic-convention attributes (ADR 260713-143958
+  // Phase 7). Set on the runtime-turn span so an operator's own trace/OTLP stack
+  // gets standards-based LLM observability of their agent runs. All are coarse
+  // metadata — model names, token counts, cost — never a prompt, path, or
+  // content. The value of `gen_ai.system` is the DorkOS runtime id (not a raw
+  // provider name), per the ADR. ---
+  /** GenAI system: the DorkOS runtime id (`claude-code` | `codex` | `opencode`). */
+  GEN_AI_SYSTEM: 'gen_ai.system',
+  // `gen_ai.request.model` is deliberately absent: no runtime distinguishes a
+  // requested vs answering model today; reinstate when one does.
+  /** The model that answered the turn, when the runtime reports one. */
+  GEN_AI_RESPONSE_MODEL: 'gen_ai.response.model',
+  /** Turn-total input tokens (summed across the turn's requests), when known. */
+  GEN_AI_USAGE_INPUT_TOKENS: 'gen_ai.usage.input_tokens',
+  /** Turn-total output tokens (summed across the turn's requests), when known. */
+  GEN_AI_USAGE_OUTPUT_TOKENS: 'gen_ai.usage.output_tokens',
+  /**
+   * Turn cost in USD, when the runtime reports one. Not an OTel-standard GenAI
+   * key (the convention leaves cost vendor-specific), so it stays in the
+   * `dorkos.` namespace — still a plain number, never content.
+   */
+  GEN_AI_COST_USD: 'dorkos.gen_ai.cost_usd',
 } as const;
 
 /**

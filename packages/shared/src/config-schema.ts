@@ -295,6 +295,17 @@ export const UserConfigSchema = z.object({
        * after already linking only takes effect on a future re-link.
        */
       linkAnalyticsToAccount: z.boolean().default(false),
+      /**
+       * Tier 2 channel (opt-in): bridge anonymous AI-run METADATA to DorkOS's
+       * own ingest at dorkos.ai (which forwards to PostHog's LLM analytics) — one
+       * `$ai_generation` event per completed agent turn carrying only the model,
+       * the runtime, token counts, timing, and cost. Never prompts, code, file
+       * paths, or conversation content. Defaults `false` and turns on only by an
+       * explicit opt-in (never the first-run banner); the notice-before-send gate
+       * does not apply. Independent of `usage`. See ADR 260713-143958 Phase 7 and
+       * https://dorkos.ai/telemetry.
+       */
+      aiMetadata: z.boolean().default(false),
     })
     .default(() => ({
       userHasDecided: false,
@@ -304,6 +315,7 @@ export const UserConfigSchema = z.object({
       lastPromptedVersion: null,
       usage: true,
       linkAnalyticsToAccount: false,
+      aiMetadata: false,
     })),
   workspace: z
     .object({

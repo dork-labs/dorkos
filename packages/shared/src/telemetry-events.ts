@@ -442,3 +442,79 @@ export const ExceptionEventSchema = z
 
 /** A registry-validated, fully-enveloped `$exception` crash event. */
 export type ExceptionEvent = z.infer<typeof ExceptionEventSchema>;
+
+// ===========================================================================
+// AI-run metadata events — ADR 260713-143958 Phase 7, DOR-319
+//
+// ANOTHER DOCUMENTED CARVE-OUT from the `[object]_[verb]` convention, exactly
+// like `$exception` above: the PostHog-native `$ai_generation` event. Its
+// `$`-prefixed name and property keys (`$ai_model`, `$ai_provider`,
+// `$ai_input_tokens`, `$ai_output_tokens`, `$ai_latency`, `$ai_total_cost_usd`,
+// `$ai_trace_id`, `$process_person_profile`) are what PostHog's LLM-analytics
+// dashboards expect on the wire, so we mirror that shape verbatim rather than
+// renaming it into our convention.
+//
+// This is the Tier 2 half of Plane 2 (ADR 260713-143958): one event per
+// completed runtime turn carrying ONLY non-content metadata — model, provider
+// (the runtime id), token counts, wall-clock latency, and cost. It is METADATA
+// ONLY: never a prompt, never code, never a path, never session content. It
+// rides the SAME owned ingest and envelope as the Tier 1 usage events, but is
+// gated by its OWN opt-in consent channel (`telemetry.aiMetadata`, default
+// FALSE), independent of `telemetry.usage`. `$process_person_profile: false`
+// keeps it anonymous (no PostHog person) even though the anonymous per-install
+// `instanceId` rides along as `distinctId`. Kept self-contained so it validates
+// independently of the usage union. See `services/observability/ai-metadata.ts`
+// (span harvest) and `services/core/ai-metadata-reporter.ts` (the sender).
+// ===========================================================================
+
+/**
+ * Strict allowlist of a `$ai_generation` event's properties — metadata only.
+ * Every field is a model name, a coarse provider id, a token count, a duration,
+ * or a cost; there is NO key a prompt, a path, or any content could ride on.
+ * This allowlist IS the send-side no-content contract for the AI bridge.
+ *
+ * Property names match PostHog's LLM-observability canonical shape so their
+ * built-in dashboards (Users / Traces / Costs) render without extra mapping:
+ *   - `$ai_trace_id`: an ephemeral, random per-turn UUID (opaque correlation id,
+ *     never derived from content). PostHog requires it on every AI event.
+ *   - `$ai_provider`: the DorkOS runtime id (`claude-code` | `codex` | `opencode`).
+ *   - `$ai_model`: the answering model, when the runtime reports one.
+ *   - `$ai_input_tokens` / `$ai_output_tokens`: turn totals, when known.
+ *   - `$ai_latency`: wall-clock turn duration in SECONDS (PostHog's unit).
+ *   - `$ai_total_cost_usd`: the runtime's reported turn cost, when known.
+ *   - `$process_person_profile: false`: pinned, so the event never creates a
+ *     PostHog person (anonymous by construction, mirroring `$exception`).
+ */
+export const AiGenerationEventPropertiesSchema = z
+  .object({
+    $ai_trace_id: z.string().uuid(),
+    $ai_provider: z.string().min(1).max(MAX_STRING_LEN),
+    $ai_model: z.string().min(1).max(MAX_STRING_LEN).optional(),
+    $ai_input_tokens: z.number().int().min(0).optional(),
+    $ai_output_tokens: z.number().int().min(0).optional(),
+    $ai_latency: z.number().min(0),
+    $ai_total_cost_usd: z.number().min(0).optional(),
+    $process_person_profile: z.literal(false),
+  })
+  .strict();
+
+/** The `$ai_generation` event property bag (built by the AI-metadata reporter). */
+export type AiGenerationEventProperties = z.infer<typeof AiGenerationEventPropertiesSchema>;
+
+/**
+ * A single fully-enveloped `$ai_generation` event — the AI-run-metadata wire
+ * shape. Shares {@link envelopeFields} (`distinctId`/`timestamp`/`dorkosVersion`)
+ * with the usage events, so it POSTs to the same `/api/telemetry/events` batch
+ * endpoint; the site route validates it against a route-local mirror of this
+ * schema and forwards it to PostHog's LLM analytics.
+ */
+export const AiGenerationEventSchema = z
+  .object({
+    event: z.literal('$ai_generation'),
+    properties: AiGenerationEventPropertiesSchema,
+    ...envelopeFields,
+  })
+  .strict();
+
+/** A registry-validated, fully-enveloped `$ai_generation` metadata event. */
+export type AiGenerationEvent = z.infer<typeof AiGenerationEventSchema>;

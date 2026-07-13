@@ -130,6 +130,27 @@ export async function* mapResultEvent(
     const contextMaxTokens = firstModelUsage?.contextWindow as number | undefined;
     const costUsd = result.total_cost_usd as number | undefined;
 
+    // Turn TOTALS for AI observability (gen_ai.* spans + the opt-in
+    // $ai_generation bridge; ADR 260713-143958 Phase 7). Unlike the context/cache
+    // figures above — which describe the current window and deliberately avoid the
+    // aggregate — a per-turn generation event WANTS the sum across every request in
+    // the turn, which is exactly what `modelUsage` carries. Summed across models so
+    // a turn that switched models still reports one honest total. Undefined when
+    // the SDK reported no `modelUsage` — absent OR empty (older SDKs / error
+    // results) — so "no data" never masquerades as a zero-token turn.
+    let turnInputTokens: number | undefined;
+    let turnOutputTokens: number | undefined;
+    if (modelUsageMap && Object.keys(modelUsageMap).length > 0) {
+      let inSum = 0;
+      let outSum = 0;
+      for (const usage of Object.values(modelUsageMap)) {
+        inSum += (usage.inputTokens as number | undefined) ?? 0;
+        outSum += (usage.outputTokens as number | undefined) ?? 0;
+      }
+      turnInputTokens = inSum;
+      turnOutputTokens = outSum;
+    }
+
     // Stamp `usage` onto the result status so the merged Usage & cost item has
     // the session cost (secondary for a subscription, primary if no rate-limit
     // signal has arrived). Re-attach the last observed subscription utilization
@@ -156,6 +177,8 @@ export async function* mapResultEvent(
         contextMaxTokens,
         cacheReadTokens,
         cacheCreationTokens,
+        ...(turnInputTokens !== undefined ? { turnInputTokens } : {}),
+        ...(turnOutputTokens !== undefined ? { turnOutputTokens } : {}),
         ...(terminalReason ? { terminalReason } : {}),
         ...(usage ? { usage } : {}),
       },

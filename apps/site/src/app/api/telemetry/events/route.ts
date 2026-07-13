@@ -148,8 +148,44 @@ const ExceptionEventSchema = z
 
 type ExceptionEvent = z.infer<typeof ExceptionEventSchema>;
 
-/** Any event this ingest accepts: a curated usage event OR a `$exception` crash. */
-type AcceptedEvent = TelemetryEvent | ExceptionEvent;
+// --- AI-run metadata events — mirrors the shared `$ai_generation` section in
+// `@dorkos/shared/telemetry-events` (DOR-319, ADR 260713-143958 Phase 7). Another
+// PostHog-native `$`-prefixed carve-out that rides the SAME batch endpoint. It is
+// METADATA ONLY (model, provider, token counts, latency, cost) — the strict
+// allowlist below is the receive-side half of the no-content contract. Keep in
+// lockstep with the shared `AiGenerationEventSchema`.
+
+/** Mirrors `AiGenerationEventPropertiesSchema` in the shared registry. */
+const AiGenerationEventPropertiesSchema = z
+  .object({
+    $ai_trace_id: z.string().uuid(),
+    $ai_provider: z.string().min(1).max(MAX_STRING_LEN),
+    $ai_model: z.string().min(1).max(MAX_STRING_LEN).optional(),
+    $ai_input_tokens: z.number().int().min(0).optional(),
+    $ai_output_tokens: z.number().int().min(0).optional(),
+    $ai_latency: z.number().min(0),
+    $ai_total_cost_usd: z.number().min(0).optional(),
+    $process_person_profile: z.literal(false),
+  })
+  .strict();
+
+/** Mirrors `AiGenerationEventSchema` (strict, shares the envelope fields). */
+const AiGenerationEventSchema = z
+  .object({
+    event: z.literal('$ai_generation'),
+    properties: AiGenerationEventPropertiesSchema,
+    ...envelopeFields,
+  })
+  .strict();
+
+type AiGenerationEvent = z.infer<typeof AiGenerationEventSchema>;
+
+/**
+ * Any event this ingest accepts on the non-feedback path: a curated usage event,
+ * a `$exception` crash, or an `$ai_generation` metadata event. All three ride
+ * {@link forwardToPostHog}, which spreads `properties` through unchanged.
+ */
+type AcceptedEvent = TelemetryEvent | ExceptionEvent | AiGenerationEvent;
 
 // --- end mirror ----------------------------------------------------------------
 
@@ -245,11 +281,11 @@ export async function POST(request: Request): Promise<Response> {
       ? (body as { events: unknown[] }).events
       : [];
 
-  // Three event families, each validated independently so a mixed batch is
+  // Four event families, each validated independently so a mixed batch is
   // fine: the curated usage union, then feedback (user-volunteered, the only
-  // free-text; DOR-317), then the `$exception` crash carve-out (DOR-318).
-  // Anything matching none of the strict schemas is silently dropped
-  // (allowlist rejection), never persisted.
+  // free-text; DOR-317), then the `$exception` crash carve-out (DOR-318), then
+  // the `$ai_generation` metadata carve-out (DOR-319). Anything matching none of
+  // the strict schemas is silently dropped (allowlist rejection), never persisted.
   const valid: AcceptedEvent[] = [];
   const validFeedback: FeedbackEvent[] = [];
   for (const raw of rawEvents.slice(0, MAX_BATCH)) {
@@ -264,7 +300,12 @@ export async function POST(request: Request): Promise<Response> {
       continue;
     }
     const exception = ExceptionEventSchema.safeParse(raw);
-    if (exception.success) valid.push(exception.data);
+    if (exception.success) {
+      valid.push(exception.data);
+      continue;
+    }
+    const aiGeneration = AiGenerationEventSchema.safeParse(raw);
+    if (aiGeneration.success) valid.push(aiGeneration.data);
   }
 
   if (valid.length > 0) {

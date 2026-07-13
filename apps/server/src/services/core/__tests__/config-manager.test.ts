@@ -18,6 +18,7 @@ import {
   applyTier1OptOutDefaults,
   backfillTelemetryUsageChannel,
   backfillTelemetryLinkAnalyticsToAccount,
+  backfillTelemetryAiMetadataChannel,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -575,6 +576,46 @@ describe('backfillTelemetryLinkAnalyticsToAccount migration', () => {
   it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     expect(() => backfillTelemetryLinkAnalyticsToAccount(store)).not.toThrow();
+    expect(store.data.telemetry).toBeUndefined();
+  });
+});
+
+describe('backfillTelemetryAiMetadataChannel migration', () => {
+  it('seeds aiMetadata: false for a never-answered install (Tier 2 opt-in starts off)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: false, install: true, heartbeat: true, usage: true },
+    });
+    backfillTelemetryAiMetadataChannel(store);
+    expect((store.data.telemetry as Record<string, unknown>).aiMetadata).toBe(false);
+  });
+
+  it('seeds aiMetadata: false even for an already-decided install (opt-in is never auto-enrolled)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: true, install: true, heartbeat: true, usage: true },
+    });
+    backfillTelemetryAiMetadataChannel(store);
+    expect((store.data.telemetry as Record<string, unknown>).aiMetadata).toBe(false);
+  });
+
+  it('never overwrites an existing aiMetadata value (idempotent, byte-safe)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: true, aiMetadata: true },
+    });
+    backfillTelemetryAiMetadataChannel(store);
+    expect((store.data.telemetry as Record<string, unknown>).aiMetadata).toBe(true);
+  });
+
+  it('running twice is a no-op on the second pass (idempotent)', () => {
+    const store = createMockStore({ telemetry: { userHasDecided: false } });
+    backfillTelemetryAiMetadataChannel(store);
+    const afterFirst = JSON.stringify(store.data.telemetry);
+    backfillTelemetryAiMetadataChannel(store);
+    expect(JSON.stringify(store.data.telemetry)).toBe(afterFirst);
+  });
+
+  it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillTelemetryAiMetadataChannel(store)).not.toThrow();
     expect(store.data.telemetry).toBeUndefined();
   });
 });

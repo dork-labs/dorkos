@@ -120,6 +120,10 @@ import {
   flushServerError,
   captureServerError,
 } from './services/core/error-reporter.js';
+import {
+  registerAiMetadataReporter,
+  shutdownAiMetadataReporter,
+} from './services/core/ai-metadata-reporter.js';
 import { resolveTelemetryConsent, isTelemetryDebugEnabled } from '@dorkos/shared/telemetry-consent';
 import {
   decideTier1Boot,
@@ -358,6 +362,22 @@ async function start() {
     cwd: process.cwd(),
     dorkHome,
     debug: telemetryDebug,
+  });
+
+  // Opt-in AI-run metadata bridge (DOR-319, ADR 260713-143958 Phase 7). A
+  // SEPARATE Tier 2 opt-in from every other channel: fires only when
+  // `telemetry.aiMetadata` is true (default FALSE) AND no kill switch is set. The
+  // notice gate does NOT apply — turning it on IS the explicit consent. When on,
+  // this installs the observability bridge so the runtime-wrap seam (registered
+  // BELOW — hence this must run first) emits one `$ai_generation` metadata event
+  // per completed turn to the owned ingest. Off → the bridge stays uninstalled
+  // and no turn is ever harvested for it. Metadata only: model, tokens, timing,
+  // cost — never prompts, code, paths, or content.
+  registerAiMetadataReporter({
+    enabled: resolveTelemetryConsent(telemetryConfig?.aiMetadata ?? false, telemetryEnv),
+    debug: telemetryDebug,
+    dorkHome,
+    dorkosVersion: SERVER_VERSION,
   });
 
   // Stage the bundled core extensions on disk before the discovery pipeline
@@ -1387,6 +1407,8 @@ async function shutdownServices() {
   // Flush any buffered usage events so a clean exit doesn't drop the tail of the
   // queue. No-op when the usage reporter never registered (consent off).
   await shutdownUsageReporter();
+  // Same for the opt-in AI-metadata bridge. No-op when it never registered.
+  await shutdownAiMetadataReporter();
   // Close the global session-list subscription (and its directory watcher).
   await sessionListBroadcaster.stop();
   if (schedulerService) {

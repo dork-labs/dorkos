@@ -1,31 +1,36 @@
 /**
  * Traces the AgentRuntime boundary in one place. {@link traceRuntime} wraps a
  * registered runtime so every `sendMessage` turn — from any caller (interactive
- * trigger, task scheduler, embedded, UI action) — gets a `runtime.send_message`
- * span with the runtime type and the turn's event count. This is the single
- * seam for runtime-call spans: no span code is scattered into the runtime
- * adapters themselves.
+ * trigger, task scheduler, embedded, UI action) — is observed at one seam: no
+ * span code is scattered into the runtime adapters themselves.
  *
- * When tracing is off the runtime is returned untouched (zero overhead); when
- * on, a thin Proxy intercepts only `sendMessage` and passes every other member
- * straight through, bound to the real runtime so private state stays intact.
+ * The wrap drives BOTH AI-observability outputs (ADR 260713-143958 Phase 7) via
+ * {@link observeRuntimeTurn}: when tracing is on it enriches the
+ * `runtime.send_message` span with the runtime type, the turn's event count, and
+ * the turn's `gen_ai.*` metadata; when the opt-in `telemetry.aiMetadata` bridge
+ * is installed it emits a per-turn `$ai_generation` event. Both read only
+ * non-content metadata off the turn's status events.
+ *
+ * When neither output is active the runtime is returned untouched (zero
+ * overhead); otherwise a thin Proxy intercepts only `sendMessage` and passes
+ * every other member straight through, bound to the real runtime so private
+ * state stays intact.
  *
  * @module services/observability/trace-runtime
  */
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { isTracingEnabled, tracedGenerator } from './otel.js';
-import { SPAN, ATTR } from './attributes.js';
+import { isAiObservabilityActive, observeRuntimeTurn } from './ai-metadata.js';
 
 /**
- * Wrap a runtime so its `sendMessage` turns are traced. Returns the runtime
- * unchanged when debug tracing is disabled.
+ * Wrap a runtime so its `sendMessage` turns are observed. Returns the runtime
+ * unchanged when neither tracing nor the AI-metadata bridge is active.
  *
  * @param runtime - The runtime to instrument.
- * @returns The same runtime (off) or a tracing proxy over it (on).
+ * @returns The same runtime (off) or an observing proxy over it (on).
  */
 export function traceRuntime(runtime: AgentRuntime): AgentRuntime {
-  if (!isTracingEnabled()) return runtime;
+  if (!isAiObservabilityActive()) return runtime;
 
   return new Proxy(runtime, {
     get(target, prop) {
@@ -35,11 +40,7 @@ export function traceRuntime(runtime: AgentRuntime): AgentRuntime {
           content: string,
           opts?: MessageOpts
         ): AsyncGenerator<StreamEvent> =>
-          tracedGenerator(
-            SPAN.RUNTIME_SEND_MESSAGE,
-            { [ATTR.RUNTIME]: target.type, [ATTR.SESSION_ID]: sessionId },
-            target.sendMessage(sessionId, content, opts)
-          );
+          observeRuntimeTurn(target.type, sessionId, target.sendMessage(sessionId, content, opts));
       }
       // Receiver is the real target (not the proxy) so getters/methods that
       // touch private fields resolve against the instance that owns them.
