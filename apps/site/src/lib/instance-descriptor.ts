@@ -41,6 +41,18 @@ export interface InstanceDescriptor {
   platform: string;
   /** DorkOS version the instance is running (e.g. `0.4.2`). */
   dorkosVersion: string;
+  /**
+   * The instance's anonymous per-install telemetry `instanceId` — the distinct
+   * id its anonymous app-telemetry is captured under (ADR 260713-143958 Phase 4,
+   * the device-link merge point). **Optional and forward-compatible:** the app
+   * only includes it when it has identified-telemetry opt-in for this instance,
+   * so its presence is the app-side consent signal that its anonymous history
+   * may be merged into the account person on link (see
+   * {@link ../lib/posthog-server aliasInstanceToAccount}). Absent for instances
+   * that never send it (today's app, and any instance without telemetry
+   * opt-in), in which case no merge happens.
+   */
+  telemetryInstanceId?: string;
 }
 
 /** Copy shown when an instance did not send a usable descriptor. */
@@ -59,6 +71,11 @@ export function encodeInstanceDescriptor(descriptor: InstanceDescriptor): string
     name: descriptor.name,
     platform: descriptor.platform,
     dorkosVersion: descriptor.dorkosVersion,
+    // Only serialized when present, so the wire shape is unchanged for instances
+    // without telemetry opt-in.
+    ...(descriptor.telemetryInstanceId
+      ? { telemetryInstanceId: descriptor.telemetryInstanceId }
+      : {}),
   });
 }
 
@@ -91,6 +108,11 @@ export function parseInstanceDescriptor(scope: string | null | undefined): Insta
         typeof record.dorkosVersion === 'string' && record.dorkosVersion.trim()
           ? record.dorkosVersion
           : fallback.dorkosVersion,
+      // Carried through only when the instance sent it (telemetry opt-in). Left
+      // undefined otherwise so `aliasInstanceToAccount` skips the merge.
+      ...(typeof record.telemetryInstanceId === 'string' && record.telemetryInstanceId.trim()
+        ? { telemetryInstanceId: record.telemetryInstanceId }
+        : {}),
     };
   } catch {
     return fallback;

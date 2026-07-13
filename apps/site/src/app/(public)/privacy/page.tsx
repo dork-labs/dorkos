@@ -122,8 +122,13 @@ export default function PrivacyPolicyPage() {
                 can see and manage your linked devices.
               </li>
               <li>
+                If analytics is on and you are signed in, we tie your website activity to a random
+                account ID (never your name or email) so we can see how signed-in people use DorkOS.
+                If analytics is off, we do not.
+              </li>
+              <li>
                 You can delete your account, and everything tied to it, any time from your account
-                page.
+                page. That also erases the analytics record tied to your account.
               </li>
             </ul>
           </div>

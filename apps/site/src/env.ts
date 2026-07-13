@@ -34,6 +34,21 @@ const webEnvSchema = z.object({
   // stance. Project API keys are write-only and public-safe, but keeping this
   // server-side keeps the ingest fan-out a single, swappable control point.
   POSTHOG_PROJECT_KEY: z.string().optional(),
+  // Server-only PostHog **personal** API key (`phx_...`), used ONLY to erase a
+  // PostHog person on account deletion (ADR 260713-143958 Phase 4 — "account
+  // deletion must erase the PostHog person"). Unlike the project key, a personal
+  // key grants read/admin access, so it is server-only and never sent to a
+  // client. Optional by design: when unset (or POSTHOG_PROJECT_ID is unset), the
+  // deletion flow logs a skip line and proceeds — a missing analytics-erasure
+  // key must never block a user's right to erasure. Set only in production.
+  POSTHOG_PERSONAL_API_KEY: z.string().optional(),
+  // The numeric PostHog **project id** (e.g. `12345`) the persons REST API is
+  // scoped to (`/api/projects/:id/persons/`). Distinct from the project *key*
+  // above (a write-only ingest token); this is the project's numeric id, read
+  // from the PostHog project settings URL. Paired with POSTHOG_PERSONAL_API_KEY
+  // for account-deletion person erasure; when either is unset, erasure is
+  // skipped (logged), never fatal.
+  POSTHOG_PROJECT_ID: z.string().optional(),
 
   // Better Auth — the DorkOS account cloud identity core (accounts-and-auth P2).
   // BETTER_AUTH_SECRET signs sessions; set a 32+ char secret in production. When
