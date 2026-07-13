@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && for d in src/adapters/*/docs; do [ -d \"$d\" ] && t=$(echo \"$d\" | sed 's|src/|dist/|') && mkdir -p \"$t\" && cp \"$d\"/*.md \"$t/\"; done",
+    "build": "tsc && node scripts/copy-adapter-docs.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint ."
