@@ -207,6 +207,25 @@ describe('CloudLinkPanel', () => {
     );
   });
 
+  it('fails closed when the consent write fails: no link starts and an error shows', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+    // The consent write fails (e.g. transient network error to the local server).
+    vi.mocked(transport.updateConfig).mockRejectedValue(new Error('write failed'));
+    renderPanel(transport);
+
+    await user.click(await screen.findByRole('button', { name: /link this instance/i }));
+
+    // The failure surfaces honestly and the handshake NEVER fires — proceeding
+    // would act on the stale persisted flag (worst case: a withdrawal that
+    // failed to persist would still send the id).
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't save your choice/i);
+    expect(transport.startCloudLink).not.toHaveBeenCalled();
+    // The user stays on the idle entry point, free to retry.
+    expect(screen.getByRole('button', { name: /link this instance/i })).toBeInTheDocument();
+  });
+
   it('shows a friendly error when starting the link fails', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

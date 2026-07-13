@@ -145,15 +145,21 @@ function IdleState({
     setLinkAnalytics(persisted);
   }, [persisted]);
 
+  const [consentError, setConsentError] = useState<string | null>(null);
+
   // Persist the choice BEFORE starting the handshake: the descriptor is built
-  // server-side at link time, so the flag must be on disk first for the id to be
-  // included. A failed write is non-fatal — the link still proceeds (without the
-  // analytics merge), since linking is the primary action here.
+  // server-side at link time, so the flag must be on disk first. Fail CLOSED on
+  // a write failure — never start the link. Proceeding would act on the stale
+  // persisted flag in both directions: an opt-in would silently skip the merge,
+  // and (worse) an unchecked box over a previously-persisted `true` would send
+  // the id against an explicit withdrawal.
   const handleLink = useCallback(async () => {
+    setConsentError(null);
     try {
       await updateConfig.mutateAsync({ telemetry: { linkAnalyticsToAccount: linkAnalytics } });
     } catch {
-      // Ignore: fall through to link anyway.
+      setConsentError("Couldn't save your choice. Try again.");
+      return;
     }
     await start();
   }, [updateConfig, linkAnalytics, start]);
@@ -192,9 +198,9 @@ function IdleState({
         )}
         {busy ? 'Starting…' : 'Link this instance'}
       </Button>
-      {startError && (
+      {(consentError ?? startError) && (
         <p className="text-sm text-red-500" role="alert">
-          {startError}
+          {consentError ?? startError}
         </p>
       )}
     </div>
