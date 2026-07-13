@@ -1,8 +1,9 @@
 /**
  * Marketplace telemetry reporter — forwards install events to dorkos.ai.
  *
- * Registered once at server startup when `config.telemetry.install === true`.
- * Uses the existing `registerTelemetryReporter` hook from
+ * Registered once at server startup for the Tier 1 install channel
+ * (`config.telemetry.install`, anonymous, opt-out, default true; ADR
+ * 260713-143958). Uses the existing `registerTelemetryReporter` hook from
  * services/marketplace/telemetry-hook.ts.
  *
  * Privacy contract: see https://dorkos.ai/marketplace/privacy
@@ -47,8 +48,10 @@ export interface TelemetryPayload {
  * is printed to stderr and the network call is skipped, so a power user can
  * audit the wire format for themselves.
  *
- * @param consent - Whether the user has opted in via `config.telemetry.install`.
- *   Must already fold in the env kill switch via `resolveTelemetryConsent`.
+ * @param consent - The final send decision for the install channel. Must already
+ *   fold in `config.telemetry.install`, the env kill switch (via
+ *   `resolveTelemetryConsent`), and the Tier 1 notice-before-first-send gate
+ *   (`hasTier1SendGate`) at the call site.
  * @param dorkHome - The resolved dorkHome path for storing the install ID.
  * @param dorkosVersion - The current DorkOS version string.
  * @param debug - When true, print each payload to stderr instead of sending it.

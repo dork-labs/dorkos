@@ -1,32 +1,35 @@
 ---
 title: Telemetry
-description: What the optional DorkOS heartbeat sends, how to turn it on or off, and the private-by-default promise
+description: What the anonymous DorkOS heartbeat sends, how to turn it off, and the anonymous-by-default promise
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-DorkOS is private by default. Nothing about how you use it leaves your computer unless you turn it on. This page shows the exact data it would send, word for word, so you can decide with full information.
+DorkOS shares a little anonymous data by default so we can see roughly how many people run it. It is anonymous, not personal: no prompts, no code, no file paths, no session content, ever. This page shows the exact data, word for word, and every way to turn it off.
 
 <Callout type="info">
-  Every telemetry channel is off on a fresh install. DorkOS asks once, on first run, and shows you
-  the payload before you choose. You can change your mind anytime.
+  The two anonymous channels (a daily heartbeat and marketplace install counts) are on by default.
+  DorkOS prints a first-run notice and sends nothing on that first run. Crash reporting is separate
+  and stays off until you turn it on. You can change any of this anytime.
 </Callout>
 
 ## The short version
 
-- Telemetry is off until you opt in. Fresh installs send nothing.
+- Two anonymous channels are on by default: a daily heartbeat and marketplace install counts.
+- On first run, DorkOS shows a notice and sends nothing that run. If you do nothing, sharing begins next launch.
 - It is anonymous. No prompts, no code, no file paths, no session content, ever.
+- Turn it off any time: `dorkos telemetry disable`, `DO_NOT_TRACK=1`, or the Privacy & Data settings tab.
 - The full payload is documented here and enforced in code and tests.
 - The public version of this page lives at [dorkos.ai/telemetry](https://dorkos.ai/telemetry).
 
 ## What the heartbeat sends
 
-If you opt in, DorkOS sends one small message to dorkos.ai about once a week. This is how we can even roughly count how many people actively run DorkOS. Here is the whole payload:
+DorkOS sends one small message to dorkos.ai about once a day. This is how we can even roughly count how many people actively run DorkOS. Here is the whole payload:
 
 ```json
 {
   "instanceId": "a1b2c3d4-e5f6-...",
-  "dorkosVersion": "0.46.0",
+  "dorkosVersion": "0.47.0",
   "os": "darwin-arm64",
   "runtimesConfigured": ["claude-code", "codex"],
   "tunnelEnabled": false,
@@ -47,15 +50,19 @@ If you opt in, DorkOS sends one small message to dorkos.ai about once a week. Th
 
 ## What it never sends
 
-The list above is the complete payload. It is enforced in code and in tests, so nothing sneaks in. It never includes your prompts, your code, file paths, your hostname or username, IP address, or anything from your sessions. If we ever want to add a field, we update this page first.
+The list above is the complete payload. It is enforced in code and in tests, so nothing sneaks in. It never includes your prompts, your code, file paths, your hostname or username, IP address, or anything from your sessions. This is what makes it anonymous rather than personal, and it is why we can turn it on by default. If we ever want to add a field, we update this page first.
+
+## We tell you before anything sends
+
+The first time DorkOS starts, it prints a plain notice in its log: what it shares, a link to the payload, and how to turn it off. Nothing is sent on that first run. If you do nothing, the daily heartbeat and install counts begin on the next launch. If you turn them off first, they never start. This ordering is enforced in code (the send gate is captured before the notice is recorded), so a first-run boot never sends.
 
 ## Marketplace installs
 
-The same opt-in also turns on anonymous marketplace install events, which help rank packages and spot broken installs. They follow the same no-PII rule and are documented on the [marketplace privacy page](https://dorkos.ai/marketplace/privacy).
+The marketplace install-count channel is on by default too, and it helps rank packages and spot broken installs. It follows the same no-PII rule and is documented on the [marketplace privacy page](https://dorkos.ai/marketplace/privacy).
 
 ## Error reporting (a separate opt-in)
 
-DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. It is different from the heartbeat, so it is its own separate choice and the "share anonymous data" banner never turns it on:
+DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. Unlike the anonymous heartbeat, this one is off until you turn it on:
 
 - It goes to a **third party**, not to us. You point it at your own [Sentry](https://sentry.io) or self-hosted [GlitchTip](https://glitchtip.com) project. Nothing is sent unless you set that up.
 - It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file contents, no session data.
@@ -119,26 +126,27 @@ Set `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints the exact JSON payload for the 
 DORKOS_TELEMETRY_DEBUG=1 dorkos
 ```
 
-## How to turn it on or off
+## How to turn it off (or back on)
 
-The first time you open DorkOS, a banner asks whether to share anonymous data and shows you the payload above. Pick either option and it remembers your choice. To change it later, open settings (there's a **Privacy & Data** tab with a switch for each channel), use `dorkos telemetry` above, or edit `~/.dork/config.json`:
+The first time you open DorkOS, a banner discloses that it shares anonymous data and shows you the payload above, with a **Keep sharing** and a **Turn off** button. To change it later, open settings (there's a **Privacy & Data** tab with a switch for each channel), use `dorkos telemetry` above, or edit `~/.dork/config.json`:
 
 ```json
 {
   "telemetry": {
-    "heartbeat": false,
-    "install": false,
+    "heartbeat": true,
+    "install": true,
     "errorReporting": false,
     "userHasDecided": true
   }
 }
 ```
 
-Set a value to `true` to opt in, or `false` to opt out. The default for every channel is `false`. Error reporting needs one more thing on top of its flag: a `SENTRY_DSN` environment variable. Without it, nothing is sent even if the flag is `true`.
+Set a value to `false` to turn a channel off, or `true` to turn it on. The two anonymous channels default to `true`; error reporting defaults to `false`. Error reporting needs one more thing on top of its flag: a `SENTRY_DSN` environment variable. Without it, nothing is sent even if the flag is `true`.
 
 <Callout type="info">
-  Because this is off by default, our numbers only reflect people who chose to share. We undercount
-  on purpose. A private-by-default product that flies a little blind is the right trade.
+  Anonymous by default is the norm for developer tools, from Next.js to VS Code to Homebrew. We keep
+  it genuinely anonymous, show you the whole payload, and make turning it off a one-liner. Your code
+  and your chats with the AI never leave your machine, default or not.
 </Callout>
 
 ## When this changes

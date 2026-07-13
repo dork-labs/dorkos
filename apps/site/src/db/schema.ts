@@ -98,13 +98,14 @@ export type MarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferSele
 export type NewMarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferInsert;
 
 /**
- * `instance_heartbeats` — one row per DorkOS installation for the opt-in weekly
- * heartbeat (DOR-293). **Last-seen semantics via upsert**: the receive route
- * upserts on `instanceId`, so a given install has exactly one row whose
- * `receivedAt` and payload reflect its most recent ping. This bounds the table
- * to the number of distinct instances (not the number of pings) and makes the
- * row count a true distinct-instance metric. "Weekly-active" is then a
- * `receivedAt >= now() - 7 days` filter over distinct rows.
+ * `instance_heartbeats` — one row per DorkOS installation for the anonymous
+ * daily heartbeat (DOR-293; Tier 1 opt-out per ADR 260713-143958). **Last-seen
+ * semantics via upsert**: the receive route upserts on `instanceId`, so a given
+ * install has exactly one row whose `receivedAt` and payload reflect its most
+ * recent ping. This bounds the table to the number of distinct instances (not
+ * the number of pings) and makes the row count a true distinct-instance metric.
+ * "Daily-active" is then a `receivedAt >= now() - 1 day` filter over distinct
+ * rows (and any wider window is just a larger interval).
  *
  * The columns below are the **complete allowed set**. Like
  * `marketplace_install_events`, this table is the privacy contract: the schema
@@ -119,7 +120,7 @@ export const instanceHeartbeats = pgTable(
     id: bigserial('id', { mode: 'bigint' }).primaryKey(),
     /**
      * Random per-install UUID (shared with install telemetry). Identifies one
-     * DorkOS installation so we can de-duplicate to weekly-active counts — NOT
+     * DorkOS installation so we can de-duplicate to daily-active counts — NOT
      * a user, and never joined to any account table. **Unique**: the receive
      * route upserts on this column, so repeated pings update the same row.
      */

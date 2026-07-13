@@ -2,7 +2,7 @@
  * Environment kill switches and debug mode for outbound telemetry.
  *
  * DorkOS has several first-party outbound channels (marketplace install events,
- * the weekly heartbeat, error reporting). Each is gated by its own config flag,
+ * the daily heartbeat, error reporting). Each is gated by its own config flag,
  * but an operator must also be able to force **every** channel off from the
  * environment, without editing config — the universal `DO_NOT_TRACK` convention
  * (see https://consoledonottrack.com / donottrack.sh) plus a scoped
@@ -85,4 +85,39 @@ export function isTelemetryDebugEnabled(env: TelemetryEnv): boolean {
 export function resolveTelemetryConsent(configValue: boolean, env: TelemetryEnv): boolean {
   if (isTelemetryDisabledByEnv(env)) return false;
   return configValue;
+}
+
+/**
+ * The minimal telemetry-consent shape the Tier 1 send gate reads: whether the
+ * user has answered a consent prompt, and the last DorkOS version whose first-run
+ * notice this install saw.
+ */
+export interface Tier1GateConfig {
+  /** `true` once the user has explicitly answered a consent prompt (either way). */
+  userHasDecided: boolean;
+  /** The version whose first-run notice was shown, or `null` if never shown. */
+  lastPromptedVersion: string | null;
+}
+
+/**
+ * Whether the notice-before-first-send gate is open for the Tier 1 opt-out
+ * channels (heartbeat + install; ADR 260713-143958). Tier 1 defaults ON, but a
+ * genuinely anonymous, opt-out channel may only send **after** the first-run
+ * notice has been shown (the Homebrew ordering rule). The gate is open when the
+ * user has explicitly decided (`userHasDecided === true`) OR the first-run notice
+ * has already been recorded (`lastPromptedVersion !== null`).
+ *
+ * This is an ADDITIONAL requirement on top of each channel's config flag and the
+ * env kill switches: an effective Tier 1 send is
+ * `resolveTelemetryConsent(flag, env) && hasTier1SendGate(config)`. Error
+ * reporting is opt-in and does NOT use this gate.
+ *
+ * Centralized here so every Tier 1 sender (heartbeat, install, and future usage
+ * counters) evaluates the gate identically.
+ *
+ * @param config - The telemetry consent state (`config.telemetry`).
+ */
+export function hasTier1SendGate(config: Tier1GateConfig | undefined | null): boolean {
+  if (config == null) return false;
+  return config.userHasDecided === true || config.lastPromptedVersion !== null;
 }

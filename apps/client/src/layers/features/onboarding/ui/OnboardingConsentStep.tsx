@@ -8,20 +8,21 @@ interface OnboardingConsentStepProps {
 }
 
 /**
- * Onboarding telemetry consent step. Presents the same choice as the standalone
- * banner: share anonymous data (weekly heartbeat + marketplace install events,
- * with the exact payload shown verbatim) or decline. Either choice records the
- * shared `telemetry.userHasDecided` gate so the banner never reappears, then
- * advances to the completion screen. A failed write still advances — a telemetry
- * hiccup must never trap the user in onboarding.
+ * Onboarding telemetry disclosure step. Presents the same opt-out framing as the
+ * standalone banner: DorkOS shares a small anonymous heartbeat and marketplace
+ * install counts by default, shown here verbatim, and the user can keep sharing
+ * or turn it off. Either choice records the shared `telemetry.userHasDecided`
+ * gate so the disclosure never reappears, then advances to the completion
+ * screen. A failed write still advances — a telemetry hiccup must never trap the
+ * user in onboarding.
  */
 export function OnboardingConsentStep({ onComplete }: OnboardingConsentStepProps) {
   const updateConfig = useUpdateConfig();
 
   const choose = useCallback(
-    (accept: boolean) => {
+    (share: boolean) => {
       updateConfig.mutate(
-        { telemetry: { install: accept, heartbeat: accept, userHasDecided: true } },
+        { telemetry: { install: share, heartbeat: share, userHasDecided: true } },
         { onSettled: () => onComplete() }
       );
     },
@@ -31,12 +32,13 @@ export function OnboardingConsentStep({ onComplete }: OnboardingConsentStepProps
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto py-4">
       <div className="max-w-md space-y-2 text-center">
-        <h2 className="text-2xl font-semibold tracking-tight">Share anonymous usage data?</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">
+          DorkOS shares a little anonymous data
+        </h2>
         <p className="text-muted-foreground text-sm">
-          DorkOS never phones home unless you say yes. Turn this on and it sends a small anonymous
-          ping about once a week, plus anonymous marketplace install events. No prompts, code, file
-          paths, or session content ever leave your machine. You can change your mind anytime in
-          settings.{' '}
+          To see roughly how many people run DorkOS, it sends a small anonymous heartbeat once a day
+          plus anonymous marketplace install counts. Here is exactly what is in it. No prompts,
+          code, file paths, or session content ever leave your machine. Turn it off any time.{' '}
           <a
             href="https://dorkos.ai/telemetry"
             target="_blank"
@@ -55,10 +57,10 @@ export function OnboardingConsentStep({ onComplete }: OnboardingConsentStepProps
 
       <div className="flex gap-2">
         <Button variant="outline" onClick={() => choose(false)} disabled={updateConfig.isPending}>
-          No thanks
+          Turn off
         </Button>
         <Button onClick={() => choose(true)} disabled={updateConfig.isPending}>
-          Share anonymous data
+          Keep sharing
         </Button>
       </div>
     </div>

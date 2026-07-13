@@ -336,7 +336,7 @@ Uploaded files (from chat, workbench, or anywhere else you attach a file) are st
 
 ### Telemetry
 
-DorkOS is private by default. Every telemetry channel is off until you opt in, and the first-run banner shows you the exact payload before you decide. See the full [telemetry contract](/docs/self-hosting/telemetry) for what the weekly heartbeat sends and how to opt in or out.
+DorkOS shares a little anonymous data by default. Two channels are on: a daily heartbeat and marketplace install counts, both genuinely anonymous (no prompts, code, paths, or session content). DorkOS shows a first-run notice and sends nothing on that first run, and you can turn it off any time with `dorkos telemetry disable`, `DO_NOT_TRACK=1`, or the Privacy & Data settings tab. Crash reporting is separate and stays off until you turn it on. See the full [telemetry contract](/docs/self-hosting/telemetry) for the exact payload.
 
 <TypeTable
   type={{
@@ -348,14 +348,15 @@ DorkOS is private by default. Every telemetry channel is off until you opt in, a
     },
     'telemetry.heartbeat': {
       description:
-        'Send an anonymous weekly heartbeat to dorkos.ai (version, OS, configured runtimes, and rough counts). Never prompts, code, paths, or session content.',
+        'Send an anonymous daily heartbeat to dorkos.ai (version, OS, configured runtimes, and rough counts). Never prompts, code, paths, or session content. Anonymous and opt-out; a first-run notice is shown before anything sends.',
       type: 'boolean',
-      default: 'false',
+      default: 'true',
     },
     'telemetry.install': {
-      description: 'Send anonymous marketplace install events to dorkos.ai.',
+      description:
+        'Send anonymous marketplace install counts to dorkos.ai. Anonymous and opt-out; a first-run notice is shown before anything sends.',
       type: 'boolean',
-      default: 'false',
+      default: 'true',
     },
     'telemetry.errorReporting': {
       description:

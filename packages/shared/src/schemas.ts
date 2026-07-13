@@ -2199,10 +2199,12 @@ export const ServerConfigSchema = z
           description: 'True once the user has explicitly chosen (banner stops appearing)',
         }),
         install: z.boolean().openapi({
-          description: 'Whether the marketplace install-events channel is opted in',
+          description:
+            'Whether the marketplace install-events channel is on (Tier 1, anonymous, opt-out, default true)',
         }),
         heartbeat: z.boolean().openapi({
-          description: 'Whether the weekly anonymous heartbeat channel is opted in',
+          description:
+            'Whether the daily anonymous heartbeat channel is on (Tier 1, anonymous, opt-out, default true)',
         }),
         errorReporting: z.boolean().openapi({
           description: 'Whether the crash/error-report channel is opted in',

@@ -1,8 +1,8 @@
 /**
- * Tests for the anonymous weekly heartbeat reporter.
+ * Tests for the anonymous daily heartbeat reporter.
  *
  * Covers the consent gate (the load-bearing "does NOT fire without consent"
- * guarantee), the weekly-due cadence, and a privacy allow-list + no-PII check
+ * guarantee), the daily-due cadence, and a privacy allow-list + no-PII check
  * on the exact wire body. Mocks `node:fs/promises` (last-sent marker + instance
  * id never touch disk) and `global.fetch` (to capture the payload).
  */
@@ -137,7 +137,7 @@ describe('heartbeat-reporter', () => {
       expect(isHeartbeatDue(null, Date.now())).toBe(true);
     });
 
-    it('isHeartbeatDue respects the weekly interval', () => {
+    it('isHeartbeatDue respects the daily interval', () => {
       const now = 1_000_000_000_000;
       expect(isHeartbeatDue(now - HEARTBEAT_INTERVAL_MS + 1, now)).toBe(false);
       expect(isHeartbeatDue(now - HEARTBEAT_INTERVAL_MS, now)).toBe(true);

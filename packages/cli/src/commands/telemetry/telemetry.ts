@@ -3,7 +3,7 @@
  * (DOR-312, ADR 260713-143958 Phase 1).
  *
  * A plain, honest control surface for the first-party outbound telemetry
- * channels: `install` (marketplace install events), `heartbeat` (the weekly
+ * channels: `install` (marketplace install events), `heartbeat` (the daily
  * anonymous ping), and `errors` (crash reports). `status` prints each channel's
  * effective state, flagging when an env kill switch (`DO_NOT_TRACK` /
  * `DORKOS_TELEMETRY_DISABLED`) overrides config. `enable`/`disable` write the
@@ -35,7 +35,7 @@ export const TELEMETRY_CHANNELS: readonly TelemetryChannel[] = ['install', 'hear
 /** Maps a channel name to its `telemetry.*` config key and a display label. */
 const CHANNEL_META: Record<TelemetryChannel, { configKey: string; label: string }> = {
   install: { configKey: 'install', label: 'Install events' },
-  heartbeat: { configKey: 'heartbeat', label: 'Weekly heartbeat' },
+  heartbeat: { configKey: 'heartbeat', label: 'Daily heartbeat' },
   errors: { configKey: 'errorReporting', label: 'Crash reports' },
 };
 
@@ -164,9 +164,11 @@ export function runTelemetryDisable(deps: TelemetryDeps, channel?: TelemetryChan
 export const HELP_TEXT = `
 Usage: dorkos telemetry <subcommand>
 
-See and control what anonymous data DorkOS sends. Everything is off by default
-and no channel ever sends without your say-so. Env kill switches DO_NOT_TRACK
-and DORKOS_TELEMETRY_DISABLED force every channel off, beating this config.
+See and control what anonymous data DorkOS sends. The anonymous heartbeat and
+install counts are on by default and opt-out; crash reports stay off until you
+turn them on. Nothing sends until DorkOS has shown you its first-run notice. Env
+kill switches DO_NOT_TRACK and DORKOS_TELEMETRY_DISABLED force every channel off,
+beating this config.
 
 Subcommands:
   status                 Show each channel's state and any env override

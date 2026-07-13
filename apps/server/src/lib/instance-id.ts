@@ -1,11 +1,11 @@
 /**
- * Stable anonymous instance identifier for opt-in telemetry.
+ * Stable anonymous instance identifier for telemetry.
  *
  * A single random UUID stored as one line of text in
  * `<dorkHome>/telemetry-install-id`. It identifies a single DorkOS
  * installation — not a user — so telemetry sinks can de-duplicate noisy
- * retries without any PII. Every opt-in channel that sends to dorkos.ai
- * (marketplace install events, the weekly heartbeat) shares this one id.
+ * retries without any PII. Every channel that sends to dorkos.ai
+ * (marketplace install events, the daily heartbeat) shares this one id.
  *
  * The file name is kept as `telemetry-install-id` for backward compatibility:
  * marketplace install telemetry created it first, and reusing the same file

@@ -37,8 +37,8 @@ describe('UserConfigSchema', () => {
       },
       telemetry: {
         userHasDecided: false,
-        install: false,
-        heartbeat: false,
+        install: true,
+        heartbeat: true,
         errorReporting: false,
         lastPromptedVersion: null,
       },
@@ -255,8 +255,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       telemetry: {
         userHasDecided: false,
-        install: false,
-        heartbeat: false,
+        install: true,
+        heartbeat: true,
         errorReporting: false,
         lastPromptedVersion: null,
       },
@@ -446,44 +446,47 @@ describe('UserConfigSchema agents', () => {
 });
 
 describe('UserConfigSchema telemetry', () => {
-  const ALL_OFF = {
+  // Tier 1 opt-out defaults (ADR 260713-143958): the anonymous install +
+  // heartbeat channels default ON; errorReporting (Tier 2) defaults OFF.
+  const TIER1_DEFAULTS = {
     userHasDecided: false,
-    install: false,
-    heartbeat: false,
+    install: true,
+    heartbeat: true,
     errorReporting: false,
     lastPromptedVersion: null,
   };
 
-  it('telemetry defaults to every channel off when omitted', () => {
+  it('telemetry defaults the Tier 1 channels on and errorReporting off when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
-    expect(result.telemetry).toEqual(ALL_OFF);
+    expect(result.telemetry).toEqual(TIER1_DEFAULTS);
   });
 
   it('telemetry section defaults when empty object provided', () => {
     const result = UserConfigSchema.parse({ version: 1, telemetry: {} });
-    expect(result.telemetry).toEqual(ALL_OFF);
+    expect(result.telemetry).toEqual(TIER1_DEFAULTS);
   });
 
-  it('each channel accepts true independently', () => {
+  it('each channel accepts an explicit value independently', () => {
     const result = UserConfigSchema.parse({
       version: 1,
-      telemetry: { install: true, heartbeat: true, errorReporting: true, userHasDecided: true },
+      telemetry: { install: false, heartbeat: false, errorReporting: true, userHasDecided: true },
     });
     expect(result.telemetry).toEqual({
-      install: true,
-      heartbeat: true,
+      install: false,
+      heartbeat: false,
       errorReporting: true,
       userHasDecided: true,
       lastPromptedVersion: null,
     });
   });
 
-  it('unset channels default to false when only one is set', () => {
+  it('unset channels fall back to their defaults when only one is set', () => {
     const result = UserConfigSchema.parse({
       version: 1,
-      telemetry: { heartbeat: true },
+      telemetry: { errorReporting: true },
     });
-    expect(result.telemetry).toEqual({ ...ALL_OFF, heartbeat: true });
+    // errorReporting overridden; Tier 1 channels keep their on-by-default value.
+    expect(result.telemetry).toEqual({ ...TIER1_DEFAULTS, errorReporting: true });
   });
 
   it('userHasDecided is independent of the channel flags', () => {
@@ -492,8 +495,9 @@ describe('UserConfigSchema telemetry', () => {
       telemetry: { userHasDecided: true },
     });
     expect(result.telemetry.userHasDecided).toBe(true);
-    expect(result.telemetry.install).toBe(false);
-    expect(result.telemetry.heartbeat).toBe(false);
+    // Channels keep their defaults regardless of the decision gate.
+    expect(result.telemetry.install).toBe(true);
+    expect(result.telemetry.heartbeat).toBe(true);
   });
 
   it('rejects non-boolean channel values', () => {

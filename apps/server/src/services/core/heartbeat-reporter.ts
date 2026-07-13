@@ -1,21 +1,27 @@
 /**
- * Anonymous weekly heartbeat reporter (DOR-293).
+ * Anonymous daily heartbeat reporter (DOR-293; Tier 1 opt-out per ADR
+ * 260713-143958).
  *
- * Sends one small, anonymous JSON ping to dorkos.ai roughly once a week so the
- * project can count "known weekly-active instances". It is **off by default**
- * and only ever runs when `config.telemetry.heartbeat === true` — no network
- * call, no timer, and no disk read happen without that explicit opt-in.
+ * Sends one small, anonymous JSON ping to dorkos.ai roughly once a day so the
+ * project can count "known daily-active instances". It is a Tier 1 opt-out
+ * channel: `config.telemetry.heartbeat` defaults to `true`, but the caller must
+ * still fold in the notice-before-first-send gate (`hasTier1SendGate`) so a
+ * never-answered install sends nothing until its first-run notice has been
+ * shown. When `consent` is false — because the user turned it off, an env kill
+ * switch is set, or the notice has not yet been shown — no network call, timer,
+ * or disk read happens.
  *
  * What the payload contains is documented verbatim at
  * https://dorkos.ai/telemetry and in `docs/self-hosting/telemetry.mdx`. It
  * carries an anonymous per-install id, the version, OS/arch, which runtimes are
  * configured, whether the tunnel and cloud link are on, and rough counts —
- * never prompts, code, file paths, or session content. Undercounting is
- * accepted by design: a private-by-default product flies partly blind.
+ * never prompts, code, file paths, or session content. The anonymization bar
+ * (no IP, no fingerprint, no content, no paths) is what makes the opt-out
+ * default defensible.
  *
- * Consent lives in the shared `telemetry` consent namespace so error reporting
- * (PR-B) and a future remote OpenTelemetry exporter can reuse it. See ADR
- * 260711-141639.
+ * Consent lives in the shared `telemetry` consent namespace so the install
+ * channel, error reporting, and future usage counters reuse it. See ADR
+ * 260713-143958 and 260711-141639.
  *
  * @module services/core/heartbeat-reporter
  */
@@ -25,11 +31,11 @@ import path from 'node:path';
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger } from '../../lib/logger.js';
 
-/** Where the weekly heartbeat is delivered. */
+/** Where the daily heartbeat is delivered. */
 export const HEARTBEAT_ENDPOINT = 'https://dorkos.ai/api/telemetry/heartbeat';
 
-/** Minimum gap between heartbeats: one week in milliseconds. */
-export const HEARTBEAT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Minimum gap between heartbeats: one day in milliseconds. */
+export const HEARTBEAT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** File (under dorkHome) recording when the last heartbeat was sent (epoch ms as text). */
 export const LAST_SENT_FILENAME = 'heartbeat-last-sent';
@@ -97,7 +103,7 @@ export function buildHeartbeatPayload(input: HeartbeatInput): HeartbeatPayload {
 
 /**
  * Whether a heartbeat is due given the last-sent time and the current time.
- * Due when it has never been sent (`null`) or at least a week has elapsed.
+ * Due when it has never been sent (`null`) or at least a day has elapsed.
  *
  * @param lastSentMs - Epoch ms of the previous send, or `null` if never sent.
  * @param nowMs - Current epoch ms.
@@ -161,10 +167,11 @@ async function writeLastSent(dorkHome: string, nowMs: number): Promise<void> {
 /** Options for {@link maybeSendHeartbeat} and {@link registerHeartbeat}. */
 export interface HeartbeatOptions {
   /**
-   * Whether the user opted into the heartbeat. Must already fold in the env
-   * kill switch (`DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`) via
-   * `resolveTelemetryConsent` at the call site — this module treats it as the
-   * final word.
+   * The final send decision for the heartbeat. Must already fold in the channel
+   * flag, the env kill switch (`DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`) via
+   * `resolveTelemetryConsent`, AND the Tier 1 notice-before-first-send gate
+   * (`hasTier1SendGate`) at the call site — this module treats it as the final
+   * word.
    */
   consent: boolean;
   /**
@@ -229,13 +236,15 @@ export async function maybeSendHeartbeat(options: HeartbeatOptions): Promise<boo
 }
 
 /**
- * Register the weekly heartbeat for the lifetime of the server.
+ * Register the daily heartbeat for the lifetime of the server.
  *
  * No-op when `options.consent` is false — no timer is scheduled and nothing is
- * read or sent. When consent is on, it sends immediately if one is due (the
- * once-a-week cadence is enforced by the on-disk marker, so a restart storm
- * cannot spam the endpoint) and then re-checks weekly. The interval is
- * `unref()`ed so it never keeps the process alive.
+ * read or sent. `consent` must already fold in the channel flag, the env kill
+ * switches, and the Tier 1 notice-before-first-send gate at the call site. When
+ * consent is on, it sends immediately if one is due (the once-a-day cadence is
+ * enforced by the on-disk marker, so a restart storm cannot spam the endpoint)
+ * and then re-checks daily. The interval is `unref()`ed so it never keeps the
+ * process alive.
  *
  * @param options - Consent, identity, and count-collection inputs.
  */
@@ -251,5 +260,5 @@ export function registerHeartbeat(options: HeartbeatOptions): void {
   }, HEARTBEAT_INTERVAL_MS);
   timer.unref();
 
-  logger.info('[Telemetry] Weekly heartbeat registered (consent: opt-in)');
+  logger.info('[Telemetry] Daily heartbeat registered');
 }
