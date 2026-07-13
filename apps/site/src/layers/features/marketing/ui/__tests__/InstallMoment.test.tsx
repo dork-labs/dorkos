@@ -195,6 +195,15 @@ describe('InstallMoment — OS-adaptive install hero', () => {
 
       expect(screen.queryByText('Download for Mac')).toBeNull();
     });
+
+    it('suppresses the redundant Windows note in "Other ways" — the visitor already has the hero', async () => {
+      render(<InstallMoment />);
+      await waitFor(() => expect(screen.getByText('Download for Windows')).toBeTruthy());
+
+      // The "Other ways to install" Windows note ("download the alpha installer")
+      // is for non-Windows visitors; a Windows visitor already has the hero.
+      expect(screen.queryByText(/download the alpha installer/i)).toBeNull();
+    });
   });
 
   describe('non-Mac, non-Windows visitor', () => {

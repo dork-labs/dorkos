@@ -257,10 +257,7 @@ function WindowsDownloadHero() {
       >
         <Download size={18} aria-hidden="true" />
         Download for Windows
-        <span
-          className="rounded-sm px-1.5 py-0.5 text-[9px] tracking-[0.1em] uppercase"
-          style={{ background: 'rgba(255,255,255,0.18)', color: '#FFFEFB' }}
-        >
+        <span className="text-cream-white rounded-sm bg-white/[0.18] px-1.5 py-0.5 text-[9px] tracking-[0.1em] uppercase">
           alpha
         </span>
       </a>
