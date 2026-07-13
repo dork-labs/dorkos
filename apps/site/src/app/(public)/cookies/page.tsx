@@ -12,7 +12,7 @@ export default function CookiePolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Cookie Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 12, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             This site is run by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
             we mean.
@@ -23,8 +23,10 @@ export default function CookiePolicyPage() {
           <h2 className="text-charcoal font-mono text-base font-semibold">The short version</h2>
           <p className="text-warm-gray leading-relaxed">
             We keep cookies to a minimum. We set a login cookie if you sign in, and a small cookie
-            that remembers UI preferences. We set analytics cookies only if you accept the consent
-            banner. We do not use ad cookies, and we do not sell cookie data.
+            that remembers UI preferences. We set an analytics cookie only when analytics is on: in
+            the EU and UK that means after you accept the banner, and elsewhere it is on by default
+            with a one-click off switch. If analytics is off, we still count visits anonymously with
+            no cookies. We do not use ad cookies, and we do not sell cookie data.
           </p>
         </section>
 
@@ -59,15 +61,20 @@ export default function CookiePolicyPage() {
             <h3 className="text-charcoal text-lg font-medium">Analytics</h3>
             <p className="text-warm-gray leading-relaxed">
               We use PostHog, a privacy-friendly analytics tool, to understand how the website is
-              used. It stores nothing in your browser until you accept the consent banner. If you
-              decline, ignore the banner, or have Do Not Track switched on, PostHog stays off and
-              sets no cookies. When it is on, it uses cookies to count page visits and a few clicks,
+              used. When analytics is on, it sets a cookie to count page visits and a few clicks,
               like copying the install command. There is no session recording and no cross-site
-              tracking. See our{' '}
+              tracking.
+            </p>
+            <p className="text-warm-gray leading-relaxed">
+              When analytics is off, PostHog sets no cookies and stores nothing in your browser. It
+              still counts your visit, but anonymously, using a privacy-preserving code that is
+              reshuffled every day, so it cannot be traced back to you or linked across days. If you
+              decline the banner, turn analytics off on the{' '}
               <Link href="/privacy" className="text-charcoal hover:text-brand-orange underline">
                 Privacy Policy
               </Link>{' '}
-              for the full picture.
+              page, or have Do Not Track or Global Privacy Control switched on, the cookie version
+              stays off automatically.
             </p>
           </div>
         </section>

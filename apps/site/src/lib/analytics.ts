@@ -14,13 +14,27 @@
  * error, so `analyticsEnabled` guards every call — this is what keeps an
  * unconfigured deploy at zero network requests *and* zero console noise.
  *
- * Turning analytics on for real takes TWO switches, because capture is also
- * consent-gated (`opt_out_capturing_by_default: true`):
- *   1. Set `NEXT_PUBLIC_POSTHOG_KEY` (and `NEXT_PUBLIC_POSTHOG_HOST` for EU).
- *   2. Set `siteConfig.disableCookieBanner` to `false` so visitors can accept
- *      the cookie banner — without it nobody can opt in and no events flow.
- * Before flipping either, honor the /privacy and /cookies pages' promise:
- * update their analytics wording and "Last updated" dates in the same PR.
+ * ## The hybrid consent model (ADR 260713-143958, Phase 0)
+ *
+ * There is no longer a "capture nothing" state. The SDK runs
+ * `cookieless_mode: 'on_reject'`, so **every visitor produces analytics** — the
+ * only question is which kind:
+ *   - **cookieless** (the default floor): a daily-salted server-side hash, no
+ *     cookies, no cross-day identity. Genuinely anonymous.
+ *   - **cookies**: normal cookie-based capture, after an opt-in.
+ *
+ * Region picks the UX (see src/lib/consent.ts and proxy.ts): EU/EEA/UK/CH (and
+ * any unknown country, which fails closed) see the opt-in banner; everywhere
+ * else analytics is on by default with a one-click off switch on /privacy.
+ * `CookieConsentBanner` reconciles the actual capture state on mount and honors
+ * DNT + Global Privacy Control as decline signals.
+ *
+ * To turn analytics on for a deploy, set `NEXT_PUBLIC_POSTHOG_KEY` (and
+ * `NEXT_PUBLIC_POSTHOG_HOST` for EU) — and enable cookieless mode in the
+ * PostHog *project* settings, or cookieless events are dropped server-side.
+ * `siteConfig.disableCookieBanner` is a kill switch for the banner UX only.
+ * Before changing the model, honor the /privacy and /cookies pages' promise:
+ * update their wording and "Last updated" dates in the same PR.
  *
  * ## The launch funnel (Part 3.1)
  *
