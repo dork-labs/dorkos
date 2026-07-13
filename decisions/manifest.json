@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260713-133412",
+      "slug": "windows-unsigned-alpha-azure-signing",
+      "title": "Ship the Windows desktop as an unsigned alpha; adopt Azure Artifact Signing later",
+      "status": "accepted",
+      "created": "2026-07-13",
+      "extractedFrom": "desktop-windows-support",
+      "specSlug": "desktop-windows-support"
+    },
+    {
       "id": "260712-005315",
       "slug": "desktop-renderer-served-from-localhost",
       "title": "Packaged desktop renderer is served by the bundled server over localhost",
