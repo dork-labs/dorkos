@@ -108,7 +108,7 @@ Debug a failing test:
 Delegate to the maintain command:
 
 ```
-Read and follow the instructions in .claude/commands/browsertest:maintain.md
+Read and follow the instructions in .claude/commands/browsertest/maintain.md
 ```
 
 ### `report`
