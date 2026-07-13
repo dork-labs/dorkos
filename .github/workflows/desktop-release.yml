@@ -177,6 +177,19 @@ jobs:
         # — absent on a fresh runner unless the dependency graph builds.
         run: pnpm exec turbo build --filter=@dorkos/desktop
 
+      # Activate the MSVC C++ toolchain (cl.exe + Windows SDK) before the
+      # native rebuild below. electron-rebuild force-recompiles better-sqlite3
+      # and node-pty from source via node-gyp, which needs Visual Studio's C++
+      # tools. On windows-latest node-gyp otherwise fails with "Could not find
+      # any Visual Studio installation to use" — this runs vcvars so node-gyp
+      # finds the toolchain (the standard fix, and the same path VS Code uses
+      # to build node-pty for Electron on Windows). Pinned to a commit SHA
+      # (v1.13.0) since it's a third-party action.
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
       # Flips better-sqlite3/node-pty to Electron's ABI right before
       # packaging (electron-builder.yml has npmRebuild: false — see
       # scripts/rebuild-natives.ts for why its built-in rebuild is bypassed).
