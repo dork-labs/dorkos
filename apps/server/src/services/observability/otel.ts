@@ -23,9 +23,9 @@
  * Both may run at once (debug→file, endpoint→OTLP, both→both). The universal
  * `OTEL_SDK_DISABLED` kill switch overrides everything and keeps tracing off.
  *
- * All `@opentelemetry/*` imports are confined to this directory (ESLint Hard
- * Rule #2 mirror); the rest of the server instruments through the helpers
- * exported here.
+ * All `@opentelemetry/*` imports are confined to this directory (an ESLint
+ * confinement rule mirroring the runtime-SDK ban's posture); the rest of the
+ * server instruments through the helpers exported here.
  *
  * @module services/observability/otel
  */
