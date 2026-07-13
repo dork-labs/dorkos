@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseDeepLink } from '../navigation';
+import { findDeepLinkArg, parseDeepLink } from '../navigation';
 
 vi.mock('electron', () => import('./electron-mock'));
 
@@ -61,6 +61,34 @@ describe('parseDeepLink', () => {
     ['', 'empty string'],
   ])('rejects %s (%s) as null', (url) => {
     expect(parseDeepLink(url)).toBeNull();
+  });
+});
+
+describe('findDeepLinkArg (Windows/Linux argv delivery)', () => {
+  it('finds a dorkos:// URL among a typical Windows cold-start argv', () => {
+    expect(findDeepLinkArg(['C:\\Program Files\\DorkOS\\DorkOS.exe', 'dorkos://agents/123'])).toBe(
+      'dorkos://agents/123'
+    );
+  });
+
+  it('finds the URL regardless of its position in argv', () => {
+    expect(findDeepLinkArg(['dorkos://session?id=x', '--some-flag'])).toBe('dorkos://session?id=x');
+  });
+
+  it('returns the first dorkos:// URL when several are present', () => {
+    expect(findDeepLinkArg(['app.exe', 'dorkos://a', 'dorkos://b'])).toBe('dorkos://a');
+  });
+
+  it('returns null for an ordinary launch with no deep link', () => {
+    expect(findDeepLinkArg(['C:\\DorkOS\\DorkOS.exe', '--enable-logging'])).toBeNull();
+  });
+
+  it('returns null for an empty argv', () => {
+    expect(findDeepLinkArg([])).toBeNull();
+  });
+
+  it('ignores a non-dorkos scheme', () => {
+    expect(findDeepLinkArg(['app.exe', 'https://dorkos.ai'])).toBeNull();
   });
 });
 

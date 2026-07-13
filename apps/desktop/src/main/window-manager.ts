@@ -213,8 +213,14 @@ export function createWindow(rendererUrl?: string): BrowserWindow {
     minWidth: 800,
     minHeight: 600,
     title: 'DorkOS',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    // macOS gets the inset title bar the renderer's top region is laid out
+    // around (with the traffic lights nudged to match). Everything else keeps
+    // the native OS frame: on Windows a `hidden`/`hiddenInset` title bar drops
+    // the minimize/maximize/close controls, and we draw no custom overlay to
+    // replace them — that would leave the window with no way to close it.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 } }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

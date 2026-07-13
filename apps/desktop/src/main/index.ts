@@ -5,6 +5,7 @@ import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
 import { setupAutoUpdater, restartToUpdate, getLastUpdateStatus } from './auto-updater';
 import {
+  findDeepLinkArg,
   parseDeepLink,
   registerReadinessReset,
   requestNavigate,
@@ -73,6 +74,25 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+/**
+ * Route a raw `dorkos://` URL through the app's navigation path, from
+ * whichever platform channel delivered it (macOS `open-url`, or a Windows/Linux
+ * `process.argv` / `second-instance` scan). A well-formed link navigates via
+ * {@link requestNavigate} — which ensures/focuses a window and tolerates a
+ * renderer that isn't subscribed yet; a malformed one just brings the app
+ * forward.
+ *
+ * @param url - The raw deep-link URL string.
+ */
+function handleDeepLinkUrl(url: string): void {
+  const path = parseDeepLink(url);
+  if (path) {
+    requestNavigate(getMainWindow, showMainWindow, path);
+  } else {
+    showMainWindow();
+  }
+}
+
 // Only one instance of the app may run at a time — two copies would each
 // spawn their own server process against the same ~/.dork SQLite store.
 // This must run before any ready-work (IPC handlers, window creation).
@@ -84,30 +104,44 @@ if (!gotTheLock) {
   // A second launch attempt was blocked by the lock above; bring the
   // existing window to the front instead of doing nothing. If the window
   // was closed (macOS keeps the app alive with zero windows), recreate it.
-  app.on('second-instance', () => {
-    showMainWindow();
-  });
-
-  // Register `dorkos://` as this app's protocol handler. Safe to call
-  // before 'ready' and idempotent across launches.
-  app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
-
-  // macOS delivers `dorkos://` activations here — including a cold-start
-  // deep link, which can fire before 'ready' (before any window or server
-  // exists). Per Electron's docs this listener must be registered as early
-  // as possible, before 'ready', to reliably catch that case.
-  app.on('open-url', (event, url) => {
-    event.preventDefault();
-    const path = parseDeepLink(url);
-    if (path) {
-      // requestNavigate both ensures/focuses a window and tolerates a
-      // renderer that isn't subscribed yet (pending-navigation handoff).
-      requestNavigate(getMainWindow, showMainWindow, path);
+  //
+  // On Windows/Linux a warm `dorkos://` activation arrives as the `argv` of
+  // this event (the OS launches a second instance that fails the lock and
+  // hands its command line here), so scan it for a deep link and route it;
+  // with no link attached it's a plain re-focus. macOS routes warm deep
+  // links through `open-url` instead, and passes no meaningful argv here.
+  app.on('second-instance', (_event, argv: string[]) => {
+    const url = Array.isArray(argv) ? findDeepLinkArg(argv) : null;
+    if (url) {
+      handleDeepLinkUrl(url);
     } else {
-      // Malformed/unknown deep link: just bring the app forward.
       showMainWindow();
     }
   });
+
+  // Register `dorkos://` as this app's protocol handler. Cross-platform and
+  // safe to call before 'ready'; idempotent across launches.
+  app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+
+  // macOS delivers `dorkos://` activations through `open-url` — including a
+  // cold-start deep link, which can fire before 'ready' (before any window or
+  // server exists). Per Electron's docs this listener must be registered as
+  // early as possible, before 'ready', to reliably catch that case. This
+  // event is macOS-only, so scope its registration there; Windows/Linux
+  // deliver deep links via argv instead (see below and `second-instance`).
+  if (process.platform === 'darwin') {
+    app.on('open-url', (event, url) => {
+      event.preventDefault();
+      handleDeepLinkUrl(url);
+    });
+  } else {
+    // Windows/Linux cold-start deep link: the OS appends the `dorkos://` URL
+    // to this process's command line. Scan it once at startup and route it
+    // through the same pending-navigation path — the queued path is delivered
+    // once the window's renderer subscribes on mount (see navigation.ts).
+    const coldStartUrl = findDeepLinkArg(process.argv);
+    if (coldStartUrl) handleDeepLinkUrl(coldStartUrl);
+  }
 
   // Register IPC handlers for the preload bridge.
   // These must be registered before the window is created.
