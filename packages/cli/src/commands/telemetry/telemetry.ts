@@ -4,7 +4,8 @@
  *
  * A plain, honest control surface for the first-party outbound telemetry
  * channels: `install` (marketplace install events), `heartbeat` (the daily
- * anonymous ping), and `errors` (crash reports). `status` prints each channel's
+ * anonymous ping), `usage` (named feature-usage events), and `errors` (crash
+ * reports). `status` prints each channel's
  * effective state, flagging when an env kill switch (`DO_NOT_TRACK` /
  * `DORKOS_TELEMETRY_DISABLED`) overrides config. `enable`/`disable` write the
  * config flags (all channels, or one via `--channel`) and record the shared
@@ -27,16 +28,22 @@ import {
 import type { ConfigStore } from '../../config-commands.js';
 
 /** A user-facing telemetry channel name (as typed after `--channel`). */
-export type TelemetryChannel = 'install' | 'heartbeat' | 'errors';
+export type TelemetryChannel = 'install' | 'heartbeat' | 'errors' | 'usage';
 
-/** The three channels a user can toggle. */
-export const TELEMETRY_CHANNELS: readonly TelemetryChannel[] = ['install', 'heartbeat', 'errors'];
+/** The channels a user can toggle. */
+export const TELEMETRY_CHANNELS: readonly TelemetryChannel[] = [
+  'install',
+  'heartbeat',
+  'errors',
+  'usage',
+];
 
 /** Maps a channel name to its `telemetry.*` config key and a display label. */
 const CHANNEL_META: Record<TelemetryChannel, { configKey: string; label: string }> = {
   install: { configKey: 'install', label: 'Install events' },
   heartbeat: { configKey: 'heartbeat', label: 'Daily heartbeat' },
   errors: { configKey: 'errorReporting', label: 'Crash reports' },
+  usage: { configKey: 'usage', label: 'Feature usage' },
 };
 
 /** Command output routed somewhere (console in production, a buffer in tests). */
@@ -164,9 +171,9 @@ export function runTelemetryDisable(deps: TelemetryDeps, channel?: TelemetryChan
 export const HELP_TEXT = `
 Usage: dorkos telemetry <subcommand>
 
-See and control what anonymous data DorkOS sends. The anonymous heartbeat and
-install counts are on by default and opt-out; crash reports stay off until you
-turn them on. Nothing sends until DorkOS has shown you its first-run notice. Env
+See and control what anonymous data DorkOS sends. The anonymous heartbeat,
+install counts, and feature-usage events are on by default and opt-out; crash
+reports stay off until you turn them on. Nothing sends until DorkOS has shown you its first-run notice. Env
 kill switches DO_NOT_TRACK and DORKOS_TELEMETRY_DISABLED force every channel off,
 beating this config.
 
@@ -175,7 +182,7 @@ Subcommands:
   enable [--channel C]   Turn on all channels, or just one
   disable [--channel C]  Turn off all channels, or just one
 
-Channels (C): install | heartbeat | errors
+Channels (C): install | heartbeat | errors | usage
 
 Examples:
   dorkos telemetry status

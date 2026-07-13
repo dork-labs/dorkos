@@ -181,12 +181,14 @@ router.get('/', async (_req, res) => {
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
     })(),
+    // Fallback mirrors the schema defaults (Tier 1 channels on, notice-gated).
     telemetry: configManager.get('telemetry') ?? {
       userHasDecided: false,
-      install: false,
-      heartbeat: false,
+      install: true,
+      heartbeat: true,
       errorReporting: false,
       lastPromptedVersion: null,
+      usage: true,
     },
     auth: configManager.get('auth') ?? { enabled: false },
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },

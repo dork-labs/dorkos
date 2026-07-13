@@ -16,6 +16,7 @@ import {
   generalizeTelemetryConsent,
   backfillTelemetryLastPromptedVersion,
   applyTier1OptOutDefaults,
+  backfillTelemetryUsageChannel,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -503,6 +504,44 @@ describe('applyTier1OptOutDefaults migration', () => {
   it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     expect(() => applyTier1OptOutDefaults(store)).not.toThrow();
+    expect(store.data.telemetry).toBeUndefined();
+  });
+});
+
+describe('backfillTelemetryUsageChannel migration', () => {
+  it('sets usage: false for an already-decided install (never widen an explicit choice)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: true, install: true, heartbeat: false, errorReporting: false },
+    });
+    backfillTelemetryUsageChannel(store);
+    expect((store.data.telemetry as Record<string, unknown>).usage).toBe(false);
+  });
+
+  it('sets usage: true for a never-answered install (Tier 1 default, notice-gated at send)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: false, install: false, heartbeat: false, errorReporting: false },
+    });
+    backfillTelemetryUsageChannel(store);
+    expect((store.data.telemetry as Record<string, unknown>).usage).toBe(true);
+  });
+
+  it('treats an absent userHasDecided as never-answered (usage: true)', () => {
+    const store = createMockStore({ telemetry: { install: false } });
+    backfillTelemetryUsageChannel(store);
+    expect((store.data.telemetry as Record<string, unknown>).usage).toBe(true);
+  });
+
+  it('never overwrites an existing usage value (idempotent)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: false, usage: false },
+    });
+    backfillTelemetryUsageChannel(store);
+    expect((store.data.telemetry as Record<string, unknown>).usage).toBe(false);
+  });
+
+  it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillTelemetryUsageChannel(store)).not.toThrow();
     expect(store.data.telemetry).toBeUndefined();
   });
 });

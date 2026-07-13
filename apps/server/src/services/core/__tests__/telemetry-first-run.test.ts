@@ -81,6 +81,7 @@ describe('formatFirstRunTelemetryNotice', () => {
 
     expect(notice).toContain('daily anonymous heartbeat');
     expect(notice).toContain('marketplace install counts');
+    expect(notice).toContain('feature-usage events');
     expect(notice).toContain(TELEMETRY_PAYLOAD_DOC_URL);
     // All three documented opt-outs.
     expect(notice).toContain('dorkos telemetry disable');

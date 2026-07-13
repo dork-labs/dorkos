@@ -1,7 +1,7 @@
 /**
  * First-run Tier 1 telemetry notice + boot ordering (ADR 260713-143958, Phase 2).
  *
- * The Tier 1 channels (heartbeat + install) are anonymous and opt-out by
+ * The Tier 1 channels (heartbeat, install, feature usage) are anonymous and opt-out by
  * default, but they may only start sending **after** a first-run notice has been
  * shown — the Homebrew ordering rule. This module owns two pure pieces so the
  * boot sequence in `index.ts` stays thin and the ordering is unit-testable:
@@ -77,11 +77,13 @@ export function decideTier1Boot(
 export function formatFirstRunTelemetryNotice(): string {
   return [
     'DorkOS shares a little anonymous data by default so we can see how many people',
-    'are running it. Two things leave your machine:',
+    'are running it. Three things leave your machine:',
     '',
     '  - a daily anonymous heartbeat (a random install id, the version, your OS and',
     '    chip type, which runtimes you have on, and rough counts)',
     '  - anonymous marketplace install counts',
+    '  - a few named feature-usage events, like app start and new session (counts',
+    '    and coarse facts only)',
     '',
     'That is all. No prompts, no code, no file paths, no session content, ever.',
     `See the exact payload, word for word: ${TELEMETRY_PAYLOAD_DOC_URL}`,

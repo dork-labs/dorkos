@@ -263,6 +263,20 @@ export const UserConfigSchema = z.object({
        * 260713-143958.
        */
       lastPromptedVersion: z.string().nullable().default(null),
+      /**
+       * Channel: send curated, anonymous feature-usage events to dorkos.ai
+       * (e.g. `app_started`, `session_created`) so we can see adoption funnels
+       * and which runtimes get used. Curated named events only — never
+       * autocaptured, never prompts, code, paths, or session content; the exact
+       * catalog lives in `@dorkos/shared/telemetry-events`.
+       *
+       * Tier 1 posture (ADR 260713-143958 Phase 3): defaults to `true`, but like
+       * `heartbeat`/`install` it never sends until the first-run notice gate is
+       * satisfied (`userHasDecided` or `lastPromptedVersion` set), so a
+       * never-prompted install stays silent. Payload documented verbatim at
+       * https://dorkos.ai/telemetry.
+       */
+      usage: z.boolean().default(true),
     })
     .default(() => ({
       userHasDecided: false,
@@ -270,6 +284,7 @@ export const UserConfigSchema = z.object({
       heartbeat: true,
       errorReporting: false,
       lastPromptedVersion: null,
+      usage: true,
     })),
   workspace: z
     .object({

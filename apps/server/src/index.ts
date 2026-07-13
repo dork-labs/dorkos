@@ -111,6 +111,11 @@ import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import {
+  registerUsageReporter,
+  reportUsageEvent,
+  shutdownUsageReporter,
+} from './services/core/usage-reporter.js';
+import {
   initServerErrorReporting,
   flushServerError,
   type ServerErrorReporter,
@@ -272,14 +277,15 @@ async function start() {
   };
   const telemetryDebug = isTelemetryDebugEnabled(telemetryEnv);
 
-  // Tier 1 opt-out telemetry (ADR 260713-143958). The heartbeat + install
-  // channels default ON and are genuinely anonymous, but the Homebrew ordering
-  // rule requires a first-run notice before anything sends. `decideTier1Boot`
-  // reads the consent snapshot ONCE, here, and captures the send gate BEFORE the
-  // notice writes `lastPromptedVersion` — so nothing sends on the boot that first
-  // shows the notice, and both the install reporter (below) and the heartbeat
-  // (registered later, in the `server.listen` callback) share this one captured
-  // `tier1SendGate`. Sends begin on the next boot at the earliest.
+  // Tier 1 opt-out telemetry (ADR 260713-143958). The heartbeat, install, and
+  // feature-usage channels default ON and are genuinely anonymous, but the
+  // Homebrew ordering rule requires a first-run notice before anything sends.
+  // `decideTier1Boot` reads the consent snapshot ONCE, here, and captures the
+  // send gate BEFORE the notice writes `lastPromptedVersion` — so nothing sends
+  // on the boot that first shows the notice, and the install reporter (below),
+  // the usage reporter (below), and the heartbeat (registered later, in the
+  // `server.listen` callback) all share this one captured `tier1SendGate`.
+  // Sends begin on the next boot at the earliest.
   const telemetryConfig = configManager.get('telemetry');
   const tier1Boot = decideTier1Boot(telemetryConfig, SERVER_VERSION);
   const tier1SendGate = tier1Boot.sendGate;
@@ -307,6 +313,38 @@ async function start() {
       ...current,
       lastPromptedVersion: tier1Boot.lastPromptedVersionToWrite,
     });
+  }
+
+  // Register the anonymous feature-usage reporter (DOR-315, ADR 260713-143958
+  // Phase 3). Tier 1: `telemetry.usage` defaults ON, but sends only when no env
+  // kill switch is set (`resolveTelemetryConsent`) AND the CAPTURED pre-notice
+  // `tier1SendGate` above is open — the same snapshotted gate the install and
+  // heartbeat senders use, never re-read after the notice writes
+  // `lastPromptedVersion`, so a never-prompted install sends nothing this boot.
+  // No-op (no timer, no network) unless all three hold. Curated events flow
+  // through the owned ingest at https://dorkos.ai/api/telemetry/events.
+  const usageConsent =
+    resolveTelemetryConsent(telemetryConfig?.usage ?? true, telemetryEnv) && tier1SendGate;
+  registerUsageReporter({
+    enabled: usageConsent,
+    debug: telemetryDebug,
+    dorkHome,
+    dorkosVersion: SERVER_VERSION,
+  });
+  if (usageConsent) {
+    // Emit `app_started` once at boot: coarse platform-arch + how many runtimes
+    // are configured (a count, never their names or anything identifying).
+    const startupRuntimes = configManager.get('runtimes');
+    const runtimesConfiguredCount =
+      1 + (startupRuntimes.codex.enabled ? 1 : 0) + (startupRuntimes.opencode.enabled ? 1 : 0);
+    reportUsageEvent({
+      event: 'app_started',
+      properties: {
+        os: `${process.platform}-${process.arch}`,
+        runtimesConfigured: runtimesConfiguredCount,
+      },
+    });
+    logger.info('[Telemetry] Usage reporter active (consent: opt-out, notice-gated)');
   }
 
   // Opt-in error reporting (DOR-293). A SEPARATE explicit opt-in from the
@@ -1346,6 +1384,9 @@ async function shutdownServices() {
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
+  // Flush any buffered usage events so a clean exit doesn't drop the tail of the
+  // queue. No-op when the usage reporter never registered (consent off).
+  await shutdownUsageReporter();
   // Close the global session-list subscription (and its directory watcher).
   await sessionListBroadcaster.stop();
   if (schedulerService) {

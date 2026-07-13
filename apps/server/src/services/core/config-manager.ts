@@ -485,6 +485,38 @@ export function applyTier1OptOutDefaults(store: {
   store.set('telemetry', { ...t, install: true, heartbeat: true });
 }
 
+/**
+ * Migration body: backfill `telemetry.usage` (the anonymous feature-usage
+ * channel, DOR-315, ADR 260713-143958 Phase 3) onto an EXISTING `telemetry`
+ * block. conf merges top-level defaults SHALLOWLY, so a `telemetry` object
+ * already on disk never inherits the new nested default — this supplies it.
+ *
+ * Consent-flip semantics: a user who already answered a telemetry consent
+ * prompt (`userHasDecided === true`) answered one that did NOT include this
+ * channel, so we must not silently expand their explicit choice — they get
+ * `usage: false`. A never-answered install gets the Tier 1 default `true`
+ * (still gated by the first-run notice before anything sends). Additive +
+ * idempotent: only writes when the field is absent, never overwrites a set
+ * value. The whole-object-absent case is handled by the schema default on read.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillTelemetryUsageChannel(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry && typeof telemetry === 'object' && !('usage' in telemetry)) {
+    const t = telemetry as Record<string, unknown>;
+    // An explicit prior "no" (or "yes") to the older channels is never widened:
+    // if they decided, the new channel starts OFF; otherwise it takes the Tier 1
+    // default ON (notice-gated at send time).
+    const userDecided = t.userHasDecided === true;
+    store.set('telemetry', { ...t, usage: !userDecided });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -565,6 +597,10 @@ const CONFIG_MIGRATIONS = {
     // never-answered installs (DOR-314, ADR 260713-143958 Phase 2). Preserves an
     // explicit prior choice; the notice-before-first-send gate still applies.
     applyTier1OptOutDefaults(store);
+    // Backfill `telemetry.usage` (anonymous feature-usage channel, DOR-315,
+    // ADR 260713-143958 Phase 3). Additive + idempotent; already-decided
+    // installs start OFF, never-answered take the Tier 1 default ON.
+    backfillTelemetryUsageChannel(store);
   },
 } as const;
 

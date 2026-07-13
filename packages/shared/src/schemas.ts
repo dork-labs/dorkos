@@ -2212,6 +2212,10 @@ export const ServerConfigSchema = z
         lastPromptedVersion: z.string().nullable().optional().openapi({
           description: 'DorkOS version whose consent notice this install last saw, or null',
         }),
+        usage: z.boolean().optional().openapi({
+          description:
+            'Whether the anonymous feature-usage events channel is on (Tier 1, anonymous, opt-out, default true)',
+        }),
       })
       .optional()
       .openapi({ description: 'Telemetry consent state (shared per-channel namespace)' }),

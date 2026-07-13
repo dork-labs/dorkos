@@ -22,6 +22,7 @@ interface TelemetryState {
   install?: boolean;
   heartbeat?: boolean;
   errorReporting?: boolean;
+  usage?: boolean;
   userHasDecided?: boolean;
 }
 
@@ -35,6 +36,7 @@ function setConfig(telemetry: TelemetryState | null) {
               install: telemetry.install ?? false,
               heartbeat: telemetry.heartbeat ?? false,
               errorReporting: telemetry.errorReporting ?? false,
+              usage: telemetry.usage ?? false,
               userHasDecided: telemetry.userHasDecided ?? false,
             },
           },
@@ -67,7 +69,7 @@ describe('PrivacyTab', () => {
 
   afterEach(() => cleanup());
 
-  it('renders the three channel toggles, the payload, and the contract link', () => {
+  it('renders the four channel toggles, the payload, and the contract link', () => {
     setConfig({});
     render(<PrivacyTab />);
 
@@ -75,7 +77,10 @@ describe('PrivacyTab', () => {
       screen.getByRole('switch', { name: /share anonymous install counts/i })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('switch', { name: /share an anonymous weekly heartbeat/i })
+      screen.getByRole('switch', { name: /share an anonymous daily heartbeat/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('switch', { name: /share anonymous feature-usage events/i })
     ).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: /share crash reports/i })).toBeInTheDocument();
 
@@ -87,11 +92,18 @@ describe('PrivacyTab', () => {
   });
 
   it('reflects the current channel states', () => {
-    setConfig({ install: true, heartbeat: false, errorReporting: true, userHasDecided: true });
+    setConfig({
+      install: true,
+      heartbeat: false,
+      errorReporting: true,
+      usage: true,
+      userHasDecided: true,
+    });
     render(<PrivacyTab />);
 
     expect(screen.getByRole('switch', { name: /install counts/i })).toBeChecked();
-    expect(screen.getByRole('switch', { name: /weekly heartbeat/i })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: /daily heartbeat/i })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: /feature-usage events/i })).toBeChecked();
     expect(screen.getByRole('switch', { name: /crash reports/i })).toBeChecked();
   });
 
@@ -100,7 +112,7 @@ describe('PrivacyTab', () => {
     setConfig({ heartbeat: false });
     render(<PrivacyTab />);
 
-    await user.click(screen.getByRole('switch', { name: /weekly heartbeat/i }));
+    await user.click(screen.getByRole('switch', { name: /daily heartbeat/i }));
 
     expect(updateMutate).toHaveBeenCalledWith({
       telemetry: { heartbeat: true, userHasDecided: true },
@@ -116,6 +128,18 @@ describe('PrivacyTab', () => {
 
     expect(updateMutate).toHaveBeenCalledWith({
       telemetry: { install: false, userHasDecided: true },
+    });
+  });
+
+  it('toggling usage off patches only that channel plus the decision gate', async () => {
+    const user = userEvent.setup();
+    setConfig({ usage: true });
+    render(<PrivacyTab />);
+
+    await user.click(screen.getByRole('switch', { name: /feature-usage events/i }));
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      telemetry: { usage: false, userHasDecided: true },
     });
   });
 

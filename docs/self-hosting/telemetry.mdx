@@ -8,14 +8,15 @@ import { Callout } from 'fumadocs-ui/components/callout';
 DorkOS shares a little anonymous data by default so we can see roughly how many people run it. It is anonymous, not personal: no prompts, no code, no file paths, no session content, ever. This page shows the exact data, word for word, and every way to turn it off.
 
 <Callout type="info">
-  The two anonymous channels (a daily heartbeat and marketplace install counts) are on by default.
-  DorkOS prints a first-run notice and sends nothing on that first run. Crash reporting is separate
-  and stays off until you turn it on. You can change any of this anytime.
+  The three anonymous channels (a daily heartbeat, marketplace install counts, and a few named
+  feature-usage events) are on by default. DorkOS prints a first-run notice and sends nothing on
+  that first run. Crash reporting is separate and stays off until you turn it on. You can change
+  any of this anytime.
 </Callout>
 
 ## The short version
 
-- Two anonymous channels are on by default: a daily heartbeat and marketplace install counts.
+- Three anonymous channels are on by default: a daily heartbeat, marketplace install counts, and a few named feature-usage events.
 - On first run, DorkOS shows a notice and sends nothing that run. If you do nothing, sharing begins next launch.
 - It is anonymous. No prompts, no code, no file paths, no session content, ever.
 - Turn it off any time: `dorkos telemetry disable`, `DO_NOT_TRACK=1`, or the Privacy & Data settings tab.
@@ -54,11 +55,32 @@ The list above is the complete payload. It is enforced in code and in tests, so 
 
 ## We tell you before anything sends
 
-The first time DorkOS starts, it prints a plain notice in its log: what it shares, a link to the payload, and how to turn it off. Nothing is sent on that first run. If you do nothing, the daily heartbeat and install counts begin on the next launch. If you turn them off first, they never start. This ordering is enforced in code (the send gate is captured before the notice is recorded), so a first-run boot never sends.
+The first time DorkOS starts, it prints a plain notice in its log: what it shares, a link to the payload, and how to turn it off. Nothing is sent on that first run. If you do nothing, the daily heartbeat, install counts, and feature-usage events begin on the next launch. If you turn them off first, they never start. This ordering is enforced in code (the send gate is captured before the notice is recorded), so a first-run boot never sends.
 
 ## Marketplace installs
 
 The marketplace install-count channel is on by default too, and it helps rank packages and spot broken installs. It follows the same no-PII rule and is documented on the [marketplace privacy page](https://dorkos.ai/marketplace/privacy).
+
+## Feature-usage events
+
+DorkOS can send a short list of named, anonymous events so we can see which features actually get used and where people drop off. These are curated events, not a firehose: DorkOS never auto-captures your clicks or screens. Every event is defined in one place in the source (the shared event registry) and validated against a strict allowlist, so an event can only ever carry the exact fields listed below.
+
+Two events ship today:
+
+| Event             | When it fires                               | What it carries                                                                                                                    |
+| ----------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `app_started`     | Once when the DorkOS server starts.         | `os` (your platform and chip type, like `darwin-arm64`) and `runtimesConfigured` (a count of how many agent runtimes you have on). |
+| `session_created` | Once when a new agent session is first run. | `runtime` (which runtime owns the session, like `claude-code`). Never the folder, the prompt, or the session id.                   |
+
+Each event is wrapped in the same anonymous envelope as everything else: your random `instanceId`, a timestamp, and your DorkOS version. Like the heartbeat, it never includes your prompts, your code, file paths, your hostname or username, or anything from your sessions.
+
+Like the heartbeat and install counts, this channel is on by default, in line with how tools like VS Code and Homebrew count usage. Two things still protect you: nothing sends until after DorkOS has shown you the first-run notice, and you can turn it off three ways, the same as every other channel:
+
+- Flip `telemetry.usage` to `false` in `~/.dork/config.json` (or use the **Privacy & Data** tab, or `dorkos telemetry disable --channel usage`).
+- Set `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` to silence this and every other channel at once.
+- Preview it first with `DORKOS_TELEMETRY_DEBUG=1`, which prints the exact events to your terminal instead of sending them.
+
+If you already answered the first-run consent prompt on an older version, an upgrade leaves this channel off for you: an explicit choice is never widened without asking again.
 
 ## Error reporting (a separate opt-in)
 
@@ -112,7 +134,7 @@ Either one on its own is enough. When a kill switch is set, no channel sends any
 dorkos telemetry status                     # show each channel and any env override
 dorkos telemetry enable                      # turn on all channels
 dorkos telemetry disable                     # turn off all channels
-dorkos telemetry enable --channel heartbeat  # turn on just one (install | heartbeat | errors)
+dorkos telemetry enable --channel heartbeat  # turn on just one (install | heartbeat | errors | usage)
 dorkos telemetry disable --channel errors    # turn off just one
 ```
 
@@ -120,7 +142,7 @@ dorkos telemetry disable --channel errors    # turn off just one
 
 ## Preview the exact payload before it sends
 
-Set `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints the exact JSON payload for the heartbeat and install channels to your terminal (stderr) **instead of sending it**. Nothing goes over the network in debug mode, so you can read, word for word, what would leave your machine:
+Set `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints the exact JSON payloads for the heartbeat, install, and feature-usage channels to your terminal (stderr) **instead of sending them**. Nothing goes over the network in debug mode, so you can read, word for word, what would leave your machine:
 
 ```bash
 DORKOS_TELEMETRY_DEBUG=1 dorkos
@@ -136,12 +158,13 @@ The first time you open DorkOS, a banner discloses that it shares anonymous data
     "heartbeat": true,
     "install": true,
     "errorReporting": false,
+    "usage": true,
     "userHasDecided": true
   }
 }
 ```
 
-Set a value to `false` to turn a channel off, or `true` to turn it on. The two anonymous channels default to `true`; error reporting defaults to `false`. Error reporting needs one more thing on top of its flag: a `SENTRY_DSN` environment variable. Without it, nothing is sent even if the flag is `true`.
+Set a value to `false` to turn a channel off, or `true` to turn it on. The three anonymous channels default to `true`; error reporting defaults to `false`. Error reporting needs one more thing on top of its flag: a `SENTRY_DSN` environment variable. Without it, nothing is sent even if the flag is `true`.
 
 <Callout type="info">
   Anonymous by default is the norm for developer tools, from Next.js to VS Code to Homebrew. We keep
