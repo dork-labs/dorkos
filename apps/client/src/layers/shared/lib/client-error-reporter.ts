@@ -20,8 +20,9 @@ import type { Transport } from '@dorkos/shared/transport';
 
 /**
  * Signatures already reported this session. Bounded so a runaway error loop
- * can't grow it without limit; once full, new distinct errors are simply not
- * reported (better than unbounded memory or a report storm).
+ * can't grow it without limit; when the set is full, new errors are still
+ * reported but no longer tracked for dedup (bounded memory wins over perfect
+ * dedup at that extreme).
  */
 const seen = new Set<string>();
 const MAX_SEEN = 200;
