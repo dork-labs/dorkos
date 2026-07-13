@@ -104,6 +104,12 @@ export function MarketingFooter({
             Security
           </Link>
           <Link
+            href="/feedback"
+            className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
+          >
+            Feedback
+          </Link>
+          <Link
             href="/privacy"
             className="text-2xs text-cream-tertiary/60 hover:text-brand-orange transition-smooth font-mono tracking-[0.1em]"
           >

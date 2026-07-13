@@ -10,8 +10,8 @@ DorkOS shares a little anonymous data by default so we can see roughly how many 
 <Callout type="info">
   The three anonymous channels (a daily heartbeat, marketplace install counts, and a few named
   feature-usage events) are on by default. DorkOS prints a first-run notice and sends nothing on
-  that first run. Crash reporting is separate and stays off until you turn it on. You can change
-  any of this anytime.
+  that first run. Crash reporting is separate and stays off until you turn it on. You can change any
+  of this anytime.
 </Callout>
 
 ## The short version
@@ -81,6 +81,16 @@ Like the heartbeat and install counts, this channel is on by default, in line wi
 - Preview it first with `DORKOS_TELEMETRY_DEBUG=1`, which prints the exact events to your terminal instead of sending them.
 
 If you already answered the first-run consent prompt on an older version, an upgrade leaves this channel off for you: an explicit choice is never widened without asking again.
+
+## Feedback (only when you press Send)
+
+DorkOS has a **Send feedback** button in the help menu, and there is a feedback form on the website too. This is not telemetry. It is a message you write and choose to send: general feedback, a bug, or an idea. Because you are deliberately sending it, it does not follow the anonymous-telemetry rules above.
+
+- It is sent **only when you press Send**. Nothing about feedback goes out on its own.
+- It carries exactly what you typed: your message, and a contact detail if you chose to add one. It also notes which screen you were on and your DorkOS version, so we have context.
+- It ignores the telemetry switches. `DO_NOT_TRACK`, `DORKOS_TELEMETRY_DISABLED`, and the Privacy & Data toggles turn off tracking, not the Send button. If you press Send, your message reaches us, because that is what you asked for. If you never press it, nothing is sent.
+
+Prefer a public thread? The help menu also has **Report a bug on GitHub** and **Request a feature on GitHub**, which open a prefilled issue you review and edit before submitting.
 
 ## Error reporting (a separate opt-in)
 

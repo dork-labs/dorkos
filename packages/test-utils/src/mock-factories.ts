@@ -487,6 +487,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCloudStatus: vi
       .fn()
       .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
+    sendFeedback: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides,
   };
 }

@@ -198,3 +198,14 @@ export function optOutCapturing(): void {
   if (!analyticsEnabled) return;
   posthog.opt_out_capturing();
 }
+
+/**
+ * The visitor's current PostHog distinct id, or `null` when analytics is
+ * unconfigured. Used by the feedback form to tag a submission with a
+ * pseudonymous id so it can be correlated with the same visitor's page views;
+ * the caller falls back to a random UUID when this is `null`. No PII either way.
+ */
+export function getAnalyticsDistinctId(): string | null {
+  if (!analyticsEnabled) return null;
+  return posthog.get_distinct_id();
+}

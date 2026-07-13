@@ -15,6 +15,7 @@ import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
 import tunnelRoutes from './routes/tunnel.js';
 import cloudRoutes from './routes/cloud.js';
+import feedbackRoutes from './routes/feedback.js';
 import modelRoutes from './routes/models.js';
 import subagentRoutes from './routes/subagents.js';
 import capabilitiesRoutes from './routes/capabilities.js';
@@ -123,6 +124,7 @@ export function createApp() {
   app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/cloud', cloudRoutes);
+  app.use('/api/feedback', feedbackRoutes);
   app.use('/api/models', modelRoutes);
   app.use('/api/subagents', subagentRoutes);
   app.use('/api/capabilities', capabilitiesRoutes);
