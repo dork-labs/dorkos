@@ -5,6 +5,7 @@ import path from 'path';
 import {
   initObservability,
   shutdownObservability,
+  resolveObservabilityMode,
   isTracingEnabled,
   getTraceFilePath,
   startSpan,
@@ -29,6 +30,77 @@ function readSpans(file: string): Array<Record<string, unknown>> {
 
 afterEach(async () => {
   await shutdownObservability();
+});
+
+describe('resolveObservabilityMode — activation decision', () => {
+  it('is fully off with no env and no debug flag (identical to today)', () => {
+    expect(resolveObservabilityMode({}, false)).toEqual({
+      file: false,
+      otlp: false,
+      disabled: false,
+    });
+  });
+
+  it('turns file mode on for the debug flag alone', () => {
+    expect(resolveObservabilityMode({}, true)).toEqual({
+      file: true,
+      otlp: false,
+      disabled: false,
+    });
+  });
+
+  it('turns OTLP mode on when an endpoint is set, without the debug flag', () => {
+    expect(
+      resolveObservabilityMode({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318' }, false)
+    ).toEqual({ file: false, otlp: true, disabled: false });
+  });
+
+  it('turns both modes on independently when debug + endpoint are set', () => {
+    expect(
+      resolveObservabilityMode({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318' }, true)
+    ).toEqual({ file: true, otlp: true, disabled: false });
+  });
+
+  it('treats a blank/whitespace endpoint as unset', () => {
+    expect(resolveObservabilityMode({ OTEL_EXPORTER_OTLP_ENDPOINT: '   ' }, false)).toEqual({
+      file: false,
+      otlp: false,
+      disabled: false,
+    });
+  });
+
+  describe('OTEL_SDK_DISABLED wins over everything', () => {
+    it('overrides the debug flag', () => {
+      expect(resolveObservabilityMode({ OTEL_SDK_DISABLED: 'true' }, true)).toEqual({
+        file: false,
+        otlp: false,
+        disabled: true,
+      });
+    });
+
+    it('overrides an OTLP endpoint', () => {
+      expect(
+        resolveObservabilityMode(
+          { OTEL_SDK_DISABLED: 'true', OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318' },
+          false
+        )
+      ).toEqual({ file: false, otlp: false, disabled: true });
+    });
+
+    it.each(['true', 'TRUE', ' True ', '1', 'yes', 'YES', 'on'])(
+      'accepts truthy form %j',
+      (value) => {
+        expect(resolveObservabilityMode({ OTEL_SDK_DISABLED: value }, true).disabled).toBe(true);
+      }
+    );
+
+    it.each(['false', 'FALSE', '0', 'no', 'off', '', '  '])(
+      'ignores non-truthy form %j',
+      (value) => {
+        expect(resolveObservabilityMode({ OTEL_SDK_DISABLED: value }, true).disabled).toBe(false);
+      }
+    );
+  });
 });
 
 describe('observability — off by default (zero output)', () => {

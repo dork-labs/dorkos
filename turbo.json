@@ -19,6 +19,7 @@
     "DORKOS_VERSION_OVERRIDE",
     "MCP_API_KEY",
     "NGROK_AUTHTOKEN",
+    "OTEL_*",
     "SITE_PORT",
     "TUNNEL_AUTH",
     "TUNNEL_DOMAIN",

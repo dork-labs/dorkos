@@ -119,6 +119,7 @@ import { eventFanOut } from './services/core/event-fan-out.js';
 import {
   initObservability,
   shutdownObservability,
+  isOtlpExporting,
   traceRelay,
 } from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
@@ -180,10 +181,12 @@ async function start() {
     });
   }
 
-  // Local-first debug tracing (DOR-294). Off unless `dorkos --debug-trace`
-  // (DORKOS_OTEL_DEBUG) is set — then spans for turns, runtime calls, relay
-  // dispatch, and task runs are written to a sanitized JSONL file. Must run
-  // before runtimes/relay are registered so the tracing wrappers see it on.
+  // Observability (DOR-294 local file + DOR-313 bring-your-own OTLP). Off unless
+  // the operator opts in: `dorkos --debug-trace` (DORKOS_OTEL_DEBUG) writes a
+  // sanitized JSONL trace file, and the standard OTEL_EXPORTER_OTLP_ENDPOINT
+  // ships spans to their own stack. Both are the operator's own data going to
+  // their own tools; nothing reaches DorkOS. Must run before runtimes/relay are
+  // registered so the tracing wrappers see it on.
   const traceFile = await initObservability({
     debug: env.DORKOS_OTEL_DEBUG,
     dorkHome,
@@ -191,6 +194,11 @@ async function start() {
   });
   if (traceFile) {
     logger.info(`[OTel] Debug tracing ON — writing spans to ${traceFile}`);
+  }
+  if (isOtlpExporting()) {
+    logger.info(
+      `[OTel] OTLP trace export ON — shipping spans to ${env.OTEL_EXPORTER_OTLP_ENDPOINT}`
+    );
   }
 
   // Create consolidated Drizzle database and run migrations before any service init.

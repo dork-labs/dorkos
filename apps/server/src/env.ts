@@ -60,6 +60,20 @@ const serverEnvSchema = z.object({
   // Never phones home — there is no remote/OTLP exporter — so it is a purely
   // local opt-in and does NOT go through the anonymous-telemetry consent.
   DORKOS_OTEL_DEBUG: boolFlag,
+  // Bring-your-own observability (DOR-313, Plane 2 of ADR 260713-143958). These
+  // are the STANDARD OpenTelemetry env vars, honored so an operator pipes DorkOS
+  // traces into their own stack (Jaeger, Grafana Tempo, Honeycomb, ...) with no
+  // DorkOS-specific config. Setting an OTLP endpoint registers a batched OTLP/HTTP
+  // trace exporter alongside (or instead of) the local debug file. This is the
+  // operator's data going to the operator's tools — nothing reaches DorkOS.
+  //   - OTEL_EXPORTER_OTLP_ENDPOINT: turns OTLP export on when set (the exporter
+  //     also reads OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / _HEADERS natively).
+  //   - OTEL_SERVICE_NAME: overrides the resource service.name (default 'dorkos-server').
+  //   - OTEL_SDK_DISABLED: universal kill switch — when truthy, ALL tracing stays
+  //     off, overriding both the OTLP endpoint and DORKOS_OTEL_DEBUG.
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
+  OTEL_SDK_DISABLED: z.string().optional(),
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
   // binding a non-loopback host without a login. Off by default; set only by
   // container images that own their own network boundary (see Dockerfile.*).
