@@ -48,8 +48,29 @@ describe('MarketingHeader — OS-aware CTA', () => {
     });
   });
 
-  it('shows a "Get started" button anchored to #install off-Mac', () => {
-    stubNavigator({ userAgent: 'Windows NT 10.0', platform: 'Win32' });
+  it('shows a "Download" button linking to /download/windows on Windows', async () => {
+    stubNavigator({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      platform: 'Win32',
+    });
+    render(<MarketingHeader />);
+
+    await waitFor(() => {
+      const cta = screen
+        .getAllByRole('link')
+        .find((el) => el.getAttribute('href') === '/download/windows');
+      expect(cta).toBeTruthy();
+      expect(cta!.textContent).toContain('Download');
+    });
+  });
+
+  it('shows a "Get started" button anchored to #install on other platforms (Linux)', () => {
+    stubNavigator({
+      userAgent:
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      platform: 'Linux x86_64',
+    });
     render(<MarketingHeader />);
 
     const cta = screen.getAllByRole('link').find((el) => el.getAttribute('href') === '#install');

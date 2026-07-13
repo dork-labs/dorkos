@@ -21,11 +21,18 @@ export function MarketingHeader() {
   const [isScrolled, setIsScrolled] = useState(false);
   const platform = usePlatform();
 
-  // OS-aware primary CTA. macOS visitors get a native download; everyone else
-  // (and the stable pre-hydration default) scrolls to the install section.
+  // OS-aware primary CTA. macOS and Windows visitors get a native download;
+  // everyone else (and the stable pre-hydration default) scrolls to the
+  // install section.
   const isMac = platform === 'mac';
-  const ctaHref = isMac ? '/download/mac' : '#install';
-  const ctaLabel = isMac ? 'Download' : 'Get started';
+  const isWindows = platform === 'windows';
+  const ctaHref = isMac ? '/download/mac' : isWindows ? '/download/windows' : '#install';
+  const ctaLabel = isMac || isWindows ? 'Download' : 'Get started';
+  const trackDownloadClick = isMac
+    ? () => trackHeroDownload('nav')
+    : isWindows
+      ? () => trackHeroDownload('windows_nav')
+      : undefined;
 
   useEffect(() => {
     let ticking = false;
@@ -99,10 +106,10 @@ export function MarketingHeader() {
           </Link>
           <a
             href={ctaHref}
-            onClick={isMac ? () => trackHeroDownload('nav') : undefined}
+            onClick={trackDownloadClick}
             className="bg-brand-orange text-cream-white text-2xs focus-visible:ring-brand-orange/50 inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 font-mono font-medium tracking-[0.08em] uppercase transition-colors hover:bg-[#C94E00] focus-visible:ring-2 focus-visible:outline-none"
           >
-            {isMac && <Download size={12} aria-hidden="true" />}
+            {(isMac || isWindows) && <Download size={12} aria-hidden="true" />}
             {ctaLabel}
           </a>
         </div>

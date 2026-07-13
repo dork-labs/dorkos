@@ -62,14 +62,24 @@ describe('detectPlatform', () => {
     expect(detectPlatform()).toBe('other');
   });
 
-  it('treats Windows as "other"', () => {
+  it('detects Windows as "windows"', () => {
     stubNavigator({
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       platform: 'Win32',
       maxTouchPoints: 0,
     });
-    expect(detectPlatform()).toBe('other');
+    expect(detectPlatform()).toBe('windows');
+  });
+
+  it('detects Windows from the userAgent even when navigator.platform is empty', () => {
+    stubNavigator({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      platform: '',
+      maxTouchPoints: 0,
+    });
+    expect(detectPlatform()).toBe('windows');
   });
 
   it('treats Linux as "other"', () => {

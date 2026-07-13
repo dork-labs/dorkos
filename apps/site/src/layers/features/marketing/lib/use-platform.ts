@@ -8,13 +8,14 @@ import { useSyncExternalStore } from 'react';
  * detection only runs in the browser, so the first paint must not assume a
  * platform (that would risk a hydration mismatch and a content flash).
  */
-export type Platform = 'unknown' | 'mac' | 'other';
+export type Platform = 'unknown' | 'mac' | 'windows' | 'other';
 
 /**
- * Detect whether the current browser is running on a Mac desktop (macOS),
- * excluding iPhone and iPad — including iPadOS, which masquerades as a Mac in
- * `navigator.platform`/`userAgent` but reports multiple touch points and
- * cannot run a `.dmg`.
+ * Detect the visitor's desktop platform for OS-aware download affordances:
+ * macOS (excluding iPhone/iPad — including iPadOS, which masquerades as a
+ * Mac in `navigator.platform`/`userAgent` but reports multiple touch points
+ * and cannot run a `.dmg`), Windows, or `'other'` for everything else
+ * (Linux, mobile, unrecognized).
  *
  * Returns `'other'` when called outside a browser so it is safe to call
  * anywhere; the hook below is what gates on client-side execution.
@@ -29,7 +30,12 @@ export function detectPlatform(): Exclude<Platform, 'unknown'> {
   const touchPoints = navigator.maxTouchPoints ?? 0;
   const isIpadOrIphone = /iPhone|iPad|iPod/i.test(ua) || (looksLikeMac && touchPoints > 1);
 
-  return looksLikeMac && !isIpadOrIphone ? 'mac' : 'other';
+  if (looksLikeMac && !isIpadOrIphone) return 'mac';
+
+  const looksLikeWindows = /Win(dows|32|64)/i.test(platform) || /Windows NT/i.test(ua);
+  if (looksLikeWindows) return 'windows';
+
+  return 'other';
 }
 
 /** Platform never changes for the life of a page, so there is nothing to subscribe to. */
