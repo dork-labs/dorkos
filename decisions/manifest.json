@@ -2548,6 +2548,13 @@
       "created": "2026-07-11",
       "extractedFrom": "pip-mobile-sheet",
       "specSlug": "pip-mobile-sheet"
+    },
+    {
+      "id": "260713-143958",
+      "slug": "two-plane-two-tier-data-collection-strategy",
+      "title": "Two-plane, two-tier data collection strategy",
+      "status": "accepted",
+      "created": "2026-07-13"
     }
   ]
 }

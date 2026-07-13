@@ -11,7 +11,10 @@ superseded-by: null
 
 ## Status
 
-Accepted (DOR-293, implemented in PR-A: consent + heartbeat + /telemetry page)
+Accepted (DOR-293, implemented in PR-A: consent + heartbeat + /telemetry page). Amended by
+[260713-143958](260713-143958-two-plane-two-tier-data-collection-strategy.md): the consent
+namespace, public payload docs, and no-PII tests stand, but the heartbeat and install channels
+move from opt-in to anonymous opt-out under its Tier 1 rules.
 
 ## Context
 
