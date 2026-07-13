@@ -2,7 +2,7 @@
  * Derives PostHog's region-specific hosts from the single configured ingest
  * host (`NEXT_PUBLIC_POSTHOG_HOST`), so switching between the US and EU
  * regions is one env var instead of three. Consumed by both `next.config.ts`
- * (the `/ingest` reverse-proxy rewrite, server-side) and
+ * (the `/hub` reverse-proxy rewrite, server-side) and
  * `instrumentation-client.ts` (the `ui_host` passed to `posthog.init`,
  * client-side) — kept dependency-free (no zod, no Next imports) so it is safe
  * to import from both.

@@ -6,74 +6,76 @@ import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasOptedOutCapturing, optInCapturing, optOutCapturing } from '@/lib/analytics';
+import { decideConsent, readConsentSignals, setStoredConsent } from '@/lib/consent';
 import { siteConfig } from '@/config/site';
 
-const COOKIE_CONSENT_KEY = 'cookie-consent';
-const CONSENT_EXPIRY_DAYS = 365;
+/** Attribute set on `<html>` while the banner is open, so the pill nav can hide behind it. */
+const BANNER_OPEN_ATTR = 'data-consent-banner-open';
 
-type ConsentValue = 'accepted' | 'rejected' | null;
-
-function getStoredConsent(): ConsentValue {
-  if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem(COOKIE_CONSENT_KEY);
-  if (!stored) return null;
-
-  try {
-    const { value, expiry } = JSON.parse(stored);
-    if (Date.now() > expiry) {
-      localStorage.removeItem(COOKIE_CONSENT_KEY);
-      return null;
-    }
-    return value as ConsentValue;
-  } catch {
-    return null;
-  }
-}
-
-function setStoredConsent(value: 'accepted' | 'rejected') {
-  const expiry = Date.now() + CONSENT_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
-  localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify({ value, expiry }));
-}
-
+/**
+ * The site's consent controller. Mounted once in the root layout, it does two
+ * things on every page:
+ *
+ * 1. **Reconciles PostHog's capture state** to the visitor's region + choice
+ *    (see src/lib/consent.ts). Open regions silently opt in; gated regions stay
+ *    cookieless until a choice; any decline/DNT/GPC signal pins to cookieless.
+ *    Because the site runs `cookieless_mode: 'on_reject'`, "opted out" still
+ *    produces anonymous, cookieless analytics — never zero.
+ * 2. **Shows the opt-in banner** only when the decision calls for it (a gated
+ *    region, undecided, no decline signal).
+ *
+ * While the banner is open it flags `<html>` with `data-consent-banner-open` so
+ * the bottom pill nav (MarketingNav) hides instead of overlapping it.
+ */
 export function CookieConsentBanner() {
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
-    // Skip if banner is disabled in site config
+    // Kill switch: hide the banner and touch no consent state.
     if (siteConfig.disableCookieBanner) return;
 
-    // Check if user has already made a choice
-    const consent = getStoredConsent();
+    const decision = decideConsent(readConsentSignals());
 
-    // Stored consent is the source of truth. PostHog is opted out by default
-    // (see instrumentation-client.ts), so re-sync its capture state to the
-    // stored choice on mount — a visitor who accepted in a prior session, or
-    // before this gating shipped, must be re-opted-in here. captureEventName:
-    // false avoids emitting a duplicate opt-in event on every page load.
-    if (consent === 'accepted' && hasOptedOutCapturing()) {
+    // Reconcile PostHog to the desired capture kind. Only act when the current
+    // state differs, and never emit a consent event here (captureEventName:
+    // false) — the only event-emitting opt-in is an explicit banner Accept.
+    if (decision.capture === 'cookies' && hasOptedOutCapturing()) {
       optInCapturing({ captureEventName: false });
-    } else if (consent === 'rejected' && !hasOptedOutCapturing()) {
+    } else if (decision.capture === 'cookieless' && !hasOptedOutCapturing()) {
       optOutCapturing();
     }
 
-    if (consent === null) {
-      // Small delay to prevent flash on page load
+    if (decision.showBanner) {
+      // Small delay to prevent flash on page load.
       const timer = setTimeout(() => setIsVisible(true), 500);
       return () => clearTimeout(timer);
     }
   }, []);
+
+  // Flag <html> while the banner is on screen so the pill nav hides behind it.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    if (isVisible) {
+      root.setAttribute(BANNER_OPEN_ATTR, '');
+      return () => root.removeAttribute(BANNER_OPEN_ATTR);
+    }
+    root.removeAttribute(BANNER_OPEN_ATTR);
+  }, [isVisible]);
 
   const handleClose = (accepted: boolean) => {
     setIsClosing(true);
     setStoredConsent(accepted ? 'accepted' : 'rejected');
 
     if (accepted) {
-      // Enable capture and record the decision as the opt-in event in one call.
+      // Enable cookie-based capture and record the decision as the opt-in event
+      // in one call.
       optInCapturing({ captureEventName: 'cookie_consent_accepted' });
     } else {
-      // Stop all capture. We intentionally do NOT capture a decline event —
-      // sending analytics after a decline is the dark pattern this fixes.
+      // Drop to the cookieless anonymous floor. We intentionally do NOT capture
+      // a decline event — sending analytics after a decline is the dark pattern
+      // this fixes.
       optOutCapturing();
     }
 
@@ -89,7 +91,9 @@ export function CookieConsentBanner() {
   return (
     <div
       className={cn(
-        'fixed right-0 bottom-0 left-0 z-50 p-4 sm:p-6',
+        // z-[110] sits above the bottom pill nav (z-100); the nav also hides
+        // itself via [data-consent-banner-open] while this is open.
+        'fixed right-0 bottom-0 left-0 z-[110] p-4 sm:p-6',
         'transition-all duration-200 ease-out',
         isClosing ? 'translate-y-full opacity-0' : 'translate-y-0 opacity-100'
       )}
@@ -112,8 +116,8 @@ export function CookieConsentBanner() {
             <div className="space-y-1 pr-8 sm:pr-0">
               <p className="font-medium">We value your privacy</p>
               <p id="cookie-consent-description" className="text-muted-foreground text-sm">
-                We use cookies to enhance your browsing experience and analyze site traffic. By
-                clicking &quot;Accept&quot;, you consent to our use of cookies.{' '}
+                Accept to let us count visits with cookies. Decline and we still count you, but
+                anonymously, with no cookies and no cross-day tracking.{' '}
                 <Link href="/cookies" className="text-primary underline-offset-4 hover:underline">
                   Learn more
                 </Link>

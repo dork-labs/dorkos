@@ -33,15 +33,18 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // PostHog reverse proxy - routes analytics through our domain to avoid ad blockers
+  // PostHog reverse proxy - routes analytics through our domain to avoid ad
+  // blockers. The path is `/hub`, not PostHog's `/ingest` default, because
+  // `/ingest` matches common blocklist patterns; the neutral name slips past
+  // more blockers. Must match `api_host` in instrumentation-client.ts.
   async rewrites() {
     return [
       {
-        source: '/ingest/static/:path*',
+        source: '/hub/static/:path*',
         destination: `${deriveAssetHost(posthogIngestHost)}/static/:path*`,
       },
       {
-        source: '/ingest/:path*',
+        source: '/hub/:path*',
         destination: `${posthogIngestHost}/:path*`,
       },
     ];

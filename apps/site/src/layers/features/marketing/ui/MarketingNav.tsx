@@ -42,7 +42,12 @@ export function MarketingNav({ links }: MarketingNavProps) {
   };
 
   return (
-    <nav className="fixed left-1/2 z-100 -translate-x-1/2" style={{ bottom: '40px' }}>
+    // Hide while the cookie banner is open (it flags <html> with
+    // data-consent-banner-open) so the pill never overlaps the banner.
+    <nav
+      className="fixed left-1/2 z-100 -translate-x-1/2 [[data-consent-banner-open]_&]:hidden"
+      style={{ bottom: '40px' }}
+    >
       {/* Using explicit margins instead of gap to avoid extra space from hidden arrow */}
       <ul className="bg-cream-white border-cream-secondary flex items-center rounded-[40px] border px-8 py-2 shadow-lg/5">
         {links.map((link, index) => (

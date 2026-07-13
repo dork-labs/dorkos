@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AnalyticsPreferenceControl } from '@/layers/widgets/cookie-consent';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
@@ -12,7 +13,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 12, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
             we mean.
@@ -28,8 +29,10 @@ export default function PrivacyPolicyPage() {
             </li>
             <li>
               This website collects almost nothing: your email if you subscribe, plus your name and
-              email if you choose to make an account. If you accept the cookie banner, we also count
-              basic, anonymous page visits.
+              email if you choose to make an account. We also count basic page visits. In the EU and
+              UK we ask first with a banner. Everywhere else it is on by default, and you can switch
+              it off in one click below. Either way, if you say no we still count you, but
+              anonymously, with no cookies.
             </li>
             <li>
               We do not run ads, we do not sell your data, and we do not track you around the web.
@@ -128,21 +131,31 @@ export default function PrivacyPolicyPage() {
             <h3 className="text-charcoal text-lg font-medium">What about analytics and cookies?</h3>
             <p className="text-warm-gray leading-relaxed">
               We use PostHog, a privacy-friendly analytics tool, to understand how the website is
-              used. Nothing is recorded until you accept the cookie banner: if you decline, or just
-              ignore it, we capture nothing at all. You can change your mind any time by clearing
-              the site&apos;s cookies.
+              used. We count page visits and a few clicks, like copying the install command. That is
+              it. There is no session recording, we do not log what you type, and we do not use
+              tracking that follows you to other sites.
             </p>
             <p className="text-warm-gray leading-relaxed">
-              Here is what we count once you accept: page visits and a few clicks, like copying the
-              install command. That is it. There is no session recording, we do not log what you
-              type, we do not use tracking that follows you to other sites, and we honor your
-              browser&apos;s Do Not Track setting, which switches analytics off even if you
-              accepted.
+              How we ask depends on where you are. In the EU, the EEA, the UK, and Switzerland, we
+              show a banner and count nothing with cookies until you accept. Everywhere else,
+              analytics is on by default, and you can turn it off with the switch below or from the
+              banner if you see one.
             </p>
             <p className="text-warm-gray leading-relaxed">
-              The cookies we set are the basic ones: a login cookie if you sign in, and a small
-              cookie that remembers UI preferences like whether a sidebar is open. We do not use ad
-              cookies, and we do not sell cookie data. Our{' '}
+              Here is the honest part: if you decline, ignore the banner, or turn analytics off, we
+              still count your visit, but anonymously. No cookies, no stored ID, and no way to
+              connect today&apos;s visit to tomorrow&apos;s. We use a privacy-preserving code that
+              is reshuffled every day, so the count cannot be traced back to you. We also honor your
+              browser&apos;s Do Not Track and Global Privacy Control signals: if either is on, the
+              cookie version stays off automatically.
+            </p>
+
+            <AnalyticsPreferenceControl />
+
+            <p className="text-warm-gray leading-relaxed">
+              The cookies we set are the basic ones: a login cookie if you sign in, a small cookie
+              that remembers UI preferences like whether a sidebar is open, and the analytics cookie
+              only if you have it on. We do not use ad cookies, and we do not sell cookie data. Our{' '}
               <Link href="/cookies" className="text-charcoal hover:text-brand-orange underline">
                 Cookie Policy
               </Link>{' '}
@@ -164,6 +177,7 @@ export default function PrivacyPolicyPage() {
         <section className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">Your choices</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
+            <li>Turn cookie-based analytics off (or on) with the switch above, any time.</li>
             <li>Unsubscribe from any email with one click.</li>
             <li>Delete your account and its data from your account page.</li>
             <li>
