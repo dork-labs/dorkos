@@ -67,7 +67,7 @@ export function useSendFeedback(): UseSendFeedback {
         if (ok) {
           toast.success('Thanks, sent.');
         } else {
-          toast.error("Couldn't send — try the GitHub option.");
+          toast.error("Couldn't send. Try the GitHub option.");
         }
         return ok;
       } finally {

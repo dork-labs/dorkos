@@ -99,7 +99,7 @@ describe('FeedbackDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Couldn't send — try the GitHub option.")
+      expect(toast.error).toHaveBeenCalledWith("Couldn't send. Try the GitHub option.")
     );
     // Failure must NOT close the dialog (the user can retry or copy their text).
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
