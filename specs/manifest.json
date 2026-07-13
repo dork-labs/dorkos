@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260713-014129",
+      "slug": "desktop-windows-support",
+      "title": "Windows desktop support — unsigned NSIS alpha on the unified release train",
+      "created": "2026-07-12",
+      "status": "specified"
+    },
+    {
       "id": "260711-211617",
       "slug": "pip-mobile-sheet",
       "title": "Mobile PIP: dock the floating panel to a bottom sheet below 768px",
