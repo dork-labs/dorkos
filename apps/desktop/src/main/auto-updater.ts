@@ -41,6 +41,35 @@ let getMainWindow: (() => BrowserWindow | null) | null = null;
 let checkingInteractively = false;
 
 /**
+ * True when electron-updater failed only because the *newest* GitHub release
+ * exists but its update-metadata file (`latest-mac.yml` on macOS, `latest.yml`
+ * on Windows) has not been attached yet — the window between `/system:release`
+ * publishing the release and `desktop-release.yml` uploading the installers.
+ * The GitHub provider throws `Cannot find latest-mac.yml in the latest release
+ * artifacts (…): HttpError: 404` for exactly this case.
+ *
+ * This is not a real failure: there is simply nothing installable yet, so we
+ * surface it as "no update available" rather than an error, never showing the
+ * user a stack trace for the normal release-in-progress gap. Draft-until-
+ * attached in the release workflow closes this window on the happy path; this
+ * stays as defense-in-depth for a partial upload, a failed single-platform
+ * build, or any other transient not-yet-ready release state.
+ *
+ * Detection prefers electron-updater's stable error `code`
+ * (`ERR_UPDATER_CHANNEL_FILE_NOT_FOUND`, set at the throw site) so it is immune
+ * to message-wording changes and can never misfire on a genuine connectivity
+ * error that merely mentions "404". The message regex is only a fallback for a
+ * provider/version that omits the code.
+ */
+function isReleaseNotReadyError(err: Error): boolean {
+  if ((err as { code?: unknown }).code === 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND') {
+    return true;
+  }
+  const message = err.message ?? '';
+  return /Cannot find .*\.ya?ml in the latest release/i.test(message);
+}
+
+/**
  * The last *actionable* update status (`downloading` / `downloaded`), retained
  * so a renderer that mounts *after* the event fired can recover it via the
  * `get-update-status` IPC — the analogue of `navigation.ts`'s pending-navigate
@@ -130,6 +159,26 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   });
 
   autoUpdater.on('error', (err: Error) => {
+    // A not-yet-ready release (metadata file 404) means "nothing to install
+    // right now", not a failure. Surface it like `update-not-available` so the
+    // sidebar card never turns red and an interactive check gets a calm notice
+    // instead of a raw HttpError stack trace.
+    if (isReleaseNotReadyError(err)) {
+      log.info('Update metadata not published yet; treating as no update available.', err.message);
+      sendUpdateStatus({ state: 'not-available' });
+      if (checkingInteractively) {
+        void showMessageBox({
+          type: 'info',
+          title: 'Update Not Ready Yet',
+          message: 'A newer version is being prepared.',
+          detail:
+            'The latest release is still finishing its upload. Please check again in a few minutes.',
+        });
+      }
+      checkingInteractively = false;
+      return;
+    }
+
     sendUpdateStatus({ state: 'error', message: err.message });
     if (checkingInteractively) {
       void showMessageBox({
@@ -158,8 +207,10 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
  * Unlike the background checks in `setupAutoUpdater`, every outcome is
  * surfaced to the user via a native dialog anchored to the main window:
  * no update found ("You're up to date"), a download-then-restart-prompt
- * flow (shared with the background path), or an error dialog. A background
- * check never shows an "up to date" dialog — only this path does.
+ * flow (shared with the background path), a calm "not ready yet" notice when
+ * the newest release exists but its installer has not finished uploading (see
+ * {@link isReleaseNotReadyError}), or an error dialog for a genuine failure. A
+ * background check never shows an "up to date" dialog — only this path does.
  *
  * No-ops when `!app.isPackaged`, matching `setupAutoUpdater`. The menu item
  * is already disabled in that case; this guard is defensive in case the two
@@ -170,12 +221,34 @@ export function checkForUpdatesInteractive(): void {
 
   checkingInteractively = true;
   autoUpdater.checkForUpdates().catch((err: unknown) => {
+    // electron-updater both emits `error` and rejects the returned promise on
+    // failure. The `error` handler runs first and clears the flag, so if it is
+    // already false the outcome was surfaced there — skip to avoid a double
+    // dialog. This branch only handles a rejection with no matching `error`
+    // event.
+    if (!checkingInteractively) return;
     checkingInteractively = false;
+    const error = err instanceof Error ? err : new Error(String(err));
+    // Reaching here means no `error` event fired, so no status was sent yet —
+    // resolve the renderer card off `checking` to match the outcome (the
+    // `error` event path already sends its own status before this runs).
+    if (isReleaseNotReadyError(error)) {
+      sendUpdateStatus({ state: 'not-available' });
+      void showMessageBox({
+        type: 'info',
+        title: 'Update Not Ready Yet',
+        message: 'A newer version is being prepared.',
+        detail:
+          'The latest release is still finishing its upload. Please check again in a few minutes.',
+      });
+      return;
+    }
+    sendUpdateStatus({ state: 'error', message: error.message });
     void showMessageBox({
       type: 'error',
       title: 'Update Check Failed',
       message: 'DorkOS could not check for updates.',
-      detail: err instanceof Error ? err.message : String(err),
+      detail: error.message,
     });
   });
 }

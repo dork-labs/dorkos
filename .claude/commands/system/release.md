@@ -234,7 +234,7 @@ Include the current version (from VERSION) and last tag in the prompt. Parse the
 
 Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
 
-Also note: pushing the `vX.Y.Z` tag triggers the "Desktop Release" workflow (`.github/workflows/desktop-release.yml`), which asynchronously builds, signs, and notarizes the arm64 macOS app and attaches the DMG + `.zip` + `latest-mac.yml` to this release. That runs in a separate workflow, so a desktop build failure can never block or unwind the product release created here.
+Also note: pushing the `vX.Y.Z` tag triggers the "Desktop Release" workflow (`.github/workflows/desktop-release.yml`), which asynchronously builds the macOS (signed + notarized) and Windows apps, attaches their installers + `latest*.yml` to the **draft** release created in Phase 6.11, and then publishes that draft. That runs in a separate workflow, so a desktop build failure can never block or unwind the product release created here — `publish-release` runs fail-soft (`if: always()`) and publishes regardless.
 
 If `--dry-run`, **STOP** here.
 
@@ -479,7 +479,7 @@ If push fails: the commit and tag exist locally — report the error, retry with
 
 ### 6.11: GitHub Release notes
 
-**Create the GitHub Release now — this is required, not optional, under the unified release model.** The release is the canonical release artifact and the target the "Desktop Release" workflow attaches the macOS build to. That workflow is **attach-only**: pushing the tag in Phase 6.10 already started it, but it will not create the release itself — it polls for this release and **fails** if it never appears. Skipping this step therefore fails the desktop build and leaves `dorkos.ai/download/mac` with nothing to serve. Do it immediately after the push, before stepping away.
+**Create the GitHub Release now, as a draft — this is required, not optional, under the unified release model.** The release is the canonical release artifact and the target the "Desktop Release" workflow attaches the macOS + Windows builds to. It is created as a **draft** on purpose: electron-updater ignores draft releases, so installed apps keep reporting "up to date" until every installer + `latest*.yml` is attached and the workflow publishes the draft — closing the window where a "Check for updates" would 404 on a not-yet-uploaded metadata file. That workflow is otherwise **attach-only**: pushing the tag in Phase 6.10 already started it, but it will not create the release itself — it polls for this release and **fails** if it never appears. Skipping this step therefore fails the desktop build and leaves `dorkos.ai/download/mac` with nothing to serve. Do it immediately after the push, before stepping away.
 
 Generate **narrative release notes**, using the `writing-changelogs` skill for structure and the `writing-for-humans` skill for readability:
 
@@ -489,12 +489,12 @@ Generate **narrative release notes**, using the `writing-changelogs` skill for s
 - End with install/update instructions (`npm update -g dorkos`) and the compare link: `https://github.com/dork-labs/dorkos/compare/v[prev]...v[new]`.
 
 ```bash
-gh release create vX.Y.Z --title "vX.Y.Z" --notes "[narrative release notes]"
+gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes "[narrative release notes]"
 ```
 
-If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
+If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually (as a draft) at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
 
-**The GitHub Release is created here, first, with the notes above.** The macOS desktop assets (`.dmg` + `.zip` + `latest-mac.yml`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.10) already kicked off the "Desktop Release" workflow, which builds, signs, and notarizes the app and then uploads those files onto this same release (attach-only — it never creates or re-drafts the release, so these notes are never clobbered). The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. The release and its notes are complete and published regardless — the desktop build attaching is a separate, fail-soft step, and a desktop build failure never unwinds this release.
+**The GitHub Release is created here, first, as a draft with the notes above.** The desktop assets (macOS `.dmg` + `.zip` + `latest-mac.yml`, Windows `.exe` + `latest.yml` + `.blockmap`) attach **later, asynchronously**: pushing the `vX.Y.Z` tag (Phase 6.10) already kicked off the "Desktop Release" workflow, which builds (and, on macOS, signs + notarizes) each platform, uploads the files onto this release, and then — in its `publish-release` job — flips the draft to **published**. The first-ever notarization from a fresh signing identity can take ~30–65 min; later ones are minutes. Until the workflow publishes it, the release stays a draft — invisible to the auto-updater and the public, which is what prevents the "Check for updates" 404 during the build. If a desktop build fails, `publish-release` still runs (`if: always()`) and publishes the release with whatever attached, so a desktop failure never strands the release as a permanent draft or unwinds it. If the workflow never runs at all, publish the draft by hand once you've confirmed its assets: `gh release edit vX.Y.Z --draft=false`.
 
 ---
 
@@ -502,7 +502,7 @@ If `gh` is unavailable: `brew install gh && gh auth login`, or create the releas
 
 Summarize: version, tag, commit SHA, npm package link (`https://www.npmjs.com/package/dorkos`), GitHub tag/compare links, harness-maintenance outcomes (ADRs progressed, docs reconciled, deferred items), any Check 6 migration notes, and the media outcome from Phase 6.6 (whether a re-capture was required, which shots were archived under `archive/vX.Y.Z/`, any shipped feature noted as missing a shot, and the features.ts catalog decision). Mention that the Docker image publishes automatically to `ghcr.io/dork-labs/dorkos:{version}` on the tag push (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml`).
 
-Also tell the user the "Desktop Release" workflow is building the macOS app on the same tag push and will attach the DMG + `.zip` + `latest-mac.yml` to this release when it finishes (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/desktop-release.yml`). First-ever notarization can take ~30–65 min; minutes thereafter. Once the assets attach, `https://dorkos.ai/download/mac` starts resolving to the new DMG. A desktop build failure does not affect the already-published release — re-run the workflow from the tag if it fails.
+Also tell the user the "Desktop Release" workflow is building the macOS + Windows apps on the same tag push (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/desktop-release.yml`); it attaches their installers + `latest*.yml` to the **draft** release and then **publishes** it. **Until the workflow finishes, the GitHub Release stays a draft — hidden from the auto-updater and the public** (the npm/CLI release is already live regardless). First-ever notarization can take ~30–65 min; minutes thereafter. Once it publishes, `https://dorkos.ai/download/mac` and `/download/windows` resolve to the new installers and "Check for updates" works. A desktop build failure still publishes the release fail-soft (with whatever attached) and never unwinds it — re-run the workflow from the tag if a platform failed.
 
 If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; check auth with `npm whoami` (see the token section above).
 

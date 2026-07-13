@@ -277,6 +277,133 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
   });
 
+  it('interactive check: a not-yet-ready release (metadata 404) shows a calm notice, not an error', async () => {
+    const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const { setupAutoUpdater, checkForUpdatesInteractive } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(dialog.showMessageBox).mockClear();
+    vi.mocked(win.webContents.send).mockClear();
+
+    checkForUpdatesInteractive();
+    // The exact shape electron-updater's GitHub provider throws while the newest
+    // release exists but its installer/metadata has not been attached yet.
+    autoUpdater.emit(
+      'error',
+      new Error(
+        'Cannot find latest-mac.yml in the latest release artifacts ' +
+          '(https://github.com/dork-labs/dorkos/releases/download/v0.48.0/latest-mac.yml): HttpError: 404'
+      )
+    );
+
+    // Calm info notice, never a scary "Update Check Failed" error dialog.
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(
+      win,
+      expect.objectContaining({ type: 'info', title: 'Update Not Ready Yet' })
+    );
+    // The renderer card sees "not-available", never an error state.
+    expect(win.webContents.send).toHaveBeenCalledWith('update:status', { state: 'not-available' });
+    expect(win.webContents.send).not.toHaveBeenCalledWith(
+      'update:status',
+      expect.objectContaining({ state: 'error' })
+    );
+  });
+
+  it('background check: a not-yet-ready release (metadata 404) is silent and never an error status', async () => {
+    const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const { setupAutoUpdater } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(dialog.showMessageBox).mockClear();
+    vi.mocked(win.webContents.send).mockClear();
+
+    autoUpdater.emit(
+      'error',
+      new Error('Cannot find latest.yml in the latest release artifacts: HttpError: 404')
+    );
+
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(win.webContents.send).toHaveBeenCalledWith('update:status', { state: 'not-available' });
+    expect(win.webContents.send).not.toHaveBeenCalledWith(
+      'update:status',
+      expect.objectContaining({ state: 'error' })
+    );
+  });
+
+  it('interactive check: an error event followed by a promise rejection surfaces only one dialog', async () => {
+    const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+    // Mirror electron-updater's real behavior: it BOTH emits `error` and rejects
+    // the returned promise. The `error` handler runs first and clears the flag,
+    // so the catch must not fire a second dialog.
+    autoUpdater.checkForUpdates = vi.fn(() => {
+      autoUpdater.emit('error', new Error('network down'));
+      return Promise.reject(new Error('network down'));
+    });
+
+    const { setupAutoUpdater, checkForUpdatesInteractive } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    checkForUpdatesInteractive();
+
+    await vi.waitFor(() => {
+      expect(dialog.showMessageBox).toHaveBeenCalled();
+    });
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('interactive check: checkForUpdates() rejecting with a not-ready release (error code, no event) shows the calm notice', async () => {
+    const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+    // Rejection with NO matching `error` event — the only path that reaches the
+    // catch's not-ready branch. Detected via electron-updater's stable error
+    // code, not the message text.
+    const notReady = Object.assign(new Error('opaque provider failure'), {
+      code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND',
+    });
+    autoUpdater.checkForUpdates = vi.fn(() => Promise.reject(notReady));
+
+    const { setupAutoUpdater, checkForUpdatesInteractive } = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(dialog.showMessageBox).mockClear();
+    vi.mocked(win.webContents.send).mockClear();
+
+    checkForUpdatesInteractive();
+
+    await vi.waitFor(() => {
+      expect(dialog.showMessageBox).toHaveBeenCalledWith(
+        win,
+        expect.objectContaining({ type: 'info', title: 'Update Not Ready Yet' })
+      );
+    });
+    // The card resolves off `checking` even though no `error` event fired.
+    expect(win.webContents.send).toHaveBeenCalledWith('update:status', { state: 'not-available' });
+    expect(win.webContents.send).not.toHaveBeenCalledWith(
+      'update:status',
+      expect.objectContaining({ state: 'error' })
+    );
+  });
+
   it('interactive check: checkForUpdates() rejecting shows an error dialog and clears the interactive flag', async () => {
     const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
     resetElectronMock();
