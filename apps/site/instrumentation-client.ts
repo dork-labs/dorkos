@@ -2,8 +2,9 @@ import posthog from 'posthog-js';
 import { env } from '@/env';
 import { deriveUiHost } from '@/lib/posthog-host';
 
-// PostHog stays entirely uninitialized until NEXT_PUBLIC_POSTHOG_KEY is set —
-// no init call, no config fetch, no script load, zero network requests and
+// PostHog stays entirely uninitialized until NEXT_PUBLIC_POSTHOG_KEY is set
+// (a BUILD-time value: changing it in Vercel requires a fresh, uncached build).
+// Without it: no init call, no config fetch, no script load, zero requests and
 // zero console noise. This is the literal claim the /privacy and /cookies
 // pages make ("wired up... but switched off by default"); keep it true.
 if (env.NEXT_PUBLIC_POSTHOG_KEY) {
