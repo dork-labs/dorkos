@@ -12,16 +12,16 @@ DorkOS gives you a browser tab where you run, schedule, and check on your coding
 <Callout type="info">
   Every install method needs a Claude API key (a key from
   [Anthropic](https://console.anthropic.com/) that lets DorkOS talk to Claude on your behalf). If
-  you don't have one yet, create it there first. Everything except Docker and the macOS desktop app
-  also needs [Node.js](https://nodejs.org/) 22 or later, the JavaScript runtime DorkOS runs on. (The
+  you don't have one yet, create it there first. Everything except Docker and the desktop app also
+  needs [Node.js](https://nodejs.org/) 22 or later, the JavaScript runtime DorkOS runs on. (The
   desktop app and Docker bring their own, so you don't have to install anything else.)
 </Callout>
 
 ## Pick your install method
 
-Most people should use the one-liner: it's one command and it checks your setup for you. Already comfortable with npm? Use the npm tab. On a Mac and want a real app in your dock, no terminal at all? Use the Desktop App. Running on a server, or don't want Node.js on your machine? Use Docker. Contributing to DorkOS itself? Use Self-Hosted.
+Most people should use the one-liner: it's one command and it checks your setup for you. Already comfortable with npm? Use the npm tab. On a Mac and want a real app in your dock, no terminal at all? Use the Desktop App (there is a new Windows version too, still in early testing). Running on a server, or don't want Node.js on your machine? Use Docker. Contributing to DorkOS itself? Use Self-Hosted.
 
-<Tabs items={['One-liner (Recommended)', 'npm', 'Desktop App (macOS)', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner (Recommended)', 'npm', 'Desktop App', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner (Recommended)">
 
@@ -137,7 +137,7 @@ DorkOS starts on port 4242 and opens your browser to the cockpit.
 
 </Tab>
 
-<Tab value="Desktop App (macOS)">
+<Tab value="Desktop App">
 
 <Callout type="warn">
   The desktop app is new. It runs on Macs with Apple Silicon (the M1 chip or later) and is under
@@ -163,6 +163,17 @@ On first launch, DorkOS walks you through connecting Claude: sign in to your Cla
 
 </Step>
 </Steps>
+
+### On Windows (early alpha)
+
+There is now a Windows version too, and it is brand new. Download it from [dorkos.ai/download/windows](https://dorkos.ai/download/windows) and run the installer.
+
+<Callout type="warn">
+  Windows may show a blue "Windows protected your PC" message, because the app is not signed yet.
+  Click **More info**, then **Run anyway** to continue. We have not finished testing the Windows app
+  on a real machine, so treat it as an early preview. If something does not work, the web cockpit
+  from the tabs above is the most reliable way to run DorkOS today.
+</Callout>
 
 <Callout type="info">
   The desktop app updates itself. When a new version is out, it downloads in the background and
@@ -328,7 +339,7 @@ This starts the Express API server and Vite dev server together, with hot reload
 
 DorkOS checks for a newer version every time it starts. Here's how to update on each install method.
 
-<Tabs items={['One-liner / npm', 'Desktop App (macOS)', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner / npm', 'Desktop App', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner / npm">
 
@@ -362,7 +373,7 @@ dorkos --version
 
 </Tab>
 
-<Tab value="Desktop App (macOS)">
+<Tab value="Desktop App">
 
 Nothing to do: the desktop app updates itself. It downloads new versions in the background and installs them the next time you quit and reopen the app.
 
