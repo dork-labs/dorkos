@@ -155,7 +155,15 @@ jobs:
             --clobber
 
   build-windows:
-    runs-on: windows-latest
+    # Pinned to windows-2022, NOT windows-latest, on purpose. windows-latest now
+    # ships Visual Studio 18 (2026), and node-gyp 11.x — which @electron/rebuild
+    # uses to force-compile better-sqlite3 + node-pty against Electron's ABI —
+    # does not yet recognize VS 18: its VisualStudioFinder rejects the unknown
+    # version and fails with "Could not find any Visual Studio installation to
+    # use", even with the vcvars environment fully set up. windows-2022 ships
+    # VS 2022 (v17), which node-gyp detects natively. Revisit windows-latest
+    # once node-gyp ships VS 18 support.
+    runs-on: windows-2022
     permissions:
       contents: write
     steps:
@@ -176,19 +184,6 @@ jobs:
         # @dorkos/extension-api and friends, whose exports resolve to dist/
         # — absent on a fresh runner unless the dependency graph builds.
         run: pnpm exec turbo build --filter=@dorkos/desktop
-
-      # Activate the MSVC C++ toolchain (cl.exe + Windows SDK) before the
-      # native rebuild below. electron-rebuild force-recompiles better-sqlite3
-      # and node-pty from source via node-gyp, which needs Visual Studio's C++
-      # tools. On windows-latest node-gyp otherwise fails with "Could not find
-      # any Visual Studio installation to use" — this runs vcvars so node-gyp
-      # finds the toolchain (the standard fix, and the same path VS Code uses
-      # to build node-pty for Electron on Windows). Pinned to a commit SHA
-      # (v1.13.0) since it's a third-party action.
-      - name: Set up MSVC developer environment
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          arch: x64
 
       # Flips better-sqlite3/node-pty to Electron's ABI right before
       # packaging (electron-builder.yml has npmRebuild: false — see
