@@ -41,6 +41,7 @@ describe('UserConfigSchema', () => {
         heartbeat: true,
         errorReporting: false,
         lastPromptedVersion: null,
+        usage: true,
       },
       workspace: {
         enabled: true,
@@ -51,7 +52,7 @@ describe('UserConfigSchema', () => {
         retentionCap: null,
       },
       harness: { autoSync: true },
-      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10 },
+      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
         opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
@@ -259,6 +260,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         heartbeat: true,
         errorReporting: false,
         lastPromptedVersion: null,
+        usage: true,
       },
       workspace: {
         enabled: true,
@@ -269,7 +271,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         retentionCap: null,
       },
       harness: { autoSync: true },
-      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10 },
+      workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
         opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
@@ -446,14 +448,16 @@ describe('UserConfigSchema agents', () => {
 });
 
 describe('UserConfigSchema telemetry', () => {
-  // Tier 1 opt-out defaults (ADR 260713-143958): the anonymous install +
-  // heartbeat channels default ON; errorReporting (Tier 2) defaults OFF.
+  // Tier 1 opt-out defaults (ADR 260713-143958): the anonymous install,
+  // heartbeat, and usage channels default ON (all notice-gated before any
+  // send); errorReporting (Tier 2) defaults OFF.
   const TIER1_DEFAULTS = {
     userHasDecided: false,
     install: true,
     heartbeat: true,
     errorReporting: false,
     lastPromptedVersion: null,
+    usage: true,
   };
 
   it('telemetry defaults the Tier 1 channels on and errorReporting off when omitted', () => {
@@ -477,6 +481,7 @@ describe('UserConfigSchema telemetry', () => {
       errorReporting: true,
       userHasDecided: true,
       lastPromptedVersion: null,
+      usage: true,
     });
   });
 

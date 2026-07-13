@@ -37,6 +37,10 @@
       "types": "./src/telemetry-consent.ts",
       "default": "./dist/telemetry-consent.js"
     },
+    "./telemetry-events": {
+      "types": "./src/telemetry-events.ts",
+      "default": "./dist/telemetry-events.js"
+    },
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
       "default": "./dist/relay-schemas.js"

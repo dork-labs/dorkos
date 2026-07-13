@@ -137,14 +137,18 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier (any runtime's session id)
    * @param runtime - Runtime type string (e.g. `'claude-code'`, `'codex'`)
    * @param agentPath - Optional path to the agent that owns this session
+   * @returns `true` when this call inserted a NEW binding row (i.e. a genuinely
+   *   new session), `false` when a row already existed. Lets the caller fire a
+   *   once-per-session side effect (e.g. the `session_created` usage event)
+   *   without a separate existence check on the hot path.
    */
   async persistSessionRuntime(
     sessionId: string,
     runtime: string,
     agentPath?: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const db = this.requireDb('persistSessionRuntime');
-    await db
+    const result = await db
       .insert(sessionMetadata)
       .values({
         sessionId,
@@ -153,6 +157,9 @@ export class RuntimeRegistry {
         createdAt: new Date().toISOString(),
       })
       .onConflictDoNothing();
+    // better-sqlite3 RunResult: `changes` is the number of rows actually written
+    // (0 when the conflict was ignored). A fresh insert === a new session.
+    return result.changes > 0;
   }
 
   /**

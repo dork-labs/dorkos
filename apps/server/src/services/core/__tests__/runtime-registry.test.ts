@@ -350,6 +350,15 @@ describe('RuntimeRegistry', () => {
         expect(row?.runtime).toBe('claude-code');
         expect(row?.agentPath).toBe('/first/path');
       });
+
+      it('returns true on the first insert and false on the duplicate (the once-per-session signal)', async () => {
+        // This boolean gates the once-per-session `session_created` usage event
+        // at the POST /messages call site — a regression here double-fires it.
+        const first = await registry.persistSessionRuntime('session-5', 'claude-code');
+        const second = await registry.persistSessionRuntime('session-5', 'claude-code');
+        expect(first).toBe(true);
+        expect(second).toBe(false);
+      });
     });
 
     describe('getSessionRuntimeType', () => {

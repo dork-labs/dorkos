@@ -25,6 +25,15 @@ const webEnvSchema = z.object({
   // next.config.ts reverse-proxy rewrite, so switching region is one env var.
   // See src/lib/posthog-host.ts for how the UI/asset hosts are derived from it.
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().default('https://us.i.posthog.com'),
+  // Server-only PostHog project (write-only) key used by the owned-ingest route
+  // (`/api/telemetry/events`, ADR 260713-143958 Phase 3) to fan curated app
+  // usage events out to PostHog's `/batch/` endpoint server-side — so the key
+  // lives only in site env and no client surface embeds a vendor SDK. Optional
+  // by design: when unset, the ingest route accepts events and drops them (zero
+  // errors), matching the "unconfigured deploy makes zero PostHog requests"
+  // stance. Project API keys are write-only and public-safe, but keeping this
+  // server-side keeps the ingest fan-out a single, swappable control point.
+  POSTHOG_PROJECT_KEY: z.string().optional(),
 
   // Better Auth — the DorkOS account cloud identity core (accounts-and-auth P2).
   // BETTER_AUTH_SECRET signs sessions; set a 32+ char secret in production. When

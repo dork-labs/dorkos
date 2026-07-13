@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { reportUsageEvent } from '../services/core/usage-reporter.js';
 import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
@@ -417,7 +418,15 @@ router.post(
     if (!runtimeRegistry.has(runtimeType)) {
       return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
     }
-    await runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, agentPath);
+    const isNewSession = await runtimeRegistry.persistSessionRuntime(
+      sessionId,
+      runtimeType,
+      agentPath
+    );
+    // Fire the anonymous `session_created` usage event exactly once, on the
+    // first-write that mints the session (no-op unless usage telemetry is on).
+    if (isNewSession)
+      reportUsageEvent({ event: 'session_created', properties: { runtime: runtimeType } });
 
     // Read X-Client-Id header, or generate UUID if missing
     const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
