@@ -322,7 +322,7 @@ if (process.argv[2] === 'cloud') {
 // `disable`) and flag (`--channel`). Intercept before the top-level parseArgs
 // call so its args aren't rejected as unknown options. Reads and writes
 // ~/.dork/config.json directly — no running server. Dispatch + help text live in
-// commands/telemetry-dispatcher.ts (DOR-312).
+// commands/telemetry/telemetry.ts (DOR-312).
 if (process.argv[2] === 'telemetry') {
   process.env.DORK_HOME = DORK_HOME;
   fs.mkdirSync(DORK_HOME, { recursive: true });
