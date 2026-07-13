@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   DEVICE_GRANT_TYPE,
   INSTANCE_CLIENT_ID,
+  buildInstanceDescriptor,
   pollForToken,
   requestDeviceCode,
   revokeInstanceKey,
@@ -73,6 +74,56 @@ describe('requestDeviceCode', () => {
     await expect(
       requestDeviceCode({ baseUrl: BASE, descriptor: DESCRIPTOR, fetchImpl })
     ).rejects.toThrow(/HTTP 500/);
+  });
+
+  it('serializes telemetryInstanceId into the scope only when the descriptor carries it', async () => {
+    const okResponse = () =>
+      new Response(
+        JSON.stringify({
+          device_code: 'dev-123',
+          user_code: 'ABCD1234',
+          verification_uri: `${BASE}/activate`,
+          verification_uri_complete: `${BASE}/activate?user_code=ABCD1234`,
+          expires_in: 1800,
+          interval: 5,
+        }),
+        { status: 200 }
+      );
+
+    // Present: the id rides in the scope (the app-side opt-in signal).
+    const withId = vi.fn(okResponse);
+    await requestDeviceCode({
+      baseUrl: BASE,
+      descriptor: { ...DESCRIPTOR, telemetryInstanceId: 'inst-uuid-1' },
+      fetchImpl: withId,
+    });
+    const scopeWith = JSON.parse(
+      JSON.parse((withId.mock.calls[0][1] as RequestInit).body as string).scope
+    );
+    expect(scopeWith.telemetryInstanceId).toBe('inst-uuid-1');
+
+    // Absent: the wire shape is exactly the three base fields, no key at all.
+    const withoutId = vi.fn(okResponse);
+    await requestDeviceCode({ baseUrl: BASE, descriptor: DESCRIPTOR, fetchImpl: withoutId });
+    const scopeWithout = JSON.parse(
+      JSON.parse((withoutId.mock.calls[0][1] as RequestInit).body as string).scope
+    );
+    expect(scopeWithout).toEqual(DESCRIPTOR);
+    expect('telemetryInstanceId' in scopeWithout).toBe(false);
+  });
+});
+
+describe('buildInstanceDescriptor', () => {
+  it('omits telemetryInstanceId when no id is passed', () => {
+    const descriptor = buildInstanceDescriptor();
+    expect('telemetryInstanceId' in descriptor).toBe(false);
+    expect(descriptor.name).toBeTruthy();
+    expect(descriptor.platform).toBe(process.platform);
+  });
+
+  it('includes telemetryInstanceId when one is passed (the opt-in path)', () => {
+    const descriptor = buildInstanceDescriptor('inst-uuid-2');
+    expect(descriptor.telemetryInstanceId).toBe('inst-uuid-2');
   });
 });
 

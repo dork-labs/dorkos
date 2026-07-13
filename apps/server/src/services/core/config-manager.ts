@@ -517,6 +517,35 @@ export function backfillTelemetryUsageChannel(store: {
   }
 }
 
+/**
+ * Migration body: backfill `telemetry.linkAnalyticsToAccount` (the device-link
+ * analytics merge opt-in, DOR-320, ADR 260713-143958 Phase 4) onto an EXISTING
+ * `telemetry` block. conf merges top-level defaults SHALLOWLY, so a `telemetry`
+ * object already on disk never inherits the new nested default — this supplies
+ * it.
+ *
+ * This is a Tier 2, explicit-opt-in flag: unlike the Tier 1 usage backfill, it
+ * always seeds `false` regardless of `userHasDecided`. The consent for this
+ * channel is captured in the account-link flow, never inferred from a prior
+ * telemetry choice, so every upgraded install starts OFF and only turns on by an
+ * explicit choice at link time. Additive + idempotent: only writes when the
+ * field is absent, never overwrites a set value. The whole-object-absent case is
+ * handled by the schema default on read.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillTelemetryLinkAnalyticsToAccount(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry && typeof telemetry === 'object' && !('linkAnalyticsToAccount' in telemetry)) {
+    const t = telemetry as Record<string, unknown>;
+    store.set('telemetry', { ...t, linkAnalyticsToAccount: false });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -601,6 +630,10 @@ const CONFIG_MIGRATIONS = {
     // ADR 260713-143958 Phase 3). Additive + idempotent; already-decided
     // installs start OFF, never-answered take the Tier 1 default ON.
     backfillTelemetryUsageChannel(store);
+    // Backfill `telemetry.linkAnalyticsToAccount` (device-link analytics merge
+    // opt-in, DOR-320, ADR 260713-143958 Phase 4). Additive + idempotent; Tier 2
+    // opt-in, so every upgraded install starts OFF regardless of prior choice.
+    backfillTelemetryLinkAnalyticsToAccount(store);
   },
 } as const;
 

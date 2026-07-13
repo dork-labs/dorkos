@@ -106,6 +106,17 @@ Before anything leaves your machine, home directories and full file paths are st
   and DorkOS prints the crash payload to your terminal instead of sending it.
 </Callout>
 
+## Linking analytics to your account (a separate opt-in)
+
+When you link this install to a DorkOS account, you can also connect this install's anonymous usage counts to your account, so you can see them when you are signed in on dorkos.ai. Like crash reports, this is off until you turn it on, and it never sends anything new: it only ties the counts you already share to your account.
+
+- It is off by default. You turn it on with a checkbox in the account-link flow, right before you link, in Settings under DorkOS account.
+- It only takes effect at link time. If you link first and turn it on later, the connection happens the next time you link, not retroactively.
+- The environment kill switches turn it off too: with `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` set, nothing is connected even if the checkbox is on.
+- No new data is collected. It is the same anonymous usage counts described above, now visible under your account.
+
+To undo it: turn the checkbox off (it takes effect on your next link), and remove the already-connected data from your account page on dorkos.ai. Unlinking the instance stops it from reporting further.
+
 ## Debug tracing (a separate, local-only flag)
 
 `dorkos --debug-trace` is a diagnostics tool, not part of the telemetry above, and it isn't covered by the opt-in banner: it's a per-run flag you choose to add when you're troubleshooting something, most often because we asked you to when you report a bug.

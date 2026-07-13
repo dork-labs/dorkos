@@ -87,6 +87,44 @@ describe('CloudLinkManager', () => {
     expect(paths).toContain('/api/instances/heartbeat');
   });
 
+  it('threads the telemetry instance id into the device-code scope only when the resolver returns one', async () => {
+    // Helper: pull the parsed `scope` object from the /device/code POST body.
+    const scopeOf = (fetchImpl: ReturnType<typeof routerFetch>) => {
+      const call = fetchImpl.mock.calls.find((c) => (c[0] as string).endsWith('/device/code'));
+      const body = JSON.parse((call?.[1] as RequestInit).body as string);
+      return JSON.parse(body.scope) as Record<string, unknown>;
+    };
+
+    // Opted in: the resolver returns an id, so the scope carries it (the merge signal).
+    const withFetch = routerFetch({
+      code: () => CODES,
+      token: () => ({ status: 400, body: { error: 'expired_token' } }),
+    });
+    const withManager = new CloudLinkManager({
+      fetchImpl: withFetch,
+      sleep: noSleep,
+      resolveTelemetryInstanceId: async () => 'inst-uuid-optin',
+    });
+    await withManager.startLink();
+    await withManager.pendingLink;
+    withManager.stop();
+    expect(scopeOf(withFetch).telemetryInstanceId).toBe('inst-uuid-optin');
+
+    // Not opted in: the resolver returns undefined, so the scope omits the id.
+    const withoutFetch = routerFetch({
+      code: () => CODES,
+      token: () => ({ status: 400, body: { error: 'expired_token' } }),
+    });
+    manager = new CloudLinkManager({
+      fetchImpl: withoutFetch,
+      sleep: noSleep,
+      resolveTelemetryInstanceId: async () => undefined,
+    });
+    await manager.startLink();
+    await manager.pendingLink;
+    expect('telemetryInstanceId' in scopeOf(withoutFetch)).toBe(false);
+  });
+
   it('persists the account label the heartbeat reports', async () => {
     const fetchImpl = routerFetch({
       code: () => CODES,

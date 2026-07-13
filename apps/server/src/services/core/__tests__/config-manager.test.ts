@@ -17,6 +17,7 @@ import {
   backfillTelemetryLastPromptedVersion,
   applyTier1OptOutDefaults,
   backfillTelemetryUsageChannel,
+  backfillTelemetryLinkAnalyticsToAccount,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -542,6 +543,38 @@ describe('backfillTelemetryUsageChannel migration', () => {
   it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     expect(() => backfillTelemetryUsageChannel(store)).not.toThrow();
+    expect(store.data.telemetry).toBeUndefined();
+  });
+});
+
+describe('backfillTelemetryLinkAnalyticsToAccount migration', () => {
+  it('seeds linkAnalyticsToAccount: false on an existing telemetry block (Tier 2 opt-in)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: false, install: true, heartbeat: true, usage: true },
+    });
+    backfillTelemetryLinkAnalyticsToAccount(store);
+    expect((store.data.telemetry as Record<string, unknown>).linkAnalyticsToAccount).toBe(false);
+  });
+
+  it('seeds false even for an already-decided install (never inferred from prior choice)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: true, install: true, heartbeat: false, usage: false },
+    });
+    backfillTelemetryLinkAnalyticsToAccount(store);
+    expect((store.data.telemetry as Record<string, unknown>).linkAnalyticsToAccount).toBe(false);
+  });
+
+  it('never overwrites an existing value (idempotent)', () => {
+    const store = createMockStore({
+      telemetry: { userHasDecided: false, linkAnalyticsToAccount: true },
+    });
+    backfillTelemetryLinkAnalyticsToAccount(store);
+    expect((store.data.telemetry as Record<string, unknown>).linkAnalyticsToAccount).toBe(true);
+  });
+
+  it('no-ops when the telemetry section is absent (schema default supplies it)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillTelemetryLinkAnalyticsToAccount(store)).not.toThrow();
     expect(store.data.telemetry).toBeUndefined();
   });
 });

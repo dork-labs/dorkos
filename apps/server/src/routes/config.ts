@@ -189,6 +189,7 @@ router.get('/', async (_req, res) => {
       errorReporting: false,
       lastPromptedVersion: null,
       usage: true,
+      linkAnalyticsToAccount: false,
     },
     auth: configManager.get('auth') ?? { enabled: false },
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },

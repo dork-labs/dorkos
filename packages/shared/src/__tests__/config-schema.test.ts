@@ -42,6 +42,7 @@ describe('UserConfigSchema', () => {
         errorReporting: false,
         lastPromptedVersion: null,
         usage: true,
+        linkAnalyticsToAccount: false,
       },
       workspace: {
         enabled: true,
@@ -261,6 +262,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         errorReporting: false,
         lastPromptedVersion: null,
         usage: true,
+        linkAnalyticsToAccount: false,
       },
       workspace: {
         enabled: true,
@@ -458,6 +460,7 @@ describe('UserConfigSchema telemetry', () => {
     errorReporting: false,
     lastPromptedVersion: null,
     usage: true,
+    linkAnalyticsToAccount: false,
   };
 
   it('telemetry defaults the Tier 1 channels on and errorReporting off when omitted', () => {
@@ -482,6 +485,7 @@ describe('UserConfigSchema telemetry', () => {
       userHasDecided: true,
       lastPromptedVersion: null,
       usage: true,
+      linkAnalyticsToAccount: false,
     });
   });
 
