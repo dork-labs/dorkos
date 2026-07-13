@@ -89,6 +89,23 @@ const VALID_EXCEPTION = {
   dorkosVersion: '0.47.0',
 };
 
+const VALID_AI_GENERATION = {
+  event: '$ai_generation' as const,
+  properties: {
+    $ai_trace_id: '3f3aa6bb-9f44-4f3a-bf67-7c6d2b9a1234',
+    $ai_provider: 'claude-code',
+    $ai_model: 'claude-opus-4-6',
+    $ai_input_tokens: 1200,
+    $ai_output_tokens: 340,
+    $ai_latency: 4.2,
+    $ai_total_cost_usd: 0.51,
+    $process_person_profile: false as const,
+  },
+  distinctId: '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+  timestamp: '2026-07-13T12:00:04.000Z',
+  dorkosVersion: '0.47.0',
+};
+
 let fetchSpy: ReturnType<typeof vi.spyOn>;
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -233,6 +250,43 @@ describe('POST /api/telemetry/events', () => {
       const poisoned = {
         ...VALID_EXCEPTION,
         properties: { ...VALID_EXCEPTION.properties, cwd: '/Users/kai/secret' },
+      };
+      const res = await POST(makeRequest({ events: [poisoned] }));
+      expect((await readJson(res)).accepted).toBe(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('$ai_generation metadata events (DOR-319)', () => {
+    beforeEach(() => {
+      env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+    });
+
+    it('accepts a valid $ai_generation event in a mixed batch', async () => {
+      const res = await POST(
+        makeRequest({ events: [VALID_APP_STARTED, VALID_AI_GENERATION, VALID_EXCEPTION] })
+      );
+      expect((await readJson(res)).accepted).toBe(3);
+    });
+
+    it('forwards $ai_generation to PostHog with its LLM-analytics properties intact', async () => {
+      await POST(makeRequest({ events: [VALID_AI_GENERATION] }));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const sent = JSON.parse(init.body as string) as {
+        batch: Array<{ event: string; properties: Record<string, unknown> }>;
+      };
+      expect(sent.batch[0].event).toBe('$ai_generation');
+      expect(sent.batch[0].properties.$ai_model).toBe('claude-opus-4-6');
+      expect(sent.batch[0].properties.$ai_input_tokens).toBe(1200);
+      expect(sent.batch[0].properties.$process_person_profile).toBe(false);
+      expect(sent.batch[0].properties.dorkos_version).toBe('0.47.0');
+    });
+
+    it('drops an $ai_generation event carrying a content-shaped property (strict allowlist)', async () => {
+      const poisoned = {
+        ...VALID_AI_GENERATION,
+        properties: { ...VALID_AI_GENERATION.properties, $ai_input: 'the raw prompt text' },
       };
       const res = await POST(makeRequest({ events: [poisoned] }));
       expect((await readJson(res)).accepted).toBe(0);

@@ -30,3 +30,10 @@ export {
 export { traceRuntime } from './trace-runtime.js';
 export { traceRelay } from './trace-relay.js';
 export { SPAN, ATTR } from './attributes.js';
+export {
+  setAiMetadataBridge,
+  isAiBridgeEnabled,
+  isAiObservabilityActive,
+  observeRuntimeTurn,
+  type AiTurnMetadata,
+} from './ai-metadata.js';

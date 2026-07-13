@@ -142,3 +142,65 @@ describe('mapResultEvent — result usage stamping', () => {
     expect(usageOf(events)).toBeUndefined();
   });
 });
+
+describe('mapResultEvent — turn-total token metadata (AI observability, DOR-319)', () => {
+  /** The status-event data object, if any. */
+  function statusData(events: StreamEvent[]): Record<string, unknown> | undefined {
+    const status = events.find((e) => e.type === 'session_status');
+    return status?.data as Record<string, unknown> | undefined;
+  }
+
+  it('sums modelUsage input/output tokens into turn totals for the result status', async () => {
+    const events = await drain(
+      mapResultEvent(
+        msg({
+          type: 'result',
+          subtype: 'success',
+          total_cost_usd: 0.3,
+          model: 'claude-opus-4-6',
+          modelUsage: {
+            'claude-opus-4-6': { inputTokens: 1000, outputTokens: 200, contextWindow: 200000 },
+            'claude-haiku': { inputTokens: 250, outputTokens: 50, contextWindow: 200000 },
+          },
+        }),
+        makeSession(),
+        SESSION_ID
+      )
+    );
+    const data = statusData(events)!;
+    expect(data.turnInputTokens).toBe(1250);
+    expect(data.turnOutputTokens).toBe(250);
+  });
+
+  it('omits the turn-total fields when the SDK reported no modelUsage', async () => {
+    const events = await drain(
+      mapResultEvent(
+        msg({ type: 'result', subtype: 'success', total_cost_usd: 0.1, model: 'claude-opus-4-6' }),
+        makeSession(),
+        SESSION_ID
+      )
+    );
+    const data = statusData(events)!;
+    expect('turnInputTokens' in data).toBe(false);
+    expect('turnOutputTokens' in data).toBe(false);
+  });
+
+  it('omits the turn-total fields when modelUsage is present but EMPTY (no data ≠ zero tokens)', async () => {
+    const events = await drain(
+      mapResultEvent(
+        msg({
+          type: 'result',
+          subtype: 'success',
+          total_cost_usd: 0.1,
+          model: 'claude-opus-4-6',
+          modelUsage: {},
+        }),
+        makeSession(),
+        SESSION_ID
+      )
+    );
+    const data = statusData(events)!;
+    expect('turnInputTokens' in data).toBe(false);
+    expect('turnOutputTokens' in data).toBe(false);
+  });
+});

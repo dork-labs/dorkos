@@ -546,6 +546,33 @@ export function backfillTelemetryLinkAnalyticsToAccount(store: {
   }
 }
 
+/**
+ * Migration body: backfill `telemetry.aiMetadata` (the opt-in AI-run metadata
+ * bridge, DOR-319, ADR 260713-143958 Phase 7) onto an EXISTING `telemetry`
+ * block. conf merges top-level defaults SHALLOWLY, so a `telemetry` object
+ * already on disk never inherits the new nested default — this supplies it.
+ *
+ * Unlike the Tier 1 channels, this is a Tier 2 OPT-IN channel: it seeds `false`
+ * for EVERY existing install, regardless of `userHasDecided`. A prior consent
+ * choice never enrolls anyone in a new opt-in channel — turning it on is always
+ * a fresh, explicit act. Additive + idempotent: only writes when the field is
+ * absent, never overwrites a set value. The whole-object-absent case is handled
+ * by the schema default on read (which already yields `false`).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillTelemetryAiMetadataChannel(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry && typeof telemetry === 'object' && !('aiMetadata' in telemetry)) {
+    const t = telemetry as Record<string, unknown>;
+    store.set('telemetry', { ...t, aiMetadata: false });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -634,6 +661,10 @@ const CONFIG_MIGRATIONS = {
     // opt-in, DOR-320, ADR 260713-143958 Phase 4). Additive + idempotent; Tier 2
     // opt-in, so every upgraded install starts OFF regardless of prior choice.
     backfillTelemetryLinkAnalyticsToAccount(store);
+    // Backfill `telemetry.aiMetadata` (opt-in AI-run metadata bridge, DOR-319,
+    // ADR 260713-143958 Phase 7). Additive + idempotent; Tier 2 opt-in, so it
+    // seeds OFF for every existing install regardless of a prior consent choice.
+    backfillTelemetryAiMetadataChannel(store);
   },
 } as const;
 

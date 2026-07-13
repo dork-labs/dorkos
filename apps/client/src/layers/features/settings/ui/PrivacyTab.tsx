@@ -21,7 +21,7 @@ export function PrivacyTab() {
 
   /** Patch one channel and record that the user has made a telemetry choice. */
   const setChannel = (
-    channel: 'install' | 'heartbeat' | 'errorReporting' | 'usage',
+    channel: 'install' | 'heartbeat' | 'errorReporting' | 'usage' | 'aiMetadata',
     value: boolean
   ) => {
     updateConfig.mutate({ telemetry: { [channel]: value, userHasDecided: true } });
@@ -69,6 +69,13 @@ export function PrivacyTab() {
             description="Send a few named events like app start and new session so we can see which features get used. Counts only, never prompts, code, file paths, or session content."
             checked={telemetry?.usage ?? false}
             onCheckedChange={(v) => setChannel('usage', v)}
+            disabled={updateConfig.isPending}
+          />
+          <SwitchSettingRow
+            label="Share AI run metadata"
+            description="Send a small summary of each agent turn: which model ran, how many tokens it used, how long it took, and the cost. Never your prompts, your code, or your conversations. Off until you turn it on."
+            checked={telemetry?.aiMetadata ?? false}
+            onCheckedChange={(v) => setChannel('aiMetadata', v)}
             disabled={updateConfig.isPending}
           />
           <SwitchSettingRow

@@ -36,10 +36,14 @@ describe('sanitizeSpan — no-PII allowlist', () => {
         [ATTR.RUNTIME]: 'claude-code',
         [ATTR.SESSION_ID]: 'sess-123',
         [ATTR.EVENT_COUNT]: 42,
-        // NOT allowlisted — must be dropped (these represent PII/secrets)
+        // allowlisted gen_ai metadata — kept (Phase 7): a token COUNT is not content
+        [ATTR.GEN_AI_USAGE_INPUT_TOKENS]: 1234,
+        // NOT allowlisted — must be dropped (these represent PII/secrets/content)
         prompt: 'write my AWS key please',
         'file.path': '/Users/dorian/secret/project',
-        'gen_ai.usage.input_tokens': 1234,
+        // A content-shaped gen_ai key (a prompt/completion) has NO allowlist entry
+        // and must still be dropped — only the coarse counts/model are permitted.
+        'gen_ai.prompt': 'summarize /Users/dorian/secret.txt',
         hostname: 'dorians-macbook.local',
         username: 'dorian',
         apiKey: 'sk-ant-supersecret',
@@ -52,13 +56,15 @@ describe('sanitizeSpan — no-PII allowlist', () => {
       [ATTR.RUNTIME]: 'claude-code',
       [ATTR.SESSION_ID]: 'sess-123',
       [ATTR.EVENT_COUNT]: 42,
+      [ATTR.GEN_AI_USAGE_INPUT_TOKENS]: 1234,
     });
     // None of the sensitive values survive anywhere in the serialized span.
     const serialized = JSON.stringify(out);
     for (const secret of [
       'AWS key',
       '/Users/dorian',
-      'input_tokens',
+      'gen_ai.prompt',
+      'secret.txt',
       'macbook',
       'dorian',
       'sk-ant',

@@ -22,7 +22,18 @@ When you turn tracing on, DorkOS records a span (a timed record of one operation
 - **Relay dispatch.** One span each time a message goes onto the agent message bus, with how many agents it reached.
 - **Task runs.** One span per scheduled or manual task, with whether it ran on a schedule or by hand.
 
-Each span carries only durations, counts, and coarse labels (like which runtime, or "scheduled" versus "manual"). It never carries your prompts, your code, file paths, tokens, your hostname, or anything from your sessions. There is a fixed allowlist of the fields a span may hold, enforced in code and tests, so content cannot leak in even by mistake. When something fails, the span is marked as an error, but the error message itself is dropped, because a message can contain anything.
+Each span carries only durations, counts, and coarse labels (like which runtime, or "scheduled" versus "manual"). It never carries your prompts, your code, file paths, your hostname, or anything from your sessions. There is a fixed allowlist of the fields a span may hold, enforced in code and tests, so content cannot leak in even by mistake. When something fails, the span is marked as an error, but the error message itself is dropped, because a message can contain anything.
+
+### AI run details on your runtime spans
+
+Runtime-call spans also carry standard AI metadata, following OpenTelemetry's `gen_ai.*` naming, so any tool that understands LLM traces can read them straight away:
+
+- `gen_ai.system`: which runtime ran the turn (`claude-code`, `codex`, or `opencode`).
+- `gen_ai.response.model`: the model that answered, when the runtime reports one.
+- `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`: the token counts for the whole turn, when known.
+- `dorkos.gen_ai.cost_usd`: the turn's cost in dollars, when the runtime reports one.
+
+These are counts and a model name, nothing more. There is still no prompt, no code, and no path on the span. They show up automatically once tracing is on, both in your local trace file and at your OTLP endpoint. (If you would rather share only these AI counts with us, and nothing else, there is a separate opt-in setting on the [telemetry](/docs/self-hosting/telemetry) page.)
 
 ## Look at traces on your own machine
 

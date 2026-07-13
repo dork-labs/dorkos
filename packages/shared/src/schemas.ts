@@ -721,6 +721,23 @@ export const SessionStatusEventSchema = z
     contextTokens: z.number().int().optional(),
     contextMaxTokens: z.number().int().optional(),
     outputTokens: z.number().int().optional(),
+    /**
+     * Turn-total input tokens for the whole turn (summed across every API
+     * round-trip), emitted ONLY on the terminal result status. Distinct from
+     * `contextTokens` (the current-window size) and from the streaming
+     * `outputTokens` delta the projector merges. Consumed by the AI-observability
+     * seam (`gen_ai.usage.input_tokens` span attr + `$ai_input_tokens` bridge);
+     * the status-strip projector ignores it. See ADR 260713-143958 Phase 7.
+     */
+    turnInputTokens: z.number().int().optional(),
+    /**
+     * Turn-total output tokens for the whole turn (summed across every API
+     * round-trip), emitted ONLY on the terminal result status. Sibling of
+     * {@link SessionStatusEventSchema}'s `turnInputTokens`; feeds
+     * `gen_ai.usage.output_tokens` + `$ai_output_tokens`. Kept separate from the
+     * streaming `outputTokens` delta so the projector's merge is unaffected.
+     */
+    turnOutputTokens: z.number().int().optional(),
     /** Tokens read from prompt cache (90% cost savings). */
     cacheReadTokens: z.number().int().optional(),
     /** Tokens written to prompt cache (slight write premium). */
@@ -2219,6 +2236,10 @@ export const ServerConfigSchema = z
         linkAnalyticsToAccount: z.boolean().optional().openapi({
           description:
             'Whether linking this install to a DorkOS account also merges its anonymous usage history onto the account person (Tier 2, opt-in, default false; set in the account-link flow)',
+        }),
+        aiMetadata: z.boolean().optional().openapi({
+          description:
+            'Whether the AI-run metadata bridge is on (Tier 2, opt-in, default false): per-turn model/token/timing/cost, never content',
         }),
       })
       .optional()

@@ -117,6 +117,18 @@ When you link this install to a DorkOS account, you can also connect this instal
 
 To undo it: turn the checkbox off (it takes effect on your next link), and remove the already-connected data from your account page on dorkos.ai. Unlinking the instance stops it from reporting further.
 
+## AI run metadata (a separate opt-in)
+
+Every time an agent finishes a turn, DorkOS knows a few plain facts about it: which model ran, how many tokens it used, how long it took, and what it cost. You can choose to share a short summary of those facts with us, so we can see how the different runtimes compare. Like crash reports, this is **off until you turn it on**.
+
+- It goes to dorkos.ai, the same place as everything else, and nowhere else.
+- Each turn sends one small summary: the model, the runtime (Claude Code, Codex, or OpenCode), the input and output token counts, the turn's time, and its cost.
+- It carries **no** prompt, **no** code, **no** file path, and **nothing** you or the agent said. It is counts and a model name, full stop.
+
+This is the same AI data DorkOS can already put on your own traces (see [observability](/docs/self-hosting/observability)). That side is always yours and never reaches us. This setting is the opposite direction: it, and only it, shares those counts with DorkOS, and only when you turn it on.
+
+To turn it on, set `telemetry.aiMetadata: true` in your config (or use the **Privacy & Data** tab). To preview it first, run with `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints each summary to your terminal instead of sending it. `DO_NOT_TRACK=1` and `DORKOS_TELEMETRY_DISABLED=1` turn it off along with everything else.
+
 ## Debug tracing (a separate, local-only flag)
 
 `dorkos --debug-trace` is a diagnostics tool, not part of the telemetry above, and it isn't covered by the opt-in banner: it's a per-run flag you choose to add when you're troubleshooting something, most often because we asked you to when you report a bug.
@@ -180,12 +192,13 @@ The first time you open DorkOS, a banner discloses that it shares anonymous data
     "install": true,
     "errorReporting": false,
     "usage": true,
+    "aiMetadata": false,
     "userHasDecided": true
   }
 }
 ```
 
-Set a value to `false` to turn a channel off, or `true` to turn it on. The three anonymous channels default to `true`; error reporting defaults to `false` and its flag is the only switch it needs.
+Set a value to `false` to turn a channel off, or `true` to turn it on. The three anonymous channels default to `true`; error reporting and AI run metadata default to `false`, and each one's flag is the only switch it needs.
 
 <Callout type="info">
   Anonymous by default is the norm for developer tools, from Next.js to VS Code to Homebrew. We keep

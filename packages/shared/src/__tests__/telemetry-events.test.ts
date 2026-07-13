@@ -15,8 +15,10 @@ import {
   TelemetryEventBatchSchema,
   TelemetryEventInputSchema,
   ExceptionEventSchema,
+  AiGenerationEventSchema,
   type TelemetryEvent,
   type ExceptionEvent,
+  type AiGenerationEvent,
 } from '../telemetry-events.js';
 
 const VALID_DISTINCT_ID = '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4';
@@ -217,6 +219,84 @@ describe('telemetry event registry', () => {
       const poisoned = structuredClone(VALID_EXCEPTION);
       (poisoned.properties.$exception_list[0].stacktrace as { type: string }).type = 'resolved';
       expect(ExceptionEventSchema.safeParse(poisoned).success).toBe(false);
+    });
+  });
+
+  describe('AiGenerationEventSchema ($ai_generation carve-out)', () => {
+    const VALID_AI_GENERATION: AiGenerationEvent = {
+      event: '$ai_generation',
+      properties: {
+        $ai_trace_id: '3f3aa6bb-9f44-4f3a-bf67-7c6d2b9a1234',
+        $ai_provider: 'claude-code',
+        $ai_model: 'claude-opus-4-6',
+        $ai_input_tokens: 1200,
+        $ai_output_tokens: 340,
+        $ai_latency: 4.2,
+        $ai_total_cost_usd: 0.51,
+        $process_person_profile: false,
+      },
+      distinctId: VALID_DISTINCT_ID,
+      timestamp: VALID_TIMESTAMP,
+      dorkosVersion: '0.47.0',
+    };
+
+    it('accepts a valid $ai_generation event', () => {
+      expect(AiGenerationEventSchema.safeParse(VALID_AI_GENERATION).success).toBe(true);
+    });
+
+    it('accepts a minimal event (only provider, latency, trace id, profile flag)', () => {
+      const minimal = {
+        ...VALID_AI_GENERATION,
+        properties: {
+          $ai_trace_id: '3f3aa6bb-9f44-4f3a-bf67-7c6d2b9a1234',
+          $ai_provider: 'opencode',
+          $ai_latency: 1.1,
+          $process_person_profile: false,
+        },
+      };
+      expect(AiGenerationEventSchema.safeParse(minimal).success).toBe(true);
+    });
+
+    it('is NOT accepted by the usage union (kept separate)', () => {
+      expect(TelemetryEventSchema.safeParse(VALID_AI_GENERATION).success).toBe(false);
+    });
+
+    it('rejects any unknown property key — no prompt/path/content can ride along', () => {
+      for (const poison of [
+        { prompt: 'summarize this secret file' },
+        { $ai_input: 'the raw prompt text' },
+        { $ai_output_choices: ['the model reply'] },
+        { path: '/Users/kai/.env' },
+      ]) {
+        const res = AiGenerationEventSchema.safeParse({
+          ...VALID_AI_GENERATION,
+          properties: { ...VALID_AI_GENERATION.properties, ...poison },
+        });
+        expect(res.success).toBe(false);
+      }
+    });
+
+    it('pins $process_person_profile to false (metadata stays anonymous)', () => {
+      const res = AiGenerationEventSchema.safeParse({
+        ...VALID_AI_GENERATION,
+        properties: { ...VALID_AI_GENERATION.properties, $process_person_profile: true },
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('requires a UUID trace id and a numeric latency', () => {
+      expect(
+        AiGenerationEventSchema.safeParse({
+          ...VALID_AI_GENERATION,
+          properties: { ...VALID_AI_GENERATION.properties, $ai_trace_id: 'not-a-uuid' },
+        }).success
+      ).toBe(false);
+      expect(
+        AiGenerationEventSchema.safeParse({
+          ...VALID_AI_GENERATION,
+          properties: { ...VALID_AI_GENERATION.properties, $ai_latency: 'fast' },
+        }).success
+      ).toBe(false);
     });
   });
 });
