@@ -29,14 +29,10 @@ const serverEnvSchema = z.object({
   // `@dorkos/shared/telemetry-consent` so the server and CLI agree exactly.
   DO_NOT_TRACK: z.string().optional(),
   DORKOS_TELEMETRY_DISABLED: z.string().optional(),
-  // Telemetry debug mode (DOR-312) — when '1'/'true', the heartbeat and install
-  // senders print the exact JSON payload to stderr instead of sending it.
+  // Telemetry debug mode (DOR-312) — when '1'/'true', the heartbeat, install,
+  // usage, and error-report senders print the exact JSON payload to stderr
+  // instead of sending it.
   DORKOS_TELEMETRY_DEBUG: z.string().optional(),
-  // Opt-in error reporting (DOR-293) — Sentry/GlitchTip DSN. Reports are only
-  // sent when this is set AND `config.telemetry.errorReporting` is true. The DSN
-  // contains a public ingest key, not a secret at rest; it lives in env, never
-  // config.json. See services/core/error-reporter.ts.
-  SENTRY_DSN: z.string().optional(),
   // Note: BETTER_AUTH_SECRET (the optional session-signing-secret override) is
   // deliberately NOT declared here. Its sole consumer,
   // services/core/auth/secret.ts, reads process.env directly — that module is a

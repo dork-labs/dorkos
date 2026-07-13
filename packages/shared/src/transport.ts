@@ -263,6 +263,21 @@ export interface TerminalHandle {
   readonly closeInfo?: { code: number; reason: string };
 }
 
+/**
+ * An untrusted cockpit crash report relayed to the server (DOR-318). Carries
+ * only the three raw `Error` strings — the server rebuilds and scrubs them, so
+ * the client never scrubs and the server never trusts these values. Everything
+ * is optional because a given crash may expose only some of them.
+ */
+export interface ClientErrorReport {
+  /** Error constructor name (e.g. `TypeError`). */
+  name?: string;
+  /** Raw error message — dropped server-side, never sent onward. */
+  message?: string;
+  /** Raw `Error.stack` — scrubbed server-side to repo-relative frames. */
+  stack?: string;
+}
+
 export interface Transport {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
@@ -792,6 +807,17 @@ export interface Transport {
   getConfig(): Promise<ServerConfig>;
   /** Partially update the persisted user config. */
   updateConfig(patch: Record<string, unknown>): Promise<void>;
+  /**
+   * Relay a caught cockpit crash to the server's `POST /api/errors` intake
+   * (DOR-318). Fire-and-forget and best-effort: it must never throw or surface
+   * to the user. The server rebuilds and scrubs the report and only sends it
+   * onward when error reporting is opted in — the client neither scrubs nor
+   * gates. `DirectTransport` (Obsidian, in-process) no-ops: crash reporting is a
+   * web-cockpit surface.
+   *
+   * @param report - The untrusted `{ name, message, stack }` from the caught error.
+   */
+  reportError(report: ClientErrorReport): Promise<void>;
   /**
    * List models available for the resolved runtime.
    *

@@ -116,9 +116,9 @@ import {
   shutdownUsageReporter,
 } from './services/core/usage-reporter.js';
 import {
-  initServerErrorReporting,
+  registerServerErrorReporting,
   flushServerError,
-  type ServerErrorReporter,
+  captureServerError,
 } from './services/core/error-reporter.js';
 import { resolveTelemetryConsent, isTelemetryDebugEnabled } from '@dorkos/shared/telemetry-consent';
 import {
@@ -157,9 +157,6 @@ let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
-// Opt-in error reporter (DOR-293) — assigned in start() when the user consented
-// and a DSN is set; stays null otherwise so the process handlers report nothing.
-let serverErrorReporter: ServerErrorReporter | null = null;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -347,17 +344,20 @@ async function start() {
     logger.info('[Telemetry] Usage reporter active (consent: opt-out, notice-gated)');
   }
 
-  // Opt-in error reporting (DOR-293). A SEPARATE explicit opt-in from the
-  // anonymous-data channels: fires only when `telemetry.errorReporting` is true,
-  // no kill switch is set, AND a `SENTRY_DSN` is set (third-party egress). `null`
-  // when off — the process error handlers below then send nothing. Scrubbing +
-  // message omission live in the shared error-report core.
-  serverErrorReporter = initServerErrorReporting({
+  // Opt-in error reporting (DOR-293, consolidated in DOR-318). A SEPARATE
+  // explicit opt-in (Tier 2) from the anonymous-data channels: fires only when
+  // `telemetry.errorReporting` is true AND no kill switch is set. Crash reports
+  // map to a PostHog `$exception` event and POST to the OWNED ingest
+  // (https://dorkos.ai/api/telemetry/events) — no third-party egress, no
+  // `SENTRY_DSN`. Off → the process handlers below (and `POST /api/errors`) send
+  // nothing. Scrubbing + message omission live in the shared error-report core.
+  registerServerErrorReporting({
     consent: resolveTelemetryConsent(telemetryConfig?.errorReporting ?? false, telemetryEnv),
-    dsn: env.SENTRY_DSN,
     version: SERVER_VERSION,
     environment: env.NODE_ENV,
     cwd: process.cwd(),
+    dorkHome,
+    debug: telemetryDebug,
   });
 
   // Stage the bundled core extensions on disk before the discovery pipeline
@@ -1449,7 +1449,7 @@ process.on('uncaughtException', (err) => {
   // network before we exit (a bare fire-and-forget would be dropped when the
   // event loop stops on the next line). The timeout guards against a hung
   // endpoint delaying shutdown.
-  void flushServerError(serverErrorReporter, err).finally(() => process.exit(1));
+  void flushServerError(err).finally(() => process.exit(1));
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -1457,7 +1457,7 @@ process.on('unhandledRejection', (reason) => {
     reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : reason,
   });
   // Non-fatal (we don't exit), so fire-and-forget is fine here.
-  void serverErrorReporter?.capture(reason);
+  void captureServerError(reason);
 });
 
 start().catch((err) => {

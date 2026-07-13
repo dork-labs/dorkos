@@ -1,7 +1,8 @@
 /**
- * Tests for the CLI error-reporter adapter: reading opt-in consent from
- * config.json and the consent + DSN gate. Scrubbing/send are covered by the
- * shared `@dorkos/shared/error-report` tests.
+ * Tests for the CLI error-reporter adapter (DOR-318): reading opt-in consent
+ * from config.json, the consent + env-kill-switch gate (no DSN anymore), and
+ * that a live reporter sends a scrubbed `$exception` batch to the owned ingest.
+ * Scrubbing/mapping are covered by the shared `@dorkos/shared/error-report` tests.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
@@ -15,11 +16,9 @@ import {
   type CliErrorReporter,
 } from '../lib/error-reporter.js';
 
-// This test intentionally sets and reads the SENTRY_DSN env var to exercise the
-// DSN gate, so the "read env via env.ts" rule does not apply here.
+// These tests intentionally set and read process.env kill switches / debug to
+// exercise the gate, so the "read env via env.ts" rule does not apply here.
 /* eslint-disable no-restricted-syntax */
-
-const VALID_DSN = 'https://pub@o1.ingest.sentry.io/456';
 
 function makeDorkHome(config?: unknown): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-err-'));
@@ -48,36 +47,65 @@ describe('readErrorReportingConsent', () => {
   });
 });
 
-describe('initCliErrorReporting — consent + DSN gate', () => {
-  const original = process.env.SENTRY_DSN;
+describe('initCliErrorReporting — consent + env gate', () => {
+  const savedEnv = { ...process.env };
 
   afterEach(() => {
-    if (original === undefined) delete process.env.SENTRY_DSN;
-    else process.env.SENTRY_DSN = original;
+    delete process.env.DO_NOT_TRACK;
+    delete process.env.DORKOS_TELEMETRY_DISABLED;
+    delete process.env.DORKOS_TELEMETRY_DEBUG;
+    process.env.NODE_ENV = savedEnv.NODE_ENV;
+    vi.restoreAllMocks();
   });
 
-  it('returns null when consent is false, even with a DSN', () => {
-    process.env.SENTRY_DSN = VALID_DSN;
+  it('returns null when consent is false', () => {
     const dorkHome = makeDorkHome({ telemetry: { errorReporting: false } });
     expect(initCliErrorReporting({ dorkHome, version: '0.46.0' })).toBeNull();
   });
 
-  it('returns null when consent is true but no DSN is set', () => {
-    delete process.env.SENTRY_DSN;
+  it('returns null when an env kill switch is set, even if opted in', () => {
+    process.env.DO_NOT_TRACK = '1';
     const dorkHome = makeDorkHome({ telemetry: { errorReporting: true } });
     expect(initCliErrorReporting({ dorkHome, version: '0.46.0' })).toBeNull();
   });
 
-  it('returns null when the DSN is malformed', () => {
-    process.env.SENTRY_DSN = 'not-a-dsn';
-    const dorkHome = makeDorkHome({ telemetry: { errorReporting: true } });
-    expect(initCliErrorReporting({ dorkHome, version: '0.46.0' })).toBeNull();
-  });
-
-  it('returns a reporter when opted in and a valid DSN is set', () => {
-    process.env.SENTRY_DSN = VALID_DSN;
+  it('returns a reporter when opted in and no kill switch is set (no DSN needed)', () => {
     const dorkHome = makeDorkHome({ telemetry: { errorReporting: true } });
     expect(initCliErrorReporting({ dorkHome, version: '0.46.0' })).not.toBeNull();
+  });
+
+  it('capture sends a scrubbed $exception batch to the owned ingest', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const dorkHome = makeDorkHome({ telemetry: { errorReporting: true } });
+
+    const reporter = initCliErrorReporting({ dorkHome, version: '0.46.0' });
+    await reporter!.capture(new Error('boom at /Users/alice/x with sk-abcdefgh12345678'));
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://dorkos.ai/api/telemetry/events');
+    const body = (init.body as string) ?? '';
+    expect(body).not.toContain('alice');
+    expect(body).not.toContain('sk-abcdefgh12345678');
+    expect(body).toContain('"event":"$exception"');
+    expect(body).toContain('"surface":"cli"');
+    vi.unstubAllGlobals();
+  });
+
+  it('capture in debug mode prints and sends nothing', async () => {
+    process.env.DORKOS_TELEMETRY_DEBUG = '1';
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const writeSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const dorkHome = makeDorkHome({ telemetry: { errorReporting: true } });
+
+    const reporter = initCliErrorReporting({ dorkHome, version: '0.46.0' });
+    await reporter!.capture(new Error('boom'));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('$exception'));
+    vi.unstubAllGlobals();
   });
 });
 

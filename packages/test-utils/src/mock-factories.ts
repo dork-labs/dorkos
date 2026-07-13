@@ -450,6 +450,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       details: 'Routing succeeded. No agent was invoked.',
     }),
     updateConfig: vi.fn().mockResolvedValue(undefined),
+    reportError: vi.fn().mockResolvedValue(undefined),
     // Directory Operations
     createDirectory: vi.fn().mockResolvedValue({ path: '/test/new-folder' }),
     // Discovery

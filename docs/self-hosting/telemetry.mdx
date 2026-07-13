@@ -96,14 +96,14 @@ Prefer a public thread? The help menu also has **Report a bug on GitHub** and **
 
 DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. Unlike the anonymous heartbeat, this one is off until you turn it on:
 
-- It goes to a **third party**, not to us. You point it at your own [Sentry](https://sentry.io) or self-hosted [GlitchTip](https://glitchtip.com) project. Nothing is sent unless you set that up.
-- It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file contents, no session data.
+- It goes to dorkos.ai, the same place as the heartbeat, and nowhere else. There is no third party and nothing to set up.
+- It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file paths, no session data.
 
-Before anything leaves your machine, home directories and full file paths are stripped so no username can leak, and anything shaped like a key, token, or password is redacted. To turn it on, set two things: a `SENTRY_DSN` environment variable pointing at your project, and `telemetry.errorReporting: true` in your config. Leave either one unset and nothing is reported.
+Before anything leaves your machine, home directories and full file paths are stripped so no username can leak, and anything shaped like a key, token, or password is redacted. To turn it on, set `telemetry.errorReporting: true` in your config. That is the only switch. Leave it off (the default) and nothing is reported.
 
 <Callout type="info">
-  Error reporting works the same way with a self-hosted GlitchTip: use its DSN instead of Sentry's.
-  Everything stays under your control.
+  Want to see exactly what a crash report looks like before it sends? Set `DORKOS_TELEMETRY_DEBUG=1`
+  and DorkOS prints the crash payload to your terminal instead of sending it.
 </Callout>
 
 ## Debug tracing (a separate, local-only flag)
@@ -174,7 +174,7 @@ The first time you open DorkOS, a banner discloses that it shares anonymous data
 }
 ```
 
-Set a value to `false` to turn a channel off, or `true` to turn it on. The three anonymous channels default to `true`; error reporting defaults to `false`. Error reporting needs one more thing on top of its flag: a `SENTRY_DSN` environment variable. Without it, nothing is sent even if the flag is `true`.
+Set a value to `false` to turn a channel off, or `true` to turn it on. The three anonymous channels default to `true`; error reporting defaults to `false` and its flag is the only switch it needs.
 
 <Callout type="info">
   Anonymous by default is the norm for developer tools, from Next.js to VS Code to Homebrew. We keep

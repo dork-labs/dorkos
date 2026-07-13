@@ -33,8 +33,8 @@ export function PrivacyTab() {
         <h3 className="text-sm font-semibold">Privacy &amp; Data</h3>
         <p className="text-muted-foreground text-xs">
           DorkOS shares a little anonymous data by default so we can count active installs and see
-          which features get used. It is anonymous by construction: no prompts, code, file paths,
-          or session content are ever sent, and nothing sends before the first-run notice. Crash
+          which features get used. It is anonymous by construction: no prompts, code, file paths, or
+          session content are ever sent, and nothing sends before the first-run notice. Crash
           reports are separate and stay off until you turn them on.{' '}
           <a
             href="https://dorkos.ai/telemetry"
@@ -73,7 +73,7 @@ export function PrivacyTab() {
           />
           <SwitchSettingRow
             label="Share crash reports"
-            description="Send a cleaned-up crash report when something breaks. Needs a SENTRY_DSN set; the error message text is never included."
+            description="Send a cleaned-up crash report to dorkos.ai when something breaks. Scrubbed first: no error messages, no file paths, no code. Off until you turn it on."
             checked={telemetry?.errorReporting ?? false}
             onCheckedChange={(v) => setChannel('errorReporting', v)}
             disabled={updateConfig.isPending}

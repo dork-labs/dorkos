@@ -1,5 +1,5 @@
 /**
- * Opt-in CLI error reporting (DOR-293 PR-B).
+ * Opt-in CLI error reporting (DOR-293, consolidated in DOR-318).
  *
  * Wires the shared allowlist-scrubbing error-report core to the CLI so a crash
  * in a standalone command (`doctor`, `feedback`, `package`, `harness`, …) can be
@@ -10,22 +10,37 @@
  *
  * Same gate as the server: reporting happens only when
  * `config.telemetry.errorReporting === true` (read from `~/.dork/config.json`)
- * AND a `SENTRY_DSN` env var is set. Missing either → `null`, nothing sent. The
- * error message is omitted and paths/tokens scrubbed by the shared core.
+ * AND no env kill switch is set (`DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`).
+ * There is no longer a `SENTRY_DSN` requirement — crash reports map to a PostHog
+ * `$exception` event and POST to DorkOS's own ingest
+ * (`https://dorkos.ai/api/telemetry/events`), which forwards to PostHog Error
+ * Tracking server-side (ADR 260713-143958 Phase 6). The error message is omitted
+ * and paths/tokens scrubbed by the shared core. `DORKOS_TELEMETRY_DEBUG=1` prints
+ * the exact payload to stderr instead of sending it.
  *
  * @module cli/lib/error-reporter
  */
 
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import {
-  buildErrorEvent,
-  parseDsn,
+  buildExceptionEvent,
+  sendExceptionEvent,
   raceWithTimeout,
-  sendErrorEvent,
   FATAL_FLUSH_TIMEOUT_MS,
 } from '@dorkos/shared/error-report';
-import { isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
+import {
+  isTelemetryDisabledByEnv,
+  isTelemetryDebugEnabled,
+} from '@dorkos/shared/telemetry-consent';
+
+/**
+ * File (under dorkHome) holding the anonymous per-install UUID. Mirrors
+ * `INSTANCE_ID_FILENAME` in `apps/server/src/lib/instance-id.ts` — the CLI can't
+ * import from the server package, so the name is duplicated with this note.
+ */
+const INSTANCE_ID_FILENAME = 'telemetry-install-id';
 
 /** A live CLI error reporter. `capture` is fire-and-forget and never throws. */
 export interface CliErrorReporter {
@@ -35,9 +50,9 @@ export interface CliErrorReporter {
 
 /** Options for {@link initCliErrorReporting}. */
 export interface InitCliErrorReportingOptions {
-  /** Resolved `~/.dork` directory (holds `config.json`). */
+  /** Resolved `~/.dork` directory (holds `config.json` + the install id). */
   dorkHome: string;
-  /** CLI version (`__CLI_VERSION__`) used as the Sentry release. */
+  /** CLI version (`__CLI_VERSION__`) used as the release + event `dorkosVersion`. */
   version: string;
 }
 
@@ -59,12 +74,30 @@ export function readErrorReportingConsent(dorkHome: string): boolean {
 }
 
 /**
+ * Read the anonymous per-install id shared with every dorkos.ai channel. Falls
+ * back to a fresh random UUID when the file is missing (a standalone CLI command
+ * that has never sent a heartbeat): still anonymous, and PostHog groups crashes
+ * by fingerprint, not `distinct_id`.
+ *
+ * @param dorkHome - The resolved `~/.dork` directory.
+ */
+function readInstanceId(dorkHome: string): string {
+  try {
+    const raw = fs.readFileSync(path.join(dorkHome, INSTANCE_ID_FILENAME), 'utf-8').trim();
+    if (raw) return raw;
+  } catch {
+    // Missing or unreadable — fall through to an ephemeral anonymous id.
+  }
+  return randomUUID();
+}
+
+/**
  * Build a CLI error reporter, or return `null` when reporting is off.
  *
- * Returns `null` (and sends nothing) unless the user opted in via config AND a
- * valid `SENTRY_DSN` is present.
+ * Returns `null` (and sends nothing) unless the user opted in via config AND no
+ * env kill switch is set.
  *
- * @param options - The dorkHome (for config) and CLI version.
+ * @param options - The dorkHome (for config + install id) and CLI version.
  */
 export function initCliErrorReporting(
   options: InitCliErrorReportingOptions
@@ -72,32 +105,31 @@ export function initCliErrorReporting(
   if (!readErrorReportingConsent(options.dorkHome)) return null;
   // Env kill switch (DOR-312) beats config: DO_NOT_TRACK / DORKOS_TELEMETRY_DISABLED
   // force every outbound channel off. Read process.env at call time, matching the
-  // CLI's imperative env convention (see cli.ts / the DSN read below).
+  // CLI's imperative env convention (see cli.ts).
   // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
   if (isTelemetryDisabledByEnv(process.env)) return null;
-  // Read at call time, not from env.ts's import-time snapshot: the DSN is set by
-  // the operator's shell right before running, and the CLI resolves its
-  // environment imperatively (see the DORK_HOME convention in cli.ts).
-  // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
-  const dsn = process.env.SENTRY_DSN;
-  if (!dsn || !parseDsn(dsn)) return null;
 
   const release = `dorkos@${options.version}`;
   // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
   const environment = process.env.NODE_ENV ?? 'production';
+  // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
+  const debug = isTelemetryDebugEnabled(process.env);
   const os = `${process.platform}-${process.arch}`;
+  const distinctId = readInstanceId(options.dorkHome);
 
   return {
     async capture(error: unknown): Promise<void> {
-      const event = buildErrorEvent({
+      const event = buildExceptionEvent({
         error,
         release,
         environment,
         surface: 'cli',
         os,
         cwd: process.cwd(),
+        distinctId,
+        dorkosVersion: options.version,
       });
-      await sendErrorEvent(event, dsn);
+      await sendExceptionEvent(event, { debug });
     },
   };
 }

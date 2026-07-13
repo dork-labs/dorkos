@@ -260,12 +260,13 @@ if (process.argv[2] === 'marketplace') {
 // main command flow below.
 const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
 
-// Opt-in error reporting (DOR-293). Install early so standalone CLI commands
-// (doctor, feedback, package, harness, …) are covered — but ONLY when reporting
-// is on (a non-null reporter). Installing handlers unconditionally would disable
-// Node's default crash-on-unhandled-rejection for every user. No-op unless
-// `telemetry.errorReporting` is true in config AND a SENTRY_DSN is set. The
-// handlers are uninstalled just before the in-process server boots, so the
+// Opt-in error reporting (DOR-293, consolidated in DOR-318). Install early so
+// standalone CLI commands (doctor, feedback, package, harness, …) are covered —
+// but ONLY when reporting is on (a non-null reporter). Installing handlers
+// unconditionally would disable Node's default crash-on-unhandled-rejection for
+// every user. No-op unless `telemetry.errorReporting` is true in config AND no
+// env kill switch is set; crash reports POST to the owned ingest, no SENTRY_DSN.
+// The handlers are uninstalled just before the in-process server boots, so the
 // server's own reporter owns the cockpit path (no double report).
 const cliErrorReporter = initCliErrorReporting({ dorkHome: DORK_HOME, version: __CLI_VERSION__ });
 const uninstallCliErrorHandlers = cliErrorReporter

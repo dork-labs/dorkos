@@ -1,34 +1,35 @@
 /**
- * Opt-in error reporting core — DSN parsing, PII scrubbing, and Sentry-envelope
- * building/sending, shared by the server and the CLI (DOR-293 PR-B).
+ * Opt-in error reporting core — PII scrubbing and PostHog `$exception` mapping,
+ * shared by the server and the CLI (DOR-293, consolidated in DOR-318).
  *
- * This is the security-critical layer. Crash reports go to a **third party**
- * (Sentry or a self-hosted GlitchTip, which speaks the same protocol), so the
- * event is built by an **allowlist**: only the fields defined here are ever
- * sent. The raw error message is never sent (it is free-form and could carry
- * session content or prompts); we send the error type plus a stack scrubbed to
- * repo-relative filenames, with home directories, absolute paths, and
- * secret-shaped tokens stripped before anything leaves the machine. There is
- * deliberately no full Sentry SDK — a minimal reporter lets us allowlist by
- * construction (rather than denylist the SDK's large auto-captured surface) and
- * keeps the CLI bundle small. See ADR 260711-153307.
+ * This is the security-critical layer. Crash reports are built by an
+ * **allowlist**: only the fields defined here are ever sent. The raw error
+ * message is never sent (it is free-form and could carry session content or
+ * prompts); we send the error type plus a stack scrubbed to repo-relative
+ * filenames, with home directories, absolute paths, and secret-shaped tokens
+ * stripped before anything leaves the machine. Allowlist-by-construction (rather
+ * than denylisting a vendor SDK's large auto-captured surface) keeps the CLI
+ * bundle small and the privacy guarantee tight. See ADR 260711-153307
+ * (scrubbing contract) and ADR 260713-143958 Phase 6 (destination).
  *
- * Environment-agnostic and pure except {@link sendErrorEvent} (uses `fetch`):
- * every input is passed in, so the same code runs in the server and the CLI and
- * is exhaustively testable. Nothing here reads config, env, or the filesystem.
+ * **Destination (DOR-318):** reports no longer go direct-to-Sentry. They map to
+ * a PostHog-native `$exception` event and POST to DorkOS's own ingest at
+ * {@link TELEMETRY_EVENTS_ENDPOINT} (`https://dorkos.ai/api/telemetry/events`),
+ * which forwards to PostHog Error Tracking server-side. This removes the
+ * third-party egress and the founder `SENTRY_DSN` dependency; the consent
+ * posture is unchanged (Tier 2 explicit opt-in). The `$exception` wire shape is
+ * a documented carve-out defined in `telemetry-events.ts`; we import its type
+ * only (no runtime coupling), so this module stays pure.
+ *
+ * Environment-agnostic and pure except {@link sendExceptionEvent} (uses
+ * `fetch`): every input is passed in, so the same code runs in the server and
+ * the CLI and is exhaustively testable. Nothing here reads config, env, or the
+ * filesystem.
  *
  * @module error-report
  */
 
-/** A DSN parsed into the pieces needed to build the ingest URL and auth header. */
-export interface ParsedDsn {
-  /** The Sentry/GlitchTip envelope ingest URL. */
-  ingestUrl: string;
-  /** The public key (DSN username) used in the auth header. */
-  publicKey: string;
-  /** The numeric project id (last path segment of the DSN). */
-  projectId: string;
-}
+import type { ExceptionEvent, ExceptionEventProperties } from './telemetry-events.js';
 
 /** A single scrubbed stack frame — structural location only, never source or locals. */
 export interface ScrubbedFrame {
@@ -73,7 +74,7 @@ export interface BuildErrorEventInput {
   /** Deployment environment, e.g. `production` / `development`. */
   environment: string;
   /** Which surface reported it. */
-  surface: 'server' | 'cli';
+  surface: 'server' | 'cli' | 'client';
   /** OS tag, e.g. `darwin-arm64`. */
   os: string;
   /**
@@ -300,53 +301,146 @@ export function buildErrorEvent(input: BuildErrorEventInput): ErrorEvent {
   };
 }
 
+/** The DorkOS owned-ingest endpoint that both usage and `$exception` events POST to. */
+export const TELEMETRY_EVENTS_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
+
 /**
- * Parse a Sentry/GlitchTip DSN into its ingest URL, public key, and project id.
- * Returns `null` for anything malformed so callers can no-op safely.
+ * Map the scrubbed {@link ErrorEvent} into the property bag of a PostHog-native
+ * `$exception` event (ADR 260713-143958 Phase 6). This is the single place the
+ * server and CLI (and the client route, which rebuilds server-side) agree on the
+ * wire shape, so the scrubbing done in {@link buildErrorEvent} is preserved
+ * end-to-end.
  *
- * DSN form: `https://<publicKey>@<host>[/<path>]/<projectId>`.
+ * Shape notes (verified against `posthog-node`'s error-tracking output, which
+ * PostHog Error Tracking is guaranteed to parse):
+ *   - `$exception_list[].value` is the empty string — the raw message is never
+ *     sent (mirrors {@link buildErrorEvent}); `type` is the scrubbed error name.
+ *   - `stacktrace.type` is `'raw'` and each frame carries only structural
+ *     location (`platform`, repo-relative `filename`, `function`, line/col,
+ *     `in_app`) — no source lines, no locals, never an absolute path. Because we
+ *     send pre-scrubbed raw frames with no `chunk_id`/`abs_path`, PostHog does no
+ *     source-map fetch against us — grouping keys off the error type + top
+ *     in-app frames (its default `$exception_fingerprint`), which is exactly a
+ *     bug-report signature.
+ *   - `$process_person_profile: false` keeps crash events anonymous (no PostHog
+ *     person is created) even though a `distinctId` (the anonymous per-install
+ *     `instanceId`) rides along for cross-crash correlation.
+ *   - `surface` / `release` / `environment` / `os` mirror the old `ErrorEvent`
+ *     tags/fields so crashes stay filterable by client vs server, version, etc.
  *
- * @param dsn - The DSN string (from `SENTRY_DSN` or config).
+ * @param event - A scrubbed event from {@link buildErrorEvent}.
  */
-export function parseDsn(dsn: string): ParsedDsn | null {
-  let url: URL;
-  try {
-    url = new URL(dsn);
-  } catch {
-    return null;
-  }
-  const publicKey = url.username;
-  if (!publicKey) return null;
-  const segments = url.pathname.split('/').filter(Boolean);
-  const projectId = segments.pop();
-  if (!projectId) return null;
-  const prefix = segments.length > 0 ? `/${segments.join('/')}` : '';
-  const ingestUrl = `${url.protocol}//${url.host}${prefix}/api/${projectId}/envelope/`;
-  return { ingestUrl, publicKey, projectId };
+export function errorEventToExceptionProperties(event: ErrorEvent): ExceptionEventProperties {
+  const surface = event.tags.surface ?? 'server';
+  // Browser stacks are web JS; the server and CLI are node JS. PostHog uses this
+  // only to classify frames — it never triggers a fetch for our raw frames.
+  const platform = surface === 'client' ? 'web:javascript' : 'node:javascript';
+  const value = event.exception.values[0];
+  return {
+    $exception_list: [
+      {
+        type: value.type,
+        // Empty by design — the raw message is never sent (see buildErrorEvent).
+        value: '',
+        mechanism: { handled: false, synthetic: false },
+        stacktrace: {
+          type: 'raw',
+          frames: value.stacktrace.frames.map((f) => ({
+            platform,
+            filename: f.filename,
+            function: f.function,
+            ...(f.lineno !== undefined ? { lineno: f.lineno } : {}),
+            ...(f.colno !== undefined ? { colno: f.colno } : {}),
+            in_app: f.in_app,
+          })),
+        },
+      },
+    ],
+    $exception_level: 'error',
+    $process_person_profile: false,
+    surface,
+    release: event.release,
+    environment: event.environment,
+    os: event.tags.os ?? 'unknown',
+  };
+}
+
+/** Inputs for building a fully-enveloped {@link ExceptionEvent}. */
+export interface BuildExceptionEventInput extends BuildErrorEventInput {
+  /** Anonymous per-install id used as the PostHog `distinct_id` (a UUID, not a user). */
+  distinctId: string;
+  /** Emitting DorkOS version, stamped into the event envelope. */
+  dorkosVersion: string;
 }
 
 /**
- * Send a built {@link ErrorEvent} to the DSN's envelope endpoint. Best-effort:
- * any failure (bad DSN, network error, non-2xx) is swallowed — error reporting
- * must never itself crash the process or surface to the user.
+ * Build a fully-enveloped, scrubbed PostHog `$exception` event ready to POST to
+ * {@link TELEMETRY_EVENTS_ENDPOINT}. The single constructor for a crash event —
+ * allowlisted by construction, exactly like {@link buildErrorEvent} (which it
+ * wraps): the set of fields that can ever be sent is precisely the
+ * {@link ExceptionEvent} shape.
  *
- * @param event - The allowlisted, already-scrubbed event.
- * @param dsn - The Sentry/GlitchTip DSN.
+ * @param input - The error plus release/environment/surface/os/cwd context and
+ *   the envelope identity (`distinctId`, `dorkosVersion`).
  */
-export async function sendErrorEvent(event: ErrorEvent, dsn: string): Promise<void> {
-  const parsed = parseDsn(dsn);
-  if (!parsed) return;
-  const header = { event_id: event.event_id, sent_at: new Date().toISOString(), dsn };
-  const itemHeader = { type: 'event' as const, content_type: 'application/json' };
-  const envelope = `${JSON.stringify(header)}\n${JSON.stringify(itemHeader)}\n${JSON.stringify(event)}\n`;
+export function buildExceptionEvent(input: BuildExceptionEventInput): ExceptionEvent {
+  const scrubbed = buildErrorEvent(input);
+  return {
+    event: '$exception',
+    properties: errorEventToExceptionProperties(scrubbed),
+    distinctId: input.distinctId,
+    timestamp: scrubbed.timestamp,
+    dorkosVersion: input.dorkosVersion,
+  };
+}
+
+/** Options for {@link sendExceptionEvent}. */
+export interface SendExceptionEventOptions {
+  /** Ingest endpoint. Defaults to {@link TELEMETRY_EVENTS_ENDPOINT}; overridable in tests. */
+  endpoint?: string;
+  /** `fetch` implementation. Defaults to the global; overridable in tests. */
+  fetchImpl?: typeof fetch;
+  /**
+   * Debug mode (`DORKOS_TELEMETRY_DEBUG`): print the exact JSON that WOULD be
+   * sent to stderr and send nothing, so a power user can audit the wire format.
+   */
+  debug?: boolean;
+}
+
+/**
+ * POST one built {@link ExceptionEvent} to the owned ingest as a single-event
+ * batch (`{ events: [event] }`), matching the usage-reporter's wire envelope.
+ * Best-effort: any failure (network error, non-2xx) is swallowed — error
+ * reporting must never itself crash the process or surface to the user. In debug
+ * mode nothing is sent; the payload is printed to stderr instead.
+ *
+ * @param event - The allowlisted, already-scrubbed `$exception` event.
+ * @param options - Endpoint / fetch / debug overrides.
+ */
+export async function sendExceptionEvent(
+  event: ExceptionEvent,
+  options: SendExceptionEventOptions = {}
+): Promise<void> {
+  const endpoint = options.endpoint ?? TELEMETRY_EVENTS_ENDPOINT;
+  const body = JSON.stringify({ events: [event] });
+
+  if (options.debug) {
+    // process may be undefined in a browser, but this sender only runs in the
+    // server/CLI (Node); guard anyway so the pure module stays browser-safe.
+    if (typeof process !== 'undefined' && process.stderr) {
+      process.stderr.write(
+        `[Telemetry] DORKOS_TELEMETRY_DEBUG: crash report NOT sent. Would POST to ${endpoint}:\n` +
+          `${JSON.stringify({ events: [event] }, null, 2)}\n`
+      );
+    }
+    return;
+  }
+
   try {
-    await fetch(parsed.ingestUrl, {
+    await (options.fetchImpl ?? fetch)(endpoint, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/x-sentry-envelope',
-        'x-sentry-auth': `Sentry sentry_version=7, sentry_client=${SDK_NAME}/${event.release}, sentry_key=${parsed.publicKey}`,
-      },
-      body: envelope,
+      headers: { 'content-type': 'application/json' },
+      body,
     });
   } catch {
     // Telemetry must never fail user operations.

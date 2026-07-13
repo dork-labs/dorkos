@@ -247,10 +247,12 @@ export const UserConfigSchema = z.object({
        */
       heartbeat: z.boolean().default(true),
       /**
-       * Tier 2 channel (opt-in): send crash and error reports to a third-party
-       * sink (today's Sentry path). Defaults `false` and never turns on without
-       * an explicit opt-in AND a configured `SENTRY_DSN` — the notice-before-send
-       * gate does not apply to it.
+       * Tier 2 channel (opt-in): send scrubbed crash reports to DorkOS's own
+       * ingest at dorkos.ai (which forwards to PostHog Error Tracking), never to
+       * a third party. Defaults `false` and turns on only by an explicit opt-in
+       * (never the first-run banner); the notice-before-send gate does not apply.
+       * The raw message is never sent and paths/tokens are scrubbed. See ADR
+       * 260711-153307 (scrubbing) + 260713-143958 Phase 6 (destination).
        */
       errorReporting: z.boolean().default(false),
       /**

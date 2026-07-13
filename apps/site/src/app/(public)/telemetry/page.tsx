@@ -143,46 +143,30 @@ export default function TelemetryPage() {
           <p className="text-warm-gray leading-relaxed">
             DorkOS can also send a crash report when something breaks, so we can fix it without
             asking you to dig through log files. Unlike the heartbeat, this one is off until you
-            turn it on, for two reasons:
+            turn it on, and it is careful about what it sends:
           </p>
           <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
             <li>
-              It goes to a <span className="text-charcoal font-semibold">third party</span>, not to
-              us directly. You point it at your own{' '}
-              <a
-                href="https://sentry.io"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-charcoal hover:text-brand-orange underline"
-              >
-                Sentry
-              </a>{' '}
-              or self-hosted{' '}
-              <a
-                href="https://glitchtip.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-charcoal hover:text-brand-orange underline"
-              >
-                GlitchTip
-              </a>{' '}
-              project. Nothing is sent unless you set that up.
+              It goes to <span className="text-charcoal font-semibold">dorkos.ai</span>, the same
+              place as the heartbeat, and nowhere else. There is no third party and nothing for you
+              to set up.
             </li>
             <li>
               We send the error type and a cleaned-up stack trace (which function, which file, which
               line), and nothing else. We do{' '}
               <span className="text-charcoal font-semibold">not</span> send the error message text
               at all, because a message can contain whatever your code put in it. No prompts, no
-              code, no file contents, no session data.
+              code, no file paths, no session data.
             </li>
           </ul>
           <p className="text-warm-gray leading-relaxed">
             Before anything is sent, home directories and full file paths are stripped (so no
             username leaks), and anything that looks like a key, token, or password is redacted. To
-            turn it on you set two things: a <span className="font-mono">SENTRY_DSN</span>{' '}
-            environment variable pointing at your project, and{' '}
-            <span className="font-mono">telemetry.errorReporting: true</span> in your config. Leave
-            either one unset and nothing is reported.
+            turn it on, set <span className="font-mono">telemetry.errorReporting: true</span> in
+            your config. That is the only switch; leave it off (the default) and nothing is
+            reported. You can preview a crash report first with{' '}
+            <span className="font-mono">DORKOS_TELEMETRY_DEBUG=1</span>, which prints it to your
+            terminal instead of sending it.
           </p>
         </section>
 
@@ -217,7 +201,7 @@ export default function TelemetryPage() {
   "telemetry": {
     "heartbeat": true,        // the daily ping (on by default)
     "install": true,          // marketplace install counts (on by default)
-    "errorReporting": false,  // crash reports (off; also needs SENTRY_DSN)
+    "errorReporting": false,  // scrubbed crash reports to dorkos.ai (off by default)
     "userHasDecided": true
   }
 }`}</code>

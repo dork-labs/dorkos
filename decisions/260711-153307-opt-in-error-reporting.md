@@ -13,6 +13,20 @@ superseded-by: null
 
 Accepted (DOR-293 PR-B, implemented: server + CLI error reporting).
 
+**Amended 2026-07-13 (DOR-318, ADR 260713-143958 Phase 6):** the crash-report
+**destination** consolidated from direct-to-Sentry into DorkOS's own ingest
+(`https://dorkos.ai/api/telemetry/events` → PostHog Error Tracking as a
+`$exception` event), removing the third-party egress and the `SENTRY_DSN`
+requirement. Reports now also cover cockpit (browser) crashes via
+`POST /api/errors`, which rebuilds and re-scrubs the untrusted client payload
+server-side. The **scrubbing allowlist and consent posture are unchanged**: the
+raw message is still omitted, stacks are still scrubbed to repo-relative
+filenames with home dirs / absolute paths / tokens stripped (decision 3 below
+stands verbatim), and `telemetry.errorReporting` remains a separate explicit
+Tier 2 opt-in. Decisions 1 and 5 stand; decisions 2 (Sentry envelope) and 4
+(`SENTRY_DSN` in env) are superseded by the owned-ingest wire format and the
+removal of the DSN.
+
 ## Context
 
 PR-A shipped the shared opt-in telemetry consent namespace (ADR 260711-141639) with a reserved

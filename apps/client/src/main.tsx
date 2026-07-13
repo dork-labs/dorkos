@@ -14,6 +14,8 @@ import {
   streamManager,
   executeUiCommand,
   resolveApiBaseUrl,
+  reportClientError,
+  installClientErrorHandlers,
 } from '@/layers/shared/lib';
 import {
   TransportProvider,
@@ -304,6 +306,11 @@ streamManager.subscribeUiCommand((command, sessionId) =>
 // Register all built-in features into the extension registry
 initializeExtensions();
 
+// Cockpit crash reporting (DOR-318): relay uncaught window errors + unhandled
+// rejections to the server, which scrubs and (only when opted in) forwards them
+// to PostHog Error Tracking. Deduped per session; never throws or loops.
+installClientErrorHandlers(transport);
+
 ReactDOM.createRoot(document.getElementById('root')!, {
   onCaughtError: (error, errorInfo) => {
     // Fires when an ErrorBoundary catches — fallback UI is already showing
@@ -312,10 +319,18 @@ ReactDOM.createRoot(document.getElementById('root')!, {
   onUncaughtError: (error, errorInfo) => {
     // Fires when no ErrorBoundary caught it — full app crash
     console.error('[dorkos:uncaught]', error, errorInfo.componentStack);
+    // App-crash level (ADR-0210): report the error React couldn't recover from.
+    reportClientError(transport, error);
   },
 }).render(
   <React.StrictMode>
-    <ErrorBoundary FallbackComponent={AppCrashFallback}>
+    <ErrorBoundary
+      FallbackComponent={AppCrashFallback}
+      // The top-level (app-crash) boundary is the one place we report a caught
+      // React error — deeper per-panel boundaries stay quiet (ADR-0210). Dedup
+      // in reportClientError collapses any overlap with onUncaughtError.
+      onError={(error) => reportClientError(transport, error)}
+    >
       <Root />
     </ErrorBoundary>
   </React.StrictMode>

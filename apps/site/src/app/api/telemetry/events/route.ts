@@ -88,6 +88,69 @@ const TelemetryEventSchema = z.discriminatedUnion('event', [
 
 type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
+// --- Exception events (crash reporting) — mirrors the shared `$exception` -------
+// section in `@dorkos/shared/telemetry-events` (DOR-318, ADR 260713-143958
+// Phase 6). PostHog-native `$exception` events ride the SAME batch endpoint but
+// are a documented carve-out from the `[object]_[verb]` convention. Keep this in
+// lockstep with the shared `ExceptionEventSchema`.
+
+const MAX_FRAME_STRING_LEN = 1024;
+const MAX_STACK_FRAMES = 200;
+
+/** Mirrors `ExceptionStackFrameSchema` in the shared registry. */
+const ExceptionStackFrameSchema = z
+  .object({
+    platform: z.string().min(1).max(MAX_STRING_LEN),
+    filename: z.string().max(MAX_FRAME_STRING_LEN),
+    function: z.string().max(MAX_FRAME_STRING_LEN),
+    lineno: z.number().int().min(0).optional(),
+    colno: z.number().int().min(0).optional(),
+    in_app: z.boolean(),
+  })
+  .strict();
+
+/** Mirrors `ExceptionValueSchema` in the shared registry. */
+const ExceptionValueSchema = z
+  .object({
+    type: z.string().max(MAX_FRAME_STRING_LEN),
+    value: z.string().max(MAX_STRING_LEN),
+    mechanism: z.object({ handled: z.boolean(), synthetic: z.boolean() }).strict(),
+    stacktrace: z
+      .object({
+        type: z.literal('raw'),
+        frames: z.array(ExceptionStackFrameSchema).max(MAX_STACK_FRAMES),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** Mirrors `ExceptionEventPropertiesSchema` in the shared registry. */
+const ExceptionEventPropertiesSchema = z
+  .object({
+    $exception_list: z.array(ExceptionValueSchema).min(1).max(10),
+    $exception_level: z.literal('error'),
+    $process_person_profile: z.literal(false),
+    surface: z.string().min(1).max(MAX_STRING_LEN),
+    release: z.string().min(1).max(MAX_STRING_LEN),
+    environment: z.string().min(1).max(MAX_STRING_LEN),
+    os: z.string().min(1).max(MAX_STRING_LEN),
+  })
+  .strict();
+
+/** Mirrors `ExceptionEventSchema` (strict, shares the envelope fields). */
+const ExceptionEventSchema = z
+  .object({
+    event: z.literal('$exception'),
+    properties: ExceptionEventPropertiesSchema,
+    ...envelopeFields,
+  })
+  .strict();
+
+type ExceptionEvent = z.infer<typeof ExceptionEventSchema>;
+
+/** Any event this ingest accepts: a curated usage event OR a `$exception` crash. */
+type AcceptedEvent = TelemetryEvent | ExceptionEvent;
+
 // --- end mirror ----------------------------------------------------------------
 
 // --- Route-local mirror of the FEEDBACK section of `@dorkos/shared/telemetry-events`
@@ -182,22 +245,26 @@ export async function POST(request: Request): Promise<Response> {
       ? (body as { events: unknown[] }).events
       : [];
 
-  const valid: TelemetryEvent[] = [];
+  // Three event families, each validated independently so a mixed batch is
+  // fine: the curated usage union, then feedback (user-volunteered, the only
+  // free-text; DOR-317), then the `$exception` crash carve-out (DOR-318).
+  // Anything matching none of the strict schemas is silently dropped
+  // (allowlist rejection), never persisted.
+  const valid: AcceptedEvent[] = [];
   const validFeedback: FeedbackEvent[] = [];
   for (const raw of rawEvents.slice(0, MAX_BATCH)) {
-    const parsed = TelemetryEventSchema.safeParse(raw);
-    if (parsed.success) {
-      valid.push(parsed.data);
+    const usage = TelemetryEventSchema.safeParse(raw);
+    if (usage.success) {
+      valid.push(usage.data);
       continue;
     }
-    // Feedback events (user-volunteered) validate against their own schema and
-    // carry the only free-text this ingest accepts (DOR-317).
     const feedback = FeedbackEventSchema.safeParse(raw);
     if (feedback.success) {
       validFeedback.push(feedback.data);
       continue;
     }
-    // Invalid events are silently dropped (allowlist rejection), never persisted.
+    const exception = ExceptionEventSchema.safeParse(raw);
+    if (exception.success) valid.push(exception.data);
   }
 
   if (valid.length > 0) {
@@ -216,9 +283,11 @@ export async function POST(request: Request): Promise<Response> {
  * logged so a PostHog hiccup never turns into a non-200 the app might retry on.
  *
  * `distinct_id` is the event's own anonymous `distinctId`; the DorkOS version
- * rides in `properties` as `dorkos_version`.
+ * rides in `properties` as `dorkos_version`. A `$exception` event carries its
+ * PostHog Error Tracking fields (`$exception_list`, …) in `properties`, which
+ * spread through unchanged — PostHog groups it into an Issue server-side.
  */
-async function forwardToPostHog(events: TelemetryEvent[]): Promise<void> {
+async function forwardToPostHog(events: AcceptedEvent[]): Promise<void> {
   const apiKey = env.POSTHOG_PROJECT_KEY;
   if (!apiKey) return; // Unconfigured deploy: accept, forward nothing.
 
