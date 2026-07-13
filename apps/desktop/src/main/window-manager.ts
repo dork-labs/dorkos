@@ -196,7 +196,9 @@ export function isOwnOrigin(url: string, rendererUrl?: string): boolean {
 }
 
 /**
- * Create the main BrowserWindow with native macOS styling.
+ * Create the main BrowserWindow. On macOS it uses the hidden-inset title bar
+ * (traffic-light styling); on Windows/Linux it falls back to the native window
+ * frame with standard min/max/close controls.
  *
  * @param rendererUrl - The bundled server's own origin
  *   (`http://localhost:<port>`), passed once {@link startServer} in

@@ -4,12 +4,17 @@ import { requestNavigate, SETTINGS_ROUTE } from './navigation';
 import { checkForUpdatesInteractive } from './auto-updater';
 
 /**
- * Set up the native macOS application menu.
+ * Set up the application menu. The template is macOS-shaped (an app-name
+ * submenu, macOS-only `services`/`hide` roles) but installs on every platform;
+ * Electron silently drops the mac-only roles off macOS, so it stays functional
+ * on Windows/Linux (if non-idiomatic there — a native File/Edit/… layout is a
+ * tracked Windows follow-up, DOR-230-class QA).
  *
  * App menu: About DorkOS, a Check for Updates… item (enabled only in
- * packaged builds — dev builds can't apply updates), Settings… (`Cmd+,`),
- * and the standard services/hide/quit roles. Also provides the standard
- * Edit/View/Window role menus and a custom Help menu with external links.
+ * packaged builds — dev builds can't apply updates), Settings… (`CmdOrCtrl+,`,
+ * so the accelerator fires on Windows/Linux too), and the standard
+ * services/hide/quit roles. Also provides the standard Edit/View/Window role
+ * menus and a custom Help menu with external links.
  *
  * @param getMainWindow - Accessor for the current main window, looked up at
  *   click-time rather than captured — the tracked window is recreated across
@@ -40,7 +45,7 @@ export function setupMenu(
         { type: 'separator' },
         {
           label: 'Settings…',
-          accelerator: 'Cmd+,',
+          accelerator: 'CmdOrCtrl+,',
           click: () => requestNavigate(getMainWindow, ensureWindow, SETTINGS_ROUTE),
         },
         { type: 'separator' },
