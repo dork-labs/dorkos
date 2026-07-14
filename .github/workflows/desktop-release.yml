@@ -16,15 +16,25 @@ name: Desktop Release
 #     reads latest.yml to find the update payload; without it, update checks
 #     404. The .exe is the human-facing installer.
 #
-# Because these are separate workflow jobs from the release that
-# `/system:release` cuts, a desktop build/sign/notarize failure on either
-# platform can never block or unwind the already-created CLI/product release,
-# nor block the other platform: the release and its notes exist the moment the
-# tag is pushed; each platform's assets simply attach later (or not, on
-# failure), independently. Fail-soft by construction.
+# `/system:release` creates the release as a DRAFT (Phase 6.11, --draft).
+# electron-updater ignores draft releases, so clients keep seeing the previous
+# release as the latest — and correctly report "up to date" — until a release is
+# published. The two build jobs ATTACH their assets to that draft (attach-only:
+# they never create a release, flip the draft flag, or rewrite the human-written
+# notes), then the `publish-release` job flips the draft to published once both
+# have finished. That closes the auto-update window: on the happy path every
+# asset (installer + latest*.yml) is attached before the release is ever
+# visible, so an update check can never 404 on a not-yet-uploaded metadata file.
 #
-# `workflow_dispatch` (with `dry_run`) still builds both apps without
-# publishing, for manual verification.
+# Fail-soft is preserved. `publish-release` runs with `if: always()`, so even a
+# build/sign/notarize failure on one or both platforms still publishes the
+# release (with whatever assets attached, plus the notes) rather than stranding
+# it as a permanent draft — a desktop failure can never unwind the CLI/product
+# release, and the app degrades gracefully on a missing platform asset
+# (auto-updater.ts treats a metadata 404 as "no update yet", not an error).
+#
+# `workflow_dispatch` (with `dry_run`) still builds both apps without attaching
+# or publishing, for manual verification.
 
 on:
   push:
@@ -119,8 +129,9 @@ jobs:
       # step — so the release is normally already present. The poll below only
       # covers a slow operator, and FAILS LOUDLY if the release is still absent
       # (Phase 6.11 skipped): a red run is the correct signal, not a silent bare
-      # release. The release must be published (non-draft) for
-      # dorkos.ai/download/mac to resolve the .dmg.
+      # release. The release is created as a DRAFT; the separate `publish-release`
+      # job flips it to published once both platform builds finish, which is what
+      # makes dorkos.ai/download/mac resolve the .dmg.
       #
       # The .zip must ship alongside the .dmg: latest-mac.yml points
       # electron-updater (Squirrel.Mac) at the zip as the update payload, so
@@ -269,3 +280,35 @@ jobs:
             apps/desktop/release/latest.yml \
             apps/desktop/release/*.blockmap \
             --clobber
+
+  publish-release:
+    # Flip the draft release (created by /system:release Phase 6.11 with --draft)
+    # to published, AFTER both platform builds have attached their assets. This
+    # is what closes the auto-update window described in the file header: until
+    # this runs, electron-updater sees the previous release as latest and reports
+    # "up to date"; once it runs, every installer + latest*.yml is already
+    # attached, so no update check can 404 on a not-yet-uploaded metadata file.
+    #
+    # `needs` both build jobs and runs `if: always()` so it publishes even when a
+    # build failed — a notes-plus-whatever-attached release beats a permanent
+    # draft, preserving the fail-soft guarantee (the app degrades gracefully on a
+    # missing platform asset). Gated to real tag pushes, never dry_run.
+    # Idempotent: --draft=false on an already-published release is a no-op.
+    needs: [build-macos, build-windows]
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create it (as a draft) before this workflow can publish it." >&2
+            exit 1
+          fi
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+          echo "Published release $tag."
