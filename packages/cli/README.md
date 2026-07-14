@@ -35,6 +35,8 @@ npm install -g dorkos
 
 Needs Node.js 22 or later. Uses your existing [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sign-in, no separate account needed.
 
+Just want to try it first? `npx dorkos@latest` runs DorkOS with no install step (the first run takes a minute or two to set up).
+
 ## Quick Start
 
 ```bash

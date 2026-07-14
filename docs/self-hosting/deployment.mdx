@@ -9,6 +9,12 @@ DorkOS deploys as a standalone server via the `dorkos` npm package. One process 
 
 This page covers the Claude Code runtime (the default). If you're running Codex or OpenCode instead, check their setup docs for the credentials they expect.
 
+## Docker or a direct install?
+
+For most servers, Docker is the easier default. It keeps DorkOS isolated from the rest of the machine, checks its own health automatically, and upgrades in a couple of commands, all while running as a regular, unprivileged user instead of root. Start with the [Docker guide](/docs/self-hosting/docker).
+
+A direct install, like the one below, fits better when your agents need broad access to code already on the machine. A container only sees the folders you mount into it, while a direct install (paired with systemd, covered further down) can reach anything your OS user can.
+
 ## Quick Deploy
 
 ```bash

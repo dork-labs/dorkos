@@ -1,0 +1,24 @@
+# DorkOS Docker Compose file
+# Downloaded from https://dorkos.ai/compose.yml
+# Docs: https://dorkos.ai/docs/self-hosting/docker
+#
+# Set ANTHROPIC_API_KEY in your shell (or a .env file next to this one),
+# then start DorkOS with: docker compose up -d
+#
+# (Maintainers: keep in sync with the inline example in docs/self-hosting/docker.mdx)
+
+services:
+  dorkos:
+    image: ghcr.io/dork-labs/dorkos:latest
+    container_name: dorkos
+    restart: unless-stopped
+    ports:
+      - '4242:4242'
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NODE_ENV=production
+    volumes:
+      - dorkos-data:/home/node/.dork
+
+volumes:
+  dorkos-data:

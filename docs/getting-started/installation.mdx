@@ -17,6 +17,25 @@ DorkOS gives you a browser tab where you run, schedule, and check on your coding
   desktop app and Docker bring their own, so you don't have to install anything else.)
 </Callout>
 
+## Try it without installing
+
+Curious before you commit to anything? If you have Node.js 22 or newer, you can run DorkOS straight from npm with `npx`, no install step first:
+
+```bash
+npx dorkos@latest
+```
+
+The first run takes a minute or two: npx downloads DorkOS and compiles a couple of native pieces it depends on. After that, your browser opens to the same cockpit a permanent install gives you.
+
+Already signed in to Claude Code? You're set. Otherwise, set your API key first:
+
+```bash
+export ANTHROPIC_API_KEY="your-key-here"
+npx dorkos@latest
+```
+
+Like what you see? Install DorkOS for good with one of the methods below, and skip that first-run wait every time you start it.
+
 ## Pick your install method
 
 Most people should use the one-liner: it's one command and it checks your setup for you. Already comfortable with npm? Use the npm tab. On a Mac and want a real app in your dock, no terminal at all? Use the Desktop App (there is a new Windows version too, still in early testing). Running on a server, or don't want Node.js on your machine? Use Docker. Contributing to DorkOS itself? Use Self-Hosted.
