@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import log from 'electron-log';
+import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
 
 /**
  * Location of the Claude Code native binary inside a packaged build,
@@ -202,7 +203,8 @@ function spawnServer(entryPath: string, env: Record<string, string>): ServerChil
  * Start the Express server in an isolated process.
  *
  * @returns The port number the server is listening on.
- * @throws If the server fails to start within 15 seconds.
+ * @throws If the server child does not signal readiness within
+ *   {@link SERVER_READY_PARENT_TIMEOUT_MS}.
  */
 export async function startServer(): Promise<number> {
   const port = await getFreePort();
@@ -254,7 +256,10 @@ export async function startServer(): Promise<number> {
 
   await new Promise<void>((res, rej) => {
     reject = rej;
-    timeout = setTimeout(() => rej(new Error('Server start timeout')), 15_000);
+    timeout = setTimeout(
+      () => rej(new Error('Server start timeout')),
+      SERVER_READY_PARENT_TIMEOUT_MS
+    );
     child!.on('message', (msg: unknown) => {
       if (
         msg &&

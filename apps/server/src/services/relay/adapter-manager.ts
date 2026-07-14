@@ -299,8 +299,19 @@ export class AdapterManager {
     });
   }
 
-  /** Reload config from disk and reconcile adapter state. */
+  /**
+   * Reload config from disk and reconcile adapter state.
+   *
+   * Runs as one atomic task on the serialized start queue so an in-flight
+   * background start pass can never interleave with the unregister loop below
+   * (which would otherwise leak a should-be-disabled adapter caught mid-register).
+   */
   async reload(): Promise<void> {
+    return this.enqueue(() => this.reloadInner());
+  }
+
+  /** Reconcile body for {@link reload}. Runs inside the serialized chain. */
+  private async reloadInner(): Promise<void> {
     const oldConfigIds = new Set(this.configs.map((c) => c.id));
     // Capture names before reloading config (entries may be removed)
     const oldNames = new Map([...oldConfigIds].map((id) => [id, this.resolveAdapterName(id)]));
@@ -331,10 +342,10 @@ export class AdapterManager {
       }
     }
 
-    // Start/update enabled adapters. Queued so a hot-reload can never run an
-    // adapter-start pass concurrently with the background pass initialize()
-    // kicked off (a concurrent pair could double-register the same adapter).
-    await this.queueStartEnabledAdapters();
+    // Start/update enabled adapters. Called directly (not via the queue):
+    // reloadInner already runs inside the serialized chain, so re-enqueuing
+    // here would deadlock the chain waiting on itself.
+    await this.startEnabledAdapters();
   }
 
   /**
@@ -349,18 +360,35 @@ export class AdapterManager {
   }
 
   /**
-   * Run {@link startEnabledAdapters} serialized behind any in-flight pass, so
-   * initialize()'s background pass and reload()'s pass never interleave. The
-   * chain never rejects: startEnabledAdapters isolates per-adapter failures,
-   * and a defensive catch keeps one broken pass from poisoning the chain.
+   * Chain a task onto the serialized start queue and return the new chain
+   * tail. Every mutation of adapter state that could race the background
+   * start pass — a start pass itself, or a full reload/reconcile — runs
+   * through here so two of them never interleave.
+   *
+   * The chain never rejects: a defensive catch keeps one broken task from
+   * poisoning every task queued after it.
+   *
+   * A queued task must never await the chain (e.g. via
+   * {@link adaptersStarted} or {@link queueStartEnabledAdapters}) — that would
+   * deadlock the chain waiting on itself. Tasks call {@link startEnabledAdapters}
+   * directly instead, since they already run inside the chain.
    */
-  private queueStartEnabledAdapters(): Promise<void> {
+  private enqueue(task: () => Promise<void>): Promise<void> {
     this.startChain = this.startChain.then(() =>
-      this.startEnabledAdapters().catch((err) => {
-        logger.warn('[AdapterManager] Adapter start pass failed:', err);
+      task().catch((err) => {
+        logger.warn('[AdapterManager] Queued adapter task failed:', err);
       })
     );
     return this.startChain;
+  }
+
+  /**
+   * Run {@link startEnabledAdapters} serialized behind any in-flight pass, so
+   * initialize()'s background pass and reload()'s reconcile never interleave.
+   * Per-adapter failures are isolated inside startEnabledAdapters.
+   */
+  private queueStartEnabledAdapters(): Promise<void> {
+    return this.enqueue(() => this.startEnabledAdapters());
   }
 
   /** Enable a specific adapter by ID and persist the change to disk. */
@@ -370,6 +398,11 @@ export class AdapterManager {
 
     config.enabled = true;
     await this.persistConfigs();
+
+    // Race: the background start pass (initialize's queueStartEnabledAdapters)
+    // may have just registered this same adapter. Skip build+register if so,
+    // so we never double-register — the persist above already stuck.
+    if (this.registry.get(id)) return;
 
     const adapter = await this.buildAdapter(config);
     if (adapter) {
