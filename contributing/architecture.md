@@ -929,17 +929,18 @@ Standard Vite React build. Server compiled separately via `tsc`.
 2. **esbuild server bundle** — `apps/server/` + workspace packages to `dist/server/index.js` (ESM, node built-ins externalized)
 3. **esbuild CLI entry** — `packages/cli/src/cli.ts` to `dist/bin/cli.js` (with shebang)
 
-**Native dependency:** `better-sqlite3` is required at runtime (via `@dorkos/db`) but cannot be inlined by esbuild. It is listed as a direct dependency in `packages/cli/package.json` so `npm install -g` compiles it via node-gyp. Install environments need build tools (`python3`, `build-essential`, `libsqlite3-dev` on Linux; Xcode CLI tools on macOS).
+**Native dependencies:** `better-sqlite3` (via `@dorkos/db`) and `node-pty` (via the CLI) are required at runtime but cannot be inlined by esbuild. They are direct dependencies in `packages/cli/package.json` so `npm install -g` builds them. `node-pty` ships no Linux prebuilds and compiles via node-gyp; `better-sqlite3` has official Linux prebuilds for Node 24 and vendors its own SQLite. Install environments need build tools (`python3`, `build-essential` on Linux — no `libsqlite3-dev`; Xcode CLI tools on macOS).
 
-**Docker images:** Three Dockerfiles at the repo root serve different purposes:
+**Docker image:** One multi-stage `Dockerfile` at the repo root produces four build targets:
 
-| File                     | Purpose                                                                 | Command                                |
-| ------------------------ | ----------------------------------------------------------------------- | -------------------------------------- |
-| `Dockerfile`             | CLI install smoke test (`--version`, `--help`, `--post-install-check`)  | `pnpm smoke:docker`                    |
-| `Dockerfile.integration` | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration`               |
-| `Dockerfile.run`         | Runnable container — starts a DorkOS server on `DORKOS_PORT`            | `pnpm docker:build && pnpm docker:run` |
+| Target                | Purpose                                                                 | Command                                |
+| --------------------- | ----------------------------------------------------------------------- | -------------------------------------- |
+| `smoke`               | CLI install smoke test (`--version`, `--help`, `--post-install-check`)  | `pnpm smoke:docker`                    |
+| `integration`         | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration`               |
+| `runtime`             | Published product image — starts a DorkOS server on `DORKOS_PORT`       | `pnpm docker:build && pnpm docker:run` |
+| `builder` / `install` | Internal stages — toolchain + global npm install, not run directly      | —                                      |
 
-`Dockerfile.integration` supports two install modes via `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to test the published npm package. Both integration and runnable images set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.
+`runtime` is the last stage, so a bare `docker build .` produces it. Install mode is selected by the `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to run the integration target against the published npm package. The `integration` and `runtime` targets set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.
 
 The GitHub Actions workflow (`.github/workflows/cli-smoke-test.yml`) runs smoke tests on bare Ubuntu runners (Node 22/24 matrix), Docker smoke tests, and full integration tests on every push to main.
 

@@ -235,8 +235,9 @@ Run DorkOS in a Docker container without a local Node.js install:
 pnpm docker:build
 pnpm docker:run
 
-# Or directly
-docker build -f Dockerfile.run -t dorkos:local .
+# Or directly (pack the CLI first: the image installs from a local dorkos-*.tgz)
+pnpm --filter=dorkos run build && (cd packages/cli && pnpm pack --pack-destination ../../)
+docker build -t dorkos:local .
 docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY=your-key dorkos:local
 ```
 

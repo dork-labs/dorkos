@@ -106,8 +106,9 @@ export interface BindCheckInput {
   /**
    * The `DORKOS_ALLOW_INSECURE_BIND` escape hatch: when `true`, a non-loopback
    * bind is permitted without a login (a warning is logged). Set by container
-   * images (`Dockerfile.integration`, `Dockerfile.run`) that bind `0.0.0.0`
-   * because the container — not the DorkOS process — owns the network boundary.
+   * images (the `integration` and `runtime` targets of the root `Dockerfile`)
+   * that bind `0.0.0.0` because the container — not the DorkOS process — owns
+   * the network boundary.
    */
   allowInsecureBind: boolean;
 }

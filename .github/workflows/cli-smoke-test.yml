@@ -3,7 +3,26 @@ name: CLI Smoke Test
 on:
   push:
     branches: [main]
+  pull_request:
+    # The tarball under test bundles apps/server and apps/client (esbuild), so
+    # they gate PRs alongside the CLI package itself.
+    paths:
+      - 'packages/cli/**'
+      - 'packages/shared/**'
+      - 'apps/server/**'
+      - 'apps/client/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'scripts/smoke-test.sh'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/cli-smoke-test.yml'
   workflow_dispatch:
+
+# Cancel superseded runs on the same ref for PRs only — every push to main
+# keeps its own completed run.
+concurrency:
+  group: cli-smoke-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Opt into Node 24 for every JavaScript-based action (checkout, setup-node,
 # upload-artifact, download-artifact, etc.) ahead of GitHub's Sept 2026 hard
@@ -55,7 +74,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y python3 build-essential libsqlite3-dev
+        run: sudo apt-get update && sudo apt-get install -y python3 build-essential
 
       - uses: actions/download-artifact@v4
         with:
@@ -100,7 +119,7 @@ jobs:
           name: cli-tarball
 
       - name: Build smoke test image
-        run: docker build -t dorkos-smoke .
+        run: docker build --target smoke -t dorkos-smoke .
 
       - name: Run smoke tests
         run: docker run --rm dorkos-smoke
@@ -112,7 +131,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
-            Dockerfile.integration
+            Dockerfile
             .dockerignore
             scripts/smoke-test.sh
 
@@ -121,7 +140,7 @@ jobs:
           name: cli-tarball
 
       - name: Build integration test image
-        run: docker build -f Dockerfile.integration -t dorkos-integration .
+        run: docker build --target integration -t dorkos-integration .
 
       - name: Run integration tests
         run: docker run --rm dorkos-integration

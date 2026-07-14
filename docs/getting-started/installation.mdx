@@ -196,11 +196,11 @@ Run DorkOS in a container. No Node.js installation required on the host, only [D
 docker run -d --name dorkos \
   -p 4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
-The `-v dorkos-data:/root/.dork` part creates a Docker volume, a small chunk of storage that survives even if you remove the container, so your sessions and settings stick around.
+The `-v dorkos-data:/home/node/.dork` part creates a Docker volume, a small chunk of storage that survives even if you remove the container, so your sessions and settings stick around.
 
 </Step>
 <Step>
@@ -389,11 +389,17 @@ docker stop dorkos && docker rm dorkos
 docker run -d --name dorkos \
   -p 4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
 Data in the `dorkos-data` volume persists across updates.
+
+<Callout type="warn">
+  Upgrading from version 0.48.0 or earlier? The data path changed from `/root/.dork` to
+  `/home/node/.dork`, and existing files need an ownership fix first. See [Upgrading from an older
+  image](/docs/self-hosting/docker#upgrading-from-an-older-image) in the Docker guide.
+</Callout>
 
 </Tab>
 

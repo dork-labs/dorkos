@@ -1247,7 +1247,7 @@ async function start() {
   // reachable) interface unless login is enabled AND an owner account exists.
   // A hard gate — binding beyond localhost without credentials would expose the
   // instance. Container images that own their network boundary opt out with
-  // DORKOS_ALLOW_INSECURE_BIND=true (see Dockerfile.integration / Dockerfile.run).
+  // DORKOS_ALLOW_INSECURE_BIND=true (see the Dockerfile integration/runtime targets).
   const bindCheck = checkBindAllowed({
     host,
     exposureAllowed: canExpose(),

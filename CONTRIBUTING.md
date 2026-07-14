@@ -183,7 +183,7 @@ pnpm docker:run      # Start dorkos on port 4242
 Or from the published npm package:
 
 ```bash
-docker build -f Dockerfile.run --build-arg INSTALL_MODE=npm -t dorkos .
+docker build --build-arg INSTALL_MODE=npm -t dorkos .
 docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY=your-key dorkos
 ```
 
