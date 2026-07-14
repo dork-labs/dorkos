@@ -92,3 +92,79 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+  # Mirror the just-pushed GHCR multi-arch image to Docker Hub. GHCR is and
+  # stays the canonical registry; this job is a best-effort mirror purely for
+  # discoverability on Docker Hub — nothing in the product depends on it.
+  #
+  # DORMANT BY DEFAULT and never fails when unconfigured: the whole job is gated
+  # on the repository VARIABLE `DOCKERHUB_MIRROR` (repository variables are
+  # allowed in a job-level `if:`; secrets are not), so an unconfigured repo
+  # simply skips it. To enable:
+  #   1. Set repository variable DOCKERHUB_MIRROR = true
+  #   2. Add secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (a Docker Hub access
+  #      token with write scope on the destination repo)
+  #   3. Optionally set repository variable DOCKERHUB_IMAGE to override the
+  #      destination image (default: dorklabs/dorkos)
+  #
+  # No rebuild: `docker buildx imagetools create` copies the existing GHCR
+  # manifest list (both linux/amd64 and linux/arm64) to the Docker Hub tags,
+  # preserving multi-arch. The destination tag set mirrors the GHCR flavor
+  # (exact version, major.minor, latest-when-not-prerelease, sha) by reusing
+  # docker/metadata-action against the Docker Hub image name. Designed for the
+  # `v*` tag-push path, like build-and-push above.
+  mirror-docker-hub:
+    needs: build-and-push
+    if: vars.DOCKERHUB_MIRROR == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Read-only login to the canonical source registry so the mirror works
+      # even if the GHCR package is private.
+      - name: Log in to GHCR (source)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub (destination)
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute Docker Hub tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.DOCKERHUB_IMAGE || 'dorklabs/dorkos' }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+          flavor: |
+            latest=auto
+
+      - name: Mirror manifests from GHCR to Docker Hub
+        run: |
+          set -euo pipefail
+          source="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          echo "Mirroring ${source} to Docker Hub:"
+          echo "${DOCKER_METADATA_OUTPUT_TAGS}"
+          tag_args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            tag_args+=("--tag" "$tag")
+          done <<< "${DOCKER_METADATA_OUTPUT_TAGS}"
+          docker buildx imagetools create "${tag_args[@]}" "$source"
