@@ -102,7 +102,7 @@ The featured rail at the top highlights curated agents. Below it, the package gr
 
 ### Review and install
 
-Click a package to open the detail sheet. You'll see the README, the requested permissions, the external hosts the package needs to reach (for example, a Discord adapter reaching Discord's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
+Click a package to open the detail sheet. You'll see the requested permissions, the external hosts the package needs to reach (for example, a Discord adapter reaching Discord's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
 
 By default a package installs **globally**, for every agent. To scope it to one agent, pick **Specific agent** in the install dialog and choose the agent. The preview updates to show exactly what that install will do. An agent-scoped plugin's commands, skills, and hooks become available in that agent's sessions from its next message.
 
@@ -123,17 +123,27 @@ By default a package installs **globally**, for every agent. To scope it to one 
 
 Marketplace is the in-product browse experience. It mirrors the public catalog but adds the install machinery, so you can go from "interesting package" to "running on my machine" without leaving the app.
 
+<ProductShot
+  id="marketplace-detail"
+  alt="The marketplace package detail sheet for a package, showing its permission preview (files it will create, a scheduled task it bundles) and an Install button"
+/>
+
 The browse surface has three sections:
 
 - **Featured rail**: a curated row of agents the maintainers have highlighted. Rotates monthly, so it's not the same three agents forever.
 - **Package grid**: every package in every registered marketplace, ranked by featured weight and install count.
-- **Detail sheet**: opens when you click a package. Shows the README, permission preview, install instructions, and related packages.
+- **Detail sheet**: opens when you click a package. Shows the permission preview, install instructions, and related packages.
 
 The install confirmation dialog always shows you exactly what the package wants to do (which files it will write, which network hosts it needs to reach, which permissions it will request) before any state changes. You can deny at any point and DorkOS leaves your installation untouched.
 
 ## Managing installed packages
 
 A package can be installed in more than one place: globally, and separately on individual agents. When you open the detail sheet for a package you've installed, the **Installed** panel lists every installation, one row per scope:
+
+<ProductShot
+  id="marketplace-installed"
+  alt="The Installed packages panel showing one package installed both globally and for a specific agent, the agent row marked Overrides global"
+/>
 
 - **All agents (global)**: installed globally, active everywhere.
 - **A specific agent**, shown by name: installed only for that agent's sessions. If the same package is also installed globally, the agent row is marked **Overrides global**, meaning that for that agent, the agent's copy takes precedence.

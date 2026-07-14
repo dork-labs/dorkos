@@ -15,7 +15,7 @@ import {
 } from './library.js';
 import { autoSkippedShotIds } from './overrides.js';
 import { partitionShots, SHOTS } from './shots.js';
-import { setAutoSkip, sleep } from './lib.js';
+import { addAutoSkip, setAutoSkip, sleep } from './lib.js';
 import { captureAgentDiscovery, captureLightStills, captureLoops } from './surfaces-desktop.js';
 import { captureMobile } from './surfaces-mobile.js';
 
@@ -76,7 +76,13 @@ export async function bootSeedAndDrive(
   let browser: Browser | undefined;
   try {
     process.stdout.write('▸ Seeding demo data…\n');
-    await seedData();
+    const { marketplaceInstalled } = await seedData();
+    if (!marketplaceInstalled) {
+      // The real installs the `marketplace-installed` shot needs didn't land —
+      // skip-and-report that one shot rather than faking the installed state
+      // or aborting every other capture in this run.
+      addAutoSkip('marketplace-installed');
+    }
     const rec = await makeRecorder();
     process.stdout.write(`▸ Recording raws (run ${rec.runId})…\n`);
     browser = await chromium.launch();

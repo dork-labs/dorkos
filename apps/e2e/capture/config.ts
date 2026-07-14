@@ -411,6 +411,91 @@ export const CANVAS_SOURCE_DOC =
 export const CANVAS_SOURCE_FILENAME = 'rate-limiting-design.md';
 
 /**
+ * A small, deterministic source tree seeded under the atlas agent's cwd
+ * (alongside {@link CANVAS_SOURCE_FILENAME}) so the Workbench's Files tab has
+ * real folders and files to browse — the token-bucket design in
+ * {@link CANVAS_SOURCE_DOC}, now "implemented". Keys are paths relative to the
+ * atlas agent's project directory.
+ */
+export const WORKBENCH_SOURCE_FILES: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify(
+    { name: 'atlas', private: true, type: 'module', scripts: { test: 'vitest run' } },
+    null,
+    2
+  ),
+  'tsconfig.json': JSON.stringify(
+    {
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'NodeNext',
+        strict: true,
+        skipLibCheck: true,
+      },
+    },
+    null,
+    2
+  ),
+  'src/rate-limiter.ts':
+    '/**\n' +
+    ' * Token-bucket rate limiter for the API middleware.\n' +
+    ' *\n' +
+    ' * Each client gets its own bucket: capacity 10, refill 60/min. Requests drain\n' +
+    ' * a token; an empty bucket returns 429 with Retry-After instead of queuing.\n' +
+    ' */\n\n' +
+    'interface Bucket {\n' +
+    '  tokens: number;\n' +
+    '  lastRefillMs: number;\n' +
+    '}\n\n' +
+    'const CAPACITY = 10;\n' +
+    'const REFILL_PER_MINUTE = 60;\n' +
+    'const REFILL_PER_MS = REFILL_PER_MINUTE / 60_000;\n\n' +
+    'const buckets = new Map<string, Bucket>();\n\n' +
+    'function refill(bucket: Bucket, nowMs: number): void {\n' +
+    '  const elapsed = nowMs - bucket.lastRefillMs;\n' +
+    '  bucket.tokens = Math.min(CAPACITY, bucket.tokens + elapsed * REFILL_PER_MS);\n' +
+    '  bucket.lastRefillMs = nowMs;\n' +
+    '}\n\n' +
+    'export function takeToken(clientId: string, nowMs: number): boolean {\n' +
+    '  let bucket = buckets.get(clientId);\n' +
+    '  if (!bucket) {\n' +
+    '    bucket = { tokens: CAPACITY, lastRefillMs: nowMs };\n' +
+    '    buckets.set(clientId, bucket);\n' +
+    '  }\n' +
+    '  refill(bucket, nowMs);\n' +
+    '  if (bucket.tokens < 1) return false;\n' +
+    '  bucket.tokens -= 1;\n' +
+    '  return true;\n' +
+    '}\n',
+  'src/health.ts':
+    '/** Pings every registered endpoint and reports which ones are up. */\n' +
+    'export async function checkHealth(endpoints: string[]): Promise<Record<string, boolean>> {\n' +
+    '  const results: Record<string, boolean> = {};\n' +
+    '  for (const endpoint of endpoints) {\n' +
+    '    results[endpoint] = await pingEndpoint(endpoint);\n' +
+    '  }\n' +
+    '  return results;\n' +
+    '}\n\n' +
+    'async function pingEndpoint(url: string): Promise<boolean> {\n' +
+    '  try {\n' +
+    "    const res = await fetch(url, { method: 'HEAD' });\n" +
+    '    return res.ok;\n' +
+    '  } catch {\n' +
+    '    return false;\n' +
+    '  }\n' +
+    '}\n',
+  'tests/rate-limiter.test.ts':
+    "import { describe, expect, it } from 'vitest';\n" +
+    "import { takeToken } from '../src/rate-limiter.js';\n\n" +
+    "describe('takeToken', () => {\n" +
+    "  it('drains the bucket then blocks', () => {\n" +
+    '    const now = 0;\n' +
+    "    for (let i = 0; i < 10; i++) expect(takeToken('client-a', now)).toBe(true);\n" +
+    "    expect(takeToken('client-a', now)).toBe(false);\n" +
+    '  });\n' +
+    '});\n',
+};
+
+/**
  * Prompt pool for the concurrent multi-session captures. Each drive takes the
  * next four, so repeated drives (light still, dark poster, loop) mint sessions
  * with distinct, realistic titles instead of duplicate rows in the sidebar.
@@ -498,7 +583,18 @@ export const DISCOVERY_PROJECTS: readonly DiscoveryProject[] = [
 /** Marketplace registry source name written into `marketplaces.json`. */
 export const MARKETPLACE_SOURCE_NAME = 'dorkos';
 
-/** A cached marketplace registry document served offline for the browse view. */
+/**
+ * A `marketplace.json` document served entirely from local disk (no network,
+ * no pre-warmed cache): {@link MARKETPLACE_SOURCE_NAME}'s configured `source`
+ * is a `file://` URL pointing at {@link MARKETPLACE_FIXTURE_ROOT}, and this
+ * object is written verbatim to `<root>/marketplace.json` by
+ * `prepareFilesystem`. The browse grid renders these six entries; two of
+ * them (`code-reviewer`, `flow`) additionally have real on-disk package
+ * directories under `<root>/plugins/` (see
+ * {@link MARKETPLACE_FIXTURE_PACKAGES}), so their detail sheet and installs
+ * run the real resolve → stage → validate → preview pipeline
+ * (`relativePathResolver`) with no clone and no network.
+ */
 export const MARKETPLACE_REGISTRY = {
   name: 'dorkos',
   owner: { name: 'Dork Labs', email: 'hello@dorkos.ai' },
@@ -570,3 +666,115 @@ export const MARKETPLACE_REGISTRY = {
     },
   ],
 } as const;
+
+/**
+ * Local root of the offline marketplace fixture — a `file://` source, so
+ * relative-path package sources resolve straight off disk with no clone and
+ * no network (see the doc comment on {@link MARKETPLACE_REGISTRY}).
+ */
+export const MARKETPLACE_FIXTURE_ROOT = path.join(CAPTURE_WORLD, 'marketplace-fixture');
+
+/** A real, installable marketplace package: files keyed by path relative to the package directory. */
+export interface MarketplaceFixturePackage {
+  /** Package name — must match a `name` in {@link MARKETPLACE_REGISTRY} and the directory it's written to. */
+  readonly name: string;
+  /** File contents, keyed by path relative to the package root. */
+  readonly files: Readonly<Record<string, string>>;
+}
+
+/**
+ * Real on-disk content for two of {@link MARKETPLACE_REGISTRY}'s six catalog
+ * entries — enough for the real install pipeline (resolve → stage → validate
+ * → build `PermissionPreview`) to run against them. The other four entries
+ * are browse-only (`marketplace.json` metadata, no package directory), which
+ * is fine: only the detail sheet and installs stage a package on disk.
+ *
+ * `code-reviewer` additionally bundles a scheduled task and a UI extension
+ * (mirroring `apps/server/src/services/marketplace/fixtures/valid-plugin`, a
+ * shape already proven against the real validator) so its permission preview
+ * shows a genuinely non-trivial "Effects" group, not just a bare file count.
+ */
+export const MARKETPLACE_FIXTURE_PACKAGES: readonly MarketplaceFixturePackage[] = [
+  {
+    name: 'code-reviewer',
+    files: {
+      '.dork/manifest.json': JSON.stringify(
+        {
+          schemaVersion: 1,
+          name: 'code-reviewer',
+          version: '1.4.0',
+          type: 'plugin',
+          description: 'Reviews diffs against a rubric and posts findings inline.',
+          author: 'Dork Labs',
+          license: 'MIT',
+          tags: ['review', 'quality', 'pr'],
+          layers: ['tasks', 'extensions'],
+          extensions: ['review-summary'],
+        },
+        null,
+        2
+      ),
+      '.claude-plugin/plugin.json': JSON.stringify(
+        {
+          name: 'code-reviewer',
+          version: '1.4.0',
+          description: 'Reviews diffs against a rubric and posts findings inline.',
+        },
+        null,
+        2
+      ),
+      'README.md':
+        '# code-reviewer\n\n' +
+        'Reviews diffs against a rubric and posts findings inline.\n\n' +
+        '## What it does\n\n' +
+        '- Scores each changed file against a house style rubric\n' +
+        '- Posts inline findings as PR review comments\n' +
+        '- Schedules a nightly sweep of stale review threads\n',
+      '.dork/tasks/nightly-code-review/SKILL.md':
+        '---\n' +
+        'name: nightly-code-review\n' +
+        'description: Nightly sweep of open review threads, flagging anything unresolved for more than a day.\n' +
+        'kind: task\n' +
+        'cron: "0 4 * * *"\n' +
+        '---\n\n' +
+        '# Nightly code review sweep\n\n' +
+        'Walk every open PR review thread and flag anything unresolved for more than a day.\n',
+      '.dork/extensions/review-summary/extension.json': JSON.stringify(
+        { id: 'review-summary', name: 'review-summary', version: '1.4.0', entry: './index.ts' },
+        null,
+        2
+      ),
+      '.dork/extensions/review-summary/index.ts': 'export {};\n',
+    },
+  },
+  {
+    name: 'flow',
+    files: {
+      '.dork/manifest.json': JSON.stringify(
+        {
+          schemaVersion: 1,
+          name: 'flow',
+          version: '0.9.0',
+          type: 'plugin',
+          description: 'PM-agnostic workflow engine — CAPTURE → SHIP, straight from chat.',
+          author: 'Dork Labs',
+          license: 'MIT',
+          tags: ['workflow', 'planning', 'linear'],
+          layers: ['commands', 'skills'],
+        },
+        null,
+        2
+      ),
+      '.claude-plugin/plugin.json': JSON.stringify(
+        {
+          name: 'flow',
+          version: '0.9.0',
+          description: 'PM-agnostic workflow engine — CAPTURE → SHIP, straight from chat.',
+        },
+        null,
+        2
+      ),
+      'README.md': '# flow\n\nPM-agnostic workflow engine — CAPTURE → SHIP, straight from chat.\n',
+    },
+  },
+];

@@ -111,6 +111,16 @@ export function setAutoSkip(ids: Set<string>): void {
 }
 
 /**
+ * Add one more shot id to the auto-skip set after `setAutoSkip` has already
+ * run — for a shot whose seed-time prerequisite (e.g. a real marketplace
+ * install) failed at runtime, so the record phase skips-and-reports it
+ * instead of driving a surface with no money state to show.
+ */
+export function addAutoSkip(id: string): void {
+  autoSkip.add(id);
+}
+
+/**
  * Restrict this process to a subset of shots (a parallel shard's partition).
  * Pass `null` (the default) to capture every registered shot.
  */
