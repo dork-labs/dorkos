@@ -196,6 +196,14 @@ function OtherWaysToInstall({
             <span className="text-charcoal">Linux</span> — install with the one-liner or npm; the
             web cockpit runs the same everywhere.
           </li>
+          <li className="text-warm-gray-light font-mono text-[11px] leading-relaxed">
+            <span className="text-charcoal">Server</span> — running DorkOS somewhere other than your
+            own machine?{' '}
+            <Link href="/docs/self-hosting/docker" className="text-brand-orange hover:underline">
+              Run it in Docker
+            </Link>
+            .
+          </li>
         </ul>
       </div>
     </details>

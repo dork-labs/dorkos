@@ -211,7 +211,21 @@ Since the container runs as an unprivileged user, files agents create in your mo
 
 The `docker run` commands above work fine for trying DorkOS out, but they're unwieldy to maintain. You end up with long shell commands that are easy to mistype and hard to version control. Docker Compose captures the full configuration in one file, so it's reproducible, easy to update, and simple to tear down with `docker compose down`.
 
-```yaml title="docker-compose.yml"
+The quickest way to start: download the ready-made file and run it.
+
+```bash
+curl -O https://dorkos.ai/compose.yml
+export ANTHROPIC_API_KEY=your-key-here
+docker compose up -d
+```
+
+`docker compose` finds `compose.yml` in the current directory automatically, no `-f` flag needed.
+
+Want to see or customize it first? Here's what that file contains (minus a short comment header):
+
+{/* Keep this block in sync with apps/site/public/compose.yml */}
+
+```yaml title="compose.yml"
 services:
   dorkos:
     image: ghcr.io/dork-labs/dorkos:latest
@@ -227,10 +241,6 @@ services:
 
 volumes:
   dorkos-data:
-```
-
-```bash
-docker compose up -d
 ```
 
 <Callout type="info">
