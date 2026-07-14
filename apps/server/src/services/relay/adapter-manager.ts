@@ -159,6 +159,10 @@ export class AdapterManager {
   private readonly deps: AdapterManagerDeps;
   private manifests = new Map<string, AdapterManifest>();
   private bindingSubsystem?: BindingSubsystem;
+  /** Serialized adapter-start passes — see {@link queueStartEnabledAdapters}. */
+  private startChain: Promise<void> = Promise.resolve();
+  /** Set by {@link shutdown}; stops any in-flight start pass from registering more adapters. */
+  private stopped = false;
   /** Normalized runtime-type → agent-runtime map (always populated post-construction). */
   private readonly agentRuntimes: Map<string, AgentRuntimeLike>;
 
@@ -264,7 +268,12 @@ export class AdapterManager {
     }
 
     await this.initBindingSubsystem();
-    await this.startEnabledAdapters();
+    // Adapter starts do network I/O (e.g. Telegram's getMe handshake) that can
+    // hang for tens of seconds, and the desktop shell health-gates startup on
+    // the server reaching `app.listen` within a fixed window. Starting adapters
+    // in the background keeps a slow or unreachable adapter endpoint from
+    // taking down the whole server boot; await adaptersStarted() to observe it.
+    void this.queueStartEnabledAdapters();
     this.configWatcher = watchAdapterConfig(this.configPath, () => {
       this.reload().catch((err) => {
         logger.warn('[AdapterManager] Hot-reload failed:', err);
@@ -290,8 +299,19 @@ export class AdapterManager {
     });
   }
 
-  /** Reload config from disk and reconcile adapter state. */
+  /**
+   * Reload config from disk and reconcile adapter state.
+   *
+   * Runs as one atomic task on the serialized start queue so an in-flight
+   * background start pass can never interleave with the unregister loop below
+   * (which would otherwise leak a should-be-disabled adapter caught mid-register).
+   */
   async reload(): Promise<void> {
+    return this.enqueue(() => this.reloadInner());
+  }
+
+  /** Reconcile body for {@link reload}. Runs inside the serialized chain. */
+  private async reloadInner(): Promise<void> {
     const oldConfigIds = new Set(this.configs.map((c) => c.id));
     // Capture names before reloading config (entries may be removed)
     const oldNames = new Map([...oldConfigIds].map((id) => [id, this.resolveAdapterName(id)]));
@@ -322,11 +342,74 @@ export class AdapterManager {
       }
     }
 
-    // Start/update enabled adapters
+    // Start/update enabled adapters. Called directly (not via the queue):
+    // reloadInner already runs inside the serialized chain, so re-enqueuing
+    // here would deadlock the chain waiting on itself.
     await this.startEnabledAdapters();
   }
 
-  /** Enable a specific adapter by ID and persist the change to disk. */
+  /**
+   * Resolves once every adapter-start pass queued so far has settled.
+   *
+   * `initialize()` starts adapters in the background so boot never blocks on
+   * adapter network I/O; callers that need started adapters (tests, health
+   * introspection) await this instead.
+   */
+  adaptersStarted(): Promise<void> {
+    return this.startChain;
+  }
+
+  /**
+   * Chain a task onto the serialized adapter queue and return a promise for
+   * that task. Every registry mutation runs through here — the background
+   * start pass, reload's reconcile, and the register/unregister halves of
+   * enable/disable/addAdapter/removeAdapter/updateConfig — so no two of them
+   * can ever interleave (a concurrent pair could double-register an adapter,
+   * or unregister one an in-flight pass then re-registers).
+   *
+   * The returned promise settles with the task itself, including rejection,
+   * so public methods keep surfacing their own failures to callers. The
+   * chain tail is sanitized separately: one broken task never poisons the
+   * tasks queued after it, and {@link adaptersStarted} never rejects.
+   *
+   * A queued task must never await the chain (e.g. via
+   * {@link adaptersStarted}, {@link queueStartEnabledAdapters}, or another
+   * enqueue) — that would deadlock the chain waiting on itself. Tasks call
+   * {@link startEnabledAdapters} directly instead, since they already run
+   * inside the chain. Because config state can change while a task waits its
+   * turn, tasks must re-check current state (still enabled? already
+   * registered?) once they run.
+   */
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    const run = this.startChain.then(() => task());
+    this.startChain = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  /**
+   * Run {@link startEnabledAdapters} serialized behind any in-flight task, so
+   * initialize()'s background pass and other registry mutations never
+   * interleave. Per-adapter failures are isolated inside
+   * startEnabledAdapters; a whole-pass failure is logged here because
+   * initialize() fires this without awaiting it.
+   */
+  private queueStartEnabledAdapters(): Promise<void> {
+    return this.enqueue(() => this.startEnabledAdapters()).catch((err) => {
+      logger.warn('[AdapterManager] Adapter start pass failed:', err);
+    });
+  }
+
+  /**
+   * Enable a specific adapter by ID and persist the change to disk.
+   *
+   * The config flip + persist happen immediately; the register itself is
+   * serialized through {@link enqueue} so it can never interleave with the
+   * background start pass (which may be mid-loop when this is called).
+   * Resolves once the queued register has settled; register failures reject.
+   */
   async enable(id: string): Promise<void> {
     const config = this.configs.find((c) => c.id === id);
     if (!config) throw new Error(`Adapter not found: ${id}`);
@@ -334,8 +417,17 @@ export class AdapterManager {
     config.enabled = true;
     await this.persistConfigs();
 
-    const adapter = await this.buildAdapter(config);
-    if (adapter) {
+    await this.enqueue(async () => {
+      if (this.stopped) return; // shutdown() ran while queued
+      // Re-check inside the queue — the world may have changed while this
+      // task waited its turn. The registry.get here is the authoritative
+      // dedupe against the background start pass having registered it.
+      const current = this.configs.find((c) => c.id === id);
+      if (!current?.enabled) return;
+      if (this.registry.get(id)) return;
+
+      const adapter = await this.buildAdapter(current);
+      if (!adapter) return;
       try {
         await this.registry.register(adapter);
         this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.connected', 'Connected to relay');
@@ -345,23 +437,32 @@ export class AdapterManager {
         this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
         throw err;
       }
-    }
+    });
   }
 
-  /** Disable a specific adapter by ID and persist the change to disk. */
+  /**
+   * Disable a specific adapter by ID and persist the change to disk.
+   *
+   * The unregister is serialized through {@link enqueue}: if the background
+   * start pass is mid-register for this adapter, the queued unregister lands
+   * after the pass settles, so the adapter can never survive a disable.
+   */
   async disable(id: string): Promise<void> {
     const config = this.configs.find((c) => c.id === id);
     if (!config) throw new Error(`Adapter not found: ${id}`);
 
     config.enabled = false;
     await this.persistConfigs();
-    await this.registry.unregister(id);
-    this.deps.eventRecorder?.insertAdapterEvent(
-      id,
-      'adapter.disconnected',
-      'Disconnected from relay'
-    );
-    await this.emitAdapterLifecycle(id, 'disconnected');
+
+    await this.enqueue(async () => {
+      await this.registry.unregister(id);
+      this.deps.eventRecorder?.insertAdapterEvent(
+        id,
+        'adapter.disconnected',
+        'Disconnected from relay'
+      );
+      await this.emitAdapterLifecycle(id, 'disconnected');
+    });
   }
 
   /**
@@ -525,8 +626,17 @@ export class AdapterManager {
     logger.debug('[AdapterManager] config saved', { id });
 
     if (enabled) {
-      const adapter = await this.buildAdapter(adapterConfig);
-      if (adapter) {
+      // Serialized through the queue: a hot-reload or start pass in flight
+      // must settle before this register runs, so the new adapter can never
+      // be registered twice. Re-check state inside the task — a queued
+      // reload/remove may have dropped or disabled the config meanwhile.
+      await this.enqueue(async () => {
+        if (this.stopped) return;
+        const current = this.configs.find((c) => c.id === id);
+        if (!current?.enabled || this.registry.get(id)) return;
+
+        const adapter = await this.buildAdapter(current);
+        if (!adapter) return;
         logger.info('[AdapterManager] starting adapter', { id });
         try {
           await this.registry.register(adapter);
@@ -543,7 +653,7 @@ export class AdapterManager {
           logger.error('[AdapterManager] adapter start failed', { id, error: message });
           throw err;
         }
-      }
+      });
     }
   }
 
@@ -586,11 +696,16 @@ export class AdapterManager {
     // Capture name before config removal for the disconnected event
     const adapterName = this.resolveAdapterName(id);
 
-    try {
-      await this.registry.unregister(id);
-    } catch {
-      /* not running -- ignore */
-    }
+    // Serialized: an in-flight start pass may be registering this adapter
+    // right now; queueing the unregister behind it guarantees the removal
+    // lands after, so the adapter can never outlive its config.
+    await this.enqueue(async () => {
+      try {
+        await this.registry.unregister(id);
+      } catch {
+        /* not running -- ignore */
+      }
+    });
 
     await this.emitAdapterLifecycle(id, 'disconnected', adapterName);
     this.configs.splice(index, 1);
@@ -642,20 +757,28 @@ export class AdapterManager {
     }
     await this.persistConfigs();
 
-    // Restart adapter if running
-    if (existing.enabled && this.registry.get(id)) {
+    // Restart the adapter if running. Serialized and re-checked inside the
+    // queue — the enabled/registered snapshot taken outside the queue could
+    // be stale against an in-flight start pass or a queued disable.
+    await this.enqueue(async () => {
+      if (this.stopped) return;
+      const current = this.configs.find((c) => c.id === id);
+      if (!current?.enabled || !this.registry.get(id)) return;
       try {
         await this.registry.unregister(id);
       } catch {
         /* ignore */
       }
-      const adapter = await this.buildAdapter(existing);
+      const adapter = await this.buildAdapter(current);
       if (adapter) await this.registry.register(adapter);
-    }
+    });
   }
 
   /** Stop all adapters and the config file watcher. */
   async shutdown(): Promise<void> {
+    // Halt any in-flight background start pass before tearing the registry
+    // down, so it can't register fresh adapters into a dead relay.
+    this.stopped = true;
     if (this.bindingSubsystem) {
       await this.bindingSubsystem.shutdown();
       this.bindingSubsystem = undefined;
@@ -670,6 +793,7 @@ export class AdapterManager {
   /** Start all enabled adapters that are not already running. */
   private async startEnabledAdapters(): Promise<void> {
     for (const config of this.configs) {
+      if (this.stopped) return; // shutdown() ran mid-pass
       if (!config.enabled) continue;
       if (this.registry.get(config.id)) continue; // Already running
 
@@ -680,6 +804,7 @@ export class AdapterManager {
       try {
         const adapter = await this.buildAdapter(config);
         if (!adapter) continue;
+        if (this.stopped) return; // shutdown() ran while building — registry is dead
         await this.registry.register(adapter);
         this.deps.eventRecorder?.insertAdapterEvent(
           config.id,

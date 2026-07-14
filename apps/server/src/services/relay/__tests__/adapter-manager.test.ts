@@ -197,6 +197,24 @@ const mockDeps: AdapterManagerDeps = {
   credentialProvider: mockCredentialProvider,
 };
 
+/**
+ * initialize() starts adapters in the background; tests that assert on
+ * started adapters must also wait for that pass to settle.
+ */
+async function initAndStart(m: AdapterManager): Promise<void> {
+  await m.initialize();
+  await m.adaptersStarted();
+}
+
+/** A promise with its resolver exposed, for deterministically gating async steps. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 describe('AdapterManager', () => {
   let manager: AdapterManager;
   let registry: ReturnType<typeof createMockRegistry>;
@@ -213,7 +231,7 @@ describe('AdapterManager', () => {
     it('reads config and starts enabled adapters', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       expect(readFile).toHaveBeenCalledWith(configPath, 'utf-8');
       // Only tg-main is enabled, wh-github is disabled
@@ -224,7 +242,7 @@ describe('AdapterManager', () => {
     it('skips disabled adapters', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       // wh-github is disabled, should not be registered
       const registerCalls = vi.mocked(registry.register).mock.calls;
@@ -235,7 +253,7 @@ describe('AdapterManager', () => {
     it('starts the config file watcher', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       expect(chokidar.watch).toHaveBeenCalledWith(
         configPath,
@@ -251,7 +269,7 @@ describe('AdapterManager', () => {
     it('detects config changes and reconciles', async () => {
       // Initial config: one enabled adapter
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // New config: tg-main disabled, wh-github enabled
       const newConfig = JSON.stringify({
@@ -285,7 +303,7 @@ describe('AdapterManager', () => {
 
     it('unregisters adapters removed from config', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // New config has no adapters
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
@@ -300,7 +318,7 @@ describe('AdapterManager', () => {
   describe('enable()', () => {
     it('updates config and starts adapter', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.enable('wh-github');
@@ -316,7 +334,7 @@ describe('AdapterManager', () => {
 
     it('throws for unknown adapter ID', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       await expect(manager.enable('nonexistent')).rejects.toThrow('Adapter not found: nonexistent');
     });
@@ -325,7 +343,7 @@ describe('AdapterManager', () => {
   describe('disable()', () => {
     it('updates config and stops adapter', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.disable('tg-main');
@@ -341,7 +359,7 @@ describe('AdapterManager', () => {
 
     it('throws for unknown adapter ID', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       await expect(manager.disable('nonexistent')).rejects.toThrow(
         'Adapter not found: nonexistent'
@@ -352,7 +370,7 @@ describe('AdapterManager', () => {
   describe('listAdapters()', () => {
     it('returns config + status for each adapter', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const adapters = manager.listAdapters();
 
@@ -364,7 +382,7 @@ describe('AdapterManager', () => {
 
     it('returns disconnected status for non-running adapters', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const adapters = manager.listAdapters();
 
@@ -377,7 +395,7 @@ describe('AdapterManager', () => {
   describe('getAdapter()', () => {
     it('returns config and status for known adapter', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const result = manager.getAdapter('tg-main');
 
@@ -388,14 +406,14 @@ describe('AdapterManager', () => {
 
     it('returns undefined for unknown ID', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       expect(manager.getAdapter('nonexistent')).toBeUndefined();
     });
 
     it('masks sensitive config fields', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const result = manager.getAdapter('tg-main');
       expect(result).toBeDefined();
@@ -406,7 +424,7 @@ describe('AdapterManager', () => {
 
     it('returns same masked format as listAdapters()', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const single = manager.getAdapter('tg-main');
       const list = manager.listAdapters();
@@ -417,7 +435,7 @@ describe('AdapterManager', () => {
 
     it('masks nested sensitive fields', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const result = manager.getAdapter('wh-github');
       expect(result).toBeDefined();
@@ -432,7 +450,7 @@ describe('AdapterManager', () => {
   describe('shutdown()', () => {
     it('stops all adapters and config watcher', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const mockWatcher = vi.mocked(chokidar.watch).mock.results[0].value;
 
@@ -452,7 +470,7 @@ describe('AdapterManager', () => {
   describe('getCatalog()', () => {
     it('returns all three built-in manifests after initialize', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const catalog = manager.getCatalog();
 
@@ -464,7 +482,7 @@ describe('AdapterManager', () => {
 
     it('returns empty instances for adapter types with no configured instances', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const catalog = manager.getCatalog();
       const claudeCode = catalog.find((e) => e.manifest.type === 'claude-code');
@@ -475,7 +493,7 @@ describe('AdapterManager', () => {
 
     it('returns correct enabled and status for configured instances', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const catalog = manager.getCatalog();
       const telegram = catalog.find((e) => e.manifest.type === 'telegram');
@@ -500,7 +518,7 @@ describe('AdapterManager', () => {
         ],
       });
       vi.mocked(readFile).mockResolvedValue(configWithLabel);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const catalog = manager.getCatalog();
       const telegram = catalog.find((e) => e.manifest.type === 'telegram');
@@ -510,7 +528,7 @@ describe('AdapterManager', () => {
 
     it('does not include label key when adapter has no label', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const catalog = manager.getCatalog();
       const telegram = catalog.find((e) => e.manifest.type === 'telegram');
@@ -522,7 +540,7 @@ describe('AdapterManager', () => {
   describe('maskSensitiveFields (via listAdapters)', () => {
     it('replaces top-level password fields with ***', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const adapters = manager.listAdapters();
       const tg = adapters.find((a) => a.config.id === 'tg-main');
@@ -534,7 +552,7 @@ describe('AdapterManager', () => {
 
     it('replaces nested dot-notation password fields with ***', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const adapters = manager.listAdapters();
       const wh = adapters.find((a) => a.config.id === 'wh-github');
@@ -549,7 +567,7 @@ describe('AdapterManager', () => {
 
     it('preserves non-password fields unchanged', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const adapters = manager.listAdapters();
       const tg = adapters.find((a) => a.config.id === 'tg-main');
@@ -571,7 +589,7 @@ describe('AdapterManager', () => {
         ],
       });
       vi.mocked(readFile).mockResolvedValue(configWithFlat);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // Should not throw even though inbound.secret path doesn't exist
       const adapters = manager.listAdapters();
@@ -584,7 +602,7 @@ describe('AdapterManager', () => {
   describe('getManifest()', () => {
     it('returns manifest for known type', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const manifest = manager.getManifest('telegram');
       expect(manifest).toBeDefined();
@@ -593,7 +611,7 @@ describe('AdapterManager', () => {
 
     it('returns undefined for unknown type', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       expect(manager.getManifest('unknown')).toBeUndefined();
     });
@@ -602,7 +620,7 @@ describe('AdapterManager', () => {
   describe('registerPluginManifest()', () => {
     it('adds a custom manifest to the catalog', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
 
       manager.registerPluginManifest('custom-adapter', {
         type: 'custom-adapter',
@@ -629,7 +647,7 @@ describe('AdapterManager', () => {
   describe('testConnection()', () => {
     it('prefers adapter.testConnection() when available', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const result = await manager.testConnection('telegram', {
         token: 'test-token',
@@ -641,7 +659,7 @@ describe('AdapterManager', () => {
 
     it('does NOT call start() when adapter has testConnection()', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const testFn = vi.fn().mockResolvedValue({ ok: true });
       const startFn = vi.fn().mockResolvedValue(undefined);
@@ -672,7 +690,7 @@ describe('AdapterManager', () => {
 
     it('returns { ok: false } when adapter.testConnection() returns error', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
       vi.mocked(TgMock).mockImplementationOnce(function (id: string) {
@@ -703,7 +721,7 @@ describe('AdapterManager', () => {
 
     it('falls back to start/stop when adapter has no testConnection()', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const startFn = vi.fn().mockResolvedValue(undefined);
       const stopFn = vi.fn().mockResolvedValue(undefined);
@@ -735,7 +753,7 @@ describe('AdapterManager', () => {
 
     it('returns { ok: false } for unknown adapter type', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const result = await manager.testConnection('nonexistent', {});
 
@@ -744,7 +762,7 @@ describe('AdapterManager', () => {
 
     it('always calls stop() on the adapter in fallback path, even on failure', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const stopFn = vi.fn().mockResolvedValue(undefined);
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
@@ -773,7 +791,7 @@ describe('AdapterManager', () => {
 
     it('does NOT register the adapter in the registry', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.testConnection('telegram', { token: 't', mode: 'polling' });
@@ -784,7 +802,7 @@ describe('AdapterManager', () => {
     it('times out after 15 seconds if testConnection() hangs', async () => {
       vi.useFakeTimers();
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const stopFn = vi.fn().mockResolvedValue(undefined);
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
@@ -823,7 +841,7 @@ describe('AdapterManager', () => {
 
     it('clears timeout timer on successful testConnection()', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
@@ -838,7 +856,7 @@ describe('AdapterManager', () => {
 
     it('clears timeout timer on successful fallback start/stop', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
@@ -870,7 +888,7 @@ describe('AdapterManager', () => {
   describe('addAdapter()', () => {
     it('adds a new adapter to configs and persists', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.addAdapter('webhook', 'wh-new', {
@@ -891,7 +909,7 @@ describe('AdapterManager', () => {
 
     it('starts the adapter if enabled', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.addAdapter('webhook', 'wh-new', {
@@ -904,7 +922,7 @@ describe('AdapterManager', () => {
 
     it('does not start the adapter if disabled', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.addAdapter(
@@ -922,7 +940,7 @@ describe('AdapterManager', () => {
 
     it('rejects duplicate IDs with DUPLICATE_ID', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       await expect(manager.addAdapter('webhook', 'tg-main', {})).rejects.toThrow(AdapterError);
 
@@ -935,7 +953,7 @@ describe('AdapterManager', () => {
 
     it('rejects unknown adapter types with UNKNOWN_TYPE', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
 
       await expect(manager.addAdapter('nonexistent-type', 'new-id', {})).rejects.toThrow(
         AdapterError
@@ -956,7 +974,7 @@ describe('AdapterManager', () => {
         ],
       });
       vi.mocked(readFile).mockResolvedValue(configWithClaudeCode);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // claude-code is non-multiInstance, cc-main already exists
       await expect(manager.addAdapter('claude-code', 'cc-second', {})).rejects.toThrow(
@@ -972,7 +990,7 @@ describe('AdapterManager', () => {
 
     it('allows second instance of multiInstance type (webhook)', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // webhook is multiInstance, wh-github already exists
       await expect(
@@ -990,7 +1008,7 @@ describe('AdapterManager', () => {
 
     it('allows second instance of multiInstance type (telegram)', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // telegram is multiInstance, tg-main already exists
       await expect(
@@ -1005,7 +1023,7 @@ describe('AdapterManager', () => {
 
     it('getCatalog() shows both Telegram instances under the telegram entry', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       await manager.addAdapter('telegram', 'tg-second', { token: 'tok2', mode: 'polling' });
 
@@ -1038,7 +1056,7 @@ describe('AdapterManager', () => {
         ],
       });
       vi.mocked(readFile).mockResolvedValue(twoTelegramConfig);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       // Disable only tg-first, tg-second should remain enabled
@@ -1056,7 +1074,7 @@ describe('AdapterManager', () => {
 
     it('stores label at top-level when provided', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.addAdapter(
@@ -1078,7 +1096,7 @@ describe('AdapterManager', () => {
 
     it('does not include label in persisted config when omitted', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.addAdapter('telegram', 'tg-nolabel', { token: 'tok', mode: 'polling' });
@@ -1133,7 +1151,7 @@ describe('AdapterManager', () => {
 
     it('label is NOT passed to the adapter constructor', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       const { TelegramAdapter: TgMock } = await import('@dorkos/relay');
@@ -1174,7 +1192,7 @@ describe('AdapterManager', () => {
   describe('updateAdapterLabel()', () => {
     it('sets label on an existing adapter and persists', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.updateAdapterLabel('tg-main', 'Production Bot');
@@ -1198,7 +1216,7 @@ describe('AdapterManager', () => {
         ],
       });
       vi.mocked(readFile).mockResolvedValue(configWithLabel);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.updateAdapterLabel('tg-main', '');
@@ -1211,7 +1229,7 @@ describe('AdapterManager', () => {
 
     it('label is reflected in getCatalog() after update', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       await manager.updateAdapterLabel('tg-main', 'Updated Label');
 
@@ -1222,7 +1240,7 @@ describe('AdapterManager', () => {
 
     it('throws NOT_FOUND for unknown adapter ID', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       try {
         await manager.updateAdapterLabel('nonexistent', 'Some Label');
@@ -1236,7 +1254,7 @@ describe('AdapterManager', () => {
   describe('removeAdapter()', () => {
     it('stops, removes from config, persists', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.removeAdapter('tg-main');
@@ -1249,7 +1267,7 @@ describe('AdapterManager', () => {
 
     it('returns NOT_FOUND for unknown IDs', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       try {
         await manager.removeAdapter('nonexistent');
@@ -1272,7 +1290,7 @@ describe('AdapterManager', () => {
         ],
       });
       vi.mocked(readFile).mockResolvedValue(configWithClaude);
-      await manager.initialize();
+      await initAndStart(manager);
 
       try {
         await manager.removeAdapter('claude-code');
@@ -1284,7 +1302,7 @@ describe('AdapterManager', () => {
 
     it('auto-deletes orphan bindings for the removed adapter', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // Inject a mock bindingSubsystem whose getBindingStore() returns a mock store
       const mockBindingStore = {
@@ -1309,7 +1327,7 @@ describe('AdapterManager', () => {
 
     it('does not affect bindings for other adapters on removal', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       const mockBindingStore = {
         getAll: vi.fn().mockReturnValue([{ id: 'b1', adapterId: 'wh-github', agentId: 'agent-1' }]),
@@ -1327,7 +1345,7 @@ describe('AdapterManager', () => {
   describe('updateConfig()', () => {
     it('merges new config and persists', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.updateConfig('tg-main', { token: 'new-token', mode: 'webhook' });
@@ -1337,7 +1355,7 @@ describe('AdapterManager', () => {
 
     it('preserves password fields when empty string submitted', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // Update with empty token (password field) — should preserve original
       await manager.updateConfig('tg-main', { token: '', mode: 'webhook' });
@@ -1361,7 +1379,7 @@ describe('AdapterManager', () => {
 
     it('preserves password fields when *** submitted', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       await manager.updateConfig('tg-main', { token: '***', mode: 'webhook' });
 
@@ -1380,7 +1398,7 @@ describe('AdapterManager', () => {
 
     it('preserves nested password fields (e.g., inbound.secret)', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       // Update wh-github with empty nested secrets — should preserve originals
       await manager.updateConfig('wh-github', {
@@ -1412,7 +1430,7 @@ describe('AdapterManager', () => {
 
     it('restarts adapter after config change', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       // tg-main is enabled and running
@@ -1425,7 +1443,7 @@ describe('AdapterManager', () => {
 
     it('does not restart disabled adapter after config change', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       // wh-github is disabled, should not restart
@@ -1440,7 +1458,7 @@ describe('AdapterManager', () => {
 
     it('returns NOT_FOUND for unknown IDs', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
-      await manager.initialize();
+      await initAndStart(manager);
 
       try {
         await manager.updateConfig('nonexistent', { key: 'value' });
@@ -1454,7 +1472,7 @@ describe('AdapterManager', () => {
   describe('saveConfig atomicity (via addAdapter)', () => {
     it('writes to a tmp file first, then renames to the final path', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-      await manager.initialize();
+      await initAndStart(manager);
       vi.clearAllMocks();
 
       await manager.addAdapter('webhook', 'wh-atomic', {
@@ -1585,7 +1603,7 @@ describe('AdapterManager', () => {
         return VALID_CONFIG;
       });
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       const slackManifest = manager.getManifest('slack');
       expect(slackManifest?.setupGuide).toBe('# Slack Setup\n\nFollow these steps.');
@@ -1598,7 +1616,7 @@ describe('AdapterManager', () => {
         return VALID_CONFIG;
       });
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       const claudeCodeManifest = manager.getManifest('claude-code');
       expect(claudeCodeManifest?.setupGuide).toBeUndefined();
@@ -1637,7 +1655,7 @@ describe('AdapterManager', () => {
         return VALID_CONFIG;
       });
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       const catalog = manager.getCatalog();
       const slack = catalog.find((e) => e.manifest.type === 'slack');
@@ -1651,7 +1669,7 @@ describe('AdapterManager', () => {
       err.code = 'ENOENT';
       vi.mocked(readFile).mockRejectedValue(err);
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       expect(manager.listAdapters()).toHaveLength(0);
       expect(registry.register).not.toHaveBeenCalled();
@@ -1660,7 +1678,7 @@ describe('AdapterManager', () => {
     it('malformed config -> log warning, empty adapter list', async () => {
       vi.mocked(readFile).mockResolvedValue('{ invalid json !!!');
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       expect(manager.listAdapters()).toHaveLength(0);
     });
@@ -1672,7 +1690,7 @@ describe('AdapterManager', () => {
         })
       );
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       expect(manager.listAdapters()).toHaveLength(0);
     });
@@ -1703,7 +1721,7 @@ describe('AdapterManager', () => {
         if (callCount === 1) throw new Error('Start failed');
       });
 
-      await manager.initialize();
+      await initAndStart(manager);
 
       // Both adapters should have been attempted
       expect(registry.register).toHaveBeenCalledTimes(2);
@@ -1739,6 +1757,7 @@ describe('AdapterManager', () => {
       // initialize() must NOT throw — a single unresolvable secret cannot abort
       // the whole relay init.
       await expect(brokenManager.initialize()).resolves.toBeUndefined();
+      await brokenManager.adaptersStarted();
 
       // Only the healthy adapter is registered; the broken one is skipped.
       expect(registry.register).toHaveBeenCalledTimes(1);
@@ -1760,6 +1779,116 @@ describe('AdapterManager', () => {
         'adapter.connected',
         expect.any(String)
       );
+    });
+  });
+
+  describe('registry serialization under concurrency', () => {
+    const TWO_ENABLED_CONFIG = JSON.stringify({
+      adapters: [
+        {
+          id: 'tg-first',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'tok1', mode: 'polling' },
+        },
+        {
+          id: 'tg-second',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'tok2', mode: 'polling' },
+        },
+      ],
+    });
+
+    /**
+     * Gate one adapter id's registry.register call behind an explicit
+     * release, keeping the mock registry's normal bookkeeping. `reached`
+     * resolves when register(id) has been CALLED (the pass is mid-register),
+     * which is the deterministic hook the race tests pivot on — no sleeps.
+     */
+    function gateRegister(id: string): { reached: Promise<void>; release: () => void } {
+      const original = vi.mocked(registry.register).getMockImplementation()!;
+      const reached = deferred();
+      const gate = deferred();
+      vi.mocked(registry.register).mockImplementation(async (adapter: RelayAdapter) => {
+        if (adapter.id === id) {
+          reached.resolve();
+          await gate.promise;
+        }
+        return original(adapter);
+      });
+      return { reached: reached.promise, release: gate.resolve };
+    }
+
+    /**
+     * Let every pending microtask settle without resolving the register
+     * gate. After this, a racing enable/disable has run as far as it can:
+     * an unserialized implementation has fully completed its registry
+     * mutation (the bug), while a serialized one is parked in the queue.
+     */
+    function flushMicrotasks(): Promise<void> {
+      return new Promise((resolve) => setImmediate(resolve));
+    }
+
+    it('enable() while the start pass is mid-register of the same adapter registers it exactly once', async () => {
+      vi.mocked(readFile).mockResolvedValue(TWO_ENABLED_CONFIG);
+      const { reached, release } = gateRegister('tg-second');
+
+      await manager.initialize();
+      await reached; // pass is mid-register of tg-second: registry.get() still sees nothing
+
+      const enablePromise = manager.enable('tg-second');
+      await flushMicrotasks(); // an unserialized enable would double-register here
+      release();
+      await enablePromise;
+      await manager.adaptersStarted();
+
+      const secondRegisters = vi
+        .mocked(registry.register)
+        .mock.calls.filter((call) => (call[0] as RelayAdapter).id === 'tg-second');
+      expect(secondRegisters).toHaveLength(1);
+      expect(registry.get('tg-second')).toBeDefined();
+    });
+
+    it('disable() during the background start pass leaves the adapter unregistered', async () => {
+      vi.mocked(readFile).mockResolvedValue(TWO_ENABLED_CONFIG);
+      const { reached, release } = gateRegister('tg-second');
+
+      await manager.initialize();
+      await reached; // pass is mid-register of tg-second — the worst-case interleave
+
+      const disablePromise = manager.disable('tg-second');
+      // An unserialized disable would fully complete its (no-op) unregister
+      // here, before the pass's in-flight register lands — the leak.
+      await flushMicrotasks();
+      release();
+      await disablePromise;
+      await manager.adaptersStarted();
+
+      // The pass's in-flight register completed, but the queued unregister
+      // landed after it — the adapter must not survive the disable.
+      expect(registry.get('tg-second')).toBeUndefined();
+      expect(manager.getAdapter('tg-second')!.config.enabled).toBe(false);
+    });
+
+    it('shutdown() mid-pass stops the pass from registering further adapters', async () => {
+      vi.mocked(readFile).mockResolvedValue(TWO_ENABLED_CONFIG);
+      const { reached, release } = gateRegister('tg-first');
+
+      await manager.initialize();
+      await reached; // pass is mid-register of tg-first
+
+      await manager.shutdown();
+      release();
+      await manager.adaptersStarted();
+
+      // Only tg-first (already in flight when shutdown ran) was registered;
+      // the pass bailed before reaching tg-second.
+      expect(registry.register).toHaveBeenCalledTimes(1);
+      const registeredIds = vi
+        .mocked(registry.register)
+        .mock.calls.map((call) => (call[0] as RelayAdapter).id);
+      expect(registeredIds).not.toContain('tg-second');
     });
   });
 });

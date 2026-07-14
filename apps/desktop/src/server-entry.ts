@@ -19,13 +19,19 @@
  */
 declare module '@dorkos/server';
 
+import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
+
 // Mark this file as a module so the ambient declaration above and the
 // top-level helpers below stay file-scoped instead of leaking into the
 // global scope of the whole program.
 export {};
 
-/** Poll the health endpoint until the server is responding. */
-async function waitForServer(port: number, timeoutMs = 10_000): Promise<void> {
+/**
+ * Poll the health endpoint until the server is responding.
+ *
+ * The default window rationale lives on {@link SERVER_READY_TIMEOUT_MS}.
+ */
+async function waitForServer(port: number, timeoutMs = SERVER_READY_TIMEOUT_MS): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
