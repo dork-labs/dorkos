@@ -13,7 +13,7 @@ Run DorkOS as a container. The official image bundles Node.js, the DorkOS CLI, a
 docker run -d --name dorkos \
   -p 4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
@@ -97,15 +97,22 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
 
 ### Custom port
 
-Two things need to agree: the port DorkOS listens on inside the container (`--port`), and the port Docker maps from the host (`-p`). Both sides of `-p host:container` should match the `--port` value:
+Set `DORKOS_PORT` instead of using the `--port` flag. The container's built-in health check reads `DORKOS_PORT` to know which port to test, so setting the env var keeps DorkOS and its health check pointed at the same place. Match it with the container side of `-p host:container`:
 
 ```bash
 docker run -d --name dorkos \
   -p 8080:8080 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v dorkos-data:/root/.dork \
-  ghcr.io/dork-labs/dorkos:latest --port 8080
+  -e DORKOS_PORT=8080 \
+  -v dorkos-data:/home/node/.dork \
+  ghcr.io/dork-labs/dorkos:latest
 ```
+
+<Callout type="warn">
+  The `--port` flag still works, but it only tells DorkOS which port to listen on. The health check
+  keeps checking port 4242, so `docker ps` would report the container unhealthy even though it's
+  running fine. Use `DORKOS_PORT` instead so both stay in sync.
+</Callout>
 
 ### Environment file
 
@@ -120,13 +127,19 @@ NODE_ENV=production
 docker run -d --name dorkos \
   -p 4242:4242 \
   --env-file .env.dorkos \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
 ## Persistent Data
 
-DorkOS stores configuration, session transcripts, agent registrations, and the SQLite database in `~/.dork/` inside the container. Without a volume mount, all of this is lost when the container is removed. Mount a named volume or host directory to persist data across container restarts and upgrades.
+DorkOS stores configuration, session transcripts, agent registrations, and the SQLite database in `/home/node/.dork` inside the container. Without a volume mount, all of this is lost when the container is removed. Mount a named volume or host directory to persist data across container restarts and upgrades.
+
+<Callout type="warn">
+  **Upgrading from 0.48 or earlier?** The container now runs as a non-root user, and its data
+  directory moved from `/root/.dork` to `/home/node/.dork`. See [Upgrading from an older
+  image](#upgrading-from-an-older-image) below before you pull the new version.
+</Callout>
 
 <Tabs items={["Named Volume (Recommended)", "Host Directory"]}>
 
@@ -135,7 +148,7 @@ DorkOS stores configuration, session transcripts, agent registrations, and the S
 docker run -d --name dorkos \
   -p 4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
@@ -149,7 +162,7 @@ mkdir -p ~/.dork
 docker run -d --name dorkos \
   -p 4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v ~/.dork:/root/.dork \
+  -v ~/.dork:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
@@ -158,6 +171,19 @@ Useful for backup or inspection, since the data directory is directly accessible
 </Tab>
 
 </Tabs>
+
+### Upgrading from an older image
+
+Versions 0.48.0 and earlier ran the container as root, and stored data at `/root/.dork`. The image now runs as a regular, unprivileged user (`node`, uid 1000) instead of root, so a compromised agent or a bug can't touch the rest of the container as easily. That move means two things for anyone upgrading:
+
+1. **The data path changed.** Change every `-v ...:/root/.dork` in your `docker run` command or Compose file to `-v ...:/home/node/.dork`.
+2. **Existing files need new ownership.** Files created by the old root image are owned by root, and the new non-root user can't write to them until you fix that. Run this once, before starting the new image, against the same volume or host directory you already use:
+
+```bash
+docker run --rm -v dorkos-data:/data alpine chown -R 1000:1000 /data
+```
+
+Replace `dorkos-data` with your volume name, or with the host path (e.g. `~/.dork:/data`) if you mounted a directory instead of a named volume. After that, start the new image with the updated `/home/node/.dork` mount path as shown above.
 
 ### Mounting a project directory
 
@@ -169,7 +195,7 @@ docker run -d --name dorkos \
   -e ANTHROPIC_API_KEY=your-key-here \
   -e DORKOS_DEFAULT_CWD=/workspace \
   -e DORKOS_BOUNDARY=/workspace \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   -v ~/projects/my-app:/workspace \
   ghcr.io/dork-labs/dorkos:latest
 ```
@@ -178,6 +204,8 @@ docker run -d --name dorkos \
   Set `DORKOS_BOUNDARY` to the mounted directory to restrict agent file access. Without it, agents
   can access the entire container filesystem.
 </Callout>
+
+Since the container runs as an unprivileged user, files agents create in your mounted project are owned by uid 1000 instead of root, so they're usually already owned by your own user account on Linux hosts.
 
 ## Docker Compose
 
@@ -195,13 +223,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
     volumes:
-      - dorkos-data:/root/.dork
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:4242/api/health']
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      - dorkos-data:/home/node/.dork
 
 volumes:
   dorkos-data:
@@ -210,6 +232,12 @@ volumes:
 ```bash
 docker compose up -d
 ```
+
+<Callout type="info">
+  No `healthcheck:` entry needed: the image already checks its own health every 30 seconds. Run
+  `docker ps` and look at the `STATUS` column to see whether the container reports healthy or
+  unhealthy.
+</Callout>
 
 ### With a reverse proxy
 
@@ -231,13 +259,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
     volumes:
-      - dorkos-data:/root/.dork
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:4242/api/health']
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      - dorkos-data:/home/node/.dork
 
   caddy:
     image: caddy:2-alpine
@@ -271,6 +293,10 @@ dorkos.example.com {
 
 ## Health Check
 
+The image checks its own health automatically: every 30 seconds it asks itself whether the server is responding, and reports the result to Docker. Run `docker ps` and check the `STATUS` column for `healthy` or `unhealthy`, no setup required.
+
+You can also check it yourself at any time:
+
 ```bash
 curl http://localhost:4242/api/health
 # { "status": "ok", "version": "0.8.0", "uptime": 12345 }
@@ -280,7 +306,7 @@ The health endpoint is unauthenticated and suitable for load balancer or contain
 
 ## Building from Source
 
-The official image from the container registry is the easiest path. Build from source if you need to run unreleased changes, test a fork, or include local modifications:
+The official image from the container registry is the easiest path. Build from source if you need to run unreleased changes, test a fork, or include local modifications. One `Dockerfile` at the repository root covers both cases below.
 
 <Steps>
 <Step>
@@ -305,7 +331,7 @@ This builds the CLI package and creates the `dorkos:latest` image locally.
 docker run -d --name dorkos \
   -p 4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   dorkos:latest
 ```
 
@@ -314,10 +340,10 @@ docker run -d --name dorkos \
 
 ### From published npm (no clone needed)
 
-If you want a custom Docker image but don't need local code changes, you can build one that installs a published version directly from npm. This is useful when the official container image isn't available or you need to customize the base image:
+If you want a custom Docker image but don't need local code changes, you can build one that installs a published version directly from npm, no tarball or local build required:
 
 ```bash
-docker build -f Dockerfile.run \
+docker build \
   --build-arg INSTALL_MODE=npm \
   --build-arg DORKOS_VERSION=latest \
   -t dorkos:npm .
@@ -344,7 +370,7 @@ docker stop dorkos && docker rm dorkos
 docker run -d --name dorkos \
   -p 4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -v dorkos-data:/root/.dork \
+  -v dorkos-data:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
@@ -389,9 +415,27 @@ Common causes: missing `ANTHROPIC_API_KEY`, port already in use on the host, or 
 <Step>
 ### Data lost after restart
 
-**Cause**: No volume mounted for `/root/.dork`.
+**Cause**: No volume mounted for `/home/node/.dork`.
 
-**Fix**: Add `-v dorkos-data:/root/.dork` to persist configuration and session data.
+**Fix**: Add `-v dorkos-data:/home/node/.dork` to persist configuration and session data.
+
+</Step>
+
+<Step>
+### Upgrading from a root-based image and the new container can't write its data
+
+**Cause**: Images from version 0.48.0 and earlier ran as root and stored data at `/root/.dork`. The
+new image runs as an unprivileged user instead, and that user can't write to files the old root
+image created.
+
+**Fix**: Fix ownership once, then switch to the new mount path:
+
+```bash
+docker run --rm -v dorkos-data:/data alpine chown -R 1000:1000 /data
+```
+
+Then start the new container with `-v dorkos-data:/home/node/.dork` (not `/root/.dork`). See
+[Upgrading from an older image](#upgrading-from-an-older-image) above for the full walkthrough.
 
 </Step>
 

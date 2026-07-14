@@ -1033,7 +1033,7 @@ pnpm docker:build    # Build the image
 pnpm docker:run      # Run the container (maps DORKOS_PORT)
 ```
 
-The `Dockerfile.run` image bundles the CLI, server, and client. Pass environment variables at runtime:
+The `runtime` target of the root `Dockerfile` bundles the CLI, server, and client. Pass environment variables at runtime:
 
 ```bash
 docker run --rm -p 4242:4242 \
