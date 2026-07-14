@@ -1,0 +1,52 @@
+---
+title: DorkOS 0.49.0
+description: Try DorkOS in one command with npx, start a server from a ready-made Compose file, and run a safer Docker image that works as a regular user, checks its own health, and shuts down cleanly
+date: 2026-07-14
+author: DorkOS Team
+category: release
+tags: [release, docker, self-hosting, install]
+---
+
+DorkOS 0.49.0 makes it easier to run on a server and safer in Docker. You can try DorkOS in one command without installing anything, start a server from a ready-made Compose file, and the published Docker image now runs as a regular user instead of root, checks its own health, and shuts down cleanly.
+
+## Highlights
+
+### Try it in one command
+
+You no longer have to install DorkOS to see what it does. Run `npx dorkos@latest` and it downloads DorkOS, starts it, and opens the cockpit in your browser. The first run takes a minute or two while it sets up; a regular install skips that wait next time.
+
+### Start a server with one file
+
+Running DorkOS on a server used to mean copying a long command by hand. Now you can download a ready-made Docker Compose file from [dorkos.ai/compose.yml](https://dorkos.ai/compose.yml) and run `docker compose up -d`. The deployment guide also explains when Docker is the easier choice and when a direct install fits better.
+
+### A safer, healthier Docker image
+
+The published Docker image now runs as a regular, unprivileged user instead of root, so a compromised agent or a bug can't reach the rest of the container as easily. It also carries a built-in health check that actually works, so `docker ps` correctly reports whether the container is healthy, and it starts and shuts down cleanly. The image is smaller too, since it no longer ships build tools it doesn't need at runtime.
+
+If you already run DorkOS in Docker, this release moves the data directory from `/root/.dork` to `/home/node/.dork`. Before starting the new image, fix ownership of your existing data and point your volume at the new path. The [Docker guide](https://dorkos.ai/docs/self-hosting/docker#upgrading-from-an-older-image) has the full walkthrough.
+
+## All Changes
+
+### Added
+
+- Try DorkOS without installing anything: `npx dorkos@latest` downloads it, starts it, and opens the cockpit in your browser. The first run takes a minute or two; a regular install skips that wait next time.
+- Starting DorkOS on a server got simpler: download a ready-made Docker Compose file from [dorkos.ai/compose.yml](https://dorkos.ai/compose.yml) and run `docker compose up -d`. The deployment guide now also explains when to pick Docker and when a direct install fits better.
+
+### Changed
+
+- **BREAKING**: The published Docker image now runs as a regular, unprivileged user instead of root, so a compromised agent or a bug can't touch the rest of the container as easily. Its data directory moved from `/root/.dork` to `/home/node/.dork`.
+  - Migration: before starting the new image, fix ownership of your existing data with `docker run --rm -v dorkos-data:/data alpine chown -R 1000:1000 /data` (swap `dorkos-data` for your own volume or host path), then change every `-v ...:/root/.dork` to `-v ...:/home/node/.dork`. See the [Docker guide](https://dorkos.ai/docs/self-hosting/docker#upgrading-from-an-older-image) for the full walkthrough.
+- Shrink the published Docker image by dropping the build toolchain it no longer needs at runtime.
+- Add tini to the image so DorkOS starts, shuts down, and cleans up child processes properly, no `--init` flag needed.
+
+### Fixed
+
+- The desktop app no longer fails to launch with "Server exited with code 1" when a connected messaging service is slow to respond. Before, if a service like Telegram took too long to answer during startup, the whole app gave up and showed an error. Now the app starts right away and connects your messaging services in the background. The app also waits longer for slow first-time startups instead of giving up after 10 seconds.
+- Checking for updates in the desktop app right after a new release no longer shows an error. During the few minutes it takes a release's installer to finish building and upload, "Check for updates…" now tells you the new version is still being prepared instead of showing a confusing error message.
+- Fix the Docker image's health check, which never actually worked: the setup guides told you to add a `curl`-based check, but the image has no `curl`, so it silently failed forever. The image now runs its own built-in check every 30 seconds, so `docker ps` correctly reports the container as healthy or unhealthy.
+
+## Install / Update
+
+```
+npm install -g dorkos@0.49.0
+```

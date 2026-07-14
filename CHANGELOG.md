@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.49.0] - 2026-07-14
+
+> DorkOS is easier to run on a server and safer in Docker. You can try it in one command with `npx dorkos@latest`, and start a server from a ready-made Compose file. The published Docker image now runs as a regular user instead of root, checks its own health, and shuts down cleanly.
+
+### Added
+
+- Try DorkOS without installing anything: `npx dorkos@latest` downloads it, starts it, and opens the cockpit in your browser. The first run takes a minute or two; a regular install skips that wait next time.
+- Starting DorkOS on a server got simpler: download a ready-made Docker Compose file from [dorkos.ai/compose.yml](https://dorkos.ai/compose.yml) and run `docker compose up -d`. The deployment guide now also explains when to pick Docker and when a direct install fits better.
+
+### Changed
+
+- **BREAKING**: The published Docker image now runs as a regular, unprivileged user instead of root, so a compromised agent or a bug can't touch the rest of the container as easily. Its data directory moved from `/root/.dork` to `/home/node/.dork`.
+  - Migration: before starting the new image, fix ownership of your existing data with `docker run --rm -v dorkos-data:/data alpine chown -R 1000:1000 /data` (swap `dorkos-data` for your own volume or host path), then change every `-v ...:/root/.dork` to `-v ...:/home/node/.dork`. See the [Docker guide](https://dorkos.ai/docs/self-hosting/docker#upgrading-from-an-older-image) for the full walkthrough.
+- Shrink the published Docker image by dropping the build toolchain it no longer needs at runtime.
+- Add tini to the image so DorkOS starts, shuts down, and cleans up child processes properly, no `--init` flag needed.
+
+### Fixed
+
+- The desktop app no longer fails to launch with "Server exited with code 1" when a connected messaging service is slow to respond. Before, if a service like Telegram took too long to answer during startup, the whole app gave up and showed an error. Now the app starts right away and connects your messaging services in the background. The app also waits longer for slow first-time startups instead of giving up after 10 seconds.
+- Checking for updates in the desktop app right after a new release no longer shows an error. During the few minutes it takes a release's installer to finish building and upload, "Check for updates…" now tells you the new version is still being prepared instead of showing a confusing error message.
+- Fix the Docker image's health check, which never actually worked: the setup guides told you to add a `curl`-based check, but the image has no `curl`, so it silently failed forever. The image now runs its own built-in check every 30 seconds, so `docker ps` correctly reports the container as healthy or unhealthy.
+
 ## [0.48.0] - 2026-07-13
 
 > You can now download DorkOS for Windows as an early alpha, alongside the Mac app. This release also moves every bit of analytics onto DorkOS's own site, so no third-party tracker is ever bundled into the app, and it hands you real controls: a Privacy & Data settings tab, command-line switches, and two kill switches that force everything off. A small anonymous heartbeat and usage count are now on by default, but DorkOS shows you the exact data on first run and sends nothing until you have seen it. You can also send your own traces to any observability tool, get crash reports through DorkOS instead of a third party, and send feedback right from the app.
@@ -472,46 +494,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix playground registry slug and agent management copy
 - Improve agent management action descriptions for clarity
 
-## [0.40.0] - 2026-04-14
-
-> Agent personality and sidebar polish — verbosity-based traits, lifecycle management actions, scoped marketplace installs, and refined animations across the Agent Hub, sidebar, and session components.
-
-### Added
-
-- Add agent lifecycle management actions and split navigation
-- Enhance sidebar functionality and UI components
-- Add polished avatar picker with micro-interactions and transitions
-- Enhance agent trait management and UI components
-- Update personality traits from tone-based to verbosity-based system
-- Improve PersonalityRadar component for light/dark mode adaptability
-- Implement AgentChipContextMenu and enhance ShortcutChips for agent actions
-- Update PersonalityRadar component for improved light/dark mode support
-- Add nebula theme utilities and PresetPill component
-- Polish AgentListItem expand/collapse with spring animations and loading states
-- Implement context menu and compact/full session row components
-- Enhance AgentHub with loading skeleton and animation transitions
-- Add scoped installs and skills-first Toolkit tab
-- Add dev tools dropdown menu with unified TanStack devtools panel
-
-### Changed
-
-- Update agent management actions and enhance UI components
-- Streamline RightPanelHeader and enhance AgentHubHero UI
-- Replace hardcoded default traits with DEFAULT_TRAITS constant
-- Remove 'active' status from session indicators and update related tests
-- Replace SessionItem with SessionRow components in sidebar and features sections
-- Enhance AgentListItem animation and expand/collapse logic
-- Fix stale JSDoc referencing removed Sessions drill-down
-- Simplify AgentListItem interactions and visual container
-
-### Fixed
-
-- Add success toasts for deny/unblock actions
-- Address code review findings in AgentListItem
-- Wire route projectPath param and address review findings
-
 ---
 
-Older releases (v0.1.0 – v0.39.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.39.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.39.0.md).
+Older releases (v0.1.0 – v0.40.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.40.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.40.0.md).
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.49.0...HEAD
