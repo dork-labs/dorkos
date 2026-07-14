@@ -24,8 +24,15 @@ declare module '@dorkos/server';
 // global scope of the whole program.
 export {};
 
-/** Poll the health endpoint until the server is responding. */
-async function waitForServer(port: number, timeoutMs = 10_000): Promise<void> {
+/**
+ * Poll the health endpoint until the server is responding.
+ *
+ * The window must exceed the slowest legitimate boot, not the typical one: a
+ * first run on a slow disk pays DB setup plus a mesh disk scan that is itself
+ * capped at 30s. Polling returns the moment the server is up, so a generous
+ * ceiling costs a healthy boot nothing.
+ */
+async function waitForServer(port: number, timeoutMs = 60_000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {

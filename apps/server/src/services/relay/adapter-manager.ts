@@ -159,6 +159,10 @@ export class AdapterManager {
   private readonly deps: AdapterManagerDeps;
   private manifests = new Map<string, AdapterManifest>();
   private bindingSubsystem?: BindingSubsystem;
+  /** Serialized adapter-start passes — see {@link queueStartEnabledAdapters}. */
+  private startChain: Promise<void> = Promise.resolve();
+  /** Set by {@link shutdown}; stops any in-flight start pass from registering more adapters. */
+  private stopped = false;
   /** Normalized runtime-type → agent-runtime map (always populated post-construction). */
   private readonly agentRuntimes: Map<string, AgentRuntimeLike>;
 
@@ -264,7 +268,12 @@ export class AdapterManager {
     }
 
     await this.initBindingSubsystem();
-    await this.startEnabledAdapters();
+    // Adapter starts do network I/O (e.g. Telegram's getMe handshake) that can
+    // hang for tens of seconds, and the desktop shell health-gates startup on
+    // the server reaching `app.listen` within a fixed window. Starting adapters
+    // in the background keeps a slow or unreachable adapter endpoint from
+    // taking down the whole server boot; await adaptersStarted() to observe it.
+    void this.queueStartEnabledAdapters();
     this.configWatcher = watchAdapterConfig(this.configPath, () => {
       this.reload().catch((err) => {
         logger.warn('[AdapterManager] Hot-reload failed:', err);
@@ -322,8 +331,36 @@ export class AdapterManager {
       }
     }
 
-    // Start/update enabled adapters
-    await this.startEnabledAdapters();
+    // Start/update enabled adapters. Queued so a hot-reload can never run an
+    // adapter-start pass concurrently with the background pass initialize()
+    // kicked off (a concurrent pair could double-register the same adapter).
+    await this.queueStartEnabledAdapters();
+  }
+
+  /**
+   * Resolves once every adapter-start pass queued so far has settled.
+   *
+   * `initialize()` starts adapters in the background so boot never blocks on
+   * adapter network I/O; callers that need started adapters (tests, health
+   * introspection) await this instead.
+   */
+  adaptersStarted(): Promise<void> {
+    return this.startChain;
+  }
+
+  /**
+   * Run {@link startEnabledAdapters} serialized behind any in-flight pass, so
+   * initialize()'s background pass and reload()'s pass never interleave. The
+   * chain never rejects: startEnabledAdapters isolates per-adapter failures,
+   * and a defensive catch keeps one broken pass from poisoning the chain.
+   */
+  private queueStartEnabledAdapters(): Promise<void> {
+    this.startChain = this.startChain.then(() =>
+      this.startEnabledAdapters().catch((err) => {
+        logger.warn('[AdapterManager] Adapter start pass failed:', err);
+      })
+    );
+    return this.startChain;
   }
 
   /** Enable a specific adapter by ID and persist the change to disk. */
@@ -656,6 +693,9 @@ export class AdapterManager {
 
   /** Stop all adapters and the config file watcher. */
   async shutdown(): Promise<void> {
+    // Halt any in-flight background start pass before tearing the registry
+    // down, so it can't register fresh adapters into a dead relay.
+    this.stopped = true;
     if (this.bindingSubsystem) {
       await this.bindingSubsystem.shutdown();
       this.bindingSubsystem = undefined;
@@ -670,6 +710,7 @@ export class AdapterManager {
   /** Start all enabled adapters that are not already running. */
   private async startEnabledAdapters(): Promise<void> {
     for (const config of this.configs) {
+      if (this.stopped) return; // shutdown() ran mid-pass
       if (!config.enabled) continue;
       if (this.registry.get(config.id)) continue; // Already running
 
