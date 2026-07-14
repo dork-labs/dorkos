@@ -19,8 +19,8 @@
 #   docker build --target runtime \
 #     --build-arg INSTALL_MODE=npm --build-arg DORKOS_VERSION=latest -t dorkos .
 #
-# Custom port (steer the healthcheck with -e DORKOS_PORT to match):
-#   docker run --rm -p 8080:8080 -e DORKOS_PORT=8080 dorkos --port 8080
+# Custom port (the env var steers both the server and the healthcheck):
+#   docker run --rm -p 8080:8080 -e DORKOS_PORT=8080 dorkos
 #
 # CLI install smoke test:
 #   docker build --target smoke -t dorkos-smoke . && docker run --rm dorkos-smoke
@@ -141,10 +141,10 @@ ENV DORKOS_ALLOW_INSECURE_BIND=true
 
 EXPOSE 4242
 
-# Reads DORKOS_PORT at check time (defaults to 4242). Overriding the port via
-# CMD --port won't update this — pass -e DORKOS_PORT to keep them in sync.
+# Reads DORKOS_PORT at check time (defaults to 4242, matching the server's own
+# default). No baked-in CMD --port: a CLI flag would beat the env var inside
+# the app, silently defeating -e DORKOS_PORT and desyncing this check.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:'+(process.env.DORKOS_PORT||4242)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["tini", "--", "dorkos"]
-CMD ["--port", "4242"]
