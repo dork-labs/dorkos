@@ -21,20 +21,26 @@ name: Desktop Release
 # release as the latest — and correctly report "up to date" — until a release is
 # published. The two build jobs ATTACH their assets to that draft (attach-only:
 # they never create a release, flip the draft flag, or rewrite the human-written
-# notes), then the `publish-release` job flips the draft to published once both
-# have finished. That closes the auto-update window: on the happy path every
+# notes). Each attached artifact is then exercised by a verify job
+# (verify-macos, verify-windows) that installs it on a clean runner. Only when
+# BOTH builds AND BOTH verifications pass does `publish-release` flip the draft
+# to published. That closes the auto-update window: on the happy path every
 # asset (installer + latest*.yml) is attached before the release is ever
 # visible, so an update check can never 404 on a not-yet-uploaded metadata file.
 #
-# Fail-soft is preserved. `publish-release` runs with `if: always()`, so even a
-# build/sign/notarize failure on one or both platforms still publishes the
-# release (with whatever assets attached, plus the notes) rather than stranding
-# it as a permanent draft — a desktop failure can never unwind the CLI/product
-# release, and the app degrades gracefully on a missing platform asset
-# (auto-updater.ts treats a metadata 404 as "no update yet", not an error).
+# Fail-CLOSED on the desktop assets. If a build or its verification fails,
+# `publish-release` is skipped (it `needs` all four jobs with no `if: always()`)
+# and the release stays an unpublished DRAFT rather than shipping an unverified
+# or half-attached installer. electron-updater ignores drafts, so users keep the
+# previous version — the safe outcome. A desktop failure still never unwinds the
+# CLI/product release (that release is published by /system:release's own npm +
+# changelog path); it only holds the desktop-facing GitHub Release as a draft
+# until a human re-runs or intervenes. Recovery from a flaky verify job: re-run
+# the failed job(s) from the Actions UI — publish-release is idempotent and
+# publishes once all of its needs are green.
 #
-# `workflow_dispatch` (with `dry_run`) still builds both apps without attaching
-# or publishing, for manual verification.
+# `workflow_dispatch` (with `dry_run`) still builds both apps (and verifies
+# them) without attaching or publishing, for manual verification.
 
 on:
   push:
@@ -281,21 +287,142 @@ jobs:
             apps/desktop/release/*.blockmap \
             --clobber
 
+  # Post-build verification: install each attached artifact on a clean runner
+  # BEFORE the release is ever published. These jobs gate publish-release, so a
+  # broken installer holds the release as a draft instead of shipping.
+  verify-macos:
+    # Match build-macos's runner so the app is verified on the OS family it was
+    # packaged on.
+    needs: build-macos
+    runs-on: macos-latest
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DorkOS-macOS-arm64
+          path: artifact
+
+      - name: Verify the macOS app bundle
+        # spctl's Gatekeeper assessment only makes sense for a real Developer ID
+        # signature, so it is gated on the SAME repo variable the build job uses
+        # to choose the signed vs unsigned package step (APPLE_DEVELOPER_CONFIGURED).
+        # codesign --verify runs unconditionally: electron-builder ad-hoc-signs
+        # the arm64 app even when unsigned (arm64 binaries must carry at least an
+        # ad-hoc signature to run), and --verify checks structural integrity, not
+        # trust — so it passes for ad-hoc and Developer ID alike.
+        env:
+          APPLE_DEVELOPER_CONFIGURED: ${{ vars.APPLE_DEVELOPER_CONFIGURED }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(artifact/*.dmg)
+          if [ ${#dmgs[@]} -eq 0 ]; then
+            echo "::error::No .dmg found in the DorkOS-macOS-arm64 artifact." >&2
+            exit 1
+          fi
+          dmg="${dmgs[0]}"
+          echo "Attaching ${dmg}…"
+          mount_dir="$(mktemp -d)"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
+          cleanup() { hdiutil detach "$mount_dir" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          apps=("$mount_dir"/*.app)
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "::error::No .app bundle found inside ${dmg}." >&2
+            exit 1
+          fi
+          app="${apps[0]}"
+          echo "Found app bundle: ${app}"
+
+          echo "Verifying code signature (structural integrity)…"
+          if ! codesign --verify --deep --strict --verbose=2 "$app"; then
+            echo "::error::codesign --verify --deep --strict failed for ${app}." >&2
+            exit 1
+          fi
+
+          if [ "${APPLE_DEVELOPER_CONFIGURED:-}" = "true" ]; then
+            echo "Signed build — asserting Gatekeeper acceptance…"
+            if ! spctl --assess --type execute --verbose=4 "$app"; then
+              echo "::error::spctl --assess rejected ${app}; a signed build must pass Gatekeeper." >&2
+              exit 1
+            fi
+          else
+            echo "Unsigned build (APPLE_DEVELOPER_CONFIGURED != true) — skipping spctl Gatekeeper assessment."
+          fi
+          echo "macOS artifact verification passed."
+
+  verify-windows:
+    needs: build-windows
+    # windows-latest is fine here (unlike the build job, which is pinned to
+    # windows-2022 for node-gyp): verification only runs an already-compiled
+    # installer, it does not rebuild native modules.
+    runs-on: windows-latest
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DorkOS-windows-x64
+          path: artifact
+
+      - name: Verify the Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem -Path artifact -Filter *.exe | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error 'No .exe installer found in the DorkOS-windows-x64 artifact.'
+            exit 1
+          }
+          Write-Host "Running silent install of $($exe.FullName)…"
+          # electron-builder's NSIS installer supports /S for a silent install.
+          # oneClick is false, but /S forces the silent path and installs to the
+          # default location. Note: electron-builder's NSIS defaults include
+          # runAfterFinish=true, so the silent install may auto-launch the app
+          # in the background — harmless on a throwaway runner; this job only
+          # tracks the installer process, never the app.
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList '/S' -PassThru
+          if (-not $proc.WaitForExit(180000)) {
+            $proc.Kill()
+            Write-Error 'Installer did not finish within 180s.'
+            exit 1
+          }
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "Installer exited with code $($proc.ExitCode)."
+            exit 1
+          }
+          # electron-builder NSIS default per-user install dir (perMachine: false
+          # in apps/desktop/electron-builder.yml) is
+          # %LOCALAPPDATA%\Programs\<productName>; productName is DorkOS, so the
+          # launcher is DorkOS.exe there.
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\DorkOS'
+          $appExe = Join-Path $installDir 'DorkOS.exe'
+          if (-not (Test-Path $appExe)) {
+            if (Test-Path $installDir) {
+              Write-Host "Contents of ${installDir}:"
+              Get-ChildItem -Recurse $installDir | Select-Object -First 50 | Format-Table FullName
+            }
+            Write-Error "Expected installed executable not found at $appExe."
+            exit 1
+          }
+          Write-Host "Windows installer verification passed: $appExe exists."
+
   publish-release:
     # Flip the draft release (created by /system:release Phase 6.11 with --draft)
-    # to published, AFTER both platform builds have attached their assets. This
-    # is what closes the auto-update window described in the file header: until
-    # this runs, electron-updater sees the previous release as latest and reports
-    # "up to date"; once it runs, every installer + latest*.yml is already
-    # attached, so no update check can 404 on a not-yet-uploaded metadata file.
+    # to published, AFTER both platform builds have attached their assets AND
+    # both verify jobs have installed them successfully. This is what closes the
+    # auto-update window described in the file header: until this runs,
+    # electron-updater sees the previous release as latest and reports "up to
+    # date"; once it runs, every installer + latest*.yml is already attached and
+    # verified, so no update check can 404 on a not-yet-uploaded metadata file.
     #
-    # `needs` both build jobs and runs `if: always()` so it publishes even when a
-    # build failed — a notes-plus-whatever-attached release beats a permanent
-    # draft, preserving the fail-soft guarantee (the app degrades gracefully on a
-    # missing platform asset). Gated to real tag pushes, never dry_run.
+    # `needs` all four jobs with NO `if: always()`, so it is SKIPPED if any build
+    # or verification fails — the release then stays an unpublished draft rather
+    # than shipping an unverified installer (electron-updater ignores drafts, so
+    # users keep the previous version). Gated to real tag pushes, never dry_run.
     # Idempotent: --draft=false on an already-published release is a no-op.
-    needs: [build-macos, build-windows]
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
+    needs: [build-macos, build-windows, verify-macos, verify-windows]
+    if: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

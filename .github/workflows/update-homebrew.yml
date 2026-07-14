@@ -1,6 +1,22 @@
 name: Update Homebrew Formula
 
 on:
+  # Two automatic triggers per release, on purpose:
+  #
+  #   - Tag push (`v*`): updates the CLI formula ASAP. The dmg is NOT attached
+  #     yet at this point — desktop-release.yml spends 5-15+ min on macOS
+  #     sign+notarize and only flips the draft release to published after its
+  #     verify jobs pass — so the cask step gracefully skips on this run.
+  #   - Release published: updates the desktop cask. By publish time the dmg is
+  #     attached AND verified (and npm is long since live), so the cask bump
+  #     actually lands. The formula steps re-run too; the commit step is
+  #     idempotent, so an unchanged formula is a logged no-op.
+  #
+  # `workflow_dispatch` still works exactly as before for manual runs.
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -21,14 +37,46 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ -n "$INPUT_VERSION" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            # Tag run: derive the version from the pushed tag (strip the `v`).
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            # Release-published run: derive it from the release's tag.
+            VERSION="${RELEASE_TAG#v}"
+          elif [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
           else
             VERSION=$(npm view dorkos version)
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Updating Homebrew formula to v$VERSION"
+
+      # On a tag run the tag is pushed before npm publish finishes, so wait for
+      # the exact version to land on npm before computing its tarball SHA (the
+      # tarball 404s until then). Also runs on release-published events — cheap,
+      # since npm is live long before publish and the loop exits on first hit.
+      # Skipped for workflow_dispatch, which either names an already-published
+      # version or reads npm's current latest — keeping manual runs
+      # byte-for-byte as before. Mirrors the retry loop in publish-docker.yml's
+      # "Wait for npm package availability" step.
+      - name: Wait for npm package availability
+        if: github.event_name == 'push' || github.event_name == 'release'
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Waiting for dorkos@${PKG_VERSION} on npm..."
+          for i in $(seq 1 30); do
+            if npm view "dorkos@${PKG_VERSION}" version 2>/dev/null; then
+              echo "Package available!"
+              exit 0
+            fi
+            echo "Attempt $i/30 — not yet available, waiting 10s..."
+            sleep 10
+          done
+          echo "::error::Package dorkos@${PKG_VERSION} not found on npm after 5 minutes"
+          exit 1
 
       - name: Compute SHA256
         id: sha
@@ -55,6 +103,54 @@ jobs:
           sed -i "s|sha256 \".*\"|sha256 \"${PKG_SHA256}\"|" Formula/dorkos.rb
           sed -i "s|version \".*\"|version \"${PKG_VERSION}\"|" Formula/dorkos.rb
 
+      # Bump the desktop cask too, when it's ready. The cask
+      # (Casks/dorkos-desktop.rb — `dorkos` is owned by the CLI formula) is
+      # added to the tap separately, and desktop builds can lag a CLI release,
+      # so this step SKIPS GRACEFULLY when either the cask file is absent from
+      # the tap OR the GitHub release for this version has no macOS .dmg asset
+      # yet — the CLI formula update still lands on its own. On the tag-push
+      # run the dmg is never attached yet (see the trigger comment up top), so
+      # the skip path is expected there; the release-published run is the one
+      # that lands the cask bump.
+      #
+      # When both are present: download the dmg, compute its sha256, and rewrite
+      # the cask's `version` + `sha256` fields (the cask's `url` interpolates
+      # #{version}, so it follows automatically). The dmg asset name is
+      # DorkOS-<version>-arm64.dmg — the `dmg.artifactName` in
+      # apps/desktop/electron-builder.yml, confirmed against the real v0.48.0
+      # release assets.
+      - name: Update desktop cask (if ready)
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -f Casks/dorkos-desktop.rb ]; then
+            echo "Casks/dorkos-desktop.rb not present in the tap yet — skipping cask update (desktop builds can lag CLI releases)."
+            exit 0
+          fi
+
+          tag="v${PKG_VERSION}"
+          dmg_name="DorkOS-${PKG_VERSION}-arm64.dmg"
+          if ! gh release view "$tag" --repo dork-labs/dorkos --json assets \
+              --jq '.assets[].name' 2>/dev/null | grep -qx "$dmg_name"; then
+            echo "No ${dmg_name} on release ${tag} yet — skipping cask update (desktop builds can lag CLI releases)."
+            exit 0
+          fi
+
+          echo "Found ${dmg_name}; updating the cask."
+          gh release download "$tag" --repo dork-labs/dorkos \
+            --pattern "$dmg_name" --dir "$RUNNER_TEMP" --clobber
+          DMG_SHA256=$(shasum -a 256 "$RUNNER_TEMP/$dmg_name" | cut -d ' ' -f 1)
+          echo "dmg sha256: $DMG_SHA256"
+          rm -f "$RUNNER_TEMP/$dmg_name"
+
+          sed -i "s|version \".*\"|version \"${PKG_VERSION}\"|" Casks/dorkos-desktop.rb
+          # The greedy sha256 pattern is safe only while the cask is
+          # single-arch (one sha256 line); revisit if an on_intel/on_arm
+          # split is ever added.
+          sed -i "s|sha256 \".*\"|sha256 \"${DMG_SHA256}\"|" Casks/dorkos-desktop.rb
+
       - name: Commit and push
         env:
           PKG_VERSION: ${{ steps.version.outputs.version }}
@@ -62,6 +158,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/dorkos.rb
-          git diff --cached --quiet && echo "No changes" && exit 0
+          # Stage the cask too when it exists; a no-op if this run left it
+          # unchanged (cask absent, or no dmg asset yet).
+          if [ -f Casks/dorkos-desktop.rb ]; then
+            git add Casks/dorkos-desktop.rb
+          fi
+          # Idempotent: a healthy release runs this job twice (tag push, then
+          # release published). If this run changed nothing — e.g. the formula
+          # was already bumped by the tag-push run and the cask is unchanged —
+          # log and exit cleanly instead of letting `git commit` fail.
+          if git diff --cached --quiet; then
+            echo "Nothing to update — tap already at ${PKG_VERSION}."
+            exit 0
+          fi
           git commit -m "Update dorkos to ${PKG_VERSION}"
           git push
