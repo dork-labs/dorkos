@@ -206,6 +206,15 @@ async function initAndStart(m: AdapterManager): Promise<void> {
   await m.adaptersStarted();
 }
 
+/** A promise with its resolver exposed, for deterministically gating async steps. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 describe('AdapterManager', () => {
   let manager: AdapterManager;
   let registry: ReturnType<typeof createMockRegistry>;
@@ -1770,6 +1779,116 @@ describe('AdapterManager', () => {
         'adapter.connected',
         expect.any(String)
       );
+    });
+  });
+
+  describe('registry serialization under concurrency', () => {
+    const TWO_ENABLED_CONFIG = JSON.stringify({
+      adapters: [
+        {
+          id: 'tg-first',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'tok1', mode: 'polling' },
+        },
+        {
+          id: 'tg-second',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'tok2', mode: 'polling' },
+        },
+      ],
+    });
+
+    /**
+     * Gate one adapter id's registry.register call behind an explicit
+     * release, keeping the mock registry's normal bookkeeping. `reached`
+     * resolves when register(id) has been CALLED (the pass is mid-register),
+     * which is the deterministic hook the race tests pivot on — no sleeps.
+     */
+    function gateRegister(id: string): { reached: Promise<void>; release: () => void } {
+      const original = vi.mocked(registry.register).getMockImplementation()!;
+      const reached = deferred();
+      const gate = deferred();
+      vi.mocked(registry.register).mockImplementation(async (adapter: RelayAdapter) => {
+        if (adapter.id === id) {
+          reached.resolve();
+          await gate.promise;
+        }
+        return original(adapter);
+      });
+      return { reached: reached.promise, release: gate.resolve };
+    }
+
+    /**
+     * Let every pending microtask settle without resolving the register
+     * gate. After this, a racing enable/disable has run as far as it can:
+     * an unserialized implementation has fully completed its registry
+     * mutation (the bug), while a serialized one is parked in the queue.
+     */
+    function flushMicrotasks(): Promise<void> {
+      return new Promise((resolve) => setImmediate(resolve));
+    }
+
+    it('enable() while the start pass is mid-register of the same adapter registers it exactly once', async () => {
+      vi.mocked(readFile).mockResolvedValue(TWO_ENABLED_CONFIG);
+      const { reached, release } = gateRegister('tg-second');
+
+      await manager.initialize();
+      await reached; // pass is mid-register of tg-second: registry.get() still sees nothing
+
+      const enablePromise = manager.enable('tg-second');
+      await flushMicrotasks(); // an unserialized enable would double-register here
+      release();
+      await enablePromise;
+      await manager.adaptersStarted();
+
+      const secondRegisters = vi
+        .mocked(registry.register)
+        .mock.calls.filter((call) => (call[0] as RelayAdapter).id === 'tg-second');
+      expect(secondRegisters).toHaveLength(1);
+      expect(registry.get('tg-second')).toBeDefined();
+    });
+
+    it('disable() during the background start pass leaves the adapter unregistered', async () => {
+      vi.mocked(readFile).mockResolvedValue(TWO_ENABLED_CONFIG);
+      const { reached, release } = gateRegister('tg-second');
+
+      await manager.initialize();
+      await reached; // pass is mid-register of tg-second — the worst-case interleave
+
+      const disablePromise = manager.disable('tg-second');
+      // An unserialized disable would fully complete its (no-op) unregister
+      // here, before the pass's in-flight register lands — the leak.
+      await flushMicrotasks();
+      release();
+      await disablePromise;
+      await manager.adaptersStarted();
+
+      // The pass's in-flight register completed, but the queued unregister
+      // landed after it — the adapter must not survive the disable.
+      expect(registry.get('tg-second')).toBeUndefined();
+      expect(manager.getAdapter('tg-second')!.config.enabled).toBe(false);
+    });
+
+    it('shutdown() mid-pass stops the pass from registering further adapters', async () => {
+      vi.mocked(readFile).mockResolvedValue(TWO_ENABLED_CONFIG);
+      const { reached, release } = gateRegister('tg-first');
+
+      await manager.initialize();
+      await reached; // pass is mid-register of tg-first
+
+      await manager.shutdown();
+      release();
+      await manager.adaptersStarted();
+
+      // Only tg-first (already in flight when shutdown ran) was registered;
+      // the pass bailed before reaching tg-second.
+      expect(registry.register).toHaveBeenCalledTimes(1);
+      const registeredIds = vi
+        .mocked(registry.register)
+        .mock.calls.map((call) => (call[0] as RelayAdapter).id);
+      expect(registeredIds).not.toContain('tg-second');
     });
   });
 });
