@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { pathToFileURL } from 'url';
 import { randomUUID } from 'crypto';
 import Database from 'better-sqlite3';
 import {
@@ -10,12 +11,15 @@ import {
   DISCOVERY_PROJECTS,
   FLEET,
   FLEET_ROOT,
+  MARKETPLACE_FIXTURE_PACKAGES,
+  MARKETPLACE_FIXTURE_ROOT,
   MARKETPLACE_REGISTRY,
   MARKETPLACE_SOURCE_NAME,
   PROJECTS_ROOT,
   RUNS,
   SESSIONS,
   TASKS,
+  WORKBENCH_SOURCE_FILES,
 } from './config.js';
 
 /**
@@ -67,6 +71,14 @@ export async function prepareFilesystem(): Promise<void> {
   // sourcePath, which is what unlocks the canvas's real edit-in-place mode.
   await fs.writeFile(path.join(FLEET_ROOT, 'atlas', CANVAS_SOURCE_FILENAME), CANVAS_SOURCE_DOC);
 
+  // A small, real source tree alongside it so the Workbench's Files tab has
+  // genuine folders/files to browse (the design doc above, "implemented").
+  for (const [relPath, content] of Object.entries(WORKBENCH_SOURCE_FILES)) {
+    const filePath = path.join(FLEET_ROOT, 'atlas', relPath);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content);
+  }
+
   // Believable "existing projects" with mixed harness markers — the onboarding
   // discovery capture points the real unified scanner at this tree.
   for (const project of DISCOVERY_PROJECTS) {
@@ -77,7 +89,12 @@ export async function prepareFilesystem(): Promise<void> {
     }
   }
 
-  // Marketplace source list + a pre-fetched registry cache (bypasses the network).
+  // Marketplace source list — a `file://` source, so `marketplace.json` and
+  // relative-path package sources are read straight off disk
+  // (`readLocalMarketplaceJson` / `relativePathResolver`): no network, no
+  // pre-warmed cache, and the detail sheet / install pipeline exercise the
+  // exact same resolve → stage → validate → preview code path a remote
+  // marketplace would.
   await fs.writeFile(
     path.join(CAPTURE_HOME, 'marketplaces.json'),
     JSON.stringify(
@@ -86,7 +103,7 @@ export async function prepareFilesystem(): Promise<void> {
         sources: [
           {
             name: MARKETPLACE_SOURCE_NAME,
-            source: 'https://github.com/dork-labs/marketplace',
+            source: pathToFileURL(MARKETPLACE_FIXTURE_ROOT).href,
             enabled: true,
             addedAt: '2026-07-01T00:00:00.000Z',
           },
@@ -96,25 +113,38 @@ export async function prepareFilesystem(): Promise<void> {
       2
     )
   );
-  const cacheDir = path.join(
-    CAPTURE_HOME,
-    'cache',
-    'marketplace',
-    'marketplaces',
-    MARKETPLACE_SOURCE_NAME
-  );
-  await fs.mkdir(cacheDir, { recursive: true });
+  await fs.mkdir(MARKETPLACE_FIXTURE_ROOT, { recursive: true });
   await fs.writeFile(
-    path.join(cacheDir, 'marketplace.json'),
+    path.join(MARKETPLACE_FIXTURE_ROOT, 'marketplace.json'),
     JSON.stringify(MARKETPLACE_REGISTRY, null, 2)
   );
-  await fs.writeFile(path.join(cacheDir, '.last-fetched'), String(Date.now()));
+  for (const pkg of MARKETPLACE_FIXTURE_PACKAGES) {
+    for (const [relPath, content] of Object.entries(pkg.files)) {
+      const filePath = path.join(MARKETPLACE_FIXTURE_ROOT, 'plugins', pkg.name, relPath);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, content);
+    }
+  }
 }
 
 /** Dismiss onboarding so the app shell renders immediately. */
 async function dismissOnboarding(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {
     onboarding: { dismissedAt: '2026-07-01T00:00:00.000Z' },
+  });
+}
+
+/**
+ * Record a settled, opted-out telemetry decision so the first-run consent
+ * banner (`TelemetryConsentBanner`) never renders over a capture — it shows
+ * app-wide until `telemetry.userHasDecided` is set, which would otherwise
+ * overlay the top of every non-`/session` frame. Declining ("No thanks") is
+ * the honest choice for a staged demo instance: a real, privacy-respecting
+ * decision, not telemetry actually left on.
+ */
+async function declineTelemetry(): Promise<void> {
+  await patchJson(`${API_URL}/api/config`, {
+    telemetry: { install: false, heartbeat: false, userHasDecided: true },
   });
 }
 
@@ -276,15 +306,55 @@ async function seedSessions(): Promise<SeededSession[]> {
 }
 
 /**
- * Post-boot seeding: dismiss onboarding, register the fleet, create tasks + run
- * history, and populate completed sessions. Runs against the live server and
- * returns the sessions it created.
+ * Install the `flow` fixture package (real, on-disk, resolved via the local
+ * `file://` marketplace source — see `MARKETPLACE_FIXTURE_PACKAGES`) globally,
+ * then again scoped to the atlas agent, through the real
+ * `POST /api/marketplace/packages/:name/install` route. The second install
+ * shadows the first for atlas, so the cross-scope installed listing reports
+ * it with `scope: 'override'` — the "Overrides global" row the
+ * `marketplace-installed` shot shows.
+ *
+ * A bare package-name install resolves against the marketplace.json CACHE
+ * (`MarketplaceCache`, warmed by the `sources/:name/refresh` route or any
+ * browse fetch) — it never fetches inline — so this refreshes that cache
+ * first; skipping it 404s with "Package not found (refresh marketplace cache
+ * first)" even though the fixture is genuinely on disk. Returns `false`
+ * (never throws) if any step fails, so the caller can skip that one shot
+ * instead of aborting the whole record.
  */
-export async function seedData(): Promise<SeededSession[]> {
+async function seedMarketplaceInstalls(): Promise<boolean> {
+  try {
+    await postJson(`${API_URL}/api/marketplace/sources/${MARKETPLACE_SOURCE_NAME}/refresh`, {});
+    await postJson(`${API_URL}/api/marketplace/packages/flow/install`, {});
+    await postJson(`${API_URL}/api/marketplace/packages/flow/install`, {
+      projectPath: path.join(FLEET_ROOT, 'atlas'),
+    });
+    return true;
+  } catch (err) {
+    process.stdout.write(
+      `  ✗ marketplace-installed seed skipped: ${err instanceof Error ? err.message : err}\n`
+    );
+    return false;
+  }
+}
+
+/**
+ * Post-boot seeding: dismiss onboarding, register the fleet, create tasks + run
+ * history, populate completed sessions, and perform the real installs the
+ * `marketplace-installed` shot needs. Runs against the live server and returns
+ * the sessions it created plus whether the marketplace installs succeeded.
+ */
+export async function seedData(): Promise<{
+  sessions: SeededSession[];
+  marketplaceInstalled: boolean;
+}> {
   await dismissOnboarding();
+  await declineTelemetry();
   await scopeConfigToCaptureHome();
   await seedFleet();
   const scheduleIds = await seedTasks();
   seedRunHistory(scheduleIds);
-  return seedSessions();
+  const sessions = await seedSessions();
+  const marketplaceInstalled = await seedMarketplaceInstalls();
+  return { sessions, marketplaceInstalled };
 }

@@ -108,6 +108,29 @@ const demoCoding: ScenarioFn = async function* () {
   yield { type: 'done', data: { sessionId: DEMO_SESSION_ID } } as StreamEvent;
 };
 
+const RATE_LIMITER_EXPLAINER =
+  "Sure — it's a token-bucket limiter, one bucket per `clientId`. Each bucket holds 10 tokens " +
+  'and refills at 60/min; a request drains one, and an empty bucket gets a `429` with ' +
+  "`Retry-After` instead of being queued. It reuses the existing in-memory store, so there's no new infra to stand up.";
+
+/**
+ * Short, single-message answer to a follow-up question about the token-bucket
+ * limiter {@link demoCoding} just built — no tool calls, just prose. Backs the
+ * Workbench money shot's chat turn (`driveWorkbench` in
+ * `apps/e2e/capture/surfaces-desktop.ts`), replacing the generic `simple-text`
+ * echo stub with a real, short explanation that stays factually consistent
+ * with the design's canvas doc and the seeded `rate-limiter.ts`
+ * (`WORKBENCH_SOURCE_FILES` in `apps/e2e/capture/config.ts`).
+ */
+const demoRateLimiterExplainer: ScenarioFn = async function* () {
+  yield {
+    type: 'session_status',
+    data: { sessionId: DEMO_SESSION_ID, model: DEMO_MODEL },
+  } as StreamEvent;
+  yield* streamText(RATE_LIMITER_EXPLAINER);
+  yield { type: 'done', data: { sessionId: DEMO_SESSION_ID } } as StreamEvent;
+};
+
 /**
  * A turn that pauses on a permission prompt: a `tool_call_start` for a
  * write-scoped tool followed by `approval_required`, then it stops WITHOUT a
@@ -421,6 +444,7 @@ const demoGenUi: ScenarioFn = async function* () {
  */
 export const DEMO_SCENARIOS: Record<string, ScenarioFn> = {
   'demo-coding': demoCoding,
+  'demo-rate-limiter-explainer': demoRateLimiterExplainer,
   'demo-approval': demoApproval,
   'demo-canvas': demoCanvas,
   'demo-subagents': demoSubagents,

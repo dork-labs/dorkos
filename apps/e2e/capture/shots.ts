@@ -119,6 +119,16 @@ export const SHOTS: readonly Shot[] = [
   { id: 'mobile-approval', kind: 'still', frame: 'mobile', consumers: ['marketing'] },
   // --- Mobile loop (marketing) ---
   { id: 'mobile-chat', kind: 'loop', frame: 'mobile', consumers: ['marketing'] },
+  // --- Desktop stills (docs-only; not on /features) ---
+  // The marketplace package detail sheet (permissions preview + install),
+  // embedded in docs/marketplace/index.mdx.
+  { id: 'marketplace-detail', kind: 'still', frame: 'desktop', consumers: ['docs'] },
+  // The Workbench: Files tab open beside an opened code file in Canvas, tab
+  // strip visible. Embedded in docs/guides/workbench.mdx.
+  { id: 'workbench', kind: 'still', frame: 'desktop', consumers: ['docs'] },
+  // The Installed packages panel with a global + agent-scoped ("overrides
+  // global") row for the same package. Embedded in docs/marketplace/index.mdx.
+  { id: 'marketplace-installed', kind: 'still', frame: 'desktop', consumers: ['docs'] },
 ];
 
 /** Index of shots by id for O(1) lookup. */

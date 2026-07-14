@@ -81,6 +81,45 @@ async function shootMarketplace(page: Page, theme: Theme, rec: RunRecorder): Pro
 }
 
 /**
+ * Capture the marketplace package detail sheet: navigating straight to
+ * `?pkg=code-reviewer` (the same URL param clicking a card writes) opens it
+ * without a click. `code-reviewer` is a real, on-disk fixture package (see
+ * `MARKETPLACE_FIXTURE_PACKAGES`), so the sheet's permission preview is a
+ * genuine `PermissionPreviewBuilder` result — not installed, so the money
+ * state is the "Permissions & Effects" section (a bundled task among its
+ * effects) plus the Install action.
+ */
+async function shootMarketplaceDetail(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
+  await page.goto(url('/marketplace?pkg=code-reviewer'));
+  await page
+    .getByText('Permissions & Effects', { exact: true })
+    .first()
+    .waitFor({ timeout: WAIT_MS });
+  await page
+    .getByText('Schedule task: nightly-code-review', { exact: false })
+    .first()
+    .waitFor({ timeout: WAIT_MS });
+  await shoot(page, 'marketplace-detail', theme, rec);
+}
+
+/**
+ * Capture the Installed packages panel with a global install plus an
+ * agent-scoped install of the same package ("Overrides global") — both real,
+ * seeded via `POST /packages/flow/install` (see `seedMarketplaceInstalls` in
+ * `seed.ts`). Skipped automatically (via `attemptShot`) if that seeding
+ * failed, rather than shooting an empty or faked panel.
+ */
+async function shootMarketplaceInstalled(
+  page: Page,
+  theme: Theme,
+  rec: RunRecorder
+): Promise<void> {
+  await page.goto(url('/marketplace?view=installed'));
+  await page.getByText('Overrides global', { exact: true }).first().waitFor({ timeout: WAIT_MS });
+  await shoot(page, 'marketplace-installed', theme, rec);
+}
+
+/**
  * Capture a rich chat turn. Waits for the tool cards and the summary heading so
  * the transcript shows streamed markdown, a code block, and multiple tool
  * cards — a full, inhabited chat surface.
@@ -265,6 +304,61 @@ async function driveCanvasEditing(page: Page, mark?: LoopMark): Promise<void> {
 async function shootCanvasEditing(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await driveCanvasEditing(page);
   await shoot(page, 'canvas-editing', theme, rec);
+}
+
+/**
+ * Open the shell's right panel when it isn't already — Files/Canvas/Terminal
+ * tabs are always in the DOM (see `RightPanelContainer`) but collapsed to zero
+ * width, and unlike the canvas/personality drives, opening Files has no
+ * server-pushed `ui_command` to reveal the panel for us.
+ */
+async function ensureRightPanelOpen(page: Page): Promise<void> {
+  const openButton = page.getByRole('button', { name: 'Open right panel' });
+  if (await openButton.count()) {
+    await openButton.click();
+  }
+}
+
+/**
+ * Drive the Workbench money shot: open the Files tab, expand the seeded
+ * `src/` folder, and click `rate-limiter.ts` — the same `open_file` ui-action
+ * the agent's own file tool and chat-triggered opens use — which switches the
+ * active right-panel tab to Canvas and renders the file read-only in
+ * CodeMirror, tab strip still visible above it. The chat turn runs
+ * `demo-rate-limiter-explainer` (a real short explanation, not the generic
+ * `simple-text` echo stub) so the visible reply reads as substantive.
+ */
+async function driveWorkbench(page: Page): Promise<void> {
+  await seedRightPanelSplit(page, CANVAS_PANEL_PCT);
+  await openLiveTurn(
+    page,
+    'demo-rate-limiter-explainer',
+    'Walk me through the rate limiter you added',
+    'atlas'
+  );
+  // Wait for the reply's closing clause so the still shows the complete
+  // streamed answer, not a mid-stream fragment.
+  await page
+    .getByText('no new infra to stand up', { exact: false })
+    .first()
+    .waitFor({ timeout: WAIT_MS });
+  await ensureRightPanelOpen(page);
+  await page.getByRole('tab', { name: 'Files' }).click({ timeout: WAIT_MS });
+  const srcFolder = page.getByRole('treeitem', { name: 'src' });
+  await srcFolder.waitFor({ timeout: WAIT_MS });
+  await srcFolder.click();
+  const file = page.getByRole('treeitem', { name: 'rate-limiter.ts' });
+  await file.waitFor({ timeout: WAIT_MS });
+  await file.click();
+  await page.locator('[data-slot="canvas"] .cm-content').first().waitFor({ timeout: WAIT_MS });
+  await page.getByText('takeToken', { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  await sleep(800); // let CodeMirror's syntax highlighting settle
+}
+
+/** Capture the Workbench: Files tab open, `src/` expanded, a code file open in Canvas. */
+async function shootWorkbench(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
+  await driveWorkbench(page);
+  await shoot(page, 'workbench', theme, rec);
 }
 
 /**
@@ -476,6 +570,12 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   await attemptShot('agents', 'agents-light', () => shootAgents(page, theme, rec));
   await attemptShot('tasks', 'tasks-light', () => shootTasks(page, theme, rec));
   await attemptShot('marketplace', 'marketplace-light', () => shootMarketplace(page, theme, rec));
+  await attemptShot('marketplace-detail', 'marketplace-detail-light', () =>
+    shootMarketplaceDetail(page, theme, rec)
+  );
+  await attemptShot('marketplace-installed', 'marketplace-installed-light', () =>
+    shootMarketplaceInstalled(page, theme, rec)
+  );
   await attemptShot('tool-approval', 'tool-approval-light', () =>
     shootToolApproval(page, theme, rec)
   );
@@ -494,12 +594,14 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
     shootMultiSession(page, theme, rec)
   );
   await attemptShot('personality', 'personality-light', () => shootPersonality(page, theme, rec));
-  // Canvas surfaces run last: opening the canvas pins the panel open for the
-  // rest of the context, which would bleed an empty panel into later shots.
+  // Canvas (and Files/Canvas workbench) surfaces run last: opening the right
+  // panel pins it open (per-agent, persisted) for the rest of the context,
+  // which would bleed an open panel into later shots.
   await attemptShot('canvas', 'canvas-light', () => shootCanvas(page, theme, rec));
   await attemptShot('canvas-editing', 'canvas-editing-light', () =>
     shootCanvasEditing(page, theme, rec)
   );
+  await attemptShot('workbench', 'workbench-light', () => shootWorkbench(page, theme, rec));
   await ctx.close();
 }
 
