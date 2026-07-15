@@ -28,6 +28,9 @@
  *   - No POSTHOG_PERSONAL_API_KEY: skip the upload (the normal local `next
  *     build`), then still delete the maps. The build never fails on a missing
  *     key.
+ *   - No POSTHOG_PROJECT_ID: skip the upload, then still delete the maps. We
+ *     require an explicit project id (no default) so a local run with a real key
+ *     can never silently upload to the wrong project.
  *   - VERCEL_ENV === 'preview': skip the upload (we don't want preview deploys
  *     adding release noise), then still delete the maps.
  *
@@ -125,15 +128,18 @@ function runSourcemapStep(bin, subcommand, version) {
       ...process.env,
       // Map our Vercel-provided vars onto the names the CLI honors, so no new
       // Vercel env vars are needed. Confirmed from the CLI binary: it reads
-      // POSTHOG_CLI_API_KEY, POSTHOG_CLI_PROJECT_ID, and POSTHOG_CLI_HOST.
+      // POSTHOG_CLI_API_KEY, POSTHOG_CLI_PROJECT_ID, and POSTHOG_CLI_HOST. No
+      // project-id fallback literal: the upload guard requires POSTHOG_PROJECT_ID
+      // so a local run can never silently target the wrong project.
       POSTHOG_CLI_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY,
-      POSTHOG_CLI_PROJECT_ID: process.env.POSTHOG_PROJECT_ID ?? '315668',
+      POSTHOG_CLI_PROJECT_ID: process.env.POSTHOG_PROJECT_ID,
       POSTHOG_CLI_HOST,
     },
   });
 }
 
 const hasKey = Boolean(process.env.POSTHOG_PERSONAL_API_KEY);
+const hasProjectId = Boolean(process.env.POSTHOG_PROJECT_ID);
 const isPreview = process.env.VERCEL_ENV === 'preview';
 const version = resolveReleaseVersion();
 let deletionFailed = false;
@@ -143,6 +149,11 @@ try {
     console.log(
       '[sourcemaps] skipped upload: no POSTHOG_PERSONAL_API_KEY (maps still deleted below)'
     );
+  } else if (!hasProjectId) {
+    // Require an explicit project id rather than defaulting to one: a local run
+    // with a real key but no POSTHOG_PROJECT_ID must not silently upload to the
+    // wrong (production) project.
+    console.log('[sourcemaps] skipped upload: no POSTHOG_PROJECT_ID (maps still deleted below)');
   } else if (isPreview) {
     console.log('[sourcemaps] skipped upload: VERCEL_ENV=preview (maps still deleted below)');
   } else {

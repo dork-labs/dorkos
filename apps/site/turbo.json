@@ -3,7 +3,18 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/**"]
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/**"],
+      // Scoped to the site only: VERCEL_ENV is in this build's cache key because
+      // the post-build sourcemap step (scripts/upload-sourcemaps.mjs) behaves
+      // differently per environment (preview skips the PostHog upload). Without
+      // it, a preview build could populate a shared remote-cache entry that a
+      // later production build consumes as a HIT, skipping the upload so
+      // production maps never reach PostHog. Keying on VERCEL_ENV makes preview
+      // and production hash to different keys. We do NOT add VERCEL_GIT_COMMIT_SHA
+      // (it would bust the cache every commit, and is unnecessary because PostHog
+      // symbolication matches on the content-derived chunkId). This override
+      // REPLACES the root build task's env, so it repeats the full list.
+      "env": ["NODE_ENV", "VITE_*", "NEXT_PUBLIC_*", "POSTHOG_*", "VERCEL_ENV"]
     }
   }
 }
