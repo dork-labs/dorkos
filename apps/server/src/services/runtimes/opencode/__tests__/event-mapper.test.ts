@@ -432,7 +432,7 @@ describe('mapOpenCodeEvent', () => {
       );
     });
 
-    it('carries provider auth failures with their error name as the code', () => {
+    it('carries provider auth failures with their error name as the code and tags them auth_error', () => {
       const events = mapOpenCodeEvent(
         sessionError(OC, providerAuthError('anthropic', 'invalid api key')),
         makeContext()
@@ -440,7 +440,30 @@ describe('mapOpenCodeEvent', () => {
       expect(events[0]!.data).toMatchObject({
         message: 'invalid api key',
         code: 'ProviderAuthError',
+        category: 'auth_error',
       });
+    });
+
+    it('tags a ProviderAuthError as auth_error via its name even when the message has no keyword', () => {
+      // The provider message can be generic ("the provider ended the session"),
+      // so classification must rely on the error NAME, not just message matching.
+      const events = mapOpenCodeEvent(
+        sessionError(OC, providerAuthError('anthropic', 'the provider ended the session')),
+        makeContext()
+      );
+      expect(events[0]!.data).toMatchObject({
+        message: 'the provider ended the session',
+        code: 'ProviderAuthError',
+        category: 'auth_error',
+      });
+    });
+
+    it('keeps a non-auth session error as execution_error', () => {
+      const events = mapOpenCodeEvent(
+        sessionError(OC, unknownError('disk write failed')),
+        makeContext()
+      );
+      expect(events[0]!.data).toMatchObject({ category: 'execution_error' });
     });
 
     it('falls back to the error name when data carries no message', () => {

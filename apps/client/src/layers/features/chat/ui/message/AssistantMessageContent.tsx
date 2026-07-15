@@ -209,6 +209,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     onRetry,
     inputZoneToolCallId,
     textEffect,
+    runtimeLabel,
   } = useMessageContext();
   const { expandToolCalls, autoHideToolCalls } = useAppStore();
   const parts = message.parts ?? [];
@@ -262,6 +263,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           category={part.category}
           details={part.details}
           onRetry={onRetry}
+          runtimeLabel={runtimeLabel}
         />
       );
     }

@@ -43,6 +43,8 @@ interface ChatMessageAreaProps {
   inputZoneToolCallId: string | null;
   /** Ref forwarded to the underlying MessageList for scroll control. */
   messageListRef: RefObject<MessageListHandle | null>;
+  /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
+  runtimeLabel?: string;
 }
 
 /**
@@ -66,6 +68,7 @@ export function ChatMessageArea({
   onRetry,
   inputZoneToolCallId,
   messageListRef,
+  runtimeLabel,
 }: ChatMessageAreaProps) {
   const birthRecord = useAgentBirthRecord(sessionId);
   // First light (M4): between the opening turn firing and the first greetable
@@ -113,6 +116,7 @@ export function ChatMessageArea({
           onToolDecided={onToolDecided}
           onRetry={onRetry}
           inputZoneToolCallId={inputZoneToolCallId}
+          runtimeLabel={runtimeLabel}
         />
       )}
 

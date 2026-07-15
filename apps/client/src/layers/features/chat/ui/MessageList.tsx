@@ -81,6 +81,8 @@ interface MessageListProps {
   inputZoneToolCallId?: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
   textEffect?: TextEffectConfig;
+  /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
+  runtimeLabel?: string;
 }
 
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
@@ -96,6 +98,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     onRetry,
     inputZoneToolCallId,
     textEffect,
+    runtimeLabel,
   },
   ref
 ) {
@@ -229,6 +232,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
                   onRetry={onRetry}
                   inputZoneToolCallId={inputZoneToolCallId}
                   textEffect={textEffect}
+                  runtimeLabel={runtimeLabel}
                 />
               </div>
             );

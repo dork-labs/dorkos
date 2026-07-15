@@ -607,6 +607,15 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
+    it('classifies an auth failure in turn.failed as auth_error', () => {
+      const events = mapCodexEvent(
+        codexTurnFailed('401 Unauthorized: your access token has been revoked'),
+        makeContext()
+      );
+      const error = events.find((e) => e.type === 'error');
+      expect(error?.data).toMatchObject({ code: 'turn_failed', category: 'auth_error' });
+    });
+
     it('dedupes turn.failed but still emits the error-reason session_status before done', () => {
       const ctx = makeContext();
       const itemEvents = mapCodexEvent(

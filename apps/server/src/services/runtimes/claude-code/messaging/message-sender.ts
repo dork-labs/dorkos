@@ -51,6 +51,7 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import { configManager } from '../../../core/config-manager.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
+import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 
 /** Lightweight projection of the SDK's SlashCommand type — avoids leaking SDK types. */
 export interface SdkCommandEntry {
@@ -871,12 +872,19 @@ export async function* executeSdkQuery(
       contentEventCount,
       retryDepth,
     });
+    // A pre-stream credential failure (the classic first-run "not signed in"
+    // case) throws here before any typed error event reaches the mappers, so
+    // classify the raw thrown message: an auth failure earns the re-auth
+    // category (and its "Fix sign-in" affordance) instead of the generic
+    // overloaded copy. The raw message stays reachable via `details`.
+    const isAuthError = detectAuthError({ message: errMsg });
     yield {
       type: 'error',
       data: {
-        message:
-          'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.',
-        category: 'execution_error' as ErrorCategory,
+        message: isAuthError
+          ? 'Your sign-in stopped working. Sign in again to keep going.'
+          : 'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.',
+        category: (isAuthError ? 'auth_error' : 'execution_error') as ErrorCategory,
         details: errMsg,
       },
     };

@@ -65,6 +65,7 @@ import type {
   ToolPart,
 } from '@opencode-ai/sdk';
 import type { SessionTaskStatus, StreamEvent, TaskItem } from '@dorkos/shared/types';
+import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { SESSIONS } from '../../../config/constants.js';
 
 /**
@@ -594,7 +595,11 @@ function mapSessionError(error: OpenCodeSessionError | undefined): StreamEvent[]
   return [
     {
       type: 'error',
-      data: { message, code: error.name, category: 'execution_error' },
+      data: {
+        message,
+        code: error.name,
+        category: detectAuthError({ message, code: error.name }) ? 'auth_error' : 'execution_error',
+      },
     },
   ];
 }

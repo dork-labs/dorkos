@@ -43,6 +43,8 @@ interface MessageItemProps {
    * synthetic bubble reads as narration, not an interactive chat message.
    */
   presentation?: boolean;
+  /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
+  runtimeLabel?: string;
 }
 
 /** Format a timestamp string to a short time display (HH:MM). */
@@ -74,6 +76,7 @@ export function MessageItem({
   inputZoneToolCallId = null,
   textEffect,
   presentation = false,
+  runtimeLabel,
 }: MessageItemProps) {
   const isUser = message.role === 'user';
   // Local-command output is a `user`-role message, but its content is a command
@@ -113,6 +116,7 @@ export function MessageItem({
         onRetry,
         inputZoneToolCallId,
         textEffect,
+        runtimeLabel,
       }}
     >
       <motion.div

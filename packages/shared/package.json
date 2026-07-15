@@ -77,6 +77,10 @@
       "types": "./src/kickoff-prompts.ts",
       "default": "./dist/kickoff-prompts.js"
     },
+    "./runtime-error-classification": {
+      "types": "./src/runtime-error-classification.ts",
+      "default": "./dist/runtime-error-classification.js"
+    },
     "./workspace": {
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"
