@@ -35,7 +35,16 @@
     "build": {
       "dependsOn": ["generate:api-docs", "^build"],
       "outputs": ["dist/**", "dist-server/**", "dist-obsidian/**", ".next/**"],
-      "env": ["NODE_ENV", "VITE_*", "NEXT_PUBLIC_*", "POSTHOG_*"]
+      // VERCEL_ENV is in the cache key because the site build's post-build
+      // sourcemap step behaves differently per environment (preview skips the
+      // PostHog upload). Without it, a preview build could populate a shared
+      // remote-cache entry that a later production build consumes as a HIT,
+      // skipping the upload so production maps never reach PostHog. Keeping it
+      // here makes preview and production hash to different keys. We do NOT add
+      // VERCEL_GIT_COMMIT_SHA: it would bust the cache every commit, and it is
+      // unnecessary because PostHog symbolication matches on the content-derived
+      // chunkId, so any prod build with identical content already has its maps.
+      "env": ["NODE_ENV", "VITE_*", "NEXT_PUBLIC_*", "POSTHOG_*", "VERCEL_ENV"]
     },
     "generate:api-docs": {
       "cache": true
