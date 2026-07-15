@@ -22,22 +22,26 @@ name: Desktop Release
 # published. The two build jobs ATTACH their assets to that draft (attach-only:
 # they never create a release, flip the draft flag, or rewrite the human-written
 # notes). Each attached artifact is then exercised by a verify job
-# (verify-macos, verify-windows) that installs it on a clean runner. Only when
-# BOTH builds AND BOTH verifications pass does `publish-release` flip the draft
-# to published. That closes the auto-update window: on the happy path every
-# asset (installer + latest*.yml) is attached before the release is ever
-# visible, so an update check can never 404 on a not-yet-uploaded metadata file.
+# (verify-macos, verify-windows) that installs it on a clean runner.
 #
-# Fail-CLOSED on the desktop assets. If a build or its verification fails,
-# `publish-release` is skipped (it `needs` all four jobs with no `if: always()`)
-# and the release stays an unpublished DRAFT rather than shipping an unverified
-# or half-attached installer. electron-updater ignores drafts, so users keep the
-# previous version — the safe outcome. A desktop failure still never unwinds the
-# CLI/product release (that release is published by /system:release's own npm +
-# changelog path); it only holds the desktop-facing GitHub Release as a draft
-# until a human re-runs or intervenes. Recovery from a flaky verify job: re-run
-# the failed job(s) from the Actions UI — publish-release is idempotent and
-# publishes once all of its needs are green.
+# ASYMMETRIC gating — macOS gates, Windows does not. macOS is the shipped,
+# signed + notarized surface, so `publish-release` requires build-macos AND
+# verify-macos to succeed. The Windows build is an explicitly-unverified early
+# alpha (AGENTS.md — labeled alpha, behind the demo-claim gate), so build-windows
+# and verify-windows are `continue-on-error: true`: they still run and surface
+# problems in the run, but a Windows failure must never hold back an otherwise-
+# good macOS release. publish-release keeps all four jobs in `needs` (so it waits
+# for the Windows assets to finish uploading before flipping the draft) and gates
+# on the macOS results explicitly via its `if`. On the happy path every asset
+# (installer + latest*.yml) is attached before the release is visible, so an
+# update check can never 404 on a not-yet-uploaded metadata file.
+#
+# A desktop failure never unwinds the CLI/product release (that release is
+# published by /system:release's own npm + changelog path). If the macOS pair
+# fails, the desktop-facing GitHub Release stays an unpublished DRAFT (the safe
+# outcome — electron-updater ignores drafts, so users keep the previous version)
+# until a human re-runs the failed job(s) from the Actions UI; publish-release is
+# idempotent and publishes once its macOS needs are green.
 #
 # `workflow_dispatch` (with `dry_run`) still builds both apps (and verifies
 # them) without attaching or publishing, for manual verification.
@@ -172,6 +176,11 @@ jobs:
             --clobber
 
   build-windows:
+    # Non-gating (see verify-windows): the Windows alpha must never block a
+    # release. publish-release keeps this in `needs` so it waits for the Windows
+    # assets to finish uploading, but continue-on-error stops a Windows build
+    # failure from skipping the publish of an otherwise-good macOS release.
+    continue-on-error: true
     # Pinned to windows-2022, NOT windows-latest, on purpose. windows-latest now
     # ships Visual Studio 18 (2026), and node-gyp 11.x — which @electron/rebuild
     # uses to force-compile better-sqlite3 + node-pty against Electron's ABI —
@@ -354,6 +363,14 @@ jobs:
 
   verify-windows:
     needs: build-windows
+    # Non-gating: the Windows build is an explicitly-unverified early alpha
+    # (see AGENTS.md — labeled alpha, behind the demo-claim gate). This job
+    # runs the installer check so a failure is visible in the run, but it must
+    # never block publishing an otherwise-good release (the macOS build, which
+    # IS the shipped/verified surface, is gated by verify-macos). Without this,
+    # a failed Windows silent-install holds the whole release as a draft —
+    # invisible to the macOS auto-updater and the download page.
+    continue-on-error: true
     # windows-latest is fine here (unlike the build job, which is pinned to
     # windows-2022 for node-gyp): verification only runs an already-compiled
     # installer, it does not rebuild native modules.
@@ -409,20 +426,27 @@ jobs:
 
   publish-release:
     # Flip the draft release (created by /system:release Phase 6.11 with --draft)
-    # to published, AFTER both platform builds have attached their assets AND
-    # both verify jobs have installed them successfully. This is what closes the
-    # auto-update window described in the file header: until this runs,
-    # electron-updater sees the previous release as latest and reports "up to
-    # date"; once it runs, every installer + latest*.yml is already attached and
-    # verified, so no update check can 404 on a not-yet-uploaded metadata file.
+    # to published, AFTER the platform builds have attached their assets. This is
+    # what closes the auto-update window described in the file header: until this
+    # runs, electron-updater sees the previous release as latest and reports "up
+    # to date"; once it runs, every installer + latest*.yml is already attached,
+    # so no update check can 404 on a not-yet-uploaded metadata file.
     #
-    # `needs` all four jobs with NO `if: always()`, so it is SKIPPED if any build
-    # or verification fails — the release then stays an unpublished draft rather
-    # than shipping an unverified installer (electron-updater ignores drafts, so
-    # users keep the previous version). Gated to real tag pushes, never dry_run.
-    # Idempotent: --draft=false on an already-published release is a no-op.
+    # `needs` all four jobs so publish waits for both platforms' uploads before
+    # flipping the draft, but the `if` gates ONLY on the macOS pair: macOS is the
+    # shipped, signed + notarized surface, so its build + verify must succeed.
+    # The Windows alpha (build-windows / verify-windows) is `continue-on-error`
+    # and deliberately excluded from the gate — a Windows failure must not hold
+    # back an otherwise-good macOS release. `always() && !cancelled()` lets this
+    # run after the Windows jobs finish regardless of their outcome, and the
+    # explicit macOS-result checks are the authoritative gate (not the subtle
+    # continue-on-error/needs interaction). If the macOS pair fails, publish is
+    # skipped and the release stays a draft (electron-updater ignores drafts, so
+    # users keep the previous version); re-run the failed job from the Actions UI
+    # — publish-release is idempotent (--draft=false on a published release is a
+    # no-op). Gated to real tag pushes, never dry_run.
     needs: [build-macos, build-windows, verify-macos, verify-windows]
-    if: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
+    if: ${{ always() && !cancelled() && startsWith(github.ref, 'refs/tags/') && !inputs.dry_run && needs.build-macos.result == 'success' && needs.verify-macos.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
