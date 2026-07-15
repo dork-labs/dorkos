@@ -9,6 +9,13 @@ const withMDX = createMDX();
 const posthogIngestHost = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
 
 const nextConfig: NextConfig = {
+  // Emit browser source maps for the production build so the post-build script
+  // (scripts/upload-sourcemaps.mjs) can inject PostHog chunk ids and upload the
+  // maps to PostHog error tracking, then delete them from the output so they
+  // never ship publicly. Next 16 + Turbopack does NOT emit these unless this is
+  // set (verified empirically), and without them PostHog cannot resolve minified
+  // browser stack traces back to the original TS/TSX.
+  productionBrowserSourceMaps: true,
   // Transpile Base UI packages for better Turbopack compatibility
   transpilePackages: ['@base-ui/react', '@base-ui/utils'],
 

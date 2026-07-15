@@ -72,6 +72,7 @@
       "ws": "^8.21.0"
     },
     "onlyBuiltDependencies": [
+      "@posthog/cli",
       "better-sqlite3",
       "esbuild",
       "ffmpeg-static",
