@@ -61,9 +61,9 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 
 ### ⚠️ Vitest gotcha: "Worker exited unexpectedly" means a poisoned better-sqlite3
 
-If `pack`/`dist` (or `rebuild-natives.ts` directly) has run on this machine — say, packaging a local build per §5 or §7 — the shared `better_sqlite3.node` in the pnpm store is now compiled for Electron's ABI, not system Node. macOS code-signing enforcement then kills every plain-Node `dlopen` of it: the process exits **137** with **"Code Signature Invalid"**, one level below anything Vitest itself can catch or report.
+If `pnpm --filter @dorkos/desktop pack` or `dist` has run on this machine (both run `rebuild-natives.ts` first — or you ran `rebuild-natives.ts` directly), the shared `better_sqlite3.node` in the pnpm store is now compiled for Electron's ABI, not system Node. macOS code-signing enforcement then kills every plain-Node `dlopen` of it: the process exits **137** with **"Code Signature Invalid"**, one level below anything Vitest itself can catch or report.
 
-**Symptom:** Vitest workers die silently — `Worker exited unexpectedly`, no assertion failures — in every package that transitively imports `@dorkos/db` (mesh, relay, site, client). The pre-push test gate then blocks every push, with nothing in the output pointing at Electron packaging as the cause.
+**Symptom:** Vitest workers die silently — `Worker exited unexpectedly`, no assertion failures — in every package whose tests load the shared better-sqlite3 binary: mesh/relay/client via `@dorkos/db`, site via better-auth's drizzle adapter. The pre-push test gate then blocks every push, with nothing in the output pointing at Electron packaging as the cause.
 
 **Fix:** `pnpm rebuild better-sqlite3` from the repo root. Re-run it any time you package the desktop app locally — packaging re-poisons the shared binary.
 
