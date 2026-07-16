@@ -1,0 +1,9 @@
+{
+  "id": "260716-234343",
+  "slug": "universal-command-intents",
+  "title": "Universal command intents with cross-agent aliases (compact / clear / context)",
+  "created": "2026-07-16",
+  "status": "ideation",
+  "linearIssue": "DOR-109",
+  "project": "Universal Command Interface"
+}

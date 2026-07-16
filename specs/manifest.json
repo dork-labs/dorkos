@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260716-234343",
+      "slug": "universal-command-intents",
+      "title": "Universal command intents with cross-agent aliases (compact / clear / context)",
+      "created": "2026-07-16",
+      "status": "ideation",
+      "project": "Universal Command Interface"
+    },
+    {
       "id": "260713-014129",
       "slug": "desktop-windows-support",
       "title": "Windows desktop support — unsigned NSIS alpha on the unified release train",
