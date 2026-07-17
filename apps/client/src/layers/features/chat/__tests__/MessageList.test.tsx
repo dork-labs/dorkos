@@ -49,7 +49,7 @@ vi.mock('../ui/ScrollThumb', () => ({
 
 // Native end-anchor scroll now rides the virtualizer (DOR-163): scrollToBottom
 // calls `scrollToEnd()`, and pinned state derives from `isAtEnd()`. The mock
-// reports pinned (isAtEnd true, distance 0) so the scroll-state contract holds.
+// reports pinned (isAtEnd true) so the scroll-state contract holds.
 const mockScrollToEnd = vi.fn();
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -64,7 +64,6 @@ vi.mock('@tanstack/react-virtual', () => ({
     measureElement: () => {},
     scrollToEnd: mockScrollToEnd,
     isAtEnd: () => true,
-    getDistanceFromEnd: () => 0,
   }),
 }));
 

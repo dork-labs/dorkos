@@ -61,7 +61,6 @@ export function computeGrouping(messages: ChatMessage[]): MessageGrouping[] {
 
 export interface ScrollState {
   isAtBottom: boolean;
-  distanceFromBottom: number;
 }
 
 export interface MessageListHandle {
@@ -116,14 +115,26 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 80,
     overscan: 5,
-    // Reuse the last real height for an item instead of re-measuring it to zero
-    // when the scroll container is hidden (`display: none` — e.g. an Obsidian
-    // sidebar tab switched away). virtual-core 3.17 honors this inside its
-    // default `measureElement`, so scroll position survives a hide/re-show
-    // without the bespoke IntersectionObserver workaround this replaces. NOTE:
-    // this only takes effect with the library's default measurer — a custom
-    // `measureElement` would bypass the cache.
-    useCachedMeasurements: true,
+    // Live measurement with a zero-guard cache fallback. Rows measure their
+    // real DOM height (the ResizeObserver entry when present, else the rect) —
+    // EXCEPT when the measurement comes back 0: a hidden scroll container
+    // (`display: none`, e.g. an Obsidian sidebar tab switched away) measures
+    // every row at 0, and letting those zeros poison the size cache collapses
+    // the total height and loses the scroll position — the bug the retired
+    // IntersectionObserver hack papered over. Answering with the last cached
+    // real height instead keeps the layout intact while hidden; live
+    // measurement resumes naturally on re-show. (Do NOT replace this with
+    // `useCachedMeasurements: true`: that flag makes the default measurer
+    // *always* answer from the cache, and since nothing ever seeds the cache,
+    // every row would freeze at the estimate.)
+    measureElement: (element, entry, instance) => {
+      const box = entry?.borderBoxSize?.[0];
+      const size = box ? Math.round(box.blockSize) : element.getBoundingClientRect().height;
+      if (size > 0) return size;
+      const index = instance.indexFromElement(element);
+      const key = instance.options.getItemKey(index);
+      return instance.itemSizeCache.get(key) ?? instance.options.estimateSize(index);
+    },
     // Anchor the list to its end: when messages above change height the view
     // stays put relative to the last item, and when a new message is appended
     // while the reader is pinned near the bottom the list follows it. Together
@@ -152,13 +163,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const isAtBottom = virtualizer.isAtEnd();
 
   // Sync scroll state to onScrollStateChange for useScrollOverlay. Fires only
-  // when the pinned state flips; the distance is read at that moment.
+  // when the pinned state flips.
   useEffect(() => {
-    onScrollStateChange?.({
-      isAtBottom,
-      distanceFromBottom: virtualizer.getDistanceFromEnd(),
-    });
-  }, [isAtBottom, onScrollStateChange, virtualizer]);
+    onScrollStateChange?.({ isAtBottom });
+  }, [isAtBottom, onScrollStateChange]);
 
   useImperativeHandle(
     ref,
