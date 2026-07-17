@@ -164,16 +164,16 @@ model/sort-agents.ts           pure sort helpers
 
 dnd-kit `DndContext` wraps the section list. Sensors: `PointerSensor` (`activationConstraint: { distance: 8 }` so click/expand still wins) + `KeyboardSensor`. `DragOverlay` renders the dragged row; valid drop targets get a visible ring (`focus-ring` token). ARIA announcements via dnd-kit's `announcements` config, worded per operation ("Moved api-server to group Clients").
 
-| Drag                                     | Drop target                        | Effect                                                                     |
-| ---------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------- |
-| Group header                             | between other group headers        | reorder `groups` array                                                     |
-| Agent row (ungrouped or in a group)      | group body or **collapsed** header | membership move (`moveToGroup`); appended at end (or drop index if manual) |
-| Agent row (ungrouped or in a group)      | Pinned section                     | `pinPath` (reference added; home membership unchanged)                     |
-| Agent row inside a `manual` group        | within same group                  | reorder `agentPaths`                                                       |
-| Agent row inside a `name`/`recent` group | within same group                  | no reorder (sort mode owns order); drag out/into other targets still works |
-| Pinned row                               | within Pinned                      | reorder `pinned`                                                           |
-| Pinned row                               | anywhere outside Pinned            | `unpinPath` (Finder drag-out gesture; membership untouched)                |
-| Agent row in a group                     | Agents (ungrouped) section         | remove from group                                                          |
+| Drag                                     | Drop target                                                             | Effect                                                                     |
+| ---------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Group header                             | between other group headers                                             | reorder `groups` array                                                     |
+| Agent row (ungrouped or in a group)      | group body or **collapsed** header                                      | membership move (`moveToGroup`); appended at end (or drop index if manual) |
+| Agent row (ungrouped or in a group)      | Pinned section                                                          | `pinPath` (reference added; home membership unchanged)                     |
+| Agent row inside a `manual` group        | within same group                                                       | reorder `agentPaths`                                                       |
+| Agent row inside a `name`/`recent` group | within same group                                                       | no reorder (sort mode owns order); drag out/into other targets still works |
+| Pinned row                               | within Pinned                                                           | reorder `pinned`                                                           |
+| Pinned row                               | onto a non-pinned container (Agents or a group); a void drop is a no-op | `unpinPath` (Finder drag-out gesture; membership untouched)                |
+| Agent row in a group                     | Agents (ungrouped) section                                              | remove from group                                                          |
 
 Every operation above is also reachable via menus (single-pointer, WCAG 2.2 §2.5.7) and via keyboard (KeyboardSensor for sorting; menus for moves). Sessions are never draggable. Mobile (Sheet): drag disabled; long-press context menu covers all operations.
 

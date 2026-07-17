@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { SidebarDnd } from '../ui/SidebarDnd';
 import { Sortable, agentDndData } from '../ui/SidebarDndPrimitives';
 
@@ -33,6 +33,9 @@ function Row() {
         {(b) => (
           <div ref={b.setNodeRef} {...b.handleProps} data-testid="row">
             alpha
+            <button type="button" data-testid="nested-action">
+              New session
+            </button>
           </div>
         )}
       </Sortable>
@@ -47,6 +50,9 @@ describe('SidebarDnd', () => {
       unobserve() {}
       disconnect() {}
     };
+    // dnd-kit scrolls the active node into view on keyboard drag start; jsdom
+    // has no scrollIntoView implementation.
+    Element.prototype.scrollIntoView = vi.fn();
   });
   beforeEach(() => {
     mockIsMobile = false;
@@ -66,5 +72,28 @@ describe('SidebarDnd', () => {
     const row = screen.getByTestId('row');
     expect(row.getAttribute('aria-roledescription')).toBeNull();
     expect(row.getAttribute('tabindex')).toBeNull();
+  });
+
+  // The row registers itself as its own activator node, so KeyboardSensor only
+  // activates when the keydown target IS the row — Space/Enter on nested
+  // interactive controls (menus, buttons, the rename input) must pass through.
+
+  it('starts a keyboard drag from a keydown on the focused row itself', () => {
+    render(<Row />);
+    const row = screen.getByTestId('row');
+    fireEvent.keyDown(row, { code: 'Enter' });
+    // dnd-kit reflects the active keyboard drag as aria-pressed on the row.
+    expect(row.getAttribute('aria-pressed')).toBe('true');
+    // End the drag so cleanup unmounts an idle tree.
+    fireEvent.keyDown(row, { code: 'Escape' });
+  });
+
+  it('does NOT start a keyboard drag from nested interactive controls', () => {
+    render(<Row />);
+    const row = screen.getByTestId('row');
+    const nested = screen.getByTestId('nested-action');
+    fireEvent.keyDown(nested, { code: 'Enter' });
+    fireEvent.keyDown(nested, { code: 'Space' });
+    expect(row.getAttribute('aria-pressed')).toBeNull();
   });
 });

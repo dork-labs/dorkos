@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   type CSSProperties,
   type HTMLAttributes,
@@ -74,8 +75,29 @@ function SortableInner({
   data: SidebarDndData;
   render: SortableRender;
 }) {
-  const { setNodeRef, attributes, listeners, transform, transition, isDragging, isOver } =
-    useSortable({ id, data });
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({ id, data });
+  // Register the row as its own activator node. KeyboardSensor only starts a
+  // drag when `event.target === activatorNode`, so Space/Enter on nested
+  // interactive controls (the "…" trigger, "New session", session rows, the
+  // rename input) bubble through untouched — only a keydown on the focused row
+  // itself picks it up. Without this, activatorNode is null and dnd-kit skips
+  // that guard entirely.
+  const setCombinedRef = useCallback(
+    (node: HTMLElement | null) => {
+      setNodeRef(node);
+      setActivatorNodeRef(node);
+    },
+    [setNodeRef, setActivatorNodeRef]
+  );
   const style: CSSProperties = {
     transform: transform
       ? `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0)`
@@ -83,7 +105,7 @@ function SortableInner({
     transition: transition ?? undefined,
   };
   const handleProps = { ...attributes, ...(listeners ?? {}) } as HTMLAttributes<HTMLElement>;
-  return <>{render({ setNodeRef, handleProps, style, isDragging, isOver })}</>;
+  return <>{render({ setNodeRef: setCombinedRef, handleProps, style, isDragging, isOver })}</>;
 }
 
 /**

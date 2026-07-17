@@ -347,15 +347,27 @@ export function DashboardSidebar() {
           )}
 
           <SortableList items={sidebarPrefs.groups.map((g) => `group-header::${g.id}`)}>
-            {sidebarPrefs.groups.map((group) => (
-              <AgentGroupSection
-                key={group.id}
-                group={group}
-                memberPaths={knownGroupMembers.get(group.id) ?? []}
-                sortCtx={sortCtx}
-                renderRow={renderAgentRow}
-              />
-            ))}
+            <AnimatePresence initial={false}>
+              {sidebarPrefs.groups.map((group) => (
+                <motion.div
+                  key={group.id}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    transition: { duration: 0.2, ease: [0, 0, 0.2, 1] },
+                  }}
+                  exit={{ opacity: 0, y: -6, transition: { duration: 0.15 } }}
+                >
+                  <AgentGroupSection
+                    group={group}
+                    memberPaths={knownGroupMembers.get(group.id) ?? []}
+                    sortCtx={sortCtx}
+                    renderRow={renderAgentRow}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </SortableList>
 
           <AnimatePresence>

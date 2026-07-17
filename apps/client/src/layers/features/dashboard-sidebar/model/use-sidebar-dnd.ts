@@ -174,8 +174,12 @@ function moveToGroupOp(
  * - agent in a manual group → same group: reorder within group
  * - agent in a name/recent group → same group: no reorder (sort owns order)
  * - pinned row → within Pinned: reorder pinned
- * - pinned row → outside Pinned: unpin
+ * - pinned row → a non-pinned container (Agents or a group): unpin
  * - agent in a group → Agents (ungrouped): remove from group
+ *
+ * A `null`/void drop (released with no valid target) is always a no-op — unpin
+ * fires only when a pinned row actually lands on a non-pinned container, never
+ * from dropping into empty space.
  *
  * @param prev - Current sidebar prefs.
  * @param drag - What is being dragged.
