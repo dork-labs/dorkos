@@ -12,6 +12,8 @@ import { getBoundary } from '../lib/boundary.js';
 import { SERVER_VERSION, IS_DEV_BUILD } from '../lib/version.js';
 import { logger, logError } from '../lib/logger.js';
 import { hasAnyApiKey } from '../services/core/auth/index.js';
+import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
+import { resolveDorkHome } from '../lib/dork-home.js';
 
 const router = Router();
 
@@ -163,20 +165,30 @@ router.get('/', async (_req, res) => {
       const mcpConfig = configManager.get('mcp');
       const envKey = env.MCP_API_KEY ?? null;
       const legacyKey = mcpConfig?.apiKey ?? null;
+      const localToken = getMcpLocalToken();
       // authSource reports how MCP access is secured:
-      //   'env'       — the static MCP_API_KEY override (headless deployments).
-      //   'user-keys' — per-user Better Auth API keys (the current model), or a
-      //                 not-yet-seeded legacy config key on its way to becoming one.
-      //   'none'      — nothing configured (localhost-only access).
-      const authSource: 'env' | 'user-keys' | 'none' = envKey
+      //   'env'         — the static MCP_API_KEY override (headless deployments).
+      //   'user-keys'   — per-user Better Auth API keys (the current model), or a
+      //                   not-yet-seeded legacy config key on its way to becoming one.
+      //   'local-token' — login off, no MCP_API_KEY: the per-instance local token
+      //                   gates the mutating surface (DOR-278). The surface is
+      //                   still gated, so authConfigured is true.
+      //   'none'        — the degenerate can't-generate fallback (should not occur
+      //                   in a normal login-off boot).
+      const authSource: 'env' | 'user-keys' | 'none' | 'local-token' = envKey
         ? 'env'
         : legacyKey || hasAnyApiKey()
           ? 'user-keys'
-          : 'none';
+          : localToken
+            ? 'local-token'
+            : 'none';
       return {
         enabled: mcpConfig?.enabled ?? true,
         authConfigured: authSource !== 'none',
         authSource,
+        // Emit the token only in local-token mode (login off, no env key, over
+        // the same loopback trust boundary as the cockpit); never otherwise.
+        localToken: authSource === 'local-token' ? localToken : null,
         endpoint: `http://localhost:${env.DORKOS_PORT}/mcp`,
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
@@ -266,6 +278,42 @@ router.put('/agents/defaultAgent', (req, res) => {
     return res.json({ success: true, defaultAgent: value.trim() });
   } catch (err) {
     logger.error('[Config] PUT agents/defaultAgent failed', logError(err));
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/config/mcp/rotate-token — regenerate the per-instance local MCP
+ * token (DOR-278).
+ *
+ * Only applies in login-off mode with no `MCP_API_KEY` override — those are the
+ * only conditions under which the local token gates the surface. When an env
+ * override is set or login is on, the local token does not apply, so this 409s
+ * rather than silently minting a token that nothing would honor. On success it
+ * writes a fresh `0600` token, refreshes the cached value the middleware and the
+ * config DTO read, and returns it so the settings tab can show the new value.
+ * Rotating invalidates every previously configured client until it re-pastes.
+ */
+router.post('/mcp/rotate-token', (_req, res) => {
+  try {
+    if (env.MCP_API_KEY?.trim()) {
+      return res.status(409).json({
+        error:
+          'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
+      });
+    }
+    if (configManager.get('auth')?.enabled === true) {
+      return res.status(409).json({
+        error:
+          'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+      });
+    }
+
+    const dorkHome = resolveDorkHome();
+    const localToken = rotateMcpLocalToken(dorkHome);
+    return res.json({ localToken });
+  } catch (err) {
+    logger.error('[Config] POST mcp/rotate-token failed', logError(err));
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
