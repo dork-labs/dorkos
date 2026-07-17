@@ -76,4 +76,46 @@ describe('docsSectionTrail', () => {
     );
     expect(trail).toEqual([{ name: 'Getting Started', url: '/docs/getting-started' }]);
   });
+
+  it('orders a 2-level nested trail root-to-leaf, pairing each name and url by position', () => {
+    const nestedTree: Root = {
+      name: 'Documentation',
+      children: [
+        {
+          type: 'folder',
+          name: 'Integrations',
+          index: { type: 'page', name: 'Integrations', url: '/docs/integrations' },
+          children: [
+            {
+              type: 'folder',
+              name: 'Relay Adapters',
+              index: {
+                type: 'page',
+                name: 'Relay Adapters',
+                url: '/docs/integrations/relay-adapters',
+              },
+              children: [
+                {
+                  type: 'page',
+                  name: 'Some Page',
+                  url: '/docs/integrations/relay-adapters/some-page',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const trail = docsSectionTrail(
+      {
+        url: '/docs/integrations/relay-adapters/some-page',
+        slugs: ['integrations', 'relay-adapters', 'some-page'],
+      },
+      nestedTree
+    );
+    expect(trail).toEqual([
+      { name: 'Integrations', url: '/docs/integrations' },
+      { name: 'Relay Adapters', url: '/docs/integrations/relay-adapters' },
+    ]);
+  });
 });
