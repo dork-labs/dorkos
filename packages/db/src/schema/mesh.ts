@@ -20,9 +20,6 @@ export const agents = sqliteTable('agents', {
     .default('active'),
   scanRoot: text('scan_root').notNull().default(''),
   behaviorJson: text('behavior_json').notNull().default('{"responseMode":"always"}'),
-  budgetJson: text('budget_json')
-    .notNull()
-    .default('{"maxHopsPerMessage":5,"maxCallsPerHour":100}'),
   lastSeenAt: text('last_seen_at'), // ISO 8601 TEXT
   lastSeenEvent: text('last_seen_event'),
   persona: text('persona'),

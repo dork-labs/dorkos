@@ -144,24 +144,21 @@ describe('Database Migrations', () => {
     expect(JSON.parse(row.behavior_json)).toEqual({ responseMode: 'always' });
   });
 
-  it('agents table has budget_json column with default hop and rate limits', () => {
+  it('agents table has no budget_json column (DOR-265: the advisory per-agent budget was removed)', () => {
     const db = createDb(':memory:');
     runMigrations(db);
 
-    db.$client
-      .prepare(
-        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01C', 'agent3', 'claude-code', '/tmp/budget-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
-      )
-      .run();
+    const columns = db.$client.pragma('table_info(agents)') as Array<{ name: string }>;
+    expect(columns.map((c) => c.name)).not.toContain('budget_json');
 
-    const row = db.$client.prepare("SELECT budget_json FROM agents WHERE id = '01C'").get() as {
-      budget_json: string;
-    };
-
-    expect(JSON.parse(row.budget_json)).toEqual({
-      maxHopsPerMessage: 5,
-      maxCallsPerHour: 100,
-    });
+    // An insert that omits budget succeeds — nothing downstream still requires it.
+    expect(() => {
+      db.$client
+        .prepare(
+          "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01C', 'agent3', 'claude-code', '/tmp/budget-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+        )
+        .run();
+    }).not.toThrow();
   });
 
   it('migration 0024 preserves existing relay_index rows across the composite-PK rebuild', () => {
