@@ -1,0 +1,73 @@
+---
+title: DorkOS 0.50.0
+description: Organize your agents into sidebar groups that follow you across devices, see which sessions are running low on context room, and get token protection for the local tools that can change your machine
+date: 2026-07-17
+author: DorkOS Team
+category: release
+tags: [release, cockpit, sessions, security]
+---
+
+DorkOS 0.50.0 is about running many agents without losing track of them. You can now organize your agents into named groups that follow you across devices, see at a glance which sessions are running low on context room, and rest easier: the DorkOS tools that can change your machine are now token-protected.
+
+## Highlights
+
+**Your agents, your groups**
+
+![The DorkOS sidebar with the new Recent section listing the latest sessions across agents, next to a live session](/product/archive/v0.50.0/multi-session-light.png)
+
+Make a sidebar group for a project, a client, or however you think about your work. Create, rename, and drag agents in and out — every drag also has a menu and keyboard path, so you are never stuck. A new "Recent" section shows your latest sessions across all agents, and one click takes you back to what you were doing. Best of all, your groups, pins, and sort choices now save to your DorkOS server, so they follow you across every browser and the desktop app. [See it in motion on the cockpit feature page.](https://dorkos.ai/features/multi-runtime-cockpit)
+
+**See which sessions are running out of room**
+
+Every session row now shows a small gauge of how full that agent's context is, and the sessions view counts how many are near full or just auto-compacted. When a session gets close to the limit, a quiet chip offers one-click compaction before things slow down. You jump into the right agent before it runs out of room, instead of finding out after.
+
+**A token now guards your local tools**
+
+The DorkOS tools that change things on your machine — creating agents, sending messages, installing packages — and agent-to-agent calls now need a token when login is off. Before, any program on your computer could call them with no token at all. This closes that open door, the same way Jupyter protects its local server. Existing MCP or A2A clients keep working once you paste in the token from Settings → Tools → External MCP Server.
+
+## All Changes
+
+### Added
+
+- Universal command intents (foundation): DorkOS now has one shared registry for the three everyday slash actions — compact the conversation, start a fresh session, and show context usage and cost — plus each agent's words for them (`/compress`, `/summarize`, `/new`, `/usage`, `/status`, and more). This groundwork lets the same command work on whichever runtime your session uses.
+- Organize your agents into named groups in the sidebar (DOR-329). Make a group for a project, a client, or however you think about your work. Create, rename, delete, and drag agents in and out. Every drag has a menu and keyboard path too, so you are never stuck. Each group can sort by hand, by name, or by most recent activity.
+- See your latest work at a glance with a new "Recent" section (DOR-329). It shows your most recent sessions across all your agents. One click takes you back to what you were just doing.
+- Pin an agent and it now stays in its group as well (DOR-329). A pinned agent shows up in both places, so pinning no longer pulls it out of the group you put it in.
+- Your sidebar setup now saves to your DorkOS server instead of one browser (DOR-329). Your groups, pins, and sort choices follow you across every browser and the desktop app.
+- When a session's context is nearly full, a quiet chip now offers one-click compaction before things slow down (DOR-112)
+- Relay metrics now include real delivery-latency percentiles (p50/p95/p99) instead of a placeholder (DOR-166)
+- New desktop app guide: install DorkOS as a native Mac app (Windows early alpha included) (DOR-284)
+- See at a glance how full each agent's context is, right in the session list. Every session row now shows a small gauge, and the sessions view sums up how many are near full or just auto-compacted — so you can jump into the right agent before it runs out of room. Claude Code sessions show a reading even when they're closed; other runtimes show it once you open the session. (DOR-113)
+- Read any doc as clean markdown, or pull the whole docs set into your agent in one fetch. Every docs page is now fetchable as markdown (add `.mdx` to any docs URL), a new `/llms-full.txt` gives your agent the whole hand-written corpus in one request, and a quiet action row above each page lets you copy the markdown or open the page in Claude. "Open in Claude" opens claude.ai in your browser — it's not a Claude Code link. (DOR-165)
+- Marketplace installs now remember where each package came from — the source repo, the version you asked for, and the exact commit that was installed. This lays the groundwork for safe reinstalls and contributing changes back. (DOR-147)
+
+### Changed
+
+- External MCP and A2A clients now need your local token when login is off. Health checks and listing tools still work without one, and there is no grace period: paste the token into any client you already set up to keep using the tools that change things. Click "Reveal token" in Settings → Tools → External MCP Server to copy it, or read it from the `mcp-local-token` file in your DorkOS data folder. (DOR-278)
+- We no longer auto-pin your default agent (DOR-329). A small set of agents shows as one clean list, and pinning stays something you choose.
+- The Windows desktop app now has a standard Windows-style menu (File, Edit, View, Window, Help) instead of a Mac-shaped one (DOR-310)
+- Upgraded the docs site's engine (Fumadocs 16.10 and its OpenAPI renderer v11), keeping the docs and API reference on current, supported tooling. (DOR-165)
+- Removed a leftover "rate limited" status banner from the chat UI that could never actually appear. (DOR-201)
+- Simplified the server's error handling to use Express 5's built-in support for async errors. No behavior change — the same errors are caught the same way, with less wrapper code. (DOR-161)
+
+### Removed
+
+- Removed the per-agent message and hourly-call limits from agent settings — they were shown as editable controls but never actually limited anything. Runaway protection still comes from the per-message budget, which is enforced. (DOR-265)
+
+### Fixed
+
+- Fixed crashed package installs leaving behind backup folders that could show up as duplicate agents. (DOR-175)
+- Chat no longer loses its scroll position when you switch away from its tab and back, and it stays pinned to the newest message more reliably while a reply streams in (DOR-163)
+- Fixed new development worktrees starting with stale package builds, which caused false type errors until you rebuilt by hand. (DOR-117)
+- Pushes that only delete branches no longer run the full pre-push test gate. (DOR-116)
+
+### Security
+
+- The DorkOS tools that change things on your machine — creating agents, sending messages, installing packages — and agent-to-agent calls now need a token when login is off. Before, any program on your computer could call them with no token at all. This closes that open door, the same way Jupyter protects its local server. One honest limit: while login is off, a program running on your computer can still ask DorkOS for the token, the same way the app does. Turning on login is what closes that last door. (DOR-278)
+- The activation page now shows the device code on the confirm screen, so you can check it matches what your DorkOS instance is displaying before you approve — even when the code arrives pre-filled from a link. (DOR-200)
+
+## Install / Update
+
+```
+npm install -g dorkos@0.50.0
+```

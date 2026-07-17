@@ -1,0 +1,58 @@
+{
+  "label": "v0.50.0",
+  "archivedAt": "2026-07-17T17:20:43.629Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-07-17T17:19:34.340Z",
+    "runId": "20260717-121401"
+  },
+  "shots": [
+    {
+      "id": "multi-session",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    }
+  ],
+  "count": 3,
+  "totalBytes": 1443291,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "multi-session-dark.png",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 91142,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-dark.webm",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 1238360,
+      "durationMs": 11582,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-light.png",
+      "surface": "multi-session",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 113789,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
+    }
+  ]
+}

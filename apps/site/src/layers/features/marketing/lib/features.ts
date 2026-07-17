@@ -260,7 +260,7 @@ export const features: Feature[] = [
       'Run Claude Code, Codex, and OpenCode side by side',
       'Pick a different tool per session, not just at setup',
       'Switch tools without leaving your screen',
-      'See every session in one list, whichever tool ran it',
+      'See every session in one list, with how much room each has left before it needs a fresh start',
       "Never build your whole workflow around one company's tool",
     ],
     moment:

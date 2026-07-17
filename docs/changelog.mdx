@@ -5,6 +5,49 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.50.0] - 2026-07-17
+
+> Organize your agents into sidebar groups that follow you across devices, see at a glance which sessions are running low on context room, and rest easier: the DorkOS tools that can change your machine are now token-protected.
+
+### Added
+
+- Universal command intents (foundation): DorkOS now has one shared registry for the three everyday slash actions — compact the conversation, start a fresh session, and show context usage and cost — plus each agent's words for them (`/compress`, `/summarize`, `/new`, `/usage`, `/status`, and more). This groundwork lets the same command work on whichever runtime your session uses.
+- Organize your agents into named groups in the sidebar (DOR-329). Make a group for a project, a client, or however you think about your work. Create, rename, delete, and drag agents in and out. Every drag has a menu and keyboard path too, so you are never stuck. Each group can sort by hand, by name, or by most recent activity.
+- See your latest work at a glance with a new "Recent" section (DOR-329). It shows your most recent sessions across all your agents. One click takes you back to what you were just doing.
+- Pin an agent and it now stays in its group as well (DOR-329). A pinned agent shows up in both places, so pinning no longer pulls it out of the group you put it in.
+- Your sidebar setup now saves to your DorkOS server instead of one browser (DOR-329). Your groups, pins, and sort choices follow you across every browser and the desktop app.
+- When a session's context is nearly full, a quiet chip now offers one-click compaction before things slow down (DOR-112)
+- Relay metrics now include real delivery-latency percentiles (p50/p95/p99) instead of a placeholder (DOR-166)
+- New desktop app guide: install DorkOS as a native Mac app (Windows early alpha included) (DOR-284)
+- See at a glance how full each agent's context is, right in the session list. Every session row now shows a small gauge, and the sessions view sums up how many are near full or just auto-compacted — so you can jump into the right agent before it runs out of room. Claude Code sessions show a reading even when they're closed; other runtimes show it once you open the session. (DOR-113)
+- Read any doc as clean markdown, or pull the whole docs set into your agent in one fetch. Every docs page is now fetchable as markdown (add `.mdx` to any docs URL), a new `/llms-full.txt` gives your agent the whole hand-written corpus in one request, and a quiet action row above each page lets you copy the markdown or open the page in Claude. "Open in Claude" opens claude.ai in your browser — it's not a Claude Code link. (DOR-165)
+- Marketplace installs now remember where each package came from — the source repo, the version you asked for, and the exact commit that was installed. This lays the groundwork for safe reinstalls and contributing changes back. (DOR-147)
+
+### Changed
+
+- External MCP and A2A clients now need your local token when login is off. Health checks and listing tools still work without one, and there is no grace period: paste the token into any client you already set up to keep using the tools that change things. Click "Reveal token" in Settings → Tools → External MCP Server to copy it, or read it from the `mcp-local-token` file in your DorkOS data folder. (DOR-278)
+- We no longer auto-pin your default agent (DOR-329). A small set of agents shows as one clean list, and pinning stays something you choose.
+- The Windows desktop app now has a standard Windows-style menu (File, Edit, View, Window, Help) instead of a Mac-shaped one (DOR-310)
+- Upgraded the docs site's engine (Fumadocs 16.10 and its OpenAPI renderer v11), keeping the docs and API reference on current, supported tooling. (DOR-165)
+- Removed a leftover "rate limited" status banner from the chat UI that could never actually appear. (DOR-201)
+- Simplified the server's error handling to use Express 5's built-in support for async errors. No behavior change — the same errors are caught the same way, with less wrapper code. (DOR-161)
+
+### Removed
+
+- Removed the per-agent message and hourly-call limits from agent settings — they were shown as editable controls but never actually limited anything. Runaway protection still comes from the per-message budget, which is enforced. (DOR-265)
+
+### Fixed
+
+- Fixed crashed package installs leaving behind backup folders that could show up as duplicate agents. (DOR-175)
+- Chat no longer loses its scroll position when you switch away from its tab and back, and it stays pinned to the newest message more reliably while a reply streams in (DOR-163)
+- Fixed new development worktrees starting with stale package builds, which caused false type errors until you rebuilt by hand. (DOR-117)
+- Pushes that only delete branches no longer run the full pre-push test gate. (DOR-116)
+
+### Security
+
+- The DorkOS tools that change things on your machine — creating agents, sending messages, installing packages — and agent-to-agent calls now need a token when login is off. Before, any program on your computer could call them with no token at all. This closes that open door, the same way Jupyter protects its local server. One honest limit: while login is off, a program running on your computer can still ask DorkOS for the token, the same way the app does. Turning on login is what closes that last door. (DOR-278)
+- The activation page now shows the device code on the confirm screen, so you can check it matches what your DorkOS instance is displaying before you approve — even when the code arrives pre-filled from a link. (DOR-200)
+
 ## [0.49.0] - 2026-07-14
 
 > DorkOS is easier to run on a server and safer in Docker. You can try it in one command with `npx dorkos@latest`, and start a server from a ready-made Compose file. The published Docker image now runs as a regular user instead of root, checks its own health, and shuts down cleanly.
@@ -458,34 +501,6 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Downgrade fumadocs-openapi 10.7.1 → 10.6.8 to fix api-doc generation
 - Address code review on spec 244 implementation
 
-## [0.41.0] - 2026-04-15
-
-> Plugin installation polish and chat input reliability — responsive dialogs, personality picker enhancements, and critical fixes for agent discovery and server stability.
-
-### Added
-
-- Enhance plugin activation and refresh mechanism
-- Responsive install dialog and agent picker
-- Enhance PersonalityPicker and onboarding flow
-- Add PersonalityPicker showcase and integrate into FeaturesPage
-- Introduce new chat input components and enhance functionality
-
-### Changed
-
-- Enhance RightPanelContainer styling and transitions
-- Streamline imports and enhance ChatInput styling
-
-### Fixed
-
-- Resolve PluginSource objects to giget-compatible strings
-- Eliminate spurious 404 and 400 errors on agents page load
-- Prevent unhandled errors from crashing Express process
-- Prevent AgentPicker dropdown clipping in install dialog
-- Show all registered agents in install dialog
-- Update project management copy for clarity
-- Fix playground registry slug and agent management copy
-- Improve agent management action descriptions for clarity
-
 ---
 
-Older releases (v0.1.0 – v0.40.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.41.0) live in the [Changelog archive](/changelog-archive).

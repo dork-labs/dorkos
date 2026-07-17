@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-14T08:50:29.455Z",
+  "generatedAt": "2026-07-17T17:19:34.340Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
-  "runId": "20260714-034457",
-  "totalBytes": 13004397,
+  "runId": "20260717-121401",
+  "totalBytes": 13015348,
   "count": 43,
   "shots": [
     {
@@ -142,9 +142,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 145124,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 147959,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -154,10 +154,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 754461,
-      "durationMs": 3122,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 659629,
+      "durationMs": 3151,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -168,8 +168,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 68203,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -179,9 +179,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 85826,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 85383,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -191,9 +191,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 105901,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 106237,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -203,10 +203,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 538096,
-      "durationMs": 7213,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 590459,
+      "durationMs": 7539,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -216,9 +216,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 103124,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 105768,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -228,10 +228,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 773194,
-      "durationMs": 10444,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 816890,
+      "durationMs": 10391,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -241,9 +241,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 105523,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 104810,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -253,9 +253,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 94137,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 94148,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -265,9 +265,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 38457,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 38794,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -277,10 +277,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 779624,
-      "durationMs": 8636,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 790763,
+      "durationMs": 8627,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -290,9 +290,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 76952,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 78119,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -302,9 +302,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 73845,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 73744,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -314,9 +314,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 95319,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 100888,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -326,10 +326,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1304461,
-      "durationMs": 8863,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 1305958,
+      "durationMs": 8948,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -339,9 +339,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 49178,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 49021,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -351,9 +351,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 65493,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 66602,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -363,10 +363,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 760163,
-      "durationMs": 7068,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 668196,
+      "durationMs": 7020,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -376,9 +376,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 58501,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 58171,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -389,8 +389,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 94427,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -400,9 +400,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 41180,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 40980,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -413,8 +413,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 82541,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -425,8 +425,8 @@
       "width": 1170,
       "height": 2532,
       "bytes": 66137,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -436,9 +436,9 @@
       "kind": "still",
       "width": 390,
       "height": 844,
-      "bytes": 44650,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 44615,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -448,10 +448,10 @@
       "kind": "loop",
       "width": 390,
       "height": 844,
-      "bytes": 1309728,
-      "durationMs": 9619,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 1237881,
+      "durationMs": 9609,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -461,9 +461,9 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 104963,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 101619,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -473,9 +473,9 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 73321,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 89808,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -485,9 +485,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 81395,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 91142,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -497,10 +497,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1292832,
-      "durationMs": 11588,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 1238360,
+      "durationMs": 11582,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -510,9 +510,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 101003,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 113789,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -522,9 +522,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 152550,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 152123,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -534,10 +534,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1119826,
-      "durationMs": 7997,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 1126223,
+      "durationMs": 7982,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -547,9 +547,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 204260,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 214366,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -559,9 +559,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 55509,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 56371,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -571,10 +571,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 650525,
-      "durationMs": 8602,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 748158,
+      "durationMs": 8632,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -584,9 +584,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 50223,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 50993,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -596,9 +596,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84651,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 85338,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -609,8 +609,8 @@
       "width": 2560,
       "height": 1600,
       "bytes": 42029,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -620,9 +620,9 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 110585,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 116153,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -632,10 +632,10 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 897730,
-      "durationMs": 6384,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 934496,
+      "durationMs": 6639,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -645,9 +645,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 109430,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 109450,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     },
     {
       "source": "auto",
@@ -657,9 +657,9 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 159320,
-      "runId": "20260714-034457",
-      "capturedAt": "2026-07-14T08:48:52.793Z"
+      "bytes": 168607,
+      "runId": "20260717-121401",
+      "capturedAt": "2026-07-17T17:18:01.819Z"
     }
   ]
 }

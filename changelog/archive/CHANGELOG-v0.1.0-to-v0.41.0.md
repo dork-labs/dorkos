@@ -1,7 +1,35 @@
-# Changelog archive: v0.1.0 – v0.40.0
+# Changelog archive: v0.1.0 – v0.41.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.41.0] - 2026-04-15
+
+> Plugin installation polish and chat input reliability — responsive dialogs, personality picker enhancements, and critical fixes for agent discovery and server stability.
+
+### Added
+
+- Enhance plugin activation and refresh mechanism
+- Responsive install dialog and agent picker
+- Enhance PersonalityPicker and onboarding flow
+- Add PersonalityPicker showcase and integrate into FeaturesPage
+- Introduce new chat input components and enhance functionality
+
+### Changed
+
+- Enhance RightPanelContainer styling and transitions
+- Streamline imports and enhance ChatInput styling
+
+### Fixed
+
+- Resolve PluginSource objects to giget-compatible strings
+- Eliminate spurious 404 and 400 errors on agents page load
+- Prevent unhandled errors from crashing Express process
+- Prevent AgentPicker dropdown clipping in install dialog
+- Show all registered agents in install dialog
+- Update project management copy for clarity
+- Fix playground registry slug and agent management copy
+- Improve agent management action descriptions for clarity
 
 ## [0.40.0] - 2026-04-14
 
