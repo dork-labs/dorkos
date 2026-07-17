@@ -27,16 +27,19 @@ The one carve-out keys off `readOnlyHint: true`, the **only** tool annotation th
 
 ### Positive
 
-- A local non-operator process can no longer reach the mutating/RCE MCP tools or drive agents over A2A on loopback without the `0600` token it cannot read
+- Closes the tokenless mutating/RCE surface: no request reaches a mutating tool or A2A execution without presenting a credential — the drive-by zero-config passthrough is gone
+- Jupyter-parity local posture: the `0600` file raises the bar for filesystem-only exfiltration (a reader without loopback socket reach cannot obtain the token), and the bearer requirement protects the surface wherever the port is reachable beyond the local user — tunnels, proxies, cross-host exposure
 - Fail-closed by construction: unknown tools, unknown methods, unparseable bodies, and mixed batches all require the token; a newly added tool defaults to guarded until it is both annotated read-only and added to the SSOT
 - Zero code impact on the cockpit SPA, DorkOS-driven agents, and the Obsidian embedded path — none call HTTP `/mcp`
 - `resources/read` (session/agent/skill data) is gated, a deliberate tightening beyond the tool decision, since transcripts can hold sensitive content
 
 ### Negative
 
+- **Not a boundary against a local process with loopback socket reach while login is off.** The cockpit must be able to display the token, and in login-off mode the cockpit and any local process are indistinguishable — so such a process can call `POST /api/config/mcp/reveal-token` exactly as the settings tab does and obtain the token. Turning on login is the boundary that closes that; this decision deliberately does not claim to.
+- **Rotate DoS residual:** by the same indistinguishability, any local caller can invoke the rotate endpoint, 401-ing every previously configured client until the new token is re-pasted. Denial of service, not disclosure.
 - A breaking change with no grace period: existing external MCP and A2A clients must add the token to keep using the tools that change things
 - Read-only tools and MCP discovery stay tokenless (accepted per the operator decision), so a local process can still probe health and list tools
-- The token is emitted through a purpose-built login-off DTO field over loopback (the same trust boundary as the cockpit); it is never emitted in login-on mode, never logged, and stored `0600` with a lax-permission repair pass
+- The token never rides `GET /api/config`; it is revealed only through the purpose-built POST endpoint (kept out of GET caches and logs), never emitted in login-on mode, never logged, and stored `0600` with a lax-permission repair pass
 
 ## Related
 

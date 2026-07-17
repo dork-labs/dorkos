@@ -57,7 +57,9 @@ curl -X POST http://localhost:4242/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_agent","arguments":{}}}'
 ```
 
-Find your token in **Settings → Tools → External MCP Server** — the setup snippets there already have it filled in, so you can copy one and paste it straight into your client. It also lives in a file called `mcp-local-token` in your DorkOS data folder (`~/.dork/` by default). Rotating the token from Settings makes a new one and turns off the old one right away, so any client you already set up stops working until you paste in the new token.
+Find your token in **Settings → Tools → External MCP Server**: click **Reveal token**, and the setup snippets fill in with it so you can copy one and paste it straight into your client. It also lives in a file called `mcp-local-token` in your DorkOS data folder (`~/.dork/` by default). Rotating the token from Settings makes a new one and turns off the old one right away, so any client you already set up stops working until you paste in the new token.
+
+One honest note on what this protects: it stops tokenless calls, keeps the token out of reach of anything that can't open a local connection, and guards the endpoint anywhere the port is reachable from outside (a tunnel or proxy). While login is off, though, a program running on your computer can still ask DorkOS for the token the same way the app does. If that matters for your machine, [turn on login](/docs/self-hosting/securing-your-instance) — that is the boundary that closes it.
 
 <Callout type="info">
   A bare `GET` to `/mcp` always returns `405`, with or without a token. To confirm auth is working,
