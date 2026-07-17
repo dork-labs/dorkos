@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 
 export const metadata: Metadata = {
   title: 'Pricing',
@@ -13,6 +14,10 @@ export const metadata: Metadata = {
     url: '/pricing',
     siteName: siteConfig.name,
   },
+  twitter: twitterFromOpenGraph({
+    title: 'Pricing — DorkOS',
+    description: 'What stays free forever, what will cost money later, and why.',
+  }),
 };
 
 export default function PricingPage() {

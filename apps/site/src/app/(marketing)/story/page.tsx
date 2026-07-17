@@ -1,5 +1,7 @@
+import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 import {
   PresentationShell,
   StoryHero,
@@ -13,6 +15,24 @@ import {
   MarketingHeader,
   MarketingFooter,
 } from '@/layers/features/marketing';
+
+const storyTitle = 'The Story — DorkOS';
+const storyDescription =
+  'How DorkOS started: one founder, a fleet of coding agents, and the bet that coordination scales further than raw intelligence.';
+
+export const metadata: Metadata = {
+  title: 'The Story',
+  description: storyDescription,
+  alternates: { canonical: '/story' },
+  openGraph: {
+    title: storyTitle,
+    description: storyDescription,
+    url: '/story',
+    type: 'article',
+    siteName: siteConfig.name,
+  },
+  twitter: twitterFromOpenGraph({ title: storyTitle, description: storyDescription }),
+};
 
 // Reuse the same social links defined on the homepage
 const socialLinks = [

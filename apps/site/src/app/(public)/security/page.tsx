@@ -1,10 +1,22 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
+
+const description =
+  'How DorkOS keeps your machine the trust boundary, and how to report a vulnerability.';
 
 export const metadata: Metadata = {
   title: 'Security',
-  description:
-    'How DorkOS keeps your machine the trust boundary, and how to report a vulnerability.',
+  description,
+  alternates: { canonical: '/security' },
+  openGraph: {
+    title: 'Security — DorkOS',
+    description,
+    url: '/security',
+    siteName: siteConfig.name,
+  },
+  twitter: twitterFromOpenGraph({ title: 'Security — DorkOS', description }),
 };
 
 export default function SecurityPage() {

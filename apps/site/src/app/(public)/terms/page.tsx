@@ -1,9 +1,21 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
+
+const description = 'The plain-English deal for using the DorkOS website and services.';
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
-  description: 'The plain-English deal for using the DorkOS website and services.',
+  description,
+  alternates: { canonical: '/terms' },
+  openGraph: {
+    title: 'Terms of Service — DorkOS',
+    description,
+    url: '/terms',
+    siteName: siteConfig.name,
+  },
+  twitter: twitterFromOpenGraph({ title: 'Terms of Service — DorkOS', description }),
 };
 
 export default function TermsOfServicePage() {

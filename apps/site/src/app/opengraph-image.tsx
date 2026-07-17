@@ -1,19 +1,21 @@
 import { ImageResponse } from 'next/og';
-
-export const runtime = 'edge';
+import { OG_COLORS, OG_FONT_SANS, OG_SIZE, OgAccentStripes, loadOgFonts } from '@/lib/og';
 
 export const alt = 'DorkOS: mission control for every coding agent you run';
-export const size = {
-  width: 1200,
-  height: 630,
-};
+export const size = OG_SIZE;
 export const contentType = 'image/png';
 
+/**
+ * Root Open Graph card — the dark hero used for the home page and every route
+ * that doesn't override its own image. Renders in the brand sans (IBM Plex Sans)
+ * loaded from disk on the Node runtime.
+ */
 export default async function Image() {
+  const fonts = await loadOgFonts();
   return new ImageResponse(
     <div
       style={{
-        background: 'linear-gradient(135deg, #1A1A1A 0%, #2A2A2A 100%)',
+        background: `linear-gradient(135deg, ${OG_COLORS.darkStart} 0%, ${OG_COLORS.darkEnd} 100%)`,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -65,7 +67,8 @@ export default async function Image() {
           style={{
             fontSize: '72px',
             fontWeight: 700,
-            color: '#FFFFFF',
+            fontFamily: OG_FONT_SANS,
+            color: OG_COLORS.white,
             letterSpacing: '-0.03em',
             lineHeight: 1.1,
           }}
@@ -76,7 +79,8 @@ export default async function Image() {
           style={{
             fontSize: '40px',
             fontWeight: 700,
-            color: '#E86C3A',
+            fontFamily: OG_FONT_SANS,
+            color: OG_COLORS.brandOrange,
             letterSpacing: '-0.03em',
             lineHeight: 1.2,
             textAlign: 'center',
@@ -91,29 +95,17 @@ export default async function Image() {
       <span
         style={{
           fontSize: '24px',
-          color: '#9A9A9A',
+          fontFamily: OG_FONT_SANS,
+          color: OG_COLORS.darkMuted,
           marginTop: '24px',
-          fontWeight: 300,
+          fontWeight: 400,
         }}
       >
         Claude Code · Codex · OpenCode
       </span>
 
-      {/* Bottom accent stripes */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div style={{ height: '4px', background: '#E86C3A' }} />
-        <div style={{ height: '4px', background: '#5B8C5A' }} />
-      </div>
+      {OgAccentStripes({ thickness: 4 })}
     </div>,
-    { ...size }
+    { ...size, fonts }
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 import { features, PRODUCT_LABELS, type FeatureProduct } from '@/layers/features/marketing';
 import { FeatureCatalog, MarketingChrome, InstallMoment } from '@/layers/features/marketing';
 
@@ -14,6 +15,10 @@ export const metadata: Metadata = {
     url: '/features',
     siteName: siteConfig.name,
   },
+  twitter: twitterFromOpenGraph({
+    title: 'Features — DorkOS',
+    description: 'The complete DorkOS feature catalog.',
+  }),
 };
 
 const VALID_PRODUCTS = Object.keys(PRODUCT_LABELS) as FeatureProduct[];
