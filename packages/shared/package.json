@@ -61,6 +61,10 @@
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
     },
+    "./command-intents": {
+      "types": "./src/command-intents.ts",
+      "default": "./dist/command-intents.js"
+    },
     "./workspace": {
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"
