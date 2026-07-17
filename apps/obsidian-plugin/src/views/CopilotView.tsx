@@ -16,7 +16,10 @@ import {
   TranscriptReader,
   CommandRegistryService,
 } from '@dorkos/server/services/runtimes/claude-code';
-import { createEmbeddedTurnTrigger } from '@dorkos/server/services/session';
+import {
+  createEmbeddedTurnTrigger,
+  createEmbeddedCommandIntentTrigger,
+} from '@dorkos/server/services/session';
 import type CopilotPlugin from '../main';
 // Vite extracts this to styles.css which Obsidian auto-loads
 import '../styles/plugin.css';
@@ -70,6 +73,9 @@ export class CopilotView extends ItemView {
       // Trigger-only send contract (ADR-0264): postMessage starts a detached
       // turn feeding the session projector; delivery flows over subscribeSession.
       turnTrigger: createEmbeddedTurnTrigger(runtime),
+      // The command-intent twin (DOR-109): runCommandIntent('compact') drives a
+      // detached compact run the same trigger-only way.
+      commandIntentTrigger: createEmbeddedCommandIntentTrigger(runtime),
     });
 
     // Embedded mode has no HTTP server: source the StreamManager's durable

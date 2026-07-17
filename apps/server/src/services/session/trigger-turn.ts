@@ -329,11 +329,15 @@ async function* tapEachEvent(
  * leaving the durable stream with `…status_change(error), error, turn_end(error)` —
  * never a frozen `streaming`. The original error is reported via `onError`.
  *
+ * Exported so the command-intent trigger ({@link
+ * import('./trigger-command-intent').triggerCommandIntent}) drives its adapter
+ * generator through the SAME error-terminal translation a turn uses.
+ *
  * @param projector - The session projector (for the direct error-status ingest).
  * @param source - The runtime's per-turn `StreamEvent` stream.
  * @param onError - Records the original failure (logging is the caller's concern).
  */
-async function* guardTurnErrors(
+export async function* guardTurnErrors(
   projector: SessionStateProjector,
   source: AsyncIterable<StreamEvent>,
   onError: (err: unknown) => void

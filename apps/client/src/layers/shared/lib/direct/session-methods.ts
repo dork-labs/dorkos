@@ -174,20 +174,36 @@ export function createDirectSessionMethods(
     // ── Command-Intent Trigger ───────────────────────────────────────────────
 
     /**
-     * Trigger a runtime-fulfilled command intent in-process. Placeholder — the
-     * in-process command-intent service is built in Phase 2 (task 2.4), modeled
-     * on `embedded-turn-trigger.ts`. Throws until then; the client pre-gates on
-     * the active runtime's capability, so this is never reached for a supported
-     * intent before Phase 2 wires it.
-     *
-     * @param _sessionId - Target session id (unused until Phase 2 wiring).
-     * @param _intent - The runtime-fulfilled intent id (unused until Phase 2 wiring).
+     * Trigger a RUNTIME-fulfilled command intent (currently `compact`)
+     * in-process (trigger-only contract, ADR-0264). The run rides the wired
+     * {@link DirectTransportServices.commandIntentTrigger | commandIntentTrigger},
+     * feeding the session projector; the compaction is delivered solely over
+     * `subscribeSession` (e.g. a `compact_boundary`). Throws a typed
+     * `SESSION_LOCKED` error when the session lock is held — reachable only when
+     * another transport instance holds it (a same-client acquire steals the
+     * lock). The client pre-gates on the runtime's capability, so this is reached
+     * only for a supported intent.
      */
     async runCommandIntent(
-      _sessionId: string,
-      _intent: RuntimeCommandIntentId
+      sessionId: string,
+      intent: RuntimeCommandIntentId
     ): Promise<{ sessionId: string }> {
-      throw new Error('runCommandIntent is not yet wired in DirectTransport');
+      const result = services.commandIntentTrigger.trigger({
+        sessionId,
+        clientId: getClientId(),
+        intent,
+        cwd: services.vaultRoot,
+      });
+      if (!result.accepted) {
+        const error = new Error('Session locked') as Error & SessionLockedError;
+        error.code = 'SESSION_LOCKED';
+        // Approximations mirror postMessage: the narrowed seam exposes no
+        // getLockInfo, and only `code` is consumed by classify-transport-error.
+        error.lockedBy = getClientId();
+        error.lockedAt = new Date().toISOString();
+        throw error;
+      }
+      return { sessionId };
     },
 
     // ── Generative-UI Interactivity ─────────────────────────────────────────
