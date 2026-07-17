@@ -21,6 +21,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { RelayCore } from '@dorkos/relay';
 import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
@@ -134,6 +135,21 @@ export class TestModeRuntime implements AgentRuntime {
     });
     const scenario = scenarioStore.getScenario(sessionId);
     yield* scenario(content);
+  }
+
+  /**
+   * Phase-1 placeholder — throws when driven. Test-mode declares
+   * `commandIntents.compact.supported: false` (task 1.2), so the gated route
+   * never calls this; Phase 2 (task 2.3) replaces it with a real synthetic
+   * `compact_boundary` generator and flips the capability to `true`.
+   */
+  // eslint-disable-next-line require-yield -- placeholder throws before any yield; Phase 2 adds the real body
+  async *executeCommandIntent(
+    _sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    _opts?: MessageOpts
+  ): AsyncGenerator<StreamEvent> {
+    throw new Error('executeCommandIntent(compact) not yet wired for test-mode');
   }
 
   setRelay(_relay: RelayCore): void {

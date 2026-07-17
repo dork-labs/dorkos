@@ -430,6 +430,27 @@ export interface AgentRuntime {
    */
   sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent>;
 
+  /**
+   * Fulfill a RUNTIME-fulfilled command intent (currently `compact`) for a
+   * session, expanding the neutral intent into the runtime's native mechanism
+   * (ADR-0273; e.g. Claude sends a bare `/compact`, OpenCode calls
+   * `session.summarize`). Yields the resulting StreamEvents so the server drives
+   * them through the durable session projector exactly like a turn — the client
+   * learns of the compaction via `GET /api/sessions/:id/events` (e.g. a
+   * `compact_boundary`). Called ONLY when
+   * `getCapabilities().commandIntents[intent].supported`; a runtime that does
+   * not support the intent may throw a typed unsupported error.
+   *
+   * @param sessionId - Target session.
+   * @param intent - The runtime-fulfilled intent id.
+   * @param opts - cwd and per-turn options (reuses the {@link MessageOpts} shape).
+   */
+  executeCommandIntent(
+    sessionId: string,
+    intent: RuntimeCommandIntentId,
+    opts?: MessageOpts
+  ): AsyncGenerator<StreamEvent>;
+
   // --- Interactive flows ---
 
   /**

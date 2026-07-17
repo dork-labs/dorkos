@@ -37,6 +37,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
 import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
@@ -305,6 +306,21 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       },
       opts
     );
+  }
+
+  /**
+   * Phase-1 placeholder — throws when driven. `CLAUDE_CODE_CAPABILITIES`
+   * declares `commandIntents.compact.supported: false` (task 1.2), so the gated
+   * route never calls this; Phase 2 (task 2.1) replaces it with the real bare
+   * `/compact` send-path body and flips the capability to `true`.
+   */
+  // eslint-disable-next-line require-yield -- placeholder throws before any yield; Phase 2 adds the real body
+  async *executeCommandIntent(
+    _sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    _opts?: MessageOpts
+  ): AsyncGenerator<StreamEvent> {
+    throw new Error('executeCommandIntent(compact) not yet wired for claude-code');
   }
 
   /**

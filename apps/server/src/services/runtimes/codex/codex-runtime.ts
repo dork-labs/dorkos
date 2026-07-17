@@ -57,6 +57,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import { getOrCreateProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
@@ -435,6 +436,21 @@ export class CodexRuntime implements AgentRuntime {
         this.activeTurns.delete(sessionId);
       }
     }
+  }
+
+  /**
+   * Codex has no compaction/summarize API (`Thread.run` only), so
+   * `CODEX_CAPABILITIES` declares `commandIntents.compact.supported: false`
+   * permanently and the gated route never calls this. The throw is the correct
+   * defensive contract (task 2.3 keeps it as codex's final form).
+   */
+  // eslint-disable-next-line require-yield -- unsupported: always throws, never yields (final form)
+  async *executeCommandIntent(
+    _sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    _opts?: MessageOpts
+  ): AsyncGenerator<StreamEvent> {
+    throw new Error('executeCommandIntent(compact) is not supported by codex');
   }
 
   /**

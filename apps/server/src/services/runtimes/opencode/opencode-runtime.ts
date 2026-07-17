@@ -56,6 +56,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { getOrCreateProjector } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -296,6 +297,21 @@ export class OpenCodeRuntime implements AgentRuntime {
         this.activeTurns.delete(sessionId);
       }
     }
+  }
+
+  /**
+   * Phase-1 placeholder — throws when driven. `OPENCODE_CAPABILITIES` declares
+   * `commandIntents.compact.supported: false` (task 1.2), so the gated route
+   * never calls this; Phase 2 (task 2.2) replaces it with the real
+   * `client.session.summarize` body and flips the capability to `true`.
+   */
+  // eslint-disable-next-line require-yield -- placeholder throws before any yield; Phase 2 adds the real body
+  async *executeCommandIntent(
+    _sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    _opts?: MessageOpts
+  ): AsyncGenerator<StreamEvent> {
+    throw new Error('executeCommandIntent(compact) not yet wired for opencode');
   }
 
   /**

@@ -8,6 +8,7 @@ import type {
   RuntimeCapabilities,
   McpAppServerConnection,
 } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   SessionSnapshot,
@@ -80,6 +81,20 @@ export class FakeAgentRuntime implements AgentRuntime {
       this._scenarioIndex++;
       yield* scenario(content);
     }
+  });
+
+  /**
+   * Fulfill the runtime-fulfilled `compact` intent by yielding a synthetic
+   * `compact_boundary` StreamEvent — its FINAL form (not a placeholder). Lets
+   * conformance and e2e assert that a supported runtime's dispatch reached the
+   * adapter and produced a terminal/boundary event.
+   */
+  executeCommandIntent = vi.fn(async function* (
+    _sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    _opts?: MessageOpts
+  ): AsyncGenerator<StreamEvent> {
+    yield { type: 'compact_boundary', data: {} } as StreamEvent;
   });
 
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
