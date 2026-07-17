@@ -1,7 +1,7 @@
 ---
 id: 260717-001410
 title: Cross-agent recent sessions via a server-side fan-out endpoint with a per-agent activity map
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: agent-sidebar-organization
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
