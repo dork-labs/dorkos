@@ -62,13 +62,15 @@ const softwareAppJsonLd = {
 // JSON-LD for the Organization entity. Consolidates dorkos.ai, the GitHub repo,
 // and the npm package as one entity for search and AI engines. `sameAs` is built
 // only from links that already exist in siteConfig (no invented social handles);
-// `logo` is a crawlable on-white PNG wordmark (>=112x112).
+// `logo` is the square 512x512 app icon, not the 1200x480 wordmark: Google's
+// structured-data guidance prefers a near-square logo, and the mark stays
+// legible on white at that size.
 const organizationJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: siteConfig.name,
   url: siteConfig.url,
-  logo: `${siteConfig.url}/dorkos-logo.png`,
+  logo: `${siteConfig.url}/icon-512.png`,
   sameAs: [siteConfig.github, siteConfig.npm],
 };
 

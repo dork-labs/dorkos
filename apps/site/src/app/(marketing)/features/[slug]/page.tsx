@@ -12,7 +12,7 @@ import {
   type FeatureStatus,
 } from '@/layers/features/marketing';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 export function generateStaticParams() {
   return features.map((f) => ({ slug: f.slug }));
@@ -41,6 +41,7 @@ export async function generateMetadata(props: {
     }),
     alternates: {
       canonical: `/features/${feature.slug}`,
+      types: rssFeedAlternateTypes,
     },
   };
 }

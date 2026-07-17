@@ -29,7 +29,7 @@ import {
   type FeatureStatus,
 } from '@/layers/features/marketing';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 export function generateStaticParams() {
   return (Object.keys(CATEGORY_LABELS) as FeatureCategory[]).map((category) => ({ category }));
@@ -59,6 +59,7 @@ export async function generateMetadata(props: {
     twitter: twitterFromOpenGraph({ title: `${label} Features — DorkOS`, description }),
     alternates: {
       canonical: `/features/category/${category}`,
+      types: rssFeedAlternateTypes,
     },
   };
 }

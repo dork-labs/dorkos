@@ -4,9 +4,17 @@
  * The RSS feed autodiscovery alternate, shared so every segment that sets its
  * own `alternates` can advertise the feed. Next.js shallow-merges metadata: a
  * segment that defines `alternates` overwrites the parent's `alternates`
- * wholesale (it is not deep-merged), so the feed link must be attached at every
- * segment that declares `alternates` — the root layout, the marketing layout,
- * and the blog index and post pages — not only once at the root.
+ * wholesale (it is not deep-merged), so a page that redeclares `alternates`
+ * without re-spreading `types: rssFeedAlternateTypes` silently drops the feed
+ * link, even though it still inherits everything else from the root layout.
+ *
+ * Coverage rule: every route that sets its own `alternates` object must
+ * include `types: rssFeedAlternateTypes` in that object — currently the root
+ * layout, the marketing layout, and every marketing, public, and blog page
+ * that declares a page-specific canonical URL. Routes that never set
+ * `alternates` (docs, account, download, admin) need no changes; they inherit
+ * the root layout's feed link untouched. Adding a route with its own
+ * `alternates`? Spread this in, or the feed link disappears for that page.
  */
 import type { Metadata } from 'next';
 

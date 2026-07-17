@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 const description = 'The plain-English deal for using the DorkOS website and services.';
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
   description,
-  alternates: { canonical: '/terms' },
+  alternates: { canonical: '/terms', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Terms of Service — DorkOS',
     description,

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { MarketingChrome } from '@/layers/features/marketing';
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: 'Newsletter | DorkOS',
   description:
     'Release notes and fleet reports from DorkOS, about twice a month. Double opt-in, one-click unsubscribe, no spam.',
-  alternates: { canonical: '/newsletter' },
+  alternates: { canonical: '/newsletter', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Newsletter | DorkOS',
     description: 'Release notes and fleet reports, about twice a month.',

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import {
   fetchMarketplaceJson,
   fetchPackageReadme,
@@ -45,7 +45,7 @@ export async function generateMetadata(props: {
   return {
     title,
     description,
-    alternates: { canonical: `/marketplace/${pkg.name}` },
+    alternates: { canonical: `/marketplace/${pkg.name}`, types: rssFeedAlternateTypes },
     openGraph: {
       title,
       description,

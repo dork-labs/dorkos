@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 export const metadata: Metadata = {
   title: 'Pricing',
   description:
     'What stays free forever, what will cost money later, and why. In writing, before anything costs a cent.',
-  alternates: { canonical: '/pricing' },
+  alternates: { canonical: '/pricing', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Pricing — DorkOS',
     description: 'What stays free forever, what will cost money later, and why.',

@@ -2,14 +2,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AnalyticsPreferenceControl } from '@/layers/widgets/cookie-consent';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 const description = 'What DorkOS collects, what it never touches, and the choices you have.';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
   description,
-  alternates: { canonical: '/privacy' },
+  alternates: { canonical: '/privacy', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Privacy Policy — DorkOS',
     description,

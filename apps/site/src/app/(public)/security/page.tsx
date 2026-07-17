@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 const description =
   'How DorkOS keeps your machine the trust boundary, and how to report a vulnerability.';
@@ -9,7 +9,7 @@ const description =
 export const metadata: Metadata = {
   title: 'Security',
   description,
-  alternates: { canonical: '/security' },
+  alternates: { canonical: '/security', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Security — DorkOS',
     description,
