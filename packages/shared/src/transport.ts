@@ -808,6 +808,14 @@ export interface Transport {
   /** Partially update the persisted user config. */
   updateConfig(patch: Record<string, unknown>): Promise<void>;
   /**
+   * Regenerate the per-instance local MCP token (DOR-278) and return the new
+   * value. Only meaningful in login-off mode with no `MCP_API_KEY` override —
+   * the server 409s otherwise. Rotating invalidates every previously configured
+   * MCP client until it re-pastes the new token as its `Authorization: Bearer`
+   * header.
+   */
+  rotateMcpLocalToken(): Promise<{ localToken: string }>;
+  /**
    * Relay a caught cockpit crash to the server's `POST /api/errors` intake
    * (DOR-318). Fire-and-forget and best-effort: it must never throw or surface
    * to the user. The server rebuilds and scrubs the report and only sends it

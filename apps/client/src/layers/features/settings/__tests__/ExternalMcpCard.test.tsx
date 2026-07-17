@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -34,6 +34,7 @@ function createWrapper() {
   const transport = createMockTransport();
   return {
     transport,
+    queryClient,
     Wrapper: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -194,6 +195,32 @@ describe('ExternalMcpCard', () => {
     await expandCard(user);
     expect(screen.getByText(/Couldn't generate a local token/i)).toBeInTheDocument();
     expect(screen.queryByText('Local MCP token')).not.toBeInTheDocument();
+  });
+
+  it('opens a confirm dialog that warns clients break before rotating', async () => {
+    // Purpose: rotating is destructive to configured clients, so the user must
+    // confirm and the copy must say so plainly.
+    const user = userEvent.setup();
+    const { Wrapper } = createWrapper();
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
+    await expandCard(user);
+    await user.click(screen.getByRole('button', { name: 'Rotate' }));
+    expect(screen.getByText('Rotate the local MCP token?')).toBeInTheDocument();
+    expect(screen.getByText(/stop working until you paste in the new token/i)).toBeInTheDocument();
+  });
+
+  it('rotates the token and invalidates the config query on confirm', async () => {
+    // Purpose: confirming calls the transport rotate method and refreshes the
+    // config so the new token + pre-filled snippets re-render.
+    const user = userEvent.setup();
+    const { Wrapper, transport, queryClient } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
+    await expandCard(user);
+    await user.click(screen.getByRole('button', { name: 'Rotate' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate token' }));
+    await waitFor(() => expect(transport.rotateMcpLocalToken).toHaveBeenCalledTimes(1));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['config'] });
   });
 
   it('reads green Enabled in local-token mode and amber No auth only in none', () => {

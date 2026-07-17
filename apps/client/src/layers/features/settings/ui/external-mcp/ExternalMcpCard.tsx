@@ -1,9 +1,20 @@
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, KeyRound } from 'lucide-react';
+import { toast } from 'sonner';
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
   Badge,
+  Button,
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -66,6 +77,11 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
     [transport, mcp.enabled, mcp.rateLimit, invalidateConfig]
   );
 
+  const handleRotate = useCallback(async () => {
+    await transport.rotateMcpLocalToken();
+    await invalidateConfig();
+  }, [transport, invalidateConfig]);
+
   const statusBadge = mcp.enabled ? (
     mcp.authConfigured ? (
       <Badge variant="outline" className="border-green-500/50 text-xs text-green-600">
@@ -121,7 +137,11 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
           <FieldCardContent className="border-t">
             <DuplicateToolWarning />
             <EndpointRow endpoint={mcp.endpoint} />
-            <McpAuthRow authSource={mcp.authSource} localToken={mcp.localToken ?? null} />
+            <McpAuthRow
+              authSource={mcp.authSource}
+              localToken={mcp.localToken ?? null}
+              onRotate={handleRotate}
+            />
             <RateLimitSection rateLimit={mcp.rateLimit} onUpdate={handleUpdateRateLimit} />
             <SetupInstructions endpoint={mcp.endpoint} apiKey={mcp.localToken ?? null} />
           </FieldCardContent>
@@ -135,9 +155,11 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
 function McpAuthRow({
   authSource,
   localToken,
+  onRotate,
 }: {
   authSource: McpConfig['authSource'];
   localToken: string | null;
+  onRotate: () => Promise<void>;
 }) {
   if (authSource === 'env') {
     return (
@@ -151,27 +173,7 @@ function McpAuthRow({
   }
 
   if (authSource === 'local-token') {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <KeyRound className="text-muted-foreground size-3.5" />
-          <p className="text-sm font-medium">Local MCP token</p>
-        </div>
-        <p className="text-muted-foreground text-xs">
-          Paste this token into your MCP client as a <code className="font-mono">Bearer</code>{' '}
-          token. It protects the tools that change things on your machine; read-only checks work
-          without it.
-        </p>
-        {localToken && (
-          <div className="flex items-center gap-1.5">
-            <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
-              {localToken}
-            </code>
-            <CopyButton value={localToken} />
-          </div>
-        )}
-      </div>
-    );
+    return <LocalTokenAuthRow localToken={localToken} onRotate={onRotate} />;
   }
 
   if (authSource === 'none') {
@@ -197,6 +199,87 @@ function McpAuthRow({
         MCP clients authenticate with a personal API key. Create or revoke keys in Settings →
         Security → API keys, then pass it as a <code className="font-mono">Bearer</code> token.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Local-token authentication row (login-off mode): shows the per-instance token
+ * in a copyable field with a Rotate action guarded by a breaks-existing-clients
+ * confirm.
+ */
+function LocalTokenAuthRow({
+  localToken,
+  onRotate,
+}: {
+  localToken: string | null;
+  onRotate: () => Promise<void>;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [isRotating, setIsRotating] = useState(false);
+
+  async function handleConfirmRotate() {
+    setIsRotating(true);
+    try {
+      await onRotate();
+      setConfirmOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rotate the local MCP token');
+    } finally {
+      setIsRotating(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <KeyRound className="text-muted-foreground size-3.5" />
+          <p className="text-sm font-medium">Local MCP token</p>
+        </div>
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" size="sm">
+              Rotate
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Rotate the local MCP token?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This makes a new token and turns off the old one right away. Every MCP client you
+                already set up will stop working until you paste in the new token. There is no undo.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isRotating}
+                onClick={(e) => {
+                  // Keep the dialog open until the rotate call resolves so a
+                  // failure can surface instead of silently closing.
+                  e.preventDefault();
+                  void handleConfirmRotate();
+                }}
+              >
+                {isRotating ? 'Rotating…' : 'Rotate token'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        Paste this token into your MCP client as a <code className="font-mono">Bearer</code> token.
+        It protects the tools that change things on your machine; read-only checks work without it.
+      </p>
+      {localToken && (
+        <div className="flex items-center gap-1.5">
+          <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
+            {localToken}
+          </code>
+          <CopyButton value={localToken} />
+        </div>
+      )}
     </div>
   );
 }

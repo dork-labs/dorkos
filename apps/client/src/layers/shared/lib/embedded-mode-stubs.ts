@@ -396,6 +396,12 @@ export const serverOnlyStubs = {
     // No-op in embedded mode — config is not persisted via DirectTransport.
   },
 
+  async rotateMcpLocalToken(): Promise<{ localToken: string }> {
+    // The local MCP token gates the HTTP /mcp surface, which the embedded
+    // in-process transport never exposes — there is nothing to rotate here.
+    throw new Error('Rotating the local MCP token is not supported in Obsidian plugin mode.');
+  },
+
   async getMcpConfig(
     _projectPath: string,
     _opts?: { runtime?: string }
