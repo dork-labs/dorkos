@@ -5,7 +5,14 @@ import { notFound } from 'next/navigation';
 export const dynamic = 'force-static';
 
 /**
- * Serve a docs page as raw markdown at /docs/<slug>.mdx for AI consumption.
+ * Serve a docs page as raw markdown for AI consumption.
+ *
+ * Lives at /llms.mdx/docs/[[...slug]] rather than co-located with the docs
+ * page as a [[...slug]].mdx sibling segment — that placement fails to
+ * statically export (Next.js cannot resolve generateStaticParams for a
+ * segment mixing the [[...slug]] catch-all syntax with a literal .mdx
+ * suffix). `next.config.ts` rewrites the public /docs/<slug>.mdx URL to
+ * this route, so callers never see the difference.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug } = await params;
