@@ -78,3 +78,4 @@ export { useRenameSession } from './model/use-rename-session';
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';
 export type { SessionRowProps } from './ui/SessionRow';
+export { SessionContextGauge } from './ui/SessionContextGauge';
