@@ -7,6 +7,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  CopyButton,
   FieldCard,
   FieldCardContent,
   SettingRow,
@@ -120,9 +121,9 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
           <FieldCardContent className="border-t">
             <DuplicateToolWarning />
             <EndpointRow endpoint={mcp.endpoint} />
-            <McpAuthRow authSource={mcp.authSource} />
+            <McpAuthRow authSource={mcp.authSource} localToken={mcp.localToken ?? null} />
             <RateLimitSection rateLimit={mcp.rateLimit} onUpdate={handleUpdateRateLimit} />
-            <SetupInstructions endpoint={mcp.endpoint} apiKey={null} />
+            <SetupInstructions endpoint={mcp.endpoint} apiKey={mcp.localToken ?? null} />
           </FieldCardContent>
         </CollapsibleContent>
       </Collapsible>
@@ -131,7 +132,13 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
 }
 
 /** Authentication guidance for the MCP endpoint — reflects the active credential source. */
-function McpAuthRow({ authSource }: { authSource: McpConfig['authSource'] }) {
+function McpAuthRow({
+  authSource,
+  localToken,
+}: {
+  authSource: McpConfig['authSource'];
+  localToken: string | null;
+}) {
   if (authSource === 'env') {
     return (
       <SettingRow
@@ -139,6 +146,43 @@ function McpAuthRow({ authSource }: { authSource: McpConfig['authSource'] }) {
         description="Gated by the MCP_API_KEY environment variable"
       >
         <Badge variant="outline">Environment variable</Badge>
+      </SettingRow>
+    );
+  }
+
+  if (authSource === 'local-token') {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <KeyRound className="text-muted-foreground size-3.5" />
+          <p className="text-sm font-medium">Local MCP token</p>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Paste this token into your MCP client as a <code className="font-mono">Bearer</code>{' '}
+          token. It protects the tools that change things on your machine; read-only checks work
+          without it.
+        </p>
+        {localToken && (
+          <div className="flex items-center gap-1.5">
+            <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
+              {localToken}
+            </code>
+            <CopyButton value={localToken} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (authSource === 'none') {
+    return (
+      <SettingRow
+        label="Authentication"
+        description="Couldn't generate a local token for this instance. External MCP clients won't be able to authenticate until you restart DorkOS or turn on login."
+      >
+        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+          No token
+        </Badge>
       </SettingRow>
     );
   }
