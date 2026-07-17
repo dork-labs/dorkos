@@ -63,6 +63,38 @@ export const RelayEnvelopeSchema = z
 
 export type RelayEnvelope = z.infer<typeof RelayEnvelopeSchema>;
 
+// === Relay Flow (topology pulse) ===
+
+/** Direction a relay message travels across a binding edge. */
+export const RelayFlowDirectionSchema = z
+  .enum(['inbound', 'outbound'])
+  .openapi('RelayFlowDirection');
+
+export type RelayFlowDirection = z.infer<typeof RelayFlowDirectionSchema>;
+
+/**
+ * Metadata-only signal that one relay message was delivered across a binding
+ * edge, used solely to animate a transient pulse on the topology. Carries the
+ * routing skeleton and NOTHING about the message itself — no payload, text,
+ * subject, or chat id.
+ */
+export const RelayFlowEventSchema = z
+  .object({
+    /** Binding UUID. The client maps this to edge id `binding:{bindingId}`. */
+    bindingId: z.string(),
+    /** Adapter instance id (`binding.adapterId`); edge source `adapter:{adapterId}`. */
+    adapterId: z.string(),
+    /** Mesh agent id (`binding.agentId`); edge target. */
+    agentId: z.string(),
+    /** Travel direction: `inbound` = adapter→agent (source→target). */
+    direction: RelayFlowDirectionSchema,
+    /** Emit timestamp (ISO 8601), for client-side staleness/coalescing. */
+    at: z.string().datetime(),
+  })
+  .openapi('RelayFlowEvent');
+
+export type RelayFlowEvent = z.infer<typeof RelayFlowEventSchema>;
+
 // === Standard Payload ===
 
 export const AttachmentSchema = z
