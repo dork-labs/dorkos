@@ -35,12 +35,16 @@ export function disambiguateDisplayNames(
       result[paths[0]] = base;
       continue;
     }
-    // Walk up from the end of each path until a differentiating segment is found.
+    // Walk up from the end of each path until a differentiating segment is
+    // found. Starts at the last segment (a custom displayName can collide
+    // across different directory names) and runs through offset ===
+    // segments.length so the root segment is reachable (2-segment paths, or
+    // collisions that only differ at the root).
     const splitPaths = paths.map((p) => p.split('/').filter(Boolean));
     for (const [i, p] of paths.entries()) {
       const segments = splitPaths[i];
       let suffix = '';
-      for (let offset = 2; offset < segments.length; offset++) {
+      for (let offset = 1; offset <= segments.length; offset++) {
         const candidate = segments[segments.length - offset];
         const isUnique = splitPaths.every(
           (other, j) =>
