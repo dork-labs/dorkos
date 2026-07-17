@@ -2195,9 +2195,9 @@ export const ServerConfigSchema = z
         authConfigured: z.boolean().openapi({
           description: 'True when MCP access is gated (MCP_API_KEY env var or per-user API keys)',
         }),
-        authSource: z.enum(['env', 'user-keys', 'none']).openapi({
+        authSource: z.enum(['env', 'user-keys', 'none', 'local-token']).openapi({
           description:
-            "How MCP access is secured: 'env' (MCP_API_KEY override), 'user-keys' (per-user Better Auth API keys), or 'none' (localhost-only)",
+            "How MCP access is secured: 'env' (MCP_API_KEY override), 'user-keys' (per-user Better Auth API keys), 'local-token' (login off, no MCP_API_KEY — gated by the per-instance local token), or 'none' (the degenerate can't-generate fallback)",
         }),
         endpoint: z.string().openapi({
           description: 'Full URL of the external MCP endpoint',

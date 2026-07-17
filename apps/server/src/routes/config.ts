@@ -12,6 +12,8 @@ import { getBoundary } from '../lib/boundary.js';
 import { SERVER_VERSION, IS_DEV_BUILD } from '../lib/version.js';
 import { logger, logError } from '../lib/logger.js';
 import { hasAnyApiKey } from '../services/core/auth/index.js';
+import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
+import { resolveDorkHome } from '../lib/dork-home.js';
 
 const router = Router();
 
@@ -161,22 +163,34 @@ router.get('/', async (_req, res) => {
     },
     mcp: (() => {
       const mcpConfig = configManager.get('mcp');
-      const envKey = env.MCP_API_KEY ?? null;
+      // Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset,
+      // matching the boot wiring, the token module, and the auth middleware.
+      const envKey = env.MCP_API_KEY?.trim() || null;
       const legacyKey = mcpConfig?.apiKey ?? null;
+      const localToken = getMcpLocalToken();
       // authSource reports how MCP access is secured:
-      //   'env'       — the static MCP_API_KEY override (headless deployments).
-      //   'user-keys' — per-user Better Auth API keys (the current model), or a
-      //                 not-yet-seeded legacy config key on its way to becoming one.
-      //   'none'      — nothing configured (localhost-only access).
-      const authSource: 'env' | 'user-keys' | 'none' = envKey
+      //   'env'         — the static MCP_API_KEY override (headless deployments).
+      //   'user-keys'   — per-user Better Auth API keys (the current model), or a
+      //                   not-yet-seeded legacy config key on its way to becoming one.
+      //   'local-token' — login off, no MCP_API_KEY: the per-instance local token
+      //                   gates the mutating surface (DOR-278). The surface is
+      //                   still gated, so authConfigured is true.
+      //   'none'        — the degenerate can't-generate fallback (should not occur
+      //                   in a normal login-off boot).
+      const authSource: 'env' | 'user-keys' | 'none' | 'local-token' = envKey
         ? 'env'
         : legacyKey || hasAnyApiKey()
           ? 'user-keys'
-          : 'none';
+          : localToken
+            ? 'local-token'
+            : 'none';
       return {
         enabled: mcpConfig?.enabled ?? true,
         authConfigured: authSource !== 'none',
         authSource,
+        // The token value itself deliberately does NOT ride this GET: it is
+        // revealed only via POST /api/config/mcp/reveal-token so it never lands
+        // in GET caches or logs and never leaks through a generic config dump.
         endpoint: `http://localhost:${env.DORKOS_PORT}/mcp`,
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
@@ -266,6 +280,88 @@ router.put('/agents/defaultAgent', (req, res) => {
     return res.json({ success: true, defaultAgent: value.trim() });
   } catch (err) {
     logger.error('[Config] PUT agents/defaultAgent failed', logError(err));
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/config/mcp/rotate-token — regenerate the per-instance local MCP
+ * token (DOR-278).
+ *
+ * Only applies in login-off mode with no `MCP_API_KEY` override — those are the
+ * only conditions under which the local token gates the surface. When an env
+ * override is set or login is on, the local token does not apply, so this 409s
+ * rather than silently minting a token that nothing would honor. On success it
+ * writes a fresh `0600` token, refreshes the cached value the middleware and the
+ * config DTO read, and returns it so the settings tab can show the new value.
+ * Rotating invalidates every previously configured client until it re-pastes.
+ */
+router.post('/mcp/rotate-token', (_req, res) => {
+  try {
+    if (env.MCP_API_KEY?.trim()) {
+      return res.status(409).json({
+        error:
+          'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
+      });
+    }
+    if (configManager.get('auth')?.enabled === true) {
+      return res.status(409).json({
+        error:
+          'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+      });
+    }
+
+    const dorkHome = resolveDorkHome();
+    const localToken = rotateMcpLocalToken(dorkHome);
+    return res.json({ localToken });
+  } catch (err) {
+    logger.error('[Config] POST mcp/rotate-token failed', logError(err));
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/config/mcp/reveal-token — return the per-instance local MCP token
+ * (DOR-278).
+ *
+ * The token deliberately does not ride `GET /api/config`: a POST-only reveal
+ * never lands in GET caches or logs, and the settings tab fetches it on demand
+ * instead of every config read carrying the secret. Same applicability rules as
+ * rotate: 409 when an `MCP_API_KEY` override is set or login is on (the local
+ * token does not apply there).
+ *
+ * Honest scope note: in login-off mode this endpoint sits behind the same
+ * loopback trust boundary as the cockpit, so any local process with socket
+ * reach can call it just as the settings tab does — the cockpit and a local
+ * process are indistinguishable without login. The reveal endpoint therefore
+ * does not (and cannot) make the token unreadable to local callers; turning on
+ * login is the boundary that does.
+ */
+router.post('/mcp/reveal-token', (_req, res) => {
+  try {
+    if (env.MCP_API_KEY?.trim()) {
+      return res.status(409).json({
+        error:
+          'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
+      });
+    }
+    if (configManager.get('auth')?.enabled === true) {
+      return res.status(409).json({
+        error:
+          'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+      });
+    }
+
+    const localToken = getMcpLocalToken();
+    if (!localToken) {
+      return res.status(404).json({
+        error:
+          'No local MCP token has been generated for this instance. Restart DorkOS to generate one.',
+      });
+    }
+    return res.json({ localToken });
+  } catch (err) {
+    logger.error('[Config] POST mcp/reveal-token failed', logError(err));
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

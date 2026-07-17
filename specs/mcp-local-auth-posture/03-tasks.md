@@ -4,6 +4,11 @@
 `mcp-local-auth-posture` · **Tracker:** DOR-278 (HIGH · posture · under the
 DOR-272 security umbrella) · **Mode:** full · **Generated:** 2026-07-16
 
+> **Amended at security review (2026-07-17):** tasks 3.1/3.2 as written below put
+> `localToken` on the GET config DTO; the shipped design moved it to a dedicated
+> `POST /api/config/mcp/reveal-token` endpoint instead (token never rides the
+> config payload). See 02-specification.md §4 + §Security for the amended design.
+
 11 tasks across 4 phases. The change is transport-layer and additive
 (`FakeAgentRuntime` is untouched). **Phase 1** builds the per-instance `0600`
 local-token substrate and wires it into boot. **Phase 2** is the security core:

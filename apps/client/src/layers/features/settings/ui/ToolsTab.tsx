@@ -153,7 +153,10 @@ export function ToolsTab() {
       </FieldCard>
       {serverConfig?.mcp && (
         <div data-section="external-mcp">
-          <ExternalMcpCard mcp={serverConfig.mcp} />
+          <ExternalMcpCard
+            mcp={serverConfig.mcp}
+            authEnabled={serverConfig.auth?.enabled === true}
+          />
         </div>
       )}
     </div>

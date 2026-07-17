@@ -450,6 +450,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       details: 'Routing succeeded. No agent was invoked.',
     }),
     updateConfig: vi.fn().mockResolvedValue(undefined),
+    rotateMcpLocalToken: vi.fn().mockResolvedValue({ localToken: 'dork_mcp_local_test' }),
+    revealMcpLocalToken: vi.fn().mockResolvedValue({ localToken: 'dork_mcp_local_test' }),
     reportError: vi.fn().mockResolvedValue(undefined),
     // Directory Operations
     createDirectory: vi.fn().mockResolvedValue({ path: '/test/new-folder' }),

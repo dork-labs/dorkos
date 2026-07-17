@@ -325,20 +325,23 @@ in an error). The path is the resolved dork-home path.
   `'local-token'`. In login-off mode with no `MCP_API_KEY`, `authSource` is now
   `'local-token'` (the passthrough's `'none'` disappears — the surface is always
   gated). `'none'` remains only as the degenerate can't-generate fallback.
-- Add an optional `localToken: string | null` to the `mcp` DTO, populated **only
-  when `authSource === 'local-token'`** (i.e. login off, no env key), so the
-  settings tab can render a ready-to-paste block. This is the deliberate Jupyter
-  move: in login-off mode `/api/config` is already loopback-only under the same
-  trust boundary, and the token has no meaning once login is on (it is never
-  emitted then). `authConfigured` is `true` for `'local-token'`.
+- ~~Add an optional `localToken: string | null` to the `mcp` DTO~~ **(Amended at
+  security review, 2026-07-17.)** The token does **not** ride the `GET
+/api/config` DTO: that GET is sessionGate-passthrough in login-off mode, so a
+  DTO field would hand the token to the very local-process actor this spec
+  gates. Instead the settings tab fetches it on demand from a purpose-built
+  `POST /api/config/mcp/reveal-token` (POST so it never lands in GET caches or
+  logs), returning `{ localToken }` with the same 409 semantics as rotate.
+  `authConfigured` is `true` for `'local-token'`.
 - `mcp.apiKey` / the token value stays in `SENSITIVE_CONFIG_KEYS` behavior — the
-  local token is only ever emitted through this purpose-built field, never
+  local token is only ever returned by the reveal/rotate endpoints, never
   through a generic config dump.
 
 **Server rotate route (`routes/config.ts` or a small `routes/mcp-config.ts`):**
 `POST /api/config/mcp/rotate-token` — calls `rotateMcpLocalToken(dorkHome)`,
 refreshes the cached value, returns `{ localToken }`. Thin handler; 409/400 when
 login is on or `MCP_API_KEY` is set (the local token does not apply there).
+`POST /api/config/mcp/reveal-token` mirrors those applicability rules for reads.
 
 \*\*Client — `ExternalMcpCard` (`.../settings/ui/external-mcp/ExternalMcpCard.tsx`
 
@@ -450,18 +453,36 @@ correctness with `READ_ONLY_MCP_TOOL_NAMES` + the drift test, not to re-annotate
 
 ## Security Considerations
 
-- **Threat closed:** a local non-operator process (sandboxed dep, malicious
-  `postinstall`, socket-only reach) can no longer call mutating/RCE MCP tools or
-  drive agents over A2A on loopback without the `0600` token it cannot read.
+_(Amended at security review, 2026-07-17: the token moved off `GET /api/config`
+onto `POST /api/config/mcp/reveal-token`, and the protection scope below is
+reworded to what the mechanism actually guarantees.)_
+
+- **Threat closed:** the tokenless mutating/RCE surface is gone — no request
+  reaches a mutating tool or A2A execution without presenting a credential.
+  This is Jupyter-parity local posture: the `0600` file raises the bar for
+  filesystem-only exfiltration (a reader without loopback socket reach cannot
+  obtain the token), and the bearer requirement protects the surface wherever
+  the port is reachable beyond the local user — tunnels, proxies, cross-host
+  exposure.
+- **Residual, explicit — local socket reach in login-off mode:** the token does
+  NOT stop a local process that can open a loopback socket while login is off.
+  The cockpit must be able to display the token, and in login-off mode the
+  cockpit and any local process are indistinguishable — such a process can call
+  the reveal endpoint exactly as the settings tab does. Turning on login is the
+  boundary that closes that; this spec deliberately does not claim to.
+- **Residual, explicit — rotate DoS:** by the same indistinguishability, any
+  local caller can invoke the rotate endpoint, 401-ing every configured client
+  until the new token is re-pasted. Denial of service, not disclosure.
 - **Residual, accepted:** read-only tools and MCP discovery/handshake stay
   tokenless (Decision 2) — a local process can still probe health and list tools.
   `resources/read` (session/agent/skill `dorkos://` data) is **gated**
   (fail-closed on data reads), a deliberate tightening beyond the tool decision
   since transcripts can hold sensitive content.
-- **Token exposure:** the token is emitted only through the purpose-built
-  login-off `localToken` DTO field over loopback (same trust boundary as the
-  cockpit); it is never emitted in login-on mode, never logged, and stored
-  `0600` with a lax-permission repair pass.
+- **Token exposure:** the token never rides `GET /api/config`; it is returned
+  only by the purpose-built `POST /api/config/mcp/reveal-token` and rotate
+  endpoints (POST, so it stays out of GET caches and logs), never emitted in
+  login-on mode, never logged, and stored `0600` with a lax-permission repair
+  pass.
 - **Fail-closed by construction:** unknown tools, unknown methods, unparseable
   bodies, and mixed batches all require the token. A new tool defaults to
   guarded.

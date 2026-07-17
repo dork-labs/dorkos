@@ -16,7 +16,7 @@ import {
   applyConfiguredDefaultRuntime,
   registerOptionalRuntime,
 } from './services/core/runtime-registry.js';
-import { initAuth, seedLegacyMcpApiKey } from './services/core/auth/index.js';
+import { initAuth, seedLegacyMcpApiKey, resolveMcpLocalToken } from './services/core/auth/index.js';
 import {
   canExpose,
   checkA2aExposure,
@@ -97,7 +97,7 @@ import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { createMcpRouter } from './routes/mcp.js';
-import { mcpApiKeyAuth } from './middleware/mcp-auth.js';
+import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { requireMcpEnabled } from './middleware/mcp-enabled.js';
 import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
@@ -247,6 +247,19 @@ async function start() {
   // (the owner-creation hook in createAuth handles the enable-login-mid-upgrade
   // case). Idempotent and non-throwing.
   void seedLegacyMcpApiKey(db);
+
+  // Resolve the per-instance local MCP token once (DOR-278) — but only in
+  // login-off mode with no MCP_API_KEY override. In that mode this generates and
+  // persists the 0600 <dorkHome>/mcp-local-token file on first boot and populates
+  // the getMcpLocalToken() cache the /mcp + /a2a auth middleware compares against.
+  // When MCP_API_KEY is set (the env override is the bearer) or login is on
+  // (per-user keys, ADR-0320), leave the cache null so the middleware's
+  // local-token acceptor stays inert. resolveMcpLocalToken logs only the file
+  // path, never the token value.
+  // (Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset.)
+  if (configManager.get('auth')?.enabled !== true && !env.MCP_API_KEY?.trim()) {
+    resolveMcpLocalToken(dorkHome);
+  }
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
@@ -790,20 +803,20 @@ async function start() {
 
   // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
   const mcpRateLimiter = buildMcpRateLimiter();
-  // Auth is resolved per request by mcpApiKeyAuth (env override → per-user Better
-  // Auth key / session → legacy compat key → localhost-only pass-through). This is
-  // only a startup log hint for the most-privileged static override.
-  const mcpAuthMode = env.MCP_API_KEY
+  // Auth is resolved per request by createMcpAuth (env override → per-user Better
+  // Auth key / session → legacy compat key → per-instance local token, with the
+  // read-only carve-out in login-off mode). This is only a startup log hint.
+  const mcpAuthMode = env.MCP_API_KEY?.trim()
     ? 'auth: MCP_API_KEY override'
     : configManager.get('auth')?.enabled
       ? 'auth: login gate + per-user keys'
-      : 'auth: per-user keys (localhost-only when unauthenticated)';
+      : 'auth: local token (read-only tools tokenless)';
 
   app.use(
     '/mcp',
     validateMcpOrigin,
     requireMcpEnabled,
-    mcpApiKeyAuth,
+    createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
     createMcpRouter(() => {
       if (!claudeRuntime || !mcpToolDeps) {
@@ -820,8 +833,8 @@ async function start() {
   // avoid app.use('/mcp') shadowing). Exposes ONLY `control_ui` so the Codex
   // runtime can open the canvas (ADR: Codex canvas parity). Deliberately omits
   // requireMcpEnabled (canvas must not depend on the external-MCP feature flag)
-  // and mcpApiKeyAuth (the stub holds no secrets and the loopback URL threads
-  // no bearer token). Origin validation + rate limiting still apply.
+  // and the MCP auth middleware (the stub holds no secrets and the loopback URL
+  // threads no bearer token). Origin validation + rate limiting still apply.
   app.use(
     '/codex-ui-mcp',
     validateMcpOrigin,
@@ -977,12 +990,14 @@ async function start() {
 
   // Mount A2A gateway if enabled — requires both Relay (message routing) and Mesh (agent registry)
   if (env.DORKOS_A2A_ENABLED && relayCore && meshCore) {
-    // The A2A surface shares mcpApiKeyAuth, which enforces auth only when an
-    // env key, the legacy compat key, or login is configured (mirrors the
-    // pass-through branch in mcp-auth.ts). When none is set, requests pass
-    // through unauthenticated — safe on loopback, dangerous on a public bind.
+    // The A2A surface is guarded by createMcpAuth({ surface: 'a2a' }). In
+    // login-off mode the per-instance local token gates JSON-RPC execution, but
+    // that token is a loopback-trust mechanism (a 0600 file only a local operator
+    // can read) — it does not make the surface safe on a non-loopback bind. So the
+    // exposure guard still keys off a network-reachable credential (an env key,
+    // the legacy compat key, or login) to decide whether A2A may mount off loopback.
     const authConfigured =
-      !!env.MCP_API_KEY ||
+      !!env.MCP_API_KEY?.trim() ||
       !!configManager.get('mcp')?.apiKey ||
       configManager.get('auth')?.enabled === true;
 
@@ -1033,11 +1048,12 @@ async function start() {
       // /.well-known/agent.json path is kept during the transition. Cards get
       // the lighter discovery limiter, applied before auth so unauthenticated
       // scraping is throttled too.
-      app.get('/.well-known/agent-card.json', cardRateLimiter, mcpApiKeyAuth, fleetCardHandler);
-      app.get('/.well-known/agent.json', cardRateLimiter, mcpApiKeyAuth, fleetCardHandler);
+      const a2aAuth = createMcpAuth({ surface: 'a2a' });
+      app.get('/.well-known/agent-card.json', cardRateLimiter, a2aAuth, fleetCardHandler);
+      app.get('/.well-known/agent.json', cardRateLimiter, a2aAuth, fleetCardHandler);
 
       // Per-agent cards and JSON-RPC under /a2a (per-route limiters live in the router)
-      app.use('/a2a', mcpApiKeyAuth, a2aRouter);
+      app.use('/a2a', a2aAuth, a2aRouter);
 
       const a2aAuthMode = authConfigured ? 'auth: required' : 'auth: none (loopback)';
       logger.info(

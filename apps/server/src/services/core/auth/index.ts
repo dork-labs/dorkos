@@ -212,3 +212,9 @@ export { sessionGate, verifyRequestAuth, type RequestUser } from './session-gate
 // The legacy MCP key migration (task 1.4). Re-exported so `index.ts` can run the
 // startup seed on a clean seam right after `initAuth`.
 export { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
+
+// The per-instance local MCP token (DOR-278). Re-exported so `index.ts` resolves
+// it at boot on the same auth seam as `initAuth`/`seedLegacyMcpApiKey`. The
+// middleware and the config DTO import the cached getter / rotate helper directly
+// from `./mcp-local-token.js`.
+export { resolveMcpLocalToken } from './mcp-local-token.js';

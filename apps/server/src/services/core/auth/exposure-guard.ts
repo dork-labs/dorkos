@@ -173,9 +173,11 @@ export interface A2aExposureInput {
   /** The host `app.listen` will bind to (`env.DORKOS_HOST`). */
   host: string;
   /**
-   * Whether anything gates the A2A surface: `MCP_API_KEY`, the legacy
-   * `config.mcp.apiKey` compat key, or login enabled (any of these makes
-   * `mcpApiKeyAuth` reject anonymous requests instead of passing through).
+   * Whether a network-reachable credential gates the A2A surface: `MCP_API_KEY`,
+   * the legacy `config.mcp.apiKey` compat key, or login enabled. The login-off
+   * local token (DOR-278) gates JSON-RPC execution too, but it is loopback-only
+   * (a `0600` file a remote caller cannot read), so it does not count here — this
+   * flag governs whether A2A may mount on a non-loopback bind.
    */
   authConfigured: boolean;
   /** The `DORKOS_ALLOW_INSECURE_BIND` escape hatch (see {@link BindCheckInput}). */
