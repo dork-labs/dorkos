@@ -138,6 +138,52 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
     expect(collected.frames.some((f) => f.event === 'snapshot')).toBe(false);
   });
 
+  it('threads optional body instructions through to the adapter', async () => {
+    // `/compact <instructions>` rides the JSON body (review Important 1): the
+    // route must forward the remainder into executeCommandIntent's opts, never
+    // silently drop it.
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/command-intents/compact`)
+      .send({ instructions: 'focus on the API changes' });
+
+    expect(res.status).toBe(202);
+    expect(fakeRuntime.executeCommandIntent).toHaveBeenCalledWith(
+      SESSION_ID,
+      'compact',
+      expect.objectContaining({ instructions: 'focus on the API changes' })
+    );
+
+    await vi.waitFor(() => {
+      expect(peekProjector(SESSION_ID)?.getStatus().lifecycle).toBe('idle');
+    });
+  });
+
+  it('a body-less trigger passes no instructions (undefined) to the adapter', async () => {
+    // Express 5 leaves req.body undefined on an empty POST — the bare trigger
+    // must keep working and forward no instructions.
+    const res = await request(app).post(`/api/sessions/${SESSION_ID}/command-intents/compact`);
+
+    expect(res.status).toBe(202);
+    expect(fakeRuntime.executeCommandIntent).toHaveBeenCalledWith(
+      SESSION_ID,
+      'compact',
+      expect.objectContaining({ instructions: undefined })
+    );
+
+    await vi.waitFor(() => {
+      expect(peekProjector(SESSION_ID)?.getStatus().lifecycle).toBe('idle');
+    });
+  });
+
+  it('a malformed body (non-string instructions) → 400 and the adapter is NOT called', async () => {
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/command-intents/compact`)
+      .send({ instructions: 42 });
+
+    expect(res.status).toBe(400);
+    expect(fakeRuntime.executeCommandIntent).not.toHaveBeenCalled();
+  });
+
   it('unsupported runtime → 422 COMMAND_INTENT_UNSUPPORTED and the adapter is NOT called', async () => {
     // Honest gating: a runtime that declares compact unsupported must surface a
     // 422 and never reach executeCommandIntent — the composer keeps the text on

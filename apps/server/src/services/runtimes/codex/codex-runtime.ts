@@ -49,6 +49,7 @@ import type {
   DependencyCheck,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   SseResponse,
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
@@ -448,7 +449,7 @@ export class CodexRuntime implements AgentRuntime {
   async *executeCommandIntent(
     _sessionId: string,
     _intent: RuntimeCommandIntentId,
-    _opts?: MessageOpts
+    _opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
     throw new Error('executeCommandIntent(compact) is not supported by codex');
   }

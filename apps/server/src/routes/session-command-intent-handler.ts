@@ -21,6 +21,7 @@
  * @module routes/session-command-intent-handler
  */
 import type { Request, Response } from 'express';
+import { z } from 'zod';
 import { COMMAND_INTENTS } from '@dorkos/shared/command-intents';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
@@ -32,6 +33,13 @@ import {
   peekProjector,
   triggerCommandIntent,
 } from '../services/session/index.js';
+
+/**
+ * Optional trigger body: trailing instructions the user typed after the intent
+ * token (e.g. `/compact focus on the API changes`). Express 5 leaves `req.body`
+ * undefined on an empty POST, so the whole body is optional.
+ */
+const CommandIntentBodySchema = z.object({ instructions: z.string().optional() }).optional();
 
 /**
  * Narrow an arbitrary `:intent` param to a runtime-fulfilled intent id, reading
@@ -52,7 +60,8 @@ function parseRuntimeIntent(param: unknown): RuntimeCommandIntentId | null {
  * Express handler for `POST /api/sessions/:id/command-intents/:intent`. Mounted by
  * `sessions.ts` under `asyncHandler`; see the module doc for semantics.
  *
- * @param req - The Express request (`:id` + `:intent` route params; no body)
+ * @param req - The Express request (`:id` + `:intent` route params; optional
+ *   JSON body `{ instructions?: string }`)
  * @param res - The Express response (202 trigger / 400 / 404 / 409 / 422)
  */
 export async function sessionCommandIntentHandler(req: Request, res: Response): Promise<void> {
@@ -70,6 +79,14 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
       'INVALID_COMMAND_INTENT'
     );
   }
+
+  // Optional body: trailing instructions after the intent token. Express 5
+  // leaves req.body undefined on an empty POST, so absence is valid.
+  const parsedBody = CommandIntentBodySchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return sendError(res, 400, 'Invalid request body', 'VALIDATION_ERROR');
+  }
+  const instructions = parsedBody.data?.instructions;
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
 
@@ -100,11 +117,15 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
   }
 
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
-  // No request body carries a cwd (the trigger POST is empty), so source it from
+  // The body carries no cwd (only optional instructions), so source it from
   // the session's live projector (set by the /events connect / prior turn).
   const cwd = peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
 
-  logger.info('[POST /command-intents] trigger', { sessionId, intent });
+  logger.info('[POST /command-intents] trigger', {
+    sessionId,
+    intent,
+    hasInstructions: instructions !== undefined,
+  });
 
   // Persist completed runs for LOG-BACKED runtimes (DOR-189), mirroring
   // /messages so the compact_boundary survives a restart.
@@ -117,6 +138,7 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
     clientId,
     intent,
     cwd,
+    instructions,
     projector,
     deps: {
       acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),

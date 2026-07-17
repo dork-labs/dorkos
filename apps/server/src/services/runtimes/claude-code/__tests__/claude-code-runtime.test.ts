@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
 
 // Hoist shared mock functions so the test and ClaudeCodeRuntime share the same
@@ -613,6 +614,56 @@ describe('ClaudeCodeRuntime', () => {
       expect((errorEvent!.data as Record<string, unknown>).message).toContain(
         'Directory boundary violation'
       );
+    });
+  });
+
+  describe('executeCommandIntent()', () => {
+    /** Stub sendMessage with an empty turn so only the composed prompt matters. */
+    function spySend() {
+      return vi
+        .spyOn(agentManager, 'sendMessage')
+        .mockImplementation(async function* (): AsyncGenerator<StreamEvent> {
+          // No events — the assertion is on the composed prompt.
+        });
+    }
+
+    /** Drain an async generator to completion. */
+    async function drain(gen: AsyncGenerator<unknown>) {
+      for await (const _ of gen) {
+        // events discarded — the assertion is on the sendMessage call
+      }
+    }
+
+    it('sends the bare /compact when no instructions are supplied', async () => {
+      // The intent wraps the shipped /compact mechanism verbatim (DOR-109).
+      const sendSpy = spySend();
+      await drain(agentManager.executeCommandIntent('s1', 'compact', { cwd: '/mock' }));
+      expect(sendSpy).toHaveBeenCalledWith('s1', '/compact', expect.objectContaining({ cwd: '/mock' }));
+    });
+
+    it('appends trailing instructions to /compact so they reach the CLI verbatim', async () => {
+      // `/compact <instructions>` reached the CLI verbatim pre-DOR-109; the
+      // intent path must preserve that (review Important 1).
+      const sendSpy = spySend();
+      await drain(
+        agentManager.executeCommandIntent('s1', 'compact', {
+          cwd: '/mock',
+          instructions: 'focus on the API changes',
+        })
+      );
+      expect(sendSpy).toHaveBeenCalledWith(
+        's1',
+        '/compact focus on the API changes',
+        expect.anything()
+      );
+    });
+
+    it('treats whitespace-only instructions as absent (bare /compact)', async () => {
+      const sendSpy = spySend();
+      await drain(
+        agentManager.executeCommandIntent('s1', 'compact', { cwd: '/mock', instructions: '   ' })
+      );
+      expect(sendSpy).toHaveBeenCalledWith('s1', '/compact', expect.anything());
     });
   });
 

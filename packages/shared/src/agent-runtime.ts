@@ -362,6 +362,22 @@ export interface MessageOpts extends SessionSettings {
 }
 
 /**
+ * Options for fulfilling a runtime command intent — a turn's {@link MessageOpts}
+ * plus the intent's optional trailing instructions.
+ */
+export interface CommandIntentOpts extends MessageOpts {
+  /**
+   * Trailing instructions the user typed after the intent token (e.g.
+   * `/compact focus on the API changes` → `'focus on the API changes'`).
+   * Runtimes whose native mechanism accepts guidance forward them verbatim
+   * (claude-code appends them to the bare `/compact`); runtimes whose mechanism
+   * takes no instruction (opencode's `session.summarize`, test-mode's synthetic
+   * boundary) ignore them — an honest per-runtime difference, not an error.
+   */
+  instructions?: string;
+}
+
+/**
  * Universal contract for agent backends.
  *
  * All session lifecycle, messaging, storage queries, and synchronization operations
@@ -443,12 +459,13 @@ export interface AgentRuntime {
    *
    * @param sessionId - Target session.
    * @param intent - The runtime-fulfilled intent id.
-   * @param opts - cwd and per-turn options (reuses the {@link MessageOpts} shape).
+   * @param opts - cwd, per-turn options, and the intent's optional trailing
+   *   instructions ({@link CommandIntentOpts}).
    */
   executeCommandIntent(
     sessionId: string,
     intent: RuntimeCommandIntentId,
-    opts?: MessageOpts
+    opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent>;
 
   // --- Interactive flows ---

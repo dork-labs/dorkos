@@ -93,6 +93,8 @@ export interface EmbeddedCommandIntentOpts {
   /** The runtime-fulfilled intent to dispatch (e.g. `'compact'`). */
   intent: RuntimeCommandIntentId;
   cwd?: string;
+  /** Trailing instructions after the intent token (see `Transport.runCommandIntent`). */
+  instructions?: string;
 }
 
 /** The in-process trigger bridge `DirectTransport.runCommandIntent` calls. */
@@ -116,7 +118,7 @@ export function createEmbeddedCommandIntentTrigger(
   runtime: AgentRuntime
 ): EmbeddedCommandIntentTrigger {
   return {
-    trigger({ sessionId, clientId, intent, cwd }) {
+    trigger({ sessionId, clientId, intent, cwd, instructions }) {
       // Persist completed runs for LOG-BACKED runtimes (DOR-189), mirroring the
       // turn trigger; claude-code opts out.
       const projector = getOrCreateProjector(sessionId, cwd, {
@@ -129,6 +131,7 @@ export function createEmbeddedCommandIntentTrigger(
         clientId,
         intent,
         cwd,
+        instructions,
         projector,
         deps: {
           acquireLock: (sid, cid, lifecycle, token) =>

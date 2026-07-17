@@ -62,9 +62,16 @@ export interface NativeCommandDeps {
   compact?: CompactIntentSupport;
 }
 
-/** Extract the leading `/token` (without the slash) from composer content, if any. */
-function leadingSlashToken(content: string): string | null {
-  return /^\/(\S+)/.exec(content.trim())?.[1] ?? null;
+/**
+ * Split composer content into its leading `/token` (without the slash) and the
+ * trimmed remainder, if the content is slash-command-shaped. The remainder is
+ * the intent's trailing instructions (e.g. `/compact focus on the API changes`)
+ * — it must survive recognition, never be silently dropped.
+ */
+function splitSlashCommand(content: string): { token: string; rest: string } | null {
+  const match = /^\/(\S+)([\s\S]*)$/.exec(content.trim());
+  if (!match) return null;
+  return { token: match[1], rest: match[2].trim() };
 }
 
 /**
@@ -92,9 +99,9 @@ export function useNativeCommands(
       // Runtime-fulfilled intent (compact): recognized here so all three canonical
       // intents share one recognition point. Only handled when the host injected
       // the runtime's support — otherwise it falls through unchanged.
-      const token = leadingSlashToken(content);
-      const intent = token ? resolveCommandIntent(token) : null;
-      if (intent?.fulfillment === 'runtime' && compact) {
+      const slash = splitSlashCommand(content);
+      const intent = slash ? resolveCommandIntent(slash.token) : null;
+      if (slash && intent?.fulfillment === 'runtime' && compact) {
         if (!compact.supported) {
           // Honest refusal — never send an unsupported intent to the model as text.
           toast.error(`Compact isn't supported by ${compact.runtimeLabel || 'this runtime'}`);
@@ -105,15 +112,19 @@ export function useNativeCommands(
           return { handled: true, ran: false };
         }
         // Trigger-only (202); the compaction rides the durable /events stream. Do
-        // NOT POST a message and never render a phantom user bubble.
-        transport.runCommandIntent(sessionId, 'compact').catch((err: unknown) => {
-          const locked = (err as { code?: string }).code === 'SESSION_LOCKED';
-          toast.error(
-            locked
-              ? 'The agent is busy — try compacting again in a moment.'
-              : "Couldn't compact the conversation."
-          );
-        });
+        // NOT POST a message and never render a phantom user bubble. Trailing
+        // instructions (the remainder after the token) ride along so runtimes
+        // that accept compaction guidance receive them verbatim.
+        transport
+          .runCommandIntent(sessionId, 'compact', slash.rest || undefined)
+          .catch((err: unknown) => {
+            const locked = (err as { code?: string }).code === 'SESSION_LOCKED';
+            toast.error(
+              locked
+                ? 'The agent is busy — try compacting again in a moment.'
+                : "Couldn't compact the conversation."
+            );
+          });
         return { handled: true, ran: true };
       }
 

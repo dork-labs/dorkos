@@ -186,13 +186,15 @@ export function createDirectSessionMethods(
      */
     async runCommandIntent(
       sessionId: string,
-      intent: RuntimeCommandIntentId
+      intent: RuntimeCommandIntentId,
+      instructions?: string
     ): Promise<{ sessionId: string }> {
       const result = services.commandIntentTrigger.trigger({
         sessionId,
         clientId: getClientId(),
         intent,
         cwd: services.vaultRoot,
+        instructions,
       });
       if (!result.accepted) {
         const error = new Error('Session locked') as Error & SessionLockedError;

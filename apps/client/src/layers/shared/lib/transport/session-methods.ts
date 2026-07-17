@@ -187,12 +187,13 @@ export function createSessionMethods(
      * `POST /sessions/:id/command-intents/:intent`. Trigger-only (202), mirroring
      * {@link postMessage}: the compaction is delivered out-of-band over `/events`
      * and the 202 body carries the SDK-canonical id. Throws a typed
-     * `SESSION_LOCKED` error on 409 when a turn is already running. (The server
-     * route lands in Phase 2, so a live call 404s until then.)
+     * `SESSION_LOCKED` error on 409 when a turn is already running. Trailing
+     * instructions (e.g. `/compact focus on the API changes`) ride the JSON body.
      */
     async runCommandIntent(
       sessionId: string,
-      intent: RuntimeCommandIntentId
+      intent: RuntimeCommandIntentId,
+      instructions?: string
     ): Promise<{ sessionId: string }> {
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/command-intents/${intent}`, {
         method: 'POST',
@@ -201,6 +202,9 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         credentials: 'include',
+        // Express 5 leaves req.body undefined on an empty POST, so the body is
+        // sent only when there are instructions to carry.
+        ...(instructions !== undefined ? { body: JSON.stringify({ instructions }) } : {}),
       });
 
       if (!response.ok) {

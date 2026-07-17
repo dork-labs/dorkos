@@ -24,7 +24,7 @@
  *
  * @module services/session/trigger-command-intent
  */
-import type { MessageOpts, SseResponse } from '@dorkos/shared/agent-runtime';
+import type { CommandIntentOpts, SseResponse } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { SessionStateProjector } from './session-state-projector.js';
@@ -47,7 +47,7 @@ export interface TriggerCommandIntentDeps {
   executeCommandIntent(
     sessionId: string,
     intent: RuntimeCommandIntentId,
-    opts?: MessageOpts
+    opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent>;
   /** Interrupt the runtime's in-flight work (stall watchdog). Resolves false when none found. */
   interruptQuery(sessionId: string): Promise<boolean>;
@@ -60,6 +60,12 @@ export interface TriggerCommandIntentOpts {
   /** The runtime-fulfilled intent to dispatch (e.g. `'compact'`). */
   intent: RuntimeCommandIntentId;
   cwd?: string;
+  /**
+   * Trailing instructions after the intent token (e.g. `/compact focus on the
+   * API changes`). Forwarded to the adapter; runtimes whose mechanism takes no
+   * instruction ignore them.
+   */
+  instructions?: string;
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   deps: TriggerCommandIntentDeps;
@@ -87,7 +93,7 @@ export interface TriggerCommandIntentResult {
  *   otherwise `{ accepted: true }`.
  */
 export function triggerCommandIntent(opts: TriggerCommandIntentOpts): TriggerCommandIntentResult {
-  const { sessionId, clientId, intent, cwd, projector, deps } = opts;
+  const { sessionId, clientId, intent, cwd, instructions, projector, deps } = opts;
 
   // Acquire against a detached lifecycle so the lock is bound to the intent's
   // real duration, not to the soon-to-be-sent 202 response (same contract as a
@@ -113,7 +119,7 @@ export function triggerCommandIntent(opts: TriggerCommandIntentOpts): TriggerCom
   // interrupts it; the outer error-guard translates a throw INTO a terminal error
   // sequence so feedProjector always closes the turn exactly once and `/events`
   // consumers see any failure. No userMessage — a compact opens no user bubble.
-  const source = deps.executeCommandIntent(sessionId, intent, { cwd });
+  const source = deps.executeCommandIntent(sessionId, intent, { cwd, instructions });
   const stallGuarded = withStallGuard(source, {
     sessionId,
     timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,

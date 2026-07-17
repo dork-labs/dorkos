@@ -398,10 +398,15 @@ export interface Transport {
    *
    * @param sessionId - Target session id.
    * @param intent - The runtime-fulfilled intent id (e.g. `'compact'`).
+   * @param instructions - Trailing instructions the user typed after the intent
+   *   token (e.g. `/compact focus on the API changes`). Forwarded to runtimes
+   *   whose native mechanism accepts guidance (claude-code); ignored by those
+   *   whose mechanism takes none (opencode, test-mode).
    */
   runCommandIntent(
     sessionId: string,
-    intent: RuntimeCommandIntentId
+    intent: RuntimeCommandIntentId,
+    instructions?: string
   ): Promise<{ sessionId: string }>;
   /**
    * Dispatch a generative-UI widget `agent`-kind action back to the session.

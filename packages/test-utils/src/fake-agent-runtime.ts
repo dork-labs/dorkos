@@ -5,6 +5,7 @@ import type {
   SseResponse,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   RuntimeCapabilities,
   McpAppServerConnection,
 } from '@dorkos/shared/agent-runtime';
@@ -92,7 +93,7 @@ export class FakeAgentRuntime implements AgentRuntime {
   executeCommandIntent = vi.fn(async function* (
     _sessionId: string,
     _intent: RuntimeCommandIntentId,
-    _opts?: MessageOpts
+    _opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
     yield { type: 'compact_boundary', data: {} } as StreamEvent;
   });

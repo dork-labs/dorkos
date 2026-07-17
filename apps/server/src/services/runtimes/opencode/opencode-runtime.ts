@@ -48,6 +48,7 @@ import type {
   DependencyCheck,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   SseResponse,
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
@@ -279,8 +280,11 @@ export class OpenCodeRuntime implements AgentRuntime {
   async *executeCommandIntent(
     sessionId: string,
     _intent: RuntimeCommandIntentId,
-    opts?: MessageOpts
+    opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
+    // NOTE: `opts.instructions` is deliberately ignored — `session.summarize`
+    // takes no instruction parameter, so OpenCode compaction cannot be guided.
+    // An honest per-runtime difference (claude-code forwards instructions).
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
     yield* this.runOpenCodeTurn(sessionId, cwd, undefined, async (client, ocSessionId) => {
       const summarized = await client.session.summarize({ path: { id: ocSessionId } });

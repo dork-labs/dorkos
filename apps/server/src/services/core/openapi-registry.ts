@@ -465,6 +465,19 @@ registry.registerPath({
     'is already running.',
   request: {
     params: z.object({ id: z.string().uuid(), intent: z.enum(['compact']) }),
+    body: {
+      description:
+        'Optional trailing instructions the user typed after the intent token ' +
+        '(e.g. `/compact focus on the API changes`). Forwarded to runtimes whose ' +
+        'native mechanism accepts guidance (claude-code); ignored by those whose ' +
+        'mechanism takes none (opencode).',
+      required: false,
+      content: {
+        'application/json': {
+          schema: z.object({ instructions: z.string().optional() }),
+        },
+      },
+    },
   },
   responses: {
     202: {
@@ -472,6 +485,10 @@ registry.registerPath({
       content: {
         'application/json': { schema: SendMessageResponseSchema },
       },
+    },
+    400: {
+      description: 'Invalid session id or malformed request body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
       description: 'Session not found',

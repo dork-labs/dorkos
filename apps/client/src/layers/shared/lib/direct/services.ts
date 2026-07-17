@@ -108,6 +108,8 @@ export interface DirectTransportServices {
       clientId: string;
       intent: RuntimeCommandIntentId;
       cwd?: string;
+      /** Trailing instructions after the intent token (see `Transport.runCommandIntent`). */
+      instructions?: string;
     }): { accepted: boolean };
   };
   transcriptReader: {

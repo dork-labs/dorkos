@@ -183,8 +183,30 @@ describe('useNativeCommands', () => {
         outcome = result.current.tryRun('/compress');
       });
       expect(outcome).toEqual({ handled: true, ran: true });
-      expect(transport.runCommandIntent).toHaveBeenCalledWith('s1', 'compact');
+      expect(transport.runCommandIntent).toHaveBeenCalledWith('s1', 'compact', undefined);
       expect(transport.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('threads trailing instructions through the dispatch, never dropping them', () => {
+      // `/compact <instructions>` carried the remainder to the CLI pre-DOR-109;
+      // recognition must forward it, not silently discard it (review Important 1).
+      const { result } = setup('s1', '/repo', { supported: true, runtimeLabel: 'Claude Code' });
+      act(() => {
+        result.current.tryRun('/compact focus on the API changes');
+      });
+      expect(transport.runCommandIntent).toHaveBeenCalledWith(
+        's1',
+        'compact',
+        'focus on the API changes'
+      );
+    });
+
+    it('passes no instructions for a bare intent token (undefined, not empty string)', () => {
+      const { result } = setup('s1', '/repo', { supported: true, runtimeLabel: 'Claude Code' });
+      act(() => {
+        result.current.tryRun('/compact');
+      });
+      expect(transport.runCommandIntent).toHaveBeenCalledWith('s1', 'compact', undefined);
     });
 
     it('dispatches the canonical /compact and the /summarize alias too', () => {

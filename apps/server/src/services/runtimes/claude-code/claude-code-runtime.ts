@@ -26,6 +26,7 @@ import type {
   RuntimeCapabilities,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   SseResponse,
   AgentRegistryPort,
   RelayPort,
@@ -310,22 +311,37 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /**
    * Fulfill the runtime-fulfilled `compact` intent (ADR-0273) by sending the
-   * bare `/compact` prompt through the SAME SDK send path a normal turn uses.
-   * This reuses DOR-107's bare-passthrough: the command-skip guard
-   * (`getKnownCommands`, wired in {@link sendMessage}) suppresses the neutral
-   * additional-context prepend on the command turn, so `/compact` reaches
-   * Claude's CLI as a first-class slash command and the turn's StreamEvents
-   * (including the `compact_boundary`) flow back for the durable projector to
-   * drive — exactly like a turn. No new Claude-SDK surface; it wraps the
-   * shipped `/compact` mechanism. `CLAUDE_CODE_CAPABILITIES.commandIntents`
-   * gates the route before this is ever called.
+   * `/compact` prompt through the SAME SDK send path a normal turn uses,
+   * appending any trailing instructions the user typed (e.g.
+   * `/compact focus on the API changes`) so they reach the CLI verbatim —
+   * exactly what typing the command pre-DOR-109 did. This reuses DOR-107's
+   * bare-passthrough: the command-skip guard (`getKnownCommands`, wired in
+   * {@link sendMessage}) suppresses the neutral additional-context prepend on
+   * the command turn, so `/compact` reaches Claude's CLI as a first-class slash
+   * command and the turn's StreamEvents (including the `compact_boundary`) flow
+   * back for the durable projector to drive — exactly like a turn. No new
+   * Claude-SDK surface; it wraps the shipped `/compact` mechanism.
+   * `CLAUDE_CODE_CAPABILITIES.commandIntents` gates the route before this is
+   * ever called.
+   *
+   * DEFENSIVE NOTE: the bare passthrough is correct today because this path
+   * never supplies `additionalContext` — with an empty context bag the sender
+   * has nothing to prepend, so `/compact` reaches the CLI bare even on a COLD
+   * `getKnownCommands` cache (which returns null before the first query for a
+   * cwd). If this method ever starts passing `additionalContext`, the
+   * warm-cache membership of `/compact` in `getKnownCommands` becomes
+   * load-bearing for the prepend-suppression — a cold cache would then let
+   * context leak onto the command turn. Revisit the guard before adding
+   * context here.
    */
   async *executeCommandIntent(
     sessionId: string,
     _intent: RuntimeCommandIntentId,
-    opts?: MessageOpts
+    opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
-    yield* this.sendMessage(sessionId, '/compact', opts);
+    const instructions = opts?.instructions?.trim();
+    const prompt = instructions ? `/compact ${instructions}` : '/compact';
+    yield* this.sendMessage(sessionId, prompt, opts);
   }
 
   /**

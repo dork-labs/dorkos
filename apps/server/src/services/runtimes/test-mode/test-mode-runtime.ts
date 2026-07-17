@@ -4,6 +4,7 @@ import type {
   RuntimeCapabilities,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   SseResponse,
 } from '@dorkos/shared/agent-runtime';
 import type {
@@ -149,7 +150,7 @@ export class TestModeRuntime implements AgentRuntime {
   async *executeCommandIntent(
     _sessionId: string,
     _intent: RuntimeCommandIntentId,
-    _opts?: MessageOpts
+    _opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
     yield { type: 'compact_boundary', data: { trigger: 'manual' } };
   }

@@ -5645,6 +5645,22 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "description": "Optional trailing instructions the user typed after the intent token (e.g. `/compact focus on the API changes`). Forwarded to runtimes whose native mechanism accepts guidance (claude-code); ignored by those whose mechanism takes none (opencode).",
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instructions": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Intent accepted and started; body carries the session id",
@@ -5652,6 +5668,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SendMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid session id or malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
