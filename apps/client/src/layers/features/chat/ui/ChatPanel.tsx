@@ -144,6 +144,23 @@ export function ChatPanel({
     [setSessionId]
   );
 
+  // Resolve the session's runtime + its capabilities up front: they gate the
+  // palette's honest disabled row AND the composer's /compact dispatch, both of
+  // which must agree. Same source ChatStatusSection's runtime chip uses (a
+  // not-yet-started Codex session resolves to Codex, not the claude-code default).
+  const runtimeChip = useRuntimeChip(sessionId ?? '');
+  const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
+  const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
+  // Compact gate injected into the send funnel: recognize + dispatch /compact
+  // when supported, honestly refuse (toast, keep text) when not.
+  const compactIntent = useMemo(
+    () => ({
+      supported: activeCaps?.commandIntents?.compact.supported === true,
+      runtimeLabel,
+    }),
+    [activeCaps, runtimeLabel]
+  );
+
   const {
     messages,
     input,
@@ -178,6 +195,7 @@ export function ChatPanel({
     onSessionIdChange: handleSessionIdChange,
     onSessionIdChangeReplace: handleSessionIdChangeReplace,
     startFreshSession,
+    compactIntent,
     launchRuntime,
     onStreamingDone: useCallback(() => {
       if (enableNotificationSound) {
@@ -220,17 +238,12 @@ export function ChatPanel({
 
   // Thread the session's runtime so a not-yet-started Codex session's palette
   // resolves to Codex's project skills rather than the inferred claude-code
-  // default. Same source ChatStatusSection's runtime chip uses.
-  const runtimeChip = useRuntimeChip(sessionId ?? '');
+  // default. Runtime + caps are resolved above (they also gate /compact dispatch).
   const { data: registry } = useCommands(
     cwd,
     sessionId ?? undefined,
     runtimeChip.runtime ?? undefined
   );
-  // Honest gating source: the active runtime's declared command-intent support
-  // and its display label drive the disabled "Not supported by {runtime}" row.
-  const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
-  const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
   // Project the shared command-intent registry into one palette row per intent
   // (/compact, /clear, /context), folding each runtime's native command for the
   // same action into that single row, then blend the DorkOS-native commands

@@ -42,4 +42,11 @@ export interface ChatSessionOptions {
    * owns the router) so the session orchestrator stays router-free.
    */
   startFreshSession?: (fromSessionId: string | null) => void;
+  /**
+   * The active runtime's `compact` support + display label (DOR-109). Injected by
+   * the host so the funnel gates the runtime-fulfilled `/compact` intent without
+   * resolving the session's runtime itself. Absent means compact is not
+   * recognized (its tokens fall through unchanged).
+   */
+  compactIntent?: { supported: boolean; runtimeLabel: string };
 }
