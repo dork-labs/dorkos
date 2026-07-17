@@ -230,6 +230,12 @@ function DownloadHero() {
       <p className="text-warm-gray-light mt-3 font-mono text-xs tracking-[0.02em]">
         Apple Silicon · no terminal needed
       </p>
+      <Link
+        href="/docs/getting-started/desktop-app"
+        className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-2 font-mono text-[11px] tracking-[0.02em]"
+      >
+        What you get →
+      </Link>
 
       {/* Terminal one-liner — a respected peer, not a footnote. */}
       <div className="mt-10 flex w-full max-w-md flex-col items-center gap-2">
@@ -272,6 +278,12 @@ function WindowsDownloadHero() {
       <p className="text-warm-gray-light mt-3 font-mono text-xs tracking-[0.02em]">
         Windows x64 · unsigned early alpha — SmartScreen may warn on first launch
       </p>
+      <Link
+        href="/docs/getting-started/desktop-app"
+        className="text-warm-gray-light hover:text-brand-orange transition-smooth mt-2 font-mono text-[11px] tracking-[0.02em]"
+      >
+        What you get →
+      </Link>
 
       {/* Terminal one-liner — a respected peer, not a footnote. */}
       <div className="mt-10 flex w-full max-w-md flex-col items-center gap-2">
