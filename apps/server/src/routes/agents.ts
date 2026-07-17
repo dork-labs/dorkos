@@ -132,7 +132,6 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         runtime: runtime ?? 'claude-code',
         capabilities: [],
         behavior: { responseMode: 'always' },
-        budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
         registeredAt: new Date().toISOString(),
         registeredBy: 'dorkos-ui',
         personaEnabled: true,

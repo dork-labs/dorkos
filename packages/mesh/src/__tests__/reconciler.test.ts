@@ -21,7 +21,6 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     runtime: 'claude-code',
     capabilities: ['code-review'],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     projectPath: '/home/user/projects/backend',
@@ -39,7 +38,6 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     runtime: 'claude-code',
     capabilities: ['code-review'],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     personaEnabled: true,
@@ -143,7 +141,6 @@ describe('reconcile()', () => {
         runtime: entry.runtime,
         capabilities: entry.capabilities,
         behavior: entry.behavior,
-        budget: entry.budget,
       })
     );
 
@@ -192,7 +189,6 @@ describe('reconcile()', () => {
         runtime: entry.runtime,
         capabilities: entry.capabilities,
         behavior: entry.behavior,
-        budget: entry.budget,
         persona: 'You are a backend expert',
         color: '#ff0000',
         icon: 'server',
@@ -230,7 +226,6 @@ describe('reconcile()', () => {
         runtime: entry.runtime,
         capabilities: entry.capabilities,
         behavior: entry.behavior,
-        budget: entry.budget,
         persona: 'same persona',
         personaEnabled: true,
         color: '#000',

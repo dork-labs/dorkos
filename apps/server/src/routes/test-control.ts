@@ -78,7 +78,6 @@ testControlRouter.post('/seed-agent', async (_req, res) => {
     runtime: 'claude-code',
     capabilities: [],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-e2e',
     personaEnabled: false,

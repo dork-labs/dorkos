@@ -127,7 +127,6 @@ export async function reconcile(deps: ReconcilerDeps): Promise<ReconcileResult> 
         runtime: manifest.runtime,
         capabilities: manifest.capabilities,
         behavior: manifest.behavior,
-        budget: manifest.budget,
         namespace,
         persona: manifest.persona,
         personaEnabled: manifest.personaEnabled,
@@ -203,7 +202,6 @@ function manifestDiffersFromEntry(manifest: AgentManifest, entry: AgentRegistryE
     manifest.runtime !== entry.runtime ||
     JSON.stringify(manifest.capabilities) !== JSON.stringify(entry.capabilities) ||
     JSON.stringify(manifest.behavior) !== JSON.stringify(entry.behavior) ||
-    JSON.stringify(manifest.budget) !== JSON.stringify(entry.budget) ||
     (manifest.persona ?? undefined) !== (entry.persona ?? undefined) ||
     (manifest.personaEnabled ?? true) !== (entry.personaEnabled ?? true) ||
     (manifest.color ?? undefined) !== (entry.color ?? undefined) ||

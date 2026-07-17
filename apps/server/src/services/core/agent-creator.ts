@@ -261,7 +261,6 @@ export async function createAgentWorkspace(
       runtime: opts.runtime ?? 'claude-code',
       capabilities: [],
       behavior: { responseMode: 'always' },
-      budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
       traits,
       conventions,
       registeredAt: new Date().toISOString(),
