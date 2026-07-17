@@ -365,5 +365,25 @@ export class CloudLinkManager {
   }
 }
 
-/** Process-wide cloud-link manager used by the `/api/cloud/*` routes and startup. */
-export const cloudLinkManager = new CloudLinkManager();
+let instance: CloudLinkManager | undefined;
+
+/**
+ * Construct the process-wide cloud-link manager. Called once at the composition
+ * root ({@link start} in `index.ts`): with no options in production (real
+ * `fetch`, real defaults), or with an injected fake `fetchImpl` under
+ * `DORKOS_TEST_RUNTIME`. Returns the constructed instance.
+ */
+export function initCloudLinkManager(options?: CloudLinkManagerOptions): CloudLinkManager {
+  instance = new CloudLinkManager(options);
+  return instance;
+}
+
+/**
+ * The process-wide cloud-link manager used by the `/api/cloud/*` routes and
+ * startup. Throws if read before {@link initCloudLinkManager} runs — a loud,
+ * helpful failure instead of a silent `undefined` dereference.
+ */
+export function getCloudLinkManager(): CloudLinkManager {
+  if (!instance) throw new Error('CloudLinkManager not initialized');
+  return instance;
+}

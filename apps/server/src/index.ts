@@ -23,7 +23,7 @@ import {
   checkBindAllowed,
 } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
-import { cloudLinkManager } from './services/core/auth/cloud-link.js';
+import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initCredentialProvider } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
@@ -454,6 +454,7 @@ async function start() {
     }
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
+    initCloudLinkManager();
   } else {
     claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
     schedulerAgentManager = claudeRuntime;
@@ -563,6 +564,7 @@ async function start() {
         active: runtimeRegistry.getDefaultType(),
       });
     }
+    initCloudLinkManager(); // real fetch, real defaults — behavior-preserving
   }
 
   // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
@@ -1427,9 +1429,11 @@ async function start() {
   // DorkOS account, heartbeat now and every 15 minutes. Non-blocking and
   // best-effort — independent of local login (config.auth.enabled). A 401 marks
   // the instance unlinked and clears the local token (never retry-loops).
-  cloudLinkManager.initOnStartup().catch((err) => {
-    logger.warn('[CloudLink] Startup heartbeat failed', logError(err));
-  });
+  getCloudLinkManager()
+    .initOnStartup()
+    .catch((err) => {
+      logger.warn('[CloudLink] Startup heartbeat failed', logError(err));
+    });
 }
 
 // Ordered teardown of all running services WITHOUT calling process.exit().
@@ -1476,7 +1480,7 @@ async function shutdownServices() {
   // window) so shutdown never leaves an orphan. No-op when it never booted.
   await openCodeServerManager.shutdown();
   await tunnelManager.stop();
-  cloudLinkManager.stop();
+  getCloudLinkManager().stop();
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
   await shutdownObservability();
