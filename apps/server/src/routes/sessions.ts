@@ -93,29 +93,24 @@ router.get('/', async (req, res) => {
 // `recent` as an `:id` param. Resolves agent project paths server-side via the
 // mesh registry, then fans out via listRecentSessions (bounded concurrency,
 // exact-cwd membership per DOR-203, ADR-0310 per-runtime degradation).
-router.get(
-  '/recent',
-  asyncHandler(async (req, res) => {
-    const parsed = RecentSessionsQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
-    }
-    const { limit } = parsed.data;
+router.get('/recent', async (req, res) => {
+  const parsed = RecentSessionsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+  }
+  const { limit } = parsed.data;
 
-    const meshCore = req.app.locals.meshCore as MeshCore | undefined;
-    const agentPaths = meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [];
-    const runtimes = runtimeRegistry.listRuntimes();
+  const meshCore = req.app.locals.meshCore as MeshCore | undefined;
+  const agentPaths = meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [];
+  const runtimes = runtimeRegistry.listRuntimes();
 
-    const { sessions, agentActivity, warnings } = await listRecentSessions({
-      runtimes,
-      agentPaths,
-      limit,
-    });
-    res.json({ sessions, agentActivity, warnings });
-  })
-);
+  const { sessions, agentActivity, warnings } = await listRecentSessions({
+    runtimes,
+    agentPaths,
+    limit,
+  });
+  res.json({ sessions, agentActivity, warnings });
+});
 
 // GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that
 // need only the runtime owner. Uses getSessionRuntimeType which infers-on-miss
