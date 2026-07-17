@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
@@ -10,6 +10,7 @@ import {
   shouldShowCompactionChip,
   useCompactionChip,
   COMPACTION_CHIP_THRESHOLD_PERCENT,
+  COMPACTION_PENDING_RESET_MS,
 } from '../use-compaction-chip';
 
 const toastError = vi.fn();
@@ -231,5 +232,91 @@ describe('useCompactionChip', () => {
     });
     expect(transport.runCommandIntent).toHaveBeenCalledTimes(1);
     resolveDispatch({ sessionId: 's1' });
+  });
+
+  describe('pending watchdog (COMPACTION_PENDING_RESET_MS)', () => {
+    // Reconnect-coalescing edge: after a 202, a reconnect can replay the
+    // compact turn's turn_start + turn_end in one batch, so React never
+    // commits isStreaming === true and the primary reset never fires. The
+    // watchdog is the honest fallback — without it the chip spins forever.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('resets pending when no streaming commit ever arrives within the window', async () => {
+      const { result } = renderHook(
+        () =>
+          useCompactionChip({
+            sessionId: 's1',
+            percent: 85,
+            compactSupported: true,
+            isStreaming: false,
+          }),
+        { wrapper }
+      );
+
+      act(() => {
+        result.current.onCompact();
+      });
+      // Flush the (successful) dispatch promise — 202 accepted, so the
+      // dispatch itself never clears pending.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.pending).toBe(true);
+
+      // One tick short of the window: still honestly in flight.
+      act(() => {
+        vi.advanceTimersByTime(COMPACTION_PENDING_RESET_MS - 1);
+      });
+      expect(result.current.pending).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(result.current.pending).toBe(false);
+      // The chip is clickable again — the server's lock (409) guards any
+      // genuine double-dispatch, so re-enabling is safe.
+      expect(result.current.visible).toBe(true);
+    });
+
+    it('cancels the watchdog when the streaming commit does arrive', async () => {
+      const { result, rerender } = renderHook(
+        (props: { isStreaming: boolean }) =>
+          useCompactionChip({
+            sessionId: 's1',
+            percent: 85,
+            compactSupported: true,
+            isStreaming: props.isStreaming,
+          }),
+        { wrapper, initialProps: { isStreaming: false } }
+      );
+
+      act(() => {
+        result.current.onCompact();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // The normal path: the compact turn starts streaming and clears pending.
+      rerender({ isStreaming: true });
+      expect(result.current.pending).toBe(false);
+
+      // The turn settles; usage stays over threshold so the chip returns.
+      // A stale watchdog firing here would be harmless (pending is already
+      // false) but must not throw or double-fire — advance past the window
+      // to prove the timer was cancelled cleanly.
+      rerender({ isStreaming: false });
+      act(() => {
+        vi.advanceTimersByTime(COMPACTION_PENDING_RESET_MS * 2);
+      });
+      expect(result.current.pending).toBe(false);
+      expect(result.current.visible).toBe(true);
+    });
   });
 });

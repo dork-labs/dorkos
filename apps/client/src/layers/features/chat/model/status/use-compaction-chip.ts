@@ -22,6 +22,23 @@ import { dispatchCompactIntent } from '../native-commands';
  */
 export const COMPACTION_CHIP_THRESHOLD_PERCENT = 80;
 
+/**
+ * Belt-and-suspenders ceiling on the chip's in-flight state. The primary
+ * `pending` reset is `isStreaming` flipping true (the compact turn taking
+ * over), but that signal can be skipped entirely in one narrow window: if the
+ * client reconnects after the compaction already finished server-side, the
+ * replay delivers `turn_start` + `turn_end` coalesced in one batch, so React
+ * never commits an `isStreaming === true` render and the effect-based reset
+ * never fires — the chip would spin until remount. A compaction that has not
+ * produced a streaming commit within this window has either finished (replay
+ * coalescing) or died (server gone); either way the honest move is to stop
+ * claiming it's in flight and let the live visibility inputs decide whether
+ * the chip returns. Conservative on purpose: real compactions finish well
+ * inside 30s, and a reset that fires during one merely re-enables a button
+ * whose click is still guarded against double-dispatch server-side (409).
+ */
+export const COMPACTION_PENDING_RESET_MS = 30_000;
+
 /** Inputs that decide whether the compaction chip should render. */
 export interface CompactionChipVisibilityInput {
   /**
@@ -79,12 +96,13 @@ export interface CompactionChipState {
   /** The percent to show in the copy. Only meaningful when `visible`. */
   percent: number;
   /**
-   * True from the moment the chip is clicked until either the compact turn's
-   * own streaming state takes over (which hides the chip entirely via
-   * `visible`) or the dispatch fails. Guards against a double-dispatch in the
-   * brief window before the session stream reflects the new turn — compact
-   * intents don't set the `triggerPending` flag `postMessage` does, so
-   * `isStreaming` alone cannot cover that window.
+   * True from the moment the chip is clicked until the compact turn's own
+   * streaming state takes over (which hides the chip entirely via `visible`),
+   * the dispatch fails, or the {@link COMPACTION_PENDING_RESET_MS} watchdog
+   * fires. Guards against a double-dispatch in the brief window before the
+   * session stream reflects the new turn — compact intents don't set the
+   * `triggerPending` flag `postMessage` does, so `isStreaming` alone cannot
+   * cover that window.
    */
   pending: boolean;
   /** Fire the compact intent — exactly the palette's `/compact` dispatch. */
@@ -112,6 +130,17 @@ export function useCompactionChip({
   // the same tick (a fast double-click) can't both slip past the `pending`
   // state check before React commits the first one's update.
   const pendingRef = useRef(false);
+  // The COMPACTION_PENDING_RESET_MS watchdog for the current dispatch, if any.
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPending = useCallback(() => {
+    pendingRef.current = false;
+    setPending(false);
+    if (resetTimerRef.current !== null) {
+      clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+  }, []);
 
   // Reset the local guard the instant `isStreaming` flips true — the stream
   // taking over is itself proof the dispatch "arrived". The chip is already
@@ -120,25 +149,35 @@ export function useCompactionChip({
   // time it becomes relevant (e.g. a turn that starts but the compaction
   // itself later fails, leaving usage over threshold with the chip due back).
   useEffect(() => {
-    if (isStreaming) {
-      pendingRef.current = false;
-      setPending(false);
-    }
-  }, [isStreaming]);
+    if (isStreaming) clearPending();
+  }, [isStreaming, clearPending]);
+
+  // Never leave a watchdog running past unmount.
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
+    },
+    []
+  );
 
   const onCompact = useCallback(() => {
     if (pendingRef.current || !sessionId) return;
     pendingRef.current = true;
     setPending(true);
+    // Watchdog: if no streaming commit ever arrives (see
+    // COMPACTION_PENDING_RESET_MS for the reconnect-coalescing edge this
+    // covers), stop claiming the dispatch is in flight.
+    resetTimerRef.current = setTimeout(() => {
+      resetTimerRef.current = null;
+      pendingRef.current = false;
+      setPending(false);
+    }, COMPACTION_PENDING_RESET_MS);
     void dispatchCompactIntent(transport, sessionId).then((accepted) => {
       // Only a failed dispatch re-enables the chip here — a successful one is
       // about to be superseded by `isStreaming` flipping true, which hides it.
-      if (!accepted) {
-        pendingRef.current = false;
-        setPending(false);
-      }
+      if (!accepted) clearPending();
     });
-  }, [sessionId, transport]);
+  }, [sessionId, transport, clearPending]);
 
   return {
     visible: shouldShowCompactionChip({ percent, compactSupported, isStreaming }),
