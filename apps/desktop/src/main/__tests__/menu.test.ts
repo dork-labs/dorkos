@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('../auto-updater', () => ({ checkForUpdatesInteractive: vi.fn() }));
@@ -29,6 +29,15 @@ function findItem(
 }
 
 describe('setupMenu (B1)', () => {
+  // setupMenu now branches on process.platform (DOR-310); this suite asserts
+  // the darwin layout, so pin the platform rather than inherit the runner's.
+  const realPlatform = process.platform;
+  beforeAll(() => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+  });
+  afterAll(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform });
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     // `../menu` imports `../navigation`, which holds module-level pending-
