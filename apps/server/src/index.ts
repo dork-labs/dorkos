@@ -972,6 +972,9 @@ async function start() {
   // when a subsystem is disabled the router degrades to safe defaults.
   if (meshCore) {
     app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
+    // Expose the registry to the (statically-mounted) sessions router so
+    // GET /api/sessions/recent can resolve agent project paths (DOR-329).
+    app.locals.meshCore = meshCore;
     logger.info('[Mesh] Routes mounted');
   }
 

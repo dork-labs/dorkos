@@ -79,6 +79,7 @@ export type {
 
 // --- Multi-runtime session-list aggregation (ADR-0310) ---
 export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';
+export { listRecentSessions, RECENT_FANOUT_CONCURRENCY } from './recent-sessions.js';
 
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';

@@ -573,6 +573,39 @@ export function backfillTelemetryAiMetadataChannel(store: {
   }
 }
 
+/**
+ * Migration body: backfill `ui.sidebar` (server-persisted sidebar organization —
+ * groups, pinned, per-section sort/collapse; DOR-329) onto an EXISTING `ui`
+ * block. conf merges top-level defaults SHALLOWLY, so a `ui` object already on
+ * disk never inherits the new nested `sidebar` default — this supplies it.
+ * Additive + idempotent: only writes when `ui.sidebar` is absent, never
+ * overwrites a user's existing organization. The whole-`ui`-absent case is
+ * handled by the schema default on read (which already yields the sidebar
+ * defaults). Seeds an empty, unorganized sidebar (no pins, no groups).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillSidebarDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (ui && typeof ui === 'object' && (ui as { sidebar?: unknown }).sidebar === undefined) {
+    store.set('ui', {
+      ...(ui as Record<string, unknown>),
+      sidebar: {
+        pinned: [],
+        groups: [],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+      },
+    });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -668,6 +701,10 @@ const CONFIG_MIGRATIONS = {
     // seeds OFF for every existing install regardless of a prior consent choice.
     backfillTelemetryAiMetadataChannel(store);
   },
+  // Backfill `ui.sidebar` (server-persisted sidebar organization — groups,
+  // pinned, per-section sort/collapse; DOR-329) onto an existing `ui` block.
+  // Additive + idempotent; seeds an empty, unorganized sidebar.
+  '0.50.0': backfillSidebarDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

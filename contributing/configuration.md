@@ -82,6 +82,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `logging.maxLogFiles`               | integer (1--30)                                                          | `14`               | Number of rotated log files to retain                                                                  |
 | `ui.theme`                          | `"light"` \| `"dark"` \| `"system"`                                      | `"system"`         | UI color theme                                                                                         |
 | `ui.dismissedUpgradeVersions`       | string[]                                                                 | `[]`               | Version strings the user has dismissed upgrade notifications for                                       |
+| `ui.sidebar`                        | object                                                                   | see below          | Sidebar organization (DOR-329): pinned agents, user-defined groups, per-section sort + collapse state  |
 | `relay.enabled`                     | boolean                                                                  | `true`             | Enable Relay subsystem (config-level toggle, distinct from `DORKOS_RELAY_ENABLED`)                     |
 | `relay.dataDir`                     | string \| null                                                           | `null`             | Override Relay data directory (`null` = default under `DORK_HOME`)                                     |
 | `scheduler.enabled`                 | boolean                                                                  | `true`             | Enable Tasks scheduler subsystem (config-level toggle)                                                 |
@@ -337,6 +338,16 @@ Three migrations landed with the local-login work (see `contributing/authenticat
 | `0.51.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
 
 The `0.50.0` migration exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
+
+### Shipped migrations: agent sidebar organization
+
+One migration landed with the sidebar organization work (DOR-329). Append-only and idempotent:
+
+| Version  | Body                      | Effect                                                                                                                         |
+| -------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `0.50.0` | `backfillSidebarDefaults` | Writes `ui.sidebar` (empty pins/groups, `name` ungrouped sort, all sections expanded) onto an existing `ui` block when absent. |
+
+`ui.sidebar` holds the server-persisted sidebar organization — pinned agents, user-defined groups (each with its own member order, sort mode, and collapse state), and per-section sort/collapse preferences. conf merges top-level defaults shallowly, so a `ui` object already on disk never inherits the new nested `sidebar` default; this migration supplies it. It never overwrites an existing `ui.sidebar`, so a user's organization survives untouched.
 
 ### Interaction with `/system:release`
 

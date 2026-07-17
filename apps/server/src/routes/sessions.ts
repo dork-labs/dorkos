@@ -11,7 +11,9 @@ import {
   SubmitAnswersRequestSchema,
   SubmitElicitationRequestSchema,
   ListSessionsQuerySchema,
+  RecentSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
+import type { MeshCore } from '@dorkos/mesh';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
@@ -19,6 +21,7 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
   aggregateSessionList,
+  listRecentSessions,
   getOrCreateProjector,
   rekeyProjector,
   triggerTurn,
@@ -84,6 +87,35 @@ router.get('/', async (req, res) => {
   }
   res.json(warnings.length > 0 ? { sessions: page, warnings } : { sessions: page });
 });
+
+// GET /api/sessions/recent - Most-recent sessions across ALL agents (DOR-329).
+// MUST be registered before the `/:id` routes below, or Express 5 would capture
+// `recent` as an `:id` param. Resolves agent project paths server-side via the
+// mesh registry, then fans out via listRecentSessions (bounded concurrency,
+// exact-cwd membership per DOR-203, ADR-0310 per-runtime degradation).
+router.get(
+  '/recent',
+  asyncHandler(async (req, res) => {
+    const parsed = RecentSessionsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+    }
+    const { limit } = parsed.data;
+
+    const meshCore = req.app.locals.meshCore as MeshCore | undefined;
+    const agentPaths = meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [];
+    const runtimes = runtimeRegistry.listRuntimes();
+
+    const { sessions, agentActivity, warnings } = await listRecentSessions({
+      runtimes,
+      agentPaths,
+      limit,
+    });
+    res.json({ sessions, agentActivity, warnings });
+  })
+);
 
 // GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that
 // need only the runtime owner. Uses getSessionRuntimeType which infers-on-miss
