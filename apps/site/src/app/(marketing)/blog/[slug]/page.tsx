@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -44,16 +45,20 @@ function readingTimeFor(path: string): string | null {
  * Only a git date that lands on a later calendar day (UTC) counts as a
  * genuine revision worth surfacing as freshness.
  *
+ * Wrapped in React's `cache()` so `generateMetadata` and the page component
+ * — both invoked per-request for the same route — resolve to the exact same
+ * value instead of computing it twice from two call sites.
+ *
  * @param path - The page's source path, relative to the blog content dir.
  * @param publishedTime - The post's frontmatter date, as an ISO string.
  */
-function resolveModifiedTime(path: string, publishedTime: string): string | undefined {
+const resolveModifiedTime = cache((path: string, publishedTime: string): string | undefined => {
   const gitTime = gitLastModified(`blog/${path}`);
   if (!gitTime) return undefined;
   const publishedDay = publishedTime.slice(0, 10);
   const gitDay = new Date(gitTime).toISOString().slice(0, 10);
   return gitDay > publishedDay ? gitTime : undefined;
-}
+});
 
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
@@ -123,14 +128,19 @@ export default async function BlogPost(props: { params: Promise<{ slug: string }
   const prevPost = currentIndex < allPosts.length - 1 ? allPosts[currentIndex + 1] : null;
   const nextPost = currentIndex > 0 ? allPosts[currentIndex - 1] : null;
 
-  // BlogPosting JSON-LD structured data
+  // BlogPosting JSON-LD structured data. `dateModified` reuses the same
+  // honest-freshness check as the openGraph `modifiedTime` in
+  // generateMetadata (see resolveModifiedTime) — omitted entirely rather
+  // than fabricated when there's no real later edit.
+  const publishedTime = new Date(page.data.date).toISOString();
+  const modifiedTime = resolveModifiedTime(page.path, publishedTime);
   const blogPostingJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: page.data.title,
     description: page.data.description,
-    datePublished: new Date(page.data.date).toISOString(),
-    dateModified: new Date(page.data.date).toISOString(),
+    datePublished: publishedTime,
+    ...(modifiedTime ? { dateModified: modifiedTime } : {}),
     author: page.data.author
       ? { '@type': 'Person', name: page.data.author }
       : { '@type': 'Organization', name: siteConfig.name },
