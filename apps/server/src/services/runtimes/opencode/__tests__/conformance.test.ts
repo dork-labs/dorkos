@@ -175,6 +175,11 @@ function makeConformanceClient(turn: OpenCodeWireEvent[]) {
       update: vi.fn(async () => ({ data: info })),
       fork: vi.fn(async () => ({ data: info })),
       promptAsync: vi.fn(async () => ({})),
+      // The command-intent (compact) trigger: OpenCodeRuntime.executeCommandIntent
+      // calls session.summarize, then drains the SAME per-turn demux tap as a
+      // prompt — so the pre-queued turn's terminal (session.idle → done)
+      // satisfies the conformance dispatch gate.
+      summarize: vi.fn(async () => ({})),
       abort: vi.fn(async () => ({ data: true })),
       todo: vi.fn(async () => ({ data: [] })),
     },
