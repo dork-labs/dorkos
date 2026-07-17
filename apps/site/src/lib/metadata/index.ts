@@ -8,3 +8,4 @@
 export { twitterFromOpenGraph, type TwitterSource } from './twitter';
 export { estimateReadingMinutes, readingTimeLabel } from './reading-time';
 export { gitLastModified } from './git-dates';
+export { docsSectionTrail, type DocsSection, type DocsPageRef } from './docs-breadcrumb';
