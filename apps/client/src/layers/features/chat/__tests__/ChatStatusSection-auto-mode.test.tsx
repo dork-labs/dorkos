@@ -54,6 +54,15 @@ vi.mock('@/layers/entities/workspace', () => ({
   useWorkspaceForSession: () => null,
 }));
 
+// The compaction chip (DOR-112) resolves `useTransport()` unconditionally —
+// stub it so this suite (which never crosses the compaction threshold) still
+// renders without a real TransportProvider.
+vi.mock('@/layers/shared/model/TransportContext', () => ({
+  useTransport: vi.fn(() => ({
+    runCommandIntent: vi.fn(),
+  })),
+}));
+
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-query')>();
   return {

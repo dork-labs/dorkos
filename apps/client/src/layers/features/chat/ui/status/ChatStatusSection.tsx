@@ -15,11 +15,14 @@ import {
   useHasConfirmedAuto,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
-import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
+import { compactComposerGate } from '../../model/build-palette-commands';
 import { useRuntimeChip } from '../../model/status/use-runtime-chip';
+import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { ShortcutChips } from '../input/ShortcutChips';
+import { CompactionChip } from './CompactionChip';
 import { DragHandle } from './DragHandle';
 import {
   StatusLine,
@@ -250,6 +253,27 @@ export function ChatStatusSection({
   const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
   const supportsCostTracking = activeCaps?.supportsCostTracking ?? true;
 
+  // Same runtime-support gate the composer's `/compact` dispatch uses
+  // (DOR-109) — the proactive compaction chip (DOR-112) must never disagree
+  // with the palette about whether this runtime can compact.
+  const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
+  const compactIntent = compactComposerGate(activeCaps?.commandIntents, runtimeLabel);
+  // Mirrors ContextItem's own percent resolution (prefer the SDK breakdown
+  // once it arrives, else the coarser estimate) so the chip's "Context N%
+  // full" copy always matches the badge it renders beside.
+  const compactionChipPercent =
+    contextPercent === null
+      ? null
+      : contextUsage
+        ? Math.round(contextUsage.percentage)
+        : contextPercent;
+  const compactionChip = useCompactionChip({
+    sessionId,
+    percent: compactionChipPercent,
+    compactSupported: compactIntent.supported,
+    isStreaming,
+  });
+
   // Configure popover state — opened by icon click or from context menus
   const [configureOpen, setConfigureOpen] = useState(false);
 
@@ -309,190 +333,208 @@ export function ChatStatusSection({
   );
 
   const statusLineContent = (
-    <div className="flex items-center gap-2 pt-2">
-      <ContextMenu>
-        <ContextMenuTrigger className="min-w-0 flex-1">
-          <StatusLine sessionId={sessionId} isStreaming={isStreaming}>
-            <StatusLine.Item itemKey="cwd" visible={showStatusBarCwd && !!status.cwd}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('cwd')}
-                onHide={() => setShowStatusBarCwd(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                {status.cwd && <CwdItem cwd={status.cwd} />}
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item itemKey="git" visible={showStatusBarGit}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('git')}
-                onHide={() => setShowStatusBarGit(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                <GitStatusItem data={gitStatus} workspace={workspace} />
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item itemKey="permission" visible={showStatusBarPermission}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('permission')}
-                onHide={() => setShowStatusBarPermission(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                <PermissionModeItem
-                  mode={status.permissionMode}
-                  onChangeMode={handleChangeMode}
-                  disabled={!sessionId}
-                  runtime={runtimeChip.runtime}
-                  modelSupportsAutoMode={modelSupportsAutoMode}
-                />
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item
-              itemKey="runtime"
-              visible={showStatusBarRuntime && runtimeChip.runtime !== null}
-            >
-              <ItemContextMenu
-                itemLabel={getItemLabel('runtime')}
-                onHide={() => setShowStatusBarRuntime(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                {runtimeChip.runtime !== null && (
-                  <RuntimeItem
+    <>
+      <div className="flex items-center gap-2 pt-2">
+        <ContextMenu>
+          <ContextMenuTrigger className="min-w-0 flex-1">
+            <StatusLine sessionId={sessionId} isStreaming={isStreaming}>
+              <StatusLine.Item itemKey="cwd" visible={showStatusBarCwd && !!status.cwd}>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('cwd')}
+                  onHide={() => setShowStatusBarCwd(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  {status.cwd && <CwdItem cwd={status.cwd} />}
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item itemKey="git" visible={showStatusBarGit}>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('git')}
+                  onHide={() => setShowStatusBarGit(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  <GitStatusItem data={gitStatus} workspace={workspace} />
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item itemKey="permission" visible={showStatusBarPermission}>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('permission')}
+                  onHide={() => setShowStatusBarPermission(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  <PermissionModeItem
+                    mode={status.permissionMode}
+                    onChangeMode={handleChangeMode}
+                    disabled={!sessionId}
                     runtime={runtimeChip.runtime}
-                    model={runtimeChip.model}
-                    onChangeRuntime={runtimeChip.onChangeRuntime}
-                    canSelect={runtimeChip.canSelect}
+                    modelSupportsAutoMode={modelSupportsAutoMode}
                   />
-                )}
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item itemKey="model" visible={showStatusBarModel}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('model')}
-                onHide={() => setShowStatusBarModel(false)}
-                onConfigure={() => setConfigureOpen(true)}
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item
+                itemKey="runtime"
+                visible={showStatusBarRuntime && runtimeChip.runtime !== null}
               >
-                <ModelConfigPopover
-                  model={status.model}
-                  onChangeModel={(model) => status.updateSession({ model })}
-                  effort={status.effort}
-                  onChangeEffort={(effort) => status.updateSession({ effort: effort ?? undefined })}
-                  fastMode={status.fastMode}
-                  onChangeFastMode={(fastMode) => status.updateSession({ fastMode })}
-                  disabled={!sessionId}
-                  sessionId={sessionId || undefined}
-                  runtime={runtimeChip.runtime}
-                />
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item itemKey="cache" visible={showStatusBarCache && cacheStatus !== null}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('cache')}
-                onHide={() => setShowStatusBarCache(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                {cacheStatus && (
-                  <CacheItem
-                    cacheReadTokens={cacheStatus.cacheReadTokens}
-                    cacheCreationTokens={cacheStatus.cacheCreationTokens}
-                    contextTokens={cacheStatus.contextTokens}
+                <ItemContextMenu
+                  itemLabel={getItemLabel('runtime')}
+                  onHide={() => setShowStatusBarRuntime(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  {runtimeChip.runtime !== null && (
+                    <RuntimeItem
+                      runtime={runtimeChip.runtime}
+                      model={runtimeChip.model}
+                      onChangeRuntime={runtimeChip.onChangeRuntime}
+                      canSelect={runtimeChip.canSelect}
+                    />
+                  )}
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item itemKey="model" visible={showStatusBarModel}>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('model')}
+                  onHide={() => setShowStatusBarModel(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  <ModelConfigPopover
+                    model={status.model}
+                    onChangeModel={(model) => status.updateSession({ model })}
+                    effort={status.effort}
+                    onChangeEffort={(effort) =>
+                      status.updateSession({ effort: effort ?? undefined })
+                    }
+                    fastMode={status.fastMode}
+                    onChangeFastMode={(fastMode) => status.updateSession({ fastMode })}
+                    disabled={!sessionId}
+                    sessionId={sessionId || undefined}
+                    runtime={runtimeChip.runtime}
                   />
-                )}
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item
-              itemKey="context"
-              visible={showStatusBarContext && contextPercent !== null}
-            >
-              <ItemContextMenu
-                itemLabel={getItemLabel('context')}
-                onHide={() => setShowStatusBarContext(false)}
-                onConfigure={() => setConfigureOpen(true)}
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item itemKey="cache" visible={showStatusBarCache && cacheStatus !== null}>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('cache')}
+                  onHide={() => setShowStatusBarCache(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  {cacheStatus && (
+                    <CacheItem
+                      cacheReadTokens={cacheStatus.cacheReadTokens}
+                      cacheCreationTokens={cacheStatus.cacheCreationTokens}
+                      contextTokens={cacheStatus.contextTokens}
+                    />
+                  )}
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item
+                itemKey="context"
+                visible={showStatusBarContext && contextPercent !== null}
               >
-                {contextPercent !== null && (
-                  <ContextItem percent={contextPercent} contextUsage={contextUsage} />
-                )}
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item
-              itemKey="usage"
-              // `supportsCostTracking` intentionally gates the whole item, even the
-              // subscription-utilization display: today the only runtime with
-              // utilization (claude-code) also reports cost, and every runtime that
-              // reports usage reports cost. If a future runtime ever exposes
-              // utilization without dollar cost, widen this to a dedicated capability.
-              visible={
-                showStatusBarUsage &&
-                usage !== null &&
-                hasRenderableUsage(usage) &&
-                supportsCostTracking
-              }
-            >
-              <ItemContextMenu
-                itemLabel={getItemLabel('usage')}
-                onHide={() => setShowStatusBarUsage(false)}
-                onConfigure={() => setConfigureOpen(true)}
+                <ItemContextMenu
+                  itemLabel={getItemLabel('context')}
+                  onHide={() => setShowStatusBarContext(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  {contextPercent !== null && (
+                    <ContextItem percent={contextPercent} contextUsage={contextUsage} />
+                  )}
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item
+                itemKey="usage"
+                // `supportsCostTracking` intentionally gates the whole item, even the
+                // subscription-utilization display: today the only runtime with
+                // utilization (claude-code) also reports cost, and every runtime that
+                // reports usage reports cost. If a future runtime ever exposes
+                // utilization without dollar cost, widen this to a dedicated capability.
+                visible={
+                  showStatusBarUsage &&
+                  usage !== null &&
+                  hasRenderableUsage(usage) &&
+                  supportsCostTracking
+                }
               >
-                {usage && hasRenderableUsage(usage) && <UsageStatusItem usage={usage} />}
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item itemKey="sound" visible={showStatusBarSound}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('sound')}
-                onHide={() => setShowStatusBarSound(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                <NotificationSoundItem
-                  enabled={enableNotificationSound}
-                  onToggle={() => setEnableNotificationSound(!enableNotificationSound)}
-                />
-              </ItemContextMenu>
-            </StatusLine.Item>
-            <StatusLine.Item itemKey="polling" visible={showStatusBarPolling}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('polling')}
-                onHide={() => setShowStatusBarPolling(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                <PollingItem
-                  enabled={enableMessagePolling}
-                  onToggle={() => setEnableMessagePolling(!enableMessagePolling)}
-                />
-              </ItemContextMenu>
-            </StatusLine.Item>
-            {/*
-             * System-managed item: connection is not user-toggleable. It is not
-             * wrapped with ItemContextMenu — it falls through to the background
-             * ContextMenu if right-clicked.
-             */}
-            <ConnectionItem connectionState={syncConnectionState} />
-            <StatusLine.Item itemKey="subagents" visible={!!subagents && subagents.length > 0}>
-              {subagents && subagents.length > 0 && <SubagentsItem subagents={subagents} />}
-            </StatusLine.Item>
-          </StatusLine>
-        </ContextMenuTrigger>
-        {/* Background context menu — fires when right-clicking the status bar but not on a specific item */}
-        <ContextMenuContent>
-          <ContextMenuItem onClick={() => setConfigureOpen(true)}>
-            Configure status bar...
-          </ContextMenuItem>
-          <ContextMenuItem onClick={resetStatusBarPreferences}>Reset to defaults</ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-      {/* Configure icon — right-aligned, stable position independent of item changes */}
-      {configureIcon}
-      {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
-      <UsageRevealPopover
-        usage={usage ?? null}
-        open={usageRevealOpen}
-        onOpenChange={setUsageRevealOpen}
-      />
-      {/* Portal-based — render once; placement is layout-independent */}
-      <AutoModeConfirmDialog
-        open={autoConfirmOpen}
-        onOpenChange={setAutoConfirmOpen}
-        onConfirm={handleConfirmAuto}
-      />
-    </div>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('usage')}
+                  onHide={() => setShowStatusBarUsage(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  {usage && hasRenderableUsage(usage) && <UsageStatusItem usage={usage} />}
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item itemKey="sound" visible={showStatusBarSound}>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('sound')}
+                  onHide={() => setShowStatusBarSound(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  <NotificationSoundItem
+                    enabled={enableNotificationSound}
+                    onToggle={() => setEnableNotificationSound(!enableNotificationSound)}
+                  />
+                </ItemContextMenu>
+              </StatusLine.Item>
+              <StatusLine.Item itemKey="polling" visible={showStatusBarPolling}>
+                <ItemContextMenu
+                  itemLabel={getItemLabel('polling')}
+                  onHide={() => setShowStatusBarPolling(false)}
+                  onConfigure={() => setConfigureOpen(true)}
+                >
+                  <PollingItem
+                    enabled={enableMessagePolling}
+                    onToggle={() => setEnableMessagePolling(!enableMessagePolling)}
+                  />
+                </ItemContextMenu>
+              </StatusLine.Item>
+              {/*
+               * System-managed item: connection is not user-toggleable. It is not
+               * wrapped with ItemContextMenu — it falls through to the background
+               * ContextMenu if right-clicked.
+               */}
+              <ConnectionItem connectionState={syncConnectionState} />
+              <StatusLine.Item itemKey="subagents" visible={!!subagents && subagents.length > 0}>
+                {subagents && subagents.length > 0 && <SubagentsItem subagents={subagents} />}
+              </StatusLine.Item>
+            </StatusLine>
+          </ContextMenuTrigger>
+          {/* Background context menu — fires when right-clicking the status bar but not on a specific item */}
+          <ContextMenuContent>
+            <ContextMenuItem onClick={() => setConfigureOpen(true)}>
+              Configure status bar...
+            </ContextMenuItem>
+            <ContextMenuItem onClick={resetStatusBarPreferences}>Reset to defaults</ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+        {/* Configure icon — right-aligned, stable position independent of item changes */}
+        {configureIcon}
+        {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
+        <UsageRevealPopover
+          usage={usage ?? null}
+          open={usageRevealOpen}
+          onOpenChange={setUsageRevealOpen}
+        />
+        {/* Portal-based — render once; placement is layout-independent */}
+        <AutoModeConfirmDialog
+          open={autoConfirmOpen}
+          onOpenChange={setAutoConfirmOpen}
+          onConfirm={handleConfirmAuto}
+        />
+      </div>
+      {/* Proactive compaction nudge (DOR-112) — its own row below the status
+          line so the fuller "Context N% full — Compact now" copy never
+          crowds the terse, horizontally-scrolling status items above it. */}
+      <AnimatePresence>
+        {compactionChip.visible && (
+          <div className="flex pt-1.5">
+            <CompactionChip
+              percent={compactionChip.percent}
+              pending={compactionChip.pending}
+              onClick={compactionChip.onCompact}
+            />
+          </div>
+        )}
+      </AnimatePresence>
+    </>
   );
 
   if (isMobile) {
