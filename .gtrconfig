@@ -30,10 +30,24 @@
     #    store; do NOT add `node_modules` to includeDirs (would corrupt links).
     # 2. fumadocs-mdx — generates apps/site/.source/ types; without them
     #    @dorkos/site#typecheck fails in a fresh worktree (pre-commit hook).
-    # 3. worktree-setup.sh — patches .env with worktree-unique DORKOS_PORT,
+    # 3. turbo build (packages/* only, ~7s) — package.json `exports` maps each
+    #    internal package's runtime entry to `dist/*.js` (types resolve straight
+    #    to `src/*.ts` via the `types` condition, so `tsc` is unaffected, but
+    #    Vite/vitest module resolution needs the built JS). Without this, a
+    #    fresh worktree's bare `pnpm vitest run <file>` fails to resolve
+    #    `@dorkos/*` imports — vitest auto-discovers every workspace project,
+    #    so even a single-file run loads apps/client's vite.config.ts, which
+    #    needs `@dorkos/shared/dist` (DOR-117). Scoped to packages/* (skips
+    #    apps/* and packages/cli, which esbuild-bundles standalone and nothing
+    #    else depends on) — turbo's `^build` dependency graph still builds
+    #    everything those packages need transitively. Packages without a
+    #    `dist`-based export (db, test-utils, icons, ...) have no build script
+    #    and are skipped instantly.
+    # 4. worktree-setup.sh — patches .env with worktree-unique DORKOS_PORT,
     #    VITE_PORT, and SITE_PORT so parallel `pnpm dev` instances don't collide.
     postCreate = pnpm install
     postCreate = pnpm --filter @dorkos/site exec fumadocs-mdx
+    postCreate = pnpm exec turbo build --filter='./packages/*' --filter='!dorkos'
     postCreate = .claude/scripts/worktree-setup.sh
 
 [defaults]
