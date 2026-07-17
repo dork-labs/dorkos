@@ -64,8 +64,6 @@ export interface SessionState {
   // --- Session metadata ---
   sessionStatus: SessionStatusEvent | null;
   contextUsage: ContextUsage | null;
-  rateLimitRetryAfter: number | null;
-  isRateLimited: boolean;
   systemStatus: SystemStatusState | null;
   operationProgress: OperationProgressState | null;
   promptSuggestions: string[];
@@ -106,8 +104,6 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   thinkingStart: null,
   sessionStatus: null,
   contextUsage: null,
-  rateLimitRetryAfter: null,
-  isRateLimited: false,
   systemStatus: null,
   operationProgress: null,
   promptSuggestions: [],

@@ -30,8 +30,6 @@ vi.mock('../model/use-rotating-verb', () => ({
 describe('deriveStripState', () => {
   const baseInput: StripStateInput = {
     status: 'idle',
-    isRateLimited: false,
-    countdown: null,
     isWaitingForUser: false,
     waitingType: 'approval',
     operationProgress: null,
@@ -76,31 +74,7 @@ describe('deriveStripState', () => {
     }
   });
 
-  it('rate-limited takes priority over waiting (priority 1 > 2)', () => {
-    const state = deriveStripState({
-      ...baseInput,
-      status: 'streaming',
-      isRateLimited: true,
-      isWaitingForUser: true,
-    });
-    expect(state.type).toBe('rate-limited');
-  });
-
-  it('rate-limited includes countdown and elapsed', () => {
-    const state = deriveStripState({
-      ...baseInput,
-      status: 'streaming',
-      isRateLimited: true,
-      countdown: 30,
-      elapsed: '1m 05s',
-    });
-    if (state.type === 'rate-limited') {
-      expect(state.countdown).toBe(30);
-      expect(state.elapsed).toBe('1m 05s');
-    }
-  });
-
-  it('waiting takes priority over operation-progress (priority 2 > 3)', () => {
+  it('waiting takes priority over operation-progress (priority 1 > 2)', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
@@ -128,7 +102,7 @@ describe('deriveStripState', () => {
     }
   });
 
-  it('operation-progress takes priority over system-message (priority 3 > 4)', () => {
+  it('operation-progress takes priority over system-message (priority 2 > 3)', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
@@ -176,7 +150,7 @@ describe('deriveStripState', () => {
     }
   });
 
-  it('system message takes priority over streaming (priority 4 > 5)', () => {
+  it('system message takes priority over streaming (priority 3 > 4)', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
@@ -215,7 +189,7 @@ describe('deriveStripState', () => {
     }
   });
 
-  it('streaming takes priority over complete (priority 5 > 6)', () => {
+  it('streaming takes priority over complete (priority 4 > 5)', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
@@ -292,36 +266,6 @@ describe('ChatStatusStrip component', () => {
     );
     expect(screen.getByTestId('chat-status-strip-waiting')).toBeInTheDocument();
     expect(screen.getByText('Waiting for your answer')).toBeInTheDocument();
-  });
-
-  it('renders rate-limited state with countdown', () => {
-    render(
-      <ChatStatusStrip
-        status="streaming"
-        streamStartTime={Date.now()}
-        estimatedTokens={100}
-        isRateLimited={true}
-        rateLimitRetryAfter={30}
-        systemStatus={null}
-      />
-    );
-    expect(screen.getByTestId('chat-status-strip-rate-limited')).toBeInTheDocument();
-    expect(screen.getByText(/Rate limited.*retrying in 30s/)).toBeInTheDocument();
-  });
-
-  it('renders rate-limited state without countdown when retryAfter is null', () => {
-    render(
-      <ChatStatusStrip
-        status="streaming"
-        streamStartTime={Date.now()}
-        estimatedTokens={100}
-        isRateLimited={true}
-        rateLimitRetryAfter={null}
-        systemStatus={null}
-      />
-    );
-    expect(screen.getByTestId('chat-status-strip-rate-limited')).toBeInTheDocument();
-    expect(screen.getByText(/Rate limited.*retrying shortly/)).toBeInTheDocument();
   });
 
   it('renders an indeterminate operation-progress bar for compaction (DOR-110)', () => {

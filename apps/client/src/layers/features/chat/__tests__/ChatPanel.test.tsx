@@ -33,8 +33,6 @@ vi.mock('../model/use-chat-session', () => ({
     activeInteraction: null,
     pendingInteractions: [],
     markToolCallResponded: vi.fn(),
-    isRateLimited: false,
-    rateLimitRetryAfter: null,
     systemStatus: null,
     promptSuggestions: [],
     syncConnectionState: 'connected',

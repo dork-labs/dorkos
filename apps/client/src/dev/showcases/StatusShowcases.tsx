@@ -129,30 +129,6 @@ export function StatusShowcases() {
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Rate limited (with countdown)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart - 10000}
-            estimatedTokens={400}
-            isRateLimited
-            rateLimitRetryAfter={42}
-            systemStatus={null}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Rate limited (no duration)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ChatStatusStrip
-            status="streaming"
-            streamStartTime={streamStart - 10000}
-            estimatedTokens={400}
-            isRateLimited
-            rateLimitRetryAfter={null}
-            systemStatus={null}
-          />
-        </ShowcaseDemo>
-
         <ShowcaseLabel>Operation progress: compaction (indeterminate bar)</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
