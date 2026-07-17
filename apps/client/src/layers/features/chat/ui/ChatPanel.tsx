@@ -181,8 +181,6 @@ export function ChatPanel({
     activeInteraction,
     pendingInteractions,
     markToolCallResponded,
-    isRateLimited,
-    rateLimitRetryAfter,
     systemStatus,
     operationProgress,
     promptSuggestions,
@@ -334,8 +332,6 @@ export function ChatPanel({
         permissionMode={permissionMode}
         isWaitingForUser={isWaitingForUser ?? false}
         waitingType={waitingType ?? 'approval'}
-        isRateLimited={isRateLimited ?? false}
-        rateLimitRetryAfter={rateLimitRetryAfter ?? null}
         systemStatus={systemStatus}
         operationProgress={operationProgress}
       />

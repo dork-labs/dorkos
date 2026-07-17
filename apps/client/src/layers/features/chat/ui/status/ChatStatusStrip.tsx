@@ -15,7 +15,6 @@ import type { SystemStatusState, OperationProgressState } from '../../model/chat
 
 /** Discriminated union representing all possible states of the chat status strip. */
 export type StripState =
-  | { type: 'rate-limited'; countdown: number | null; elapsed: string }
   | { type: 'waiting'; waitingType: 'approval' | 'question'; elapsed: string }
   | {
       type: 'operation-progress';
@@ -40,8 +39,6 @@ export type StripState =
 /** Input shape for the deriveStripState pure function. */
 export interface StripStateInput {
   status: 'idle' | 'streaming' | 'error';
-  isRateLimited: boolean;
-  countdown: number | null;
   isWaitingForUser: boolean;
   waitingType: 'approval' | 'question';
   operationProgress: OperationProgressState | null;
@@ -73,26 +70,20 @@ export function formatTokens(count: number): string {
  * Derive the active strip state from raw session inputs. Pure function — no React.
  *
  * Priority stack (first match wins):
- * 1. rate-limited — user needs to know they're waiting
- * 2. waiting-for-user — user action required to continue
- * 3. operation-progress — a long-running operation (e.g. compaction) is running
- * 4. system-message — runtime operational event (e.g. a hook), informational
- * 5. streaming — normal inference in progress
- * 6. complete — post-stream summary, auto-dismisses
- * 7. idle — nothing to show
+ * 1. waiting-for-user — user action required to continue
+ * 2. operation-progress — a long-running operation (e.g. compaction) is running
+ * 3. system-message — runtime operational event (e.g. a hook), informational
+ * 4. streaming — normal inference in progress
+ * 5. complete — post-stream summary, auto-dismisses
+ * 6. idle — nothing to show
  */
 export function deriveStripState(input: StripStateInput): StripState {
-  // Priority 1: Rate-limited
-  if (input.status === 'streaming' && input.isRateLimited) {
-    return { type: 'rate-limited', countdown: input.countdown, elapsed: input.elapsed };
-  }
-
-  // Priority 2: Waiting for user
+  // Priority 1: Waiting for user
   if (input.status === 'streaming' && input.isWaitingForUser) {
     return { type: 'waiting', waitingType: input.waitingType, elapsed: input.elapsed };
   }
 
-  // Priority 3: Operation progress (compaction) — the structured, runtime-agnostic
+  // Priority 2: Operation progress (compaction) — the structured, runtime-agnostic
   // progress treatment (DOR-110), shown regardless of streaming status. The
   // producer supplies the label copy, so there is no status string to match.
   if (input.operationProgress) {
@@ -105,7 +96,7 @@ export function deriveStripState(input: StripStateInput): StripState {
     };
   }
 
-  // Priority 4: System message (shown regardless of streaming status)
+  // Priority 3: System message (shown regardless of streaming status)
   if (input.systemStatus) {
     return {
       type: 'system-message',
@@ -114,7 +105,7 @@ export function deriveStripState(input: StripStateInput): StripState {
     };
   }
 
-  // Priority 5: Streaming
+  // Priority 4: Streaming
   if (input.status === 'streaming') {
     return {
       type: 'streaming',
@@ -128,12 +119,12 @@ export function deriveStripState(input: StripStateInput): StripState {
     };
   }
 
-  // Priority 6: Complete (auto-dismisses after 8s)
+  // Priority 5: Complete (auto-dismisses after 8s)
   if (input.showComplete) {
     return { type: 'complete', elapsed: input.lastElapsed, tokens: input.lastTokens };
   }
 
-  // Priority 7: Idle
+  // Priority 6: Idle
   return { type: 'idle' };
 }
 
@@ -148,8 +139,6 @@ interface UseStripStateInput {
   permissionMode: PermissionMode;
   isWaitingForUser: boolean;
   waitingType: 'approval' | 'question';
-  isRateLimited: boolean;
-  rateLimitRetryAfter: number | null;
   operationProgress: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
   theme: IndicatorTheme;
@@ -205,27 +194,8 @@ function useStripState(input: UseStripStateInput): StripState {
     return () => clearTimeout(timer);
   }, [showComplete]);
 
-  // Rate-limit countdown: ticks down every second from retryAfter, clears when rate limit resolves
-  const [countdown, setCountdown] = useState<number | null>(null);
-  useEffect(() => {
-    if (!input.isRateLimited || !input.rateLimitRetryAfter) {
-      setCountdown(null);
-      return;
-    }
-    setCountdown(Math.ceil(input.rateLimitRetryAfter));
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev === null || prev <= 1) return null;
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [input.isRateLimited, input.rateLimitRetryAfter]);
-
   return deriveStripState({
     status: input.status,
-    isRateLimited: input.isRateLimited,
-    countdown,
     isWaitingForUser: input.isWaitingForUser,
     waitingType: input.waitingType,
     operationProgress: input.operationProgress,
@@ -323,23 +293,6 @@ function WaitingContent({ state }: { state: Extract<StripState, { type: 'waiting
   );
 }
 
-function RateLimitedContent({ state }: { state: Extract<StripState, { type: 'rate-limited' }> }) {
-  return (
-    <div
-      className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs md:justify-start"
-      data-testid="chat-status-strip-rate-limited"
-    >
-      <span className="text-amber-500">&#x23F3;</span>
-      <span className="text-amber-600 dark:text-amber-400">
-        {state.countdown !== null
-          ? `Rate limited \u2014 retrying in ${state.countdown}s`
-          : 'Rate limited \u2014 retrying shortly'}
-      </span>
-      <span className="text-muted-foreground/70 ml-1.5 tabular-nums">{state.elapsed}</span>
-    </div>
-  );
-}
-
 function OperationProgressContent({
   state,
 }: {
@@ -410,8 +363,6 @@ function renderContent(state: StripState): React.ReactNode {
       return <StreamingContent state={state} />;
     case 'waiting':
       return <WaitingContent state={state} />;
-    case 'rate-limited':
-      return <RateLimitedContent state={state} />;
     case 'operation-progress':
       return <OperationProgressContent state={state} />;
     case 'system-message':
@@ -434,8 +385,6 @@ interface ChatStatusStripProps {
   permissionMode?: PermissionMode;
   isWaitingForUser?: boolean;
   waitingType?: 'approval' | 'question';
-  isRateLimited?: boolean;
-  rateLimitRetryAfter?: number | null;
   operationProgress?: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
   theme?: IndicatorTheme;
@@ -455,8 +404,6 @@ export function ChatStatusStrip({
   permissionMode = 'default',
   isWaitingForUser = false,
   waitingType = 'approval',
-  isRateLimited = false,
-  rateLimitRetryAfter = null,
   operationProgress = null,
   systemStatus,
   theme = DEFAULT_THEME,
@@ -468,8 +415,6 @@ export function ChatStatusStrip({
     permissionMode,
     isWaitingForUser,
     waitingType,
-    isRateLimited,
-    rateLimitRetryAfter,
     operationProgress,
     systemStatus,
     theme,
