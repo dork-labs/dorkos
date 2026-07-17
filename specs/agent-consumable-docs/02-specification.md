@@ -642,6 +642,39 @@ DECOMPOSE shape — two phases, small tasks; Phase A ships independently.
   within that gate if the cause differs (adaptation boundary, B.0). Rationale:
   cheaper and more reliable than hunting the absent commit; keeps the spec honest
   about the reconstructed (not observed) root cause.
+  - **(2026-07-17 — OBSERVED, Phase B EXECUTE task 2.0.)** Bumped core/ui `^16.10`
+    (resolved 16.11.5), openapi `^11` (resolved 11.2.2), kept mdx 14.3.0.
+    `pnpm install` was clean — openapi 11's new peers (`@scalar/api-client-react`,
+    `json-schema-typed`, `@types/react`) are all **optional**; next 16.2.9 /
+    react 19.2.5 satisfied; **mdx needed no bump** (14.3.0 peer-allows
+    `fumadocs-core ^16.0.0`). Two real failures surfaced, both **before** the
+    hypothesised prerender crash: 1. **Compile-time — confirms D6's direction, refines the mechanism.**
+    `next build` compiled, then type-check failed: `src/lib/openapi.ts:2 —
+'"fumadocs-openapi/ui"' has no exported member named 'createAPIPage'. Did
+you mean 'createOpenAPIPage'?`. v11 renamed the factory
+    `createAPIPage(server, options)` → `createOpenAPIPage(options)` (no server
+    arg) and it now returns a **client** component (`'use client'`) that renders
+    from serialized props — `payload.bundled` (a Document) or `document`
+    (schema id) + `preloaded.docs` — never a file path. D6's core claim (client
+    APIPage, file-path prop gone) is **CONFIRMED**; the first wall is just the
+    compile-time rename, not the predicted runtime file read. Adopted wiring:
+    the server calls `openapi.preloadOpenAPIPage(page)` (reads the `_openapi.preload`
+    frontmatter the v11 generator now emits, bundles the schema **server-side**)
+    and binds the resulting `preloaded` prop into the client APIPage through
+    `getMDXComponents`; the v11 generator emits an MDX `Layout` that pulls
+    `APIPage`/`OpenAPIPage` from `props.components`. No client-side filesystem read. 2. **Generator ↔ tsx incompatibility — NOT predicted by D6.**
+    `generate:api-docs` (`tsx scripts/generate-api-docs.ts`) crashed at import:
+    `SyntaxError: The requested module '../node_modules/.pnpm/xml-js@1.6.11/.../js2xml.js'
+   does not provide an export named 'require_js2xml'`. openapi 11 bundles its
+    CJS deps (xml-js) as ESM copies under its own `dist/node_modules/.pnpm/…`
+    with rolldown interop exports. **Node's native ESM loader imports them
+    correctly** (`node -e import('fumadocs-openapi')` → `generateFiles:
+   function`); **tsx's esbuild loader mis-resolves the bundled-dependency
+    `.pnpm` path** and fails. Fix (tasks 2.4/2.5): run the generator under
+    `node` (native TS type-stripping) instead of `tsx`.
+    Both fixes land inside the adaptation boundary — Phase B's done-ness is
+    unchanged (site build incl. `/docs/api/*` prerender + `/docs/api` renders +
+    `openapi-fresh` green).
 - ~~**O2 — githubUrl in ViewOptions.**~~ **(RESOLVED — wire it, A.6.)**
   `githubUrl = ${siteConfig.github}/blob/main/docs/${page.path}`. Rationale:
   `siteConfig.github` already exists and `page.path` is on the page data;

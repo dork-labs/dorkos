@@ -2600,6 +2600,15 @@
       "title": "Two-plane, two-tier data collection strategy",
       "status": "accepted",
       "created": "2026-07-13"
+    },
+    {
+      "id": "260717-151851",
+      "slug": "agent-consumable-docs-phase-split-and-client-apipage",
+      "title": "Split agent-consumable docs from the fumadocs 16.10 / openapi 11 upgrade; migrate APIPage to a v11 client component",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "agent-consumable-docs",
+      "specSlug": "agent-consumable-docs"
     }
   ]
 }

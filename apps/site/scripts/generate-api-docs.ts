@@ -6,7 +6,13 @@
  * by the Fumadocs MDX pipeline and rendered as interactive API reference docs.
  *
  * Must be run from the apps/site/ directory (the default for npm workspace scripts).
- * Run via: npm run generate:api-docs -w apps/site
+ * Run via: pnpm --filter @dorkos/site generate:api-docs
+ *
+ * Runs under plain `node` (native TypeScript type-stripping), NOT `tsx`:
+ * fumadocs-openapi v11 bundles its CJS dependencies (e.g. xml-js) as ESM copies
+ * under its own dist/, and tsx's esbuild loader mis-resolves those bundled
+ * `.pnpm` paths (`does not provide an export named 'require_js2xml'`). Node's
+ * native ESM loader resolves them correctly. Keep the runner as `node`.
  */
 import { generateFiles } from 'fumadocs-openapi';
 import { createOpenAPI } from 'fumadocs-openapi/server';
