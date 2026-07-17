@@ -63,6 +63,12 @@ export { useGlobalSessionStream } from './model/use-global-session-stream';
 export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';
 export { useAgentHottestStatus } from './model/use-agent-hottest-status';
+// Context-health merge resolver (list vs live, live wins) + its pure core.
+export {
+  useSessionContextHealth,
+  resolveSessionContextHealth,
+} from './model/use-session-context-health';
+export type { SessionContextHealth } from './model/use-session-context-health';
 export { usePulseMotion } from './model/use-pulse-motion';
 export { useRenameSession } from './model/use-rename-session';
 
