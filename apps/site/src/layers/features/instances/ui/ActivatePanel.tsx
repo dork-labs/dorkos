@@ -127,6 +127,7 @@ export function ActivatePanel({ initialCode }: { initialCode?: string }) {
 
         {state.phase === 'resolved' ? (
           <ResolvedView
+            code={code}
             pending={state.pending}
             actionPending={actionPending}
             onApprove={() => void onApprove(code, state.pending.name)}
@@ -163,14 +164,26 @@ export function ActivatePanel({ initialCode }: { initialCode?: string }) {
   );
 }
 
+/**
+ * Normalize a user code for display: strips any dashes the visitor typed
+ * (the resolve lookup already tolerates them) and uppercases it, so what
+ * renders here always matches the raw code the instance itself displays —
+ * no separator, all caps.
+ */
+function displayCode(code: string): string {
+  return code.replace(/-/g, '').trim().toUpperCase();
+}
+
 /** The approve/deny prompt for a resolved user code, branching on its status. */
 function ResolvedView({
+  code,
   pending,
   actionPending,
   onApprove,
   onDeny,
   onReset,
 }: {
+  code: string;
   pending: PendingInstanceView;
   actionPending: boolean;
   onApprove: () => void;
@@ -204,6 +217,14 @@ function ResolvedView({
   }
   return (
     <div className="flex flex-col gap-4">
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-sm">
+          Check that this code matches the one your DorkOS instance is showing.
+        </p>
+        <code className="bg-muted block rounded-md px-4 py-3 text-center font-mono text-2xl font-semibold tracking-[0.2em] tabular-nums">
+          {displayCode(code)}
+        </code>
+      </div>
       <div className="rounded-md border p-4">
         <p className="text-sm font-medium">{pending.name ?? 'A DorkOS instance'}</p>
         <p className="text-muted-foreground text-sm">Platform: {pending.platform ?? 'unknown'}</p>
