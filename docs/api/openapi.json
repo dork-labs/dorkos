@@ -144,6 +144,10 @@
           "contextTokens": {
             "type": "integer"
           },
+          "lastAutoCompactAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "cwd": {
             "type": "string"
           }

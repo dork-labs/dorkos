@@ -1,6 +1,7 @@
 import { Layers } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { resolveDisplayContextPercent, contextSeverity } from '@/layers/entities/session';
 import type { ContextUsage } from '@dorkos/shared/types';
 
 /** Format a token count as a compact human-readable string (e.g. 42.1k, 200k). */
@@ -18,10 +19,12 @@ interface ContextItemProps {
 
 /** Status bar item displaying context window usage with optional breakdown tooltip. */
 export function ContextItem({ percent, contextUsage }: ContextItemProps) {
-  // Prefer SDK percentage when available (more accurate than our estimate)
-  const displayPercent = contextUsage ? Math.round(contextUsage.percentage) : percent;
+  // Prefer the SDK breakdown when available, else the passed estimate — the one
+  // shared resolution + severity source (entities/session/lib/context-health).
+  const displayPercent = resolveDisplayContextPercent(percent, contextUsage) ?? percent;
+  const severity = contextSeverity(displayPercent);
   const colorClass =
-    displayPercent >= 95 ? 'text-red-500' : displayPercent >= 80 ? 'text-amber-500' : '';
+    severity === 'critical' ? 'text-red-500' : severity === 'warning' ? 'text-amber-500' : '';
 
   const trigger = (
     <span className={cn('inline-flex items-center gap-1', colorClass)}>

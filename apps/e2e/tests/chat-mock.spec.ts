@@ -402,3 +402,43 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
     await expect(compactRow).toHaveAttribute('aria-disabled', 'false');
   });
 });
+
+// Fleet-level context health surfaces (DOR-113, task 4.3). Backed by the
+// test-mode runtime, which emits NO context reading — no `contextTokens` on its
+// list rows and no `contextUsage` on its `session_status` fan-out — so every row
+// resolves to the honest "unknown" gauge and the fleet summary bar correctly
+// hides (nothing to report). This is the one state test-mode can drive; the
+// populated "N near full" bar and a live known gauge require a real reading and
+// are covered by the RTL tests (SessionContextGauge / FleetContextBar /
+// useFleetContextRollup).
+test.describe('Fleet context health — per-row gauge + honest unknown', () => {
+  test('each session row shows a context gauge that reads as a deliberate unknown state', async ({
+    page,
+    request,
+  }) => {
+    await request.post(`${API_URL}/api/test/scenario`, { data: { name: 'simple-text' } });
+
+    // Create a real session so the sidebar list has a row to gauge.
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.sendMessage('Hello');
+    await expect(page.getByText('Echo: Hello')).toBeVisible({ timeout: 10_000 });
+
+    await new BasePage(page).ensureSidebarOpen();
+
+    // The session list carries a per-row context gauge.
+    const row = page.getByTestId('session-row').first();
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByTestId('session-context-gauge')).toBeVisible();
+
+    // With no reading available, the gauge reads as a deliberate MUTED
+    // "unknown" — never a fabricated 0% or a broken/error state.
+    await expect(row.getByLabel('Context usage unknown')).toBeVisible();
+    await expect(row.getByText('0%')).toHaveCount(0);
+
+    // Every row is unknown ⇒ nothing to summarize ⇒ the fleet summary bar hides
+    // itself (spec §8b: hidden when nothing to report), rather than showing a
+    // hollow "0 near full".
+    await expect(page.getByTestId('fleet-context-bar')).toHaveCount(0);
+  });
+});

@@ -2,6 +2,9 @@ import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { useModels } from './use-models';
+// Same-slice import via the sibling module (not the entities/session barrel) to
+// avoid a self-referential barrel import within this slice.
+import { deriveContextPercent } from '../lib/context-health';
 import type {
   Session,
   SessionStatusEvent,
@@ -89,10 +92,7 @@ export function useSessionStatus(
     effort,
     fastMode,
     costUsd: streamingStatus?.costUsd ?? null,
-    contextPercent:
-      contextTokens && contextMaxTokens
-        ? Math.min(100, Math.round((contextTokens / contextMaxTokens) * 100))
-        : null,
+    contextPercent: deriveContextPercent(contextTokens, contextMaxTokens),
     isStreaming,
     cwd: session?.cwd ?? null,
   };

@@ -3,8 +3,11 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { TransportProvider } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
 import { useSessionChatStore, useSessionListStore } from '@/layers/entities/session';
 import { SessionsView } from '../ui/SessionsView';
 
@@ -45,7 +48,19 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 function Wrapper({ children }: { children: React.ReactNode }) {
-  return <TooltipProvider>{children}</TooltipProvider>;
+  // The rows render SessionContextGauge and the view renders FleetContextBar,
+  // both resolving context health via useModels (transport). With an empty
+  // session store the bar hides and every gauge sits in its muted "unknown"
+  // state, so these assertions are unaffected.
+  const transport = createMockTransport();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </TransportProvider>
+    </QueryClientProvider>
+  );
 }
 
 describe('SessionsView', () => {

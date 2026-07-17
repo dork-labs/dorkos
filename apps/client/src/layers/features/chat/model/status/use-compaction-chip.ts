@@ -8,19 +8,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTransport } from '@/layers/shared/model';
+import { CONTEXT_WARNING_PERCENT } from '@/layers/entities/session';
 import { dispatchCompactIntent } from '../native-commands';
-
-/**
- * Context-usage percent at which the compaction chip appears. Deliberately
- * the same ~80% point `ContextItem` (`apps/client/src/layers/features/status/
- * ui/ContextItem.tsx`) turns its badge amber — the DOR-112 spec's "context
- * usage fraction ≥ 0.8" is where context pressure starts costing turn quality
- * and latency, so the warning color and the one-click fix agree on what
- * "nearly full" means. Kept as a local constant (not imported from the status
- * feature) per this codebase's convention against cross-feature model
- * imports; if the amber threshold ever moves, move this one too.
- */
-export const COMPACTION_CHIP_THRESHOLD_PERCENT = 80;
 
 /**
  * Belt-and-suspenders ceiling on the chip's in-flight state. The primary
@@ -66,8 +55,11 @@ export interface CompactionChipVisibilityInput {
 
 /**
  * Pure visibility rule for the compaction chip — unit-testable without React.
- * All three conditions must hold: usage at/above the threshold, the runtime
- * can fulfill compact, and no turn is currently streaming.
+ * All three conditions must hold: usage at/above the shared "near full"
+ * threshold ({@link CONTEXT_WARNING_PERCENT} — the same amber point
+ * `ContextItem` uses, so the warning color and the one-click fix agree on what
+ * "nearly full" means), the runtime can fulfill compact, and no turn is
+ * currently streaming.
  *
  * @param input - The current context percent, compact support, and streaming state.
  */
@@ -77,7 +69,7 @@ export function shouldShowCompactionChip({
   isStreaming,
 }: CompactionChipVisibilityInput): boolean {
   if (percent === null) return false;
-  if (percent < COMPACTION_CHIP_THRESHOLD_PERCENT) return false;
+  if (percent < CONTEXT_WARNING_PERCENT) return false;
   if (!compactSupported) return false;
   if (isStreaming) return false;
   return true;

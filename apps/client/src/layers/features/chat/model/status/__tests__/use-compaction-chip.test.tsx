@@ -5,11 +5,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
+import { CONTEXT_WARNING_PERCENT } from '@/layers/entities/session';
 import { createMockTransport } from '@dorkos/test-utils';
 import {
   shouldShowCompactionChip,
   useCompactionChip,
-  COMPACTION_CHIP_THRESHOLD_PERCENT,
   COMPACTION_PENDING_RESET_MS,
 } from '../use-compaction-chip';
 
@@ -24,8 +24,10 @@ vi.mock('sonner', () => ({
 describe('shouldShowCompactionChip', () => {
   // The DOR-112 spec: "usage fraction >= 0.8" — asserted here as the exact
   // percent boundary, since the hook and the copy both work in whole percent.
-  it('matches the DOR-112 threshold constant', () => {
-    expect(COMPACTION_CHIP_THRESHOLD_PERCENT).toBe(80);
+  // The chip now shares the one threshold source (CONTEXT_WARNING_PERCENT), so
+  // this pins the shared constant the hook gates on.
+  it('gates on the shared near-full threshold (80)', () => {
+    expect(CONTEXT_WARNING_PERCENT).toBe(80);
   });
 
   it('hides when percent is unknown (null)', () => {

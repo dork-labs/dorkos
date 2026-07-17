@@ -8,7 +8,7 @@
  * timeout with an injectable budget (so no test ever sleeps the real 2s).
  */
 import { describe, it, expect } from 'vitest';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { FakeAgentRuntime, createMockSessionWithReading } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import { aggregateSessionList } from '../aggregate-session-list.js';
 
@@ -109,5 +109,63 @@ describe('aggregateSessionList', () => {
   it('returns empty sessions with no warnings when no runtimes are registered', async () => {
     const result = await aggregateSessionList({ runtimes: [], projectDir: '/p' });
     expect(result).toEqual({ sessions: [], warnings: [] });
+  });
+
+  it('carries a context reading only for the runtime that produced one (fleet-context-health)', async () => {
+    // Purpose (DOR-113): claude-code emits a best-effort list reading from its
+    // tail; codex/opencode closed rows are token-less. The merged list must keep
+    // that per-runtime honesty — the client renders "unknown" for the omitted
+    // rows, never a fabricated 0%.
+    const claude = new FakeAgentRuntime('claude-code');
+    const codex = new FakeAgentRuntime('codex');
+    const opencode = new FakeAgentRuntime('opencode');
+    claude.listSessions.mockResolvedValue([
+      createMockSessionWithReading({
+        id: 'cc-1',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+        contextTokens: 150_000,
+        lastAutoCompactAt: '2026-03-01T00:00:00.000Z',
+      }),
+    ]);
+    codex.listSessions.mockResolvedValue([
+      makeSession({ id: 'cx-1', updatedAt: '2026-02-01T00:00:00.000Z', runtime: 'codex' }),
+    ]);
+    opencode.listSessions.mockResolvedValue([
+      makeSession({ id: 'oc-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'opencode' }),
+    ]);
+
+    const { sessions, warnings } = await aggregateSessionList({
+      runtimes: [claude, codex, opencode],
+      projectDir: '/p',
+    });
+
+    expect(warnings).toEqual([]);
+    const byId = Object.fromEntries(sessions.map((s) => [s.id, s]));
+    expect(byId['cc-1']!.contextTokens).toBe(150_000);
+    expect(byId['cc-1']!.lastAutoCompactAt).toBe('2026-03-01T00:00:00.000Z');
+    // The token-less runtimes omit the reading entirely.
+    expect(byId['cx-1']!.contextTokens).toBeUndefined();
+    expect(byId['cx-1']!.lastAutoCompactAt).toBeUndefined();
+    expect(byId['oc-1']!.contextTokens).toBeUndefined();
+  });
+
+  it('a rejecting runtime degrades to a warning while a reading-bearing runtime still lists (ADR-0310)', async () => {
+    // Purpose (DOR-113): a whole-runtime failure never fails the aggregate and
+    // never suppresses another runtime's reading — it degrades via warnings[].
+    const claude = new FakeAgentRuntime('claude-code');
+    const codex = new FakeAgentRuntime('codex');
+    claude.listSessions.mockResolvedValue([
+      createMockSessionWithReading({ id: 'cc-1', updatedAt: '2026-03-01T00:00:00.000Z' }),
+    ]);
+    codex.listSessions.mockRejectedValue(new Error('codex offline'));
+
+    const { sessions, warnings } = await aggregateSessionList({
+      runtimes: [claude, codex],
+      projectDir: '/p',
+    });
+
+    expect(sessions.map((s) => s.id)).toEqual(['cc-1']);
+    expect(sessions[0]!.contextTokens).toBe(120_000);
+    expect(warnings).toEqual([{ runtime: 'codex', message: 'codex offline' }]);
   });
 });

@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260717-125124",
+      "slug": "fleet-context-health",
+      "title": "Fleet-level context health — best-effort list reading + live override, honest per-runtime degradation",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "fleet-context-health",
+      "specSlug": "fleet-context-health"
+    },
+    {
       "id": "260717-021653",
       "slug": "default-on-local-mcp-token",
       "title": "Default-on local MCP token with a readOnlyHint capability carve-out",

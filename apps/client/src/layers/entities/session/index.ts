@@ -6,6 +6,15 @@
 export { useSessions, useSessionListWarnings, insertOptimisticSession } from './model/use-sessions';
 export { useAgentSessions } from './model/use-agent-sessions';
 export { selectAgentSessions } from './lib/select-agent-sessions';
+// Context-health — the one client source for context percent, thresholds, and severity.
+export {
+  CONTEXT_WARNING_PERCENT,
+  CONTEXT_CRITICAL_PERCENT,
+  contextSeverity,
+  deriveContextPercent,
+  resolveDisplayContextPercent,
+} from './lib/context-health';
+export type { ContextSeverity } from './lib/context-health';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
 export { useSessionRuntime } from './model/use-session-runtime';
 export { useSessionId } from './model/use-session-id';
@@ -41,8 +50,10 @@ export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,
+  useSessionContextReading,
   useSessionRekeyTarget,
 } from './model/session-list-store';
+export type { SessionContextReading } from './model/session-list-store';
 export {
   initSessionStreamBinding,
   resetSessionStreamBinding,
@@ -52,9 +63,19 @@ export { useGlobalSessionStream } from './model/use-global-session-stream';
 export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';
 export { useAgentHottestStatus } from './model/use-agent-hottest-status';
+// Context-health merge resolver (list vs live, live wins) + its pure core.
+export {
+  useSessionContextHealth,
+  resolveSessionContextHealth,
+} from './model/use-session-context-health';
+export type { SessionContextHealth } from './model/use-session-context-health';
+// Fleet-level context rollup — runtime-neutral counts for the summary surfaces.
+export { useFleetContextRollup } from './model/use-fleet-context-rollup';
+export type { FleetContextRollup } from './model/use-fleet-context-rollup';
 export { usePulseMotion } from './model/use-pulse-motion';
 export { useRenameSession } from './model/use-rename-session';
 
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';
 export type { SessionRowProps } from './ui/SessionRow';
+export { SessionContextGauge } from './ui/SessionContextGauge';

@@ -11,6 +11,7 @@
  *
  * @module features/chat/model/stream/derive-status-bar
  */
+import { deriveContextPercent } from '@/layers/entities/session';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { UsageStatus } from '@dorkos/shared/types';
 
@@ -33,13 +34,6 @@ export interface StatusBarValues {
   cacheStatus: CacheStatusInput | null;
   /** Runtime-neutral usage/cost descriptor for the merged item, or `null`. */
   usage: UsageStatus | null;
-}
-
-/** Compute the context-window utilization percentage from token totals. */
-function deriveContextPercent(status: SessionStatus): number | null {
-  const usage = status.contextUsage;
-  if (!usage || usage.maxTokens <= 0) return null;
-  return Math.min(100, Math.round((usage.totalTokens / usage.maxTokens) * 100));
 }
 
 /** Build the cache-item input from the status' cache stats + context usage. */
@@ -65,7 +59,10 @@ export function deriveStatusBarValues(status: SessionStatus | null): StatusBarVa
     return { contextPercent: null, costUsd: null, model: null, cacheStatus: null, usage: null };
   }
   return {
-    contextPercent: deriveContextPercent(status),
+    contextPercent: deriveContextPercent(
+      status.contextUsage?.totalTokens,
+      status.contextUsage?.maxTokens
+    ),
     costUsd: status.cost,
     model: status.model,
     cacheStatus: deriveCacheStatus(status),

@@ -14,8 +14,25 @@ import { useCallback } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
+import { useShallow } from 'zustand/react/shallow';
 import type { Session } from '@dorkos/shared/types';
-import type { SessionStatus, SessionListEvent } from '@dorkos/shared/session-stream';
+import type {
+  SessionStatus,
+  SessionListEvent,
+  SessionContextUsage,
+} from '@dorkos/shared/session-stream';
+
+/**
+ * A retained per-session live context reading (survives settle). Decision 3
+ * splits liveness from the reading into two maps so the liveness/border prune
+ * can never cross-regress a settled session's last reading.
+ */
+export interface SessionContextReading {
+  /** The live SDK usage breakdown (carries totalTokens + maxTokens). */
+  contextUsage: SessionContextUsage;
+  /** Client receive time (ISO) — the live reading's freshness stamp. */
+  receivedAt: string;
+}
 
 interface SessionListStoreState {
   /** Session metadata keyed by id (from `session_upserted`). */
@@ -28,6 +45,16 @@ interface SessionListStoreState {
    * even for sessions whose metadata was never fetched.
    */
   statusCwds: Record<string, string>;
+  /**
+   * Retained live context reading per session (from `session_status.contextUsage`).
+   * Unlike {@link statuses}, this is NOT pruned when a session settles to
+   * idle/interrupted — a settled session keeps showing its last known context
+   * usage instead of blanking (Decision 3). Bounded by "sessions seen streaming
+   * since connect": cleared on remove, on rekey-retire, and on stream reconnect
+   * ({@link SessionListActions.resetStatuses}) so a stale reading can't outlive a
+   * server restart the way a status can't.
+   */
+  contextReadings: Record<string, SessionContextReading>;
   /**
    * Sessions that settled while NOT being viewed (background work the operator
    * has not acknowledged), keyed by id with the session's cwd as the value when
@@ -66,8 +93,9 @@ interface SessionListActions {
   /** Acknowledge a session's unseen-activity flag (it became active). */
   clearUnseen: (sessionId: string) => void;
   /**
-   * Drop every status projection (NOT metadata, NOT unseen flags). Called by
-   * the binding when the global stream (re)connects: `session_status` is
+   * Drop every status projection and retained context reading (NOT metadata,
+   * NOT unseen flags). Called by the binding when the global stream
+   * (re)connects: `session_status` is
    * fan-out-only with no replay for late joiners, so a status held across a
    * disconnect — e.g. a 'streaming' that settled while the server restarted —
    * would otherwise pin a stale border until that session's NEXT transition,
@@ -87,6 +115,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
       sessions: {},
       statuses: {},
       statusCwds: {},
+      contextReadings: {},
       unseen: {},
       rekeys: {},
 
@@ -105,6 +134,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
             delete state.sessions[sessionId];
             delete state.statuses[sessionId];
             delete state.statusCwds[sessionId];
+            delete state.contextReadings[sessionId];
             delete state.unseen[sessionId];
           },
           false,
@@ -132,6 +162,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                 delete state.sessions[event.sessionId];
                 delete state.statuses[event.sessionId];
                 delete state.statusCwds[event.sessionId];
+                delete state.contextReadings[event.sessionId];
                 delete state.unseen[event.sessionId];
                 break;
               case 'session_status': {
@@ -148,15 +179,27 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                   delete state.sessions[event.retiredSessionId];
                   delete state.statuses[event.retiredSessionId];
                   delete state.statusCwds[event.retiredSessionId];
+                  delete state.contextReadings[event.retiredSessionId];
                   delete state.unseen[event.retiredSessionId];
                   state.rekeys[event.retiredSessionId] = event.sessionId;
                 }
-                // Settled lifecycles carry no signal (borderKindFromLifecycle
-                // treats absent and idle identically), so prune instead of
-                // store — `session_removed` only fires on transcript deletion,
-                // so on a long-lived client every session that ever
-                // transitioned would otherwise accumulate an entry scanned per
-                // agent row.
+                // Retain the reading on EVERY status carrying contextUsage,
+                // including a settling one — a settled session keeps showing its
+                // last known usage instead of blanking (Decision 3). This is the
+                // ONLY map that survives settle; the liveness maps below still
+                // prune, so the border signal stays memory-bounded.
+                if (event.status.contextUsage) {
+                  state.contextReadings[event.sessionId] = {
+                    contextUsage: event.status.contextUsage,
+                    receivedAt: new Date().toISOString(),
+                  };
+                }
+                // Settled lifecycles carry no liveness signal
+                // (borderKindFromLifecycle treats absent and idle identically),
+                // so prune the status/cwd instead of storing — `session_removed`
+                // only fires on transcript deletion, so on a long-lived client
+                // every session that ever transitioned would otherwise
+                // accumulate an entry scanned per agent row.
                 const lifecycle = event.status.lifecycle;
                 if (lifecycle === 'idle' || lifecycle === 'interrupted') {
                   delete state.statuses[event.sessionId];
@@ -196,6 +239,9 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
           (state) => {
             state.statuses = {};
             state.statusCwds = {};
+            // A reading held across a disconnect could be stale after a server
+            // restart (same reasoning as the status drop), so clear it too.
+            state.contextReadings = {};
           },
           false,
           'session-list/resetStatuses'
@@ -205,14 +251,29 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
   )
 );
 
-/** Selector: all session metadata as an array (stable per-store-update identity). */
+/**
+ * Selector: all session metadata as an array. `Object.values` mints a fresh
+ * array each call, so it MUST go through `useShallow` — under zustand v5's
+ * `useSyncExternalStore`, an unmemoized new-reference selector loops infinitely.
+ * `useShallow` returns the cached array until an element actually changes.
+ */
 export function useSessionListSessions(): Session[] {
-  return useSessionListStore(useCallback((s) => Object.values(s.sessions), []));
+  return useSessionListStore(useShallow((s) => Object.values(s.sessions)));
 }
 
 /** Selector: the status projection for a single session, or `null`. */
 export function useSessionListStatus(sessionId: string): SessionStatus | null {
   return useSessionListStore(useCallback((s) => s.statuses[sessionId] ?? null, [sessionId]));
+}
+
+/**
+ * Selector: the retained live context reading for a single session, or `null`.
+ * Survives settle (unlike {@link useSessionListStatus}) so a background session
+ * keeps its last known usage; the merge resolver prefers this over the list
+ * reading when present (live wins).
+ */
+export function useSessionContextReading(sessionId: string): SessionContextReading | null {
+  return useSessionListStore(useCallback((s) => s.contextReadings[sessionId] ?? null, [sessionId]));
 }
 
 /**

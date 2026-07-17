@@ -42,9 +42,16 @@ Codex and OpenCode sessions work the same way in spirit: each tool keeps its own
 and DorkOS reads from all three to build one combined list. If DorkOS can't reach one of them, it
 still shows you the others and flags which one it missed.
 
+**See how full each session's context is.** Every row in the list shows a small gauge of how much
+of its context window is used, so you can spot which agents are running low before they slow down.
+A line at the top of the list sums it up, "2 near full · 1 auto-compacted", so you know which one
+to jump into first. Claude Code sessions show this reading even when they're closed; Codex and
+OpenCode show it once you open the session, and read "unknown" until then, because those tools only
+report context usage while a session is live.
+
 <Callout type="info">
-  Want a picture of this? A short clip of a session appearing in the DorkOS sidebar the instant
-  you start it from the CLI says more than the paragraph above ever could.
+  Want a picture of this? A short clip of a session appearing in the DorkOS sidebar the instant you
+  start it from the CLI says more than the paragraph above ever could.
 </Callout>
 
 ## Reference (for developers)
@@ -101,13 +108,13 @@ Most people never need this. Here's where each field on a Claude Code session co
 do:
 
 | Field               | Source                                  |
-| ------------------- | ---------------------------------------- |
-| **ID**              | The unique ID in the JSONL filename      |
-| **Title**           | First user message in the transcript     |
-| **Preview**         | Beginning of the last assistant message  |
-| **Created**         | File creation timestamp                  |
-| **Updated**         | File modification timestamp              |
-| **Permission mode** | Extracted from the SDK's init message    |
+| ------------------- | --------------------------------------- |
+| **ID**              | The unique ID in the JSONL filename     |
+| **Title**           | First user message in the transcript    |
+| **Preview**         | Beginning of the last assistant message |
+| **Created**         | File creation timestamp                 |
+| **Updated**         | File modification timestamp             |
+| **Permission mode** | Extracted from the SDK's init message   |
 
 ### Working directories
 
@@ -124,7 +131,8 @@ start a session.
     Understand how sessions fit into the overall DorkOS architecture.
   </Card>
   <Card title="Building Integrations" href="/docs/integrations/building-integrations">
-    See how session operations are delivered through the Transport interface, for extension and integration authors.
+    See how session operations are delivered through the Transport interface, for extension and
+    integration authors.
   </Card>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
     Learn how to review and approve tool calls during a session.

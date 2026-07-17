@@ -690,6 +690,7 @@ describe('TranscriptReader', () => {
         birthtime: new Date('2024-01-01'),
         mtime: new Date('2024-01-02'),
         mtimeMs: 1704153600000,
+        size: 512,
       };
       (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(statResult);
 
@@ -715,9 +716,14 @@ describe('TranscriptReader', () => {
         timestamp: '2024-01-01T10:00:00Z',
       });
 
+      // Each changed session now performs TWO opens — the 8 KB head read plus
+      // the 16 KB tail read folded in for fleet context health (DOR-113) — so
+      // each file's handle is queued twice, in file order.
       (fs.open as ReturnType<typeof vi.fn>)
-        .mockResolvedValueOnce(mockFileHandle(file1Content))
-        .mockResolvedValueOnce(mockFileHandle(file2Content));
+        .mockResolvedValueOnce(mockFileHandle(file1Content)) // file 1 head
+        .mockResolvedValueOnce(mockFileHandle(file1Content)) // file 1 tail
+        .mockResolvedValueOnce(mockFileHandle(file2Content)) // file 2 head
+        .mockResolvedValueOnce(mockFileHandle(file2Content)); // file 2 tail
 
       const sessions = await transcriptReader.listSessions('/vault');
 
@@ -743,6 +749,7 @@ describe('TranscriptReader', () => {
         birthtime: new Date('2026-03-05'),
         mtime: new Date('2026-03-05'),
         mtimeMs: Date.now(),
+        size: 512,
       };
       (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(statResult);
 
@@ -759,9 +766,13 @@ describe('TranscriptReader', () => {
         message: { role: 'user', content: 'no cwd anywhere' },
         timestamp: '2026-03-05T00:00:00Z',
       });
+      // Two opens per changed session (head + tail, DOR-113) — queue each
+      // file's handle twice, in file order.
       (fs.open as ReturnType<typeof vi.fn>)
-        .mockResolvedValueOnce(mockFileHandle(withCwd))
-        .mockResolvedValueOnce(mockFileHandle(withoutCwd));
+        .mockResolvedValueOnce(mockFileHandle(withCwd)) // with-cwd head
+        .mockResolvedValueOnce(mockFileHandle(withCwd)) // with-cwd tail
+        .mockResolvedValueOnce(mockFileHandle(withoutCwd)) // without-cwd head
+        .mockResolvedValueOnce(mockFileHandle(withoutCwd)); // without-cwd tail
 
       const sessions = await transcriptReader.listSessions('/vault');
 

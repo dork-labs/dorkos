@@ -10,6 +10,7 @@ import { usePulseMotion } from '../model/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
+import { SessionContextGauge } from './SessionContextGauge';
 
 interface SessionRowFullProps {
   session: Session;
@@ -149,6 +150,7 @@ export function SessionRowFull({
               <div className="text-muted-foreground flex items-center gap-1 text-xs">
                 <span className="min-w-0 flex-1">{relativeTime}</span>
                 <span className="flex flex-shrink-0 items-center gap-1">
+                  <SessionContextGauge session={session} />
                   {borderState.kind === 'pendingApproval' && (
                     <Hand
                       className="size-(--size-icon-xs) text-amber-500"

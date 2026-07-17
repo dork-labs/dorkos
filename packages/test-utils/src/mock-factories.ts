@@ -23,6 +23,25 @@ export function createMockSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
+/**
+ * Create a mock claude-code Session that carries a best-effort list reading —
+ * `contextTokens` plus an `lastAutoCompactAt` marker (fleet-context-health,
+ * DOR-113). This is the claude-code-shaped row a tail read produces; a
+ * codex/opencode-shaped closed-session row OMITS both (use {@link createMockSession}
+ * without them). The reading fields stay optional — never make them mandatory.
+ *
+ * @param overrides - Partial overrides for any session field, including the
+ *   reading fields (pass `contextTokens: undefined` to model an unreadable tail).
+ */
+export function createMockSessionWithReading(overrides: Partial<Session> = {}): Session {
+  return createMockSession({
+    runtime: 'claude-code',
+    contextTokens: 120_000,
+    lastAutoCompactAt: '2026-07-01T00:00:00.000Z',
+    ...overrides,
+  });
+}
+
 /** Create a mock StreamEvent with the given type and data. */
 export function createMockStreamEvent(
   type: StreamEvent['type'],

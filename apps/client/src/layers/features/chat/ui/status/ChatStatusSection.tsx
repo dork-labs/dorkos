@@ -13,6 +13,7 @@ import {
   useSubagents,
   useModels,
   useHasConfirmedAuto,
+  resolveDisplayContextPercent,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
@@ -258,15 +259,10 @@ export function ChatStatusSection({
   // with the palette about whether this runtime can compact.
   const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
   const compactIntent = compactComposerGate(activeCaps?.commandIntents, runtimeLabel);
-  // Mirrors ContextItem's own percent resolution (prefer the SDK breakdown
-  // once it arrives, else the coarser estimate) so the chip's "Context N%
-  // full" copy always matches the badge it renders beside.
-  const compactionChipPercent =
-    contextPercent === null
-      ? null
-      : contextUsage
-        ? Math.round(contextUsage.percentage)
-        : contextPercent;
+  // The chip's "Context N% full" copy must always match the ContextItem badge
+  // it renders beside; both resolve the display percent through the one shared
+  // source (prefer the SDK breakdown once it arrives, else the coarser estimate).
+  const compactionChipPercent = resolveDisplayContextPercent(contextPercent, contextUsage);
   const compactionChip = useCompactionChip({
     sessionId,
     percent: compactionChipPercent,

@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionRow } from '../ui/SessionRow';
 import type { Session } from '@dorkos/shared/types';
 import { useSessionChatStore } from '../model/session-chat-store';
 import { useSessionListStore } from '../model/session-list-store';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { TransportProvider } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
 
 // Mock window.matchMedia for useIsMobile hook
 beforeAll(() => {
@@ -45,7 +48,19 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 function Wrapper({ children }: { children: React.ReactNode }) {
-  return <TooltipProvider>{children}</TooltipProvider>;
+  // The full row now renders SessionContextGauge, which resolves context health
+  // via useModels (transport) — provide the query + transport context. With no
+  // tokens or catalog resolved, the gauge sits in its muted "unknown" state,
+  // which does not affect the assertions here.
+  const transport = createMockTransport();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </TransportProvider>
+    </QueryClientProvider>
+  );
 }
 
 function renderRow(ui: React.ReactElement) {
