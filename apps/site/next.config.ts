@@ -78,6 +78,17 @@ const nextConfig: NextConfig = {
         source: '/docs/:path*.mdx',
         destination: '/llms.mdx/docs/:path*',
       },
+      // Industry-standard `.md` suffix alias (Cloudflare/Mintlify convention).
+      // Agents trained on those hosts guess `.md`; our original `.mdx` stays
+      // for back-compat. Both hit the same raw-markdown route.
+      {
+        source: '/docs.md',
+        destination: '/llms.mdx/docs',
+      },
+      {
+        source: '/docs/:path*.md',
+        destination: '/llms.mdx/docs/:path*',
+      },
     ];
   },
   // Required to support PostHog trailing slash API requests
