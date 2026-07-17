@@ -11,6 +11,8 @@ export class ChatPage {
   readonly panel: Locator;
   readonly inferenceStreaming: Locator;
   readonly inferenceComplete: Locator;
+  readonly commandPalette: Locator;
+  readonly paletteOptions: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -21,6 +23,10 @@ export class ChatPage {
     this.panel = page.locator('[data-testid="chat-panel"]');
     this.inferenceStreaming = page.locator('[data-testid="inference-indicator-streaming"]');
     this.inferenceComplete = page.locator('[data-testid="inference-indicator-complete"]');
+    // Inline slash-command palette (CommandPalette.tsx): a listbox whose rows are
+    // role="option" with ids `command-item-{n}`.
+    this.commandPalette = page.locator('#command-palette-listbox');
+    this.paletteOptions = this.commandPalette.getByRole('option');
   }
 
   /** Navigate to the app and ensure a chat session is active. */
@@ -98,5 +104,24 @@ export class ChatPage {
   async getSessionId(): Promise<string | null> {
     const url = new URL(this.page.url());
     return url.searchParams.get('session');
+  }
+
+  /**
+   * Open the inline slash-command palette by typing `query` (e.g. `'/'` or
+   * `'/compress'`) into the composer, and wait for the listbox to appear.
+   * Uses real keystrokes so the `/` trigger detection and cursor tracking fire
+   * exactly as they do for a user.
+   */
+  async openCommandPalette(query: string) {
+    await this.input.click();
+    await this.input.pressSequentially(query);
+    await this.commandPalette.waitFor({ state: 'visible', timeout: 10_000 });
+  }
+
+  /** A single palette row by its canonical slash token (e.g. `'/compact'`). */
+  paletteRow(fullCommand: string): Locator {
+    return this.paletteOptions.filter({
+      has: this.page.getByText(fullCommand, { exact: true }),
+    });
   }
 }
