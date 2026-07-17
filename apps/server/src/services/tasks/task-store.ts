@@ -1,4 +1,4 @@
-import { eq, desc, and, count, notInArray, like, lt, isNull, sql } from 'drizzle-orm';
+import { eq, desc, and, count, inArray, notInArray, like, lt, isNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -43,7 +43,8 @@ export interface CreateTaskStoreInput {
 }
 
 /**
- * Per-schedule reliability, computed over terminal (non-`running`) runs.
+ * Per-schedule reliability, computed over terminal runs (the
+ * {@link TERMINAL_RUN_STATUSES} set, plus DB-only `timeout` rows).
  * See {@link TaskStore.getScheduleReliability}.
  */
 export interface ScheduleReliability {
@@ -452,8 +453,8 @@ export class TaskStore {
 
   /**
    * Per-schedule reliability: success rate and p95 run duration, computed
-   * over terminal (non-`running`) runs only -- an in-flight run hasn't
-   * concluded yet, so it can't count for or against a schedule (DOR-166).
+   * over terminal runs only -- an in-flight run hasn't concluded yet, so it
+   * can't count for or against a schedule (DOR-166).
    *
    * Service-layer query with no route/UI consumer yet: wire up an endpoint
    * when a surface needs "how slow and how reliable is this schedule".
@@ -472,7 +473,15 @@ export class TaskStore {
       ? sql<number | null>`percentile_cont(${pulseRuns.durationMs}, 0.95)`
       : sql<number | null>`NULL`;
 
-    const conditions = [sql`${pulseRuns.status} != 'running'`];
+    // Filter by the explicit terminal set, not `!= 'running'`, so this stays
+    // in lockstep with TERMINAL_RUN_STATUSES (the run-lifecycle guard).
+    // 'timeout' is appended because it exists only in the DB column's enum
+    // (no writer produces it today, and the shared TaskRunStatus type omits
+    // it): if such a row ever appears, it's a run that ended without
+    // success, so it must count against the success rate rather than be
+    // silently ignored.
+    const reliabilityTerminalStatuses = [...TERMINAL_RUN_STATUSES, 'timeout' as const];
+    const conditions = [inArray(pulseRuns.status, reliabilityTerminalStatuses)];
     if (scheduleId) {
       conditions.push(eq(pulseRuns.scheduleId, scheduleId));
     }

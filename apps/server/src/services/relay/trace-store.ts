@@ -177,9 +177,15 @@ export class TraceStore {
     // Delivery latency in ms, NULL for spans that haven't (yet) delivered.
     // Reused for AVG and every percentile below so they all agree on what
     // "latency" means and this stays a single SQL pass.
+    //
+    // julianday(), not strftime('%s', …): strftime truncates to whole
+    // seconds, so a sub-second delivery — the common case for in-process
+    // relay hops — reads 0ms while the field advertises milliseconds.
+    // julianday keeps the ISO string's millisecond precision (day fraction
+    // × 86_400_000 ms/day), at the cost of float noise in the µs range.
     const latencyExpr = sql`
       CASE WHEN ${relayTraces.deliveredAt} IS NOT NULL AND ${relayTraces.sentAt} IS NOT NULL
-      THEN (strftime('%s', ${relayTraces.deliveredAt}) - strftime('%s', ${relayTraces.sentAt})) * 1000
+      THEN (julianday(${relayTraces.deliveredAt}) - julianday(${relayTraces.sentAt})) * 86400000
       END
     `;
 

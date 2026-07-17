@@ -769,5 +769,25 @@ describe('TaskStore', () => {
       expect(result[0].totalRuns).toBe(1);
       expect(result[0].p95DurationMs).toBeNull();
     });
+
+    it("counts a DB-only 'timeout' row as a terminal failure, not ignoring it", () => {
+      const taskId = createTestTask('Timeout rows');
+      const ok = store.createRun(taskId, 'scheduled');
+      store.updateRun(ok.id, { status: 'completed', durationMs: 100 });
+
+      // No writer produces 'timeout' today (the shared TaskRunStatus type
+      // omits it), but the DB column enum allows it -- write it directly to
+      // simulate such a row.
+      const timedOut = store.createRun(taskId, 'scheduled');
+      db.update(pulseRuns)
+        .set({ status: 'timeout', durationMs: 5000 })
+        .where(eq(pulseRuns.id, timedOut.id))
+        .run();
+
+      const result = store.getScheduleReliability(taskId);
+      expect(result).toHaveLength(1);
+      expect(result[0].totalRuns).toBe(2); // the timeout row is included...
+      expect(result[0].successRate).toBeCloseTo(0.5, 10); // ...and counts as a failure
+    });
   });
 });

@@ -114,7 +114,7 @@ relay_get_metrics   Get aggregate delivery metrics for the bus
 
 ### Delivery Metrics
 
-Relay computes aggregate delivery metrics straight from the trace store, so they always reflect the current state of the database. These give you a summary of bus health without inspecting individual traces.
+Relay computes aggregate delivery metrics straight from the trace store, covering the last 24 hours by default. These give you a summary of bus health without inspecting individual traces.
 
 #### Fetching Metrics
 
@@ -129,7 +129,9 @@ curl http://localhost:4242/api/relay/trace/metrics
   "failedCount": 12,
   "deadLetteredCount": 50,
   "avgDeliveryLatencyMs": 45.2,
-  "p95DeliveryLatencyMs": null,
+  "p50DeliveryLatencyMs": 28.6,
+  "p95DeliveryLatencyMs": 190.5,
+  "p99DeliveryLatencyMs": 420.1,
   "activeEndpoints": 8,
   "budgetRejections": {
     "hopLimit": 0,
@@ -156,11 +158,23 @@ curl http://localhost:4242/api/relay/trace/metrics
     },
     avgDeliveryLatencyMs: {
       type: 'number | null',
-      description: 'Average time from publish to endpoint delivery (milliseconds)',
+      description:
+        'Average time from publish to endpoint delivery (milliseconds). Null when no deliveries are in the window.',
+    },
+    p50DeliveryLatencyMs: {
+      type: 'number | null',
+      description:
+        'Median (50th percentile) delivery latency in milliseconds. Null when no deliveries are in the window.',
     },
     p95DeliveryLatencyMs: {
       type: 'number | null',
-      description: '95th percentile delivery latency. Currently returns null, not yet implemented.',
+      description:
+        '95th percentile delivery latency in milliseconds. Null when no deliveries are in the window.',
+    },
+    p99DeliveryLatencyMs: {
+      type: 'number | null',
+      description:
+        '99th percentile delivery latency in milliseconds. Null when no deliveries are in the window.',
     },
     activeEndpoints: {
       type: 'number',
@@ -193,12 +207,12 @@ A healthy bus has a high delivered-to-total ratio and low dead letter counts.
 
 - **High `deadLetteredCount` relative to total**: Check budget rejections. A spike in `hopLimit` rejections usually means two agents stuck replying to each other in a loop (it happens to the best of us). TTL expirations may mean agents are too slow to process within the 1-hour window.
 - **Rising `failedCount`**: Subscriber handlers are throwing errors. Check individual traces for the `errorMessage` field. The circuit breaker (a safety switch that stops sending to an endpoint that keeps failing) automatically stops delivering to endpoints with 5 consecutive failures.
-- **High `avgDeliveryLatencyMs`**: A single slow endpoint can pull up the mean. Inspect traces filtered by endpoint to find the bottleneck.
+- **High `avgDeliveryLatencyMs`**: A single slow endpoint can pull up the mean. Compare it against `p50DeliveryLatencyMs`: an average far above the median means a few slow deliveries are skewing it. Inspect traces filtered by endpoint to find the bottleneck.
 
 <Callout type="info">
-  Relay metrics reflect the full history of the current database, not a recent time window.
-  `p95DeliveryLatencyMs` currently returns `null` and `budgetRejections` counters return `0` in this
-  endpoint. They're tracked at the RelayCore level but not yet aggregated into trace store metrics.
+  Relay metrics cover the last 24 hours by default, not the full history of the database.
+  `budgetRejections` counters return `0` in this endpoint. They're tracked at the RelayCore level
+  but not yet aggregated into trace store metrics.
 </Callout>
 
 ## When a Message Goes Missing
