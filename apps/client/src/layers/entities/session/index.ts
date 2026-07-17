@@ -50,8 +50,10 @@ export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,
+  useSessionContextReading,
   useSessionRekeyTarget,
 } from './model/session-list-store';
+export type { SessionContextReading } from './model/session-list-store';
 export {
   initSessionStreamBinding,
   resetSessionStreamBinding,
