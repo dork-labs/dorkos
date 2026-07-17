@@ -5,6 +5,7 @@
  */
 import type { DiscoveryCandidate, AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Logger } from '@dorkos/shared/logger';
+import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 
 /** Events yielded by the unified scanner. */
 export type ScanEvent =
@@ -64,3 +65,15 @@ export const UNIFIED_EXCLUDE_PATTERNS = new Set([
   '.DS_Store',
   'extensions',
 ]);
+
+/**
+ * Basename fragment marking a crash-left marketplace install backup
+ * directory (`<target>.dorkos-bak-<timestamp>-<uuid>`, see ADR-0304 and
+ * `apps/server/src/services/marketplace/transaction.ts`). Unlike
+ * {@link UNIFIED_EXCLUDE_PATTERNS}, this can't be an exact-match entry in
+ * that set because the name varies per install — every directory whose
+ * basename *contains* this marker is excluded, regardless of where it sits
+ * in the tree. These are never agents or packages, so the exclusion is
+ * unconditional (DOR-175).
+ */
+export const BACKUP_DIR_MARKER = MARKETPLACE_BACKUP_DIR_MARKER;

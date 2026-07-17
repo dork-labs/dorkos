@@ -29,13 +29,19 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { atomicMove } from './lib/atomic-move.js';
 
 /** Staging directory prefix passed to `mkdtemp`. */
 const STAGING_DIR_PREFIX = 'dorkos-install-';
 
-/** Suffix marker used when moving an existing target aside for backup. */
-const BACKUP_SUFFIX = '.dorkos-bak-';
+/**
+ * Suffix marker used when moving an existing target aside for backup, e.g.
+ * `<target>.dorkos-bak-<timestamp>-<uuid>`. Re-exported so
+ * `./backup-janitor.ts` derives the sweep pattern from this single source of
+ * truth instead of duplicating the literal.
+ */
+export const BACKUP_SUFFIX = MARKETPLACE_BACKUP_DIR_MARKER;
 
 /**
  * Options for {@link runTransaction}. The `stage` callback prepares the

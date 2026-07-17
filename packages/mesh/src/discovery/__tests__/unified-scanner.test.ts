@@ -309,6 +309,59 @@ describe('unifiedScan', () => {
       const candidates = events.filter((e) => e.type === 'candidate');
       expect(candidates).toHaveLength(0);
     });
+
+    it('skips crash-left marketplace install backup directories (DOR-175)', async () => {
+      const root = await makeTempDir();
+      // Mirrors the sibling backup naming written by
+      // apps/server/src/services/marketplace/transaction.ts's moveTargetAside:
+      // <target-basename>.dorkos-bak-<timestamp>-<uuid>.
+      const backup = path.join(
+        root,
+        `my-agent.dorkos-bak-${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`
+      );
+      await fs.mkdir(backup, { recursive: true });
+      await fs.writeFile(path.join(backup, 'AGENTS.md'), '# crash-left backup', 'utf-8');
+
+      const events = await collectAll(root, [makeClaudeMdStrategy()]);
+      const candidates = events.filter((e) => e.type === 'candidate');
+      expect(candidates).toHaveLength(0);
+    });
+
+    it('does not descend into a crash-left backup directory to find nested candidates', async () => {
+      const root = await makeTempDir();
+      const backup = path.join(root, `my-agent.dorkos-bak-${Date.now()}-deadbeef`);
+      const nested = path.join(backup, 'nested-project');
+      await fs.mkdir(nested, { recursive: true });
+      await fs.writeFile(path.join(nested, 'AGENTS.md'), '# nested', 'utf-8');
+
+      const events = await collectAll(root, [makeClaudeMdStrategy()]);
+      const candidates = events.filter((e) => e.type === 'candidate');
+      expect(candidates).toHaveLength(0);
+    });
+
+    it('does not auto-import a .dork/agent.json found under a backup directory', async () => {
+      const root = await makeTempDir();
+      const backup = path.join(root, `my-agent.dorkos-bak-${Date.now()}-cafebabe`);
+      await fs.mkdir(backup, { recursive: true });
+      await writeManifest(backup, makeManifest());
+
+      const events = await collectAll(root);
+      const autoImports = events.filter((e) => e.type === 'auto-import');
+      expect(autoImports).toHaveLength(0);
+    });
+
+    it('still scans a sibling directory whose name merely contains a similar substring', async () => {
+      // Sanity check: the exclusion is substring-based on the exact marker
+      // '.dorkos-bak-', not an overly broad match on 'bak' or 'dorkos'.
+      const root = await makeTempDir();
+      const normal = path.join(root, 'dorkos-backup-notes');
+      await fs.mkdir(normal, { recursive: true });
+      await fs.writeFile(path.join(normal, 'AGENTS.md'), '# normal project', 'utf-8');
+
+      const events = await collectAll(root, [makeClaudeMdStrategy()]);
+      const candidates = events.filter((e) => e.type === 'candidate');
+      expect(candidates).toHaveLength(1);
+    });
   });
 
   describe('symlink cycle detection', () => {
