@@ -4,6 +4,11 @@ import { z } from 'zod';
 export const docs = defineDocs({
   // Points to the root-level docs/ directory in the monorepo
   dir: '../../docs',
+  docs: {
+    postprocess: {
+      includeProcessedMarkdown: true,
+    },
+  },
 });
 
 export const blogPosts = defineCollections({
