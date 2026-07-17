@@ -454,7 +454,13 @@ async function start() {
     }
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
-    initCloudLinkManager();
+    // Cloud-link transport: fake the network dependency to dorkos.ai only, so
+    // the capture pipeline can photograph a real pending→linked flip offline.
+    // Dynamic import keeps fake-cloud-link.ts out of the production module
+    // graph — same pattern as TestModeRuntime above.
+    const { createFakeCloudLinkFetch } =
+      await import('./services/runtimes/test-mode/fake-cloud-link.js');
+    initCloudLinkManager({ fetchImpl: createFakeCloudLinkFetch() });
   } else {
     claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
     schedulerAgentManager = claudeRuntime;
