@@ -31,8 +31,28 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));
 
+// Auth substrate for the live-wired /mcp posture tests below. Login-off defaults
+// (configManager.get → undefined → auth disabled, no legacy key); no per-user
+// identity; a known local token so the acceptor + 401 body are deterministic.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn() },
+}));
+vi.mock('../../services/core/auth/index.js', () => ({
+  verifyRequestAuth: vi.fn().mockResolvedValue(null),
+}));
+vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
+  getMcpLocalToken: vi.fn(() => LOCAL_TOKEN),
+  getMcpLocalTokenPath: vi.fn(() => TOKEN_PATH),
+}));
+
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
+import { createMcpAuth } from '../../middleware/mcp-auth.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+
+/** A valid local token (dork_mcp_local_ + 64 hex) the acceptor should accept. */
+const LOCAL_TOKEN = `dork_mcp_local_${'a'.repeat(64)}`;
+/** The resolved token file path the 401 body must name (never the value). */
+const TOKEN_PATH = '/tmp/dork/mcp-local-token';
 
 /**
  * Create minimal McpToolDeps with mock services.
@@ -230,6 +250,111 @@ describe('MCP Integration', () => {
     expect(res.status).toBe(200);
     // In stateless mode, no session ID header should be set
     expect(res.headers['mcp-session-id']).toBeUndefined();
+  });
+});
+
+/**
+ * The same stateless /mcp app, but fronted by the real createMcpAuth middleware
+ * (login-off surface 'mcp') so the read-only carve-out, the local-token
+ * acceptor, and the helpful 401 body are exercised end-to-end against the live
+ * MCP server — not just the middleware in isolation.
+ */
+function createAuthedApp() {
+  const app = express();
+  app.use(express.json());
+
+  app.post('/mcp', createMcpAuth({ surface: 'mcp' }), async (req, res) => {
+    try {
+      const server = createExternalMcpServer(createMinimalDeps());
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+      res.on('close', () => {
+        transport.close().catch(() => {});
+        server.close().catch(() => {});
+      });
+    } catch (_err) {
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal error' },
+          id: null,
+        });
+      }
+    }
+  });
+
+  return app;
+}
+
+/** Start a POST /mcp request against the authed app, optionally with a token. */
+function mcpPost(app: express.Express, auth?: string): request.Test {
+  const r = request(app)
+    .post('/mcp')
+    .set('Content-Type', 'application/json')
+    .set('Accept', 'application/json, text/event-stream');
+  return auth ? r.set('Authorization', auth) : r;
+}
+
+/** A tools/call JSON-RPC body for a given tool name. */
+function toolCall(name: string): Record<string, unknown> {
+  return { jsonrpc: '2.0', method: 'tools/call', params: { name, arguments: {} }, id: 1 };
+}
+
+describe('MCP auth posture (end-to-end through the live /mcp mount)', () => {
+  it('allows a tokenless read-only tools/call (ping) via the carve-out', async () => {
+    const app = createAuthedApp();
+    const res = await mcpPost(app).send(toolCall('ping'));
+    expect(res.status).toBe(200);
+    const body = parseResponse(res);
+    expect(body.result?.content).toBeDefined();
+  });
+
+  it('allows a tokenless read-only tools/call (get_server_info)', async () => {
+    const app = createAuthedApp();
+    const res = await mcpPost(app).send(toolCall('get_server_info'));
+    expect(res.status).toBe(200);
+  });
+
+  it('allows a tokenless discovery tools/list', async () => {
+    const app = createAuthedApp();
+    const res = await mcpPost(app).send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
+    expect(res.status).toBe(200);
+    const body = parseResponse(res);
+    expect(body.result?.tools).toBeDefined();
+  });
+
+  it('401s a tokenless mutating tools/call with a helpful, non-leaking body', async () => {
+    const app = createAuthedApp();
+    const res = await mcpPost(app).send(toolCall('create_extension'));
+    expect(res.status).toBe(401);
+    const body = res.body as { jsonrpc: string; error: { code: number; message: string } };
+    expect(body.error.code).toBe(-32001);
+    expect(body.error.message).toContain(TOKEN_PATH);
+    expect(body.error.message).toContain('Authorization: Bearer');
+    expect(body.error.message).not.toContain(LOCAL_TOKEN);
+  });
+
+  it('allows the same mutating tools/call WITH the local token (reaches the server)', async () => {
+    const app = createAuthedApp();
+    const res = await mcpPost(app, `Bearer ${LOCAL_TOKEN}`).send(toolCall('create_extension'));
+    // Auth passed → the request reaches the MCP server (a JSON-RPC result, not
+    // the middleware's auth 401 envelope).
+    expect(res.status).toBe(200);
+    const body = parseResponse(res);
+    expect(body.error?.code).not.toBe(-32001);
+  });
+
+  it('401s a tokenless resources/read (fail-closed on data reads)', async () => {
+    const app = createAuthedApp();
+    const res = await mcpPost(app).send({
+      jsonrpc: '2.0',
+      method: 'resources/read',
+      params: { uri: 'dorkos://sessions' },
+      id: 1,
+    });
+    expect(res.status).toBe(401);
+    expect((res.body as { error: { code: number } }).error.code).toBe(-32001);
   });
 });
 
