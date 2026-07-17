@@ -1,5 +1,11 @@
-import { eq, desc, and, count, notInArray, like, lt, isNull } from 'drizzle-orm';
-import { pulseSchedules, pulseRuns, pulseDispatchLog, type Db } from '@dorkos/db';
+import { eq, desc, and, count, notInArray, like, lt, isNull, sql } from 'drizzle-orm';
+import {
+  pulseSchedules,
+  pulseRuns,
+  pulseDispatchLog,
+  hasPercentileSupport,
+  type Db,
+} from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type {
   Task,
@@ -34,6 +40,25 @@ export interface CreateTaskStoreInput {
   maxRuntime?: number | null;
   permissionMode?: string;
   filePath: string;
+}
+
+/**
+ * Per-schedule reliability, computed over terminal (non-`running`) runs.
+ * See {@link TaskStore.getScheduleReliability}.
+ */
+export interface ScheduleReliability {
+  /** The `pulseSchedules.id` this row covers. */
+  scheduleId: string;
+  /** Count of terminal runs included in this computation. */
+  totalRuns: number;
+  /** Fraction of terminal runs that ended `completed`, in `[0, 1]`. */
+  successRate: number;
+  /**
+   * 95th percentile run duration in ms, over terminal runs with a recorded
+   * `durationMs`. `null` when none do, or the linked better-sqlite3 binary
+   * predates the percentile extension (DOR-166).
+   */
+  p95DurationMs: number | null;
 }
 
 /** Fields that can be updated on a run. */
@@ -421,6 +446,48 @@ export class TaskStore {
       .where(and(eq(pulseSchedules.agentId, agentId), eq(pulseSchedules.enabled, true)))
       .run();
     return result.changes;
+  }
+
+  // === Reliability ===
+
+  /**
+   * Per-schedule reliability: success rate and p95 run duration, computed
+   * over terminal (non-`running`) runs only -- an in-flight run hasn't
+   * concluded yet, so it can't count for or against a schedule (DOR-166).
+   *
+   * Service-layer query with no route/UI consumer yet: wire up an endpoint
+   * when a surface needs "how slow and how reliable is this schedule".
+   *
+   * @param scheduleId - Restrict to one schedule. Omit for every schedule
+   *   that has at least one terminal run.
+   * @returns One row per schedule with at least one terminal run -- a
+   *   schedule with none (never run, or only ever `running`) is simply
+   *   absent, never a fabricated zero-filled row.
+   */
+  getScheduleReliability(scheduleId?: string): ScheduleReliability[] {
+    // percentile_cont() ships in better-sqlite3 12.10+ (DOR-166); feature-detect
+    // once and fall back to NULL instead of letting the query throw on an
+    // older binary -- success rate must keep working either way.
+    const p95Expr = hasPercentileSupport(this.db)
+      ? sql<number | null>`percentile_cont(${pulseRuns.durationMs}, 0.95)`
+      : sql<number | null>`NULL`;
+
+    const conditions = [sql`${pulseRuns.status} != 'running'`];
+    if (scheduleId) {
+      conditions.push(eq(pulseRuns.scheduleId, scheduleId));
+    }
+
+    return this.db
+      .select({
+        scheduleId: pulseRuns.scheduleId,
+        totalRuns: count(),
+        successRate: sql<number>`AVG(CASE WHEN ${pulseRuns.status} = 'completed' THEN 1.0 ELSE 0.0 END)`,
+        p95DurationMs: p95Expr,
+      })
+      .from(pulseRuns)
+      .where(and(...conditions))
+      .groupBy(pulseRuns.scheduleId)
+      .all();
   }
 
   // === File-based task sync ===

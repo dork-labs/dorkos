@@ -656,4 +656,118 @@ describe('TaskStore', () => {
       expect(store.tryClaimDispatch(task.id, freshTick)).toBe(false);
     });
   });
+
+  describe('getScheduleReliability (DOR-166)', () => {
+    function createTestTask(name: string) {
+      const task = store.createTask(taskInput({ name, prompt: 'test prompt', cron: '* * * * *' }));
+      return task.id;
+    }
+
+    it('returns [] when there is no run history', () => {
+      expect(store.getScheduleReliability()).toEqual([]);
+    });
+
+    it('excludes schedules whose runs are all still running', () => {
+      const taskId = createTestTask('Still running');
+      store.createRun(taskId, 'scheduled'); // status stays 'running'
+
+      expect(store.getScheduleReliability()).toEqual([]);
+    });
+
+    it('computes success rate and p95 duration over terminal runs, verified against hand-computed values', () => {
+      const taskId = createTestTask('Reliability check');
+
+      // 7 completed + 3 failed, durations 100ms..1000ms in 100ms steps —
+      // successRate = 7/10 = 0.7, independently of the query under test.
+      const durations = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+      const statuses: Array<'completed' | 'failed'> = [
+        'completed',
+        'completed',
+        'completed',
+        'completed',
+        'completed',
+        'completed',
+        'completed',
+        'failed',
+        'failed',
+        'failed',
+      ];
+      for (let i = 0; i < durations.length; i++) {
+        const run = store.createRun(taskId, 'scheduled');
+        store.updateRun(run.id, {
+          status: statuses[i],
+          finishedAt: new Date().toISOString(),
+          durationMs: durations[i],
+        });
+      }
+      // A still-running run must not affect success rate or the duration set.
+      store.createRun(taskId, 'scheduled');
+
+      // Hand-computed p95 via the standard percentile_cont linear-interpolation
+      // formula over the sorted duration set [100, 200, ..., 1000] (n=10):
+      //   rank = 0.95 * (n - 1) = 8.55 -> interpolate between values[8]=900
+      //   and values[9]=1000 at fraction 0.55 -> 900 + 0.55*100 = 955.
+      const sorted = [...durations].sort((a, b) => a - b);
+      const rank = 0.95 * (sorted.length - 1);
+      const lo = Math.floor(rank);
+      const hi = Math.ceil(rank);
+      const handComputedP95 = sorted[lo] + (rank - lo) * (sorted[hi] - sorted[lo]);
+
+      const result = store.getScheduleReliability();
+      expect(result).toHaveLength(1);
+      expect(result[0].scheduleId).toBe(taskId);
+      expect(result[0].totalRuns).toBe(10); // the still-running 11th run is excluded
+      expect(result[0].successRate).toBeCloseTo(0.7, 10);
+      expect(result[0].p95DurationMs).toBeCloseTo(handComputedP95, 6); // 955
+    });
+
+    it('keeps each schedule’s reliability independent', () => {
+      const taskA = createTestTask('Schedule A');
+      const taskB = createTestTask('Schedule B');
+
+      const runA = store.createRun(taskA, 'scheduled');
+      store.updateRun(runA.id, { status: 'completed', durationMs: 1000 });
+
+      const runB1 = store.createRun(taskB, 'scheduled');
+      store.updateRun(runB1.id, { status: 'failed', durationMs: 2000 });
+      const runB2 = store.createRun(taskB, 'scheduled');
+      store.updateRun(runB2.id, { status: 'failed', durationMs: 3000 });
+
+      const result = store.getScheduleReliability();
+      expect(result).toHaveLength(2);
+
+      const a = result.find((r) => r.scheduleId === taskA)!;
+      expect(a.totalRuns).toBe(1);
+      expect(a.successRate).toBe(1);
+
+      const b = result.find((r) => r.scheduleId === taskB)!;
+      expect(b.totalRuns).toBe(2);
+      expect(b.successRate).toBe(0);
+    });
+
+    it('filters to a single schedule when scheduleId is given', () => {
+      const taskA = createTestTask('Filter A');
+      const taskB = createTestTask('Filter B');
+      const runA = store.createRun(taskA, 'scheduled');
+      store.updateRun(runA.id, { status: 'completed', durationMs: 500 });
+      const runB = store.createRun(taskB, 'scheduled');
+      store.updateRun(runB.id, { status: 'completed', durationMs: 700 });
+
+      const result = store.getScheduleReliability(taskA);
+      expect(result).toHaveLength(1);
+      expect(result[0].scheduleId).toBe(taskA);
+    });
+
+    it('does not fabricate a p95 when no terminal run has a recorded duration', () => {
+      const taskId = createTestTask('No durations');
+      const run = store.createRun(taskId, 'scheduled');
+      // Terminal, but durationMs was never set.
+      store.updateRun(run.id, { status: 'cancelled' });
+
+      const result = store.getScheduleReliability();
+      expect(result).toHaveLength(1);
+      expect(result[0].totalRuns).toBe(1);
+      expect(result[0].p95DurationMs).toBeNull();
+    });
+  });
 });
