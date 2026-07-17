@@ -1,7 +1,7 @@
 ---
 id: 260717-163436
 title: Remove the advisory per-agent budget; enforced runaway protection is the per-message envelope budget
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: agent-budget-enforcement
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

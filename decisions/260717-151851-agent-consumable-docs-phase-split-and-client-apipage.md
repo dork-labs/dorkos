@@ -1,7 +1,7 @@
 ---
 id: 260717-151851
 title: Split agent-consumable docs from the fumadocs 16.10 / openapi 11 upgrade; migrate APIPage to a v11 client component
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: agent-consumable-docs
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

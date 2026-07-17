@@ -1,7 +1,7 @@
 ---
 id: 260717-125124
 title: Fleet-level context health — best-effort list reading + live override, honest per-runtime degradation
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: fleet-context-health
 superseded-by: null

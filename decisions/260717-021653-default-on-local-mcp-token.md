@@ -1,7 +1,7 @@
 ---
 id: 260717-021653
 title: Default-on local MCP token with a readOnlyHint capability carve-out
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: mcp-local-auth-posture
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
