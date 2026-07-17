@@ -140,7 +140,15 @@ export const DeliveryMetricsSchema = z
     failedCount: z.number().int(),
     deadLetteredCount: z.number().int(),
     avgDeliveryLatencyMs: z.number().nullable(),
+    /**
+     * Median (50th percentile) delivery latency in ms, `null` when no
+     * delivered spans exist in the window or the linked better-sqlite3
+     * binary predates the percentile extension (DOR-166).
+     */
+    p50DeliveryLatencyMs: z.number().nullable(),
     p95DeliveryLatencyMs: z.number().nullable(),
+    /** 99th percentile delivery latency in ms — see {@link p50DeliveryLatencyMs} for nullability. */
+    p99DeliveryLatencyMs: z.number().nullable(),
     activeEndpoints: z.number().int(),
     budgetRejections: BudgetRejectionsSchema,
   })

@@ -109,7 +109,9 @@ const METRICS: DeliveryMetrics = {
   failedCount: 1,
   deadLetteredCount: 0,
   avgDeliveryLatencyMs: 12.5,
+  p50DeliveryLatencyMs: 10,
   p95DeliveryLatencyMs: 40,
+  p99DeliveryLatencyMs: 48,
   activeEndpoints: 3,
   budgetRejections: { hopLimit: 0, ttlExpired: 0, cycleDetected: 0, budgetExhausted: 0 },
 };

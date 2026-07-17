@@ -7,7 +7,7 @@
  *
  * @module services/relay/trace-store
  */
-import { eq, sql, count, relayTraces, type Db } from '@dorkos/db';
+import { eq, sql, count, relayTraces, hasPercentileSupport, type Db } from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type { DeliveryMetrics, ObservedChat, ChannelType } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
@@ -174,13 +174,37 @@ export class TraceStore {
       .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
       .all();
 
+    // Delivery latency in ms, NULL for spans that haven't (yet) delivered.
+    // Reused for AVG and every percentile below so they all agree on what
+    // "latency" means and this stays a single SQL pass.
+    //
+    // julianday(), not strftime('%s', …): strftime truncates to whole
+    // seconds, so a sub-second delivery — the common case for in-process
+    // relay hops — reads 0ms while the field advertises milliseconds.
+    // julianday keeps the ISO string's millisecond precision (day fraction
+    // × 86_400_000 ms/day), at the cost of float noise in the µs range.
+    const latencyExpr = sql`
+      CASE WHEN ${relayTraces.deliveredAt} IS NOT NULL AND ${relayTraces.sentAt} IS NOT NULL
+      THEN (julianday(${relayTraces.deliveredAt}) - julianday(${relayTraces.sentAt})) * 86400000
+      END
+    `;
+
+    // percentile_cont() ships in better-sqlite3 12.10+ (DOR-166); a build on
+    // an older binary lacks it. Feature-detect once and fall back to NULL
+    // literals for the percentile columns instead of letting the query throw
+    // — AVG (and everything else in getMetrics) must keep working either way.
+    const percentileAvailable = hasPercentileSupport(this.db);
+    const percentile = (fraction: number) =>
+      percentileAvailable
+        ? sql<number | null>`percentile_cont(${latencyExpr}, ${fraction})`
+        : sql<number | null>`NULL`;
+
     const [latency] = this.db
       .select({
-        avgMs: sql<number | null>`AVG(
-          CASE WHEN ${relayTraces.deliveredAt} IS NOT NULL AND ${relayTraces.sentAt} IS NOT NULL
-          THEN (strftime('%s', ${relayTraces.deliveredAt}) - strftime('%s', ${relayTraces.sentAt})) * 1000
-          END
-        )`,
+        avgMs: sql<number | null>`AVG(${latencyExpr})`,
+        p50Ms: percentile(0.5),
+        p95Ms: percentile(0.95),
+        p99Ms: percentile(0.99),
       })
       .from(relayTraces)
       .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
@@ -200,7 +224,9 @@ export class TraceStore {
       failedCount: counts.failed,
       deadLetteredCount: counts.deadLettered,
       avgDeliveryLatencyMs: latency.avgMs,
-      p95DeliveryLatencyMs: null, // Simplified; p95 via offset not ported
+      p50DeliveryLatencyMs: latency.p50Ms,
+      p95DeliveryLatencyMs: latency.p95Ms,
+      p99DeliveryLatencyMs: latency.p99Ms,
       activeEndpoints: endpointCount.cnt,
       budgetRejections: {
         hopLimit: 0,

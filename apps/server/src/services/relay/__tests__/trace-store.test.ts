@@ -100,7 +100,98 @@ describe('TraceStore', () => {
     expect(metrics.totalMessages).toBe(0);
     expect(metrics.deliveredCount).toBe(0);
     expect(metrics.avgDeliveryLatencyMs).toBeNull();
+    expect(metrics.p50DeliveryLatencyMs).toBeNull();
     expect(metrics.p95DeliveryLatencyMs).toBeNull();
+    expect(metrics.p99DeliveryLatencyMs).toBeNull();
+  });
+
+  it('does not fabricate a latency percentile when spans exist but none delivered', () => {
+    // Every span is still 'sent' -- deliveredAt is NULL for all of them, so
+    // percentile_cont() sees zero non-NULL inputs and must return NULL, not 0.
+    store.insertSpan({ messageId: 'pending-1', traceId: 't1', subject: 's1' });
+    store.insertSpan({ messageId: 'pending-2', traceId: 't2', subject: 's1' });
+
+    const metrics = store.getMetrics();
+    expect(metrics.totalMessages).toBe(2);
+    expect(metrics.avgDeliveryLatencyMs).toBeNull();
+    expect(metrics.p50DeliveryLatencyMs).toBeNull();
+    expect(metrics.p95DeliveryLatencyMs).toBeNull();
+    expect(metrics.p99DeliveryLatencyMs).toBeNull();
+  });
+
+  describe('delivery-latency percentiles (DOR-166)', () => {
+    /**
+     * Hand-computed linear-interpolation percentile (the standard
+     * percentile_cont formula), independent of the query under test:
+     * rank = fraction * (n - 1); interpolate between the values that
+     * straddle `rank` in the sorted array.
+     */
+    function handComputedPercentile(sorted: number[], fraction: number): number {
+      const rank = fraction * (sorted.length - 1);
+      const lo = Math.floor(rank);
+      const hi = Math.ceil(rank);
+      return sorted[lo] + (rank - lo) * (sorted[hi] - sorted[lo]);
+    }
+
+    /** Seed one delivered span per latency, all sent at the same fake instant. */
+    function seedDeliveredSpans(latenciesMs: number[]): string {
+      vi.useFakeTimers();
+      const base = Date.parse('2026-01-01T00:00:00.000Z');
+      vi.setSystemTime(new Date(base));
+      const sentAt = new Date().toISOString();
+
+      latenciesMs.forEach((_, i) => {
+        store.insertSpan({ messageId: `lat-${i}`, traceId: `trace-${i}`, subject: 's1' });
+      });
+      latenciesMs.forEach((latency, i) => {
+        vi.setSystemTime(new Date(base + latency));
+        store.updateSpan(`lat-${i}`, {
+          status: 'delivered',
+          deliveredAt: new Date().toISOString(),
+        });
+      });
+      vi.useRealTimers();
+      return sentAt;
+    }
+
+    // julianday() carries float noise in the microsecond range (measured at
+    // most ~0.015ms on these fixtures), so latency assertions use
+    // toBeCloseTo(expected, 1) -- tolerance 0.05ms.
+    it('computes p50/p95/p99 delivery latency in one SQL pass, verified against hand-computed values', () => {
+      const latencies = Array.from({ length: 10 }, (_, i) => (i + 1) * 1000); // 1000..10000ms
+      const sentAt = seedDeliveredSpans(latencies);
+
+      const metrics = store.getMetrics({ since: sentAt });
+      expect(metrics.avgDeliveryLatencyMs).toBeCloseTo(5500, 1); // mean of 1000..10000
+      expect(metrics.p50DeliveryLatencyMs).toBeCloseTo(handComputedPercentile(latencies, 0.5), 1); // 5500
+      expect(metrics.p95DeliveryLatencyMs).toBeCloseTo(handComputedPercentile(latencies, 0.95), 1); // 9550
+      expect(metrics.p99DeliveryLatencyMs).toBeCloseTo(handComputedPercentile(latencies, 0.99), 1); // 9910
+    });
+
+    it('resolves sub-second latencies to milliseconds -- never truncates them to 0', () => {
+      // Anti-regression for the strftime('%s') bug: whole-second truncation
+      // reported a real 650ms delivery as 0ms. In-process relay hops are
+      // routinely sub-second, so this is the primary case, not an edge.
+      const latencies = [50, 150, 250, 350, 450, 550, 650, 750, 850, 950];
+      const sentAt = seedDeliveredSpans(latencies);
+
+      const metrics = store.getMetrics({ since: sentAt });
+      expect(metrics.avgDeliveryLatencyMs).toBeGreaterThan(0);
+      expect(metrics.avgDeliveryLatencyMs).toBeCloseTo(500, 1);
+      expect(metrics.p50DeliveryLatencyMs).toBeCloseTo(handComputedPercentile(latencies, 0.5), 1); // 500
+      expect(metrics.p95DeliveryLatencyMs).toBeCloseTo(handComputedPercentile(latencies, 0.95), 1); // 905
+      expect(metrics.p99DeliveryLatencyMs).toBeCloseTo(handComputedPercentile(latencies, 0.99), 1); // 941
+    });
+
+    it('reports a single 650ms delivery as ~650ms, not 0', () => {
+      const sentAt = seedDeliveredSpans([650]);
+
+      const metrics = store.getMetrics({ since: sentAt });
+      expect(metrics.avgDeliveryLatencyMs).toBeCloseTo(650, 1);
+      expect(metrics.p50DeliveryLatencyMs).toBeCloseTo(650, 1);
+      expect(metrics.p95DeliveryLatencyMs).toBeCloseTo(650, 1);
+      expect(metrics.p99DeliveryLatencyMs).toBeCloseTo(650, 1);
+    });
   });
 
   describe('getMetrics date filter', () => {
