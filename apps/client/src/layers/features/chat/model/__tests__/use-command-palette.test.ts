@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { CommandEntry } from '@dorkos/shared/types';
 import { useCommandPalette } from '../use-command-palette';
+import { buildPaletteCommands } from '../build-palette-commands';
 
 const commands: CommandEntry[] = [
   { fullCommand: '/usage', description: 'Show context usage', aliases: ['cost', 'stats'] },
@@ -83,5 +84,24 @@ describe('useCommandPalette — ranking & alias provenance (DOR-119/120)', () =>
     const first = result.current.filteredCommands[0];
     expect(first.fullCommand).toBe('/usage');
     expect(first.matchedAlias).toBeUndefined();
+  });
+});
+
+describe('useCommandPalette — command-intent alias hints (DOR-109)', () => {
+  it('surfaces the compact intent with a "matched" alias when the query is a cross-agent alias', () => {
+    // Typing an agent's own word for compaction (/summarize) resolves to the
+    // /compact intent and shows which alias matched — muscle memory carries over.
+    const commands = buildPaletteCommands([]);
+    const { result } = renderHook(() =>
+      useCommandPalette({ commands, input: '/summarize', cursorPos: 10 })
+    );
+
+    act(() => {
+      result.current.detectCommandTrigger('/summarize', 10);
+    });
+
+    const first = result.current.filteredCommands[0];
+    expect(first.fullCommand).toBe('/compact');
+    expect(first.matchedAlias).toBe('/summarize');
   });
 });

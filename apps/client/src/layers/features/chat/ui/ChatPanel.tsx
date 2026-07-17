@@ -7,7 +7,7 @@ import { useTaskState } from '../model/use-task-state';
 import { useToolShortcuts } from '../model/use-tool-shortcuts';
 import { useScrollOverlay } from '../model/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
-import { NATIVE_COMMAND_ENTRIES } from '../model/native-commands';
+import { buildPaletteCommands } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
 import { useRuntimeChip } from '../model/status/use-runtime-chip';
 import { useFileUpload } from '../model/use-file-upload';
@@ -213,16 +213,12 @@ export function ChatPanel({
     sessionId ?? undefined,
     runtimeChip.runtime ?? undefined
   );
-  // Blend native (client-side) commands ahead of runtime commands so /rename
-  // appears in the slash autocomplete. Native commands take precedence (the send
-  // path intercepts them before any runtime POST), so drop any runtime command
-  // whose token collides with a native one — otherwise the palette would list it
-  // twice. NATIVE_COMMAND_ENTRIES is a stable module constant.
-  const allCommands = useMemo(() => {
-    const nativeTokens = new Set(NATIVE_COMMAND_ENTRIES.map((e) => e.command));
-    const runtime = (registry?.commands ?? []).filter((c) => !nativeTokens.has(c.command));
-    return [...NATIVE_COMMAND_ENTRIES, ...runtime];
-  }, [registry]);
+  // Project the shared command-intent registry into one palette row per intent
+  // (/compact, /clear, /context), folding each runtime's native command for the
+  // same action into that single row, then blend the DorkOS-native commands
+  // (/rename) and the remaining runtime commands (DOR-109). The send path
+  // intercepts intents and native commands before any runtime POST.
+  const allCommands = useMemo(() => buildPaletteCommands(registry?.commands ?? []), [registry]);
   const { data: fileList } = useFiles(cwd);
   const allFileEntries = useMemo(
     () => (fileList?.files ? buildFileEntries(fileList.files) : []),

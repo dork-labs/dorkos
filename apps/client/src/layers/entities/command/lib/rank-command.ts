@@ -1,8 +1,21 @@
 import { rankMatch, type MatchTier } from '@/layers/shared/lib';
 import type { CommandEntry } from '@dorkos/shared/types';
 
+/**
+ * A palette command entry that may be shown but not selectable — the honest
+ * capability-gating surface (DOR-109). A runtime-fulfilled intent the active
+ * runtime cannot fulfill (e.g. `/compact` on Codex) renders `disabled` with a
+ * `disabledReason` rather than silently vanishing.
+ */
+export interface PaletteCommandEntry extends CommandEntry {
+  /** When true the row renders greyed out and keyboard navigation skips it. */
+  disabled?: boolean;
+  /** Plain-language reason the row is disabled, e.g. `"Not supported by Codex"`. */
+  disabledReason?: string;
+}
+
 /** A command enriched with the alias that surfaced it, when matched via an alias (DOR-120). */
-export interface RankedCommandEntry extends CommandEntry {
+export interface RankedCommandEntry extends PaletteCommandEntry {
   /** The alias the query matched, set only when the alias (not the name) is why the command surfaced. */
   matchedAlias?: string;
 }
