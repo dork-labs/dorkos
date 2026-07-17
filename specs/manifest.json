@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260717-170853",
+      "slug": "relay-flow-animation",
+      "title": "Animate live relay message flow along topology edges",
+      "created": "2026-07-17",
+      "status": "ideation"
+    },
+    {
       "id": "260717-153826",
       "slug": "agent-budget-enforcement",
       "title": "Enforce or remove the per-agent hourly turn cap",
