@@ -3992,9 +3992,6 @@
           "behavior": {
             "$ref": "#/components/schemas/AgentBehavior"
           },
-          "budget": {
-            "$ref": "#/components/schemas/AgentBudget"
-          },
           "namespace": {
             "type": "string",
             "maxLength": 64
@@ -4070,25 +4067,6 @@
         },
         "default": {
           "responseMode": "always"
-        }
-      },
-      "AgentBudget": {
-        "type": "object",
-        "properties": {
-          "maxHopsPerMessage": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 5
-          },
-          "maxCallsPerHour": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 100
-          }
-        },
-        "default": {
-          "maxHopsPerMessage": 5,
-          "maxCallsPerHour": 100
         }
       },
       "Traits": {
@@ -4210,9 +4188,6 @@
               "behavior": {
                 "$ref": "#/components/schemas/AgentBehavior"
               },
-              "budget": {
-                "$ref": "#/components/schemas/AgentBudget"
-              },
               "namespace": {
                 "type": "string",
                 "maxLength": 64
@@ -4303,9 +4278,6 @@
           },
           "behavior": {
             "$ref": "#/components/schemas/AgentBehavior"
-          },
-          "budget": {
-            "$ref": "#/components/schemas/AgentBudget"
           },
           "namespace": {
             "type": "string",

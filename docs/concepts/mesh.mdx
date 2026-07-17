@@ -11,8 +11,8 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 Mesh finds the AI agents scattered across your projects and gathers them in one place. It scans your folders, shows you what it found, and lets you approve which agents to add. Once an agent is in, other agents can find it and reach it. Mesh is always on, with nothing to turn on first.
 
 <Callout type="info">
-  Cross-project messaging is new. We're still hardening it, so expect a rough edge here and
-  there while we catch up with real-world use.
+  Cross-project messaging is new. We're still hardening it, so expect a rough edge here and there
+  while we catch up with real-world use.
 </Callout>
 
 **Try it:** open the **Agents** page and click **New Agent**, then choose **Import Project**. Mesh scans your folders and shows you what it found. From the Agents page you can also switch to the **Topology** tab to see the network map, or the **Access** tab to manage messaging rules between groups.
@@ -122,7 +122,6 @@ Every registered agent has a manifest stored in `.dork/agent.json`:
 | **runtime**           | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`) |
 | **capabilities**      | Capability tags (e.g., "typescript", "testing")                                                                                                |
 | **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`                                                                            |
-| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100). Advisory only, not enforced at runtime today.                    |
 | **namespace**         | Derived from project path relative to scan root                                                                                                |
 | **persona**           | Optional system prompt text injected into Claude sessions                                                                                      |
 | **personaEnabled**    | Whether persona text is injected (default: true)                                                                                               |
