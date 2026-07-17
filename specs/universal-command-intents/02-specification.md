@@ -2,14 +2,14 @@
 slug: universal-command-intents
 id: 260716-234343
 created: 2026-07-16
-status: specified
+status: implemented
 linearIssue: DOR-109
 project: Universal Command Interface
 ---
 
 # Universal Command Intents with Cross-Agent Aliases (compact / clear / context)
 
-**Status:** Draft
+**Status:** Implemented
 **Author:** Sage (SPECIFY stage, /flow drain)
 **Date:** 2026-07-16
 **Tracker:** DOR-109 (Universal Command Interface project) · type hypothesis · size 5

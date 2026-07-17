@@ -40,6 +40,20 @@ Select a command to insert it into the chat input. Add arguments after the comma
   job without a round trip.
 </Callout>
 
+## Three commands that work on every agent
+
+DorkOS runs several coding agents, and each one has its own word for the same everyday actions. DorkOS gives you one word for each, so the command your fingers already know keeps working no matter which agent a session uses. Type any of the aliases below and DorkOS runs the right action.
+
+| Type this  | …or any of these                       | What happens                                                                 |
+| ---------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| `/compact` | `/compress`, `/summarize`              | Shrinks the conversation so you free up room to keep working.                |
+| `/clear`   | `/new`, `/new-chat`                    | Starts a fresh session in the same project, linked back to the one you left. |
+| `/context` | `/usage`, `/cost`, `/stats`, `/status` | Shows how much context you've used and what it has cost so far.              |
+
+The palette lists one row per action, so an agent's own word for it never shows up twice. Type an alias and you'll see a small "matched /…" note telling you which action you're about to run.
+
+`/clear` and `/context` happen right in your browser, with no round trip to the agent. `/compact` asks the agent to do the shrinking, because only the agent can compact its own memory. If the agent you're on can't compact, its `/compact` row is greyed out and marked "Not supported," and typing it just tells you why, instead of quietly sending it as a message.
+
 ## The /flow command family
 
 `/flow` is the unified workflow engine: one PM-agnostic spine that runs your work from capture to done, no detours. You drive it by hand, one stage at a time, with a command per stage. Each `/flow:<stage>` command is a thin trigger over a stage skill; the top-level `/flow` orchestrator routes a stage, a work item, or the autonomous drain.
