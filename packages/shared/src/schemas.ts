@@ -121,7 +121,27 @@ export const SessionSchema = z
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
     fastMode: z.boolean().optional(),
+    /**
+     * Best-effort context-window token count for the session — the tokens
+     * currently occupying the window (input + cache-read + cache-creation, per
+     * `sumContextTokens`). Populated on the list wire by claude-code from its
+     * JSONL tail (fresh as the last turn, mtime-cached) and on a single-session
+     * read. ABSENT when no reading is available — codex/opencode closed-session
+     * list rows, or an unreadable tail — in which case the client shows an
+     * honest "unknown" gauge, never a fabricated 0%. Percent is derived
+     * client-side against the model's context window (`ModelOption.contextWindow`).
+     */
     contextTokens: z.number().int().optional(),
+    /**
+     * ISO-8601 timestamp of the most recent AUTO-triggered context compaction
+     * visible in the session's readable transcript tail (claude-code only;
+     * codex has no compaction, opencode reports it live-only). ABSENT means no
+     * auto-compaction is visible in the tail — either the session never
+     * auto-compacted, or the boundary has scrolled past the ~16 KB tail window
+     * as the session grew (an honest, disclosed limitation; durable recency is
+     * a deferred follow-up). Drives the row's discreet "auto-compacted" marker.
+     */
+    lastAutoCompactAt: z.string().datetime().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');
