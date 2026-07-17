@@ -7,6 +7,9 @@ import { openapi } from '@/lib/openapi';
 import { LLMCopyButton, ViewOptions } from '@/components/ai/page-actions';
 import { isGeneratedApiPage } from '@/lib/ai/is-generated-api-page';
 import { siteConfig } from '@/config/site';
+import { docsSectionTrail, twitterFromOpenGraph } from '@/lib/metadata';
+import { OG_SIZE } from '@/lib/og';
+import type { Metadata } from 'next';
 import type { GeneratedPageProps } from 'fumadocs-openapi';
 
 /**
@@ -18,15 +21,53 @@ export function generateStaticParams() {
 
 /**
  * Generate metadata for each documentation page from frontmatter.
+ *
+ * Sets a page-specific canonical, an Open Graph block with the per-page docs OG
+ * card, and a derived Twitter card so shared docs links carry page-specific
+ * previews instead of the sitewide root default. `alternates.types` advertises
+ * the markdown twin agents can fetch.
  */
-export async function generateMetadata(props: { params: Promise<{ slug?: string[] }> }) {
+export async function generateMetadata(props: {
+  params: Promise<{ slug?: string[] }>;
+}): Promise<Metadata> {
   const params = await props.params;
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
+  const title = page.data.title;
+  const description = page.data.description ?? `${siteConfig.name} documentation`;
+
+  // The docs OG card is a route handler (`/og/docs/...`), not the file-based
+  // `opengraph-image` convention: Next forbids that convention inside an optional
+  // catch-all. Reference it explicitly so the per-page image (and its alt) attach.
+  const sections = docsSectionTrail({ url: page.url, slugs: page.slugs }, source.pageTree);
+  const eyebrow = ['Docs', ...sections.map((section) => section.name)].join(' / ');
+
   return {
-    title: page.data.title,
-    description: page.data.description,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      url: page.url,
+      siteName: siteConfig.name,
+      images: [
+        {
+          url: `/og${page.url}`,
+          width: OG_SIZE.width,
+          height: OG_SIZE.height,
+          alt: `${title} (${eyebrow})`,
+        },
+      ],
+    },
+    twitter: twitterFromOpenGraph({ title, description }),
+    alternates: {
+      canonical: page.url,
+      // The `.md` alias serves the raw markdown source (text/markdown);
+      // advertise it so agents can fetch the plain-text twin of this page.
+      types: { 'text/markdown': `${page.url}.md` },
+    },
   };
 }
 
@@ -57,8 +98,64 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
   // render APIPage, so the bundling is skipped for them.
   const preloaded = isApi ? await openapi.preloadOpenAPIPage(page) : undefined;
 
+  const canonicalUrl = `${siteConfig.url}${page.url}`;
+
+  // TechArticle JSON-LD marks each page as technical documentation and links it
+  // to the DorkOS organization (docs are our most-cited surface for AI answers).
+  const techArticleJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: page.data.title,
+    description: page.data.description,
+    author: { '@type': 'Organization', name: siteConfig.name, url: siteConfig.url },
+    publisher: { '@type': 'Organization', name: siteConfig.name, url: siteConfig.url },
+    url: canonicalUrl,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalUrl },
+  };
+
+  // BreadcrumbList JSON-LD: Home > Docs > section(s) > page. The docs index is
+  // its own root, so it collapses to Home > Documentation to avoid a duplicate.
+  const sections = docsSectionTrail({ url: page.url, slugs: page.slugs }, source.pageTree);
+  const breadcrumbTrail =
+    page.url === '/docs'
+      ? [
+          { name: 'Home', item: siteConfig.url },
+          { name: page.data.title, item: canonicalUrl },
+        ]
+      : [
+          { name: 'Home', item: siteConfig.url },
+          { name: 'Docs', item: `${siteConfig.url}/docs` },
+          ...sections.map((section) => ({
+            name: section.name,
+            item: `${siteConfig.url}${section.url}`,
+          })),
+          { name: page.data.title, item: canonicalUrl },
+        ];
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: breadcrumbTrail.map((entry, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: entry.name,
+      item: entry.item,
+    })),
+  };
+
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(techArticleJsonLd).replace(/</g, '\\u003c'),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(breadcrumbJsonLd).replace(/</g, '\\u003c'),
+        }}
+      />
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       {!isApi && (
