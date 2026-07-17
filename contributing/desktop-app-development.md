@@ -56,8 +56,16 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 
 `better-sqlite3`/`node-pty` are compiled for **system Node** in the pnpm store (so dev + vitest work). Packaging needs them compiled for **Electron's** ABI. That rebuild:
 
-- runs in the `pack`/`dist` scripts and the release workflow — **never** in a plain `pnpm build`. Putting it in `build` flips the store-shared binary to Electron's ABI and **breaks plain-Node vitest across the whole monorepo** (mesh/relay/site/client workers get SIGKILLed). Recover with `pnpm rebuild better-sqlite3 node-pty` from the repo root.
+- runs in the `pack`/`dist` scripts and the release workflow — **never** in a plain `pnpm build`. Putting it in `build` flips the store-shared binary to Electron's ABI and breaks plain-Node vitest across the whole monorepo — see the gotcha below.
 - is done by `scripts/rebuild-natives.ts` calling `@electron/rebuild` **directly**. `electron-builder`'s own `npmRebuild` is disabled (`npmRebuild: false`) because it was observed producing a `better-sqlite3` that passed size/hash checks yet failed to `dlopen` with a misleading `NODE_MODULE_VERSION` error.
+
+### ⚠️ Vitest gotcha: "Worker exited unexpectedly" means a poisoned better-sqlite3
+
+If `pnpm --filter @dorkos/desktop pack` or `dist` has run on this machine (both run `rebuild-natives.ts` first — or you ran `rebuild-natives.ts` directly), the shared `better_sqlite3.node` in the pnpm store is now compiled for Electron's ABI, not system Node. macOS code-signing enforcement then kills every plain-Node `dlopen` of it: the process exits **137** with **"Code Signature Invalid"**, one level below anything Vitest itself can catch or report.
+
+**Symptom:** Vitest workers die silently — `Worker exited unexpectedly`, no assertion failures — in every package whose tests load the shared better-sqlite3 binary: mesh/relay/client via `@dorkos/db`, site via better-auth's drizzle adapter. The pre-push test gate then blocks every push, with nothing in the output pointing at Electron packaging as the cause.
+
+**Fix:** `pnpm rebuild better-sqlite3 node-pty` from the repo root. Re-run it any time you package the desktop app locally — packaging re-poisons the shared binaries.
 
 ## 3. Bundling Claude Code
 
