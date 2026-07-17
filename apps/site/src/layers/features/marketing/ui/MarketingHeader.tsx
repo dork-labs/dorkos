@@ -2,11 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Download } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
 import { GITHUB_OUTBOUND_HREF } from '@/config/site';
-import { trackGithubClick, trackHeroDownload } from '@/lib/analytics';
-import { usePlatform } from '../lib/use-platform';
+import { trackGithubClick, trackGetStartedNav } from '@/lib/analytics';
 
 /** GitHub mark — lucide dropped its brand glyph, so inline the official path. */
 function GitHubMark() {
@@ -19,20 +17,6 @@ function GitHubMark() {
 
 export function MarketingHeader() {
   const [isScrolled, setIsScrolled] = useState(false);
-  const platform = usePlatform();
-
-  // OS-aware primary CTA. macOS and Windows visitors get a native download;
-  // everyone else (and the stable pre-hydration default) scrolls to the
-  // install section.
-  const isMac = platform === 'mac';
-  const isWindows = platform === 'windows';
-  const ctaHref = isMac ? '/download/mac' : isWindows ? '/download/windows' : '#install';
-  const ctaLabel = isMac || isWindows ? 'Download' : 'Get started';
-  const trackDownloadClick = isMac
-    ? () => trackHeroDownload('nav')
-    : isWindows
-      ? () => trackHeroDownload('windows_nav')
-      : undefined;
 
   useEffect(() => {
     let ticking = false;
@@ -104,14 +88,13 @@ export function MarketingHeader() {
           >
             Docs
           </Link>
-          <a
-            href={ctaHref}
-            onClick={trackDownloadClick}
+          <Link
+            href="/install"
+            onClick={trackGetStartedNav}
             className="bg-brand-orange text-cream-white text-2xs focus-visible:ring-brand-orange/50 inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 font-mono font-medium tracking-[0.08em] uppercase transition-colors hover:bg-[#C94E00] focus-visible:ring-2 focus-visible:outline-none"
           >
-            {(isMac || isWindows) && <Download size={12} aria-hidden="true" />}
-            {ctaLabel}
-          </a>
+            Get started
+          </Link>
         </div>
       </div>
     </header>

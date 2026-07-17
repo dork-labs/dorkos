@@ -111,21 +111,28 @@ export function trackHeroInstallCopy(method: InstallMethod): void {
 
 /**
  * Where a desktop-download link was clicked. The `windows_*` placements
- * mirror their macOS counterparts (`hero`, `nav`); `windows_other_ways` is
- * the Windows link inside the "Other ways to install" disclosure shown to
- * non-Windows visitors.
+ * mirror their macOS counterparts (`hero`, `install_page`);
+ * `windows_other_ways` is the Windows link inside the "Other ways to
+ * install" disclosure shown to non-Windows visitors. The former `nav` /
+ * `windows_nav` placements retired when the header CTA became a "Get
+ * started" link to `/install` (see {@link trackGetStartedNav}).
  */
 export type DownloadPlacement =
   | 'hero'
-  | 'nav'
   | 'terminal_hero_link'
+  | 'install_page'
   | 'windows_hero'
-  | 'windows_nav'
+  | 'windows_install_page'
   | 'windows_other_ways';
 
 /** Fires when a visitor clicks a desktop-download link (`/download/mac` or `/download/windows`). */
 export function trackHeroDownload(placement: DownloadPlacement): void {
   capture('hero_download', { placement });
+}
+
+/** Fires when a visitor clicks the header "Get started" CTA (links to `/install`). */
+export function trackGetStartedNav(): void {
+  capture('get_started_nav');
 }
 
 /** Fires when a visitor lands on a `/docs` page. */

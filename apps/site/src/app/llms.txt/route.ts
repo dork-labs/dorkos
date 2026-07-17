@@ -1,4 +1,5 @@
 import { source, blog } from '@/lib/source';
+import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { siteConfig } from '@/config/site';
 import { subsystems } from '@/layers/features/marketing/lib/subsystems';
 import {
@@ -77,9 +78,7 @@ function buildDocsSections(): string {
 }
 
 function buildBlogSection(): string {
-  const posts = blog
-    .getPages()
-    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+  const posts = sortBlogPagesNewestFirst(blog.getPages());
 
   const lines = posts.map((post) => {
     const url = `${siteConfig.url}${post.url}`;
@@ -87,6 +86,9 @@ function buildBlogSection(): string {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
+      // Frontmatter dates parse as UTC midnight; render in UTC so the day
+      // doesn't shift in negative-offset timezones.
+      timeZone: 'UTC',
     });
     const desc = post.data.description;
     return desc

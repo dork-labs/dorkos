@@ -156,9 +156,3 @@ After your agent opens a page in the workbench browser, it can read the console 
 - Hardening pass on the parts of DorkOS that decide what a package can do and who can reach it: marketplace installs can no longer be tricked into running a command through a booby-trapped source link, your login secret and any chat-bot tokens are now kept private on disk and readable only by you, and the key that protects the tool endpoint is checked in a way that gives nothing away. Full write-up in `research/20260711_security-hardening-audit.md`.
 - Sign-in and sign-up now slow down after too many tries from the same place, so no one can sit there guessing your password. A few mistyped tries still work fine (DOR-281)
 - Cleared the last critical security warning in our test tooling; `npm audit` on the DorkOS source no longer reports any critical findings (DOR-168)
-
-## Install / Update
-
-```
-npm install -g dorkos@0.46.0
-```

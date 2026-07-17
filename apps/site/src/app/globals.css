@@ -680,16 +680,6 @@ button:hover .cursor-blink,
 }
 
 /* Film grain — analog warmth via SVG feTurbulence filter, applied with ::after */
-/* ==========================================================================
-   Blog: force Shiki light-theme token colors even when OS is in dark mode.
-   The .dark class on <html> (from next-themes system preference) causes Shiki's
-   @media (prefers-color-scheme: dark) rule to apply dark token colors, but the
-   blog layout always uses a cream background. This override ensures readability.
-   ========================================================================== */
-.blog-layout .shiki span {
-  color: var(--shiki-light) !important;
-}
-
 @utility film-grain {
   position: relative;
   &::after {

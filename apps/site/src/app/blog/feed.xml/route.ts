@@ -1,4 +1,5 @@
 import { blog } from '@/lib/source';
+import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { siteConfig } from '@/config/site';
 
 export const dynamic = 'force-static';
@@ -16,9 +17,7 @@ function escapeXml(str: string): string {
  * RSS 2.0 feed for blog posts.
  */
 export function GET() {
-  const posts = blog
-    .getPages()
-    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+  const posts = sortBlogPagesNewestFirst(blog.getPages());
 
   const items = posts
     .map(
