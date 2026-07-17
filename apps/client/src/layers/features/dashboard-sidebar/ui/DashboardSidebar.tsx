@@ -1,27 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  Activity,
-  FolderGit2,
-  LayoutDashboard,
-  Plus,
-  Search,
-  Store,
-  Users,
-  Zap,
-} from 'lucide-react';
-import {
-  SidebarHeader,
-  SidebarContent,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarGroup,
-  Kbd,
-} from '@/layers/shared/ui';
+import { Plus } from 'lucide-react';
+import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
-import { cn, formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import {
@@ -38,12 +20,14 @@ import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
+import { SidebarNavHeader } from './SidebarNavHeader';
 import { RecentSessionsSection } from './RecentSessionsSection';
 import { PinnedSection } from './PinnedSection';
 import { AgentGroupSection } from './AgentGroupSection';
 import { UngroupedSection } from './UngroupedSection';
 import { GroupCreateInput } from './GroupCreateInput';
 import { sortAgentPaths } from '../model/sort-agents';
+import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 
 /**
  * Legacy localStorage key that held pinned agent paths before organization moved
@@ -72,7 +56,6 @@ export function DashboardSidebar() {
   const queryClient = useQueryClient();
   const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
@@ -92,47 +75,11 @@ export function DashboardSidebar() {
   const recentSessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
   const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
 
-  // ── Disambiguate duplicate display names (e.g. two "server" dirs) ──
-  const displayNames = useMemo(() => {
-    const result = new Map<string, string>();
-    const nameGroups = new Map<string, string[]>();
-
-    for (const p of rawPaths) {
-      const base = getAgentDisplayName(agents?.[p], p.split('/').pop() ?? 'Agent');
-      const group = nameGroups.get(base) ?? [];
-      group.push(p);
-      nameGroups.set(base, group);
-    }
-
-    for (const [base, paths] of nameGroups) {
-      if (paths.length === 1) {
-        result.set(paths[0], base);
-        continue;
-      }
-      // Walk up from the end of each path until a differentiating segment is found.
-      const splitPaths = paths.map((p) => p.split('/').filter(Boolean));
-      for (const [i, p] of paths.entries()) {
-        const segments = splitPaths[i];
-        let suffix = '';
-        for (let offset = 2; offset < segments.length; offset++) {
-          const candidate = segments[segments.length - offset];
-          const isUnique = splitPaths.every(
-            (other, j) =>
-              j === i || other.length < offset || other[other.length - offset] !== candidate
-          );
-          if (isUnique) {
-            suffix = candidate;
-            break;
-          }
-        }
-        result.set(p, suffix ? `${base} (${suffix})` : base);
-      }
-    }
-
-    return result;
-  }, [rawPaths, agents]);
-
-  const displayNamesRecord = useMemo(() => Object.fromEntries(displayNames), [displayNames]);
+  // ── Display names (duplicates disambiguated) + the per-section sort context ──
+  const displayNamesRecord = useMemo(
+    () => disambiguateDisplayNames(rawPaths, agents ?? {}),
+    [rawPaths, agents]
+  );
   const sortCtx = useMemo(
     () => ({ displayNames: displayNamesRecord, agentActivity }),
     [displayNamesRecord, agentActivity]
@@ -261,10 +208,7 @@ export function DashboardSidebar() {
 
   const handleResumeRecentSession = useCallback(
     (session: Session) => {
-      navigate({
-        to: '/session',
-        search: { dir: session.cwd ?? undefined, session: session.id },
-      });
+      navigate({ to: '/session', search: { dir: session.cwd ?? undefined, session: session.id } });
     },
     [navigate]
   );
@@ -362,60 +306,7 @@ export function DashboardSidebar() {
 
   return (
     <>
-      <SidebarHeader className="border-b p-3">
-        <SidebarMenu>
-          <NavButton
-            icon={LayoutDashboard}
-            label="Dashboard"
-            isActive={pathname === '/'}
-            onClick={() => navigate({ to: '/' })}
-          />
-          <NavButton
-            icon={Activity}
-            label="Activity"
-            isActive={pathname === '/activity'}
-            onClick={() => navigate({ to: '/activity' })}
-          />
-          <NavButton
-            icon={Users}
-            label="Agents"
-            isActive={pathname === '/agents'}
-            onClick={() => navigate({ to: '/agents' })}
-          />
-          <NavButton
-            icon={Zap}
-            label="Tasks"
-            isActive={pathname === '/tasks'}
-            onClick={() => navigate({ to: '/tasks' })}
-          />
-          <NavButton
-            icon={FolderGit2}
-            label="Workspaces"
-            isActive={pathname === '/workspaces'}
-            onClick={() => navigate({ to: '/workspaces' })}
-          />
-          <NavButton
-            icon={Store}
-            label="Marketplace"
-            isActive={pathname === '/marketplace' || pathname.startsWith('/marketplace/')}
-            onClick={() => navigate({ to: '/marketplace' })}
-          />
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => setGlobalPaletteOpen(true)}
-              className="group text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
-            >
-              <span className="flex items-center gap-1.5">
-                <Search className="size-(--size-icon-sm)" />
-                Search
-              </span>
-              <Kbd className="shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                {formatShortcutKey(SHORTCUTS.COMMAND_PALETTE)}
-              </Kbd>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
+      <SidebarNavHeader />
 
       <SidebarContent className="p-3">
         {showRecent && (
@@ -474,42 +365,5 @@ export function DashboardSidebar() {
         <PromoSlot placement="dashboard-sidebar" maxUnits={3} />
       </SidebarContent>
     </>
-  );
-}
-
-// ── Private helper ──
-
-function NavButton({
-  icon: Icon,
-  label,
-  isActive,
-  onClick,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  isActive: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        isActive={isActive}
-        onClick={onClick}
-        className={cn(
-          'relative flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium',
-          isActive &&
-            'before:bg-primary before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full'
-        )}
-      >
-        <Icon
-          className={cn(
-            'size-(--size-icon-sm) transition-colors duration-150',
-            !isActive &&
-              'text-muted-foreground group-hover/menu-item:text-sidebar-accent-foreground'
-          )}
-        />
-        {label}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
   );
 }
