@@ -351,3 +351,24 @@ export interface AddSourceInput {
   source: string;
   enabled?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Install backups
+// ---------------------------------------------------------------------------
+
+/**
+ * Basename fragment marking a crash-left marketplace install backup
+ * directory — `<target>.dorkos-bak-<timestamp>-<uuid>`. Written by
+ * `apps/server/src/services/marketplace/transaction.ts` when it moves an
+ * existing install target aside before activation (see ADR-0304); a hard
+ * crash between the move-aside and the transaction's own cleanup/rollback
+ * leaves one of these on disk. Consumed by
+ * `apps/server/src/services/marketplace/backup-janitor.ts` (sweeps stale
+ * ones at server startup) and by `packages/mesh/src/discovery/unified-scanner.ts`
+ * (excludes them from discovery unconditionally, regardless of location).
+ *
+ * Shared here — rather than the mesh package importing server code, which
+ * the hexagonal layering forbids — because both `apps/server` and
+ * `packages/mesh` already depend on `@dorkos/shared`.
+ */
+export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';

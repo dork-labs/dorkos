@@ -93,6 +93,7 @@ import {
 import { setMarketplaceConfirmationProvider } from './services/marketplace-mcp/confirmation-registry.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
+import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
@@ -271,6 +272,23 @@ async function start() {
     }
   } catch (err) {
     logger.warn('[Activity] Startup prune failed', logError(err));
+  }
+
+  // Sweep crash-left marketplace install backups (`<target>.dorkos-bak-<ts>-<uuid>`,
+  // see transaction.ts + ADR-0304). A hard crash mid-install can leave one of
+  // these behind forever; before DOR-175 a crash-left agent backup could also
+  // resurface as a phantom duplicate agent via mesh discovery. Only backups
+  // whose embedded timestamp is >24h old are removed — see backup-janitor.ts
+  // for why that guard can never race a live install.
+  try {
+    const sweptBackups = await sweepStaleInstallBackups(dorkHome, logger);
+    if (sweptBackups > 0) {
+      logger.info(
+        `[Marketplace] Swept ${sweptBackups} stale install backup${sweptBackups === 1 ? '' : 's'}`
+      );
+    }
+  } catch (err) {
+    logger.warn('[Marketplace] Startup backup sweep failed', logError(err));
   }
 
   // Initialize directory boundary (must happen before app creation)

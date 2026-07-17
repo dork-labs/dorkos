@@ -311,6 +311,46 @@ describe('UpdateFlow', () => {
     expect(beta?.hasUpdate).toBe(false);
   });
 
+  it('never lists a crash-left install backup, even with a valid manifest (DOR-175)', async () => {
+    // A crash mid-install leaves `<name>.dorkos-bak-<ts>-<uuid>` beside the
+    // real installation — a byte-for-byte move-aside carrying a valid manifest
+    // under the same package name. Without the exclusion, update-all would see
+    // a phantom duplicate and could target the backup path with an apply.
+    const marketplaceJson = buildMarketplaceJson([{ name: 'alpha', version: '2.0.0' }]);
+    const ctx = await buildDeps({ marketplaceJson });
+    cleanupDirs.push(ctx.dorkHome);
+    const realRoot = await stageInstalledPlugin({
+      dorkHome: ctx.dorkHome,
+      manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
+    });
+    // Stage the backup sibling exactly as the transaction engine names it.
+    const backupRoot = path.join(
+      ctx.dorkHome,
+      'plugins',
+      `alpha.dorkos-bak-${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`
+    );
+    await mkdir(path.join(backupRoot, '.dork'), { recursive: true });
+    await writeFile(
+      path.join(backupRoot, '.dork', 'manifest.json'),
+      JSON.stringify(buildPluginManifest({ name: 'alpha', version: '0.9.0' }), null, 2),
+      'utf-8'
+    );
+
+    const flow = new UpdateFlow(ctx.deps);
+    const result = await flow.run({ apply: true });
+
+    // Exactly one check — the backup never became a phantom second package.
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0]).toEqual(
+      expect.objectContaining({ packageName: 'alpha', installedVersion: '1.0.0', hasUpdate: true })
+    );
+    // The single apply targeted the real package, not the backup path.
+    expect(ctx.installer.update).toHaveBeenCalledTimes(1);
+    expect(ctx.installer.update).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha' }));
+    expect(result.applied).toHaveLength(1);
+    expect(result.applied[0]?.installPath).toBe(realRoot);
+  });
+
   it('throws PackageNotInstalledForUpdateError when a named package is missing', async () => {
     const marketplaceJson = buildMarketplaceJson([{ name: 'anything', version: '1.0.0' }]);
     const ctx = await buildDeps({ marketplaceJson });

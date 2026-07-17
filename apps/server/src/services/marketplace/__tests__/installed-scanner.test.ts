@@ -184,6 +184,86 @@ describe('scanInstalledPackages', () => {
     const result = await scanInstalledPackages(dorkHome);
     expect(result).toEqual([]);
   });
+
+  it('never lists a crash-left install backup, even with a valid manifest (DOR-175)', async () => {
+    // A crash mid-install leaves `<name>.dorkos-bak-<ts>-<uuid>` on disk — a
+    // byte-for-byte move-aside of the previous installation, so it carries a
+    // VALID manifest under the SAME package name. Without the exclusion the
+    // scan would return a duplicate whose merged-by-name view could point
+    // installPath at the backup.
+    const realDir = join(dorkHome, 'plugins', 'sentry-monitor');
+    await writeManifest(realDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'sentry-monitor',
+      version: '1.2.3',
+    });
+    const backupDir = join(
+      dorkHome,
+      'plugins',
+      `sentry-monitor.dorkos-bak-${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`
+    );
+    await writeManifest(backupDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'sentry-monitor',
+      version: '1.2.2',
+    });
+    // Agent-root backups are excluded too.
+    const agentBackupDir = join(dorkHome, 'agents', `researcher.dorkos-bak-${Date.now()}-deadbeef`);
+    await writeManifest(agentBackupDir, {
+      schemaVersion: 1,
+      type: 'agent',
+      name: 'researcher',
+      version: '0.5.0',
+    });
+
+    const result = await scanInstalledPackages(dorkHome);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      name: 'sentry-monitor',
+      version: '1.2.3',
+      installPath: realDir,
+    });
+  });
+
+  it('excludes backups from the merged single-project view as well (DOR-175)', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'dorkos-scanner-project-'));
+    try {
+      const localReal = join(projectPath, '.dork', 'plugins', 'flow');
+      await writeManifest(localReal, {
+        schemaVersion: 1,
+        type: 'plugin',
+        name: 'flow',
+        version: '1.0.0',
+      });
+      const localBackup = join(
+        projectPath,
+        '.dork',
+        'plugins',
+        `flow.dorkos-bak-${Date.now()}-cafebabe`
+      );
+      await writeManifest(localBackup, {
+        schemaVersion: 1,
+        type: 'plugin',
+        name: 'flow',
+        version: '0.9.0',
+      });
+
+      const result = await scanInstalledPackages(dorkHome, projectPath);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        name: 'flow',
+        version: '1.0.0',
+        installPath: localReal,
+        scope: 'agent-local',
+      });
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('scanInstallationsAcrossScopes', () => {
@@ -263,6 +343,33 @@ describe('scanInstallationsAcrossScopes', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].scope).toBe('agent-local');
+  });
+
+  // Purpose: a crash-left backup inside an agent's .dork/plugins/ must not
+  // surface as a phantom installation row (DOR-175).
+  it('excludes crash-left backups from the cross-scope walk', async () => {
+    await writeManifest(join(agentA, '.dork', 'plugins', 'solo'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'solo',
+      version: '1.0.0',
+    });
+    await writeManifest(
+      join(agentA, '.dork', 'plugins', `solo.dorkos-bak-${Date.now()}-3fa85f64`),
+      {
+        schemaVersion: 1,
+        type: 'plugin',
+        name: 'solo',
+        version: '0.9.0',
+      }
+    );
+
+    const result = await scanInstallationsAcrossScopes(dorkHome, [
+      { projectPath: agentA, id: 'a', name: 'Alpha Agent' },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ name: 'solo', version: '1.0.0', scope: 'agent-local' });
   });
 
   // Purpose: two registry entries can point at one directory (re-registration);
