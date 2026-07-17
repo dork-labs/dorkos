@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260717-021653",
+      "slug": "default-on-local-mcp-token",
+      "title": "Default-on local MCP token with a readOnlyHint capability carve-out",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "mcp-local-auth-posture",
+      "specSlug": "mcp-local-auth-posture"
+    },
+    {
       "id": "260717-001409",
       "slug": "sidebar-organization-in-user-config",
       "title": "Sidebar organization state lives in server user config, not localStorage or agent manifests",
