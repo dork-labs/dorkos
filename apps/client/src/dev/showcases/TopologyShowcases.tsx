@@ -16,6 +16,7 @@ import {
   ADAPTERS,
 } from './topology-adapter-node';
 import { NamespaceGroupDemo, NAMESPACE_PALETTE } from './topology-namespace-group';
+import { RelayFlowPulseDemo } from './topology-relay-flow-pulse';
 
 /** Topology graph component showcases: AgentNode, AdapterNode, NamespaceGroupNode, edges, legend. */
 export function TopologyShowcases() {
@@ -184,6 +185,16 @@ export function TopologyShowcases() {
               <span className="text-muted-foreground text-xs">Cross-namespace deny rule</span>
             </div>
           </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      {/* ── Relay Flow Pulse ── */}
+      <PlaygroundSection
+        title="Relay Flow Pulse"
+        description="Live traffic on binding edges: when a message is delivered from an adapter to an agent, a quiet dot travels the wire and fades. Renders the real BindingEdge, driven by synthetic store writes (no live relay/adapter needed)."
+      >
+        <ShowcaseDemo>
+          <RelayFlowPulseDemo />
         </ShowcaseDemo>
       </PlaygroundSection>
 

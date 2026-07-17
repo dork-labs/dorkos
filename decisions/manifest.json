@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260717-180706",
+      "slug": "relay-flow-metadata-only-broadcast",
+      "title": "Relay flow animation broadcasts metadata-only relay_flow events at the inbound binding-routing boundary",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "relay-flow-animation",
+      "specSlug": "relay-flow-animation"
+    },
+    {
       "id": "260717-163436",
       "slug": "remove-advisory-agent-budget",
       "title": "Remove the advisory per-agent budget; enforced runaway protection is the per-message envelope budget",
