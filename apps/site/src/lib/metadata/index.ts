@@ -2,8 +2,9 @@
  * @module lib/metadata
  *
  * Helpers for building consistent page metadata across the site: deriving a
- * Twitter card from Open Graph values, and estimating blog reading time for the
- * post-page label chips.
+ * Twitter card from Open Graph values, estimating blog reading time for the
+ * post-page label chips, and looking up a source file's real git commit date.
  */
 export { twitterFromOpenGraph, type TwitterSource } from './twitter';
 export { estimateReadingMinutes, readingTimeLabel } from './reading-time';
+export { gitLastModified } from './git-dates';

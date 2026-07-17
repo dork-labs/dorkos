@@ -8,7 +8,7 @@ import { blog } from '@/lib/source';
 import { releaseVersion, sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { getMDXComponents } from '@/components/mdx-components';
 import { siteConfig } from '@/config/site';
-import { readingTimeLabel, twitterFromOpenGraph } from '@/lib/metadata';
+import { gitLastModified, readingTimeLabel, twitterFromOpenGraph } from '@/lib/metadata';
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 import { BlogTOCSidebar } from './_components/BlogTOCSidebar';
 import { ReleaseInstallFooter } from './_components/ReleaseInstallFooter';
@@ -35,6 +35,26 @@ function readingTimeFor(path: string): string | null {
   }
 }
 
+/**
+ * The post's real `modifiedTime`, or `undefined` when there isn't one worth
+ * reporting.
+ *
+ * A same-day git commit is almost certainly the publish commit itself, not a
+ * later edit, so it would just echo `publishedTime` under a different label.
+ * Only a git date that lands on a later calendar day (UTC) counts as a
+ * genuine revision worth surfacing as freshness.
+ *
+ * @param path - The page's source path, relative to the blog content dir.
+ * @param publishedTime - The post's frontmatter date, as an ISO string.
+ */
+function resolveModifiedTime(path: string, publishedTime: string): string | undefined {
+  const gitTime = gitLastModified(`blog/${path}`);
+  if (!gitTime) return undefined;
+  const publishedDay = publishedTime.slice(0, 10);
+  const gitDay = new Date(gitTime).toISOString().slice(0, 10);
+  return gitDay > publishedDay ? gitTime : undefined;
+}
+
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
@@ -46,6 +66,8 @@ export async function generateMetadata(props: {
   const description = page.data.description ?? `${siteConfig.name} blog`;
   const readingTime = readingTimeFor(page.path);
   const version = releaseVersion(page.data.title, params.slug);
+  const publishedTime = new Date(page.data.date).toISOString();
+  const modifiedTime = resolveModifiedTime(page.path, publishedTime);
 
   // twitter:label1/data1 (and label2/data2) render as chips in X and Slack
   // unfurls. Reading time is the headline chip; release posts add the version.
@@ -66,8 +88,8 @@ export async function generateMetadata(props: {
       title,
       description,
       type: 'article',
-      publishedTime: new Date(page.data.date).toISOString(),
-      modifiedTime: new Date(page.data.date).toISOString(),
+      publishedTime,
+      ...(modifiedTime ? { modifiedTime } : {}),
       url: `/blog/${params.slug}`,
       siteName: siteConfig.name,
       tags: page.data.tags,
