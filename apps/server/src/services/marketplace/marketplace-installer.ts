@@ -38,6 +38,7 @@ import type { SkillPackInstallFlow } from './flows/install-skill-pack.js';
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
+import { RELATIVE_PATH_SENTINEL_SHA } from './source-resolvers/relative-path.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -195,17 +196,23 @@ export class MarketplaceInstaller implements InstallerLike {
       const result = await this.dispatchFlow(staged.packagePath, staged.manifest, req);
 
       // Persist install provenance to `.dork/install-metadata.json` so the
-      // update flow can scope its marketplace lookups and the routes layer
-      // can surface "installed from" / "installed at" to API clients.
+      // update flow can scope its marketplace lookups, the routes layer can
+      // surface "installed from" / "installed at" to API clients, and (DOR-147)
+      // downstream consumers (reinstall integrity, `dorkos contribute`) can
+      // trace an installed package back to its source repo/ref/commit.
       // Best-effort: a metadata write failure is logged but does not fail
       // the install — the package itself is already on disk.
       try {
+        const provenance = deriveSourceProvenance(resolved);
         await writeInstallMetadata(result.installPath, {
           name: result.packageName,
           version: result.version,
           type: result.type,
           installedFrom: resolved.marketplaceName,
           installedAt: new Date().toISOString(),
+          sourceRepo: provenance.sourceRepo,
+          sourceRef: provenance.sourceRef,
+          commitSha: staged.commitSha,
         });
       } catch (metaErr) {
         this.deps.logger.warn('[marketplace-installer] failed to write install-metadata.json', {
@@ -356,11 +363,13 @@ export class MarketplaceInstaller implements InstallerLike {
     resolved: ResolvedPackageSource;
     manifest: MarketplacePackageManifest;
     packagePath: string;
+    /** Resolved commit SHA (DOR-147), when the staging fetch resolved a real one. */
+    commitSha?: string;
   }> {
     const resolved = await this.deps.resolver.resolve(buildResolverInput(req));
-    const packagePath = await this.stagePackage(resolved, req);
+    const staged = await this.stagePackage(resolved, req);
 
-    const validation = await validatePackage(packagePath);
+    const validation = await validatePackage(staged.path);
     if (!validation.ok || !validation.manifest) {
       const errorMessages = validation.issues
         .filter((i) => i.level === 'error')
@@ -368,7 +377,12 @@ export class MarketplaceInstaller implements InstallerLike {
       throw new InvalidPackageError(errorMessages);
     }
 
-    return { resolved, manifest: validation.manifest, packagePath };
+    return {
+      resolved,
+      manifest: validation.manifest,
+      packagePath: staged.path,
+      commitSha: staged.commitSha,
+    };
   }
 
   /**
@@ -381,12 +395,12 @@ export class MarketplaceInstaller implements InstallerLike {
   private async stagePackage(
     resolved: ResolvedPackageSource,
     req: InstallRequest
-  ): Promise<string> {
+  ): Promise<{ path: string; commitSha?: string }> {
     if (resolved.kind === 'local') {
       if (!resolved.localPath) {
         throw new Error('Resolved local package missing localPath');
       }
-      return resolved.localPath;
+      return { path: resolved.localPath };
     }
 
     // Modern path: dispatch via pluginSource (handles all five source types).
@@ -399,7 +413,7 @@ export class MarketplaceInstaller implements InstallerLike {
         pluginRoot: resolved.pluginRoot,
         force: req.force,
       });
-      return fetched.path;
+      return { path: fetched.path, commitSha: realCommitSha(fetched.commitSha) };
     }
 
     // Legacy path: bare gitUrl (deprecated — kept for backward compat with
@@ -412,7 +426,7 @@ export class MarketplaceInstaller implements InstallerLike {
       gitUrl: resolved.gitUrl,
       force: req.force,
     });
-    return fetched.path;
+    return { path: fetched.path, commitSha: realCommitSha(fetched.commitSha) };
   }
 
   /**
@@ -510,6 +524,74 @@ function derivePluginSourceType(source: PluginSource | undefined): InstallEvent[
   if (!source) return 'github';
   if (typeof source === 'string') return 'relative-path';
   return source.source;
+}
+
+/**
+ * Derive `.dork/install-metadata.json` source provenance (DOR-147) — the
+ * source repo and requested ref — from a resolved package source.
+ * Local-directory installs (`dorkos install ./path`) have no upstream repo
+ * and return an empty object rather than fabricating one.
+ *
+ * `sourceRepo` is recorded exactly as the resolver already represents the
+ * source: a bare `owner/repo` for `github`-form entries, a full URL for
+ * `url`/`git-subdir` entries and legacy `gitUrl` resolutions, or the
+ * marketplace's own source URL for same-repo relative-path packages.
+ * `sourceRef` is only populated when the source explicitly requested one —
+ * the resolvers' implicit `main` default is never recorded here, so its
+ * absence means "no ref was requested," not "resolved to main."
+ *
+ * @internal
+ */
+function deriveSourceProvenance(resolved: ResolvedPackageSource): {
+  sourceRepo?: string;
+  sourceRef?: string;
+} {
+  if (resolved.kind === 'local') {
+    return {};
+  }
+
+  const source = resolved.pluginSource;
+  if (source === undefined) {
+    // Legacy bare-gitUrl resolution (pre-superset install inputs).
+    return { sourceRepo: resolved.gitUrl };
+  }
+  if (typeof source === 'string') {
+    // Relative-path source: the plugin lives inside the marketplace's own
+    // repo, so the marketplace source URL IS the source repo.
+    return { sourceRepo: resolved.marketplaceSourceUrl };
+  }
+
+  switch (source.source) {
+    case 'github':
+      return { sourceRepo: source.repo, sourceRef: source.ref };
+    case 'url':
+      return { sourceRepo: source.url, sourceRef: source.ref };
+    case 'git-subdir':
+      return { sourceRepo: source.url, sourceRef: source.ref };
+    case 'npm':
+      // Not git-backed — no repo/ref to record. (Install currently throws
+      // NpmSourceNotSupportedError before reaching this point anyway.)
+      return {};
+  }
+}
+
+/**
+ * Filter out sentinel/placeholder commit SHAs the fetcher returns for
+ * non-git or degraded-resolution paths — these are never persisted as
+ * `commitSha` provenance, per the "never fabricate" rule (DOR-147).
+ * `RELATIVE_PATH_SENTINEL_SHA` covers same-repo monorepo packages (no
+ * per-plugin commit is tracked, only the marketplace's); `'local'` covers
+ * `file://` gitUrl resolutions; `tmp-<timestamp>` is
+ * {@link PackageFetcher}'s degraded fallback when `git ls-remote` fails
+ * (offline, missing git binary, malformed output).
+ *
+ * @internal
+ */
+function realCommitSha(sha: string): string | undefined {
+  if (sha === 'local' || sha === RELATIVE_PATH_SENTINEL_SHA || /^tmp-\d+$/.test(sha)) {
+    return undefined;
+  }
+  return sha;
 }
 
 /**

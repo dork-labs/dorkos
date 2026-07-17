@@ -410,6 +410,11 @@ describe('marketplace install pipeline — integration', () => {
     expect(typeof metadata.installedAt).toBe('string');
     // Local-path installs have no marketplace, so installedFrom is absent.
     expect(metadata.installedFrom).toBeUndefined();
+    // Local-path installs have no upstream git repo or resolved commit
+    // (DOR-147) — the sidecar must omit these rather than fabricate them.
+    expect(metadata.sourceRepo).toBeUndefined();
+    expect(metadata.sourceRef).toBeUndefined();
+    expect(metadata.commitSha).toBeUndefined();
 
     // 3. Plant some user state inside the install root that the data
     //    preservation contract must protect across the update.

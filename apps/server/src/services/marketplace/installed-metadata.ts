@@ -6,7 +6,8 @@
  * after the install flow completes. The sidecar is intentionally separate
  * from `.dork/manifest.json` (which is the immutable source manifest copied
  * from the package archive) so install-time provenance — which marketplace
- * we installed from, when, at which version — is preserved without mutating
+ * we installed from, when, at which version, and (DOR-147) the source repo,
+ * requested ref, and resolved commit SHA — is preserved without mutating
  * the canonical manifest.
  *
  * Used by the update flow to scope marketplace lookups, and by the routes
@@ -40,6 +41,33 @@ export interface InstallMetadata {
   installedFrom?: string;
   /** ISO 8601 timestamp of the successful install. */
   installedAt: string;
+  /**
+   * Canonical source repository the package was fetched from, recorded
+   * exactly as the resolver already represents it — a bare `owner/repo`
+   * for `github`-form entries, a full URL for `url`/`git-subdir` entries
+   * and legacy direct-git-URL installs, or the marketplace's own source
+   * URL for same-repo relative-path packages (DOR-147). `undefined` for
+   * local-directory installs (`dorkos install ./path`), which have no
+   * upstream repo, and for sidecars written before this field existed.
+   */
+  sourceRepo?: string;
+  /**
+   * Branch or tag explicitly requested at install time (e.g. `main`).
+   * `undefined` when no ref was requested — the fetcher's implicit
+   * default is never recorded here, so absence means "no ref requested,"
+   * not "resolved to the default branch" — and for sidecars written
+   * before this field existed.
+   */
+  sourceRef?: string;
+  /**
+   * Resolved commit SHA the package tree was fetched at (DOR-147),
+   * enabling reinstall integrity checks. `undefined` for local-directory
+   * installs, same-repo relative-path packages (no per-plugin commit is
+   * tracked, only the marketplace's), installs where SHA resolution
+   * degraded to a placeholder (e.g. offline `git ls-remote`), and
+   * sidecars written before this field existed.
+   */
+  commitSha?: string;
 }
 
 /**
@@ -65,6 +93,9 @@ export async function readInstallMetadata(installRoot: string): Promise<InstallM
       type: obj.type as PackageType,
       installedFrom: typeof obj.installedFrom === 'string' ? obj.installedFrom : undefined,
       installedAt: obj.installedAt,
+      sourceRepo: typeof obj.sourceRepo === 'string' ? obj.sourceRepo : undefined,
+      sourceRef: typeof obj.sourceRef === 'string' ? obj.sourceRef : undefined,
+      commitSha: typeof obj.commitSha === 'string' ? obj.commitSha : undefined,
     };
   } catch {
     return null;
