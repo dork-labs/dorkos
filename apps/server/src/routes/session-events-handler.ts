@@ -119,9 +119,9 @@ export const sessionEventsHandler = async (
   // The try/catch keeps the RESOLVE failure on the pre-flush path: headers
   // have not been flushed yet (initSSEStream runs below), so the error
   // middleware can still respond with plain JSON. Rejections escaping the
-  // whole handler (pre- or post-flush) are forwarded by the asyncHandler wrap
-  // at the route registration — post-flush, Express destroys the socket,
-  // which is the correct SSE failure mode (the client reconnects).
+  // whole handler (pre- or post-flush) are forwarded to the error middleware
+  // natively by Express 5 — post-flush, Express destroys the socket, which is
+  // the correct SSE failure mode (the client reconnects).
   let runtime: AgentRuntime;
   let ctx: SessionOpts;
   try {

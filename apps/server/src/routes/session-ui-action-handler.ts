@@ -33,8 +33,9 @@ import {
 } from '../services/session/index.js';
 
 /**
- * Express handler for `POST /api/sessions/:id/ui-action`. Mounted by
- * `sessions.ts` under `asyncHandler`; see the module doc for semantics.
+ * Express handler for `POST /api/sessions/:id/ui-action`. Mounted directly by
+ * `sessions.ts` (Express 5 forwards async rejections natively); see the
+ * module doc for semantics.
  *
  * @param req - The Express request (`:id` route param + `UiActionRequest` body)
  * @param res - The Express response (202 trigger / 400 / 404 / 409)

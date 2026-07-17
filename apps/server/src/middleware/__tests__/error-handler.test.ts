@@ -72,4 +72,23 @@ describe('errorHandler', () => {
 
     expect(logger.error).toHaveBeenCalledWith('[DorkOS Error]', 'Log me', expect.any(String));
   });
+
+  it('delegates to next(err) instead of writing a body when headers are already sent', async () => {
+    // Simulates a rejection on an SSE-style response (e.g. the durable session
+    // events stream) that fires AFTER the handler has already flushed headers.
+    // Express 5 forwards such rejections here natively; writing res.json() at
+    // that point would throw ERR_HTTP_HEADERS_SENT, so the guard must delegate
+    // to Express's default handler (via next(err)) instead of responding.
+    const { logger } = await import('../../lib/logger.js');
+    const res = createMockRes();
+    Object.defineProperty(res, 'headersSent', { value: true });
+    const error = new Error('post-flush rejection');
+
+    expect(() => errorHandler(error, mockReq, res, mockNext)).not.toThrow();
+
+    expect(mockNext).toHaveBeenCalledWith(error);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
 });

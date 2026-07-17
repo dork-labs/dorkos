@@ -21,10 +21,10 @@ import { getOrCreateProjector } from '../services/session/index.js';
 import { resolveAppResource, McpAppResourceError, UI_SCHEME } from '../services/mcp-apps/index.js';
 
 /**
- * Express handler for `POST /api/sessions/:id/mcp-app/resource`. Mounted by
- * `sessions.ts` under `asyncHandler`. Returns 200 with the resource + sandbox
- * metadata, or 400 (bad scheme/body) / 404 (unknown session or server) / 502
- * (upstream MCP read failed).
+ * Express handler for `POST /api/sessions/:id/mcp-app/resource`. Mounted
+ * directly by `sessions.ts` (Express 5 forwards async rejections natively).
+ * Returns 200 with the resource + sandbox metadata, or 400 (bad scheme/body) /
+ * 404 (unknown session or server) / 502 (upstream MCP read failed).
  *
  * @param req - Express request (`:id` param + `McpAppResourceRequest` body).
  * @param res - Express response.
