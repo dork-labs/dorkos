@@ -1,3 +1,11 @@
+/* Pin the cascade-layer order before anything defines the layers, so the lazy
+   blintz chunk (loaded with the canvas editor) lands in a fixed slot. blintz.css
+   ships a generic Tailwind utility set; `blintz` must sit BELOW `utilities` so
+   those bundled utilities can't beat the app's own — otherwise blintz's `.hidden`
+   forces the sidebar's `hidden md:block` to display:none app-wide — yet ABOVE
+   `base` so the editor's `.milkdown` typography isn't flattened by the app's
+   preflight (layer order trumps specificity). See layers/features/canvas/ui/blintz.css. */
+@layer theme, base, components, blintz, utilities;
 @import 'tailwindcss';
 @import '@xyflow/react/dist/style.css';
 

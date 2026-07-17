@@ -1,0 +1,7 @@
+/* blintz.css bundles a generic Tailwind utility set (`.hidden` etc.) that would
+   otherwise sit unlayered and beat the app's utilities — e.g. hiding the left
+   sidebar (`hidden md:block`) app-wide. Importing it into the `blintz` layer
+   (pinned between `components` and `utilities` in index.css) demotes those generic
+   utilities below the app's while keeping the editor's `.milkdown` typography above
+   the app's base preflight. */
+@import 'blintz/styles.css' layer(blintz);

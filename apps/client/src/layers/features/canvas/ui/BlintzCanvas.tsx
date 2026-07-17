@@ -1,5 +1,5 @@
 import { MarkdownEditor } from 'blintz';
-import 'blintz/styles.css';
+import './blintz.css';
 import { cn } from '@/layers/shared/lib';
 
 /** Props for {@link BlintzCanvas}. */
