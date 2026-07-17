@@ -4,17 +4,8 @@ import { requestNavigate, SETTINGS_ROUTE } from './navigation';
 import { checkForUpdatesInteractive } from './auto-updater';
 
 /**
- * Set up the application menu. The template is macOS-shaped (an app-name
- * submenu, macOS-only `services`/`hide` roles) but installs on every platform;
- * Electron silently drops the mac-only roles off macOS, so it stays functional
- * on Windows/Linux (if non-idiomatic there — a native File/Edit/… layout is a
- * tracked Windows follow-up, DOR-230-class QA).
- *
- * App menu: About DorkOS, a Check for Updates… item (enabled only in
- * packaged builds — dev builds can't apply updates), Settings… (`CmdOrCtrl+,`,
- * so the accelerator fires on Windows/Linux too), and the standard
- * services/hide/quit roles. Also provides the standard Edit/View/Window role
- * menus and a custom Help menu with external links.
+ * Build the "Settings…" menu item. Shared by every platform's menu —
+ * `CmdOrCtrl+,` so the accelerator fires on Windows/Linux too.
  *
  * @param getMainWindow - Accessor for the current main window, looked up at
  *   click-time rather than captured — the tracked window is recreated across
@@ -26,59 +17,155 @@ import { checkForUpdatesInteractive } from './auto-updater';
  *   with zero windows open on macOS, so it routes through
  *   {@link requestNavigate} rather than sending directly.
  */
+function buildSettingsItem(
+  getMainWindow: () => BrowserWindow | null,
+  ensureWindow: () => void
+): Electron.MenuItemConstructorOptions {
+  return {
+    label: 'Settings…',
+    accelerator: 'CmdOrCtrl+,',
+    click: () => requestNavigate(getMainWindow, ensureWindow, SETTINGS_ROUTE),
+  };
+}
+
+/**
+ * Build the "Check for Updates…" menu item. Shared by every platform's
+ * menu, gated on `app.isPackaged` — unsigned/unpackaged dev builds can't
+ * apply updates.
+ */
+function buildCheckForUpdatesItem(): Electron.MenuItemConstructorOptions {
+  return {
+    label: 'Check for Updates…',
+    enabled: app.isPackaged,
+    click: () => checkForUpdatesInteractive(),
+  };
+}
+
+/** Build the 3 external links every platform's Help menu shares. */
+function buildHelpLinkItems(): Electron.MenuItemConstructorOptions[] {
+  return [
+    {
+      label: 'DorkOS Documentation',
+      click: () => shell.openExternal('https://dorkos.ai/docs'),
+    },
+    {
+      label: 'Report an Issue',
+      click: () => shell.openExternal('https://github.com/dork-labs/dorkos/issues'),
+    },
+    {
+      label: 'dorkos.ai',
+      click: () => shell.openExternal('https://dorkos.ai'),
+    },
+  ];
+}
+
+/**
+ * Set up the application menu. Platform-branched (DOR-310): macOS keeps its
+ * existing app-name-submenu shape (About/Check for Updates/Settings/
+ * services/hide/quit, plus the standard Edit/View/Window/Help role menus).
+ * Windows and Linux get an idiomatic File/Edit/View/Window/Help layout
+ * instead — neither platform has an app-name-menu convention, so Settings…
+ * and Quit move into File, and About/Check for Updates move into Help.
+ *
+ * Settings…, Check for Updates…, and the Help links reuse the exact same
+ * items/handlers on every platform (see {@link buildSettingsItem},
+ * {@link buildCheckForUpdatesItem}, {@link buildHelpLinkItems}) — only the
+ * surrounding menu shape differs per platform.
+ *
+ * @param getMainWindow - Accessor for the current main window; see
+ *   {@link buildSettingsItem}.
+ * @param ensureWindow - Focuses the existing main window or creates one if
+ *   none exists (`index.ts`'s `showMainWindow`); see {@link buildSettingsItem}.
+ */
 export function setupMenu(
   getMainWindow: () => BrowserWindow | null,
   ensureWindow: () => void
 ): void {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        {
-          label: 'Check for Updates…',
-          // Unsigned/unpackaged dev builds can't apply updates.
-          enabled: app.isPackaged,
-          click: () => checkForUpdatesInteractive(),
-        },
-        { type: 'separator' },
-        {
-          label: 'Settings…',
-          accelerator: 'CmdOrCtrl+,',
-          click: () => requestNavigate(getMainWindow, ensureWindow, SETTINGS_ROUTE),
-        },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
-    { role: 'windowMenu' },
-    {
-      role: 'help',
-      submenu: [
-        {
-          label: 'DorkOS Documentation',
-          click: () => shell.openExternal('https://dorkos.ai/docs'),
-        },
-        {
-          label: 'Report an Issue',
-          click: () => shell.openExternal('https://github.com/dork-labs/dorkos/issues'),
-        },
-        {
-          label: 'dorkos.ai',
-          click: () => shell.openExternal('https://dorkos.ai'),
-        },
-      ],
-    },
-  ];
+  const settingsItem = buildSettingsItem(getMainWindow, ensureWindow);
+  const checkForUpdatesItem = buildCheckForUpdatesItem();
+  const helpLinkItems = buildHelpLinkItems();
+
+  const template: Electron.MenuItemConstructorOptions[] =
+    process.platform === 'darwin'
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              checkForUpdatesItem,
+              { type: 'separator' },
+              settingsItem,
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+          { role: 'editMenu' },
+          { role: 'viewMenu' },
+          { role: 'windowMenu' },
+          {
+            role: 'help',
+            submenu: helpLinkItems,
+          },
+        ]
+      : [
+          {
+            label: 'File',
+            submenu: [
+              settingsItem,
+              { type: 'separator' },
+              // Windows convention is "Exit", not "Quit"; Alt+F4 is the
+              // idiomatic accelerator (role: 'quit' provides the behavior).
+              { label: 'Exit', role: 'quit', accelerator: 'Alt+F4' },
+            ],
+          },
+          {
+            label: 'Edit',
+            submenu: [
+              { role: 'undo' },
+              { role: 'redo' },
+              { type: 'separator' },
+              { role: 'cut' },
+              { role: 'copy' },
+              { role: 'paste' },
+              { role: 'selectAll' },
+            ],
+          },
+          {
+            label: 'View',
+            submenu: [
+              { role: 'reload' },
+              { role: 'forceReload' },
+              { role: 'toggleDevTools' },
+              { type: 'separator' },
+              { role: 'resetZoom' },
+              { role: 'zoomIn' },
+              { role: 'zoomOut' },
+              { type: 'separator' },
+              { role: 'togglefullscreen' },
+            ],
+          },
+          {
+            label: 'Window',
+            submenu: [{ role: 'minimize' }, { role: 'close' }],
+          },
+          {
+            label: 'Help',
+            submenu: [
+              ...helpLinkItems,
+              { type: 'separator' },
+              checkForUpdatesItem,
+              { type: 'separator' },
+              { role: 'about' },
+            ],
+          },
+        ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
