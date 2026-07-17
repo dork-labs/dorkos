@@ -309,18 +309,23 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /**
-   * Phase-1 placeholder — throws when driven. `CLAUDE_CODE_CAPABILITIES`
-   * declares `commandIntents.compact.supported: false` (task 1.2), so the gated
-   * route never calls this; Phase 2 (task 2.1) replaces it with the real bare
-   * `/compact` send-path body and flips the capability to `true`.
+   * Fulfill the runtime-fulfilled `compact` intent (ADR-0273) by sending the
+   * bare `/compact` prompt through the SAME SDK send path a normal turn uses.
+   * This reuses DOR-107's bare-passthrough: the command-skip guard
+   * (`getKnownCommands`, wired in {@link sendMessage}) suppresses the neutral
+   * additional-context prepend on the command turn, so `/compact` reaches
+   * Claude's CLI as a first-class slash command and the turn's StreamEvents
+   * (including the `compact_boundary`) flow back for the durable projector to
+   * drive — exactly like a turn. No new Claude-SDK surface; it wraps the
+   * shipped `/compact` mechanism. `CLAUDE_CODE_CAPABILITIES.commandIntents`
+   * gates the route before this is ever called.
    */
-  // eslint-disable-next-line require-yield -- placeholder throws before any yield; Phase 2 adds the real body
   async *executeCommandIntent(
-    _sessionId: string,
+    sessionId: string,
     _intent: RuntimeCommandIntentId,
-    _opts?: MessageOpts
+    opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
-    throw new Error('executeCommandIntent(compact) not yet wired for claude-code');
+    yield* this.sendMessage(sessionId, '/compact', opts);
   }
 
   /**
