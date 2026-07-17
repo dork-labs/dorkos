@@ -158,8 +158,16 @@ export class TranscriptReader {
    * context tokens, and auto-compaction marker. Reads the last ~16KB which
    * typically contains the final assistant messages and any recent
    * `compact_boundary` record.
+   *
+   * @param filePath - Absolute path of the transcript file.
+   * @param fileSize - The transcript's byte size from the caller's existing
+   *   `fs.stat` — threaded in so the tail read adds no second stat syscall
+   *   (the sole caller, {@link extractSessionMeta}, already holds the stat).
    */
-  private async readTailStatus(filePath: string): Promise<{
+  private async readTailStatus(
+    filePath: string,
+    fileSize: number
+  ): Promise<{
     model?: string;
     permissionMode?: PermissionMode;
     contextTokens?: number;
@@ -167,11 +175,10 @@ export class TranscriptReader {
   }> {
     const TAIL_SIZE = TRANSCRIPT.TAIL_BUFFER_BYTES;
     try {
-      const stat = await fs.stat(filePath);
       const fileHandle = await fs.open(filePath, 'r');
       try {
-        const readOffset = Math.max(0, stat.size - TAIL_SIZE);
-        const buffer = Buffer.alloc(Math.min(TAIL_SIZE, stat.size));
+        const readOffset = Math.max(0, fileSize - TAIL_SIZE);
+        const buffer = Buffer.alloc(Math.min(TAIL_SIZE, fileSize));
         const { bytesRead } = await fileHandle.read(buffer, 0, buffer.length, readOffset);
         const chunk = buffer.toString('utf-8', 0, bytesRead);
         const lines = chunk.split('\n').filter((l) => l.trim());
@@ -364,8 +371,12 @@ export class TranscriptReader {
     // Fold in the tail read: the latest model overlays the head's, and a
     // best-effort context reading + auto-compaction marker ride onto the row.
     // Absent tail values leave the head-derived fields untouched and the
-    // optional reading fields unset (an honest "unknown" downstream).
-    const tailStatus = await this.readTailStatus(filePath);
+    // optional reading fields unset (an honest "unknown" downstream). The
+    // already-known stat size is threaded in so the tail adds one open, not
+    // an open plus a redundant stat. (`Number()` collapses the BigIntStats
+    // union from the fileStat parameter's `ReturnType<typeof fs.stat>` type;
+    // transcripts are far below Number.MAX_SAFE_INTEGER.)
+    const tailStatus = await this.readTailStatus(filePath, Number(stat.size));
     if (tailStatus.model) session.model = tailStatus.model;
     if (tailStatus.permissionMode) session.permissionMode = tailStatus.permissionMode;
     if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;

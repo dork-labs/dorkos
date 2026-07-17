@@ -132,27 +132,37 @@ describe('TranscriptReader tail read on the list path (fleet-context-health)', (
   it('serves an unchanged transcript from the mtime cache with no re-read, and re-reads after a bump', async () => {
     // Purpose: the added tail read is O(changed files) — a settled transcript
     // pays nothing beyond the fs.stat that keys the cache; only an mtime bump
-    // (a new turn) re-opens the file.
+    // (a new turn) re-opens the file. The stat count also pins the review fix:
+    // readTailStatus receives the caller's stat size instead of re-statting, so
+    // even a cache miss performs exactly ONE stat (the cache-keying one).
     const filePath = await writeTranscript(dir, 'sess-cache', [
       userLine(),
       assistantLine({ input_tokens: 100 }),
     ]);
     const openSpy = vi.spyOn(fs, 'open');
+    const statSpy = vi.spyOn(fs, 'stat');
 
-    // First list: cache miss -> one head open + one tail open.
+    // First list: cache miss -> one head open + one tail open, one keying stat.
     await reader.listSessionsInDir(dir);
     expect(openSpy).toHaveBeenCalledTimes(2);
+    expect(statSpy).toHaveBeenCalledTimes(1);
 
-    // Second list, transcript untouched: cache hit -> no file opens at all.
+    // Second list, transcript untouched: cache hit -> no file opens at all,
+    // only the keying stat.
     openSpy.mockClear();
+    statSpy.mockClear();
     await reader.listSessionsInDir(dir);
     expect(openSpy).toHaveBeenCalledTimes(0);
+    expect(statSpy).toHaveBeenCalledTimes(1);
 
-    // Bump the mtime (a new turn appended): cache miss -> reads again.
+    // Bump the mtime (a new turn appended): cache miss -> reads again, still a
+    // single stat.
     openSpy.mockClear();
+    statSpy.mockClear();
     await utimes(filePath, new Date(), new Date(Date.now() + 10_000));
     await reader.listSessionsInDir(dir);
     expect(openSpy).toHaveBeenCalledTimes(2);
+    expect(statSpy).toHaveBeenCalledTimes(1);
   });
 
   it('getSession shares the single tail-read path and carries the same reading', async () => {
