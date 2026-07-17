@@ -5,9 +5,11 @@ import type {
   SseResponse,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   RuntimeCapabilities,
   McpAppServerConnection,
 } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   SessionSnapshot,
@@ -80,6 +82,20 @@ export class FakeAgentRuntime implements AgentRuntime {
       this._scenarioIndex++;
       yield* scenario(content);
     }
+  });
+
+  /**
+   * Fulfill the runtime-fulfilled `compact` intent by yielding a synthetic
+   * `compact_boundary` StreamEvent — its FINAL form (not a placeholder). Lets
+   * conformance and e2e assert that a supported runtime's dispatch reached the
+   * adapter and produced a terminal/boundary event.
+   */
+  executeCommandIntent = vi.fn(async function* (
+    _sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    _opts?: CommandIntentOpts
+  ): AsyncGenerator<StreamEvent> {
+    yield { type: 'compact_boundary', data: {} } as StreamEvent;
   });
 
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
@@ -159,6 +175,10 @@ export class FakeAgentRuntime implements AgentRuntime {
         { id: 'auto', label: 'Auto' },
       ],
     },
+    // The test double is the one supported runtime that Phase-1 conformance
+    // exercises for the supported path (its executeCommandIntent yields a real
+    // synthetic compact_boundary).
+    commandIntents: { compact: { supported: true } },
     features: {},
   }));
   getSupportedModels = vi.fn<() => Promise<ModelOption[]>>().mockResolvedValue([]);

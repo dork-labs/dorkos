@@ -21,6 +21,59 @@ export function hasRenderableUsage(usage: UsageStatus): boolean {
   return usage.costUsd != null;
 }
 
+/** One label/value row in the usage detail block. */
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+/**
+ * The usage & cost detail body — utilization, window, resets, and cost for a
+ * subscription; the cost figure for pay-as-you-go. Shared by the status-bar
+ * item's hover tooltip and the pinned `/context` reveal so both read identically
+ * (DOR-100 / DOR-109). Render only for a usage that {@link hasRenderableUsage}.
+ *
+ * @param usage - The runtime-neutral usage descriptor.
+ */
+export function UsageDetail({ usage }: UsageStatusItemProps) {
+  if (usage.kind === 'subscription' && usage.utilization != null) {
+    const pct = Math.round(usage.utilization * 100);
+    const isExhausted = usage.state === 'exhausted';
+    const resetsAtLabel = usage.resetsAt
+      ? new Date(usage.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : null;
+    return (
+      <div className="space-y-1">
+        <div className="text-xs font-medium">Subscription Usage</div>
+        <div className="space-y-0.5 text-[10px]">
+          <DetailRow label="Utilization" value={`${pct}%`} />
+          {usage.windowLabel && <DetailRow label="Window" value={usage.windowLabel} />}
+          {resetsAtLabel && <DetailRow label="Resets at" value={resetsAtLabel} />}
+          {usage.costUsd != null && (
+            <DetailRow label="Session cost" value={`$${usage.costUsd.toFixed(2)}`} />
+          )}
+          {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
+          {isExhausted && <div className="text-red-500">Rate limit reached</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-medium">Session Cost</div>
+      <div className="space-y-0.5 text-[10px]">
+        {usage.costUsd != null && <DetailRow label="Cost" value={`$${usage.costUsd.toFixed(2)}`} />}
+        {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Merged status-bar item for runtime usage and cost. Subscription sessions
  * render utilization primary (cost in the tooltip); pay-as-you-go sessions, and
@@ -37,9 +90,6 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
     const isExhausted = usage.state === 'exhausted';
     const isWarning = usage.state === 'warning' || pct >= 80;
     const colorClass = isExhausted ? 'text-red-500' : isWarning ? 'text-amber-500' : '';
-    const resetsAtLabel = usage.resetsAt
-      ? new Date(usage.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : null;
 
     return (
       <Tooltip>
@@ -53,35 +103,7 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-56">
-          <div className="space-y-1">
-            <div className="text-xs font-medium">Subscription Usage</div>
-            <div className="space-y-0.5 text-[10px]">
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Utilization</span>
-                <span>{pct}%</span>
-              </div>
-              {usage.windowLabel && (
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Window</span>
-                  <span>{usage.windowLabel}</span>
-                </div>
-              )}
-              {resetsAtLabel && (
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Resets at</span>
-                  <span>{resetsAtLabel}</span>
-                </div>
-              )}
-              {usage.costUsd != null && (
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Session cost</span>
-                  <span>${usage.costUsd.toFixed(2)}</span>
-                </div>
-              )}
-              {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
-              {isExhausted && <div className="text-red-500">Rate limit reached</div>}
-            </div>
-          </div>
+          <UsageDetail usage={usage} />
         </TooltipContent>
       </Tooltip>
     );

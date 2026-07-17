@@ -193,3 +193,11 @@ export type {
 
 /** SSE connection health state. */
 export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
+export type {
+  CommandIntentId,
+  CommandIntentFulfillment,
+  RuntimeCommandIntentId,
+  CommandIntentDescriptor,
+} from './command-intents.js';
+export { COMMAND_INTENTS, resolveCommandIntent, commandIntentTokens } from './command-intents.js';

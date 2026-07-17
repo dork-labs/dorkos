@@ -14,10 +14,13 @@
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { ClientContext } from '@dorkos/shared/additional-context';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { logger } from '../../lib/logger.js';
 import { getOrCreateProjector, rekeyProjector } from './session-state-projector.js';
 import { triggerTurn } from './trigger-turn.js';
 import type { TriggerTurnResult } from './trigger-turn.js';
+import { triggerCommandIntent } from './trigger-command-intent.js';
+import type { TriggerCommandIntentResult } from './trigger-command-intent.js';
 
 /** Inputs for a single embedded turn trigger. */
 export interface EmbeddedTriggerOpts {
@@ -73,6 +76,72 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
         },
         onError: (err) => {
           logger.warn('[EmbeddedTurnTrigger] detached turn error', {
+            sessionId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        },
+      });
+    },
+  };
+}
+
+/** Inputs for a single embedded command-intent trigger. */
+export interface EmbeddedCommandIntentOpts {
+  sessionId: string;
+  /** Lock identity of the embedding client (e.g. the DirectTransport's clientId). */
+  clientId: string;
+  /** The runtime-fulfilled intent to dispatch (e.g. `'compact'`). */
+  intent: RuntimeCommandIntentId;
+  cwd?: string;
+  /** Trailing instructions after the intent token (see `Transport.runCommandIntent`). */
+  instructions?: string;
+}
+
+/** The in-process trigger bridge `DirectTransport.runCommandIntent` calls. */
+export interface EmbeddedCommandIntentTrigger {
+  /** Trigger a detached command-intent run; resolves the lock outcome. */
+  trigger(opts: EmbeddedCommandIntentOpts): TriggerCommandIntentResult;
+}
+
+/**
+ * Build an {@link EmbeddedCommandIntentTrigger} bound to one runtime instance —
+ * the command-intent twin of {@link createEmbeddedTurnTrigger}, so an embedded
+ * `runCommandIntent` follows the identical trigger-only contract (ADR-0264): the
+ * run feeds the per-session projector and delivery flows over `subscribeSession`.
+ * The caller (the client) pre-gates on the runtime's
+ * `capabilities.commandIntents[intent].supported`, so this is reached only for a
+ * supported intent.
+ *
+ * @param runtime - The embedded runtime (lock owner, intent generator).
+ */
+export function createEmbeddedCommandIntentTrigger(
+  runtime: AgentRuntime
+): EmbeddedCommandIntentTrigger {
+  return {
+    trigger({ sessionId, clientId, intent, cwd, instructions }) {
+      // Persist completed runs for LOG-BACKED runtimes (DOR-189), mirroring the
+      // turn trigger; claude-code opts out.
+      const projector = getOrCreateProjector(sessionId, cwd, {
+        persist: runtime.getCapabilities().logBackedHistory === true,
+      });
+      if (cwd !== undefined) projector.cwd = cwd;
+
+      return triggerCommandIntent({
+        sessionId,
+        clientId,
+        intent,
+        cwd,
+        instructions,
+        projector,
+        deps: {
+          acquireLock: (sid, cid, lifecycle, token) =>
+            runtime.acquireLock(sid, cid, lifecycle, token),
+          releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
+          executeCommandIntent: (sid, i, o) => runtime.executeCommandIntent(sid, i, o),
+          interruptQuery: (sid) => runtime.interruptQuery(sid),
+        },
+        onError: (err) => {
+          logger.warn('[EmbeddedCommandIntentTrigger] detached run error', {
             sessionId,
             error: err instanceof Error ? err.message : String(err),
           });

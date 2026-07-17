@@ -5,4 +5,9 @@
  */
 export { useCommands } from './model/use-commands';
 export { useCommandsSync } from './model/use-commands-sync';
-export { rankCommand, type RankedCommandEntry, type CommandRank } from './lib/rank-command';
+export {
+  rankCommand,
+  type PaletteCommandEntry,
+  type RankedCommandEntry,
+  type CommandRank,
+} from './lib/rank-command';

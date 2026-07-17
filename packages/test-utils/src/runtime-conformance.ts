@@ -488,6 +488,70 @@ export function runtimeConformance(
       });
     });
 
+    describe('command intents (DOR-109)', () => {
+      it('declares commandIntents with a { supported: boolean } for every runtime-fulfilled intent', () => {
+        // The required RuntimeCapabilities.commandIntents field must be present
+        // and well-formed on every runtime — the palette and the compact route
+        // read it to gate the runtime-fulfilled `compact` intent. `compact` is
+        // the only runtime-fulfilled id today, so it must always be declared.
+        const runtime = makeRuntime();
+        const { commandIntents } = runtime.getCapabilities();
+
+        expect(commandIntents, 'capabilities.commandIntents is required').toBeDefined();
+        const entries = Object.entries(commandIntents);
+        expect(
+          entries.length,
+          'commandIntents must declare at least the compact intent'
+        ).toBeGreaterThan(0);
+        for (const [intentId, support] of entries) {
+          expect(
+            typeof support?.supported,
+            `commandIntents.${intentId}.supported must be a boolean`
+          ).toBe('boolean');
+        }
+        expect(commandIntents.compact, 'commandIntents.compact must be declared').toBeDefined();
+      });
+
+      it('dispatches per its declared support: supported → boundary/terminal, unsupported → throws', async () => {
+        // executeCommandIntent must agree with the capability it declares: a
+        // runtime advertising compact support actually fulfills it (yielding a
+        // compact_boundary the server projects, or at minimum a terminal event),
+        // while one that declares no support is honestly defensive and throws
+        // when driven — never a silent no-op (the route gates on
+        // supported===false and never calls it, but the throw is the contract).
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts());
+        const supported = runtime.getCapabilities().commandIntents.compact.supported;
+
+        if (supported) {
+          const events: StreamEvent[] = [];
+          for await (const event of runtime.executeCommandIntent(sessionId, 'compact', {
+            cwd: projectDir,
+          })) {
+            events.push(event);
+          }
+          const settled = events.some(
+            (event) => event.type === 'compact_boundary' || event.type === TERMINAL_EVENT_TYPE
+          );
+          expect(
+            settled,
+            'a supported compact must yield a compact_boundary or a terminal event'
+          ).toBe(true);
+        } else {
+          await expect(
+            (async () => {
+              for await (const _event of runtime.executeCommandIntent(sessionId, 'compact', {
+                cwd: projectDir,
+              })) {
+                /* drain — the generator must reject before completing */
+              }
+            })()
+          ).rejects.toThrow();
+        }
+      });
+    });
+
     describe('dependencies', () => {
       it('checkDependencies returns well-formed DependencyCheck entries', async () => {
         const runtime = makeRuntime();

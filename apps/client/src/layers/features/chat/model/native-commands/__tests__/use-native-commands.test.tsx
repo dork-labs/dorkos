@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useNativeCommands } from '../use-native-commands';
+import { useUsageReveal } from '../../use-usage-reveal';
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -18,11 +19,15 @@ vi.mock('sonner', () => ({
   },
 }));
 
+// `/clear` navigation is injected by the host; a spy stands in for it here.
+const startFreshSession = vi.fn();
+
 describe('useNativeCommands', () => {
   let transport: ReturnType<typeof createMockTransport>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useUsageReveal.setState({ open: false });
     transport = createMockTransport();
     vi.mocked(transport.updateSession).mockResolvedValue({
       id: 's1',
@@ -34,7 +39,11 @@ describe('useNativeCommands', () => {
     });
   });
 
-  function setup(sessionId: string | null = 's1', cwd: string | null = '/repo') {
+  function setup(
+    sessionId: string | null = 's1',
+    cwd: string | null = '/repo',
+    compact?: { supported: boolean; runtimeLabel: string }
+  ) {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
@@ -43,7 +52,9 @@ describe('useNativeCommands', () => {
         <TransportProvider transport={transport}>{children}</TransportProvider>
       </QueryClientProvider>
     );
-    return renderHook(() => useNativeCommands(cwd, sessionId), { wrapper });
+    return renderHook(() => useNativeCommands(cwd, sessionId, { startFreshSession, compact }), {
+      wrapper,
+    });
   }
 
   it('renames the current session for "/rename Foo" and reports handled + ran', async () => {
@@ -118,5 +129,114 @@ describe('useNativeCommands', () => {
     expect(result.current.tryRun('/unknown thing')).toEqual({ handled: false });
     expect(result.current.tryRun('hello world')).toEqual({ handled: false });
     expect(transport.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('/clear opens a fresh linked session and sends no message', () => {
+    // /clear delegates to the injected navigation with the prior session id (the
+    // "linked back" reference) and never POSTs a message (no model turn).
+    const { result } = setup('s1', '/repo');
+    let outcome: ReturnType<typeof result.current.tryRun> = { handled: false };
+    act(() => {
+      outcome = result.current.tryRun('/clear');
+    });
+    expect(outcome).toEqual({ handled: true, ran: true });
+    expect(startFreshSession).toHaveBeenCalledWith('s1');
+    expect(transport.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('routes a cross-agent alias (/new) to a fresh session', () => {
+    // Muscle memory: Codex/OpenCode's /new opens a fresh session, same as /clear.
+    const { result } = setup('s1', '/repo');
+    act(() => {
+      result.current.tryRun('/new');
+    });
+    expect(startFreshSession).toHaveBeenCalledWith('s1');
+  });
+
+  it('/context reveals the usage surface and sends no message', () => {
+    const { result } = setup('s1', '/repo');
+    let outcome: ReturnType<typeof result.current.tryRun> = { handled: false };
+    act(() => {
+      outcome = result.current.tryRun('/context');
+    });
+    expect(outcome).toEqual({ handled: true, ran: true });
+    expect(useUsageReveal.getState().open).toBe(true);
+    expect(startFreshSession).not.toHaveBeenCalled();
+    expect(transport.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('routes a cross-agent alias (/usage) to the context reveal', () => {
+    // Muscle memory: another agent's word for the same intent still works.
+    const { result } = setup('s1', '/repo');
+    act(() => {
+      result.current.tryRun('/usage');
+    });
+    expect(useUsageReveal.getState().open).toBe(true);
+  });
+
+  describe('compact dispatch (DOR-109 VC1)', () => {
+    it('dispatches /compress via runCommandIntent when the runtime supports compact', () => {
+      // Supported runtime: fire the trigger, clear the composer (ran:true), no POST.
+      const { result } = setup('s1', '/repo', { supported: true, runtimeLabel: 'Claude Code' });
+      let outcome: ReturnType<typeof result.current.tryRun> = { handled: false };
+      act(() => {
+        outcome = result.current.tryRun('/compress');
+      });
+      expect(outcome).toEqual({ handled: true, ran: true });
+      expect(transport.runCommandIntent).toHaveBeenCalledWith('s1', 'compact', undefined);
+      expect(transport.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('threads trailing instructions through the dispatch, never dropping them', () => {
+      // `/compact <instructions>` carried the remainder to the CLI pre-DOR-109;
+      // recognition must forward it, not silently discard it (review Important 1).
+      const { result } = setup('s1', '/repo', { supported: true, runtimeLabel: 'Claude Code' });
+      act(() => {
+        result.current.tryRun('/compact focus on the API changes');
+      });
+      expect(transport.runCommandIntent).toHaveBeenCalledWith(
+        's1',
+        'compact',
+        'focus on the API changes'
+      );
+    });
+
+    it('passes no instructions for a bare intent token (undefined, not empty string)', () => {
+      const { result } = setup('s1', '/repo', { supported: true, runtimeLabel: 'Claude Code' });
+      act(() => {
+        result.current.tryRun('/compact');
+      });
+      expect(transport.runCommandIntent).toHaveBeenCalledWith('s1', 'compact', undefined);
+    });
+
+    it('dispatches the canonical /compact and the /summarize alias too', () => {
+      const { result } = setup('s1', '/repo', { supported: true, runtimeLabel: 'OpenCode' });
+      act(() => {
+        result.current.tryRun('/compact');
+        result.current.tryRun('/summarize');
+      });
+      expect(transport.runCommandIntent).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses on an unsupported runtime: toasts and never sends the text', () => {
+      // Codex can't compact — honest toast, keep the composer text (ran:false),
+      // and NEVER call runCommandIntent or postMessage (no silent send-as-text).
+      const { result } = setup('s1', '/repo', { supported: false, runtimeLabel: 'Codex' });
+      let outcome: ReturnType<typeof result.current.tryRun> = { handled: false };
+      act(() => {
+        outcome = result.current.tryRun('/compact');
+      });
+      expect(outcome).toEqual({ handled: true, ran: false });
+      expect(toastError).toHaveBeenCalledWith(expect.stringContaining('Codex'));
+      expect(transport.runCommandIntent).not.toHaveBeenCalled();
+      expect(transport.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('falls through (handled: false) when no compact support is injected', () => {
+      // Without the injected gate, compact tokens are not recognized here.
+      const { result } = setup('s1', '/repo');
+      expect(result.current.tryRun('/compress')).toEqual({ handled: false });
+      expect(transport.runCommandIntent).not.toHaveBeenCalled();
+    });
   });
 });

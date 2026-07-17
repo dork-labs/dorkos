@@ -61,6 +61,10 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Claude fulfills `compact` by sending the bare `/compact` prompt through its
+  // existing send path (DOR-109 task 2.1, ADR-0273); `executeCommandIntent`
+  // carries that body.
+  commandIntents: { compact: { supported: true } },
   features: {
     /** Claude loads named skills from `.claude/skills/` (SDK `Options.skills`). */
     claudeSkills: true,

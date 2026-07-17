@@ -48,6 +48,7 @@ import type {
   DependencyCheck,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   SseResponse,
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
@@ -56,6 +57,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { getOrCreateProjector } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -246,7 +248,74 @@ export class OpenCodeRuntime implements AgentRuntime {
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
 
-    const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, opts?.title);
+    yield* this.runOpenCodeTurn(sessionId, cwd, opts?.title, async (client, ocSessionId) => {
+      const model = parseModelSelection(settings.model);
+      const prompted = await client.session.promptAsync({
+        path: { id: ocSessionId },
+        body: {
+          parts: buildOpenCodeParts(content, opts),
+          ...(model !== undefined ? { model } : {}),
+        },
+      });
+      if (prompted.error !== undefined) {
+        throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
+      }
+    });
+  }
+
+  /**
+   * Fulfill the runtime-fulfilled `compact` intent (ADR-0273) by triggering
+   * OpenCode's native sidecar compaction — `client.session.summarize` with the
+   * body omitted, so compaction uses the session's own model. OpenCode reports
+   * the result out-of-band as `session.compacted`, which the shared per-turn
+   * demux tap ({@link runOpenCodeTurn}) maps to `operation_progress` done +
+   * `compact_boundary` (event-mapper.ts) and {@link mapOpenCodeTurn} terminates
+   * on the trailing `session.idle`. Driving it through the same turn path is
+   * REQUIRED, not optional: there is no standing hub→projector subscription
+   * outside a turn, so the boundary reaches the durable projector only because
+   * this generator yields it. The `@opencode-ai/sdk` import stays confined to
+   * this directory (Hard Rule 2). `OPENCODE_CAPABILITIES.commandIntents` gates
+   * the route before this is ever called.
+   */
+  async *executeCommandIntent(
+    sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    opts?: CommandIntentOpts
+  ): AsyncGenerator<StreamEvent> {
+    // NOTE: `opts.instructions` is deliberately ignored — `session.summarize`
+    // takes no instruction parameter, so OpenCode compaction cannot be guided.
+    // An honest per-runtime difference (claude-code forwards instructions).
+    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
+    yield* this.runOpenCodeTurn(sessionId, cwd, undefined, async (client, ocSessionId) => {
+      const summarized = await client.session.summarize({ path: { id: ocSessionId } });
+      if (summarized.error !== undefined) {
+        throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
+      }
+    });
+  }
+
+  /**
+   * Drive one OpenCode turn end to end: resolve the session + its demux key,
+   * subscribe a per-turn tap on the ONE shared global event stream, wait for it
+   * to be observably live, fire `trigger` (a prompt or a compaction), then yield
+   * the mapped events with permission enforcement. {@link mapOpenCodeTurn}
+   * guarantees exactly one terminal `done`, and teardown is identity-guarded so a
+   * stale turn racing a newer one never clears the newer turn's shared state.
+   * Shared by {@link sendMessage} (prompt) and {@link executeCommandIntent}
+   * (compact) so both ride the identical trigger → demux → map lifecycle.
+   *
+   * @param sessionId - DorkOS session id.
+   * @param cwd - Working directory used to resolve the client and session.
+   * @param title - Optional title used only when a new OpenCode session is created.
+   * @param trigger - Fires the turn against the resolved client + `ses_*` id.
+   */
+  private async *runOpenCodeTurn(
+    sessionId: string,
+    cwd: string,
+    title: string | undefined,
+    trigger: (client: OpencodeClient, ocSessionId: string) => Promise<void>
+  ): AsyncGenerator<StreamEvent> {
+    const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
     const client = await this.provider.getClient(cwd);
     const directory = await this.resolveSessionDirectory(client, ocSessionId);
 
@@ -269,17 +338,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
 
-      const model = parseModelSelection(settings.model);
-      const prompted = await client.session.promptAsync({
-        path: { id: ocSessionId },
-        body: {
-          parts: buildOpenCodeParts(content, opts),
-          ...(model !== undefined ? { model } : {}),
-        },
-      });
-      if (prompted.error !== undefined) {
-        throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
-      }
+      await trigger(client, ocSessionId);
 
       for await (const event of mapOpenCodeTurn(queue, ctx)) {
         yield* this.enforceApprovals(sessionId, ocSessionId, cwd, event);

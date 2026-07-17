@@ -26,6 +26,7 @@ import {
 } from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
+import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsIngestHandler } from './session-devtools.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import path from 'node:path';
@@ -613,6 +614,15 @@ router.post(
 // Semantics: mirrors /messages (fresh turn via triggerTurn, 202, turn streams
 // over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
 router.post('/:id/ui-action', asyncHandler(sessionUiActionHandler));
+
+// POST /api/sessions/:id/command-intents/:intent — Runtime-fulfilled command
+// intent (currently `compact`), DOR-109. The handler lives in
+// `session-command-intent-handler.ts` to keep this file under the size rule.
+// Semantics: capability-gated (unsupported runtime → honest 422, adapter never
+// called), else drives runtime.executeCommandIntent through the durable
+// projector (trigger-only, 202; delivery over /events, e.g. compact_boundary);
+// busy → 409 SESSION_LOCKED — see the handler's module doc.
+router.post('/:id/command-intents/:intent', asyncHandler(sessionCommandIntentHandler));
 
 // POST /api/sessions/:id/devtools/ingest — DevTools bridge capture sink (DOR-213).
 // Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.

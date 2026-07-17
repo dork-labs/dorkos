@@ -204,9 +204,16 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Submission
   // ---------------------------------------------------------------------------
 
-  // Native (client-side) chat commands (e.g. /rename) — intercepted in the send
-  // funnel so they run locally and never reach the runtime/model.
-  const native = useNativeCommands(selectedCwd, sessionId);
+  // Client-side command intents (DOR-109) — the single recognition point for
+  // /rename, /clear, /context (run locally, never reach the runtime) and the
+  // runtime-fulfilled /compact (dispatched via the transport). /clear's
+  // navigation and /compact's runtime support are injected by the host (ChatPanel
+  // owns the router + the session's runtime) so this orchestrator stays
+  // router-free.
+  const native = useNativeCommands(selectedCwd, sessionId, {
+    startFreshSession: options.startFreshSession,
+    compact: options.compactIntent,
+  });
 
   const { handleSubmit, submitContent, stop, retryMessage, markToolCallResponded } =
     useSessionSubmit({

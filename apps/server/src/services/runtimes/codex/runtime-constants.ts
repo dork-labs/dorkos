@@ -68,6 +68,9 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Codex has no compaction/summarize API (`Thread.run` only, verified at the
+  // 0.142.5 pin), so this stays honestly `false` permanently (DOR-109 task 2.3).
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 

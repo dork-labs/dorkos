@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import { FakeAgentRuntime } from '../fake-agent-runtime.js';
 
 describe('FakeAgentRuntime', () => {
@@ -84,6 +85,23 @@ describe('FakeAgentRuntime', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('declares compact support and executeCommandIntent yields a compact_boundary', async () => {
+    // Purpose: FakeAgentRuntime is the reference SUPPORTED runtime for the
+    // command-intent gate (DOR-109 VC3) — it declares commandIntents.compact
+    // supported and its executeCommandIntent yields a real synthetic
+    // compact_boundary so conformance + route tests can assert the dispatch
+    // reached the runtime along the supported path.
+    const runtime = new FakeAgentRuntime();
+    expect(runtime.getCapabilities().commandIntents.compact.supported).toBe(true);
+
+    const events: StreamEvent[] = [];
+    for await (const e of runtime.executeCommandIntent('s1', 'compact')) events.push(e);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('compact_boundary');
+    expect(runtime.executeCommandIntent).toHaveBeenCalledWith('s1', 'compact');
+  });
+
   it('hasSession defaults to false', () => {
     const runtime = new FakeAgentRuntime();
     expect(runtime.hasSession('s1')).toBe(false);
@@ -92,7 +110,7 @@ describe('FakeAgentRuntime', () => {
   it('acquireLock defaults to true', () => {
     const runtime = new FakeAgentRuntime();
     // SseResponse mock — only needs the on() method signature
-    const mockRes = { on: vi.fn() };
-    expect(runtime.acquireLock('s1', 'client-1', mockRes as any)).toBe(true);
+    const mockRes: SseResponse = { on: vi.fn() };
+    expect(runtime.acquireLock('s1', 'client-1', mockRes)).toBe(true);
   });
 });

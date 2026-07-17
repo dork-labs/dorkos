@@ -449,6 +449,64 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/api/sessions/{id}/command-intents/{intent}',
+  tags: ['Sessions'],
+  summary: 'Trigger a runtime-fulfilled command intent (trigger-only)',
+  description:
+    'TRIGGERS a RUNTIME-fulfilled command intent (currently `compact`) and returns ' +
+    'immediately (DOR-109, ADR-0273/ADR-0264). The runtime expands the neutral intent ' +
+    'into its native mechanism (Claude: bare `/compact`; OpenCode: `session.summarize`), ' +
+    'and the outcome — a compaction — is delivered solely on the durable ' +
+    '`GET /api/sessions/{id}/events` stream (e.g. a `compact_boundary`), NOT in this ' +
+    'response. The client-native intents (`clear`, `context`) are handled entirely ' +
+    'client-side and never reach this route. Capability-gated: a runtime that does not ' +
+    'support the intent (e.g. Codex) returns `422` and the adapter is never called — ' +
+    'never a silent no-op. Mirrors the message trigger: `409` SESSION_LOCKED when a turn ' +
+    'is already running.',
+  request: {
+    params: z.object({ id: z.string().uuid(), intent: z.enum(['compact']) }),
+    body: {
+      description:
+        'Optional trailing instructions the user typed after the intent token ' +
+        '(e.g. `/compact focus on the API changes`). Forwarded to runtimes whose ' +
+        'native mechanism accepts guidance (claude-code); ignored by those whose ' +
+        'mechanism takes none (opencode).',
+      required: false,
+      content: {
+        'application/json': {
+          schema: z.object({ instructions: z.string().optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    202: {
+      description: 'Intent accepted and started; body carries the session id',
+      content: {
+        'application/json': { schema: SendMessageResponseSchema },
+      },
+    },
+    400: {
+      description: 'Invalid session id or malformed request body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Session not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Session locked by another client',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    422: {
+      description: 'Unknown intent, or the session runtime does not support it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/api/sessions/{id}/approve',
   tags: ['Sessions'],
   summary: 'Approve pending tool call',

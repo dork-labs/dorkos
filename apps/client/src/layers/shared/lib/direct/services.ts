@@ -9,6 +9,7 @@
  */
 import type { RuntimeCapabilities, SessionOpts } from '@dorkos/shared/agent-runtime';
 import type { ClientContext } from '@dorkos/shared/additional-context';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -89,6 +90,27 @@ export interface DirectTransportServices {
       cwd?: string;
       context?: ClientContext;
     }): Promise<{ accepted: boolean; canonicalId?: string }>;
+  };
+  /**
+   * In-process trigger bridge for a RUNTIME-fulfilled command intent (currently
+   * `compact`), the command-intent twin of {@link turnTrigger} (DOR-109,
+   * ADR-0264). The embedding host wires
+   * `createEmbeddedCommandIntentTrigger(runtime)` from
+   * `@dorkos/server/services/session` here, so `runCommandIntent` drives a
+   * detached run feeding the session projector — delivery then flows over
+   * `subscribeSession` (e.g. a `compact_boundary`), exactly like the HTTP route.
+   * Resolves synchronously with the lock outcome (there is no canonical id to
+   * await for an existing session).
+   */
+  commandIntentTrigger: {
+    trigger(opts: {
+      sessionId: string;
+      clientId: string;
+      intent: RuntimeCommandIntentId;
+      cwd?: string;
+      /** Trailing instructions after the intent token (see `Transport.runCommandIntent`). */
+      instructions?: string;
+    }): { accepted: boolean };
   };
   transcriptReader: {
     listSessions(vaultRoot: string): Promise<Session[]>;

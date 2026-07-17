@@ -66,6 +66,10 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // OpenCode fulfills `compact` via its native sidecar compaction
+  // (`client.session.summarize`; DOR-109 task 2.2, ADR-0273) —
+  // `executeCommandIntent` carries that body.
+  commandIntents: { compact: { supported: true } },
   features: {},
 };
 

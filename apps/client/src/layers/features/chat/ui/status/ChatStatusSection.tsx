@@ -18,6 +18,7 @@ import { useWorkspaceForSession } from '@/layers/entities/workspace';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
 import { useRuntimeChip } from '../../model/status/use-runtime-chip';
+import { useUsageReveal } from '../../model/use-usage-reveal';
 import { ShortcutChips } from '../input/ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -31,6 +32,7 @@ import {
   CacheItem,
   ContextItem,
   UsageStatusItem,
+  UsageRevealPopover,
   hasRenderableUsage,
   NotificationSoundItem,
   PollingItem,
@@ -191,6 +193,10 @@ export function ChatStatusSection({
   // Merged Usage & cost item: runtime-neutral usage descriptor from the
   // snapshot-backed projection (subscription utilization or pay-as-you-go cost).
   const usage = streamValues.usage;
+  // The `/context` intent pins the usage & cost detail open (DOR-109) so a
+  // keyboard user sees it without hovering the status-bar item.
+  const usageRevealOpen = useUsageReveal((s) => s.open);
+  const setUsageRevealOpen = useUsageReveal((s) => s.setOpen);
   // NOTE: `model` is intentionally NOT overridden from the snapshot. The snapshot
   // carries the SDK-resolved model id (e.g. "claude-opus-4-6"), whereas the model
   // picker + auto-mode gating key off the user-selectable option VALUE (e.g.
@@ -474,6 +480,12 @@ export function ChatStatusSection({
       </ContextMenu>
       {/* Configure icon — right-aligned, stable position independent of item changes */}
       {configureIcon}
+      {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
+      <UsageRevealPopover
+        usage={usage ?? null}
+        open={usageRevealOpen}
+        onOpenChange={setUsageRevealOpen}
+      />
       {/* Portal-based — render once; placement is layout-independent */}
       <AutoModeConfirmDialog
         open={autoConfirmOpen}

@@ -48,15 +48,34 @@ export type {
   CaptureBufferView,
   DevtoolsScreenshotEntry,
 } from './devtools-capture-store.js';
-export { triggerTurn, DetachedTurnLifecycle, CANONICAL_ID_TIMEOUT_MS } from './trigger-turn.js';
+export {
+  triggerTurn,
+  DetachedTurnLifecycle,
+  CANONICAL_ID_TIMEOUT_MS,
+  guardTurnErrors,
+} from './trigger-turn.js';
 export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
+export { triggerCommandIntent } from './trigger-command-intent.js';
+export type {
+  TriggerCommandIntentDeps,
+  TriggerCommandIntentOpts,
+  TriggerCommandIntentResult,
+} from './trigger-command-intent.js';
 export { withStallGuard } from './stall-guard.js';
 export type { StallGuardOpts } from './stall-guard.js';
 export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
-export { createEmbeddedTurnTrigger } from './embedded-turn-trigger.js';
-export type { EmbeddedTurnTrigger, EmbeddedTriggerOpts } from './embedded-turn-trigger.js';
+export {
+  createEmbeddedTurnTrigger,
+  createEmbeddedCommandIntentTrigger,
+} from './embedded-turn-trigger.js';
+export type {
+  EmbeddedTurnTrigger,
+  EmbeddedTriggerOpts,
+  EmbeddedCommandIntentTrigger,
+  EmbeddedCommandIntentOpts,
+} from './embedded-turn-trigger.js';
 
 // --- Multi-runtime session-list aggregation (ADR-0310) ---
 export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';

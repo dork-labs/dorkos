@@ -12,6 +12,14 @@ export interface SetSessionIdOptions {
    * canonical URL silently supersedes the optimistic one (no extra Back step).
    */
   replace?: boolean;
+  /**
+   * The session this new one continues from (the `/clear` intent's "linked back"
+   * reference, DOR-109). Recorded as client navigation state in the URL — a
+   * lightweight link, no DB column. Omit for an unrelated navigation; passing it
+   * as `undefined` drops any prior `continuedFrom` so the link never leaks
+   * forward onto later navigations.
+   */
+  continuedFrom?: string;
 }
 
 /**
@@ -47,6 +55,9 @@ export function useSessionId(): [
         search: (prev) => ({
           ...prev,
           session: id ?? undefined,
+          // Set explicitly so a fresh navigation without a link drops any prior
+          // `continuedFrom` rather than carrying it forward via `...prev`.
+          continuedFrom: options?.continuedFrom,
         }),
         replace: options?.replace,
       });

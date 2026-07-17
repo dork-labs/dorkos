@@ -261,3 +261,65 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await expect(page.getByText('Echo: please fail')).toBeVisible({ timeout: 10_000 });
   });
 });
+
+// Universal command intents in the inline slash palette (DOR-109, VC2 + VC3
+// enabled side). Backed by the test-mode runtime, whose caps declare
+// `commandIntents.compact.supported === true` (Phase 2 task 2.3), so the compact
+// row renders ENABLED here. The DISABLED "Not supported by {runtime}" side (VC3
+// negative) is NOT reachable in this environment: the test-mode server registers
+// only `test-mode` + `test-mode-b` (both supported), codex is not a registered
+// runtime here, and `buildPaletteCommands` renders an unresolved (undefined) caps
+// map as enabled — so no palette row is ever disabled against this server. That
+// gating branch is covered by the Phase 3 unit tests
+// (features/chat/model/__tests__/build-palette-commands.test.ts +
+// features/commands CommandPalette gating), which mock caps to supported:false.
+// The intent rows themselves are client-side (COMMAND_INTENTS), so these
+// assertions hold on a cold session with no prior turn.
+test.describe('Command Intents — inline palette dedupe + alias hints', () => {
+  test('shows exactly one row per canonical intent, folding the native runtime command', async ({
+    page,
+  }) => {
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: agentDir });
+
+    // Typing `/` opens the palette with every command; each canonical intent
+    // appears once — a runtime's own command for the same action folds into the
+    // single intent row rather than doubling (the dedupe pass).
+    await chatPage.openCommandPalette('/');
+    await expect(chatPage.paletteRow('/compact')).toHaveCount(1);
+    await expect(chatPage.paletteRow('/clear')).toHaveCount(1);
+    await expect(chatPage.paletteRow('/context')).toHaveCount(1);
+
+    // The plain-language intent descriptions render (writing-for-humans).
+    await expect(
+      chatPage.commandPalette.getByText('Shrink the conversation to free up context')
+    ).toBeVisible();
+  });
+
+  test('typing an alias fuzzy-matches the intent and shows the "matched /{alias}" hint', async ({
+    page,
+  }) => {
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: agentDir });
+
+    // `/compress` is a cross-agent alias of `compact`; typing it ranks the
+    // compact intent and surfaces the shipped alias hint so a user's muscle
+    // memory resolves to the right intent.
+    await chatPage.openCommandPalette('/compress');
+    await expect(chatPage.paletteRow('/compact')).toHaveCount(1);
+    await expect(chatPage.commandPalette.getByText('matched /compress')).toBeVisible();
+  });
+
+  test('the compact row is ENABLED on a runtime that supports it (test-mode)', async ({ page }) => {
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: agentDir });
+
+    // test-mode declares compact supported, so the row is selectable — not the
+    // greyed, aria-disabled "Not supported by {runtime}" state (which the unit
+    // tests cover for an unsupporting runtime).
+    await chatPage.openCommandPalette('/compact');
+    const compactRow = chatPage.paletteRow('/compact');
+    await expect(compactRow).toHaveCount(1);
+    await expect(compactRow).toHaveAttribute('aria-disabled', 'false');
+  });
+});

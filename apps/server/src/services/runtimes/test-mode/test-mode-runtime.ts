@@ -4,6 +4,7 @@ import type {
   RuntimeCapabilities,
   SessionOpts,
   MessageOpts,
+  CommandIntentOpts,
   SseResponse,
 } from '@dorkos/shared/agent-runtime';
 import type {
@@ -21,6 +22,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { RelayCore } from '@dorkos/relay';
 import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
@@ -134,6 +136,23 @@ export class TestModeRuntime implements AgentRuntime {
     });
     const scenario = scenarioStore.getScenario(sessionId);
     yield* scenario(content);
+  }
+
+  /**
+   * Fulfill the runtime-fulfilled `compact` intent by yielding a synthetic
+   * `compact_boundary` — the deterministic e2e/conformance vehicle, mirroring
+   * {@link FakeAgentRuntime}'s final form. Lets the palette-gating + dispatch
+   * e2e (Phase 4) and the conformance suite assert a supported runtime's
+   * dispatch reached the adapter and produced a boundary the durable projector
+   * drives. `TEST_MODE_CAPABILITIES.commandIntents` gates the route before this
+   * is ever called.
+   */
+  async *executeCommandIntent(
+    _sessionId: string,
+    _intent: RuntimeCommandIntentId,
+    _opts?: CommandIntentOpts
+  ): AsyncGenerator<StreamEvent> {
+    yield { type: 'compact_boundary', data: { trigger: 'manual' } };
   }
 
   setRelay(_relay: RelayCore): void {

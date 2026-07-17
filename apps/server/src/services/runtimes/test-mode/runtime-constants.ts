@@ -59,6 +59,10 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Test-mode fulfills `compact` by yielding a synthetic `compact_boundary`
+  // (DOR-109 task 2.3) — the deterministic e2e/conformance vehicle for
+  // per-runtime intent gating.
+  commandIntents: { compact: { supported: true } },
   features: {
     /**
      * Scenario keys served by the built-in `scenario-store`. Keys here MUST

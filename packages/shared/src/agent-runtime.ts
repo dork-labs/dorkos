@@ -21,6 +21,7 @@ import type {
 } from './types.js';
 import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
+import type { RuntimeCommandIntentId } from './command-intents.js';
 
 /**
  * Describes a single permission mode a runtime supports. Runtimes enumerate
@@ -231,6 +232,15 @@ export function deriveRuntimeReadiness(
 }
 
 /**
+ * Per-runtime support for a single runtime-fulfilled command intent
+ * (see {@link RuntimeCapabilities.commandIntents}).
+ */
+export interface CommandIntentSupport {
+  /** Whether the runtime can fulfill this intent for a session. */
+  supported: boolean;
+}
+
+/**
  * Runtime capability flags — describes what a given backend supports.
  *
  * Genuinely-boolean capabilities remain flat booleans. Permission modes are
@@ -278,6 +288,18 @@ export interface RuntimeCapabilities {
     default?: string;
     values: PermissionModeDescriptor[];
   };
+
+  /**
+   * Support for RUNTIME-fulfilled command intents (currently `compact`).
+   * Client-native intents (`clear`, `context`) are universal and not gated
+   * here. `supported: false` → the palette disables the entry ("Not supported
+   * by {runtime}") and the composer refuses to send the intent as text. A
+   * first-class sibling of {@link RuntimeCapabilities.permissionModes} per
+   * ADR-0256, not the `features` bag; the adapter expands the neutral intent
+   * into its native mechanism per ADR-0273. Required — compile-time forcing so
+   * no adapter silently omits it.
+   */
+  commandIntents: Record<RuntimeCommandIntentId, CommandIntentSupport>;
 
   /**
    * Context kinds this runtime injects natively (the server omits these from
@@ -337,6 +359,22 @@ export interface MessageOpts extends SessionSettings {
    * Only honored on the first turn — ignored once the session has started.
    */
   title?: string;
+}
+
+/**
+ * Options for fulfilling a runtime command intent — a turn's {@link MessageOpts}
+ * plus the intent's optional trailing instructions.
+ */
+export interface CommandIntentOpts extends MessageOpts {
+  /**
+   * Trailing instructions the user typed after the intent token (e.g.
+   * `/compact focus on the API changes` → `'focus on the API changes'`).
+   * Runtimes whose native mechanism accepts guidance forward them verbatim
+   * (claude-code appends them to the bare `/compact`); runtimes whose mechanism
+   * takes no instruction (opencode's `session.summarize`, test-mode's synthetic
+   * boundary) ignore them — an honest per-runtime difference, not an error.
+   */
+  instructions?: string;
 }
 
 /**
@@ -407,6 +445,28 @@ export interface AgentRuntime {
    * @param opts - Optional overrides for permission mode, cwd, and system prompt
    */
   sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent>;
+
+  /**
+   * Fulfill a RUNTIME-fulfilled command intent (currently `compact`) for a
+   * session, expanding the neutral intent into the runtime's native mechanism
+   * (ADR-0273; e.g. Claude sends a bare `/compact`, OpenCode calls
+   * `session.summarize`). Yields the resulting StreamEvents so the server drives
+   * them through the durable session projector exactly like a turn — the client
+   * learns of the compaction via `GET /api/sessions/:id/events` (e.g. a
+   * `compact_boundary`). Called ONLY when
+   * `getCapabilities().commandIntents[intent].supported`; a runtime that does
+   * not support the intent may throw a typed unsupported error.
+   *
+   * @param sessionId - Target session.
+   * @param intent - The runtime-fulfilled intent id.
+   * @param opts - cwd, per-turn options, and the intent's optional trailing
+   *   instructions ({@link CommandIntentOpts}).
+   */
+  executeCommandIntent(
+    sessionId: string,
+    intent: RuntimeCommandIntentId,
+    opts?: CommandIntentOpts
+  ): AsyncGenerator<StreamEvent>;
 
   // --- Interactive flows ---
 

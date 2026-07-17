@@ -63,19 +63,31 @@ export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: Co
               </div>
               {items.map(({ cmd, index }) => {
                 const isSelected = index === selectedIndex;
+                // Honest capability gating (DOR-109): a runtime-fulfilled intent
+                // the active runtime cannot fulfill renders greyed-out and is not
+                // selectable by click or keyboard.
+                const isDisabled = cmd.disabled === true;
                 return (
                   <div
                     key={cmd.fullCommand}
                     id={`command-item-${index}`}
                     role="option"
                     aria-selected={isSelected}
+                    aria-disabled={isDisabled}
                     data-selected={isSelected}
+                    data-disabled={isDisabled}
                     tabIndex={isSelected ? 0 : -1}
-                    onClick={() => onSelect(cmd)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') onSelect(cmd);
+                    onClick={() => {
+                      if (!isDisabled) onSelect(cmd);
                     }}
-                    className="data-[selected=true]:bg-accent hover:bg-muted cursor-pointer rounded-md px-2 py-1.5 transition-colors duration-100"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !isDisabled) onSelect(cmd);
+                    }}
+                    className={
+                      isDisabled
+                        ? 'cursor-not-allowed rounded-md px-2 py-1.5 opacity-45'
+                        : 'data-[selected=true]:bg-accent hover:bg-muted cursor-pointer rounded-md px-2 py-1.5 transition-colors duration-100'
+                    }
                   >
                     <div className="flex min-w-0 items-baseline gap-2">
                       <span className="text-foreground shrink-0 font-mono text-[13px] font-medium">
@@ -86,10 +98,16 @@ export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: Co
                           {cmd.argumentHint}
                         </span>
                       )}
-                      {cmd.matchedAlias && (
-                        <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-[11px] italic">
-                          matched /{cmd.matchedAlias.replace(/^\//, '')}
+                      {isDisabled && cmd.disabledReason ? (
+                        <span className="text-muted-foreground/70 ml-auto shrink-0 text-[11px]">
+                          {cmd.disabledReason}
                         </span>
+                      ) : (
+                        cmd.matchedAlias && (
+                          <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-[11px] italic">
+                            matched /{cmd.matchedAlias.replace(/^\//, '')}
+                          </span>
+                        )
                       )}
                     </div>
                     {cmd.description && (

@@ -17,6 +17,7 @@ import type {
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
 import type { ClientContext } from '@dorkos/shared/additional-context';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
 import type { UiActionRequest } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
@@ -168,6 +169,43 @@ export function createDirectSessionMethods(
         throw error;
       }
       return { sessionId: result.canonicalId ?? sessionId };
+    },
+
+    // ── Command-Intent Trigger ───────────────────────────────────────────────
+
+    /**
+     * Trigger a RUNTIME-fulfilled command intent (currently `compact`)
+     * in-process (trigger-only contract, ADR-0264). The run rides the wired
+     * {@link DirectTransportServices.commandIntentTrigger | commandIntentTrigger},
+     * feeding the session projector; the compaction is delivered solely over
+     * `subscribeSession` (e.g. a `compact_boundary`). Throws a typed
+     * `SESSION_LOCKED` error when the session lock is held — reachable only when
+     * another transport instance holds it (a same-client acquire steals the
+     * lock). The client pre-gates on the runtime's capability, so this is reached
+     * only for a supported intent.
+     */
+    async runCommandIntent(
+      sessionId: string,
+      intent: RuntimeCommandIntentId,
+      instructions?: string
+    ): Promise<{ sessionId: string }> {
+      const result = services.commandIntentTrigger.trigger({
+        sessionId,
+        clientId: getClientId(),
+        intent,
+        cwd: services.vaultRoot,
+        instructions,
+      });
+      if (!result.accepted) {
+        const error = new Error('Session locked') as Error & SessionLockedError;
+        error.code = 'SESSION_LOCKED';
+        // Approximations mirror postMessage: the narrowed seam exposes no
+        // getLockInfo, and only `code` is consumed by classify-transport-error.
+        error.lockedBy = getClientId();
+        error.lockedAt = new Date().toISOString();
+        throw error;
+      }
+      return { sessionId };
     },
 
     // ── Generative-UI Interactivity ─────────────────────────────────────────

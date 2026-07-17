@@ -70,6 +70,7 @@ import type {
   TransportScanOptions,
 } from './mesh-schemas.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
+import type { RuntimeCommandIntentId } from './command-intents.js';
 import type {
   StoreCredentialResult,
   DelegatedLoginResult,
@@ -381,6 +382,31 @@ export interface Transport {
     content: string,
     cwd?: string,
     options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
+  ): Promise<{ sessionId: string }>;
+  /**
+   * Trigger a RUNTIME-fulfilled command intent (currently `compact`) for a
+   * session and resolve to the canonical session id.
+   *
+   * The single client path all four surfaces share to fulfill a runtime intent:
+   * `HttpTransport` POSTs `/sessions/:id/command-intents/:intent` (trigger-only,
+   * `202`), `DirectTransport` calls the same server service in-process. The
+   * outcome — a compaction — is delivered out-of-band over the durable `/events`
+   * stream (e.g. a `compact_boundary`), NOT in this response, exactly like
+   * {@link postMessage}. Callers must first gate on the active runtime's
+   * `capabilities.commandIntents[intent].supported`; an unsupported intent is an
+   * honest error, never sent as text.
+   *
+   * @param sessionId - Target session id.
+   * @param intent - The runtime-fulfilled intent id (e.g. `'compact'`).
+   * @param instructions - Trailing instructions the user typed after the intent
+   *   token (e.g. `/compact focus on the API changes`). Forwarded to runtimes
+   *   whose native mechanism accepts guidance (claude-code); ignored by those
+   *   whose mechanism takes none (opencode, test-mode).
+   */
+  runCommandIntent(
+    sessionId: string,
+    intent: RuntimeCommandIntentId,
+    instructions?: string
   ): Promise<{ sessionId: string }>;
   /**
    * Dispatch a generative-UI widget `agent`-kind action back to the session.

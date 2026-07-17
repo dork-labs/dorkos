@@ -56,6 +56,10 @@ const appShellRoute = createRoute({
  * runtime (ADR-0255: a switch is always a fresh session, never a history
  * transplant). It is consumed once on mount, then the send takes over.
  *
+ * `continuedFrom` is the `/clear` intent's "linked back" reference (DOR-109) —
+ * the id of the session this fresh one continues from. A lightweight client-side
+ * link recorded in the URL only; there is no DB column.
+ *
  * @internal Exported for testing only.
  */
 export const sessionSearchSchema = mergeDialogSearch(
@@ -64,6 +68,7 @@ export const sessionSearchSchema = mergeDialogSearch(
     dir: z.string().optional(),
     runtime: z.string().optional(),
     prompt: z.string().optional(),
+    continuedFrom: z.string().optional(),
   })
 );
 

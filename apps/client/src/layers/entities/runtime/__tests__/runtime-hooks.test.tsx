@@ -55,6 +55,7 @@ const CLAUDE_CODE_PROFILE: RuntimeCapabilities = {
       { id: 'auto', label: 'Auto' },
     ],
   },
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 
@@ -76,6 +77,7 @@ const CODEX_PROFILE: RuntimeCapabilities = {
       { id: 'bypassPermissions', label: 'Full access' },
     ],
   },
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 
@@ -97,6 +99,7 @@ const OPENCODE_PROFILE: RuntimeCapabilities = {
       { id: 'bypassPermissions', label: 'Bypass permissions' },
     ],
   },
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 

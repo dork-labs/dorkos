@@ -136,6 +136,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     subscribeSessionList: vi.fn(emptyAsyncIterable),
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
     postMessage: vi.fn().mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
+    runCommandIntent: vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
     sendUiAction: vi.fn().mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
     fetchMcpAppResource: vi
       .fn()

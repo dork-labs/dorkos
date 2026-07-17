@@ -7,12 +7,13 @@ import { useTaskState } from '../model/use-task-state';
 import { useToolShortcuts } from '../model/use-tool-shortcuts';
 import { useScrollOverlay } from '../model/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
-import { NATIVE_COMMAND_ENTRIES } from '../model/native-commands';
+import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
 import { useRuntimeChip } from '../model/status/use-runtime-chip';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
+import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useAppStore } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
 import type { MessageListHandle } from './MessageList';
@@ -131,6 +132,35 @@ export function ChatPanel({
     [setSessionId, queryClient]
   );
 
+  /**
+   * `/clear` navigation: open a fresh session in the same project (the setter
+   * preserves the `dir` param), recording the prior session as the new one's
+   * lightweight `continuedFrom` link (DOR-109). No message is sent.
+   */
+  const startFreshSession = useCallback(
+    (fromSessionId: string | null) => {
+      setSessionId(crypto.randomUUID(), { continuedFrom: fromSessionId ?? undefined });
+    },
+    [setSessionId]
+  );
+
+  // Resolve the session's runtime + its capabilities up front: they gate the
+  // palette's honest disabled row AND the composer's /compact dispatch, both of
+  // which must agree. Same source ChatStatusSection's runtime chip uses (a
+  // not-yet-started Codex session resolves to Codex, not the claude-code default).
+  const runtimeChip = useRuntimeChip(sessionId ?? '');
+  const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
+  const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
+  // Compact gate injected into the send funnel: recognize + dispatch /compact
+  // when supported, honestly refuse (toast, keep text) when the runtime declares
+  // it unsupported. Optimistic while capabilities load — matching the palette
+  // gate in buildPaletteCommands, so the two surfaces never disagree during the
+  // caps-loading window (the server's 422 is the backstop for a wrong optimism).
+  const compactIntent = useMemo(
+    () => compactComposerGate(activeCaps?.commandIntents, runtimeLabel),
+    [activeCaps, runtimeLabel]
+  );
+
   const {
     messages,
     input,
@@ -164,6 +194,8 @@ export function ChatPanel({
     onTaskEvent: handleTaskEventWithCelebrations,
     onSessionIdChange: handleSessionIdChange,
     onSessionIdChangeReplace: handleSessionIdChangeReplace,
+    startFreshSession,
+    compactIntent,
     launchRuntime,
     onStreamingDone: useCallback(() => {
       if (enableNotificationSound) {
@@ -206,23 +238,25 @@ export function ChatPanel({
 
   // Thread the session's runtime so a not-yet-started Codex session's palette
   // resolves to Codex's project skills rather than the inferred claude-code
-  // default. Same source ChatStatusSection's runtime chip uses.
-  const runtimeChip = useRuntimeChip(sessionId ?? '');
+  // default. Runtime + caps are resolved above (they also gate /compact dispatch).
   const { data: registry } = useCommands(
     cwd,
     sessionId ?? undefined,
     runtimeChip.runtime ?? undefined
   );
-  // Blend native (client-side) commands ahead of runtime commands so /rename
-  // appears in the slash autocomplete. Native commands take precedence (the send
-  // path intercepts them before any runtime POST), so drop any runtime command
-  // whose token collides with a native one — otherwise the palette would list it
-  // twice. NATIVE_COMMAND_ENTRIES is a stable module constant.
-  const allCommands = useMemo(() => {
-    const nativeTokens = new Set(NATIVE_COMMAND_ENTRIES.map((e) => e.command));
-    const runtime = (registry?.commands ?? []).filter((c) => !nativeTokens.has(c.command));
-    return [...NATIVE_COMMAND_ENTRIES, ...runtime];
-  }, [registry]);
+  // Project the shared command-intent registry into one palette row per intent
+  // (/compact, /clear, /context), folding each runtime's native command for the
+  // same action into that single row, then blend the DorkOS-native commands
+  // (/rename) and the remaining runtime commands (DOR-109). The send path
+  // intercepts intents and native commands before any runtime POST.
+  const allCommands = useMemo(
+    () =>
+      buildPaletteCommands(registry?.commands ?? [], {
+        commandIntents: activeCaps?.commandIntents,
+        runtimeLabel,
+      }),
+    [registry, activeCaps, runtimeLabel]
+  );
   const { data: fileList } = useFiles(cwd);
   const allFileEntries = useMemo(
     () => (fileList?.files ? buildFileEntries(fileList.files) : []),

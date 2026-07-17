@@ -20,6 +20,7 @@ import type {
   DevtoolsIngest,
 } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { fetchJSON, buildQueryString } from './http-client';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
@@ -175,6 +176,51 @@ export function createSessionMethods(
       // Trigger-only contract: the turn streams over /events. The body carries
       // the SDK-canonical id (which may differ from the client UUID for a
       // brand-new session — create-on-first-message).
+      const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
+      return { sessionId: data.sessionId ?? sessionId };
+    },
+
+    // ── Command-Intent Trigger (202, out-of-band delivery via /events) ─────
+
+    /**
+     * Trigger a runtime-fulfilled command intent via
+     * `POST /sessions/:id/command-intents/:intent`. Trigger-only (202), mirroring
+     * {@link postMessage}: the compaction is delivered out-of-band over `/events`
+     * and the 202 body carries the SDK-canonical id. Throws a typed
+     * `SESSION_LOCKED` error on 409 when a turn is already running. Trailing
+     * instructions (e.g. `/compact focus on the API changes`) ride the JSON body.
+     */
+    async runCommandIntent(
+      sessionId: string,
+      intent: RuntimeCommandIntentId,
+      instructions?: string
+    ): Promise<{ sessionId: string }> {
+      const response = await fetch(`${baseUrl}/sessions/${sessionId}/command-intents/${intent}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Id': getClientId(),
+        },
+        credentials: 'include',
+        // Express 5 leaves req.body undefined on an empty POST, so the body is
+        // sent only when there are instructions to carry.
+        ...(instructions !== undefined ? { body: JSON.stringify({ instructions }) } : {}),
+      });
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          const errorData = (await response.json().catch(() => null)) as SessionLockedError | null;
+          if (errorData?.code === 'SESSION_LOCKED') {
+            const error = new Error('Session locked') as Error & SessionLockedError;
+            error.code = 'SESSION_LOCKED';
+            error.lockedBy = errorData.lockedBy;
+            error.lockedAt = errorData.lockedAt;
+            throw error;
+          }
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+
       const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
       return { sessionId: data.sessionId ?? sessionId };
     },
