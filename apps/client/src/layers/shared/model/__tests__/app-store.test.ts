@@ -8,13 +8,14 @@ describe('AppStore', () => {
 
   it('toggleSidebar flips state', async () => {
     const { useAppStore } = await import('../app-store');
-    expect(useAppStore.getState().sidebarOpen).toBe(false);
-
-    useAppStore.getState().toggleSidebar();
+    // Desktop default is open (DOR-343); jsdom matchMedia reports non-mobile.
     expect(useAppStore.getState().sidebarOpen).toBe(true);
 
     useAppStore.getState().toggleSidebar();
     expect(useAppStore.getState().sidebarOpen).toBe(false);
+
+    useAppStore.getState().toggleSidebar();
+    expect(useAppStore.getState().sidebarOpen).toBe(true);
   });
 
   it('setSidebarOpen sets explicit value', async () => {

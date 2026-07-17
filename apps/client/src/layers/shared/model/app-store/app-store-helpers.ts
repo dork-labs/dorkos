@@ -88,7 +88,7 @@ export function purgeOrphanedPreferenceKeys(): void {
 
 /** Default values for each persisted boolean. */
 export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
-  sidebarOpen: false,
+  sidebarOpen: true,
   showTimestamps: false,
   expandToolCalls: false,
   autoHideToolCalls: true,
