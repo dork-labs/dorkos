@@ -83,13 +83,22 @@ interface ViewOptionsItem {
 }
 
 /**
+ * Cap for the Claude Desktop `claude://` deep link's prompt. The scheme
+ * truncates around 14k characters; our prompt is far shorter, but the cap
+ * keeps the link valid if the page URL ever grows unexpectedly.
+ */
+const CLAUDE_DESKTOP_MAX_PROMPT = 14_000;
+
+/**
  * "…" view-options menu for a docs page.
  *
  * Opens a popover of plain, honest deep-links: View as Markdown, Open in
- * GitHub, and AI hand-offs (Open in Claude, ChatGPT, Scira AI, Cursor).
- * "Open in Claude" opens claude.ai — the web app — in a new tab with a
- * prompt pre-filled to read this page's URL; it is **not** a Claude Code or
- * desktop link.
+ * GitHub, and AI hand-offs (Open in Claude, Claude Desktop, ChatGPT,
+ * Perplexity, Scira AI, Cursor). "Open in Claude" opens claude.ai — the web
+ * app — in a new tab with a prompt pre-filled to read this page's URL; it is
+ * **not** a Claude Code or desktop link. "Open in Claude Desktop" is the
+ * distinct one: it uses the official `claude://` desktop deep-link scheme, so
+ * it only works when the Claude desktop app is installed.
  *
  * Local, project-owned adaptation of fumadocs-ui's `ViewOptionsPopover` (see
  * the `LLMCopyButton` TSDoc above for why this is hand-vendored rather than
@@ -141,6 +150,16 @@ export function ViewOptions({
         title: 'Open in Claude',
         href: `https://claude.ai/new?${new URLSearchParams({ q })}`,
         icon: <ClaudeIcon />,
+      },
+      {
+        title: 'Open in Claude Desktop',
+        href: `claude://claude.ai/new?${new URLSearchParams({ q: q.slice(0, CLAUDE_DESKTOP_MAX_PROMPT) })}`,
+        icon: <ClaudeIcon />,
+      },
+      {
+        title: 'Open in Perplexity',
+        href: `https://www.perplexity.ai/search?${new URLSearchParams({ q })}`,
+        icon: <PerplexityIcon />,
       },
       {
         title: 'Open in Cursor',
@@ -272,6 +291,16 @@ function SciraIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** Perplexity mark, used by the "Open in Perplexity" deep-link. */
+function PerplexityIcon() {
+  return (
+    <svg fill="currentColor" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <title>Perplexity</title>
+      <path d="M22.3977 7.0896h-2.3106V.0676l-7.5094 6.3542V.1577h-1.1554v6.1966L4.4904.0676v7.022H2.1797v10.9863h2.3107V24l7.5094-6.3543v6.2896h1.1554v-6.2896L20.087 24v-6.9241h2.3107V7.0896zm-4.6213-4.5896v4.5896h-5.4243l5.4243-4.5896zm-13.2762 0 5.4243 4.5896H4.5002V2.5zm-1.1554 13.3966V8.2451H10.845l-7.5006 6.3557v.1558zm7.5094 5.1575-6.3541-5.3757 6.3541-5.3743v10.75zm1.1554-10.7501 6.3541 5.3743-6.3541 5.3757v-10.75zm7.5006 5.5943-7.5006-6.3557h6.3452v6.5115l1.1554-.1558z" />
     </svg>
   );
 }
