@@ -65,7 +65,7 @@ If `pnpm --filter @dorkos/desktop pack` or `dist` has run on this machine (both 
 
 **Symptom:** Vitest workers die silently — `Worker exited unexpectedly`, no assertion failures — in every package whose tests load the shared better-sqlite3 binary: mesh/relay/client via `@dorkos/db`, site via better-auth's drizzle adapter. The pre-push test gate then blocks every push, with nothing in the output pointing at Electron packaging as the cause.
 
-**Fix:** `pnpm rebuild better-sqlite3` from the repo root. Re-run it any time you package the desktop app locally — packaging re-poisons the shared binary.
+**Fix:** `pnpm rebuild better-sqlite3 node-pty` from the repo root. Re-run it any time you package the desktop app locally — packaging re-poisons the shared binaries.
 
 ## 3. Bundling Claude Code
 
