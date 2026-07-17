@@ -17,6 +17,7 @@ import type {
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
 import type { ClientContext } from '@dorkos/shared/additional-context';
+import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
 import type { UiActionRequest } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
@@ -168,6 +169,25 @@ export function createDirectSessionMethods(
         throw error;
       }
       return { sessionId: result.canonicalId ?? sessionId };
+    },
+
+    // ── Command-Intent Trigger ───────────────────────────────────────────────
+
+    /**
+     * Trigger a runtime-fulfilled command intent in-process. Placeholder — the
+     * in-process command-intent service is built in Phase 2 (task 2.4), modeled
+     * on `embedded-turn-trigger.ts`. Throws until then; the client pre-gates on
+     * the active runtime's capability, so this is never reached for a supported
+     * intent before Phase 2 wires it.
+     *
+     * @param _sessionId - Target session id (unused until Phase 2 wiring).
+     * @param _intent - The runtime-fulfilled intent id (unused until Phase 2 wiring).
+     */
+    async runCommandIntent(
+      _sessionId: string,
+      _intent: RuntimeCommandIntentId
+    ): Promise<{ sessionId: string }> {
+      throw new Error('runCommandIntent is not yet wired in DirectTransport');
     },
 
     // ── Generative-UI Interactivity ─────────────────────────────────────────
