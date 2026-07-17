@@ -34,6 +34,8 @@ On startup you'll see a log line confirming the mount point and auth mode:
 [A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, auth: none (loopback))
 ```
 
+Here `auth: none` means you've set no `MCP_API_KEY` and haven't turned on login. JSON-RPC execution is still token-gated in that mode — it needs the local MCP token (see [Authentication](#authentication)); only the loopback bind is what "loopback" refers to.
+
 ## Discovery: the Agent Card
 
 A2A clients start by fetching an **Agent Card**: a JSON document describing what an agent is and where to reach it.
@@ -70,13 +72,19 @@ Supported methods: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/c
 
 ### Authentication
 
-Auth mirrors the [MCP endpoint](/docs/getting-started/configuration): set `MCP_API_KEY` and send it as a bearer token.
+Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution is always token-gated**. Fetching an Agent Card (the `GET` discovery paths) stays open — that's public metadata, the A2A analogue of listing tools.
+
+Which token you send depends on your setup:
+
+- **Login off (the default):** send the **local MCP token** as a Bearer header. It's the same token the [MCP endpoint](/docs/integrations/mcp-server) uses — find it in **Settings → Tools → External MCP Server**, or in the `mcp-local-token` file in your DorkOS data folder (`~/.dork/` by default). Without it, a JSON-RPC `POST` comes back `401`; an Agent Card `GET` still works.
+- **Headless deployments:** set `MCP_API_KEY` and send it as the Bearer token. It overrides everything else.
+- **Login on:** a per-user [Better Auth](/docs/getting-started/configuration) API key works as the Bearer token.
 
 ```
-Authorization: Bearer <MCP_API_KEY>
+Authorization: Bearer <token>
 ```
 
-A per-user [Better Auth](/docs/getting-started/configuration) API key also works when login is enabled. When nothing is configured, requests pass through unauthenticated, permitted **only** on a loopback bind (see [Deployment security](#deployment-security)). Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and only carry a `security` requirement when the server actually enforces auth.
+Agent Cards advertise the spec-standard `http`/`bearer` security scheme.
 
 ### `contextId`: grouping turns into a session
 

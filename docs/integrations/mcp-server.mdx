@@ -36,18 +36,37 @@ Manage it from **Settings → Tools → External MCP Server**: an enable/disable
 
 ### Authentication
 
-MCP clients authenticate with a personal API key, created and revoked from **Settings → Security → API keys**, sent as a Bearer token. A minimal JSON-RPC call looks like this:
+How you authenticate depends on whether you've turned on login.
+
+**Login off (the default).** DorkOS protects the tools that change things on your machine with a **local token** it makes for you. You paste this token into your MCP client once, as a Bearer header. Read-only checks (listing tools, `ping`, `get_server_info`) still work with no token, so a quick health probe needs no setup:
 
 ```bash
+# Read-only: no token needed
 curl -X POST http://localhost:4242/mcp \
-  -H "Authorization: Bearer dork_..." \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-A bare `GET` to `/mcp` won't work for testing your key: as noted above, `GET` always returns `405` regardless of the header. `POST` a real JSON-RPC request, like the one above, if you want to confirm auth is working.
+Any tool that changes state (creating an agent, sending a Relay message, installing from the marketplace) needs the token. Without it, the call comes back with a `401` that tells you where to find the token:
 
-For headless deployments (CI, servers no one signs into), set the `MCP_API_KEY` environment variable. It's a static override that takes priority over per-user keys, and it can't be revoked from the UI. If login is off and neither an env key nor a per-user key is configured, the endpoint is reachable without a token, the same localhost-only, zero-config posture as the rest of DorkOS. See [Securing Your Instance](/docs/self-hosting/securing-your-instance) for the full key-management flow.
+```bash
+# A tool that changes things: token required
+curl -X POST http://localhost:4242/mcp \
+  -H "Authorization: Bearer dork_mcp_local_..." \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_agent","arguments":{}}}'
+```
+
+Find your token in **Settings → Tools → External MCP Server** — the setup snippets there already have it filled in, so you can copy one and paste it straight into your client. It also lives in a file called `mcp-local-token` in your DorkOS data folder (`~/.dork/` by default). Rotating the token from Settings makes a new one and turns off the old one right away, so any client you already set up stops working until you paste in the new token.
+
+<Callout type="info">
+  A bare `GET` to `/mcp` always returns `405`, with or without a token. To confirm auth is working,
+  `POST` a real JSON-RPC request like the ones above.
+</Callout>
+
+**Login on.** Once you turn on login, MCP clients authenticate with a **personal API key** instead, created and revoked from **Settings → Security → API keys** and sent as a Bearer token. The local token steps aside; per-user keys take over. See [Securing Your Instance](/docs/self-hosting/securing-your-instance) for the full flow.
+
+**Headless deployments** (CI, servers no one signs into): set the `MCP_API_KEY` environment variable. It's a static override that every client uses as its Bearer token; it takes priority over both the local token and per-user keys, and it can't be revoked from the UI.
 
 ### Client configuration
 
