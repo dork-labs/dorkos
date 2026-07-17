@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import type { MetadataRoute } from 'next';
 import { siteConfig } from '@/config/site';
@@ -30,7 +30,7 @@ function gitLastModified(relPath: string): string | undefined {
   if (cached !== undefined) return cached ?? undefined;
   let result: string | null = null;
   try {
-    const out = execSync(`git log -1 --format=%cI -- "${relPath}"`, {
+    const out = execFileSync('git', ['log', '-1', '--format=%cI', '--', relPath], {
       cwd: REPO_ROOT,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
