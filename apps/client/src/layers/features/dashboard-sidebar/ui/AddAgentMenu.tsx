@@ -1,19 +1,31 @@
 import { useState } from 'react';
-import { Plus, FolderPlus, Store } from 'lucide-react';
-import { Popover, PopoverTrigger, PopoverContent, SidebarGroupAction } from '@/layers/shared/ui';
+import { Plus, FolderPlus, FolderKanban, Store } from 'lucide-react';
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  SidebarGroupAction,
+  Separator,
+} from '@/layers/shared/ui';
 import { useAgentCreationStore } from '@/layers/shared/model';
 import { useNavigate } from '@tanstack/react-router';
+
+interface AddAgentMenuProps {
+  /** Open the inline group-create flow (adds a "New group" entry to the menu). */
+  onNewGroup?: () => void;
+}
 
 /**
  * Popover menu for adding agents — triggered by the + button
  * in the AGENTS sidebar group header.
  *
- * Three actions:
+ * Actions:
  * - Create agent -> opens CreateAgentDialog on 'new' tab
  * - Import project -> opens CreateAgentDialog on 'import' tab
  * - Browse Marketplace -> navigates to /marketplace
+ * - New group -> opens the inline group-create flow (when `onNewGroup` is given)
  */
-export function AddAgentMenu() {
+export function AddAgentMenu({ onNewGroup }: AddAgentMenuProps) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -58,6 +70,22 @@ export function AddAgentMenu() {
           <Store className="size-4" />
           Browse Marketplace
         </button>
+        {onNewGroup && (
+          <>
+            <Separator className="my-1" />
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onNewGroup();
+              }}
+              className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
+            >
+              <FolderKanban className="size-4" />
+              New group
+            </button>
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );

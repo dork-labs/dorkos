@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,7 +18,6 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarGroup,
-  SidebarGroupLabel,
   Kbd,
 } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
@@ -29,17 +28,22 @@ import {
   useConfig,
   useSidebarPrefs,
   useUpdateSidebarPrefs,
-  pinPath,
-  unpinPath,
+  createGroup,
+  moveToGroup,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useAgentSessions, useRenameSession } from '@/layers/entities/session';
+import { useAgentSessions, useRenameSession, useRecentSessions } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
-import { AddAgentMenu } from './AddAgentMenu';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
+import { RecentSessionsSection } from './RecentSessionsSection';
+import { PinnedSection } from './PinnedSection';
+import { AgentGroupSection } from './AgentGroupSection';
+import { UngroupedSection } from './UngroupedSection';
+import { GroupCreateInput } from './GroupCreateInput';
+import { sortAgentPaths } from '../model/sort-agents';
 
 /**
  * Legacy localStorage key that held pinned agent paths before organization moved
@@ -47,13 +51,20 @@ import { AgentOnboardingCard } from './AgentOnboardingCard';
  */
 const LEGACY_PINNED_STORAGE_KEY = 'dorkos-pinned-agents';
 
+/** Pending group-create flow: `pendingPath` (if set) is moved into the group on commit. */
+interface GroupCreationState {
+  pendingPath: string | null;
+}
+
 /**
- * Unified dashboard sidebar — top-level navigation and expandable agent list.
+ * Unified dashboard sidebar — top-level navigation plus the organized agent
+ * roster (DOR-329): Recent sessions, Pinned references, user-defined groups, and
+ * the ungrouped "Agents" list, with progressive disclosure so a small unorganized
+ * fleet stays as clean as before.
  *
- * The dashboard sidebar is the primary sidebar that persists across all routes.
- * Agents are sourced from the mesh registry (full roster, no cap), sorted
- * alphabetically by display name (falling back to the directory name), and
- * split into a Pinned section and an All section.
+ * This component is a slim orchestrator: it wires data (roster, sidebar prefs,
+ * recent sessions), computes membership maps, and composes the section
+ * components. Section chrome, sorting, and CRUD live in those children.
  */
 export function DashboardSidebar() {
   const navigate = useNavigate();
@@ -71,19 +82,21 @@ export function DashboardSidebar() {
   const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
   const pinnedAgentPaths = sidebarPrefs.pinned;
 
-  // ── Full mesh roster (unsorted; display-name sort is derived below) ──
+  // ── Full mesh roster (unsorted; per-section sorting is derived below) ──
   const { data: meshData } = useMeshAgentPaths();
-
   const rawPaths = useMemo(() => (meshData?.agents ?? []).map((a) => a.projectPath), [meshData]);
-
   const { data: agents } = useResolvedAgents(rawPaths);
+
+  // ── Cross-agent recent sessions + per-agent activity (drives the "recent" sort) ──
+  const recentQuery = useRecentSessions();
+  const recentSessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
+  const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
 
   // ── Disambiguate duplicate display names (e.g. two "server" dirs) ──
   const displayNames = useMemo(() => {
     const result = new Map<string, string>();
     const nameGroups = new Map<string, string[]>();
 
-    // Group paths by their base display name
     for (const p of rawPaths) {
       const base = getAgentDisplayName(agents?.[p], p.split('/').pop() ?? 'Agent');
       const group = nameGroups.get(base) ?? [];
@@ -96,8 +109,7 @@ export function DashboardSidebar() {
         result.set(paths[0], base);
         continue;
       }
-      // Walk up from the end of each path until we find a differentiating segment.
-      // Paths may have different lengths, so compare by offset from the end.
+      // Walk up from the end of each path until a differentiating segment is found.
       const splitPaths = paths.map((p) => p.split('/').filter(Boolean));
       for (const [i, p] of paths.entries()) {
         const segments = splitPaths[i];
@@ -120,41 +132,62 @@ export function DashboardSidebar() {
     return result;
   }, [rawPaths, agents]);
 
-  // ── Roster sorted alphabetically by resolved display name ──
-  // getAgentDisplayName resolves displayName → name → directory name, so agents
-  // without a custom name fall back to sorting by their directory name. Sorting
-  // by the disambiguated label keeps the order consistent with what's rendered.
-  const allPaths = useMemo(() => {
-    return [...rawPaths].sort((a, b) => {
-      const nameA = (displayNames.get(a) ?? '').toLowerCase();
-      const nameB = (displayNames.get(b) ?? '').toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-  }, [rawPaths, displayNames]);
+  const displayNamesRecord = useMemo(() => Object.fromEntries(displayNames), [displayNames]);
+  const sortCtx = useMemo(
+    () => ({ displayNames: displayNamesRecord, agentActivity }),
+    [displayNamesRecord, agentActivity]
+  );
 
-  // ── Pinned paths filtered to those that exist in the full roster ──
-  const pinnedPaths = useMemo(() => {
-    const pathSet = new Set(allPaths);
-    return pinnedAgentPaths.filter((p) => pathSet.has(p));
-  }, [pinnedAgentPaths, allPaths]);
+  // ── Membership maps (stale paths filtered at render, never pruned on write) ──
+  const knownSet = useMemo(() => new Set(rawPaths), [rawPaths]);
 
-  // ── Unpinned paths — agents not in the pinned section ──
-  const unpinnedPaths = useMemo(() => {
-    const pinnedSet = new Set(pinnedPaths);
-    return allPaths.filter((p) => !pinnedSet.has(p));
-  }, [allPaths, pinnedPaths]);
+  const pinnedPaths = useMemo(
+    () => pinnedAgentPaths.filter((p) => knownSet.has(p)),
+    [pinnedAgentPaths, knownSet]
+  );
+
+  const groupedSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of sidebarPrefs.groups) {
+      for (const p of g.agentPaths) if (knownSet.has(p)) set.add(p);
+    }
+    return set;
+  }, [sidebarPrefs.groups, knownSet]);
+
+  const knownGroupMembers = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const g of sidebarPrefs.groups) {
+      map.set(
+        g.id,
+        g.agentPaths.filter((p) => knownSet.has(p))
+      );
+    }
+    return map;
+  }, [sidebarPrefs.groups, knownSet]);
+
+  const ungroupedPaths = useMemo(
+    () =>
+      sortAgentPaths(
+        rawPaths.filter((p) => !groupedSet.has(p)),
+        sidebarPrefs.ungroupedSortMode,
+        sortCtx
+      ),
+    [rawPaths, groupedSet, sidebarPrefs.ungroupedSortMode, sortCtx]
+  );
+
+  const agentCount = rawPaths.length;
+  const organized = sidebarPrefs.groups.length > 0 || pinnedPaths.length > 0;
+  const showRecent = agentCount >= 2 && (recentQuery.isLoading || recentSessions.length > 0);
 
   // ── One-time migration of legacy localStorage pins → server config (DOR-329) ──
-  // Runs once after config loads. If the old `dorkos-pinned-agents` key exists
-  // and the server has no pins yet, seed the server pins from it (order
-  // preserved); server state wins when it already has pins. The key's presence
-  // IS the migration flag — it is removed afterward either way, so re-mounts and
-  // reloads are no-ops.
+  // If the old `dorkos-pinned-agents` key exists and the server has no pins yet,
+  // seed the server pins from it (order preserved); server state wins when it
+  // already has pins. The key's presence IS the migration flag — it is removed
+  // afterward either way, so re-mounts and reloads are no-ops.
   const pinMigrationDoneRef = useRef(false);
   useEffect(() => {
     if (pinMigrationDoneRef.current) return;
-    // Wait for the real server config before deciding "server has no pins".
-    if (config === undefined) return;
+    if (config === undefined) return; // wait for real server config
     const raw = localStorage.getItem(LEGACY_PINNED_STORAGE_KEY);
     if (raw === null) {
       pinMigrationDoneRef.current = true;
@@ -184,18 +217,34 @@ export function DashboardSidebar() {
 
   // ── Expanded agent tracking — auto-expand active agent ──
   const [expandedPath, setExpandedPath] = useState<string | null>(selectedCwd);
-
   useEffect(() => {
     setExpandedPath(selectedCwd);
   }, [selectedCwd]);
 
+  // ── Inline group-create flow ──
+  const [groupCreation, setGroupCreation] = useState<GroupCreationState | null>(null);
+  const handleRequestNewGroup = useCallback((path?: string) => {
+    setGroupCreation({ pendingPath: path ?? null });
+  }, []);
+  const handleCommitNewGroup = useCallback(
+    (name: string) => {
+      const pending = groupCreation?.pendingPath ?? null;
+      updateSidebarPrefs((prev) => {
+        const { next, id } = createGroup(prev, name);
+        return pending ? moveToGroup(next, pending, id) : next;
+      });
+      setGroupCreation(null);
+    },
+    [groupCreation, updateSidebarPrefs]
+  );
+  const handleCancelNewGroup = useCallback(() => setGroupCreation(null), []);
+
   // ── Handlers ──
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
-      // Include a session ID so the URL always has ?session=, which ensures
-      // ChatPanel's focus effect fires on every agent switch.  Mirror the
-      // sessionRouteLoader logic: reuse the most-recent cached session for the
-      // target agent, or generate a fresh UUID.
+      // Include a session ID so the URL always has ?session=, ensuring ChatPanel's
+      // focus effect fires on every agent switch. Reuse the most-recent cached
+      // session for the target agent, or generate a fresh UUID.
       const cached = queryClient.getQueryData<Session[]>(['sessions', agentPath]);
       const sessionId = cached?.[0]?.id ?? crypto.randomUUID();
       navigate({ to: '/session', search: { dir: agentPath, session: sessionId } });
@@ -205,37 +254,35 @@ export function DashboardSidebar() {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
+      navigate({ to: '/session', search: (prev) => ({ ...prev, session: sessionId }) });
+    },
+    [navigate]
+  );
+
+  const handleResumeRecentSession = useCallback(
+    (session: Session) => {
       navigate({
         to: '/session',
-        search: (prev) => ({ ...prev, session: sessionId }),
+        search: { dir: session.cwd ?? undefined, session: session.id },
       });
     },
     [navigate]
   );
 
-  const handleNewSession = useCallback(() => {
-    navigate({
-      to: '/session',
-      search: { dir: selectedCwd ?? undefined, session: crypto.randomUUID() },
-    });
-  }, [navigate, selectedCwd]);
+  const handleNewSession = useCallback(
+    (dir?: string) => {
+      navigate({
+        to: '/session',
+        search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },
+      });
+    },
+    [navigate, selectedCwd]
+  );
 
   const handleToggleExpand = useCallback((path: string) => {
     setExpandedPath((prev) => (prev === path ? null : path));
   }, []);
 
-  const handleTogglePin = useCallback(
-    (path: string) => {
-      if (pinnedAgentPaths.includes(path)) {
-        updateSidebarPrefs((prev) => unpinPath(prev, path));
-      } else {
-        updateSidebarPrefs((prev) => pinPath(prev, path));
-      }
-    },
-    [pinnedAgentPaths, updateSidebarPrefs]
-  );
-
-  /** Open the Agent Hub right panel for a given agent path. */
   const handleOpenProfile = useCallback(
     (path: string) => {
       useAgentHubStore.getState().openHub(path);
@@ -264,6 +311,53 @@ export function DashboardSidebar() {
       renameSession.mutate({ sessionId, title });
     },
     [renameSession]
+  );
+
+  // ── Shared agent-row renderer (keeps section components lean; keyPrefix lets a
+  // pinned reference coexist with its home copy) ──
+  const renderAgentRow = useCallback(
+    (path: string, keyPrefix: string): ReactNode => {
+      const isActive = selectedCwd === path && pathname === '/session';
+      return (
+        <AgentListItem
+          key={`${keyPrefix}-${path}`}
+          path={path}
+          agent={agents?.[path] ?? null}
+          displayName={displayNamesRecord[path]}
+          isActive={isActive}
+          isExpanded={expandedPath === path}
+          onSelect={() => handleSelectAgent(path)}
+          onToggleExpand={() => handleToggleExpand(path)}
+          onOpenProfile={() => handleOpenProfile(path)}
+          onRequestNewGroup={handleRequestNewGroup}
+          sessions={isActive ? previewSessions : []}
+          isLoadingSessions={isActive && sessionsLoading}
+          activeSessionId={activeSessionId}
+          onSessionClick={handleSessionClick}
+          onNewSession={() => handleNewSession(path)}
+          onForkSession={handleForkSession}
+          onRenameSession={handleRenameSession}
+        />
+      );
+    },
+    [
+      selectedCwd,
+      pathname,
+      agents,
+      displayNamesRecord,
+      expandedPath,
+      previewSessions,
+      sessionsLoading,
+      activeSessionId,
+      handleSelectAgent,
+      handleToggleExpand,
+      handleOpenProfile,
+      handleRequestNewGroup,
+      handleSessionClick,
+      handleNewSession,
+      handleForkSession,
+      handleRenameSession,
+    ]
   );
 
   return (
@@ -324,98 +418,59 @@ export function DashboardSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="p-3">
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-muted-foreground/70 text-[10px] font-medium tracking-wider uppercase">
-            Agents
-          </SidebarGroupLabel>
-          <AddAgentMenu />
+        {showRecent && (
+          <RecentSessionsSection
+            sessions={recentSessions}
+            isLoading={recentQuery.isLoading}
+            warnings={recentQuery.data?.warnings}
+            agents={agents ?? {}}
+            displayNames={displayNamesRecord}
+            onSelectSession={handleResumeRecentSession}
+          />
+        )}
 
-          {/* Pinned section — only if pins exist */}
-          {pinnedPaths.length > 0 && (
-            <>
-              <SidebarGroupLabel className="text-muted-foreground/50 mt-1 text-[9px] font-medium tracking-wider uppercase">
-                Pinned
-              </SidebarGroupLabel>
-              <SidebarMenu>
-                {pinnedPaths.map((path) => {
-                  const isActive = selectedCwd === path && pathname === '/session';
-                  return (
-                    <AgentListItem
-                      key={`pinned-${path}`}
-                      path={path}
-                      agent={agents?.[path] ?? null}
-                      displayName={displayNames.get(path)}
-                      isActive={isActive}
-                      isExpanded={expandedPath === path}
-                      isPinned={true}
-                      onSelect={() => handleSelectAgent(path)}
-                      onToggleExpand={() => handleToggleExpand(path)}
-                      onTogglePin={() => handleTogglePin(path)}
-                      onOpenProfile={() => handleOpenProfile(path)}
-                      sessions={isActive ? previewSessions : []}
-                      isLoadingSessions={isActive && sessionsLoading}
-                      activeSessionId={activeSessionId}
-                      onSessionClick={handleSessionClick}
-                      onNewSession={handleNewSession}
-                      onForkSession={handleForkSession}
-                      onRenameSession={handleRenameSession}
-                    />
-                  );
-                })}
-              </SidebarMenu>
-            </>
-          )}
+        {pinnedPaths.length > 0 && <PinnedSection paths={pinnedPaths} renderRow={renderAgentRow} />}
 
-          {/* Unpinned agents — only shown when there are pinned agents to separate from */}
-          {pinnedPaths.length > 0 && unpinnedPaths.length > 0 && (
-            <SidebarGroupLabel className="text-muted-foreground/50 mt-3 text-[9px] font-medium tracking-wider uppercase">
-              Other
-            </SidebarGroupLabel>
-          )}
-          <SidebarMenu>
-            {(pinnedPaths.length > 0 ? unpinnedPaths : allPaths).map((path) => {
-              const isActive = selectedCwd === path && pathname === '/session';
-              return (
-                <AgentListItem
-                  key={path}
-                  path={path}
-                  agent={agents?.[path] ?? null}
-                  displayName={displayNames.get(path)}
-                  isActive={isActive}
-                  isExpanded={expandedPath === path}
-                  isPinned={pinnedAgentPaths.includes(path)}
-                  onSelect={() => handleSelectAgent(path)}
-                  onToggleExpand={() => handleToggleExpand(path)}
-                  onTogglePin={() => handleTogglePin(path)}
-                  onOpenProfile={() => handleOpenProfile(path)}
-                  sessions={isActive ? previewSessions : []}
-                  isLoadingSessions={isActive && sessionsLoading}
-                  activeSessionId={activeSessionId}
-                  onSessionClick={handleSessionClick}
-                  onNewSession={handleNewSession}
-                  onForkSession={handleForkSession}
-                  onRenameSession={handleRenameSession}
-                />
-              );
-            })}
-          </SidebarMenu>
+        {sidebarPrefs.groups.map((group) => (
+          <AgentGroupSection
+            key={group.id}
+            group={group}
+            memberPaths={knownGroupMembers.get(group.id) ?? []}
+            sortCtx={sortCtx}
+            renderRow={renderAgentRow}
+          />
+        ))}
 
-          {/* Progressive empty state — less prominent as the roster grows */}
-          {allPaths.length <= 2 && (
-            <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
-          )}
-          {allPaths.length >= 3 && allPaths.length <= 4 && (
-            <button
-              type="button"
-              onClick={() => useAgentCreationStore.getState().open()}
-              className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1.5 px-2 text-xs font-medium transition-colors"
-            >
-              <Plus className="size-3.5" />
-              Add agent
-            </button>
-          )}
-          {/* 5+ agents: no prompt — the + button in the header is sufficient */}
-        </SidebarGroup>
+        {groupCreation !== null && (
+          <SidebarGroup>
+            <SidebarMenu>
+              <GroupCreateInput onCommit={handleCommitNewGroup} onCancel={handleCancelNewGroup} />
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+
+        <UngroupedSection
+          paths={ungroupedPaths}
+          organized={organized}
+          renderRow={renderAgentRow}
+          onNewGroup={() => handleRequestNewGroup()}
+        />
+
+        {/* Progressive empty state — less prominent as the roster grows */}
+        {agentCount <= 2 && (
+          <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
+        )}
+        {agentCount >= 3 && agentCount <= 4 && (
+          <button
+            type="button"
+            onClick={() => useAgentCreationStore.getState().open()}
+            className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1.5 px-2 text-xs font-medium transition-colors"
+          >
+            <Plus className="size-3.5" />
+            Add agent
+          </button>
+        )}
+
         <PromoSlot placement="dashboard-sidebar" maxUnits={3} />
       </SidebarContent>
     </>
