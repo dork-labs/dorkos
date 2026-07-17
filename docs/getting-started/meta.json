@@ -1,5 +1,13 @@
 {
   "title": "Getting Started",
-  "pages": ["what-is-dorkos", "installation", "quickstart", "configuration", "troubleshooting", "uninstall"],
+  "pages": [
+    "what-is-dorkos",
+    "installation",
+    "desktop-app",
+    "quickstart",
+    "configuration",
+    "troubleshooting",
+    "uninstall"
+  ],
   "defaultOpen": true
 }

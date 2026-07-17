@@ -1,0 +1,130 @@
+---
+title: Desktop App
+description: Install DorkOS as a native app with a menu, dorkos:// deep links, and automatic updates
+---
+
+# Desktop App
+
+The desktop app is the same DorkOS cockpit you'd get from the CLI or Docker, just wrapped in a native window with its own dock or taskbar icon. Nothing to type in a terminal, and it bundles Claude Code, so there's less to set up first.
+
+<Callout type="warn">
+  **macOS** is signed, notarized, and ready to use today (Apple Silicon only). **Windows** is an
+  early alpha: it's built and code-reviewed, but not yet confirmed by a real end-user install, so
+  expect rough edges and a security warning on first launch. There is no Linux desktop app yet; use
+  the [CLI, npm, or Docker](/docs/getting-started/installation) instead.
+</Callout>
+
+## What you get
+
+- **A real window**: a dock icon on macOS or a taskbar entry on Windows, not a browser tab. It remembers its size and position the next time you open it.
+- **A native menu**: About DorkOS, Check for Updates, and Settings (`Cmd/Ctrl+,`), plus a Help menu with links to the docs and to report an issue. (On Windows the menu is present but still shaped like a Mac menu; a proper Windows layout is a tracked follow-up.)
+- **`dorkos://` links**: click one, like `dorkos://agents`, and it opens the app straight to that screen instead of a browser tab.
+- **Automatic updates**: the app checks for a new version on launch and every four hours, downloads it quietly in the background, and asks you to restart when it's ready. Windows updates use the same mechanism, but since the Windows build itself is unverified, treat that as unverified too.
+- **Claude Code, already inside**: the default agent runtime ships with the app, so you don't need Node.js or a separate Claude Code install to get going.
+- **One instance at a time**: opening the app again just brings the existing window forward instead of starting a second copy.
+
+## Install
+
+<Tabs items={['macOS', 'Windows (early alpha)']}>
+
+<Tab value="macOS">
+
+<Steps>
+<Step>
+
+### Download and open
+
+Download the app from [dorkos.ai/download/mac](https://dorkos.ai/download/mac), open the `.dmg`, and drag DorkOS into your Applications folder.
+
+</Step>
+<Step>
+
+### Confirm the first launch
+
+macOS checks any app you download before its first run. The first time you open DorkOS, click **Open** when it asks. After that, it opens normally.
+
+</Step>
+<Step>
+
+### Connect your agent
+
+DorkOS walks you through connecting Claude on first launch: sign in to your Claude account, or paste your Anthropic API key. No environment variables to set.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  Apple Silicon only (the M1 chip or later). On an Intel Mac, use the [CLI or
+  npm](/docs/getting-started/installation) instead, they run on any Mac.
+</Callout>
+
+</Tab>
+
+<Tab value="Windows (early alpha)">
+
+<Callout type="warn">
+  This build is new: built and code-reviewed, but not yet confirmed by a real end-user install. If
+  something doesn't work, the [web cockpit](/docs/getting-started/quickstart) is the most reliable
+  way to run DorkOS on Windows today.
+</Callout>
+
+<Steps>
+<Step>
+
+### Download and run the installer
+
+Download it from [dorkos.ai/download/windows](https://dorkos.ai/download/windows) and run the `.exe`. It installs just for your account, so it won't ask for administrator access.
+
+</Step>
+<Step>
+
+### Get past the SmartScreen warning
+
+The installer isn't signed yet, so Windows shows a blue "Windows protected your PC" screen. Click **More info**, then **Run anyway** to continue.
+
+</Step>
+<Step>
+
+### Connect your agent
+
+Same as macOS: sign in to your Claude account, or paste your Anthropic API key, and you're set.
+
+</Step>
+</Steps>
+
+<Callout type="info">x64 only, for now.</Callout>
+
+</Tab>
+
+</Tabs>
+
+## Updating
+
+Nothing to do. The app checks for a new release on launch and every four hours, downloads it in the background, and shows a restart prompt (or a card in the sidebar) once it's ready.
+
+If an update doesn't apply for some reason, download the latest installer from the same link you used the first time and run it again. Your sessions, agents, and settings live outside the app itself, so reinstalling doesn't lose anything.
+
+## When to use the CLI or web cockpit instead
+
+The desktop app is a good fit if you want DorkOS running locally, all the time, without a terminal. A few things it doesn't do:
+
+- **Run on Linux.** There's no Linux build yet; use the [one-liner, npm, or Docker](/docs/getting-started/installation).
+- **Run on an Intel Mac.** The macOS build is Apple Silicon only.
+- **Be reached from another device.** The desktop app only ever listens on your own machine. To reach DorkOS from your phone or another computer, run it with the CLI or [Docker](/docs/self-hosting/docker) and point `DORKOS_HOST` at your network instead; see [Deployment](/docs/self-hosting/deployment).
+
+For any of those, the [web cockpit](/docs/getting-started/installation) is the same DorkOS, just reached through a browser tab.
+
+## Uninstalling
+
+See the desktop app section of the [Uninstall guide](/docs/getting-started/uninstall#desktop-app).
+
+## Next steps
+
+<Cards>
+  <Card title="Installation" href="/docs/getting-started/installation">
+    Every install method, side by side.
+  </Card>
+  <Card title="Quickstart" href="/docs/getting-started/quickstart">
+    Open your first session in about two minutes.
+  </Card>
+</Cards>
