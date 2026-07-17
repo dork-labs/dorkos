@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
-import { proxy } from '../proxy';
+import { config, proxy } from '../proxy';
 
 function request(path: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest(`https://dorkos.ai${path}`, { headers });
@@ -68,6 +68,15 @@ describe('proxy /docs markdown content negotiation', () => {
     expect(rewriteTarget(response)).toContain('/llms.mdx/docs/getting-started/quickstart');
   });
 
+  it('rewrites when the client sends Accept: text/plain', () => {
+    // `text/plain` is one of fumadocs-core's default markdownMediaTypes (alongside
+    // text/markdown and text/x-markdown). This test pins that default: if a future
+    // fumadocs-core bump drops text/plain from the list, this breaks loudly instead
+    // of silently serving HTML to plain-text agent fetches.
+    const response = proxy(request('/docs/getting-started/quickstart', { accept: 'text/plain' }));
+    expect(rewriteTarget(response)).toContain('/llms.mdx/docs/getting-started/quickstart');
+  });
+
   it('rewrites the bare /docs index when markdown is preferred', () => {
     const response = proxy(request('/docs', { accept: 'text/markdown' }));
     const target = rewriteTarget(response);
@@ -125,5 +134,24 @@ describe('proxy /docs markdown content negotiation', () => {
       request('/docs/getting-started/quickstart', { accept: 'text/markdown' })
     );
     expect(response.headers.get('set-cookie')).toBeNull();
+  });
+});
+
+describe('proxy config.matcher', () => {
+  // Next.js compiles each matcher string into an anchored regex; mirror that here.
+  const matcher = new RegExp(`^${config.matcher[0]}$`);
+
+  it('runs the proxy on a canonical (extension-less) docs page', () => {
+    expect(matcher.test('/docs/getting-started/quickstart')).toBe(true);
+  });
+
+  it('excludes dotted paths so the proxy never sees the .md/.mdx suffix aliases', () => {
+    // The proxy assumes extension-less pathnames: docsMarkdownTarget and the Link
+    // header both append `.md`, so if the proxy ran on a `/docs/....md` path it would
+    // emit a broken double-suffix rewrite/alternate. The matcher's `.*\..*` negative
+    // lookahead is what guarantees dotted paths (handled by next.config.ts rewrites)
+    // bypass the proxy entirely.
+    expect(matcher.test('/docs/getting-started/quickstart.md')).toBe(false);
+    expect(matcher.test('/docs/getting-started/quickstart.mdx')).toBe(false);
   });
 });
