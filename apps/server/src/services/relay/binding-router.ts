@@ -21,6 +21,7 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { BindingTestResult } from '@dorkos/shared/relay-schemas';
+import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { PublishOptions, Unsubscribe } from '@dorkos/relay';
 import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
@@ -76,6 +77,13 @@ export interface BindingRouterDeps {
   eventRecorder?: {
     insertAdapterEvent(adapterId: string, eventType: string, message: string): void;
   };
+  /**
+   * Optional callback fired once per delivered inbound message (`deliveredTo
+   * > 0`), used solely to animate the topology pulse. Injected rather than
+   * imported so the router stays unit-testable and free of the SSE
+   * singleton — mirrors {@link eventRecorder}.
+   */
+  onFlow?: (flow: RelayFlowEvent) => void;
 }
 
 /**
@@ -305,11 +313,24 @@ export class BindingRouter {
 
       const dispatchSubject = await this.buildDispatchSubject(sessionId);
 
-      await this.deps.relayCore.publish(dispatchSubject, enrichedPayload, {
+      const { deliveredTo } = await this.deps.relayCore.publish(dispatchSubject, enrichedPayload, {
         from: envelope.from,
         replyTo: envelope.replyTo,
         budget: envelope.budget,
       });
+
+      // One delivered inbound message = one pulse. deliveredTo === 0 means the
+      // message was budget-rejected (DOR-260), consent-denied (DOR-277), or had
+      // no subscriber — it never reached the agent, so it must not pulse.
+      if (deliveredTo > 0) {
+        this.deps.onFlow?.({
+          bindingId: binding.id,
+          adapterId: binding.adapterId,
+          agentId: binding.agentId,
+          direction: 'inbound',
+          at: new Date().toISOString(),
+        });
+      }
 
       logger.info(
         `BindingRouter: routed ${envelope.subject} → ${dispatchSubject} ` +
