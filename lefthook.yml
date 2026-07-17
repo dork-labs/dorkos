@@ -23,13 +23,22 @@ pre-commit:
 pre-push:
   commands:
     tests:
-      # CACHE-KEY CONSTRAINT — do not re-fork this command. Turbo hashes the
-      # passthrough args (everything after `--`) into the task cache key, but
-      # NOT runner flags like --concurrency. The passthrough here must stay
-      # exactly `-- --run` so this gate shares its cache with the dev loop's
-      # `pnpm test -- --run`: a green dev run makes the push instant (all
-      # cache hits). Adding any passthrough flag (e.g. --retry) forks the key
-      # and forces a full re-run on every push.
+      # DOR-116 — delete-only pushes (e.g. `git push origin --delete <branch>`)
+      # have nothing to test. lefthook does not forward git's pre-push stdin
+      # (one "<local ref> <local sha> <remote ref> <remote sha>" line per
+      # updated ref, see githooks(5)) to the run command unless use_stdin is
+      # set, so that's required below. A local sha of all zeros means that
+      # ref update is a deletion; skip the gate only when EVERY line is a
+      # deletion and at least one line was actually seen — empty/missing
+      # stdin falls through to running tests (safe default).
+      #
+      # CACHE-KEY CONSTRAINT — do not re-fork the turbo invocation below.
+      # Turbo hashes the passthrough args (everything after `--`) into the
+      # task cache key, but NOT runner flags like --concurrency. The
+      # passthrough here must stay exactly `-- --run` so this gate shares its
+      # cache with the dev loop's `pnpm test -- --run`: a green dev run makes
+      # the push instant (all cache hits). Adding any passthrough flag (e.g.
+      # --retry) forks the key and forces a full re-run on every push.
       #
       #   --concurrency=1  (DOR-121, not hashed) Turbo otherwise fans out ~10
       #     package suites in parallel and each `vitest run` spawns its own
@@ -39,5 +48,17 @@ pre-push:
       #   VITEST_RETRY=2 absorbs timing flake in integration tests at the gate
       #     only (wired into vitest configs). It rides globalPassThroughEnv, so
       #     it is NOT hashed and does not fork the cache key.
-      run: VITEST_RETRY=2 pnpm exec dotenv -- turbo test --concurrency=1 -- --run
+      use_stdin: true
+      run: |
+        saw_ref=0
+        all_deletes=1
+        while read -r local_ref local_sha remote_ref remote_sha; do
+          saw_ref=1
+          [ "$local_sha" = "0000000000000000000000000000000000000000" ] || all_deletes=0
+        done
+        if [ "$saw_ref" = "1" ] && [ "$all_deletes" = "1" ]; then
+          echo "Delete-only push — skipping the test gate (nothing to test)."
+          exit 0
+        fi
+        VITEST_RETRY=2 pnpm exec dotenv -- turbo test --concurrency=1 -- --run
       fail_text: 'Tests failed — fix them before pushing.'
