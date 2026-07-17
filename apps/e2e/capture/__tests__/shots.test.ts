@@ -103,10 +103,17 @@ describe('shot registry', () => {
       }
     });
 
-    it('pins the session-list surfaces and agent-discovery', () => {
+    it('pins the session-list surfaces, agent-discovery, and the accounts device-flow pair', () => {
       // The density (multi-session, mobile-sessions) and onboarding
-      // (agent-discovery) shots must ride one stack's accumulated state.
-      expect(SHARD_0_PINNED_SHOTS).toEqual(['multi-session', 'mobile-sessions', 'agent-discovery']);
+      // (agent-discovery) shots must ride one stack's accumulated state; the
+      // accounts pair must ride one stack's single linear device flow.
+      expect(SHARD_0_PINNED_SHOTS).toEqual([
+        'multi-session',
+        'mobile-sessions',
+        'agent-discovery',
+        'accounts-pending',
+        'accounts-linked',
+      ]);
       for (const id of SHARD_0_PINNED_SHOTS) expect(getShot(id)).toBeDefined();
     });
 
