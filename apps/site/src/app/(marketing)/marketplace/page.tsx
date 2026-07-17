@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { MarketplaceJson } from '@dorkos/marketplace';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import {
   fetchMarketplaceJson,
   fetchInstallCounts,
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   title: 'Marketplace — DorkOS',
   description:
     'Pre-built agents, plugins, and skill packs from the DorkOS community. Install with one command.',
-  alternates: { canonical: '/marketplace' },
+  alternates: { canonical: '/marketplace', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Marketplace — DorkOS',
     description: 'Pre-built agents, plugins, and skill packs from the DorkOS community.',

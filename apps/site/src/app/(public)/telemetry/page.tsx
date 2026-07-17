@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 const description =
   'Exactly what the anonymous DorkOS heartbeat sends, how to turn it off, and our anonymous-by-default promise.';
@@ -9,7 +9,7 @@ const description =
 export const metadata: Metadata = {
   title: 'Telemetry',
   description,
-  alternates: { canonical: '/telemetry' },
+  alternates: { canonical: '/telemetry', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Telemetry — DorkOS',
     description,

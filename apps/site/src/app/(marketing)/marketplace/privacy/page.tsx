@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 export const metadata: Metadata = {
   title: 'Marketplace privacy — DorkOS',
   description:
     'How DorkOS handles install telemetry. Anonymous and opt-out. No PII. Anonymous install IDs. Open source pipeline.',
-  alternates: { canonical: '/marketplace/privacy' },
+  alternates: { canonical: '/marketplace/privacy', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Marketplace privacy — DorkOS',
     description: 'How DorkOS handles install telemetry: anonymous, opt-out, no PII, anonymous IDs.',

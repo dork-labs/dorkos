@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 const description = 'The short list of cookies dorkos.ai actually sets.';
 
 export const metadata: Metadata = {
   title: 'Cookie Policy',
   description,
-  alternates: { canonical: '/cookies' },
+  alternates: { canonical: '/cookies', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Cookie Policy — DorkOS',
     description,

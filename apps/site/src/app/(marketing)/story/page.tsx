@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import {
   PresentationShell,
   StoryHero,
@@ -23,7 +23,7 @@ const storyDescription =
 export const metadata: Metadata = {
   title: 'The Story',
   description: storyDescription,
-  alternates: { canonical: '/story' },
+  alternates: { canonical: '/story', types: rssFeedAlternateTypes },
   openGraph: {
     title: storyTitle,
     description: storyDescription,

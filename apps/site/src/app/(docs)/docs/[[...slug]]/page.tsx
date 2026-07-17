@@ -7,7 +7,7 @@ import { openapi } from '@/lib/openapi';
 import { LLMCopyButton, ViewOptions } from '@/components/ai/page-actions';
 import { isGeneratedApiPage } from '@/lib/ai/is-generated-api-page';
 import { siteConfig } from '@/config/site';
-import { docsSectionTrail, twitterFromOpenGraph } from '@/lib/metadata';
+import { docsSectionTrail, rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { OG_SIZE } from '@/lib/og';
 import type { Metadata } from 'next';
 import type { GeneratedPageProps } from 'fumadocs-openapi';
@@ -25,7 +25,9 @@ export function generateStaticParams() {
  * Sets a page-specific canonical, an Open Graph block with the per-page docs OG
  * card, and a derived Twitter card so shared docs links carry page-specific
  * previews instead of the sitewide root default. `alternates.types` advertises
- * the markdown twin agents can fetch.
+ * both the markdown twin agents can fetch and the sitewide RSS feed (the page
+ * redeclares `alternates`, which shallow-overrides the root layout's, so the
+ * feed link must be re-spread here or it silently disappears).
  */
 export async function generateMetadata(props: {
   params: Promise<{ slug?: string[] }>;
@@ -64,9 +66,12 @@ export async function generateMetadata(props: {
     twitter: twitterFromOpenGraph({ title, description }),
     alternates: {
       canonical: page.url,
-      // The `.md` alias serves the raw markdown source (text/markdown);
-      // advertise it so agents can fetch the plain-text twin of this page.
-      types: { 'text/markdown': `${page.url}.md` },
+      types: {
+        ...rssFeedAlternateTypes,
+        // The `.md` alias serves the raw markdown source (text/markdown);
+        // advertise it so agents can fetch the plain-text twin of this page.
+        'text/markdown': `${page.url}.md`,
+      },
     },
   };
 }

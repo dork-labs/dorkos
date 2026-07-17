@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { siteConfig } from '@/config/site';
+import { rssFeedAlternateTypes } from '@/lib/metadata';
 
 export const metadata: Metadata = {
   title: `The Story | ${siteConfig.name}`,
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: '/story',
+    types: rssFeedAlternateTypes,
   },
 };
 

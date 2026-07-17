@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { features, PRODUCT_LABELS, type FeatureProduct } from '@/layers/features/marketing';
 import { FeatureCatalog, MarketingChrome, InstallMoment } from '@/layers/features/marketing';
 
@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: 'Features — DorkOS',
   description:
     'The complete DorkOS feature catalog: scheduling, messaging, agent discovery, and more. Built for developers who ship.',
-  alternates: { canonical: '/features' },
+  alternates: { canonical: '/features', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Features — DorkOS',
     description: 'The complete DorkOS feature catalog.',

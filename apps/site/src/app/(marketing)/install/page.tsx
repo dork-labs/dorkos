@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { MarketingChrome } from '@/layers/features/marketing';
 import { DownloadButton, InstallCommand } from './_components/InstallPageActions';
 
@@ -12,21 +12,16 @@ export const metadata: Metadata = {
   title: 'Install DorkOS',
   description:
     'Every way to install DorkOS: the Mac app, a one-line terminal install, npm, the Windows early alpha, and Docker for servers.',
-  alternates: { canonical: '/install' },
+  alternates: { canonical: '/install', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Install DorkOS',
     description:
       'Every way to install DorkOS: the Mac app, a one-line terminal install, npm, the Windows early alpha, and Docker for servers.',
     url: '/install',
     siteName: siteConfig.name,
-    images: [
-      {
-        url: '/opengraph-image',
-        width: 1200,
-        height: 630,
-        alt: 'Install DorkOS',
-      },
-    ],
+    // No explicit `images`: the co-located opengraph-image.tsx auto-attaches to
+    // both Open Graph and Twitter (Next only skips it when a route sets its own
+    // images), so the install-specific card wins over the root fallback.
   },
   twitter: twitterFromOpenGraph({
     title: 'Install DorkOS',

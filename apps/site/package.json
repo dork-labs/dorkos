@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "generate:api-docs": "node scripts/generate-api-docs.ts",
+    "site:indexnow": "node scripts/indexnow-ping.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",

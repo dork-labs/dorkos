@@ -9,7 +9,12 @@ import { blog } from '@/lib/source';
 import { releaseVersion, sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { getMDXComponents } from '@/components/mdx-components';
 import { siteConfig } from '@/config/site';
-import { gitLastModified, readingTimeLabel, twitterFromOpenGraph } from '@/lib/metadata';
+import {
+  gitLastModified,
+  readingTimeLabel,
+  rssFeedAlternateTypes,
+  twitterFromOpenGraph,
+} from '@/lib/metadata';
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 import { BlogTOCSidebar } from './_components/BlogTOCSidebar';
 import { ReleaseInstallFooter } from './_components/ReleaseInstallFooter';
@@ -103,6 +108,9 @@ export async function generateMetadata(props: {
     ...(Object.keys(labelChips).length > 0 ? { other: labelChips } : {}),
     alternates: {
       canonical: `/blog/${params.slug}`,
+      // Article pages are where most readers autodiscover the feed; the page's
+      // own `alternates` overwrites the layout's, so re-declare it here.
+      types: rssFeedAlternateTypes,
     },
   };
 }
