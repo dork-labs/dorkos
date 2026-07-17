@@ -7,7 +7,7 @@ import { useTaskState } from '../model/use-task-state';
 import { useToolShortcuts } from '../model/use-tool-shortcuts';
 import { useScrollOverlay } from '../model/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
-import { buildPaletteCommands } from '../model/build-palette-commands';
+import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
 import { useRuntimeChip } from '../model/status/use-runtime-chip';
 import { useFileUpload } from '../model/use-file-upload';
@@ -152,12 +152,12 @@ export function ChatPanel({
   const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
   const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
   // Compact gate injected into the send funnel: recognize + dispatch /compact
-  // when supported, honestly refuse (toast, keep text) when not.
+  // when supported, honestly refuse (toast, keep text) when the runtime declares
+  // it unsupported. Optimistic while capabilities load — matching the palette
+  // gate in buildPaletteCommands, so the two surfaces never disagree during the
+  // caps-loading window (the server's 422 is the backstop for a wrong optimism).
   const compactIntent = useMemo(
-    () => ({
-      supported: activeCaps?.commandIntents?.compact.supported === true,
-      runtimeLabel,
-    }),
+    () => compactComposerGate(activeCaps?.commandIntents, runtimeLabel),
     [activeCaps, runtimeLabel]
   );
 

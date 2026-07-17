@@ -35,6 +35,29 @@ export interface CommandIntentGate {
   runtimeLabel: string;
 }
 
+/**
+ * The composer's gate for the runtime-fulfilled `compact` intent, injected into
+ * the send funnel (`useNativeCommands`). Deliberately OPTIMISTIC while
+ * capabilities load, exactly like the palette gate in
+ * {@link buildPaletteCommands}: it refuses only when the caps map is PRESENT and
+ * declares compact unsupported. An undefined caps map (still fetching) must not
+ * produce a false "not supported" toast — if the optimistic dispatch turns out
+ * wrong, the server's capability gate (422) is the backstop.
+ *
+ * @param commandIntents - The active runtime's `commandIntents` capability map,
+ *   or `undefined` while capabilities load.
+ * @param runtimeLabel - The active runtime's display label for the refusal toast.
+ */
+export function compactComposerGate(
+  commandIntents: Record<RuntimeCommandIntentId, { supported: boolean }> | undefined,
+  runtimeLabel: string
+): { supported: boolean; runtimeLabel: string } {
+  return {
+    supported: commandIntents?.compact.supported !== false,
+    runtimeLabel,
+  };
+}
+
 /** Lowercase a slash token and ensure a single leading `/`, matching the shared registry tokens. */
 function normalizeSlashToken(token: string): string {
   const trimmed = token.trim().toLowerCase();

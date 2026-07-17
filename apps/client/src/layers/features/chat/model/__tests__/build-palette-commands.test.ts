@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CommandEntry } from '@dorkos/shared/types';
-import { buildPaletteCommands } from '../build-palette-commands';
+import { buildPaletteCommands, compactComposerGate } from '../build-palette-commands';
 
 /** Count how many palette rows carry a given `/token`. */
 function countByToken(rows: { fullCommand: string }[], token: string): number {
@@ -107,9 +107,44 @@ describe('buildPaletteCommands', () => {
     });
 
     it('leaves compact enabled while caps are still loading (optimistic)', () => {
-      // A missing caps map must not falsely disable — the submit path re-gates.
+      // A missing caps map must not falsely disable — the server 422 is the backstop.
       const rows = buildPaletteCommands([], { runtimeLabel: '' });
       expect(rows.find((r) => r.fullCommand === '/compact')?.disabled).toBeUndefined();
     });
+  });
+});
+
+describe('compactComposerGate (DOR-109 review Important 2)', () => {
+  it('is optimistic while capabilities load — no false "not supported" refusal', () => {
+    // The composer gate must agree with the palette gate during the caps-loading
+    // window: undefined caps → dispatch optimistically (server 422 backstop),
+    // never a false "Compact isn't supported by this runtime" toast.
+    expect(compactComposerGate(undefined, '').supported).toBe(true);
+  });
+
+  it('refuses only when caps are present and declare compact unsupported', () => {
+    const gate = compactComposerGate({ compact: { supported: false } }, 'Codex');
+    expect(gate.supported).toBe(false);
+    expect(gate.runtimeLabel).toBe('Codex');
+  });
+
+  it('dispatches when caps are present and declare compact supported', () => {
+    expect(compactComposerGate({ compact: { supported: true } }, 'Claude Code').supported).toBe(
+      true
+    );
+  });
+
+  it('agrees with the palette gate in every caps state', () => {
+    // The two gates must never disagree: for each caps state, the palette row is
+    // disabled exactly when the composer refuses.
+    const capsStates = [undefined, { compact: { supported: true } }, { compact: { supported: false } }];
+    for (const commandIntents of capsStates) {
+      const paletteDisabled =
+        buildPaletteCommands([], { commandIntents, runtimeLabel: 'X' }).find(
+          (r) => r.fullCommand === '/compact'
+        )?.disabled === true;
+      const composerRefuses = !compactComposerGate(commandIntents, 'X').supported;
+      expect(paletteDisabled).toBe(composerRefuses);
+    }
   });
 });
