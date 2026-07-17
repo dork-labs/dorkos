@@ -4,7 +4,7 @@ import { Rss } from 'lucide-react';
 import { blog } from '@/lib/source';
 import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { siteConfig } from '@/config/site';
-import { twitterFromOpenGraph } from '@/lib/metadata';
+import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 export const metadata: Metadata = {
   title: 'Blog',
@@ -21,9 +21,7 @@ export const metadata: Metadata = {
   }),
   alternates: {
     canonical: '/blog',
-    types: {
-      'application/rss+xml': '/blog/feed.xml',
-    },
+    types: rssFeedAlternateTypes,
   },
 };
 

@@ -4,6 +4,24 @@ import { deriveAssetHost } from './src/lib/posthog-host';
 
 const withMDX = createMDX();
 
+// Next's built-in HTML_LIMITED_BOTS pattern (from
+// next/dist/shared/lib/router/utils/html-bots.js). Setting `htmlLimitedBots`
+// REPLACES this default rather than extending it, so we reproduce it here and
+// union our AI crawlers onto it, keeping the existing blocking-render behavior
+// for the classic unfurl bots (Slack, Discord, Twitter, etc.).
+const NEXT_DEFAULT_HTML_LIMITED_BOTS =
+  '[\\w-]+-Google|Google-[\\w-]+|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|WhatsApp|SkypeUriPreview|Yeti|googleweblight';
+
+// AI crawlers that fetch pages without executing JS. Forcing fully-blocking
+// (non-streamed) metadata for them removes a whole class of streamed-metadata
+// bugs where structured data or head tags could arrive after the bot stops
+// reading. Our JSON-LD is verified present in the streamed HTML today; this is
+// belt-and-suspenders so a future streaming change cannot silently regress it.
+const AI_CRAWLER_BOTS =
+  'GPTBot|ClaudeBot|Claude-SearchBot|Claude-User|PerplexityBot|OAI-SearchBot|ChatGPT-User|Meta-ExternalAgent|claude-code';
+
+const htmlLimitedBots = new RegExp(`${NEXT_DEFAULT_HTML_LIMITED_BOTS}|${AI_CRAWLER_BOTS}`, 'i');
+
 // Region-selectable via NEXT_PUBLIC_POSTHOG_HOST (see src/env.ts); matches the
 // default there so an unset env var proxies to the same place in dev and prod.
 const posthogIngestHost = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
@@ -16,6 +34,9 @@ const nextConfig: NextConfig = {
   // set (verified empirically), and without them PostHog cannot resolve minified
   // browser stack traces back to the original TS/TSX.
   productionBrowserSourceMaps: true,
+  // See the constants above: force blocking (non-streamed) metadata for classic
+  // unfurl bots plus AI crawlers so structured data is always in the initial HTML.
+  htmlLimitedBots,
   // Transpile Base UI packages for better Turbopack compatibility
   transpilePackages: ['@base-ui/react', '@base-ui/utils'],
 

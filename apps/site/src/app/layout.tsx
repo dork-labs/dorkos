@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import { siteConfig } from '@/config/site';
+import { rssFeedAlternateTypes } from '@/lib/metadata';
 import { Providers } from './providers';
 import { CookieConsentBanner } from '@/layers/widgets/cookie-consent';
 import { AnalyticsIdentity } from '@/layers/widgets/analytics-identity';
@@ -60,6 +61,10 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: '/',
+    // Advertise the blog RSS feed sitewide so readers autodiscover it from any
+    // page, not just /blog. Re-declared on segments that set their own
+    // `alternates` (they overwrite this one; Next does not deep-merge).
+    types: rssFeedAlternateTypes,
   },
 };
 

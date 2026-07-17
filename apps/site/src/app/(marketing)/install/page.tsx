@@ -19,14 +19,9 @@ export const metadata: Metadata = {
       'Every way to install DorkOS: the Mac app, a one-line terminal install, npm, the Windows early alpha, and Docker for servers.',
     url: '/install',
     siteName: siteConfig.name,
-    images: [
-      {
-        url: '/opengraph-image',
-        width: 1200,
-        height: 630,
-        alt: 'Install DorkOS',
-      },
-    ],
+    // No explicit `images`: the co-located opengraph-image.tsx auto-attaches to
+    // both Open Graph and Twitter (Next only skips it when a route sets its own
+    // images), so the install-specific card wins over the root fallback.
   },
   twitter: twitterFromOpenGraph({
     title: 'Install DorkOS',
