@@ -103,6 +103,13 @@ vi.mock('../AdapterNode', () => ({
 vi.mock('../BindingEdge', () => ({
   BindingEdge: () => <div data-testid="binding-edge" />,
 }));
+// Mock the relay-flow SSE bridge — it calls useEventSubscription, which
+// requires an EventStreamProvider this suite does not wrap TopologyGraph in.
+// The bridge itself is unit-tested directly in use-relay-flow-subscription.test.ts.
+const mockUseRelayFlowSubscription = vi.fn();
+vi.mock('../../model/use-relay-flow-subscription', () => ({
+  useRelayFlowSubscription: (enabled: boolean) => mockUseRelayFlowSubscription(enabled),
+}));
 // BindingDialog now lives in entities/binding; its mock is defined in that
 // module's mock below. Props are captured here for assertions.
 let capturedBindingDialogProps: Record<string, unknown> = {};
@@ -530,6 +537,30 @@ describe('TopologyGraph', () => {
       const edgeTypes = capturedReactFlowProps.edgeTypes as Record<string, unknown>;
       expect(edgeTypes).toHaveProperty('binding');
       expect(edgeTypes).toHaveProperty('cross-namespace');
+    });
+  });
+
+  describe('relay-flow subscription mount', () => {
+    it('mounts useRelayFlowSubscription once with the relayEnabled flag', async () => {
+      setupDefaults({ relayEnabled: true });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      expect(mockUseRelayFlowSubscription).toHaveBeenCalledWith(true);
+    });
+
+    it('passes relayEnabled=false through when relay is disabled', async () => {
+      setupDefaults({ relayEnabled: false });
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      expect(mockUseRelayFlowSubscription).toHaveBeenCalledWith(false);
     });
   });
 
