@@ -13,6 +13,7 @@ import { useRuntimeChip } from '../model/status/use-runtime-chip';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
+import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useAppStore } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
 import type { MessageListHandle } from './MessageList';
@@ -213,12 +214,23 @@ export function ChatPanel({
     sessionId ?? undefined,
     runtimeChip.runtime ?? undefined
   );
+  // Honest gating source: the active runtime's declared command-intent support
+  // and its display label drive the disabled "Not supported by {runtime}" row.
+  const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
+  const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
   // Project the shared command-intent registry into one palette row per intent
   // (/compact, /clear, /context), folding each runtime's native command for the
   // same action into that single row, then blend the DorkOS-native commands
   // (/rename) and the remaining runtime commands (DOR-109). The send path
   // intercepts intents and native commands before any runtime POST.
-  const allCommands = useMemo(() => buildPaletteCommands(registry?.commands ?? []), [registry]);
+  const allCommands = useMemo(
+    () =>
+      buildPaletteCommands(registry?.commands ?? [], {
+        commandIntents: activeCaps?.commandIntents,
+        runtimeLabel,
+      }),
+    [registry, activeCaps, runtimeLabel]
+  );
   const { data: fileList } = useFiles(cwd);
   const allFileEntries = useMemo(
     () => (fileList?.files ? buildFileEntries(fileList.files) : []),

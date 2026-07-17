@@ -11,9 +11,29 @@
  * @module features/chat/model/build-palette-commands
  */
 import type { CommandEntry } from '@dorkos/shared/types';
-import { COMMAND_INTENTS, commandIntentTokens } from '@dorkos/shared/command-intents';
+import {
+  COMMAND_INTENTS,
+  commandIntentTokens,
+  type RuntimeCommandIntentId,
+} from '@dorkos/shared/command-intents';
 import type { PaletteCommandEntry } from '@/layers/entities/command';
 import { NATIVE_COMMAND_ENTRIES } from './native-commands';
+
+/**
+ * Honest capability gate for the runtime-fulfilled intents (currently `compact`).
+ * A runtime that declares an intent unsupported renders its row disabled rather
+ * than silently failing.
+ */
+export interface CommandIntentGate {
+  /**
+   * The active runtime's per-intent support, from
+   * `RuntimeCapabilities.commandIntents`. `undefined` while capabilities load —
+   * treated as enabled (optimistic; the submit path re-gates on the real caps).
+   */
+  commandIntents?: Record<RuntimeCommandIntentId, { supported: boolean }>;
+  /** Display label of the active runtime for the disabled reason, e.g. `"Codex"`. */
+  runtimeLabel: string;
+}
 
 /** Lowercase a slash token and ensure a single leading `/`, matching the shared registry tokens. */
 function normalizeSlashToken(token: string): string {
@@ -21,16 +41,32 @@ function normalizeSlashToken(token: string): string {
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
 }
 
-/** The canonical intents projected into palette rows (one per intent, with aliases). */
-function buildIntentEntries(): PaletteCommandEntry[] {
-  return COMMAND_INTENTS.map((intent) => ({
-    command: intent.id,
-    fullCommand: intent.canonical,
-    description: intent.description,
-    argumentHint: intent.argumentHint,
-    // Spread the readonly registry aliases into a mutable array for CommandEntry.
-    aliases: [...intent.aliases],
-  }));
+/**
+ * The canonical intents projected into palette rows (one per intent, with
+ * aliases). A runtime-fulfilled intent the active runtime cannot fulfill is
+ * marked disabled with a plain-language reason; client-native intents
+ * (clear/context) are universal and never gated.
+ */
+function buildIntentEntries(gate?: CommandIntentGate): PaletteCommandEntry[] {
+  return COMMAND_INTENTS.map((intent) => {
+    // Only runtime-fulfilled intents are capability-gated. `supported` is
+    // treated as true unless the runtime declares it false, so a loading caps
+    // map never falsely disables the row.
+    const unsupported =
+      intent.fulfillment === 'runtime' &&
+      gate?.commandIntents?.[intent.id as RuntimeCommandIntentId]?.supported === false;
+    return {
+      command: intent.id,
+      fullCommand: intent.canonical,
+      description: intent.description,
+      argumentHint: intent.argumentHint,
+      // Spread the readonly registry aliases into a mutable array for CommandEntry.
+      aliases: [...intent.aliases],
+      ...(unsupported
+        ? { disabled: true, disabledReason: `Not supported by ${gate.runtimeLabel}` }
+        : {}),
+    };
+  });
 }
 
 /**
@@ -49,10 +85,15 @@ function buildIntentEntries(): PaletteCommandEntry[] {
  *   command already represented.
  *
  * @param runtimeCommands - The active session's runtime slash commands.
+ * @param gate - Capability gate for the runtime-fulfilled intents (optional; a
+ *   missing gate leaves every intent enabled).
  */
-export function buildPaletteCommands(runtimeCommands: CommandEntry[]): PaletteCommandEntry[] {
+export function buildPaletteCommands(
+  runtimeCommands: CommandEntry[],
+  gate?: CommandIntentGate
+): PaletteCommandEntry[] {
   const intentTokens = commandIntentTokens();
-  const intentEntries = buildIntentEntries();
+  const intentEntries = buildIntentEntries(gate);
 
   // Native rows minus any that are themselves an intent (clear/context), so a
   // native and an intent row never both render for the same token.

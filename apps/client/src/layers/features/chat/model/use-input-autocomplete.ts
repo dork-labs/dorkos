@@ -1,7 +1,7 @@
 import { useState, useCallback, type RefObject } from 'react';
 import type { CommandEntry } from '@dorkos/shared/types';
 import type { FileEntry } from '@/layers/shared/lib';
-import type { RankedCommandEntry } from '@/layers/entities/command';
+import type { PaletteCommandEntry, RankedCommandEntry } from '@/layers/entities/command';
 import { useCommandPalette } from './use-command-palette';
 import { useFileAutocomplete } from './use-file-autocomplete';
 import type { ChatInputHandle } from '../ui/input/ChatInput';
@@ -9,7 +9,7 @@ import type { ChatInputHandle } from '../ui/input/ChatInput';
 interface UseInputAutocompleteOptions {
   input: string;
   setInput: (v: string) => void;
-  commands: CommandEntry[];
+  commands: PaletteCommandEntry[];
   fileEntries: FileEntry[];
   chatInputRef: RefObject<ChatInputHandle | null>;
 }

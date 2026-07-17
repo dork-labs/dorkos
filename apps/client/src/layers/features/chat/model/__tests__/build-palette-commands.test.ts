@@ -72,4 +72,44 @@ describe('buildPaletteCommands', () => {
     const rows = buildPaletteCommands(runtimeCommands);
     expect(countByToken(rows, '/review')).toBe(1);
   });
+
+  describe('honest capability gating (DOR-109 VC3)', () => {
+    it('disables the compact row when the runtime declares compact unsupported', () => {
+      // Codex cannot compact — the row shows, greyed out, with the honest reason.
+      const rows = buildPaletteCommands([], {
+        commandIntents: { compact: { supported: false } },
+        runtimeLabel: 'Codex',
+      });
+      const compact = rows.find((r) => r.fullCommand === '/compact');
+      expect(compact?.disabled).toBe(true);
+      expect(compact?.disabledReason).toBe('Not supported by Codex');
+    });
+
+    it('leaves the compact row enabled when the runtime supports compact', () => {
+      const rows = buildPaletteCommands([], {
+        commandIntents: { compact: { supported: true } },
+        runtimeLabel: 'Claude Code',
+      });
+      const compact = rows.find((r) => r.fullCommand === '/compact');
+      expect(compact?.disabled).toBeUndefined();
+      expect(compact?.disabledReason).toBeUndefined();
+    });
+
+    it('never gates the client-native intents (clear/context) regardless of caps', () => {
+      // clear/context are DorkOS-native and universal — a false compact cap must
+      // not leak onto them.
+      const rows = buildPaletteCommands([], {
+        commandIntents: { compact: { supported: false } },
+        runtimeLabel: 'Codex',
+      });
+      expect(rows.find((r) => r.fullCommand === '/clear')?.disabled).toBeUndefined();
+      expect(rows.find((r) => r.fullCommand === '/context')?.disabled).toBeUndefined();
+    });
+
+    it('leaves compact enabled while caps are still loading (optimistic)', () => {
+      // A missing caps map must not falsely disable — the submit path re-gates.
+      const rows = buildPaletteCommands([], { runtimeLabel: '' });
+      expect(rows.find((r) => r.fullCommand === '/compact')?.disabled).toBeUndefined();
+    });
+  });
 });

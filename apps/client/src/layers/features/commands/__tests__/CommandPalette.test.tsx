@@ -130,6 +130,48 @@ describe('CommandPalette', () => {
     });
   });
 
+  describe('honest capability gating (DOR-109 VC3)', () => {
+    it('renders a disabled row with its reason and marks it aria-disabled', () => {
+      render(
+        <CommandPalette
+          filteredCommands={[
+            {
+              fullCommand: '/compact',
+              description: 'Shrink the conversation to free up context',
+              disabled: true,
+              disabledReason: 'Not supported by Codex',
+            },
+          ]}
+          selectedIndex={0}
+          onSelect={vi.fn()}
+        />
+      );
+      expect(screen.getByText('Not supported by Codex')).toBeDefined();
+      const option = screen.getByRole('option');
+      expect(option.getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('does not call onSelect when a disabled row is clicked', () => {
+      const onSelect = vi.fn();
+      render(
+        <CommandPalette
+          filteredCommands={[
+            {
+              fullCommand: '/compact',
+              description: 'Shrink the conversation to free up context',
+              disabled: true,
+              disabledReason: 'Not supported by Codex',
+            },
+          ]}
+          selectedIndex={0}
+          onSelect={onSelect}
+        />
+      );
+      screen.getByRole('option').click();
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+  });
+
   describe('ARIA attributes', () => {
     it('listbox container has listbox role and correct id', () => {
       render(

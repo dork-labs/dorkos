@@ -1,11 +1,35 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { CommandEntry } from '@dorkos/shared/types';
-import { rankCommand, type RankedCommandEntry } from '@/layers/entities/command';
+import {
+  rankCommand,
+  type PaletteCommandEntry,
+  type RankedCommandEntry,
+} from '@/layers/entities/command';
 
 interface UseCommandPaletteOptions {
-  commands: CommandEntry[];
+  commands: PaletteCommandEntry[];
   input: string;
   cursorPos: number;
+}
+
+/**
+ * The first selectable (non-disabled) index at or after `start`, scanning in
+ * `direction` and wrapping. Disabled rows (honest capability gating, DOR-109)
+ * render but are never landed on. Returns `start` when every row is disabled.
+ */
+function findSelectableIndex(
+  commands: RankedCommandEntry[],
+  start: number,
+  direction: 1 | -1
+): number {
+  const n = commands.length;
+  if (n === 0) return 0;
+  let idx = ((start % n) + n) % n;
+  for (let i = 0; i < n; i++) {
+    if (!commands[idx]?.disabled) return idx;
+    idx = (idx + direction + n) % n;
+  }
+  return start;
 }
 
 interface UseCommandPaletteReturn {
@@ -48,19 +72,25 @@ export function useCommandPalette({
       .map(({ cmd, rank }) => ({ ...cmd, matchedAlias: rank.matchedAlias }));
   }, [commands, commandQuery]);
 
-  // Reset selectedIndex when filter changes or palette opens/closes
+  // Reset selectedIndex to the first selectable row when the filter changes or
+  // the palette opens/closes.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting selection index in response to query/visibility changes
-    setSelectedIndex(0);
+    setSelectedIndex(findSelectableIndex(filteredCommands, 0, 1));
+    // filteredCommands is derived from commandQuery; keying off the query keeps
+    // the reset tied to user typing / open-close, not every list recompute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandQuery, showCommands]);
 
-  // Clamp selectedIndex when filteredCommands shrinks
+  // Keep the selection on a selectable row: snap to the first enabled entry when
+  // the current index falls out of range (list shrank) or points at a disabled
+  // row (e.g. capabilities loaded and disabled the runtime-fulfilled intent).
   useEffect(() => {
-    if (filteredCommands.length > 0 && selectedIndex >= filteredCommands.length) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clamping index to valid range after list shrinks
-      setSelectedIndex(filteredCommands.length - 1);
+    if (filteredCommands.length === 0) return;
+    const current = filteredCommands[selectedIndex];
+    if (!current || current.disabled) {
+      setSelectedIndex(findSelectableIndex(filteredCommands, 0, 1));
     }
-  }, [filteredCommands.length, selectedIndex]);
+  }, [filteredCommands, selectedIndex]);
 
   /** Returns true if a command trigger was detected. */
   const detectCommandTrigger = useCallback((value: string, cursor: number): boolean => {
@@ -87,25 +117,22 @@ export function useCommandPalette({
   );
 
   const handleArrowDown = useCallback(() => {
-    setSelectedIndex((prev) =>
-      filteredCommands.length === 0 ? 0 : (prev + 1) % filteredCommands.length
-    );
-  }, [filteredCommands.length]);
+    setSelectedIndex((prev) => findSelectableIndex(filteredCommands, prev + 1, 1));
+  }, [filteredCommands]);
 
   const handleArrowUp = useCallback(() => {
-    setSelectedIndex((prev) =>
-      filteredCommands.length === 0
-        ? 0
-        : (prev - 1 + filteredCommands.length) % filteredCommands.length
-    );
-  }, [filteredCommands.length]);
+    setSelectedIndex((prev) => findSelectableIndex(filteredCommands, prev - 1, -1));
+  }, [filteredCommands]);
 
   /** Returns the new input value if a command was selected, or null. */
   const handleKeyboardSelect = useCallback((): string | null => {
-    if (filteredCommands.length > 0 && selectedIndex < filteredCommands.length) {
-      return handleCommandSelect(filteredCommands[selectedIndex]);
+    const cmd = filteredCommands[selectedIndex];
+    // A disabled row (honest capability gating) is never selectable — leave the
+    // palette open so the user can pick a supported command instead.
+    if (cmd && !cmd.disabled) {
+      return handleCommandSelect(cmd);
     }
-    setShowCommands(false);
+    if (!cmd) setShowCommands(false);
     return null;
   }, [filteredCommands, selectedIndex, handleCommandSelect]);
 
