@@ -1,6 +1,16 @@
-import { describe, it, expect, vi, beforeAll, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { AgentContextMenu } from '../ui/AgentContextMenu';
+
+// The wrapper renders the shared AgentRowMenuItems; mock it so this test stays
+// focused on the ContextMenu wiring (item behavior is covered by its own test).
+vi.mock('../ui/AgentRowMenuItems', () => ({
+  AgentRowMenuItems: ({ variant, path }: { variant: string; path: string }) => (
+    <div data-testid="row-menu-items">
+      {variant}:{path}
+    </div>
+  ),
+}));
 
 // ContextMenu relies on pointer events and ResizeObserver — mock both for jsdom.
 beforeAll(() => {
@@ -11,32 +21,24 @@ beforeAll(() => {
   };
 });
 
-// Radix portals attach to document.body; explicit cleanup ensures no DOM bleed
-// between tests when menus are left open.
 afterEach(() => {
   cleanup();
 });
 
 const defaultProps = {
-  isPinned: false,
-  onTogglePin: vi.fn(),
+  path: '/agents/api-server',
   onOpenProfile: vi.fn(),
   onNewSession: vi.fn(),
+  onRequestNewGroup: vi.fn(),
 };
 
-/** Return the non-aria-hidden trigger when Radix clones the trigger into a portal wrapper. */
+/** Return the trigger element rendered directly inside our render root. */
 function getTrigger(container: HTMLElement) {
-  // Radix may render two copies of the trigger: one in the portal (aria-hidden)
-  // and one in the actual DOM. Target the one directly inside our render root.
   return container.querySelector('[data-testid="trigger"]') as HTMLElement;
 }
 
 describe('AgentContextMenu', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('renders children without opening menu by default', () => {
+  it('renders children without opening the menu by default', () => {
     const { container } = render(
       <AgentContextMenu {...defaultProps}>
         <div data-testid="child">Agent Row</div>
@@ -44,37 +46,10 @@ describe('AgentContextMenu', () => {
     );
 
     expect(container.querySelector('[data-testid="child"]')).toBeInTheDocument();
-    // Menu content is rendered in a portal only after trigger — not visible yet
-    expect(screen.queryByText('Pin agent')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('row-menu-items')).not.toBeInTheDocument();
   });
 
-  it('opens context menu and shows "Pin agent" when isPinned is false', () => {
-    const { container } = render(
-      <AgentContextMenu {...defaultProps} isPinned={false}>
-        <div data-testid="trigger">Agent Row</div>
-      </AgentContextMenu>
-    );
-
-    fireEvent.contextMenu(getTrigger(container));
-
-    expect(screen.getByText('Pin agent')).toBeInTheDocument();
-    expect(screen.queryByText('Unpin agent')).not.toBeInTheDocument();
-  });
-
-  it('opens context menu and shows "Unpin agent" when isPinned is true', () => {
-    const { container } = render(
-      <AgentContextMenu {...defaultProps} isPinned={true}>
-        <div data-testid="trigger">Agent Row</div>
-      </AgentContextMenu>
-    );
-
-    fireEvent.contextMenu(getTrigger(container));
-
-    expect(screen.getByText('Unpin agent')).toBeInTheDocument();
-    expect(screen.queryByText('Pin agent')).not.toBeInTheDocument();
-  });
-
-  it('shows all menu items after right-click', () => {
+  it('opens on right-click and renders the shared items in the context variant', () => {
     const { container } = render(
       <AgentContextMenu {...defaultProps}>
         <div data-testid="trigger">Agent Row</div>
@@ -83,52 +58,9 @@ describe('AgentContextMenu', () => {
 
     fireEvent.contextMenu(getTrigger(container));
 
-    expect(screen.getByText('Pin agent')).toBeInTheDocument();
-    expect(screen.getByText('Agent profile')).toBeInTheDocument();
-    expect(screen.getByText('New session')).toBeInTheDocument();
-    expect(screen.queryByText('Manage agent')).not.toBeInTheDocument();
-    expect(screen.queryByText('Edit settings')).not.toBeInTheDocument();
-  });
-
-  it('calls onTogglePin when pin item is clicked', () => {
-    const onTogglePin = vi.fn();
-    const { container } = render(
-      <AgentContextMenu {...defaultProps} onTogglePin={onTogglePin}>
-        <div data-testid="trigger">Agent Row</div>
-      </AgentContextMenu>
-    );
-
-    fireEvent.contextMenu(getTrigger(container));
-    fireEvent.click(screen.getByText('Pin agent'));
-
-    expect(onTogglePin).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls onOpenProfile when "Agent profile" is clicked', () => {
-    const onOpenProfile = vi.fn();
-    const { container } = render(
-      <AgentContextMenu {...defaultProps} onOpenProfile={onOpenProfile}>
-        <div data-testid="trigger">Agent Row</div>
-      </AgentContextMenu>
-    );
-
-    fireEvent.contextMenu(getTrigger(container));
-    fireEvent.click(screen.getByText('Agent profile'));
-
-    expect(onOpenProfile).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls onNewSession when "New session" is clicked', () => {
-    const onNewSession = vi.fn();
-    const { container } = render(
-      <AgentContextMenu {...defaultProps} onNewSession={onNewSession}>
-        <div data-testid="trigger">Agent Row</div>
-      </AgentContextMenu>
-    );
-
-    fireEvent.contextMenu(getTrigger(container));
-    fireEvent.click(screen.getByText('New session'));
-
-    expect(onNewSession).toHaveBeenCalledTimes(1);
+    const items = screen.getByTestId('row-menu-items');
+    expect(items).toBeInTheDocument();
+    // Forwards the context variant and the agent path to the shared items.
+    expect(items).toHaveTextContent('context:/agents/api-server');
   });
 });

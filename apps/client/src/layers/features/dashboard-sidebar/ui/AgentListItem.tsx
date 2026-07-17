@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
-import { Plus, MoreHorizontal, Pin, PinOff, User } from 'lucide-react';
+import { Plus, MoreHorizontal } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
@@ -10,13 +10,12 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useAgentVisual, AgentIdentity } from '@/layers/entities/agent';
 import { useAgentHottestStatus, usePulseMotion, SessionRow } from '@/layers/entities/session';
 import { AgentContextMenu } from './AgentContextMenu';
+import { AgentRowMenuItems } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
 
 /** Maximum sessions shown in the expanded agent preview. */
@@ -50,14 +49,12 @@ interface AgentListItemProps {
   displayName?: string;
   isActive: boolean;
   isExpanded: boolean;
-  /** Whether this agent is currently pinned. */
-  isPinned: boolean;
   onSelect: () => void;
   onToggleExpand: () => void;
-  /** Toggle pin state for this agent. */
-  onTogglePin: () => void;
   /** Open agent profile in the right panel hub. */
   onOpenProfile: () => void;
+  /** Open the inline group-create flow, moving this agent into the new group on commit. */
+  onRequestNewGroup: (agentPath: string) => void;
   /** Recent sessions for this agent (only needed when expanded). */
   sessions: Session[];
   /** True while the initial sessions fetch is in-flight (no cached data yet). */
@@ -86,11 +83,10 @@ export function AgentListItem({
   displayName: displayNameProp,
   isActive,
   isExpanded,
-  isPinned,
   onSelect,
   onToggleExpand,
-  onTogglePin,
   onOpenProfile,
+  onRequestNewGroup,
   sessions,
   isLoadingSessions,
   activeSessionId,
@@ -139,10 +135,10 @@ export function AgentListItem({
         className="rounded-md border-l-2"
       >
         <AgentContextMenu
-          isPinned={isPinned}
-          onTogglePin={onTogglePin}
+          path={path}
           onOpenProfile={onOpenProfile}
           onNewSession={onNewSession}
+          onRequestNewGroup={onRequestNewGroup}
         >
           <div
             data-slot="agent-list-item"
@@ -169,29 +165,13 @@ export function AgentListItem({
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start" className="w-48">
-                <DropdownMenuItem onClick={onTogglePin}>
-                  {isPinned ? (
-                    <>
-                      <PinOff className="mr-2 size-4" />
-                      Unpin agent
-                    </>
-                  ) : (
-                    <>
-                      <Pin className="mr-2 size-4" />
-                      Pin agent
-                    </>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onOpenProfile}>
-                  <User className="mr-2 size-4" />
-                  Agent profile
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onNewSession}>
-                  <Plus className="mr-2 size-4" />
-                  New session
-                </DropdownMenuItem>
+                <AgentRowMenuItems
+                  variant="dropdown"
+                  path={path}
+                  onOpenProfile={onOpenProfile}
+                  onNewSession={onNewSession}
+                  onRequestNewGroup={onRequestNewGroup}
+                />
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

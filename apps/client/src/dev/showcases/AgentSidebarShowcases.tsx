@@ -187,7 +187,6 @@ function SessionRowCompactShowcase() {
 function AgentListItemShowcase() {
   const [activePath, setActivePath] = useState<string>(MOCK_AGENTS[0].path);
   const [expandedPath, setExpandedPath] = useState<string | null>(MOCK_AGENTS[0].path);
-  const [pinnedPaths, setPinnedPaths] = useState<Set<string>>(new Set([MOCK_AGENTS[0].path]));
   const [activeSessionId, setActiveSessionId] = useState('sess-1');
 
   const handleSelect = useCallback((path: string) => {
@@ -197,18 +196,6 @@ function AgentListItemShowcase() {
 
   const handleToggleExpand = useCallback((path: string) => {
     setExpandedPath((prev) => (prev === path ? null : path));
-  }, []);
-
-  const handleTogglePin = useCallback((path: string) => {
-    setPinnedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
   }, []);
 
   return (
@@ -229,11 +216,10 @@ function AgentListItemShowcase() {
                 displayName={displayName}
                 isActive={isActive}
                 isExpanded={expandedPath === path}
-                isPinned={pinnedPaths.has(path)}
                 onSelect={() => handleSelect(path)}
                 onToggleExpand={() => handleToggleExpand(path)}
-                onTogglePin={() => handleTogglePin(path)}
                 onOpenProfile={() => {}}
+                onRequestNewGroup={() => {}}
                 sessions={isActive ? MOCK_SESSIONS : []}
                 isLoadingSessions={false}
                 activeSessionId={isActive ? activeSessionId : null}
@@ -254,11 +240,10 @@ function AgentListItemShowcase() {
             displayName={MOCK_AGENTS[0].displayName}
             isActive
             isExpanded
-            isPinned
             onSelect={() => {}}
             onToggleExpand={() => {}}
-            onTogglePin={() => {}}
             onOpenProfile={() => {}}
+            onRequestNewGroup={() => {}}
             sessions={MOCK_SESSIONS}
             isLoadingSessions={false}
             activeSessionId="sess-1"
@@ -277,11 +262,10 @@ function AgentListItemShowcase() {
             displayName={MOCK_AGENTS[1].displayName}
             isActive
             isExpanded
-            isPinned={false}
             onSelect={() => {}}
             onToggleExpand={() => {}}
-            onTogglePin={() => {}}
             onOpenProfile={() => {}}
+            onRequestNewGroup={() => {}}
             sessions={[]}
             isLoadingSessions={false}
             activeSessionId={null}
@@ -302,11 +286,10 @@ function AgentListItemShowcase() {
               displayName={displayName}
               isActive={false}
               isExpanded={false}
-              isPinned={false}
               onSelect={() => {}}
               onToggleExpand={() => {}}
-              onTogglePin={() => {}}
               onOpenProfile={() => {}}
+              onRequestNewGroup={() => {}}
               sessions={[]}
               isLoadingSessions={false}
               activeSessionId={null}
@@ -323,23 +306,21 @@ function AgentListItemShowcase() {
 // ── AgentContextMenu ──
 
 function AgentContextMenuShowcase() {
-  const [isPinned, setIsPinned] = useState(false);
-
   return (
     <PlaygroundSection
       title="AgentContextMenu"
-      description="Right-click / long-press context menu for agent rows. Wraps children in a Radix ContextMenu trigger. Try right-clicking the target below."
+      description="Right-click / long-press context menu for agent rows. Renders the shared AgentRowMenuItems (pin, move-to-group, profile, new session). Try right-clicking the target below."
     >
       <ShowcaseLabel>Right-click target</ShowcaseLabel>
       <ShowcaseDemo>
         <AgentContextMenu
-          isPinned={isPinned}
-          onTogglePin={() => setIsPinned((p) => !p)}
+          path={MOCK_AGENTS[0].path}
           onOpenProfile={() => {}}
           onNewSession={() => {}}
+          onRequestNewGroup={() => {}}
         >
           <div className="bg-muted text-muted-foreground hover:bg-accent hover:text-foreground flex w-64 cursor-context-menu items-center justify-center rounded-lg border border-dashed px-4 py-3 text-xs transition-colors">
-            Right-click me {isPinned ? '(pinned)' : '(unpinned)'}
+            Right-click me
           </div>
         </AgentContextMenu>
       </ShowcaseDemo>
