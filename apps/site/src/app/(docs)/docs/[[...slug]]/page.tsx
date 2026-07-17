@@ -64,9 +64,9 @@ export async function generateMetadata(props: {
     twitter: twitterFromOpenGraph({ title, description }),
     alternates: {
       canonical: page.url,
-      // The `.mdx` twin returns real text/markdown today (the `.md` alias lands
-      // with the content-negotiation PR); advertise the URL that resolves now.
-      types: { 'text/markdown': `${page.url}.mdx` },
+      // The `.md` alias serves the raw markdown source (text/markdown);
+      // advertise it so agents can fetch the plain-text twin of this page.
+      types: { 'text/markdown': `${page.url}.md` },
     },
   };
 }
