@@ -16,7 +16,7 @@ import {
   applyConfiguredDefaultRuntime,
   registerOptionalRuntime,
 } from './services/core/runtime-registry.js';
-import { initAuth, seedLegacyMcpApiKey } from './services/core/auth/index.js';
+import { initAuth, seedLegacyMcpApiKey, resolveMcpLocalToken } from './services/core/auth/index.js';
 import {
   canExpose,
   checkA2aExposure,
@@ -247,6 +247,18 @@ async function start() {
   // (the owner-creation hook in createAuth handles the enable-login-mid-upgrade
   // case). Idempotent and non-throwing.
   void seedLegacyMcpApiKey(db);
+
+  // Resolve the per-instance local MCP token once (DOR-278) — but only in
+  // login-off mode with no MCP_API_KEY override. In that mode this generates and
+  // persists the 0600 <dorkHome>/mcp-local-token file on first boot and populates
+  // the getMcpLocalToken() cache the /mcp + /a2a auth middleware compares against.
+  // When MCP_API_KEY is set (the env override is the bearer) or login is on
+  // (per-user keys, ADR-0320), leave the cache null so the middleware's
+  // local-token acceptor stays inert. resolveMcpLocalToken logs only the file
+  // path, never the token value.
+  if (configManager.get('auth')?.enabled !== true && !env.MCP_API_KEY) {
+    resolveMcpLocalToken(dorkHome);
+  }
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
