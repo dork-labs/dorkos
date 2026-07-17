@@ -11,8 +11,13 @@ import {
 } from '@/layers/shared/ui';
 import { AgentRowMenuItems, buildRowMenuNodes, type RowMenuModel } from '../ui/AgentRowMenuItems';
 
-// Mock the config surface so rendering needs no transport/QueryClient.
-const groups = [{ id: 'g1', name: 'Clients', agentPaths: ['/agents/api-server'] }];
+// Mock the config surface so rendering needs no transport/QueryClient. Two
+// groups with the agent in g1 makes the Move-to-group submenu fully populated:
+// a checked target, an unchecked target, Remove from group, and New group…
+const groups = [
+  { id: 'g1', name: 'Clients', agentPaths: ['/agents/api-server'] },
+  { id: 'g2', name: 'Experiments', agentPaths: [] },
+];
 vi.mock('@/layers/entities/config', () => ({
   useSidebarPrefs: () => ({ pinned: [], groups, ungroupedSortMode: 'name' }),
   useUpdateSidebarPrefs: () => ({
@@ -117,6 +122,10 @@ describe('buildRowMenuNodes', () => {
 
 // ---------------------------------------------------------------------------
 // Cross-variant parity (the dual-menu drift guard)
+//
+// Both variants render through ONE generic walk (`renderNodes` + slot
+// primitives), so drift is structurally impossible; this test is the regression
+// guard proving it end-to-end, including the Move-to-group submenu contents.
 // ---------------------------------------------------------------------------
 
 const props = {
@@ -126,15 +135,35 @@ const props = {
   onRequestNewGroup: vi.fn(),
 };
 
-function topLevelLabels(): string[] {
-  return screen
-    .getAllByRole('menuitem')
-    .map((el) => el.textContent?.trim() ?? '')
-    .sort();
+/** One rendered menu entry: label + ARIA role + checked state (submenu included). */
+interface MenuEntry {
+  label: string;
+  role: string;
+  checked: string | null;
+}
+
+/** Collect every visible menu item across the whole open menu tree. */
+function collectMenuTree(): MenuEntry[] {
+  const items = [
+    ...screen.queryAllByRole('menuitem'),
+    ...screen.queryAllByRole('menuitemcheckbox'),
+  ];
+  return items
+    .map((el) => ({
+      label: el.textContent?.trim() ?? '',
+      role: el.getAttribute('role') ?? '',
+      checked: el.getAttribute('aria-checked'),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label) || a.role.localeCompare(b.role));
+}
+
+/** Open the Move-to-group submenu via the Radix LTR sub-open key. */
+function openMoveSubmenu() {
+  fireEvent.keyDown(screen.getByText('Move to group'), { key: 'ArrowRight' });
 }
 
 describe('AgentRowMenuItems variant parity', () => {
-  it('renders the identical top-level items into both menu variants', () => {
+  it('renders the identical full item tree (submenu included) in both variants', () => {
     // Context (right-click) variant
     const ctx = render(
       <ContextMenu>
@@ -147,7 +176,8 @@ describe('AgentRowMenuItems variant parity', () => {
       </ContextMenu>
     );
     fireEvent.contextMenu(ctx.container.querySelector('[data-testid="trigger"]')!);
-    const contextLabels = topLevelLabels();
+    openMoveSubmenu();
+    const contextTree = collectMenuTree();
     cleanup();
 
     // Dropdown ("…") variant
@@ -159,11 +189,31 @@ describe('AgentRowMenuItems variant parity', () => {
         </DropdownMenuContent>
       </DropdownMenu>
     );
-    const dropdownLabels = topLevelLabels();
+    openMoveSubmenu();
+    const dropdownTree = collectMenuTree();
 
-    expect(contextLabels).toEqual(dropdownLabels);
-    expect(contextLabels).toEqual(
-      ['Pin agent', 'Move to group', 'Agent profile', 'New session'].sort()
+    // Full-tree parity: same labels, same roles, same checked states.
+    expect(contextTree).toEqual(dropdownTree);
+
+    // And the tree is the complete expected item set.
+    const labels = contextTree.map((e) => e.label);
+    expect(labels).toEqual(
+      [
+        'Pin agent',
+        'Move to group',
+        'Agent profile',
+        'New session',
+        // Submenu contents:
+        'Clients',
+        'Experiments',
+        'Remove from group',
+        'New group…',
+      ].sort()
     );
+    // The agent's current group carries the checkmark; the other target does not.
+    const clients = contextTree.find((e) => e.label === 'Clients');
+    const experiments = contextTree.find((e) => e.label === 'Experiments');
+    expect(clients).toMatchObject({ role: 'menuitemcheckbox', checked: 'true' });
+    expect(experiments).toMatchObject({ role: 'menuitemcheckbox', checked: 'false' });
   });
 });

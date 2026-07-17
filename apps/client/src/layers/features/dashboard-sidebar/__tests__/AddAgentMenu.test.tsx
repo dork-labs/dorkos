@@ -49,13 +49,13 @@ beforeAll(() => {
   };
 });
 
-function renderMenu() {
+function renderMenu(props: Parameters<typeof AddAgentMenu>[0] = {}) {
   return render(
     <TooltipProvider>
       <SidebarProvider>
         <SidebarGroup>
           <SidebarGroupLabel>Agents</SidebarGroupLabel>
-          <AddAgentMenu />
+          <AddAgentMenu {...props} />
         </SidebarGroup>
       </SidebarProvider>
     </TooltipProvider>
@@ -104,5 +104,21 @@ describe('AddAgentMenu', () => {
     fireEvent.click(screen.getByLabelText('Add agent'));
     fireEvent.click(screen.getByText('Browse Marketplace'));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/marketplace' });
+  });
+
+  it('hides the New group entry when onNewGroup is not provided', () => {
+    renderMenu();
+    fireEvent.click(screen.getByLabelText('Add agent'));
+    expect(screen.queryByText('New group')).not.toBeInTheDocument();
+  });
+
+  it('New group opens the inline create flow (DOR-329 entry point)', () => {
+    const onNewGroup = vi.fn();
+    renderMenu({ onNewGroup });
+    fireEvent.click(screen.getByLabelText('Add agent'));
+    fireEvent.click(screen.getByText('New group'));
+    expect(onNewGroup).toHaveBeenCalledOnce();
+    // The popover closes after selection.
+    expect(screen.queryByText('Create agent')).not.toBeInTheDocument();
   });
 });

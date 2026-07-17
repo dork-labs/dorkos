@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ElementType, ReactNode } from 'react';
 import {
   Pin,
   PinOff,
@@ -130,78 +130,71 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
   ];
 }
 
-/** Render the shared nodes into Radix ContextMenu primitives. */
-function renderContextNodes(nodes: RowMenuNode[]): ReactNode {
-  return nodes.map((node) => {
-    switch (node.type) {
-      case 'separator':
-        return <ContextMenuSeparator key={node.key} />;
-      case 'item': {
-        const Icon = node.icon;
-        return (
-          <ContextMenuItem key={node.key} onClick={node.onSelect}>
-            <Icon className="mr-2 size-4" />
-            {node.label}
-          </ContextMenuItem>
-        );
-      }
-      case 'checkItem':
-        return (
-          <ContextMenuCheckboxItem key={node.key} checked={node.checked} onClick={node.onSelect}>
-            {node.label}
-          </ContextMenuCheckboxItem>
-        );
-      case 'sub': {
-        const Icon = node.icon;
-        return (
-          <ContextMenuSub key={node.key}>
-            <ContextMenuSubTrigger>
-              <Icon className="mr-2 size-4" />
-              {node.label}
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent className="w-48">
-              {renderContextNodes(node.items)}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-        );
-      }
-    }
-  });
+/**
+ * Slot primitives one menu family provides. Both variants render through the
+ * SAME {@link renderNodes} walk — only the primitives differ — so the two menus
+ * cannot structurally drift.
+ */
+interface RowMenuSlots {
+  Item: ElementType;
+  CheckboxItem: ElementType;
+  Separator: ElementType;
+  Sub: ElementType;
+  SubTrigger: ElementType;
+  SubContent: ElementType;
 }
 
-/** Render the shared nodes into Radix DropdownMenu primitives. */
-function renderDropdownNodes(nodes: RowMenuNode[]): ReactNode {
+const VARIANT_SLOTS: Record<AgentRowMenuVariant, RowMenuSlots> = {
+  context: {
+    Item: ContextMenuItem,
+    CheckboxItem: ContextMenuCheckboxItem,
+    Separator: ContextMenuSeparator,
+    Sub: ContextMenuSub,
+    SubTrigger: ContextMenuSubTrigger,
+    SubContent: ContextMenuSubContent,
+  },
+  dropdown: {
+    Item: DropdownMenuItem,
+    CheckboxItem: DropdownMenuCheckboxItem,
+    Separator: DropdownMenuSeparator,
+    Sub: DropdownMenuSub,
+    SubTrigger: DropdownMenuSubTrigger,
+    SubContent: DropdownMenuSubContent,
+  },
+};
+
+/** Render the shared nodes through one generic walk using the given slots. */
+function renderNodes(nodes: RowMenuNode[], slots: RowMenuSlots): ReactNode {
+  const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent } = slots;
   return nodes.map((node) => {
     switch (node.type) {
       case 'separator':
-        return <DropdownMenuSeparator key={node.key} />;
+        return <Separator key={node.key} />;
       case 'item': {
         const Icon = node.icon;
         return (
-          <DropdownMenuItem key={node.key} onClick={node.onSelect}>
+          <Item key={node.key} onClick={node.onSelect}>
             <Icon className="mr-2 size-4" />
             {node.label}
-          </DropdownMenuItem>
+          </Item>
         );
       }
       case 'checkItem':
         return (
-          <DropdownMenuCheckboxItem key={node.key} checked={node.checked} onClick={node.onSelect}>
+          <CheckboxItem key={node.key} checked={node.checked} onClick={node.onSelect}>
             {node.label}
-          </DropdownMenuCheckboxItem>
+          </CheckboxItem>
         );
       case 'sub': {
         const Icon = node.icon;
         return (
-          <DropdownMenuSub key={node.key}>
-            <DropdownMenuSubTrigger>
+          <Sub key={node.key}>
+            <SubTrigger>
               <Icon className="mr-2 size-4" />
               {node.label}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-48">
-              {renderDropdownNodes(node.items)}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+            </SubTrigger>
+            <SubContent className="w-48">{renderNodes(node.items, slots)}</SubContent>
+          </Sub>
         );
       }
     }
@@ -251,5 +244,5 @@ export function AgentRowMenuItems({
     onNewGroup: () => onRequestNewGroup(path),
   });
 
-  return <>{variant === 'context' ? renderContextNodes(nodes) : renderDropdownNodes(nodes)}</>;
+  return <>{renderNodes(nodes, VARIANT_SLOTS[variant])}</>;
 }

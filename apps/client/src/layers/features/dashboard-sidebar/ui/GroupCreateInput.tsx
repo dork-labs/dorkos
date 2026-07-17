@@ -29,12 +29,15 @@ export function GroupCreateInput({ onCommit, onCancel }: GroupCreateInputProps) 
   }, []);
 
   const commit = () => {
+    // First Enter/Escape decides; everything after is a no-op — guards
+    // double-Enter and the blur that follows a commit.
+    if (committedRef.current) return;
+    committedRef.current = true;
     const trimmed = value.trim();
     if (trimmed.length < MIN_NAME || trimmed.length > MAX_NAME) {
       onCancel();
       return;
     }
-    committedRef.current = true;
     onCommit(trimmed);
   };
 

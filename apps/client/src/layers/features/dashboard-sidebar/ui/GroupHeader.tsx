@@ -273,7 +273,7 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
           <AlertDialogHeader>
             <AlertDialogTitle>Delete group &ldquo;{group.name}&rdquo;?</AlertDialogTitle>
             <AlertDialogDescription>
-              Its {memberCount} {memberCount === 1 ? 'agent' : 'agents'} move back to Agents.
+              Its {memberCount} {memberCount === 1 ? 'agent moves' : 'agents move'} back to Agents.
               Nothing is deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>

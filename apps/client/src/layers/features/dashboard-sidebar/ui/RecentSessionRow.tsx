@@ -38,8 +38,8 @@ export function RecentSessionRow({ session, agent, displayName, onClick }: Recen
         onClick={onClick}
         title={`${displayName} · ${sessionDisplayTitle(session.title)}`}
         className={cn(
-          'text-muted-foreground hover:bg-accent hover:text-foreground',
-          'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors duration-100 active:scale-[0.98]'
+          'text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-sidebar-ring',
+          'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]'
         )}
       >
         <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
