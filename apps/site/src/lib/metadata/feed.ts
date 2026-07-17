@@ -10,10 +10,11 @@
  *
  * Coverage rule: every route that sets its own `alternates` object must
  * include `types: rssFeedAlternateTypes` in that object — currently the root
- * layout, the marketing layout, and every marketing, public, and blog page
- * that declares a page-specific canonical URL. Routes that never set
- * `alternates` (docs, account, download, admin) need no changes; they inherit
- * the root layout's feed link untouched. Adding a route with its own
+ * layout, the marketing layout, every marketing, public, and blog page that
+ * declares a page-specific canonical URL, and the docs catch-all page (which
+ * also advertises its markdown alternate alongside the feed). Routes that
+ * never set `alternates` (account, download, admin) need no changes; they
+ * inherit the root layout's feed link untouched. Adding a route with its own
  * `alternates`? Spread this in, or the feed link disappears for that page.
  */
 import type { Metadata } from 'next';
