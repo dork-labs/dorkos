@@ -8,6 +8,7 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 import { useRenameSession } from '@/layers/entities/session';
+import { useUsageReveal } from '../use-usage-reveal';
 import { parseNativeCommand } from './registry';
 
 /**
@@ -27,11 +28,20 @@ export type NativeCommandResult = { handled: false } | { handled: true; ran: boo
  *
  * @param cwd - Working directory scope for the rename mutation's cache key.
  * @param sessionId - The active session id (the rename target).
+ * @param startFreshSession - Injected navigation for the `/clear` intent: open a
+ *   fresh session in the same project, linked back to `fromSessionId`. Injected
+ *   by the host (which owns the router) so this hook stays router-free, matching
+ *   the orchestrator's existing navigation-via-callbacks pattern. A no-op when
+ *   omitted (e.g. isolated tests, dev surfaces without navigation).
  * @returns `{ tryRun }` — `tryRun(content)` runs a registered native command
  *   locally and returns a {@link NativeCommandResult} describing whether it was
  *   handled (skip the runtime) and whether it actually ran.
  */
-export function useNativeCommands(cwd: string | null, sessionId: string | null) {
+export function useNativeCommands(
+  cwd: string | null,
+  sessionId: string | null,
+  startFreshSession?: (fromSessionId: string | null) => void
+) {
   const { mutate: renameMutate } = useRenameSession(cwd);
 
   const tryRun = useCallback(
@@ -40,7 +50,7 @@ export function useNativeCommands(cwd: string | null, sessionId: string | null) 
       if (!parsed) return { handled: false };
       // Build the executor context here (only when a command actually runs).
       // `renameMutate` is a stable reference from TanStack Query, so `tryRun`
-      // only changes when the active session changes.
+      // only changes when the active session or the injected navigation changes.
       const ran = parsed.command.run(parsed.args, {
         sessionId,
         renameSession: (title) => {
@@ -55,10 +65,15 @@ export function useNativeCommands(cwd: string | null, sessionId: string | null) 
         },
         notify: (message, kind) =>
           kind === 'error' ? toast.error(message) : toast.success(message),
+        // `/clear`: delegate to the host's navigation (no-op if none injected).
+        startFreshSession: (fromSessionId) => startFreshSession?.(fromSessionId),
+        // `/context`: pin the usage & cost surface open. The store is external to
+        // React, so the executor toggles it imperatively.
+        focusUsageSurface: () => useUsageReveal.getState().reveal(),
       });
       return { handled: true, ran };
     },
-    [renameMutate, sessionId]
+    [renameMutate, sessionId, startFreshSession]
   );
 
   return { tryRun };

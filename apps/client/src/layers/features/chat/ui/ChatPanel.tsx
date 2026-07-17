@@ -132,6 +132,18 @@ export function ChatPanel({
     [setSessionId, queryClient]
   );
 
+  /**
+   * `/clear` navigation: open a fresh session in the same project (the setter
+   * preserves the `dir` param), recording the prior session as the new one's
+   * lightweight `continuedFrom` link (DOR-109). No message is sent.
+   */
+  const startFreshSession = useCallback(
+    (fromSessionId: string | null) => {
+      setSessionId(crypto.randomUUID(), { continuedFrom: fromSessionId ?? undefined });
+    },
+    [setSessionId]
+  );
+
   const {
     messages,
     input,
@@ -165,6 +177,7 @@ export function ChatPanel({
     onTaskEvent: handleTaskEventWithCelebrations,
     onSessionIdChange: handleSessionIdChange,
     onSessionIdChangeReplace: handleSessionIdChangeReplace,
+    startFreshSession,
     launchRuntime,
     onStreamingDone: useCallback(() => {
       if (enableNotificationSound) {

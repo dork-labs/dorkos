@@ -175,6 +175,7 @@ vi.mock('@/layers/features/status', () => ({
   AutoModeConfirmDialog: vi.fn(() => null),
   ModelConfigPopover: vi.fn(() => null),
   UsageStatusItem: vi.fn(() => null),
+  UsageRevealPopover: vi.fn(() => null),
   hasRenderableUsage: vi.fn(() => false),
   ContextItem: vi.fn(() => null),
   NotificationSoundItem: vi.fn(() => null),

@@ -36,4 +36,10 @@ export interface ChatSessionOptions {
    * Absent means the server resolves the runtime (agent manifest, then default).
    */
   launchRuntime?: string;
+  /**
+   * Navigation for the `/clear` command intent (DOR-109): open a fresh session in
+   * the same project, linked back to `fromSessionId`. Injected by the host (which
+   * owns the router) so the session orchestrator stays router-free.
+   */
+  startFreshSession?: (fromSessionId: string | null) => void;
 }

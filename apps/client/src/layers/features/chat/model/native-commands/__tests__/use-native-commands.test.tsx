@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useNativeCommands } from '../use-native-commands';
+import { useUsageReveal } from '../../use-usage-reveal';
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -18,11 +19,15 @@ vi.mock('sonner', () => ({
   },
 }));
 
+// `/clear` navigation is injected by the host; a spy stands in for it here.
+const startFreshSession = vi.fn();
+
 describe('useNativeCommands', () => {
   let transport: ReturnType<typeof createMockTransport>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useUsageReveal.setState({ open: false });
     transport = createMockTransport();
     vi.mocked(transport.updateSession).mockResolvedValue({
       id: 's1',
@@ -43,7 +48,7 @@ describe('useNativeCommands', () => {
         <TransportProvider transport={transport}>{children}</TransportProvider>
       </QueryClientProvider>
     );
-    return renderHook(() => useNativeCommands(cwd, sessionId), { wrapper });
+    return renderHook(() => useNativeCommands(cwd, sessionId, startFreshSession), { wrapper });
   }
 
   it('renames the current session for "/rename Foo" and reports handled + ran', async () => {
@@ -118,5 +123,48 @@ describe('useNativeCommands', () => {
     expect(result.current.tryRun('/unknown thing')).toEqual({ handled: false });
     expect(result.current.tryRun('hello world')).toEqual({ handled: false });
     expect(transport.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('/clear opens a fresh linked session and sends no message', () => {
+    // /clear delegates to the injected navigation with the prior session id (the
+    // "linked back" reference) and never POSTs a message (no model turn).
+    const { result } = setup('s1', '/repo');
+    let outcome: ReturnType<typeof result.current.tryRun> = { handled: false };
+    act(() => {
+      outcome = result.current.tryRun('/clear');
+    });
+    expect(outcome).toEqual({ handled: true, ran: true });
+    expect(startFreshSession).toHaveBeenCalledWith('s1');
+    expect(transport.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('routes a cross-agent alias (/new) to a fresh session', () => {
+    // Muscle memory: Codex/OpenCode's /new opens a fresh session, same as /clear.
+    const { result } = setup('s1', '/repo');
+    act(() => {
+      result.current.tryRun('/new');
+    });
+    expect(startFreshSession).toHaveBeenCalledWith('s1');
+  });
+
+  it('/context reveals the usage surface and sends no message', () => {
+    const { result } = setup('s1', '/repo');
+    let outcome: ReturnType<typeof result.current.tryRun> = { handled: false };
+    act(() => {
+      outcome = result.current.tryRun('/context');
+    });
+    expect(outcome).toEqual({ handled: true, ran: true });
+    expect(useUsageReveal.getState().open).toBe(true);
+    expect(startFreshSession).not.toHaveBeenCalled();
+    expect(transport.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('routes a cross-agent alias (/usage) to the context reveal', () => {
+    // Muscle memory: another agent's word for the same intent still works.
+    const { result } = setup('s1', '/repo');
+    act(() => {
+      result.current.tryRun('/usage');
+    });
+    expect(useUsageReveal.getState().open).toBe(true);
   });
 });

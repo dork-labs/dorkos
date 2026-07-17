@@ -204,9 +204,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Submission
   // ---------------------------------------------------------------------------
 
-  // Native (client-side) chat commands (e.g. /rename) — intercepted in the send
-  // funnel so they run locally and never reach the runtime/model.
-  const native = useNativeCommands(selectedCwd, sessionId);
+  // Native (client-side) chat commands (e.g. /rename, /clear, /context) —
+  // intercepted in the send funnel so they run locally and never reach the
+  // runtime/model. `/clear`'s navigation is injected by the host (ChatPanel owns
+  // the router) so this orchestrator stays router-free.
+  const native = useNativeCommands(selectedCwd, sessionId, options.startFreshSession);
 
   const { handleSubmit, submitContent, stop, retryMessage, markToolCallResponded } =
     useSessionSubmit({
