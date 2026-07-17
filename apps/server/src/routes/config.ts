@@ -163,7 +163,9 @@ router.get('/', async (_req, res) => {
     },
     mcp: (() => {
       const mcpConfig = configManager.get('mcp');
-      const envKey = env.MCP_API_KEY ?? null;
+      // Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset,
+      // matching the boot wiring, the token module, and the auth middleware.
+      const envKey = env.MCP_API_KEY?.trim() || null;
       const legacyKey = mcpConfig?.apiKey ?? null;
       const localToken = getMcpLocalToken();
       // authSource reports how MCP access is secured:

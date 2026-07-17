@@ -62,9 +62,11 @@ const RESOURCES_READ = {
 };
 
 /**
- * App mirroring the real `/mcp` chain: the auth handler before `express.json()`,
- * the app-wide session gate, then a `/mcp` route guarded by the real middleware.
- * The stub handler returns `{ ok: true }` only when the middleware calls `next()`.
+ * App mirroring the real `/mcp` chain: the Better Auth handler (mounted before
+ * the JSON body parser, as in production), then `express.json()`, then the
+ * app-wide session gate, then a `/mcp` route guarded by the real `createMcpAuth`
+ * middleware — so `req.body` peeking behaves exactly as production. The stub
+ * handler returns `{ ok: true }` only when the middleware calls `next()`.
  */
 function buildApp(): express.Express {
   const app = express();

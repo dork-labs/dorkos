@@ -59,27 +59,27 @@ describe('ExternalMcpCard', () => {
 
   it('renders External MCP Server label', () => {
     const { Wrapper } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     expect(screen.getByText('External MCP Server')).toBeInTheDocument();
   });
 
   it('shows Enabled badge when enabled and auth configured', () => {
     const { Wrapper } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'user-keys' };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={mcp} authEnabled={false} />, { wrapper: Wrapper });
     expect(screen.getByText('Enabled')).toBeInTheDocument();
   });
 
   it('shows No auth badge when enabled but no auth', () => {
     const { Wrapper } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     expect(screen.getByText('No auth')).toBeInTheDocument();
   });
 
   it('shows Disabled badge when not enabled', () => {
     const { Wrapper } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, enabled: false };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={mcp} authEnabled={false} />, { wrapper: Wrapper });
     expect(screen.getByText('Disabled')).toBeInTheDocument();
   });
 
@@ -89,7 +89,7 @@ describe('ExternalMcpCard', () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'user-keys' };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={mcp} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText(/personal API key/i)).toBeInTheDocument();
     expect(screen.queryByText('Local MCP token')).not.toBeInTheDocument();
@@ -99,7 +99,7 @@ describe('ExternalMcpCard', () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'env' };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={mcp} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('Environment variable')).toBeInTheDocument();
   });
@@ -107,7 +107,7 @@ describe('ExternalMcpCard', () => {
   it('renders Setup Instructions as a collapsible section when expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('Setup Instructions')).toBeInTheDocument();
   });
@@ -115,7 +115,7 @@ describe('ExternalMcpCard', () => {
   it('renders duplicate tool warning when expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(
       screen.getByText('Do not configure this for agents running inside DorkOS.')
@@ -125,7 +125,7 @@ describe('ExternalMcpCard', () => {
   it('calls updateConfig when toggle is clicked', async () => {
     const user = userEvent.setup();
     const { Wrapper, transport } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
 
     const toggle = screen.getByRole('switch', { name: /toggle external mcp access/i });
     await user.click(toggle);
@@ -140,7 +140,7 @@ describe('ExternalMcpCard', () => {
   it('shows endpoint URL when expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('http://localhost:6242/mcp')).toBeInTheDocument();
   });
@@ -152,7 +152,7 @@ describe('ExternalMcpCard', () => {
     const user = userEvent.setup();
     const { Wrapper, transport } = createWrapper();
     vi.mocked(transport.revealMcpLocalToken).mockResolvedValue({ localToken: LOCAL_TOKEN });
-    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('Local MCP token')).toBeInTheDocument();
     // Before reveal: no token on screen, just the Reveal action.
@@ -173,7 +173,7 @@ describe('ExternalMcpCard', () => {
     const user = userEvent.setup();
     const { Wrapper, transport } = createWrapper();
     vi.mocked(transport.revealMcpLocalToken).mockResolvedValue({ localToken: LOCAL_TOKEN });
-    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     await user.click(screen.getByText('Setup Instructions'));
     const presBefore = Array.from(document.querySelectorAll('pre'));
@@ -191,21 +191,34 @@ describe('ExternalMcpCard', () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'env' };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={mcp} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('Environment variable')).toBeInTheDocument();
     expect(screen.queryByText('Local MCP token')).not.toBeInTheDocument();
   });
 
-  it('shows an honest fallback in the degenerate none state', async () => {
-    // Purpose: if no token could be generated (should not happen in a normal
-    // boot), the card says so plainly rather than pretending auth is set.
+  it('shows an honest fallback in the degenerate login-off none state', async () => {
+    // Purpose: login OFF with no token means generation failed (should not
+    // happen in a normal boot) — the card says so plainly rather than
+    // pretending auth is set.
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText(/Couldn't generate a local token/i)).toBeInTheDocument();
     expect(screen.queryByText('Local MCP token')).not.toBeInTheDocument();
+  });
+
+  it('shows personal-API-key guidance for login-on none (no keys minted yet)', async () => {
+    // Purpose: login ON with authSource 'none' just means no personal API key
+    // exists yet — a reachable state. The "couldn't generate a local token"
+    // alarm would be false there; the card points at Settings → Security instead.
+    const user = userEvent.setup();
+    const { Wrapper } = createWrapper();
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={true} />, { wrapper: Wrapper });
+    await expandCard(user);
+    expect(screen.getByText(/personal API key/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't generate a local token/i)).not.toBeInTheDocument();
   });
 
   it('opens a confirm dialog that warns clients break before rotating', async () => {
@@ -213,7 +226,7 @@ describe('ExternalMcpCard', () => {
     // confirm and the copy must say so plainly.
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
-    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     await user.click(screen.getByRole('button', { name: 'Rotate' }));
     expect(screen.getByText('Rotate the local MCP token?')).toBeInTheDocument();
@@ -226,7 +239,7 @@ describe('ExternalMcpCard', () => {
     const user = userEvent.setup();
     const { Wrapper, transport, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
+    render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
     await user.click(screen.getByRole('button', { name: 'Rotate' }));
     await user.click(screen.getByRole('button', { name: 'Rotate token' }));
@@ -240,11 +253,13 @@ describe('ExternalMcpCard', () => {
     // Purpose: the header badge tracks authConfigured — local-token is gated
     // (green), only the degenerate none is unprotected (amber).
     const { Wrapper } = createWrapper();
-    const { rerender } = render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
+    const { rerender } = render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={false} />, {
+      wrapper: Wrapper,
+    });
     expect(screen.getByText('Enabled')).toBeInTheDocument();
     expect(screen.queryByText('No auth')).not.toBeInTheDocument();
 
-    rerender(<ExternalMcpCard mcp={DEFAULT_MCP} />);
+    rerender(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />);
     expect(screen.getByText('No auth')).toBeInTheDocument();
     expect(screen.queryByText('Enabled')).not.toBeInTheDocument();
   });

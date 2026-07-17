@@ -35,6 +35,13 @@ type McpConfig = NonNullable<ServerConfig['mcp']>;
 
 interface ExternalMcpCardProps {
   mcp: McpConfig;
+  /**
+   * Whether local login is on (`ServerConfig.auth.enabled`). Needed to tell the
+   * two `authSource === 'none'` causes apart: login-on with no personal API keys
+   * minted yet (point at Settings → Security) vs the login-off degenerate
+   * couldn't-generate-a-token state.
+   */
+  authEnabled: boolean;
 }
 
 /**
@@ -49,7 +56,7 @@ interface ExternalMcpCardProps {
  * environment override for headless deployments. This card no longer mints a single
  * global key — key lifecycle lives in the Security section.
  */
-export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
+export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
@@ -152,6 +159,7 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
             <EndpointRow endpoint={mcp.endpoint} />
             <McpAuthRow
               authSource={mcp.authSource}
+              authEnabled={authEnabled}
               revealedToken={revealedToken}
               onReveal={handleReveal}
               onRotate={handleRotate}
@@ -168,11 +176,13 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
 /** Authentication guidance for the MCP endpoint — reflects the active credential source. */
 function McpAuthRow({
   authSource,
+  authEnabled,
   revealedToken,
   onReveal,
   onRotate,
 }: {
   authSource: McpConfig['authSource'];
+  authEnabled: boolean;
   revealedToken: string | null;
   onReveal: () => Promise<void>;
   onRotate: () => Promise<void>;
@@ -194,7 +204,10 @@ function McpAuthRow({
     );
   }
 
-  if (authSource === 'none') {
+  // 'none' with login OFF is the degenerate couldn't-generate state. 'none' with
+  // login ON just means no personal API key has been minted yet — that gets the
+  // same guidance as 'user-keys' below, not a false "couldn't generate" alarm.
+  if (authSource === 'none' && !authEnabled) {
     return (
       <SettingRow
         label="Authentication"
@@ -207,6 +220,7 @@ function McpAuthRow({
     );
   }
 
+  // 'user-keys', or login-on 'none' (no keys minted yet): personal API keys.
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">

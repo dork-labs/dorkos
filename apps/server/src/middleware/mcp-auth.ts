@@ -56,7 +56,9 @@ export function createMcpAuth({
 }): (req: Request, res: Response, next: NextFunction) => Promise<void> {
   return async function mcpAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
     const token = extractBearerToken(req.headers.authorization);
-    const envKey = env.MCP_API_KEY ?? null;
+    // Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset, matching
+    // the boot wiring, the token module, and the config DTO.
+    const envKey = env.MCP_API_KEY?.trim() || null;
     const legacyKey = configManager.get('mcp')?.apiKey ?? null;
     const authEnabled = configManager.get('auth')?.enabled === true;
 

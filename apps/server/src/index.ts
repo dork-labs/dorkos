@@ -256,7 +256,8 @@ async function start() {
   // (per-user keys, ADR-0320), leave the cache null so the middleware's
   // local-token acceptor stays inert. resolveMcpLocalToken logs only the file
   // path, never the token value.
-  if (configManager.get('auth')?.enabled !== true && !env.MCP_API_KEY) {
+  // (Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset.)
+  if (configManager.get('auth')?.enabled !== true && !env.MCP_API_KEY?.trim()) {
     resolveMcpLocalToken(dorkHome);
   }
 
@@ -805,7 +806,7 @@ async function start() {
   // Auth is resolved per request by createMcpAuth (env override → per-user Better
   // Auth key / session → legacy compat key → per-instance local token, with the
   // read-only carve-out in login-off mode). This is only a startup log hint.
-  const mcpAuthMode = env.MCP_API_KEY
+  const mcpAuthMode = env.MCP_API_KEY?.trim()
     ? 'auth: MCP_API_KEY override'
     : configManager.get('auth')?.enabled
       ? 'auth: login gate + per-user keys'
@@ -996,7 +997,7 @@ async function start() {
     // exposure guard still keys off a network-reachable credential (an env key,
     // the legacy compat key, or login) to decide whether A2A may mount off loopback.
     const authConfigured =
-      !!env.MCP_API_KEY ||
+      !!env.MCP_API_KEY?.trim() ||
       !!configManager.get('mcp')?.apiKey ||
       configManager.get('auth')?.enabled === true;
 

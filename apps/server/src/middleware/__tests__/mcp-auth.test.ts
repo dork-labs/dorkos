@@ -303,6 +303,24 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
     expect(next).toHaveBeenCalled();
   });
 
+  it('treats a whitespace-only MCP_API_KEY as unset (local token still authorizes)', async () => {
+    // Trim-for-presence: a whitespace-only env var must not activate acceptor 1
+    // — the local token (acceptor 4) still authorizes a mutating call.
+    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = '   ';
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: `Bearer ${LOCAL_TOKEN}`,
+        body: rpc('tools/call', 'create_extension'),
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+  });
+
   it('accepts a per-user identity on a mutating call', async () => {
     // Acceptor 2: shared verifier resolves an identity.
     mockConfig({ authEnabled: false });

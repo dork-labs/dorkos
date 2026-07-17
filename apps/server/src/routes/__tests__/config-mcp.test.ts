@@ -198,6 +198,17 @@ describe('Config MCP endpoints', () => {
       const res = await request(app).get('/api/config').expect(200);
       expect(res.body.mcp.authSource).toBe('env');
     });
+
+    it('treats a whitespace-only MCP_API_KEY as unset', async () => {
+      // Purpose: trim-for-presence — a whitespace-only env var counts as unset
+      // everywhere (boot, middleware, DTO), so the DTO falls through to the
+      // local token instead of reporting a phantom 'env' source no client
+      // could actually use.
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = '   ';
+      vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
+      const res = await request(app).get('/api/config').expect(200);
+      expect(res.body.mcp.authSource).toBe('local-token');
+    });
   });
 
   describe('POST /api/config/mcp/rotate-token', () => {
