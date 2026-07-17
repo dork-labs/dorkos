@@ -629,6 +629,8 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   await attemptShot('workbench', 'workbench-light', () => shootWorkbench(page, theme, rec));
   // Runs last: linking persists a token into the isolated capture config, and
   // running last keeps that state from bleeding into any earlier surface.
+  // The guard keys on `accounts-pending` for the WHOLE single-flow pair —
+  // both stills ride one drive (and one shard-0 pin), so one check decides both.
   if (!isShotSkipped('accounts-pending')) {
     await attempt('accounts (pending→linked)', () => shootCloudLink(page, theme, rec));
   }

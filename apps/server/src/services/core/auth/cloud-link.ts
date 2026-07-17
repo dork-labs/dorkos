@@ -137,8 +137,9 @@ export interface CloudLinkManagerOptions {
 /**
  * Singleton lifecycle manager for device-linking this instance to a DorkOS
  * account. Constructed with injectable transport/clock hooks so tests exercise
- * the full flow with a mock `fetch` and no real timers; the exported
- * {@link cloudLinkManager} uses the real defaults.
+ * the full flow with a mock `fetch` and no real timers; the production
+ * instance is built by {@link initCloudLinkManager} with no options (real
+ * `fetch`, real defaults).
  */
 export class CloudLinkManager {
   private readonly fetchImpl: FetchLike | undefined;
