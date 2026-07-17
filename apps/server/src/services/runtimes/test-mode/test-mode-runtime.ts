@@ -138,18 +138,20 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   /**
-   * Phase-1 placeholder — throws when driven. Test-mode declares
-   * `commandIntents.compact.supported: false` (task 1.2), so the gated route
-   * never calls this; Phase 2 (task 2.3) replaces it with a real synthetic
-   * `compact_boundary` generator and flips the capability to `true`.
+   * Fulfill the runtime-fulfilled `compact` intent by yielding a synthetic
+   * `compact_boundary` — the deterministic e2e/conformance vehicle, mirroring
+   * {@link FakeAgentRuntime}'s final form. Lets the palette-gating + dispatch
+   * e2e (Phase 4) and the conformance suite assert a supported runtime's
+   * dispatch reached the adapter and produced a boundary the durable projector
+   * drives. `TEST_MODE_CAPABILITIES.commandIntents` gates the route before this
+   * is ever called.
    */
-  // eslint-disable-next-line require-yield -- placeholder throws before any yield; Phase 2 adds the real body
   async *executeCommandIntent(
     _sessionId: string,
     _intent: RuntimeCommandIntentId,
     _opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
-    throw new Error('executeCommandIntent(compact) not yet wired for test-mode');
+    yield { type: 'compact_boundary', data: { trigger: 'manual' } };
   }
 
   setRelay(_relay: RelayCore): void {
