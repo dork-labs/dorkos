@@ -7,4 +7,5 @@
 ### Changed
 
 - Social preview images now use the real DorkOS brand font and share one set of building blocks, so previews look consistent across the blog, marketplace, and feature pages (DOR-344)
+- Blog post previews now show a reading-time estimate and when the post was last updated, not just when it was first published. The story page also got its own preview card and link details for the first time (DOR-344)
 - The security, privacy, terms, cookies, and telemetry pages now carry the same link-preview and canonical-URL details as the rest of the site (DOR-344)
