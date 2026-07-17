@@ -28,6 +28,9 @@ describe('ActivatePanel', () => {
     await waitFor(() => expect(fetchPendingInstance).toHaveBeenCalledWith('ABCD1234'));
     expect(await screen.findByText("Kai's MacBook")).toBeTruthy();
     expect(screen.getByText(/darwin/)).toBeTruthy();
+    // The pre-filled code still renders on the confirm screen, so the visitor
+    // can check it against what their instance is showing (RFC 8628 anti-phishing).
+    expect(screen.getByText('ABCD1234')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Deny' })).toBeTruthy();
   });
@@ -41,6 +44,19 @@ describe('ActivatePanel', () => {
 
     // Codes are normalized to uppercase before the lookup.
     await waitFor(() => expect(fetchPendingInstance).toHaveBeenCalledWith('WXYZ5678'));
+    // The manually typed code also renders on the confirm screen, uppercased.
+    expect(await screen.findByText('WXYZ5678')).toBeTruthy();
+  });
+
+  it('shows the code without stray dashes if the visitor typed one', async () => {
+    vi.mocked(fetchPendingInstance).mockResolvedValue(PENDING);
+    render(<ActivatePanel />);
+
+    fireEvent.change(screen.getByLabelText('Device code'), { target: { value: 'wxyz-5678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(fetchPendingInstance).toHaveBeenCalledWith('WXYZ-5678'));
+    expect(await screen.findByText('WXYZ5678')).toBeTruthy();
   });
 
   it('approves the request through the auth client', async () => {
