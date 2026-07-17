@@ -459,4 +459,43 @@ describe('DashboardSidebar', () => {
       expect(mockUpdateSidebar).not.toHaveBeenCalled();
     });
   });
+
+  // --- Groups hint card threshold (DOR-329) ---
+
+  describe('groups hint card', () => {
+    const eightPaths = Array.from({ length: 8 }, (_, i) => `/projects/p${i}`);
+
+    it('shows the hint at ≥8 agents with no groups and not dismissed', () => {
+      mockMeshPaths.mockReturnValue(eightPaths);
+      renderWithProviders(<DashboardSidebar />);
+      expect(screen.getByText('Group your agents')).toBeInTheDocument();
+    });
+
+    it('hides the hint below 8 agents', () => {
+      mockMeshPaths.mockReturnValue(eightPaths.slice(0, 7));
+      renderWithProviders(<DashboardSidebar />);
+      expect(screen.queryByText('Group your agents')).not.toBeInTheDocument();
+    });
+
+    it('hides the hint once a group exists', () => {
+      mockMeshPaths.mockReturnValue(eightPaths);
+      mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group()] }));
+      renderWithProviders(<DashboardSidebar />);
+      expect(screen.queryByText('Group your agents')).not.toBeInTheDocument();
+    });
+
+    it('hides the hint when previously dismissed', () => {
+      mockMeshPaths.mockReturnValue(eightPaths);
+      mockSidebarPrefs.mockReturnValue(makePrefs({ groupsHintDismissed: true }));
+      renderWithProviders(<DashboardSidebar />);
+      expect(screen.queryByText('Group your agents')).not.toBeInTheDocument();
+    });
+
+    it('persists dismissal via the sidebar prefs updater', () => {
+      mockMeshPaths.mockReturnValue(eightPaths);
+      renderWithProviders(<DashboardSidebar />);
+      fireEvent.click(screen.getByLabelText('Dismiss grouping tip'));
+      expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
+    });
+  });
 });

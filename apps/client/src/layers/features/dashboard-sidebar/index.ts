@@ -12,3 +12,5 @@ export { AgentListItem } from './ui/AgentListItem';
 export { AgentContextMenu } from './ui/AgentContextMenu';
 export { AgentActivityBadge } from './ui/AgentActivityBadge';
 export { AgentOnboardingCard } from './ui/AgentOnboardingCard';
+export { GroupsHintCard } from './ui/GroupsHintCard';
+export { GroupCreateInput } from './ui/GroupCreateInput';

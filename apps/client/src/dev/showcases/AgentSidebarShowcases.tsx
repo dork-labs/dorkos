@@ -9,6 +9,8 @@ import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
 import { AgentListItem } from '@/layers/features/dashboard-sidebar';
 import { AgentContextMenu } from '@/layers/features/dashboard-sidebar';
 import { AgentOnboardingCard } from '@/layers/features/dashboard-sidebar';
+import { GroupsHintCard } from '@/layers/features/dashboard-sidebar';
+import { GroupCreateInput } from '@/layers/features/dashboard-sidebar';
 
 // ── Mock data ──
 
@@ -95,8 +97,65 @@ export function AgentSidebarShowcases() {
       <SessionRowCompactShowcase />
       <AgentListItemShowcase />
       <AgentContextMenuShowcase />
+      <GroupCreateInputShowcase />
+      <GroupsHintCardShowcase />
       <AgentOnboardingCardShowcase />
     </>
+  );
+}
+
+// ── GroupCreateInput ──
+
+function GroupCreateInputShowcase() {
+  const [lastCommitted, setLastCommitted] = useState<string | null>(null);
+
+  return (
+    <PlaygroundSection
+      title="GroupCreateInput"
+      description="Inline 'new group' row (DOR-329). Type a name — Enter commits (1–40 chars, trimmed), Esc or blur cancels. Used by the '+' menu, the row 'Move to group ▸ New group…' item, and the groups hint card."
+    >
+      <ShowcaseLabel>Interactive demo</ShowcaseLabel>
+      <ShowcaseDemo>
+        <SidebarShell>
+          <GroupCreateInput onCommit={setLastCommitted} onCancel={() => {}} />
+        </SidebarShell>
+        {lastCommitted !== null && (
+          <p className="text-muted-foreground mt-2 text-xs">
+            Committed: <span className="text-foreground font-medium">{lastCommitted}</span>
+          </p>
+        )}
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+// ── GroupsHintCard ──
+
+function GroupsHintCardShowcase() {
+  const [dismissed, setDismissed] = useState(false);
+
+  return (
+    <PlaygroundSection
+      title="GroupsHintCard"
+      description="One-time discovery nudge shown once a fleet reaches ≥8 agents with no groups yet (DOR-329). The CTA opens the inline create flow; the X dismisses it for good."
+    >
+      <ShowcaseLabel>Default</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-xs">
+          {dismissed ? (
+            <button
+              type="button"
+              onClick={() => setDismissed(false)}
+              className="text-muted-foreground hover:text-foreground text-xs underline"
+            >
+              Reset (show again)
+            </button>
+          ) : (
+            <GroupsHintCard onNewGroup={() => {}} onDismiss={() => setDismissed(true)} />
+          )}
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }
 

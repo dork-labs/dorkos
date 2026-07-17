@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence, motion } from 'motion/react';
 import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
@@ -12,6 +13,7 @@ import {
   useUpdateSidebarPrefs,
   createGroup,
   moveToGroup,
+  setGroupsHintDismissed,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useAgentSessions, useRenameSession, useRecentSessions } from '@/layers/entities/session';
@@ -26,6 +28,9 @@ import { PinnedSection } from './PinnedSection';
 import { AgentGroupSection } from './AgentGroupSection';
 import { UngroupedSection } from './UngroupedSection';
 import { GroupCreateInput } from './GroupCreateInput';
+import { GroupsHintCard } from './GroupsHintCard';
+import { SidebarDnd } from './SidebarDnd';
+import { Sortable, SortableList, agentRowDndId, agentDndData } from './SidebarDndPrimitives';
 import { sortAgentPaths } from '../model/sort-agents';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 
@@ -125,6 +130,10 @@ export function DashboardSidebar() {
   const agentCount = rawPaths.length;
   const organized = sidebarPrefs.groups.length > 0 || pinnedPaths.length > 0;
   const showRecent = agentCount >= 2 && (recentQuery.isLoading || recentSessions.length > 0);
+  // Discovery nudge: only for a fleet big enough to benefit, with no groups yet,
+  // and never again once dismissed (Resolved Q — organization is user investment).
+  const showGroupsHint =
+    agentCount >= 8 && sidebarPrefs.groups.length === 0 && !sidebarPrefs.groupsHintDismissed;
 
   // ── One-time migration of legacy localStorage pins → server config (DOR-329) ──
   // If the old `dorkos-pinned-agents` key exists and the server has no pins yet,
@@ -185,6 +194,10 @@ export function DashboardSidebar() {
     [groupCreation, updateSidebarPrefs]
   );
   const handleCancelNewGroup = useCallback(() => setGroupCreation(null), []);
+  const handleDismissGroupsHint = useCallback(
+    () => updateSidebarPrefs((prev) => setGroupsHintDismissed(prev, true)),
+    [updateSidebarPrefs]
+  );
 
   // ── Handlers ──
   const handleSelectAgent = useCallback(
@@ -263,25 +276,33 @@ export function DashboardSidebar() {
     (path: string, keyPrefix: string): ReactNode => {
       const isActive = selectedCwd === path && pathname === '/session';
       return (
-        <AgentListItem
+        <Sortable
           key={`${keyPrefix}-${path}`}
-          path={path}
-          agent={agents?.[path] ?? null}
-          displayName={displayNamesRecord[path]}
-          isActive={isActive}
-          isExpanded={expandedPath === path}
-          onSelect={() => handleSelectAgent(path)}
-          onToggleExpand={() => handleToggleExpand(path)}
-          onOpenProfile={() => handleOpenProfile(path)}
-          onRequestNewGroup={handleRequestNewGroup}
-          sessions={isActive ? previewSessions : []}
-          isLoadingSessions={isActive && sessionsLoading}
-          activeSessionId={activeSessionId}
-          onSessionClick={handleSessionClick}
-          onNewSession={() => handleNewSession(path)}
-          onForkSession={handleForkSession}
-          onRenameSession={handleRenameSession}
-        />
+          id={agentRowDndId(keyPrefix, path)}
+          data={agentDndData(keyPrefix, path)}
+        >
+          {(bindings) => (
+            <AgentListItem
+              path={path}
+              agent={agents?.[path] ?? null}
+              displayName={displayNamesRecord[path]}
+              isActive={isActive}
+              isExpanded={expandedPath === path}
+              onSelect={() => handleSelectAgent(path)}
+              onToggleExpand={() => handleToggleExpand(path)}
+              onOpenProfile={() => handleOpenProfile(path)}
+              onRequestNewGroup={handleRequestNewGroup}
+              sessions={isActive ? previewSessions : []}
+              isLoadingSessions={isActive && sessionsLoading}
+              activeSessionId={activeSessionId}
+              onSessionClick={handleSessionClick}
+              onNewSession={() => handleNewSession(path)}
+              onForkSession={handleForkSession}
+              onRenameSession={handleRenameSession}
+              sortable={bindings}
+            />
+          )}
+        </Sortable>
       );
     },
     [
@@ -309,43 +330,70 @@ export function DashboardSidebar() {
       <SidebarNavHeader />
 
       <SidebarContent className="p-3">
-        {showRecent && (
-          <RecentSessionsSection
-            sessions={recentSessions}
-            isLoading={recentQuery.isLoading}
-            warnings={recentQuery.data?.warnings}
-            agents={agents ?? {}}
-            displayNames={displayNamesRecord}
-            onSelectSession={handleResumeRecentSession}
-          />
-        )}
+        <SidebarDnd displayNames={displayNamesRecord}>
+          {showRecent && (
+            <RecentSessionsSection
+              sessions={recentSessions}
+              isLoading={recentQuery.isLoading}
+              warnings={recentQuery.data?.warnings}
+              agents={agents ?? {}}
+              displayNames={displayNamesRecord}
+              onSelectSession={handleResumeRecentSession}
+            />
+          )}
 
-        {pinnedPaths.length > 0 && <PinnedSection paths={pinnedPaths} renderRow={renderAgentRow} />}
+          {pinnedPaths.length > 0 && (
+            <PinnedSection paths={pinnedPaths} renderRow={renderAgentRow} />
+          )}
 
-        {sidebarPrefs.groups.map((group) => (
-          <AgentGroupSection
-            key={group.id}
-            group={group}
-            memberPaths={knownGroupMembers.get(group.id) ?? []}
-            sortCtx={sortCtx}
+          <SortableList items={sidebarPrefs.groups.map((g) => `group-header::${g.id}`)}>
+            {sidebarPrefs.groups.map((group) => (
+              <AgentGroupSection
+                key={group.id}
+                group={group}
+                memberPaths={knownGroupMembers.get(group.id) ?? []}
+                sortCtx={sortCtx}
+                renderRow={renderAgentRow}
+              />
+            ))}
+          </SortableList>
+
+          <AnimatePresence>
+            {groupCreation !== null && (
+              <motion.div
+                key="group-create"
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: [0, 0, 0.2, 1] } }}
+                exit={{ opacity: 0, y: -6, transition: { duration: 0.15 } }}
+              >
+                <SidebarGroup>
+                  <SidebarMenu>
+                    <GroupCreateInput
+                      onCommit={handleCommitNewGroup}
+                      onCancel={handleCancelNewGroup}
+                    />
+                  </SidebarMenu>
+                </SidebarGroup>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <UngroupedSection
+            paths={ungroupedPaths}
+            organized={organized}
             renderRow={renderAgentRow}
+            onNewGroup={() => handleRequestNewGroup()}
           />
-        ))}
+        </SidebarDnd>
 
-        {groupCreation !== null && (
-          <SidebarGroup>
-            <SidebarMenu>
-              <GroupCreateInput onCommit={handleCommitNewGroup} onCancel={handleCancelNewGroup} />
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
-
-        <UngroupedSection
-          paths={ungroupedPaths}
-          organized={organized}
-          renderRow={renderAgentRow}
-          onNewGroup={() => handleRequestNewGroup()}
-        />
+        <AnimatePresence>
+          {showGroupsHint && (
+            <GroupsHintCard
+              onNewGroup={() => handleRequestNewGroup()}
+              onDismiss={handleDismissGroupsHint}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Progressive empty state — less prominent as the roster grows */}
         {agentCount <= 2 && (
