@@ -17,6 +17,7 @@ import { useAgentHottestStatus, usePulseMotion, SessionRow } from '@/layers/enti
 import { AgentContextMenu } from './AgentContextMenu';
 import { AgentRowMenuItems } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
+import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
 import type { SortableBindings } from './SidebarDndPrimitives';
 
 /** Maximum sessions shown in the expanded agent preview. */
@@ -130,6 +131,11 @@ export function AgentListItem({
     }
   }, [isActive, onSelect, onToggleExpand]);
 
+  // "New group…" mounts an inline editor; the dropdown's close-time focus
+  // restore would blur (and blur-cancel) it, so that item arms this guard
+  // (DOR-329). The context-menu variant guards itself inside AgentContextMenu.
+  const { arm: armCloseFocusGuard, onCloseAutoFocus } = useMenuCloseFocusGuard();
+
   return (
     <SidebarMenuItem
       ref={sortable?.setNodeRef}
@@ -178,13 +184,21 @@ export function AgentListItem({
                   <MoreHorizontal className="size-4" />
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="right" align="start" className="w-48">
+              <DropdownMenuContent
+                side="right"
+                align="start"
+                className="w-48"
+                onCloseAutoFocus={onCloseAutoFocus}
+              >
                 <AgentRowMenuItems
                   variant="dropdown"
                   path={path}
                   onOpenProfile={onOpenProfile}
                   onNewSession={onNewSession}
-                  onRequestNewGroup={onRequestNewGroup}
+                  onRequestNewGroup={(agentPath) => {
+                    armCloseFocusGuard();
+                    onRequestNewGroup(agentPath);
+                  }}
                 />
               </DropdownMenuContent>
             </DropdownMenu>

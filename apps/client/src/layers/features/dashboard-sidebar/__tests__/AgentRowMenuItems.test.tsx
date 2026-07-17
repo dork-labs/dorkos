@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { useState } from 'react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import {
   ContextMenu,
@@ -10,6 +11,8 @@ import {
   DropdownMenuContent,
 } from '@/layers/shared/ui';
 import { AgentRowMenuItems, buildRowMenuNodes, type RowMenuModel } from '../ui/AgentRowMenuItems';
+import { AgentContextMenu } from '../ui/AgentContextMenu';
+import { GroupCreateInput } from '../ui/GroupCreateInput';
 
 // Mock the config surface so rendering needs no transport/QueryClient. Two
 // groups with the agent in g1 makes the Move-to-group submenu fully populated:
@@ -18,17 +21,22 @@ const groups = [
   { id: 'g1', name: 'Clients', agentPaths: ['/agents/api-server'] },
   { id: 'g2', name: 'Experiments', agentPaths: [] },
 ];
+const mockUpdate = vi.fn<(updater: (prev: unknown) => unknown) => void>();
+const moveToGroupCalls: unknown[][] = [];
 vi.mock('@/layers/entities/config', () => ({
   useSidebarPrefs: () => ({ pinned: [], groups, ungroupedSortMode: 'name' }),
   useUpdateSidebarPrefs: () => ({
-    update: vi.fn(),
+    update: mockUpdate,
     updateAsync: vi.fn(),
     isPending: false,
     isError: false,
   }),
   pinPath: (p: unknown) => p,
   unpinPath: (p: unknown) => p,
-  moveToGroup: (p: unknown) => p,
+  moveToGroup: (...args: unknown[]) => {
+    moveToGroupCalls.push(args);
+    return args[0];
+  },
 }));
 
 beforeAll(() => {
@@ -43,6 +51,11 @@ beforeAll(() => {
   if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = () => {};
   }
+});
+
+beforeEach(() => {
+  mockUpdate.mockReset();
+  moveToGroupCalls.length = 0;
 });
 
 afterEach(() => cleanup());
@@ -215,5 +228,91 @@ describe('AgentRowMenuItems variant parity', () => {
     const experiments = contextTree.find((e) => e.label === 'Experiments');
     expect(clients).toMatchObject({ role: 'menuitemcheckbox', checked: 'true' });
     expect(experiments).toMatchObject({ role: 'menuitemcheckbox', checked: 'false' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end wiring through the real AgentContextMenu
+// ---------------------------------------------------------------------------
+
+/**
+ * Stateful stand-in for the orchestrator: `onRequestNewGroup` mounts the real
+ * inline editor, exactly as DashboardSidebar does.
+ */
+function InlineCreateHarness() {
+  const [creating, setCreating] = useState(false);
+  return (
+    <div>
+      <AgentContextMenu
+        path="/agents/api-server"
+        onOpenProfile={() => {}}
+        onNewSession={() => {}}
+        onRequestNewGroup={() => setCreating(true)}
+      >
+        <div data-testid="row-trigger">row</div>
+      </AgentContextMenu>
+      {creating && (
+        <ul>
+          <GroupCreateInput
+            onCommit={() => setCreating(false)}
+            onCancel={() => setCreating(false)}
+          />
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function openRowMenu() {
+  fireEvent.contextMenu(screen.getByTestId('row-trigger'));
+}
+
+function openMoveToGroupSubmenu() {
+  fireEvent.keyDown(screen.getByText('Move to group'), { key: 'ArrowRight' });
+}
+
+describe('AgentContextMenu end-to-end wiring', () => {
+  // Regression test for the live-browser bug (DOR-329): Radix closes the menu
+  // in a second commit AFTER the inline editor mounts and focuses; the close's
+  // focus restore refocused the trigger, blurring the editor, whose blur-cancel
+  // unmounted it — "New group…" appeared to do nothing. jsdom cannot fully
+  // reproduce the native focus-restore race, so this asserts the observable
+  // outcome (editor survives the menu close AND holds focus); the guard's
+  // prevent-once contract is pinned in use-menu-close-focus-guard.test.ts.
+  it('keeps the inline group-create editor alive and focused after "New group…" closes the menu', () => {
+    render(<InlineCreateHarness />);
+    openRowMenu();
+    openMoveToGroupSubmenu();
+    fireEvent.click(screen.getByText('New group…'));
+
+    const input = screen.getByLabelText('New group name');
+    expect(input).toBeInTheDocument();
+    // Focus must remain on the editor — a restored-to-trigger focus is exactly
+    // the state that killed it (blur-cancel).
+    expect(document.activeElement).toBe(input);
+    // The menu itself is gone (the guard suppresses focus restore, not closing).
+    expect(screen.queryByText('Move to group')).not.toBeInTheDocument();
+  });
+
+  it('"Move to group → <other group>" commits moveToGroup(path, groupId)', () => {
+    render(<InlineCreateHarness />);
+    openRowMenu();
+    openMoveToGroupSubmenu();
+    fireEvent.click(screen.getByText('Experiments'));
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    mockUpdate.mock.calls[0]![0]({ groups });
+    expect(moveToGroupCalls).toEqual([[{ groups }, '/agents/api-server', 'g2']]);
+  });
+
+  it('"Remove from group" commits moveToGroup(path, null)', () => {
+    render(<InlineCreateHarness />);
+    openRowMenu();
+    openMoveToGroupSubmenu();
+    fireEvent.click(screen.getByText('Remove from group'));
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    mockUpdate.mock.calls[0]![0]({ groups });
+    expect(moveToGroupCalls).toEqual([[{ groups }, '/agents/api-server', null]]);
   });
 });

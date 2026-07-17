@@ -46,6 +46,7 @@ import {
   setGroupSortMode,
   setGroupCollapsed,
 } from '@/layers/entities/config';
+import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
 
 /** Maximum group-name length (matches `SidebarGroupSchema.name`). */
 const MAX_NAME = 40;
@@ -109,6 +110,10 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
   const [deleteOpen, setDeleteOpen] = useState(false);
   const renameRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
+  // "Rename" mounts an inline editor; the launching menu's close-time focus
+  // restore would steal its focus and blur-commit it immediately (DOR-329).
+  // Armed by startRename, wired onto BOTH menu contents below.
+  const { arm: armCloseFocusGuard, onCloseAutoFocus } = useMenuCloseFocusGuard();
 
   useEffect(() => {
     if (isRenaming) {
@@ -124,6 +129,7 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
     update((prev) => setGroupCollapsed(prev, group.id, !group.collapsed));
 
   const startRename = () => {
+    armCloseFocusGuard();
     setRenameValue(group.name);
     setIsRenaming(true);
   };
@@ -259,13 +265,20 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
                   <MoreHorizontal className="size-4" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="right" align="start" className="w-44">
+              <DropdownMenuContent
+                side="right"
+                align="start"
+                className="w-44"
+                onCloseAutoFocus={onCloseAutoFocus}
+              >
                 {renderMenu(DROPDOWN_SLOTS)}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-44">{renderMenu(CONTEXT_SLOTS)}</ContextMenuContent>
+        <ContextMenuContent className="w-44" onCloseAutoFocus={onCloseAutoFocus}>
+          {renderMenu(CONTEXT_SLOTS)}
+        </ContextMenuContent>
       </ContextMenu>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
