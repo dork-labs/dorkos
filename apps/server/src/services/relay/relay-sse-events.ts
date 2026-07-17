@@ -10,6 +10,7 @@
  *
  * @module services/relay/relay-sse-events
  */
+import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
 import { eventFanOut } from '../core/event-fan-out.js';
 
 /**
@@ -29,4 +30,9 @@ export function broadcastBindingsChanged(): void {
  */
 export function broadcastAdaptersChanged(): void {
   eventFanOut.broadcast('relay_adapters_changed', { changedAt: new Date().toISOString() });
+}
+
+/** Broadcast a delivered relay message across a binding edge (topology pulse). */
+export function broadcastRelayFlow(flow: RelayFlowEvent): void {
+  eventFanOut.broadcast('relay_flow', flow);
 }

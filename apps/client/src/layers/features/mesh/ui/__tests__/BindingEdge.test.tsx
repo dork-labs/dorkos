@@ -4,10 +4,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { EdgeActivity } from '../../model/relay-flow-store';
 
 // ---------------------------------------------------------------------------
-// Mock @xyflow/react — replaces flow edge primitives with HTML stubs.
+// Mock @xyflow/react — replaces flow edge primitives with HTML stubs. Zoom is
+// mutable per-test via `mockZoom` (default 1, LOD tests override it).
 // ---------------------------------------------------------------------------
+let mockZoom = 1;
 vi.mock('@xyflow/react', () => ({
   BaseEdge: ({ id, path }: { id: string; path: string }) => (
     <path data-testid={`edge-path-${id}`} d={path} />
@@ -16,13 +19,31 @@ vi.mock('@xyflow/react', () => ({
     <div data-testid="edge-label-renderer">{children}</div>
   ),
   getBezierPath: () => ['M0,0 C50,0 50,100 100,100', 50, 50],
-  useStore: (selector: (s: unknown) => unknown) => selector({ transform: [0, 0, 1] }),
+  useStore: (selector: (s: unknown) => unknown) => selector({ transform: [0, 0, mockZoom] }),
   Position: {
     Left: 'left',
     Right: 'right',
     Top: 'top',
     Bottom: 'bottom',
   },
+}));
+
+// ---------------------------------------------------------------------------
+// Mock the relay-flow store — a plain selector-invoking stub, no Zustand
+// subscription plumbing needed for these RTL assertions.
+// ---------------------------------------------------------------------------
+let mockActivity: Record<string, EdgeActivity> = {};
+const mockClear = vi.fn();
+vi.mock('../../model/relay-flow-store', () => ({
+  useRelayFlowStore: (
+    selector: (s: { activity: Record<string, EdgeActivity>; clear: typeof mockClear }) => unknown
+  ) => selector({ activity: mockActivity, clear: mockClear }),
+}));
+
+// Mock the reduced-motion hook — the same pattern as AgentNode.reduced-motion.test.tsx.
+const mockUsePrefersReducedMotion = vi.fn(() => false);
+vi.mock('../../lib/use-reduced-motion', () => ({
+  usePrefersReducedMotion: () => mockUsePrefersReducedMotion(),
 }));
 
 import { BindingEdge } from '../BindingEdge';
@@ -51,6 +72,9 @@ const BASE_EDGE_PROPS = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockZoom = 1;
+  mockActivity = {};
+  mockUsePrefersReducedMotion.mockReturnValue(false);
 });
 
 afterEach(cleanup);
@@ -69,6 +93,37 @@ describe('BindingEdge', () => {
     it('does not render label at rest (hover-to-reveal)', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} data={{}} />);
       expect(screen.queryByTestId('edge-label-renderer')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('relay-flow pulse', () => {
+    it('renders the pulse when activity is present, zoom >= threshold, and reduced-motion is off', () => {
+      // Purpose: the render gate honors activity.
+      mockActivity = { 'binding-edge-1': { direction: 'inbound', nonce: 1 } };
+      const { container } = render(<BindingEdge {...BASE_EDGE_PROPS} />);
+      expect(container.querySelector('circle.fill-primary')).toBeInTheDocument();
+    });
+
+    it('does not render the pulse under reduced-motion, even with active entry and zoom in range', () => {
+      // Purpose: Decision 5 — the explicit, testable reduced-motion gate.
+      mockActivity = { 'binding-edge-1': { direction: 'inbound', nonce: 1 } };
+      mockUsePrefersReducedMotion.mockReturnValue(true);
+      const { container } = render(<BindingEdge {...BASE_EDGE_PROPS} />);
+      expect(container.querySelector('circle.fill-primary')).not.toBeInTheDocument();
+    });
+
+    it('does not render the pulse below PULSE_MIN_ZOOM, even with an active entry', () => {
+      // Purpose: the LOD gate — a moving dot below threshold is sub-pixel noise.
+      mockActivity = { 'binding-edge-1': { direction: 'inbound', nonce: 1 } };
+      mockZoom = 0.3;
+      const { container } = render(<BindingEdge {...BASE_EDGE_PROPS} />);
+      expect(container.querySelector('circle.fill-primary')).not.toBeInTheDocument();
+    });
+
+    it('does not render the pulse for an idle edge (no active entry)', () => {
+      // Purpose: idle edges stay clean — no phantom pulse.
+      const { container } = render(<BindingEdge {...BASE_EDGE_PROPS} />);
+      expect(container.querySelector('circle.fill-primary')).not.toBeInTheDocument();
     });
   });
 

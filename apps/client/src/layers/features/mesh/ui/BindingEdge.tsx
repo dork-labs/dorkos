@@ -7,9 +7,13 @@ import {
   useStore,
   type ReactFlowState,
 } from '@xyflow/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { sessionStrategyLabel } from '@/layers/entities/binding';
+import { useRelayFlowStore } from '../model/relay-flow-store';
+import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
+import { PULSE_MIN_ZOOM, PULSE_DURATION_MS } from '../config/relay-flow-constants';
 
 const zoomSelector = (s: ReactFlowState) => s.transform[2];
 
@@ -65,6 +69,14 @@ function BindingEdgeInner({
   const displayLabel = resolveDisplayLabel(d);
   const showLabel = (hovered || selected) && zoom >= 0.7;
 
+  // Relay-flow pulse: a single --color-primary dot tracing the exact
+  // edgePath, coalesced per edge, suppressed below the LOD threshold and
+  // under reduced-motion (Decision 5 — nothing renders, not a static blip).
+  const activity = useRelayFlowStore((s) => s.activity[id]);
+  const clear = useRelayFlowStore((s) => s.clear);
+  const prefersReduced = usePrefersReducedMotion();
+  const showPulse = !!activity && !prefersReduced && zoom >= PULSE_MIN_ZOOM;
+
   function handleDelete(e: React.MouseEvent) {
     e.stopPropagation();
     d?.onDelete?.(id);
@@ -89,6 +101,27 @@ function BindingEdgeInner({
           selected ? 'stroke-primary stroke-2' : 'stroke-primary/60 stroke-2'
         )}
       />
+      <AnimatePresence>
+        {showPulse && (
+          <motion.circle
+            key={activity.nonce}
+            r={3}
+            className="fill-primary"
+            style={{ offsetPath: `path("${edgePath}")` }}
+            initial={{
+              offsetDistance: activity.direction === 'inbound' ? '0%' : '100%',
+              opacity: 0,
+            }}
+            animate={{
+              offsetDistance: activity.direction === 'inbound' ? '100%' : '0%',
+              opacity: [0, 1, 1, 0],
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: PULSE_DURATION_MS / 1000, ease: 'easeInOut' }}
+            onAnimationComplete={() => clear(id)}
+          />
+        )}
+      </AnimatePresence>
       {showLabel && (
         <EdgeLabelRenderer>
           <div

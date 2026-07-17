@@ -989,6 +989,132 @@ describe('BindingRouter', () => {
     });
   });
 
+  describe('relay_flow emit (onFlow)', () => {
+    // A dedicated router instance with `onFlow` injected — the outer
+    // `beforeEach` router omits it, matching production's optional dep.
+    let flowRouter: BindingRouter;
+    let flowRelayCore: RelayCoreLike;
+    let onFlow: ReturnType<typeof vi.fn>;
+    let flowHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
+
+    const makeBinding = (overrides: Record<string, unknown> = {}) => ({
+      id: 'bind-1',
+      adapterId: 'tg-bot',
+      agentId: 'agent-a',
+      sessionStrategy: 'per-chat' as const,
+      label: '',
+      permissionMode: 'acceptEdits' as const,
+      enabled: true,
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+    const makeEnvelope = (overrides: Record<string, unknown> = {}) => ({
+      id: 'msg-1',
+      subject: 'relay.human.telegram.tg-bot.123',
+      payload: { content: 'hello' },
+      from: 'relay.human.telegram.bot',
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
+      createdAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+    beforeEach(async () => {
+      onFlow = vi.fn();
+      flowRelayCore = {
+        publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+        subscribe: vi.fn((_pattern: string, handler: unknown) => {
+          flowHandler = handler as typeof flowHandler;
+          return mockUnsubscribe;
+        }),
+      };
+      flowRouter = new BindingRouter({
+        bindingStore: mockBindingStore as BindingStore,
+        relayCore: flowRelayCore,
+        agentManager: mockAgentManager,
+        meshCore: mockMeshCore,
+        relayDir: '/tmp/relay-flow',
+        runtimeResolver: mockRuntimeResolver,
+        onFlow,
+      });
+      await flowRouter.init();
+    });
+
+    afterEach(async () => {
+      await flowRouter.shutdown();
+    });
+
+    it('fires onFlow exactly once with the routing skeleton when deliveredTo > 0', async () => {
+      // Purpose: a delivered inbound message pulses, keyed by the binding's
+      // own join keys (bindingId/adapterId/agentId), inbound direction, ISO at.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      vi.mocked(flowRelayCore.publish).mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 });
+
+      await flowHandler!(makeEnvelope());
+
+      expect(onFlow).toHaveBeenCalledTimes(1);
+      expect(onFlow).toHaveBeenCalledWith({
+        bindingId: 'bind-1',
+        adapterId: 'tg-bot',
+        agentId: 'agent-a',
+        direction: 'inbound',
+        at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/),
+      });
+    });
+
+    it('does not fire onFlow when deliveredTo === 0 (budget/consent/unsubscribed)', async () => {
+      // Purpose: the honesty gate — a rejected or unsubscribed message never
+      // reached the agent and must not pulse.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      vi.mocked(flowRelayCore.publish).mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
+
+      await flowHandler!(makeEnvelope());
+
+      expect(onFlow).not.toHaveBeenCalled();
+    });
+
+    it('does not fire onFlow for agent-originated envelopes (feedback-loop guard)', async () => {
+      // Purpose: no phantom pulse on non-routed inbound — skipped before
+      // binding resolution even runs.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+
+      await flowHandler!(makeEnvelope({ from: 'agent:session-abc' }));
+
+      expect(onFlow).not.toHaveBeenCalled();
+      expect(flowRelayCore.publish).not.toHaveBeenCalled();
+    });
+
+    it('does not fire onFlow when no binding resolves', async () => {
+      // Purpose: no phantom pulse when there is no binding to key the edge on.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(undefined);
+
+      await flowHandler!(makeEnvelope());
+
+      expect(onFlow).not.toHaveBeenCalled();
+    });
+
+    it('does not fire onFlow for a paused (enabled=false) or canReceive=false binding', async () => {
+      // Purpose: no phantom pulse when routing itself is suppressed.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ enabled: false }));
+      await flowHandler!(makeEnvelope());
+      expect(onFlow).not.toHaveBeenCalled();
+
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ canReceive: false }));
+      await flowHandler!(makeEnvelope());
+      expect(onFlow).not.toHaveBeenCalled();
+    });
+  });
+
   describe('testBinding()', () => {
     const makeBinding = (overrides: Record<string, unknown> = {}) => ({
       id: 'bind-1',

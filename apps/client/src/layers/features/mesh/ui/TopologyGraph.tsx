@@ -30,6 +30,8 @@ import { TopologyEmptyState } from './TopologyEmptyState';
 import { useTopologyHandlers } from './use-topology-handlers';
 import { applyElkLayout } from '../lib/elk-layout';
 import { buildTopologyElements } from '../lib/build-topology-elements';
+import { useRelayFlowSubscription } from '../model/use-relay-flow-subscription';
+import { useRelayFlowStore } from '../model/relay-flow-store';
 import { useTopology } from '@/layers/entities/mesh';
 import {
   BindingDialog,
@@ -107,6 +109,16 @@ function TopologyGraphInner({
   const { data: bindings } = useBindings();
   const { mutate: createBindingMutate } = useCreateBinding();
   const { mutate: deleteBindingMutate } = useDeleteBinding();
+
+  // Bridge the global relay_flow stream to the per-edge pulse store, mounted
+  // once for the whole graph (not per-edge). Any orphaned activity is
+  // cleared on unmount — the store's own reset() contract.
+  useRelayFlowSubscription(relayEnabled);
+  useEffect(() => {
+    return () => {
+      useRelayFlowStore.getState().reset();
+    };
+  }, []);
 
   // Stable refs for callback props prevent useMemo re-creation on each render,
   // which would trigger ELK layout unnecessarily and risk infinite re-render loops.

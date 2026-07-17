@@ -35,7 +35,11 @@ import {
   mergeWithPasswordPreservation,
 } from './adapter-config.js';
 import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
-import { broadcastAdaptersChanged, broadcastBindingsChanged } from './relay-sse-events.js';
+import {
+  broadcastAdaptersChanged,
+  broadcastBindingsChanged,
+  broadcastRelayFlow,
+} from './relay-sse-events.js';
 import { BindingSubsystem } from './binding-subsystem.js';
 import type { RelayCoreLike } from './binding-router.js';
 import {
@@ -296,6 +300,7 @@ export class AdapterManager {
       agentRuntimes: this.agentRuntimes,
       configPath: this.configPath,
       eventRecorder: this.deps.eventRecorder,
+      onFlow: broadcastRelayFlow,
     });
   }
 

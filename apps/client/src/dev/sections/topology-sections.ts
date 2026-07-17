@@ -35,6 +35,13 @@ export const TOPOLOGY_SECTIONS: PlaygroundSection[] = [
     keywords: ['edge', 'binding', 'cross-namespace', 'deny', 'allow', 'line', 'topology'],
   },
   {
+    id: 'relay-flow-pulse',
+    title: 'Relay Flow Pulse',
+    page: 'topology',
+    category: 'Edges',
+    keywords: ['relay', 'flow', 'pulse', 'animation', 'binding', 'edge', 'traffic', 'topology'],
+  },
+  {
     id: 'topologylegend',
     title: 'TopologyLegend',
     page: 'topology',

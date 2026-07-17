@@ -43,6 +43,8 @@ import {
   MessageListQuerySchema,
   InboxQuerySchema,
   EndpointRegistrationSchema,
+  RelayFlowEventSchema,
+  RelayFlowDirectionSchema,
 } from '@dorkos/shared/relay-schemas';
 import {
   AgentManifestSchema,
@@ -219,6 +221,14 @@ const LocalUninstallResultSchema = z.object({
 });
 
 const registry = new OpenAPIRegistry();
+
+// `relay_flow` is broadcast on the unified `/api/events` SSE stream, which
+// (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
+// no dedicated REST path to hang a response schema off of. Register it as a
+// standalone component so the metadata-only wire contract is still
+// discoverable in the generated OpenAPI document.
+registry.register('RelayFlowDirection', RelayFlowDirectionSchema);
+registry.register('RelayFlowEvent', RelayFlowEventSchema);
 
 // --- Health ---
 

@@ -12,6 +12,41 @@
   ],
   "components": {
     "schemas": {
+      "RelayFlowDirection": {
+        "type": "string",
+        "enum": [
+          "inbound",
+          "outbound"
+        ]
+      },
+      "RelayFlowEvent": {
+        "type": "object",
+        "properties": {
+          "bindingId": {
+            "type": "string"
+          },
+          "adapterId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/RelayFlowDirection"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "bindingId",
+          "adapterId",
+          "agentId",
+          "direction",
+          "at"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {

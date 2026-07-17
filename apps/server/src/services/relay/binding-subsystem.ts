@@ -10,6 +10,7 @@
 import { dirname } from 'node:path';
 import type { AgentRuntimeLike } from '@dorkos/relay';
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logger } from '../../lib/logger.js';
 import { BindingStore } from './binding-store.js';
@@ -37,6 +38,8 @@ export interface BindingSubsystemDeps {
   eventRecorder?: {
     insertAdapterEvent(adapterId: string, eventType: string, message: string): void;
   };
+  /** Optional callback fired once per delivered inbound message (topology pulse). */
+  onFlow?: (flow: RelayFlowEvent) => void;
 }
 
 /**
@@ -112,6 +115,7 @@ export class BindingSubsystem {
             runtimeRegistry.getSessionRuntimeType(sessionId),
         },
         eventRecorder: deps.eventRecorder,
+        onFlow: deps.onFlow,
       });
       await subsystem.bindingRouter.init();
       logger.info('[BindingSubsystem] BindingRouter initialized');
