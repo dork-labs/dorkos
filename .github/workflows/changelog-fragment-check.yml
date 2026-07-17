@@ -1,0 +1,58 @@
+name: changelog-fragment-check
+
+# Enforces the changelog-fragment guarantee at PR time.
+#
+# A fragment per user-facing change is normally minted by the local post-commit
+# hook (.claude/git-hooks/changelog-populator.py). But that hook is a per-clone
+# convenience, not a guarantee: it never runs on the squash-merged commit that
+# actually lands on main, and it silently does nothing in a checkout where it was
+# not installed or on a rebased/amended commit it treats as a replay. Six commits
+# reached main with no fragment before this gate existed, surfacing only at the
+# release-time backfill — the worst possible moment.
+#
+# This job re-runs the fragment analyzer (.claude/scripts/changelog_backfill.py)
+# against the PR's own commits (merge-base..head) and fails if a user-facing
+# commit (feat / fix / refactor / perf) has no fragment. It inspects the raw
+# branch commits, so it is immune to squash-merge relabeling and to wherever the
+# work was committed.
+#
+# To pass: add the fragment (see changelog/README.md + the writing-changelogs
+# skill), or label the PR `skip-changelog` for a deliberately non-user-facing
+# change — a pure refactor, a CI/build-infra fix (e.g. a `fix(ci):` scope), or a
+# duplicate already covered by another fragment.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for Node 20 runtime.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  fragment-present:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the PR head (not the default merge ref) with full history so
+      # the merge-base against the base branch resolves.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Determine the PR's merge-base
+        id: base
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+          base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      # Skipped (success) when the PR carries `skip-changelog`, so a deliberate
+      # non-user-facing PR is never blocked and the check still reports green.
+      # The analyzer is pure-stdlib Python 3 — no install/build step needed.
+      - name: Require a changelog fragment for every user-facing commit
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        run: |
+          python3 .claude/scripts/changelog_backfill.py \
+            --since "${{ steps.base.outputs.sha }}" --check

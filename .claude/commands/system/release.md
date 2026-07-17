@@ -61,7 +61,7 @@ git log $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD --oneline
 
 ### Check 5: Changelog completeness
 
-Compare the commits since the last tag against the **fragments in `changelog/unreleased/`** (one file per change; see `changelog/README.md`). Categorize missing commits by conventional commit type: `feat:` → Added, `fix:` → Fixed, `refactor:`/`perf:` → Changed, `BREAKING CHANGE` or `!` → Breaking; `docs:`/`style:`/`test:`/`build:`/`ci:`/`chore:` are skipped (not user-facing by default — hand-author a fragment if one genuinely is). The post-commit hook normally writes a fragment per commit, so the gap is usually small (hand-authored PRs that skipped a fragment, or squashed merges).
+Compare the commits since the last tag against the **fragments in `changelog/unreleased/`** (one file per change; see `changelog/README.md`). Categorize missing commits by conventional commit type: `feat:` → Added, `fix:` → Fixed, `refactor:`/`perf:` → Changed, `BREAKING CHANGE` or `!` → Breaking; `docs:`/`style:`/`test:`/`build:`/`ci:`/`chore:` are skipped (not user-facing by default — hand-author a fragment if one genuinely is). This is now a **backstop, not the primary gate**: the `changelog-fragment-check` PR workflow already fails any user-facing PR that lacks a fragment (unless labeled `skip-changelog`), so anything surfacing here is a PR that was merged before the gate, a `skip-changelog` opt-out that turned out user-facing, or an infra-scoped commit (e.g. `fix(ci):`) the analyzer flags by type but that is correctly fragment-less. Judge each on whether it changes something a user can see or do.
 
 **If missing entries exist**, report which commits are unrepresented (grouped by category, with short SHAs) and ask via AskUserQuestion:
 

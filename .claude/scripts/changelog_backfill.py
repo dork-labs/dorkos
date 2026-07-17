@@ -12,10 +12,14 @@ Usage:
     python3 .claude/scripts/changelog_backfill.py [options]
 
 Options:
-    --since TAG     Compare against specific tag (default: last tag)
+    --since TAG     Compare against a specific tag OR commit (default: last tag).
+                    A commit SHA works too, so CI can scope to a PR's merge-base.
     --dry-run       Show what would be added without writing files
     --json          Output as JSON for programmatic consumption
     --apply         Write fragment files for the missing entries
+    --check         Exit non-zero if any user-facing commit lacks a fragment.
+                    Writes nothing — the PR-time gate and a local pre-flight both
+                    use this to catch a missing fragment before it reaches main.
     --verbose       Show detailed analysis
 
 Output (JSON mode):
@@ -383,6 +387,11 @@ def main():
         help="Write fragment files for the missing entries"
     )
     parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit non-zero if any user-facing commit lacks a fragment (writes nothing)"
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Show detailed analysis"
@@ -437,6 +446,28 @@ def main():
         written = write_fragments(result['missing_entries'], unreleased_dir)
         if not args.json:
             print(f"\nWrote {written} fragment(s) to changelog/unreleased/.")
+
+    # Gate mode: fail if any user-facing commit is missing a fragment.
+    # Diagnostics go to stderr so a --json consumer still gets clean JSON on stdout.
+    if args.check and result['missing_entries']:
+        print(
+            f"\n{len(result['missing_entries'])} user-facing commit(s) since "
+            f"{result['since_tag'] or 'the base'} have no changelog fragment:",
+            file=sys.stderr,
+        )
+        for entry in result['missing_entries']:
+            print(
+                f"  [{entry['section']}] {entry['commit']}  {entry['entry']}",
+                file=sys.stderr,
+            )
+        print(
+            "\nAdd one fragment per change under changelog/unreleased/ "
+            "(see changelog/README.md and the writing-changelogs skill), or "
+            "label the PR 'skip-changelog' if the change is deliberately not "
+            "user-facing.",
+            file=sys.stderr,
+        )
+        return 1
 
     return 0
 
