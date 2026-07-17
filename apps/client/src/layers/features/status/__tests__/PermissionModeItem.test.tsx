@@ -162,6 +162,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
       { id: 'auto', label: 'Auto', description: 'Classifier approves or denies' },
     ],
   },
+  commandIntents: { compact: { supported: false } },
   features: {
     claudeSkills: true,
     claudeHooks: true,
@@ -186,6 +187,7 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
       { id: 'scripted', label: 'Scripted' },
     ],
   },
+  commandIntents: { compact: { supported: false } },
   features: {
     testModeScenarios: ['simple-text'],
     deterministicLatencyMs: 0,
@@ -210,6 +212,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
       { id: 'bypassPermissions', label: 'Full access', description: 'No sandbox.' },
     ],
   },
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 
@@ -231,6 +234,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
       { id: 'bypassPermissions', label: 'Bypass permissions', description: 'Skip all prompts.' },
     ],
   },
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 
@@ -244,6 +248,7 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
   supportsPlugins: false,
   nativeContext: [],
   permissionModes: { supported: false, values: [] },
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 

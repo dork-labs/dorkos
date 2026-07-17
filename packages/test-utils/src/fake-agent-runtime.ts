@@ -159,6 +159,10 @@ export class FakeAgentRuntime implements AgentRuntime {
         { id: 'auto', label: 'Auto' },
       ],
     },
+    // The test double is the one supported runtime that Phase-1 conformance
+    // exercises for the supported path (its executeCommandIntent yields a real
+    // synthetic compact_boundary).
+    commandIntents: { compact: { supported: true } },
     features: {},
   }));
   getSupportedModels = vi.fn<() => Promise<ModelOption[]>>().mockResolvedValue([]);

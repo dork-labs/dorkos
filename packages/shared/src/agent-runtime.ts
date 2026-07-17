@@ -21,6 +21,7 @@ import type {
 } from './types.js';
 import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
+import type { RuntimeCommandIntentId } from './command-intents.js';
 
 /**
  * Describes a single permission mode a runtime supports. Runtimes enumerate
@@ -231,6 +232,15 @@ export function deriveRuntimeReadiness(
 }
 
 /**
+ * Per-runtime support for a single runtime-fulfilled command intent
+ * (see {@link RuntimeCapabilities.commandIntents}).
+ */
+export interface CommandIntentSupport {
+  /** Whether the runtime can fulfill this intent for a session. */
+  supported: boolean;
+}
+
+/**
  * Runtime capability flags — describes what a given backend supports.
  *
  * Genuinely-boolean capabilities remain flat booleans. Permission modes are
@@ -278,6 +288,18 @@ export interface RuntimeCapabilities {
     default?: string;
     values: PermissionModeDescriptor[];
   };
+
+  /**
+   * Support for RUNTIME-fulfilled command intents (currently `compact`).
+   * Client-native intents (`clear`, `context`) are universal and not gated
+   * here. `supported: false` → the palette disables the entry ("Not supported
+   * by {runtime}") and the composer refuses to send the intent as text. A
+   * first-class sibling of {@link RuntimeCapabilities.permissionModes} per
+   * ADR-0256, not the `features` bag; the adapter expands the neutral intent
+   * into its native mechanism per ADR-0273. Required — compile-time forcing so
+   * no adapter silently omits it.
+   */
+  commandIntents: Record<RuntimeCommandIntentId, CommandIntentSupport>;
 
   /**
    * Context kinds this runtime injects natively (the server omits these from

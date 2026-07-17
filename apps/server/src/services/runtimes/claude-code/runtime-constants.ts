@@ -61,6 +61,9 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Phase-1 placeholder — Phase 2 (DOR-109 task 2.1) flips this to true once the
+  // bare `/compact` fulfillment body lands.
+  commandIntents: { compact: { supported: false } },
   features: {
     /** Claude loads named skills from `.claude/skills/` (SDK `Options.skills`). */
     claudeSkills: true,

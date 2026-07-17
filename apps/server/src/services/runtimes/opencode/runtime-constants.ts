@@ -66,6 +66,9 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Phase-1 placeholder — Phase 2 (DOR-109 task 2.2) flips this to true once the
+  // `client.session.summarize` fulfillment body lands.
+  commandIntents: { compact: { supported: false } },
   features: {},
 };
 

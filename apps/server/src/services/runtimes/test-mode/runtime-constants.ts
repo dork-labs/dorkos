@@ -59,6 +59,9 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Phase-1 placeholder — Phase 2 (DOR-109 task 2.3) flips this to true once the
+  // synthetic `compact_boundary` fulfillment body lands (the e2e/conformance vehicle).
+  commandIntents: { compact: { supported: false } },
   features: {
     /**
      * Scenario keys served by the built-in `scenario-store`. Keys here MUST

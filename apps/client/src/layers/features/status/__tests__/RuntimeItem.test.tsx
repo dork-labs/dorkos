@@ -201,6 +201,7 @@ function makeCaps(type: string): RuntimeCapabilities {
     supportsPlugins: false,
     nativeContext: [],
     permissionModes: { supported: false, values: [] },
+    commandIntents: { compact: { supported: false } },
     features: {},
   };
 }
