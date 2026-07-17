@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 import { MarketingChrome } from '@/layers/features/marketing';
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 
@@ -16,6 +17,10 @@ export const metadata: Metadata = {
     url: '/newsletter',
     siteName: siteConfig.name,
   },
+  twitter: twitterFromOpenGraph({
+    title: 'Newsletter | DorkOS',
+    description: 'Release notes and fleet reports, about twice a month.',
+  }),
 };
 
 /**

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 
 export const metadata: Metadata = {
   title: 'Marketplace privacy — DorkOS',
@@ -13,6 +14,10 @@ export const metadata: Metadata = {
     url: '/marketplace/privacy',
     siteName: siteConfig.name,
   },
+  twitter: twitterFromOpenGraph({
+    title: 'Marketplace privacy — DorkOS',
+    description: 'How DorkOS handles install telemetry: anonymous, opt-out, no PII, anonymous IDs.',
+  }),
 };
 
 export default function MarketplacePrivacyPage() {

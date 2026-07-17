@@ -12,6 +12,7 @@ import {
   type FeatureStatus,
 } from '@/layers/features/marketing';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 
 export function generateStaticParams() {
   return features.map((f) => ({ slug: f.slug }));
@@ -34,6 +35,10 @@ export async function generateMetadata(props: {
       siteName: siteConfig.name,
       type: 'website',
     },
+    twitter: twitterFromOpenGraph({
+      title: `${feature.name} — DorkOS`,
+      description: feature.description,
+    }),
     alternates: {
       canonical: `/features/${feature.slug}`,
     },

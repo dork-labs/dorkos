@@ -1,11 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { blog } from '@/lib/source';
-import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
+import { releaseVersion, sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { getMDXComponents } from '@/components/mdx-components';
 import { siteConfig } from '@/config/site';
+import { readingTimeLabel, twitterFromOpenGraph } from '@/lib/metadata';
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 import { BlogTOCSidebar } from './_components/BlogTOCSidebar';
 import { ReleaseInstallFooter } from './_components/ReleaseInstallFooter';
@@ -16,6 +19,22 @@ export function generateStaticParams() {
   }));
 }
 
+/**
+ * Read a blog post's reading-time label from its source markdown, or null if the
+ * file can't be read (e.g. a slug with no on-disk source). Blog sources live at
+ * the repo-root `blog/` dir; `process.cwd()` is `apps/site` at build time.
+ *
+ * @param path - The page's source path, relative to the blog content dir.
+ */
+function readingTimeFor(path: string): string | null {
+  try {
+    const raw = readFileSync(join(process.cwd(), '../../blog', path), 'utf-8');
+    return readingTimeLabel(raw);
+  } catch {
+    return null;
+  }
+}
+
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
@@ -23,18 +42,38 @@ export async function generateMetadata(props: {
   const page = blog.getPage([params.slug]);
   if (!page) notFound();
 
+  const title = page.data.title;
+  const description = page.data.description ?? `${siteConfig.name} blog`;
+  const readingTime = readingTimeFor(page.path);
+  const version = releaseVersion(page.data.title, params.slug);
+
+  // twitter:label1/data1 (and label2/data2) render as chips in X and Slack
+  // unfurls. Reading time is the headline chip; release posts add the version.
+  const labelChips: Record<string, string> = {};
+  if (readingTime) {
+    labelChips['twitter:label1'] = 'Reading time';
+    labelChips['twitter:data1'] = readingTime;
+  }
+  if (version) {
+    labelChips['twitter:label2'] = 'Version';
+    labelChips['twitter:data2'] = version;
+  }
+
   return {
-    title: page.data.title,
-    description: page.data.description,
+    title,
+    description,
     openGraph: {
-      title: page.data.title,
-      description: page.data.description,
+      title,
+      description,
       type: 'article',
       publishedTime: new Date(page.data.date).toISOString(),
+      modifiedTime: new Date(page.data.date).toISOString(),
       url: `/blog/${params.slug}`,
       siteName: siteConfig.name,
       tags: page.data.tags,
     },
+    twitter: twitterFromOpenGraph({ title, description }),
+    ...(Object.keys(labelChips).length > 0 ? { other: labelChips } : {}),
     alternates: {
       canonical: `/blog/${params.slug}`,
     },

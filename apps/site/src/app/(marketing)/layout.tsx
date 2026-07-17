@@ -1,15 +1,17 @@
 import type { Metadata } from 'next';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 import { MarketingShell } from './marketing-shell';
 
+const metaTitle = `${siteConfig.name} - ${siteConfig.description}`;
 const metaDescription =
   'Mission control for every coding agent you run: Claude Code, Codex, and OpenCode in one cockpit. Schedule your fleet, get pinged when your agents finish, and keep everything on your machine. Open source, MIT.';
 
 export const metadata: Metadata = {
-  title: `${siteConfig.name} - ${siteConfig.description}`,
+  title: metaTitle,
   description: metaDescription,
   openGraph: {
-    title: `${siteConfig.name} - ${siteConfig.description}`,
+    title: metaTitle,
     description: metaDescription,
     url: '/',
     type: 'website',
@@ -22,6 +24,10 @@ export const metadata: Metadata = {
       },
     ],
   },
+  // Mirror the long marketing copy into Twitter so the card matches Open Graph;
+  // without this the root layout's shorter description would show on the home
+  // page's Twitter card instead.
+  twitter: twitterFromOpenGraph({ title: metaTitle, description: metaDescription }),
   alternates: {
     canonical: '/',
   },
@@ -44,7 +50,9 @@ const softwareAppJsonLd = {
   sameAs: [siteConfig.github, siteConfig.npm],
 };
 
-// JSON-LD for WebSite with SearchAction (helps with sitelinks search box)
+// JSON-LD for WebSite. Deliberately no `potentialAction`/SearchAction: Google
+// retired the sitelinks searchbox on 2024-11-21, so the markup no longer does
+// anything. This block still declares the site entity (name + canonical URL).
 const websiteJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',

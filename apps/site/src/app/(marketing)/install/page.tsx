@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 import { MarketingChrome } from '@/layers/features/marketing';
 import { DownloadButton, InstallCommand } from './_components/InstallPageActions';
 
@@ -27,6 +28,11 @@ export const metadata: Metadata = {
       },
     ],
   },
+  twitter: twitterFromOpenGraph({
+    title: 'Install DorkOS',
+    description:
+      'Every way to install DorkOS: the Mac app, a one-line terminal install, npm, the Windows early alpha, and Docker for servers.',
+  }),
 };
 
 /** Mono uppercase section kicker used above each install option. */

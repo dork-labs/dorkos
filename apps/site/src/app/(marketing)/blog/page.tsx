@@ -4,6 +4,7 @@ import { Rss } from 'lucide-react';
 import { blog } from '@/lib/source';
 import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 
 export const metadata: Metadata = {
   title: 'Blog',
@@ -14,6 +15,10 @@ export const metadata: Metadata = {
     url: '/blog',
     type: 'website',
   },
+  twitter: twitterFromOpenGraph({
+    title: `Blog | ${siteConfig.name}`,
+    description: `Latest news and updates from ${siteConfig.name}.`,
+  }),
   alternates: {
     canonical: '/blog',
     types: {

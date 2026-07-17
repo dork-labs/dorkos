@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
 import {
   fetchMarketplaceJson,
   fetchPackageReadme,
@@ -52,6 +53,7 @@ export async function generateMetadata(props: {
       siteName: siteConfig.name,
       type: 'website',
     },
+    twitter: twitterFromOpenGraph({ title, description }),
   };
 }
 
