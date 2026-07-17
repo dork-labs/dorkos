@@ -3,7 +3,7 @@
   "slug": "mcp-local-auth-posture",
   "title": "MCP local auth posture: close the unauthenticated localhost surface",
   "created": "2026-07-16",
-  "status": "ideation",
+  "status": "specified",
   "linearIssue": "DOR-278",
   "tracker": {
     "parent": "DOR-272"
