@@ -1,4 +1,4 @@
-import { getLLMText } from '@/lib/get-llm-text';
+import { getLLMText } from '@/lib/ai/get-llm-text';
 import { source } from '@/lib/source';
 import { notFound } from 'next/navigation';
 

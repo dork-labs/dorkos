@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InferPageType } from 'fumadocs-core/source';
-import { getLLMText } from '@/lib/get-llm-text';
+import { getLLMText } from '@/lib/ai/get-llm-text';
 import { source } from '@/lib/source';
 import { siteConfig } from '@/config/site';
 
