@@ -206,7 +206,7 @@ if (!gotTheLock) {
     // 2. Create the main window (the renderer fetches the server port via IPC)
     createTrackedWindow();
 
-    // 3. Set up the native macOS menu bar, About panel, and Dock menu
+    // 3. Set up the native menu bar, macOS About panel, and Dock menu
     setupMenu(getMainWindow, showMainWindow);
     setupAboutPanel();
     setupDockMenu(showMainWindow);
