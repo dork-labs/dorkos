@@ -1,7 +1,7 @@
 ---
 id: 260717-180706
 title: Relay flow animation broadcasts metadata-only relay_flow events at the inbound binding-routing boundary
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: relay-flow-animation
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

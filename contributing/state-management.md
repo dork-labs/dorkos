@@ -63,7 +63,7 @@ The combined `AppState` type is the intersection of all four slices, defined in 
 
 Key state owned by the app store:
 
-- `sidebarOpen` — persisted to localStorage; always `false` on mobile on first load
+- `sidebarOpen` — persisted to localStorage; defaults to open on desktop (`BOOL_DEFAULTS.sidebarOpen`), always `false` on mobile and the embedded overlay on first load
 - `sidebarLevel` — transient (`'dashboard' | 'session'`); controls whether the sidebar shows the top-level agent list or the agent-scoped session view
 - `previousCwd` — transient; used by command palette for "switch back" suggestions
 - Dialog open states (`settingsOpen`, `tasksOpen`, `relayOpen`, etc.) — transient, not persisted
@@ -84,11 +84,17 @@ export const useAppStore = create<AppState>()(
     (...a) => {
       const [set] = a;
       return {
-        sidebarOpen: readBool('dorkos-sidebar-open', false),
+        // On mobile, always start closed regardless of persisted value
+        sidebarOpen: (() => {
+          try {
+            if (window.matchMedia('(max-width: 767px)').matches) return false;
+          } catch {}
+          return readBool(BOOL_KEYS.sidebarOpen, BOOL_DEFAULTS.sidebarOpen);
+        })(),
         toggleSidebar: () =>
           set((s) => {
             const next = !s.sidebarOpen;
-            writeBool('dorkos-sidebar-open', next);
+            writeBool(BOOL_KEYS.sidebarOpen, next);
             return { sidebarOpen: next };
           }),
         sidebarLevel: 'dashboard' as const,

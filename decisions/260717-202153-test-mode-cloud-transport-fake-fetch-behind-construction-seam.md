@@ -1,7 +1,7 @@
 ---
 id: 260717-202153
 title: Test-mode cloud transport — a DORKOS_TEST_RUNTIME-gated fake FetchLike behind a CloudLinkManager construction seam
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: capture-cloud-link-stub
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

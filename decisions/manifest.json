@@ -5,7 +5,7 @@
       "id": "260717-180706",
       "slug": "relay-flow-metadata-only-broadcast",
       "title": "Relay flow animation broadcasts metadata-only relay_flow events at the inbound binding-routing boundary",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-17",
       "extractedFrom": "relay-flow-animation",
       "specSlug": "relay-flow-animation"
@@ -2632,7 +2632,7 @@
       "id": "260717-202153",
       "slug": "test-mode-cloud-transport-fake-fetch-behind-construction-seam",
       "title": "Test-mode cloud transport \u2014 a DORKOS_TEST_RUNTIME-gated fake FetchLike behind a CloudLinkManager construction seam",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-17",
       "extractedFrom": "capture-cloud-link-stub",
       "specSlug": "capture-cloud-link-stub"
