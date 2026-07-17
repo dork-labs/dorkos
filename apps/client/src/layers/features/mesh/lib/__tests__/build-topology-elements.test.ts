@@ -18,7 +18,6 @@ vi.mock('../namespace-colors', () => ({
 const baseAgent = {
   description: '',
   behavior: { responseMode: 'always' as const },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: '2026-01-01T00:00:00.000Z',
   registeredBy: 'test',
   personaEnabled: true,
@@ -120,6 +119,24 @@ describe('buildTopologyElements', () => {
       expect(groupNodes).toHaveLength(1);
       expect(groupNodes[0].id).toBe('group:default');
       expect(result.useGroups).toBe(true);
+    });
+
+    it('does not map a budget field onto agent node data (DOR-265: the advisory budget was removed)', () => {
+      const result = buildTopologyElements(
+        singleNamespace,
+        noRules,
+        false,
+        undefined,
+        undefined,
+        emptyBindingCountByAdapter(),
+        vi.fn(),
+        emptyCallbacks()
+      );
+      const agentNodes = result.rawNodes.filter((n) => n.type === 'agent');
+      expect(agentNodes.length).toBeGreaterThan(0);
+      for (const node of agentNodes) {
+        expect(node.data).not.toHaveProperty('budget');
+      }
     });
 
     it('sets parentId on agent nodes in single-namespace topology', () => {

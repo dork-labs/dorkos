@@ -17,7 +17,6 @@ export interface AgentDemoData {
   description?: string;
   relayAdapters?: string[];
   taskCount?: number;
-  budget?: { maxCallsPerHour: number; maxHopsPerMessage: number };
   behavior?: { responseMode: string };
   lastSeenAt?: string;
 }
@@ -132,11 +131,6 @@ export function AgentExpandedCard({ d }: { d: AgentDemoData }) {
           )}
         </div>
       )}
-      {d.budget && (
-        <p className="text-muted-foreground mt-1 text-[10px]">
-          {d.budget.maxCallsPerHour} calls/hr &middot; {d.budget.maxHopsPerMessage} max hops
-        </p>
-      )}
       <div className="mt-1 flex items-center gap-2">
         {d.lastSeenAt && <span className="text-muted-foreground text-[10px]">{d.lastSeenAt}</span>}
         {d.behavior && (
@@ -165,7 +159,6 @@ export const AGENTS: AgentDemoData[] = [
     description: 'Reviews pull requests and suggests improvements based on project conventions.',
     relayAdapters: ['slack'],
     taskCount: 3,
-    budget: { maxCallsPerHour: 60, maxHopsPerMessage: 3 },
     behavior: { responseMode: 'always' },
     lastSeenAt: '2m ago',
   },

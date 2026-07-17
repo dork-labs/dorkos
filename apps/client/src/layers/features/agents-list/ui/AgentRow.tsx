@@ -44,7 +44,7 @@ const expandTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
  * Expandable two-line agent card for the fleet management list.
  * Line 1: health dot, name, runtime badge, relative last-active time, chevron.
  * Line 2: truncated path, session count badge, session launch action.
- * Expanded: full description, all capabilities, behavior/budget config, and management actions.
+ * Expanded: full description, all capabilities, behavior config, and management actions.
  * System agents do not show the Unregister button.
  */
 export function AgentRow({
@@ -207,14 +207,6 @@ export function AgentRow({
                     {agent.behavior.escalationThreshold != null && (
                       <span> · Escalation threshold: {agent.behavior.escalationThreshold}</span>
                     )}
-                  </div>
-                )}
-
-                {/* Budget */}
-                {agent.budget && (
-                  <div className="text-muted-foreground text-xs">
-                    <span className="font-medium">Budget:</span> max{' '}
-                    {agent.budget.maxHopsPerMessage} hops · {agent.budget.maxCallsPerHour} calls/hr
                   </div>
                 )}
 

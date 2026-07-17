@@ -49,12 +49,6 @@ function NamespaceGroup({ namespace, agentCount, agents }: NamespaceGroupProps) 
                   {agent.runtime}
                 </Badge>
               </div>
-              {agent.budget && (
-                <div className="text-muted-foreground flex gap-2 text-xs">
-                  <span>{agent.budget.maxCallsPerHour} calls/hr</span>
-                  <span>{agent.budget.maxHopsPerMessage} max hops</span>
-                </div>
-              )}
             </div>
           ))}
         </div>

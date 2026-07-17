@@ -164,12 +164,6 @@ export function buildTopologyElements(
           relayAdapters: typedAgent.relayAdapters ?? [],
           taskCount: typedAgent.taskCount ?? 0,
           lastSeenAt: typedAgent.lastSeenAt ?? null,
-          budget: agent.budget
-            ? {
-                maxHopsPerMessage: agent.budget.maxHopsPerMessage,
-                maxCallsPerHour: agent.budget.maxCallsPerHour,
-              }
-            : undefined,
           behavior: agent.behavior ? { responseMode: agent.behavior.responseMode } : undefined,
           color: typedAgent.color ?? null,
           avatarColor: visual.color,

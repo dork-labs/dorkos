@@ -129,7 +129,6 @@ const agentFixture = {
   runtime: 'claude-code' as const,
   capabilities: ['code', 'review', 'test', 'deploy', 'docs'],
   behavior: { responseMode: 'always' as const, escalationThreshold: undefined },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   namespace: 'web',
   registeredAt: new Date().toISOString(),
   registeredBy: 'test-user',
@@ -228,6 +227,8 @@ describe('AgentRow', () => {
 
     // After expansion, description should be visible
     expect(screen.getByText('Handles UI tasks')).toBeInTheDocument();
+    // The advisory budget line was removed (DOR-265) — no "Budget:" row remains.
+    expect(screen.queryByText(/Budget:/)).not.toBeInTheDocument();
   });
 
   it('does not show capability badges in collapsed state', () => {

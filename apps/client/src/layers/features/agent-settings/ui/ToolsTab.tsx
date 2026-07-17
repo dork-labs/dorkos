@@ -1,12 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { RotateCcw } from 'lucide-react';
 import {
   Badge,
   Button,
-  CollapsibleFieldCard,
   FieldCard,
   FieldCardContent,
-  Input,
   SettingRow,
   Switch,
   Tooltip,
@@ -206,11 +204,10 @@ interface ToolsTabProps {
 }
 
 /**
- * Tools tab for agent configuration: per-agent tool group overrides,
- * MCP server overview, and collapsible safety limits (budget).
+ * Tools tab for agent configuration: per-agent tool group overrides and
+ * MCP server overview.
  */
 export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
-  const [limitsOpen, setLimitsOpen] = useState(false);
   const relayEnabled = useRelayEnabled();
   const tasksEnabled = useTasksEnabled();
   const { config: globalConfig } = useAgentContextConfig();
@@ -280,9 +277,6 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
 
   const groups: EnabledToolGroups = agent.enabledToolGroups ?? {};
 
-  const hops = agent.budget?.maxHopsPerMessage ?? 5;
-  const calls = agent.budget?.maxCallsPerHour ?? 100;
-
   return (
     <div className="space-y-4">
       {supportsDorkTools ? (
@@ -347,58 +341,6 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
           </FieldCard>
         </>
       )}
-
-      <CollapsibleFieldCard
-        open={limitsOpen}
-        onOpenChange={setLimitsOpen}
-        trigger="Limits"
-        badge={
-          <span className="text-muted-foreground text-xs font-normal">
-            {hops} hops · {calls} calls/hr
-          </span>
-        }
-      >
-        <SettingRow
-          label="Message forwarding depth"
-          description="Maximum agents a message can pass through before stopping"
-          orientation="vertical"
-        >
-          <Input
-            type="number"
-            min={1}
-            value={hops}
-            onChange={(e) =>
-              onUpdate({
-                budget: {
-                  ...agent.budget,
-                  maxHopsPerMessage: parseInt(e.target.value) || 5,
-                },
-              })
-            }
-            className="w-24"
-          />
-        </SettingRow>
-        <SettingRow
-          label="Hourly rate limit"
-          description="Maximum tool invocations per hour. The agent pauses when exceeded."
-          orientation="vertical"
-        >
-          <Input
-            type="number"
-            min={1}
-            value={calls}
-            onChange={(e) =>
-              onUpdate({
-                budget: {
-                  ...agent.budget,
-                  maxCallsPerHour: parseInt(e.target.value) || 100,
-                },
-              })
-            }
-            className="w-24"
-          />
-        </SettingRow>
-      </CollapsibleFieldCard>
     </div>
   );
 }

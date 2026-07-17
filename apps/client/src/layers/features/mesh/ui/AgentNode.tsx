@@ -25,7 +25,6 @@ export interface AgentNodeData extends Record<string, unknown> {
   relayAdapters?: string[];
   taskCount?: number;
   lastSeenAt?: string | null;
-  budget?: { maxHopsPerMessage: number; maxCallsPerHour: number };
   behavior?: { responseMode: string };
   color?: string | null;
   /** Resolved agent visual color (from resolveAgentVisual) for the AgentAvatar. */
@@ -194,13 +193,6 @@ function ExpandedCard({ d, selected }: { d: AgentNodeData; selected?: boolean })
             </span>
           )}
         </div>
-      )}
-
-      {/* Budget display */}
-      {d.budget && (
-        <p className="text-muted-foreground mt-1 text-[10px]">
-          {d.budget.maxCallsPerHour} calls/hr &middot; {d.budget.maxHopsPerMessage} max hops
-        </p>
       )}
 
       {/* Bottom row: last seen + behavior mode */}
