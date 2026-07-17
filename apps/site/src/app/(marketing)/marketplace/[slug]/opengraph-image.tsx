@@ -2,17 +2,16 @@ import { ImageResponse } from 'next/og';
 import { siteConfig } from '@/config/site';
 import { fetchMarketplaceJson } from '@/layers/features/marketplace';
 import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
-
-export const runtime = 'edge';
+import { OG_COLORS, OG_FONT_MONO, OG_SIZE, OgDescription, OgEyebrow, loadOgFonts } from '@/lib/og';
 
 export const alt = 'DorkOS Marketplace package';
-export const size = { width: 1200, height: 630 };
+export const size = OG_SIZE;
 export const contentType = 'image/png';
 
 /**
  * Per-package Open Graph image — statically generated at build time and
- * refreshed via ISR. Mirrors the per-feature OG style at
- * `apps/site/src/app/(marketing)/features/[slug]/opengraph-image.tsx`.
+ * refreshed via ISR. Cream brand card on the shared OG toolkit; mirrors the
+ * browse card at `apps/site/src/app/(marketing)/marketplace/opengraph-image.tsx`.
  *
  * The registry fetch is wrapped in try/catch — if the package cannot be
  * resolved (registry unreachable, slug missing) we render a generic
@@ -20,6 +19,7 @@ export const contentType = 'image/png';
  */
 export default async function Image(props: { params: Promise<{ slug: string }> }) {
   const { slug } = await props.params;
+  const fonts = await loadOgFonts();
 
   let pkg: MergedMarketplaceEntry | undefined;
   try {
@@ -38,7 +38,7 @@ export default async function Image(props: { params: Promise<{ slug: string }> }
   return new ImageResponse(
     <div
       style={{
-        background: '#F5F0E8',
+        background: OG_COLORS.cream,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -47,59 +47,24 @@ export default async function Image(props: { params: Promise<{ slug: string }> }
         padding: '80px',
       }}
     >
-      <div
-        style={{
-          fontSize: 16,
-          color: '#9B8E7E',
-          fontFamily: 'monospace',
-          marginBottom: 24,
-        }}
-      >
-        {siteConfig.name} / Marketplace
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 24,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 88,
-            lineHeight: 1,
-          }}
-        >
-          {icon}
-        </div>
+      {OgEyebrow({ label: `${siteConfig.name} / Marketplace` })}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+        <div style={{ fontSize: 88, lineHeight: 1 }}>{icon}</div>
         <div
           style={{
             fontSize: 64,
             fontWeight: 700,
-            color: '#1A1714',
-            fontFamily: 'monospace',
+            color: OG_COLORS.charcoal,
+            fontFamily: OG_FONT_MONO,
             lineHeight: 1.1,
+            letterSpacing: '-0.02em',
           }}
         >
           {title}
         </div>
       </div>
-      <div
-        style={{
-          fontSize: 26,
-          color: '#6B5E4E',
-          marginTop: 24,
-          maxWidth: 1000,
-          lineHeight: 1.35,
-          display: '-webkit-box',
-          WebkitLineClamp: 3,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        }}
-      >
-        {description}
-      </div>
+      {OgDescription({ children: description, clamp: 3, maxWidth: 1000 })}
     </div>,
-    size
+    { ...size, fonts }
   );
 }
