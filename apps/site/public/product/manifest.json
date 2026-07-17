@@ -3,8 +3,8 @@
   "generatedAt": "2026-07-17T17:19:34.340Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
   "runId": "20260717-121401",
-  "totalBytes": 13015348,
-  "count": 43,
+  "totalBytes": 13247260,
+  "count": 45,
   "shots": [
     {
       "id": "cockpit",
@@ -131,9 +131,45 @@
       "kind": "still",
       "frame": "desktop",
       "consumers": ["docs"]
+    },
+    {
+      "id": "accounts-pending",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["docs"]
+    },
+    {
+      "id": "accounts-linked",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["docs"]
     }
   ],
   "assets": [
+    {
+      "source": "auto",
+      "file": "accounts-linked-light.png",
+      "surface": "accounts-linked",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 112821,
+      "runId": "20260717-152216",
+      "capturedAt": "2026-07-17T20:26:16.741Z"
+    },
+    {
+      "source": "auto",
+      "file": "accounts-pending-light.png",
+      "surface": "accounts-pending",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 119091,
+      "runId": "20260717-152216",
+      "capturedAt": "2026-07-17T20:26:16.741Z"
+    },
     {
       "source": "auto",
       "file": "agent-discovery-dark.png",

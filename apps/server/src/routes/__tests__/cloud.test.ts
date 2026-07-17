@@ -2,22 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-// Mock the cloud-link manager singleton — the route is thin over it, so the
+// Mock the cloud-link manager accessor — the route is thin over it, so the
 // route test only proves wiring + response shapes, not the flow (covered by
-// cloud-link.test.ts).
+// cloud-link.test.ts). vi.hoisted() ensures mockManager is initialized before
+// vi.mock's factory runs (vi.mock is hoisted above all imports).
+const mockManager = vi.hoisted(() => ({
+  startLink: vi.fn(),
+  getStatus: vi.fn(),
+  unlink: vi.fn(),
+  getSummary: vi.fn(),
+}));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
-  cloudLinkManager: {
-    startLink: vi.fn(),
-    getStatus: vi.fn(),
-    unlink: vi.fn(),
-    getSummary: vi.fn(),
-  },
+  getCloudLinkManager: () => mockManager,
 }));
 
-import { cloudLinkManager } from '../../services/core/auth/cloud-link.js';
 import cloudRouter from '../cloud.js';
 
-const manager = vi.mocked(cloudLinkManager);
+const manager = mockManager;
 
 function buildApp() {
   const app = express();

@@ -129,6 +129,10 @@ export const SHOTS: readonly Shot[] = [
   // The Installed packages panel with a global + agent-scoped ("overrides
   // global") row for the same package. Embedded in docs/marketplace/index.mdx.
   { id: 'marketplace-installed', kind: 'still', frame: 'desktop', consumers: ['docs'] },
+  // Settings → DorkOS account, pending and linked states from one device-flow
+  // drive (capture-cloud-link-stub). Embedded in docs/self-hosting/dorkos-accounts.mdx.
+  { id: 'accounts-pending', kind: 'still', frame: 'desktop', consumers: ['docs'] },
+  { id: 'accounts-linked', kind: 'still', frame: 'desktop', consumers: ['docs'] },
 ];
 
 /** Index of shots by id for O(1) lookup. */
@@ -192,11 +196,18 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
  *   shard 0, where the record phase drives it dead last (and restores the
  *   dismissed state after). Each shard has its own `DORK_HOME`, so the flip is
  *   already isolated; pinning makes the placement deterministic for any N.
+ * - `accounts-pending` and `accounts-linked` come from ONE linear device flow
+ *   (link → pending → auto-flip → linked, capture-cloud-link-stub); a
+ *   round-robin split would put them on different stacks and break the flow,
+ *   so both ride shard 0 as a unit — the same single-stack rationale as the
+ *   session-list shots above.
  */
 export const SHARD_0_PINNED_SHOTS: readonly string[] = [
   'multi-session',
   'mobile-sessions',
   'agent-discovery',
+  'accounts-pending',
+  'accounts-linked',
 ];
 
 /**

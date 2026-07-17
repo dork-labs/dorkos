@@ -361,6 +361,31 @@ async function shootWorkbench(page: Page, theme: Theme, rec: RunRecorder): Promi
   await shoot(page, 'workbench', theme, rec);
 }
 
+/** Open Settings → DorkOS account, link, and shoot the pending then linked states. */
+async function shootCloudLink(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
+  await page.goto(url('/agents?settings=account'));
+  // The tabpanel holds two "DorkOS account" headings — the navigation panel
+  // title (h3) and CloudLinkPanel's own heading (the only h2) — so pin the
+  // settle wait to heading level 2 to stay strict-safe.
+  const panel = page.getByRole('tabpanel', { name: 'DorkOS account' });
+  await panel
+    .getByRole('heading', { name: 'DorkOS account', level: 2 })
+    .waitFor({ timeout: WAIT_MS });
+  await panel.getByRole('button', { name: 'Link this instance' }).click({ timeout: WAIT_MS });
+
+  // Pending: the code + the "waiting" status render immediately (optimistic).
+  await panel
+    .getByText('Waiting for you to approve', { exact: false })
+    .waitFor({ timeout: WAIT_MS });
+  await shoot(page, 'accounts-pending', theme, rec);
+
+  // Linked: the fake auto-flips; the client's 2500ms status poll lands "Linked"
+  // within a couple of ticks. Wait the money state — no arbitrary sleep.
+  await panel.getByText('Linked', { exact: true }).waitFor({ timeout: WAIT_MS });
+  await panel.getByText('Dork Labs', { exact: false }).waitFor({ timeout: WAIT_MS });
+  await shoot(page, 'accounts-linked', theme, rec);
+}
+
 /**
  * Drive the fan-out turn with three concurrently running sub-agents and wait
  * until all three blocks are on screen and reporting activity. Expands the
@@ -602,6 +627,13 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
     shootCanvasEditing(page, theme, rec)
   );
   await attemptShot('workbench', 'workbench-light', () => shootWorkbench(page, theme, rec));
+  // Runs last: linking persists a token into the isolated capture config, and
+  // running last keeps that state from bleeding into any earlier surface.
+  // The guard keys on `accounts-pending` for the WHOLE single-flow pair —
+  // both stills ride one drive (and one shard-0 pin), so one check decides both.
+  if (!isShotSkipped('accounts-pending')) {
+    await attempt('accounts (pending→linked)', () => shootCloudLink(page, theme, rec));
+  }
   await ctx.close();
 }
 

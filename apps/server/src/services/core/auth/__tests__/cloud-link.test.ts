@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { initConfigManager, configManager } from '../../config-manager.js';
-import { CloudLinkManager } from '../cloud-link.js';
+import { CloudLinkManager, initCloudLinkManager, getCloudLinkManager } from '../cloud-link.js';
 
 /** Immediate, deterministic sleep so the background poll settles synchronously. */
 const noSleep = async (): Promise<void> => {};
@@ -210,5 +210,86 @@ describe('CloudLinkManager', () => {
     expect(manager.getStatus().state).toBe('idle');
     const paths = fetchImpl.mock.calls.map((c) => new URL(c[0] as string).pathname);
     expect(paths).toContain('/api/instances/revoke');
+  });
+});
+
+// The keystone honesty proof for the accessor-pair construction seam
+// (spec `capture-cloud-link-stub` §Testing Strategy — "Seam construction unit").
+// Separate top-level describe: it drives the module-level `init/getCloudLinkManager`
+// singleton directly (not `new CloudLinkManager()` per-test like the suite above).
+describe('cloud-link construction seam (init/getCloudLinkManager)', () => {
+  let tmpDir: string;
+  let manager: CloudLinkManager | undefined;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-cloud-link-seam-'));
+    initConfigManager(tmpDir);
+  });
+
+  afterEach(() => {
+    manager?.stop();
+    manager = undefined;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('prod-default construction (no fetchImpl) drives startLink() through the real globalThis.fetch, never a fake', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const p = new URL(String(input)).pathname;
+      if (p.endsWith('/device/code')) {
+        return new Response(JSON.stringify(CODES.body), { status: 200 });
+      }
+      if (p.endsWith('/device/token')) {
+        return new Response(JSON.stringify({ access_token: 'seam-test-token' }), { status: 200 });
+      }
+      if (p.endsWith('/instances/heartbeat')) {
+        return new Response(
+          JSON.stringify({ ok: true, instanceId: 'seam-inst', lastSeenAt: '2026-07-17T00:00:00Z' }),
+          { status: 200 }
+        );
+      }
+      throw new Error(`unexpected request: ${p}`);
+    });
+
+    // No fetchImpl passed — proves the prod default is byte-for-byte the real fetch.
+    manager = initCloudLinkManager({ sleep: noSleep });
+    expect(getCloudLinkManager()).toBe(manager);
+
+    await manager.startLink();
+    await manager.pendingLink;
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(manager.getStatus().state).toBe('linked');
+  });
+
+  it('an injected fetchImpl at construction is used instead of the real fetch — the seam is injectable', async () => {
+    const realFetchSpy = vi.spyOn(globalThis, 'fetch');
+    const injected = routerFetch({
+      code: () => CODES,
+      token: () => ({ status: 200, body: { access_token: 'dork_inst_seam' } }),
+      heartbeat: () => ({
+        status: 200,
+        body: { ok: true, instanceId: 'inst-seam', lastSeenAt: '2026-07-17T00:00:00Z' },
+      }),
+    });
+
+    manager = initCloudLinkManager({ fetchImpl: injected, sleep: noSleep });
+    expect(getCloudLinkManager()).toBe(manager);
+
+    await manager.startLink();
+    await manager.pendingLink;
+
+    expect(injected).toHaveBeenCalled();
+    expect(realFetchSpy).not.toHaveBeenCalled();
+    expect(manager.getStatus().state).toBe('linked');
+  });
+
+  it('getCloudLinkManager() before any initCloudLinkManager() call throws a loud, helpful error — not a silent undefined deref', async () => {
+    // instance is module-level singleton state that leaks across test files/cases
+    // via the statically-imported bindings above, so reset modules and re-import
+    // fresh to observe the pre-init state.
+    vi.resetModules();
+    const fresh = await import('../cloud-link.js');
+    expect(() => fresh.getCloudLinkManager()).toThrow('CloudLinkManager not initialized');
   });
 });
