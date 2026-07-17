@@ -27,7 +27,6 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     runtime: 'claude-code',
     capabilities: ['code-review', 'refactoring'],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     projectPath: '/home/user/projects/backend',
@@ -62,7 +61,6 @@ describe('insert and get', () => {
     expect(result!.runtime).toBe(entry.runtime);
     expect(result!.capabilities).toEqual(entry.capabilities);
     expect(result!.behavior).toEqual(entry.behavior);
-    expect(result!.budget).toEqual(entry.budget);
     expect(result!.registeredAt).toBe(entry.registeredAt);
     expect(result!.registeredBy).toBe(entry.registeredBy);
     expect(result!.projectPath).toBe(entry.projectPath);
@@ -179,15 +177,13 @@ describe('update', () => {
     expect(entry?.scanRoot).toBe('/new');
   });
 
-  it('persists behavior and budget changes', () => {
+  it('persists behavior changes', () => {
     registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1' }));
     registry.update('a1', {
       behavior: { responseMode: 'on-mention' },
-      budget: { maxHopsPerMessage: 1, maxCallsPerHour: 10 },
     });
     const entry = registry.get('a1');
     expect(entry?.behavior.responseMode).toBe('on-mention');
-    expect(entry?.budget.maxCallsPerHour).toBe(10);
   });
 });
 
@@ -231,13 +227,11 @@ describe('upsert()', () => {
     expect(registry.get('new-id')).toBeDefined();
   });
 
-  it('persists behavior_json and budget_json from entry', () => {
+  it('persists behavior_json from entry', () => {
     const behavior = { responseMode: 'on-mention' as const };
-    const budget = { maxHopsPerMessage: 3, maxCallsPerHour: 50 };
-    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a', behavior, budget }));
+    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a', behavior }));
     const entry = registry.get('agent-1');
     expect(entry?.behavior).toEqual(behavior);
-    expect(entry?.budget).toEqual(budget);
   });
 
   it('persists scan_root from entry', () => {
@@ -256,13 +250,6 @@ describe('rowToEntry()', () => {
     registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1', behavior }));
     const entry = registry.get('a1');
     expect(entry?.behavior).toEqual(behavior);
-  });
-
-  it('parses budget_json from DB column', () => {
-    const budget = { maxHopsPerMessage: 10, maxCallsPerHour: 200 };
-    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1', budget }));
-    const entry = registry.get('a1');
-    expect(entry?.budget).toEqual(budget);
   });
 
   it('reads scanRoot from DB column', () => {

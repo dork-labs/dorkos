@@ -95,7 +95,6 @@ function makeAgent(
     runtime: overrides.runtime ?? ('claude-code' as const),
     capabilities: [],
     behavior: { responseMode: 'always' as const },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     namespace: 'default',
     registeredAt: new Date().toISOString(),
     registeredBy: 'test',

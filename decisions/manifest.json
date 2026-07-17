@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260717-163436",
+      "slug": "remove-advisory-agent-budget",
+      "title": "Remove the advisory per-agent budget; enforced runaway protection is the per-message envelope budget",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "agent-budget-enforcement",
+      "specSlug": "agent-budget-enforcement"
+    },
+    {
       "id": "260717-125124",
       "slug": "fleet-context-health",
       "title": "Fleet-level context health — best-effort list reading + live override, honest per-runtime degradation",

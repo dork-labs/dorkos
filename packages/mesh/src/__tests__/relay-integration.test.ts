@@ -303,43 +303,6 @@ describe('MeshCore topology integration', () => {
     }
   });
 
-  it('budget check integration — agents have budget fields', async () => {
-    const projectDir = await makeProjectDir(base, 'budgeted-agent');
-
-    const relayCore = makeMockRelayCore();
-    const mesh = new MeshCore({
-      db,
-      relayCore: relayCore as never,
-      defaultScanRoot: base,
-    });
-
-    try {
-      const manifest = await mesh.registerByPath(
-        projectDir,
-        {
-          name: 'budgeted-agent',
-          runtime: 'claude-code',
-          budget: { maxHopsPerMessage: 3, maxCallsPerHour: 50 },
-        },
-        'test',
-        base
-      );
-
-      // In-memory manifest preserves custom budget
-      expect(manifest.budget).toEqual({ maxHopsPerMessage: 3, maxCallsPerHour: 50 });
-
-      // After round-trip through the DB the budget is preserved in the budget_json column.
-      const view = mesh.getTopology('*');
-      const agent = view.namespaces
-        .flatMap((ns) => ns.agents)
-        .find((a) => a.name === 'budgeted-agent');
-      expect(agent).toBeDefined();
-      expect(agent!.budget).toEqual({ maxHopsPerMessage: 3, maxCallsPerHour: 50 });
-    } finally {
-      mesh.close();
-    }
-  });
-
   it('listCrossNamespaceRules reflects allow rules', async () => {
     const relayCore = makeMockRelayCore();
     const mesh = new MeshCore({

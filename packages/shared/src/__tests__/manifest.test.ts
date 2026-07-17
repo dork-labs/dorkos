@@ -22,7 +22,6 @@ function makeManifest(overrides?: Partial<AgentManifest>): AgentManifest {
     runtime: 'claude-code',
     capabilities: ['code-review', 'testing'],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     registeredAt: '2026-02-24T00:00:00.000Z',
     registeredBy: 'test-suite',
     personaEnabled: true,
@@ -295,6 +294,57 @@ describe('removeDorkDirectory', () => {
     const deleted = await removeDorkDirectory(projectDir);
 
     expect(deleted).toEqual([]);
+  });
+});
+
+describe('legacy budget key tolerance (DOR-265)', () => {
+  const tempDirs: string[] = [];
+
+  async function makeTempDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shared-manifest-test-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(async () => {
+    for (const dir of tempDirs.splice(0)) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: proves the zero-touch backward-compat contract from the
+  // agent-budget-enforcement removal — old agent.json files that still carry
+  // the retired `budget` key load fine forever (Zod strips unknown keys by
+  // default), and the stale key is removed from disk on the manifest's next
+  // write. No migration of on-disk files is required.
+  it('strips a stale top-level budget key on read and removes it from disk on next write', async () => {
+    const projectDir = await makeTempDir();
+    const dorkDir = path.join(projectDir, '.dork');
+    await fs.mkdir(dorkDir, { recursive: true });
+
+    const legacyManifestJson = {
+      ...makeManifest(),
+      budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
+    };
+    await fs.writeFile(
+      path.join(dorkDir, 'agent.json'),
+      JSON.stringify(legacyManifestJson, null, 2),
+      'utf-8'
+    );
+
+    const warn = vi.fn();
+    const result = await readManifest(projectDir, { warn });
+
+    // Strip path, not the invalid-manifest path: safeParse succeeds, no warning.
+    expect(result).not.toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty('budget');
+
+    // The stripped in-memory manifest is what gets persisted on next write —
+    // the stale key is gone from disk, with no special-case migration code.
+    await writeManifest(projectDir, result!);
+    const raw = await fs.readFile(path.join(dorkDir, 'agent.json'), 'utf-8');
+    expect(raw).not.toContain('budget');
   });
 });
 

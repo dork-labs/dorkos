@@ -23,7 +23,6 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     runtime: 'claude-code',
     capabilities: ['code-review', 'testing'],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     namespace: 'default',
     registeredAt: '2026-03-22T00:00:00.000Z',
     registeredBy: 'kai',

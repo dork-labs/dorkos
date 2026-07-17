@@ -40,7 +40,6 @@ const baseAgent: AgentManifest = {
   runtime: 'claude-code',
   capabilities: ['code-review', 'testing'],
   behavior: { responseMode: 'always' },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: '2025-01-01T00:00:00.000Z',
   registeredBy: 'test',
   personaEnabled: true,
@@ -173,11 +172,9 @@ describe('ToolsTab', () => {
     });
   });
 
-  describe('Budget section', () => {
-    it('shows collapsed limits with summary badge', () => {
-      const view = renderTab(baseAgent, onUpdate);
-      expect(view.getByText('Limits')).toBeInTheDocument();
-      expect(view.getByText('5 hops · 100 calls/hr')).toBeInTheDocument();
-    });
+  it('renders tool groups and MCP servers with no Limits control (the removed advisory budget)', () => {
+    const view = renderTab(baseAgent, onUpdate);
+    expect(view.getByText('Scheduling')).toBeInTheDocument();
+    expect(view.queryByText('Limits')).not.toBeInTheDocument();
   });
 });

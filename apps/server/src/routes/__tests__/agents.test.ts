@@ -87,7 +87,6 @@ const mockManifest: AgentManifest = {
   runtime: 'claude-code',
   capabilities: ['code-review'],
   behavior: { responseMode: 'always' },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: '2026-01-01T00:00:00.000Z',
   registeredBy: 'dorkos-ui',
   personaEnabled: true,

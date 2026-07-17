@@ -258,7 +258,6 @@ describe('ScheduleRow', () => {
         runtime: 'claude-code' as const,
         capabilities: [],
         behavior: { responseMode: 'always' as const },
-        budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
         registeredAt: new Date().toISOString(),
         registeredBy: 'test',
         enabledToolGroups: {},

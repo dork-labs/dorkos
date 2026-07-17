@@ -35,7 +35,6 @@ function createTestManifest(overrides: Partial<AgentManifest> = {}): AgentManife
     registeredAt: '2026-01-01T00:00:00.000Z',
     registeredBy: 'test',
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     personaEnabled: true,
     enabledToolGroups: {},
     ...overrides,

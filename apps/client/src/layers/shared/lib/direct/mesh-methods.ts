@@ -47,7 +47,6 @@ export function createDirectMeshMethods() {
         runtime: (runtime as AgentManifest['runtime']) ?? 'claude-code',
         capabilities: [],
         behavior: { responseMode: 'always' },
-        budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
         registeredAt: new Date().toISOString(),
         registeredBy: 'dorkos-obsidian',
         personaEnabled: true,

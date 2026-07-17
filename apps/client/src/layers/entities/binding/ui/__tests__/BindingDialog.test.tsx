@@ -69,7 +69,6 @@ const MOCK_AGENTS: AgentManifest[] = [
     runtime: 'claude-code',
     capabilities: [],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     registeredAt: new Date().toISOString(),
     registeredBy: 'test',
     enabledToolGroups: {},

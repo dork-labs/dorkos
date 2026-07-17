@@ -66,31 +66,6 @@ export const AgentBehaviorSchema = z
 
 export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
 
-/**
- * Per-agent coordination budget.
- *
- * NOTE: these fields are **not currently enforced at runtime**. They are
- * persisted on the manifest and surfaced in the API, but no component throttles
- * hops or hourly calls against them today (the former `BudgetMapper` and its
- * `rate_limit_buckets` table were removed as dead code). Treat them as advisory
- * metadata until runtime enforcement is wired back in — DOR-265 tracks that
- * work and the design constraints.
- *
- * This is distinct from the **per-message envelope budget**
- * (`RelayBudget.callBudgetRemaining` / `maxHops` / TTL / cycle detection),
- * which IS enforced: the relay publish pipeline's authoritative budget gate
- * rejects an over-budget message before any delivery — including the live
- * agent-turn dispatch (DOR-260).
- */
-export const AgentBudgetSchema = z
-  .object({
-    maxHopsPerMessage: z.number().int().min(1).default(5),
-    maxCallsPerHour: z.number().int().min(1).default(100),
-  })
-  .openapi('AgentBudget');
-
-export type AgentBudget = z.infer<typeof AgentBudgetSchema>;
-
 // === Agent Tool Groups ===
 
 /**
@@ -160,7 +135,6 @@ export const AgentManifestSchema = z
     runtime: AgentRuntimeSchema,
     capabilities: z.array(z.string()).default([]),
     behavior: AgentBehaviorSchema.default({ responseMode: 'always' }),
-    budget: AgentBudgetSchema.default({ maxHopsPerMessage: 5, maxCallsPerHour: 100 }),
     namespace: z.string().max(64).optional(),
     registeredAt: z.string().datetime(),
     registeredBy: z.string().min(1),
@@ -338,7 +312,6 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   runtime: true,
   capabilities: true,
   behavior: true,
-  budget: true,
   namespace: true,
   persona: true,
   personaEnabled: true,

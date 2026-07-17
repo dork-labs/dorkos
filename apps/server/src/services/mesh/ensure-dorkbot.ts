@@ -65,7 +65,6 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
     isSystem: true,
     namespace: 'system',
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     traits: { ...DEFAULT_TRAITS },
     conventions: { soul: true, nope: true, dorkosKnowledge: true },
     registeredAt: new Date().toISOString(),

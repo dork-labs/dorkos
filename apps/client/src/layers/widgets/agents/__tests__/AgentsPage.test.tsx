@@ -132,7 +132,6 @@ const makeTopologyResult = (agentCount: number) => ({
               runtime: 'claude-code',
               capabilities: [],
               behavior: { responseMode: 'always' },
-              budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
               namespace: 'web',
               registeredAt: new Date().toISOString(),
               registeredBy: 'user',
