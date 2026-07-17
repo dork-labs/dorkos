@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260717-003523",
+      "slug": "mcp-local-auth-posture",
+      "title": "MCP local auth posture: close the unauthenticated localhost surface",
+      "created": "2026-07-16",
+      "status": "ideation"
+    },
+    {
       "id": "260716-235616",
       "slug": "agent-sidebar-organization",
       "title": "Agent sidebar organization: user-defined groups, favorites, and recent sessions",
