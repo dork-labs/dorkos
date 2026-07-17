@@ -69,6 +69,9 @@ export {
   resolveSessionContextHealth,
 } from './model/use-session-context-health';
 export type { SessionContextHealth } from './model/use-session-context-health';
+// Fleet-level context rollup — runtime-neutral counts for the summary surfaces.
+export { useFleetContextRollup } from './model/use-fleet-context-rollup';
+export type { FleetContextRollup } from './model/use-fleet-context-rollup';
 export { usePulseMotion } from './model/use-pulse-motion';
 export { useRenameSession } from './model/use-rename-session';
 

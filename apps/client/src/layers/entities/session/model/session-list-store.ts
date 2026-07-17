@@ -14,6 +14,7 @@ import { useCallback } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
+import { useShallow } from 'zustand/react/shallow';
 import type { Session } from '@dorkos/shared/types';
 import type {
   SessionStatus,
@@ -250,9 +251,14 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
   )
 );
 
-/** Selector: all session metadata as an array (stable per-store-update identity). */
+/**
+ * Selector: all session metadata as an array. `Object.values` mints a fresh
+ * array each call, so it MUST go through `useShallow` — under zustand v5's
+ * `useSyncExternalStore`, an unmemoized new-reference selector loops infinitely.
+ * `useShallow` returns the cached array until an element actually changes.
+ */
 export function useSessionListSessions(): Session[] {
-  return useSessionListStore(useCallback((s) => Object.values(s.sessions), []));
+  return useSessionListStore(useShallow((s) => Object.values(s.sessions)));
 }
 
 /** Selector: the status projection for a single session, or `null`. */
