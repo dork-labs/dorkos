@@ -70,3 +70,22 @@ function main(): void {
 }
 
 main();
+
+// Distinct multi-line block, not a bare console.log line — electron-builder
+// and @electron/rebuild both stream verbose output, and a single line gets
+// lost in it. Placed after `main()` returns (not inside it, and not guarded
+// by any env check): a failed rebuild throws out of `main()`, which exits
+// the process before this line is ever reached, so the warning only fires on
+// the success path where the shared binary was actually poisoned.
+console.log(`
+${'═'.repeat(70)}
+⚠️  ${NATIVE_MODULES.join(' and ')} are now built for Electron's ABI, not
+   system Node. This binary lives in the pnpm store shared by the whole
+   monorepo — expect mesh/relay/site/client vitest workers to fail until
+   you rebuild it for system Node:
+
+       pnpm rebuild better-sqlite3
+
+   Details: contributing/desktop-app-development.md §2.
+${'═'.repeat(70)}
+`);
