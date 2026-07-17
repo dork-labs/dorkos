@@ -21,6 +21,7 @@ import type {
 } from '@dorkos/marketplace';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../types.js';
 import type { ResolvedPackageSource } from '../package-resolver.js';
+import { RELATIVE_PATH_SENTINEL_SHA } from '../source-resolvers/relative-path.js';
 
 // Mock the validator module. Tests override `validatePackage.mockResolvedValue`
 // per-case. Placed before the installer import so vi.mock hoisting captures it.
@@ -33,6 +34,13 @@ vi.mock('../telemetry-hook.js', () => ({
   reportInstallEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock the install-metadata sidecar writer so DOR-147 provenance can be
+// asserted on the call args directly, without touching the real filesystem
+// at the fake `installPath` values these tests use (e.g. `/fake/dorkhome/...`).
+vi.mock('../installed-metadata.js', () => ({
+  writeInstallMetadata: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import {
   ConflictError,
@@ -41,9 +49,11 @@ import {
   type InstallerDeps,
 } from '../marketplace-installer.js';
 import { reportInstallEvent } from '../telemetry-hook.js';
+import { writeInstallMetadata } from '../installed-metadata.js';
 
 const mockedValidatePackage = vi.mocked(validatePackage);
 const mockedReportInstallEvent = vi.mocked(reportInstallEvent);
+const mockedWriteInstallMetadata = vi.mocked(writeInstallMetadata);
 
 /** Build a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -258,6 +268,8 @@ describe('MarketplaceInstaller', () => {
     mockedValidatePackage.mockReset();
     mockedReportInstallEvent.mockReset();
     mockedReportInstallEvent.mockResolvedValue(undefined);
+    mockedWriteInstallMetadata.mockReset();
+    mockedWriteInstallMetadata.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -594,6 +606,182 @@ describe('MarketplaceInstaller', () => {
           outcome: 'failure',
           errorCode: 'FlowFailure',
         })
+      );
+    });
+  });
+
+  describe('install() provenance (DOR-147)', () => {
+    it('omits sourceRepo/sourceRef/commitSha for a local-directory install (never fabricates)', async () => {
+      const { deps, resolver, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'local-plugin' });
+      const installResult = buildInstallResult(manifest);
+
+      wireLocalResolution(resolver, 'local-plugin', '/tmp/local-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(installResult);
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'local-plugin' });
+
+      expect(mockedWriteInstallMetadata).toHaveBeenCalledTimes(1);
+      const [, writtenMetadata] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(writtenMetadata.sourceRepo).toBeUndefined();
+      expect(writtenMetadata.sourceRef).toBeUndefined();
+      expect(writtenMetadata.commitSha).toBeUndefined();
+    });
+
+    it('records sourceRepo and the resolved commitSha for a legacy gitUrl install', async () => {
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'git-plugin' });
+
+      wireGitResolution(
+        resolver,
+        fetcher,
+        'git-plugin',
+        'dorkos-community',
+        '/tmp/cached/git-plugin'
+      );
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'git-plugin', marketplace: 'dorkos-community' });
+
+      expect(mockedWriteInstallMetadata).toHaveBeenCalledTimes(1);
+      const [installPath, writtenMetadata] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(installPath).toBe(`/fake/dorkhome/plugins/${manifest.name}`);
+      expect(writtenMetadata).toEqual(
+        expect.objectContaining({
+          sourceRepo: 'https://example.com/git-plugin.git',
+          sourceRef: undefined,
+          commitSha: 'abc123',
+        })
+      );
+    });
+
+    it('records repo + ref from a github-form marketplace source, keyed off pluginSource', async () => {
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+
+      const resolved: ResolvedPackageSource = {
+        kind: 'marketplace',
+        packageName: 'code-reviewer',
+        marketplaceName: 'dorkos-community',
+        pluginSource: { source: 'github', repo: 'dork-labs/code-reviewer', ref: 'main' },
+      };
+      resolver.resolve.mockResolvedValue(resolved);
+      fetcher.fetchPackage.mockResolvedValue({
+        path: '/tmp/cached/code-reviewer',
+        commitSha: 'deadbeefcafe0123456789abcdef0123456789ab',
+        fromCache: false,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'code-reviewer', marketplace: 'dorkos-community' });
+
+      expect(mockedWriteInstallMetadata).toHaveBeenCalledTimes(1);
+      const [, writtenMetadata] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(writtenMetadata).toEqual(
+        expect.objectContaining({
+          sourceRepo: 'dork-labs/code-reviewer',
+          sourceRef: 'main',
+          commitSha: 'deadbeefcafe0123456789abcdef0123456789ab',
+        })
+      );
+    });
+
+    it('records the marketplace source URL as sourceRepo for a relative-path (same-repo) install', async () => {
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+
+      wireRelativePathResolution(
+        resolver,
+        fetcher,
+        'code-reviewer',
+        'dorkos-community',
+        '/tmp/cached/code-reviewer'
+      );
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'code-reviewer' });
+
+      expect(mockedWriteInstallMetadata).toHaveBeenCalledTimes(1);
+      const [, writtenMetadata] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(writtenMetadata.sourceRepo).toBe('https://github.com/dork-labs/marketplace');
+    });
+
+    it('never persists the relative-path sentinel value as commitSha', async () => {
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+
+      wireRelativePathResolution(resolver, fetcher, 'code-reviewer', 'dorkos-community');
+      // Override the default 'abc123' stub with the real sentinel the
+      // relative-path resolver actually returns in production.
+      fetcher.fetchPackage.mockResolvedValue({
+        path: '/tmp/cached/code-reviewer',
+        commitSha: RELATIVE_PATH_SENTINEL_SHA,
+        fromCache: true,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'code-reviewer' });
+
+      const [, writtenMetadata] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(writtenMetadata.commitSha).toBeUndefined();
+    });
+
+    it('never persists a degraded tmp-<timestamp> commitSha placeholder', async () => {
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'git-plugin' });
+
+      wireGitResolution(resolver, fetcher, 'git-plugin', 'dorkos-community');
+      // Simulate PackageFetcher.resolveCommitSha's offline/no-git fallback.
+      fetcher.fetchFromGit.mockResolvedValue({
+        path: '/tmp/cached/git-plugin',
+        commitSha: `tmp-${Date.now()}`,
+        fromCache: false,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'git-plugin', marketplace: 'dorkos-community' });
+
+      const [, writtenMetadata] = mockedWriteInstallMetadata.mock.calls[0]!;
+      expect(writtenMetadata.commitSha).toBeUndefined();
+      // sourceRepo is still recorded — only the fabricated SHA is dropped.
+      expect(writtenMetadata.sourceRepo).toBe('https://example.com/git-plugin.git');
+    });
+
+    it('does not fail the install when writeInstallMetadata rejects (best-effort)', async () => {
+      const { deps, resolver, pluginFlow, previewBuilder, logger } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'metadata-fails' });
+
+      wireLocalResolution(resolver, 'metadata-fails');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      mockedWriteInstallMetadata.mockRejectedValue(new Error('disk full'));
+
+      const installer = new MarketplaceInstaller(deps);
+      const result = await installer.install({ name: 'metadata-fails' });
+
+      expect(result.ok).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('install-metadata'),
+        expect.objectContaining({ packageName: 'metadata-fails' })
       );
     });
   });
