@@ -47,6 +47,9 @@ export function LLMCopyButton({
     try {
       const promise = fetch(markdownUrl).then((res) => res.text());
       markdownCache.set(markdownUrl, promise);
+      // A rejected fetch must not poison the cache — drop it so the next
+      // click retries instead of re-throwing the cached failure forever.
+      promise.catch(() => markdownCache.delete(markdownUrl));
       await navigator.clipboard.write([new ClipboardItem({ 'text/plain': promise })]);
     } finally {
       setLoading(false);
