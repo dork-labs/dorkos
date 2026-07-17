@@ -20,6 +20,19 @@ import type { Session } from '@dorkos/shared/types';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { initSessionStreamBinding } from './session-stream-binding';
 import { useSessionListStore } from './session-list-store';
+import { RECENT_SESSIONS_KEY } from './use-recent-sessions';
+
+/**
+ * Invalidate the cross-agent Recent-sessions query (DOR-329) so the sidebar's
+ * "Recent" section stays live as sessions are created/updated across agents.
+ * Rides the same global-stream → cache bridge (ADR-0265) as the per-cwd caches,
+ * alongside the hook's 30s staleTime. A prefix key invalidates every limit.
+ *
+ * @param queryClient - The TanStack Query client whose recent-sessions query to refresh.
+ */
+function invalidateRecentSessions(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: RECENT_SESSIONS_KEY });
+}
 
 /**
  * Upsert a single session into its cwd-keyed `['sessions', cwd]` cache, keeping the
@@ -128,6 +141,8 @@ export function useGlobalSessionStream(): void {
     const unsubscribe = useSessionListStore.subscribe((state) => {
       if (state.sessions !== prev) {
         reconcileSessionsCache(queryClient, state.sessions, prev);
+        // Keep the cross-agent Recent section (DOR-329) live on lifecycle events.
+        invalidateRecentSessions(queryClient);
         prev = state.sessions;
       }
       if (state.rekeys !== prevRekeys) {

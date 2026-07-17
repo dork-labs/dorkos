@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   FolderGit2,
@@ -25,6 +25,13 @@ import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/share
 import { cn, formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 import { useResolvedAgents } from '@/layers/entities/agent';
+import {
+  useConfig,
+  useSidebarPrefs,
+  useUpdateSidebarPrefs,
+  pinPath,
+  unpinPath,
+} from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useAgentSessions, useRenameSession } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
@@ -33,6 +40,12 @@ import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentMenu } from './AddAgentMenu';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
+
+/**
+ * Legacy localStorage key that held pinned agent paths before organization moved
+ * to server config (DOR-329). Its presence is the one-time migration flag.
+ */
+const LEGACY_PINNED_STORAGE_KEY = 'dorkos-pinned-agents';
 
 /**
  * Unified dashboard sidebar — top-level navigation and expandable agent list.
@@ -49,22 +62,14 @@ export function DashboardSidebar() {
   const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
-  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
-  const pinnedAgentPaths = useAppStore((s) => s.pinnedAgentPaths);
-  const pinAgent = useAppStore((s) => s.pinAgent);
-  const unpinAgent = useAppStore((s) => s.unpinAgent);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
-  // ── Default agent from config ──
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => transport.getConfig(),
-    staleTime: 30_000,
-  });
-  const defaultAgentName = config?.agents?.defaultAgent ?? 'dorkbot';
-  const defaultAgentDir = config?.agents?.defaultDirectory ?? '~/.dork/agents';
-  const defaultAgentPath = `${defaultAgentDir}/${defaultAgentName}`;
+  // ── Server-persisted sidebar organization (DOR-329) ──
+  const { data: config } = useConfig();
+  const sidebarPrefs = useSidebarPrefs();
+  const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
+  const pinnedAgentPaths = sidebarPrefs.pinned;
 
   // ── Full mesh roster (unsorted; display-name sort is derived below) ──
   const { data: meshData } = useMeshAgentPaths();
@@ -139,12 +144,35 @@ export function DashboardSidebar() {
     return allPaths.filter((p) => !pinnedSet.has(p));
   }, [allPaths, pinnedPaths]);
 
-  // ── Auto-pin default agent on first install (once, when no pins exist) ──
+  // ── One-time migration of legacy localStorage pins → server config (DOR-329) ──
+  // Runs once after config loads. If the old `dorkos-pinned-agents` key exists
+  // and the server has no pins yet, seed the server pins from it (order
+  // preserved); server state wins when it already has pins. The key's presence
+  // IS the migration flag — it is removed afterward either way, so re-mounts and
+  // reloads are no-ops.
+  const pinMigrationDoneRef = useRef(false);
   useEffect(() => {
-    if (pinnedAgentPaths.length === 0 && defaultAgentPath && allPaths.includes(defaultAgentPath)) {
-      pinAgent(defaultAgentPath);
+    if (pinMigrationDoneRef.current) return;
+    // Wait for the real server config before deciding "server has no pins".
+    if (config === undefined) return;
+    const raw = localStorage.getItem(LEGACY_PINNED_STORAGE_KEY);
+    if (raw === null) {
+      pinMigrationDoneRef.current = true;
+      return;
     }
-  }, [pinnedAgentPaths.length, defaultAgentPath, allPaths, pinAgent]);
+    pinMigrationDoneRef.current = true;
+    let stored: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) stored = parsed.filter((v): v is string => typeof v === 'string');
+    } catch {
+      stored = [];
+    }
+    if (pinnedAgentPaths.length === 0 && stored.length > 0) {
+      updateSidebarPrefs((prev) => ({ ...prev, pinned: [...stored] }));
+    }
+    localStorage.removeItem(LEGACY_PINNED_STORAGE_KEY);
+  }, [config, pinnedAgentPaths.length, updateSidebarPrefs]);
 
   // ── Sessions for the active agent (canonical cwd-scoped selector, DOR-203) ──
   const {
@@ -199,12 +227,12 @@ export function DashboardSidebar() {
   const handleTogglePin = useCallback(
     (path: string) => {
       if (pinnedAgentPaths.includes(path)) {
-        unpinAgent(path);
+        updateSidebarPrefs((prev) => unpinPath(prev, path));
       } else {
-        pinAgent(path);
+        updateSidebarPrefs((prev) => pinPath(prev, path));
       }
     },
-    [pinnedAgentPaths, pinAgent, unpinAgent]
+    [pinnedAgentPaths, updateSidebarPrefs]
   );
 
   /** Open the Agent Hub right panel for a given agent path. */

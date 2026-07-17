@@ -7,7 +7,6 @@ export const STORAGE_KEYS = {
   PICKER_VIEW: 'dorkos-picker-view',
   GESTURE_HINT_COUNT: 'dorkos-gesture-hint-count',
   CANVAS_SESSIONS: 'dorkos-canvas-sessions',
-  PINNED_AGENTS: 'dorkos-pinned-agents',
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
   PIP_PANEL_STATE: 'dorkos-pip-panel-state',

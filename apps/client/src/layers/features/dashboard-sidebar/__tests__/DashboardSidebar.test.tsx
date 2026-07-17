@@ -24,9 +24,8 @@ const mockMeshPaths = vi.fn<() => string[]>(() => [
 ]);
 const mockSetGlobalPaletteOpen = vi.fn();
 const mockSetSidebarLevel = vi.fn();
-const mockPinnedAgentPaths = vi.fn<() => string[]>(() => []);
-const mockPinAgent = vi.fn();
-const mockUnpinAgent = vi.fn();
+const mockSidebarPins = vi.fn<() => string[]>(() => []);
+const mockUpdateSidebar = vi.fn<(updater: (prev: unknown) => unknown) => void>();
 const mockSetRightPanelOpen = vi.fn();
 const mockSetActiveRightPanelTab = vi.fn();
 const mockSetPickerOpen = vi.fn();
@@ -63,9 +62,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
         setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
         selectedCwd: mockSelectedCwd,
         setSidebarLevel: mockSetSidebarLevel,
-        pinnedAgentPaths: mockPinnedAgentPaths(),
-        pinAgent: mockPinAgent,
-        unpinAgent: mockUnpinAgent,
         setRightPanelOpen: mockSetRightPanelOpen,
         setActiveRightPanelTab: mockSetActiveRightPanelTab,
         setPickerOpen: mockSetPickerOpen,
@@ -73,6 +69,34 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     },
   };
 });
+
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: () => ({
+    data: { agents: { defaultAgent: 'dorkbot', defaultDirectory: '~/.dork/agents' } },
+  }),
+  useSidebarPrefs: () => ({
+    pinned: mockSidebarPins(),
+    groups: [],
+    ungroupedSortMode: 'name',
+    ungroupedCollapsed: false,
+    recentsCollapsed: false,
+    groupsHintDismissed: false,
+  }),
+  useUpdateSidebarPrefs: () => ({
+    update: mockUpdateSidebar,
+    updateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+  }),
+  pinPath: (prev: { pinned: string[] }, path: string) => ({
+    ...prev,
+    pinned: [...prev.pinned, path],
+  }),
+  unpinPath: (prev: { pinned: string[] }, path: string) => ({
+    ...prev,
+    pinned: prev.pinned.filter((p) => p !== path),
+  }),
+}));
 
 vi.mock('@/layers/features/agent-hub', () => ({
   useAgentHubStore: {
@@ -170,10 +194,10 @@ describe('DashboardSidebar', () => {
 
   beforeEach(() => {
     // Reset return values (clearAllMocks only clears call history, not return values)
+    localStorage.clear();
     mockMeshPaths.mockReset();
-    mockPinnedAgentPaths.mockReset();
-    mockPinAgent.mockReset();
-    mockUnpinAgent.mockReset();
+    mockSidebarPins.mockReset();
+    mockUpdateSidebar.mockReset();
     mockSetGlobalPaletteOpen.mockReset();
     mockSetSidebarLevel.mockReset();
     mockSetRightPanelOpen.mockReset();
@@ -183,7 +207,7 @@ describe('DashboardSidebar', () => {
     mockResolvedAgents.mockReset();
     mockResolvedAgents.mockReturnValue({});
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
-    mockPinnedAgentPaths.mockReturnValue([]);
+    mockSidebarPins.mockReturnValue([]);
     mockSelectedCwd = null;
     mockPathname = '/';
     mockTransport.listMeshAgentPaths.mockImplementation(() =>
@@ -277,16 +301,65 @@ describe('DashboardSidebar', () => {
   });
 
   it('hides PINNED section when no pins', () => {
-    mockPinnedAgentPaths.mockReturnValue([]);
+    mockSidebarPins.mockReturnValue([]);
     renderWithProviders(<DashboardSidebar />);
     expect(screen.queryByText('Pinned')).not.toBeInTheDocument();
   });
 
   it('renders PINNED section when pins exist', () => {
-    mockPinnedAgentPaths.mockReturnValue(['/projects/alpha']);
+    mockSidebarPins.mockReturnValue(['/projects/alpha']);
     mockMeshPaths.mockReturnValue(['/projects/alpha', '/projects/beta']);
     renderWithProviders(<DashboardSidebar />);
     expect(screen.getByText('Pinned')).toBeInTheDocument();
+  });
+
+  describe('legacy localStorage pin migration (DOR-329)', () => {
+    const LEGACY_KEY = 'dorkos-pinned-agents';
+
+    it('seeds server pins from localStorage (order preserved) and removes the key when server is empty', () => {
+      localStorage.setItem(LEGACY_KEY, JSON.stringify(['/projects/beta', '/projects/alpha']));
+      mockSidebarPins.mockReturnValue([]);
+
+      renderWithProviders(<DashboardSidebar />);
+
+      expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
+      // The updater seeds `pinned` from the stored array, order preserved.
+      const updater = mockUpdateSidebar.mock.calls[0]![0] as (p: { pinned: string[] }) => {
+        pinned: string[];
+      };
+      expect(updater({ pinned: [] }).pinned).toEqual(['/projects/beta', '/projects/alpha']);
+      // The key is consumed (its presence was the migration flag).
+      expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    });
+
+    it('server wins when it already has pins: does not seed, still removes the key', () => {
+      localStorage.setItem(LEGACY_KEY, JSON.stringify(['/projects/beta']));
+      mockSidebarPins.mockReturnValue(['/projects/alpha']);
+
+      renderWithProviders(<DashboardSidebar />);
+
+      expect(mockUpdateSidebar).not.toHaveBeenCalled();
+      expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    });
+
+    it('is a no-op on a re-mount once the key is gone', () => {
+      localStorage.setItem(LEGACY_KEY, JSON.stringify(['/projects/beta']));
+      mockSidebarPins.mockReturnValue([]);
+
+      const first = renderWithProviders(<DashboardSidebar />);
+      expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
+      first.unmount();
+
+      // The key is already consumed — a fresh mount migrates nothing.
+      renderWithProviders(<DashboardSidebar />);
+      expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when there is no legacy key', () => {
+      mockSidebarPins.mockReturnValue([]);
+      renderWithProviders(<DashboardSidebar />);
+      expect(mockUpdateSidebar).not.toHaveBeenCalled();
+    });
   });
 
   it('does not render SidebarFooterBar (footer is in AppShell)', () => {

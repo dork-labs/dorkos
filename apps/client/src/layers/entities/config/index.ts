@@ -11,3 +11,23 @@ export { configKeys } from './api/query-keys';
 export { useConfig } from './model/use-config';
 export { useUpdateConfig } from './model/use-update-config';
 export { HEARTBEAT_PAYLOAD_EXAMPLE } from './lib/telemetry-payload';
+export {
+  useSidebarPrefs,
+  useUpdateSidebarPrefs,
+  pinPath,
+  unpinPath,
+  moveToGroup,
+  createGroup,
+  renameGroup,
+  deleteGroup,
+  reorderGroup,
+  reorderWithinGroup,
+  reorderPinned,
+  setGroupSortMode,
+  setGroupCollapsed,
+  setUngroupedCollapsed,
+  setRecentsCollapsed,
+  setUngroupedSortMode,
+  setGroupsHintDismissed,
+} from './model/use-sidebar-prefs';
+export type { UpdateSidebarPrefs } from './model/use-sidebar-prefs';
