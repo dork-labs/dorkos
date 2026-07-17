@@ -3,6 +3,9 @@ import { DocsPage, DocsBody, DocsTitle, DocsDescription } from 'fumadocs-ui/page
 import { getMDXComponents } from '@/components/mdx-components';
 import { notFound } from 'next/navigation';
 import { APIPage } from '@/components/api-page';
+import { LLMCopyButton, ViewOptions } from '@/components/ai/page-actions';
+import { isGeneratedApiPage } from '@/lib/ai/is-generated-api-page';
+import { siteConfig } from '@/config/site';
 
 /**
  * Generate static params for all documentation pages.
@@ -38,11 +41,19 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
   if (!page) notFound();
 
   const Mdx = page.data.body;
+  const markdownUrl = `${page.url}.mdx`;
+  const githubUrl = `${siteConfig.github}/blob/main/docs/${page.path}`;
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
+      {!isGeneratedApiPage(page) && (
+        <div className="flex flex-row items-center gap-2 border-b pb-4">
+          <LLMCopyButton markdownUrl={markdownUrl} />
+          <ViewOptions markdownUrl={markdownUrl} githubUrl={githubUrl} />
+        </div>
+      )}
       <DocsBody>
         <Mdx components={getMDXComponents({ APIPage })} />
       </DocsBody>

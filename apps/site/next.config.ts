@@ -54,6 +54,23 @@ const nextConfig: NextConfig = {
         source: '/hub/:path*',
         destination: `${posthogIngestHost}/:path*`,
       },
+      // Raw-markdown docs route (DOR-165). A route handler co-located with
+      // the docs page at docs/[[...slug]].mdx/route.ts fails to statically
+      // export ("Cannot destructure property 'slug'" — Next.js cannot
+      // resolve generateStaticParams for a segment whose folder name mixes
+      // the [[...slug]] catch-all syntax with a literal .mdx suffix). The
+      // fumadocs-blessed fallback is a plain, unambiguous [[...slug]]
+      // segment under its own route, rewritten here so /docs/<slug>.mdx
+      // still serves it — see
+      // https://fumadocs.dev/docs/integrations/llms#md-extension.
+      {
+        source: '/docs.mdx',
+        destination: '/llms.mdx/docs',
+      },
+      {
+        source: '/docs/:path*.mdx',
+        destination: '/llms.mdx/docs/:path*',
+      },
     ];
   },
   // Required to support PostHog trailing slash API requests
