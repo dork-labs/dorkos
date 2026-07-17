@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { asyncHandler } from '../lib/async-handler.js';
 
 const router = Router();
 
@@ -18,28 +17,25 @@ const router = Router();
  * 3. Else the default runtime — the legitimate cold-discovery path for screens
  *    without session context (onboarding, first-run, agent creation).
  */
-router.get(
-  '/',
-  asyncHandler(async (req, res) => {
-    const runtimeParam = typeof req.query.runtime === 'string' ? req.query.runtime : undefined;
-    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+router.get('/', async (req, res) => {
+  const runtimeParam = typeof req.query.runtime === 'string' ? req.query.runtime : undefined;
+  const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
 
-    let runtime: AgentRuntime;
-    if (runtimeParam !== undefined) {
-      if (!runtimeRegistry.has(runtimeParam)) {
-        return res.status(400).json({ error: `Unknown runtime: ${runtimeParam}` });
-      }
-      runtime = runtimeRegistry.get(runtimeParam);
-    } else if (sessionId) {
-      runtime = await runtimeRegistry.resolveForSession(sessionId);
-    } else {
-      // cold discovery: no session context (onboarding, first-run)
-      runtime = runtimeRegistry.getDefault();
+  let runtime: AgentRuntime;
+  if (runtimeParam !== undefined) {
+    if (!runtimeRegistry.has(runtimeParam)) {
+      return res.status(400).json({ error: `Unknown runtime: ${runtimeParam}` });
     }
+    runtime = runtimeRegistry.get(runtimeParam);
+  } else if (sessionId) {
+    runtime = await runtimeRegistry.resolveForSession(sessionId);
+  } else {
+    // cold discovery: no session context (onboarding, first-run)
+    runtime = runtimeRegistry.getDefault();
+  }
 
-    const models = await runtime.getSupportedModels();
-    res.json({ models });
-  })
-);
+  const models = await runtime.getSupportedModels();
+  res.json({ models });
+});
 
 export default router;

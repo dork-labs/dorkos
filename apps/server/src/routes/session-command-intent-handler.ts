@@ -57,8 +57,9 @@ function parseRuntimeIntent(param: unknown): RuntimeCommandIntentId | null {
 }
 
 /**
- * Express handler for `POST /api/sessions/:id/command-intents/:intent`. Mounted by
- * `sessions.ts` under `asyncHandler`; see the module doc for semantics.
+ * Express handler for `POST /api/sessions/:id/command-intents/:intent`. Mounted
+ * directly by `sessions.ts` (Express 5 forwards async rejections natively); see
+ * the module doc for semantics.
  *
  * @param req - The Express request (`:id` + `:intent` route params; optional
  *   JSON body `{ instructions?: string }`)

@@ -521,13 +521,14 @@ describe('Sessions Routes', () => {
     });
   });
 
-  // ---- async-rejection guard (lib/async-handler.ts) ----
+  // ---- async-rejection guard (Express 5 native async forwarding) ----
 
   describe('async handler rejections reach the error middleware', () => {
-    // Express 4 does not forward rejected promises from async handlers — before
-    // the shared asyncHandler wrapper, a resolveForSession rejection on a route
-    // without its own try/catch left the request HANGING until client timeout.
-    // These pin that a rejection now terminates as a mapped error response.
+    // Express 5 forwards rejected promises from async route handlers to the
+    // error middleware natively — a resolveForSession rejection on a route
+    // without its own try/catch reaches errorHandler instead of hanging the
+    // request until client timeout. These pin that a rejection terminates as
+    // a mapped error response.
 
     it('maps a RuntimeNotRegisteredError rejection to 503 RUNTIME_NOT_AVAILABLE', async () => {
       vi.mocked(runtimeRegistry.resolveForSession).mockRejectedValueOnce(
@@ -542,7 +543,7 @@ describe('Sessions Routes', () => {
     });
 
     it('maps an unexpected rejection on an interaction route to 500 INTERNAL_ERROR', async () => {
-      // /approve never had its own try/catch — the wrapper is its only guard.
+      // /approve never had its own try/catch — Express 5's native forwarding is its only guard.
       vi.mocked(runtimeRegistry.resolveForSession).mockRejectedValueOnce(
         new Error('settings store unavailable')
       );
