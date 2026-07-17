@@ -1,10 +1,22 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { siteConfig } from '@/config/site';
+import { twitterFromOpenGraph } from '@/lib/metadata';
+
+const description =
+  'Exactly what the anonymous DorkOS heartbeat sends, how to turn it off, and our anonymous-by-default promise.';
 
 export const metadata: Metadata = {
   title: 'Telemetry',
-  description:
-    'Exactly what the anonymous DorkOS heartbeat sends, how to turn it off, and our anonymous-by-default promise.',
+  description,
+  alternates: { canonical: '/telemetry' },
+  openGraph: {
+    title: 'Telemetry — DorkOS',
+    description,
+    url: '/telemetry',
+    siteName: siteConfig.name,
+  },
+  twitter: twitterFromOpenGraph({ title: 'Telemetry — DorkOS', description }),
 };
 
 const HEARTBEAT_PAYLOAD = `{
