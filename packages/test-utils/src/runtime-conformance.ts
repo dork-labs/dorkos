@@ -207,6 +207,15 @@ export function runtimeConformance(
           // The runtime tag is the aggregation key (ADR-0310) — an adapter
           // must stamp its own type, never another runtime's.
           expect(session.runtime).toBe(runtime.type);
+          // Context reading is OPTIONAL per runtime (fleet-context-health,
+          // DOR-113): no adapter is forced to produce one. Only assert the
+          // shape WHEN present — never assert presence.
+          if (session.contextTokens !== undefined) {
+            expect(typeof session.contextTokens).toBe('number');
+          }
+          if (session.lastAutoCompactAt !== undefined) {
+            expect(typeof session.lastAutoCompactAt).toBe('string');
+          }
         }
 
         await expect(runtime.getSession(projectDir, nextSessionId())).resolves.toBeNull();
