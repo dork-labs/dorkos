@@ -134,7 +134,7 @@ describe('Config MCP endpoints', () => {
       expect(res.body.mcp.enabled).toBe(true);
       expect(res.body.mcp.authConfigured).toBe(false);
       expect(res.body.mcp.authSource).toBe('none');
-      expect(res.body.mcp.localToken).toBeNull();
+      expect(res.body.mcp).not.toHaveProperty('localToken');
       expect(res.body.mcp.endpoint).toBe('http://localhost:6242/mcp');
       expect(res.body.mcp.rateLimit).toEqual({
         enabled: true,
@@ -143,36 +143,38 @@ describe('Config MCP endpoints', () => {
       });
     });
 
-    it('returns authSource "local-token" and the token in login-off mode with no env key', async () => {
+    it('returns authSource "local-token" WITHOUT the token value in login-off mode', async () => {
       // Purpose: the common login-off boot — a per-instance local token gates
-      // the surface, so authSource is 'local-token', authConfigured is true, and
-      // the token is emitted for the settings tab to paste.
+      // the surface (authSource 'local-token', authConfigured true), but the
+      // token value never rides this sessionGate-passthrough GET: it is only
+      // available through the purpose-built POST reveal endpoint.
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
       const res = await request(app).get('/api/config').expect(200);
       expect(res.body.mcp.authSource).toBe('local-token');
       expect(res.body.mcp.authConfigured).toBe(true);
-      expect(res.body.mcp.localToken).toBe('dork_mcp_local_abc123');
+      expect(res.body.mcp).not.toHaveProperty('localToken');
+      expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
     });
 
-    it('returns authSource "env" and no token when MCP_API_KEY env var is set', async () => {
+    it('returns authSource "env" and no token field when MCP_API_KEY env var is set', async () => {
       // Purpose: an env override is the bearer clients use, so the local token
-      // never applies and is never emitted, even if one somehow resolved.
+      // never applies and the config GET carries no token field.
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
       const res = await request(app).get('/api/config').expect(200);
       expect(res.body.mcp.authConfigured).toBe(true);
       expect(res.body.mcp.authSource).toBe('env');
-      expect(res.body.mcp.localToken).toBeNull();
+      expect(res.body.mcp).not.toHaveProperty('localToken');
     });
 
-    it('returns authSource "user-keys" and no token when per-user Better Auth keys exist', async () => {
+    it('returns authSource "user-keys" and no token field when per-user Better Auth keys exist', async () => {
       // Purpose: login-on / per-user keys take precedence over the local token,
-      // which is inactive and never emitted in that mode (ADR-0320).
+      // which is inactive in that mode (ADR-0320); no token field is emitted.
       vi.mocked(hasAnyApiKey).mockReturnValue(true);
       const res = await request(app).get('/api/config').expect(200);
       expect(res.body.mcp.authConfigured).toBe(true);
       expect(res.body.mcp.authSource).toBe('user-keys');
-      expect(res.body.mcp.localToken).toBeNull();
+      expect(res.body.mcp).not.toHaveProperty('localToken');
     });
 
     it('returns authSource "user-keys" while a not-yet-seeded legacy apiKey lingers', async () => {
@@ -226,6 +228,45 @@ describe('Config MCP endpoints', () => {
       const res = await request(app).post('/api/config/mcp/rotate-token').expect(409);
       expect(res.body.error).toMatch(/login is on/i);
       expect(rotateMcpLocalToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/config/mcp/reveal-token', () => {
+    it('returns the local token on demand in login-off mode with no env key', async () => {
+      // Purpose: the settings tab fetches the token via this POST instead of it
+      // riding GET /api/config, keeping the value out of GET caches and logs.
+      vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
+      const res = await request(app).post('/api/config/mcp/reveal-token').expect(200);
+      expect(res.body.localToken).toBe('dork_mcp_local_abc123');
+    });
+
+    it('409s when MCP_API_KEY is set (the env override is the bearer)', async () => {
+      // Purpose: the local token does not apply under an env override, so there
+      // is nothing meaningful to reveal.
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
+      vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
+      const res = await request(app).post('/api/config/mcp/reveal-token').expect(409);
+      expect(res.body.error).toMatch(/MCP_API_KEY/);
+      expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
+    });
+
+    it('409s when login is on (per-user keys are the credential)', async () => {
+      // Purpose: with login on the local token is inactive (ADR-0320), so a
+      // reveal request is refused and never leaks the value.
+      vi.mocked(configManager.get).mockImplementation((key: string) =>
+        key === 'auth' ? { enabled: true } : undefined
+      );
+      vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
+      const res = await request(app).post('/api/config/mcp/reveal-token').expect(409);
+      expect(res.body.error).toMatch(/login is on/i);
+      expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
+    });
+
+    it('404s in the degenerate no-token state', async () => {
+      // Purpose: if no token resolved at boot (should not occur normally), the
+      // reveal endpoint says so honestly instead of returning an empty value.
+      const res = await request(app).post('/api/config/mcp/reveal-token').expect(404);
+      expect(res.body.error).toMatch(/no local mcp token/i);
     });
   });
 

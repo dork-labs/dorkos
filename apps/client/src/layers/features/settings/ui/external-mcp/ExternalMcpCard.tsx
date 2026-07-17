@@ -77,8 +77,21 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
     [transport, mcp.enabled, mcp.rateLimit, invalidateConfig]
   );
 
+  // The local token never rides GET /api/config (it would leak into caches and
+  // any config read); it is fetched on demand via the POST reveal endpoint and
+  // held only in component state.
+  const [revealedToken, setRevealedToken] = useState<string | null>(null);
+
+  const handleReveal = useCallback(async () => {
+    const { localToken } = await transport.revealMcpLocalToken();
+    setRevealedToken(localToken);
+  }, [transport]);
+
   const handleRotate = useCallback(async () => {
-    await transport.rotateMcpLocalToken();
+    // The rotate response carries the fresh token — show it immediately so the
+    // user can paste it into their clients without a second reveal step.
+    const { localToken } = await transport.rotateMcpLocalToken();
+    setRevealedToken(localToken);
     await invalidateConfig();
   }, [transport, invalidateConfig]);
 
@@ -139,11 +152,12 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
             <EndpointRow endpoint={mcp.endpoint} />
             <McpAuthRow
               authSource={mcp.authSource}
-              localToken={mcp.localToken ?? null}
+              revealedToken={revealedToken}
+              onReveal={handleReveal}
               onRotate={handleRotate}
             />
             <RateLimitSection rateLimit={mcp.rateLimit} onUpdate={handleUpdateRateLimit} />
-            <SetupInstructions endpoint={mcp.endpoint} apiKey={mcp.localToken ?? null} />
+            <SetupInstructions endpoint={mcp.endpoint} apiKey={revealedToken} />
           </FieldCardContent>
         </CollapsibleContent>
       </Collapsible>
@@ -154,11 +168,13 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
 /** Authentication guidance for the MCP endpoint — reflects the active credential source. */
 function McpAuthRow({
   authSource,
-  localToken,
+  revealedToken,
+  onReveal,
   onRotate,
 }: {
   authSource: McpConfig['authSource'];
-  localToken: string | null;
+  revealedToken: string | null;
+  onReveal: () => Promise<void>;
   onRotate: () => Promise<void>;
 }) {
   if (authSource === 'env') {
@@ -173,7 +189,9 @@ function McpAuthRow({
   }
 
   if (authSource === 'local-token') {
-    return <LocalTokenAuthRow localToken={localToken} onRotate={onRotate} />;
+    return (
+      <LocalTokenAuthRow revealedToken={revealedToken} onReveal={onReveal} onRotate={onRotate} />
+    );
   }
 
   if (authSource === 'none') {
@@ -204,19 +222,34 @@ function McpAuthRow({
 }
 
 /**
- * Local-token authentication row (login-off mode): shows the per-instance token
- * in a copyable field with a Rotate action guarded by a breaks-existing-clients
+ * Local-token authentication row (login-off mode): a Reveal action fetches the
+ * per-instance token on demand (it never rides the config GET) and shows it in
+ * a copyable field, plus a Rotate action guarded by a breaks-existing-clients
  * confirm.
  */
 function LocalTokenAuthRow({
-  localToken,
+  revealedToken,
+  onReveal,
   onRotate,
 }: {
-  localToken: string | null;
+  revealedToken: string | null;
+  onReveal: () => Promise<void>;
   onRotate: () => Promise<void>;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const [isRevealing, setIsRevealing] = useState(false);
+
+  async function handleReveal() {
+    setIsRevealing(true);
+    try {
+      await onReveal();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to fetch the local MCP token');
+    } finally {
+      setIsRevealing(false);
+    }
+  }
 
   async function handleConfirmRotate() {
     setIsRotating(true);
@@ -272,13 +305,17 @@ function LocalTokenAuthRow({
         Paste this token into your MCP client as a <code className="font-mono">Bearer</code> token.
         It protects the tools that change things on your machine; read-only checks work without it.
       </p>
-      {localToken && (
+      {revealedToken ? (
         <div className="flex items-center gap-1.5">
           <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
-            {localToken}
+            {revealedToken}
           </code>
-          <CopyButton value={localToken} />
+          <CopyButton value={revealedToken} />
         </div>
+      ) : (
+        <Button variant="outline" size="sm" onClick={handleReveal} disabled={isRevealing}>
+          {isRevealing ? 'Revealing…' : 'Reveal token'}
+        </Button>
       )}
     </div>
   );

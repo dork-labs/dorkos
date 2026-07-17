@@ -2199,10 +2199,6 @@ export const ServerConfigSchema = z
           description:
             "How MCP access is secured: 'env' (MCP_API_KEY override), 'user-keys' (per-user Better Auth API keys), 'local-token' (login off, no MCP_API_KEY — gated by the per-instance local token), or 'none' (the degenerate can't-generate fallback)",
         }),
-        localToken: z.string().nullable().optional().openapi({
-          description:
-            'The per-instance local MCP bearer token, present only when authSource is local-token (login off, no MCP_API_KEY); null otherwise',
-        }),
         endpoint: z.string().openapi({
           description: 'Full URL of the external MCP endpoint',
         }),

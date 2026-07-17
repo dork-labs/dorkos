@@ -24,7 +24,6 @@ const LOCAL_TOKEN_MCP: McpConfig = {
   ...DEFAULT_MCP,
   authConfigured: true,
   authSource: 'local-token',
-  localToken: LOCAL_TOKEN,
 };
 
 function createWrapper() {
@@ -146,29 +145,41 @@ describe('ExternalMcpCard', () => {
     expect(screen.getByText('http://localhost:6242/mcp')).toBeInTheDocument();
   });
 
-  it('renders the local token and a copy control in local-token mode', async () => {
-    // Purpose: login-off mode shows the per-instance token in a read-only field
-    // with a Copy button so the operator can paste it into their MCP client.
+  it('hides the token until Reveal is clicked, then shows it with a copy control', async () => {
+    // Purpose: the token never rides the config GET, so the card renders with no
+    // token value; a Reveal action fetches it on demand and shows it in a
+    // read-only field with a Copy button.
     const user = userEvent.setup();
-    const { Wrapper } = createWrapper();
+    const { Wrapper, transport } = createWrapper();
+    vi.mocked(transport.revealMcpLocalToken).mockResolvedValue({ localToken: LOCAL_TOKEN });
     render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('Local MCP token')).toBeInTheDocument();
-    expect(screen.getByText(LOCAL_TOKEN)).toBeInTheDocument();
+    // Before reveal: no token on screen, just the Reveal action.
+    expect(screen.queryByText(LOCAL_TOKEN)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reveal token' }));
+    expect(transport.revealMcpLocalToken).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(LOCAL_TOKEN)).toBeInTheDocument();
     // A copy control sits next to the token, in addition to the endpoint's — so
     // the expanded card exposes at least two "Copy to clipboard" buttons.
     const copyButtons = screen.getAllByRole('button', { name: /copy to clipboard/i });
     expect(copyButtons.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('embeds the real local token in the setup snippet (not the placeholder)', async () => {
-    // Purpose: the paste-ready client config carries the actual token so the user
-    // does not have to hand-edit a placeholder.
+  it('embeds the revealed token in the setup snippet (placeholder until revealed)', async () => {
+    // Purpose: the paste-ready client config carries the actual token once
+    // revealed, so the user does not have to hand-edit a placeholder; before the
+    // reveal the snippet keeps the placeholder (the card holds no token value).
     const user = userEvent.setup();
-    const { Wrapper } = createWrapper();
+    const { Wrapper, transport } = createWrapper();
+    vi.mocked(transport.revealMcpLocalToken).mockResolvedValue({ localToken: LOCAL_TOKEN });
     render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} />, { wrapper: Wrapper });
     await expandCard(user);
     await user.click(screen.getByText('Setup Instructions'));
+    const presBefore = Array.from(document.querySelectorAll('pre'));
+    expect(presBefore.some((p) => p.textContent?.includes('dork_mcp_YOUR_API_KEY'))).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Reveal token' }));
+    await screen.findByText(LOCAL_TOKEN);
     const pres = Array.from(document.querySelectorAll('pre'));
     expect(pres.some((p) => p.textContent?.includes(`Bearer ${LOCAL_TOKEN}`))).toBe(true);
     expect(pres.some((p) => p.textContent?.includes('dork_mcp_YOUR_API_KEY'))).toBe(false);
@@ -209,9 +220,9 @@ describe('ExternalMcpCard', () => {
     expect(screen.getByText(/stop working until you paste in the new token/i)).toBeInTheDocument();
   });
 
-  it('rotates the token and invalidates the config query on confirm', async () => {
-    // Purpose: confirming calls the transport rotate method and refreshes the
-    // config so the new token + pre-filled snippets re-render.
+  it('rotates the token, reveals the fresh value, and invalidates the config query', async () => {
+    // Purpose: confirming calls the transport rotate method, shows the returned
+    // fresh token immediately (no second reveal step), and refreshes the config.
     const user = userEvent.setup();
     const { Wrapper, transport, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -221,6 +232,8 @@ describe('ExternalMcpCard', () => {
     await user.click(screen.getByRole('button', { name: 'Rotate token' }));
     await waitFor(() => expect(transport.rotateMcpLocalToken).toHaveBeenCalledTimes(1));
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['config'] });
+    // The rotate response carries the new token; it renders without a reveal.
+    expect(await screen.findByText('dork_mcp_local_test')).toBeInTheDocument();
   });
 
   it('reads green Enabled in local-token mode and amber No auth only in none', () => {

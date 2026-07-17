@@ -287,6 +287,12 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
+    revealMcpLocalToken(): Promise<{ localToken: string }> {
+      return fetchJSON<{ localToken: string }>(baseUrl, '/config/mcp/reveal-token', {
+        method: 'POST',
+      });
+    },
+
     async reportError(report: ClientErrorReport): Promise<void> {
       // Fire-and-forget: crash reporting must never itself throw or block. We
       // bypass fetchJSON (which throws on non-OK and flips auth state) and
