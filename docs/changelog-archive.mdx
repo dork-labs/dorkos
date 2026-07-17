@@ -1,9 +1,36 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.41.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.42.0), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.42.0] - 2026-06-05
+
+> Memory recall transparency and per-session runtime ownership — see which memory files shaped each reply, gate capabilities per session, and upgrade SDK runtimes with a dedicated workflow.
+
+### Added
+
+- Surface SDK memory recall events in assistant bubbles
+- Render calm status copy from system_status.status
+- Enhance SDK event handling with memory recall and terminal reason support
+- Surface SDK terminal_reason as informational chip
+- Chat: Memory recall indicator — see which memory files shaped each response
+- Sunset deferred items from spec 244 prework
+- Per-session runtime ownership + capability gating + runtime-neutral relay
+- Add /app:runtime-upgrade command for strategic SDK upgrades
+- Add new shared skills for Linear workflows
+
+### Changed
+
+- Polish memory recall indicator per code review
+- Move shared skills to .agents/skills/ with symlinks
+- Add `pnpm dev:dogfood` to run the dev preview and built CLI cockpit side by side
+
+### Fixed
+
+- Downgrade fumadocs-openapi 10.7.1 → 10.6.8 to fix api-doc generation
+- Address code review on spec 244 implementation
 
 ## [0.41.0] - 2026-04-15
 

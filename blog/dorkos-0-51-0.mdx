@@ -1,0 +1,48 @@
+---
+title: DorkOS 0.51.0
+description: Watch messages reach your agents in real time on the topology map, and find every way to install DorkOS on one page
+date: 2026-07-17
+author: DorkOS Team
+category: release
+tags: [release, mesh, site, cockpit]
+---
+
+DorkOS 0.51.0 is about seeing your agents at work. The topology map now shows messages arriving in real time, a new page at dorkos.ai/install collects every way to get DorkOS, and the left sidebar starts open so your agents are visible from the first launch.
+
+## Highlights
+
+**Watch messages reach your agents**
+
+![The topology map showing agents grouped by project, with connected apps wired to them](/product/archive/v0.51.0/topology-dark.png)
+
+When a connected app like Slack or Telegram delivers a message to one of your agents, the topology map now shows it: a quiet pulse travels along the wire from the app to the agent. You can watch your network working instead of trusting that it is. [See it in motion on the topology feature page.](https://dorkos.ai/features/mesh-topology)
+
+**Every way to install DorkOS, on one page**
+
+The new [dorkos.ai/install](https://dorkos.ai/install) page puts every install path in one place: the Mac app, the one-line terminal install, npm, the Windows early alpha, and Docker, plus how to update. The same address still works with `curl | bash`.
+
+**Your agents are visible from the first launch**
+
+![The DorkOS cockpit with the left sidebar open, showing the agent fleet and recent activity](/product/archive/v0.51.0/cockpit-light.png)
+
+On desktop, the left sidebar now starts open, so new installs see their agents right away. Your own toggle still wins: close it once and it stays closed.
+
+## All Changes
+
+### Added
+
+- Watch inbound messages arrive at your agents on the topology map — each message delivered from a connected app sends a quiet pulse along its wire. (DOR-167)
+- New install page at dorkos.ai/install with every way to get DorkOS in one place: the Mac app, the one-line terminal install, npm, the Windows early alpha, and Docker, plus how to update. The same address still works with `curl | bash`, and dorkos.ai/download now sends you there. The site's "Get started" button and homepage link to it.
+
+### Changed
+
+- The left sidebar now starts open on desktop for new installs, so your agents are visible from the first launch. Your own toggle still wins: close it once and it stays closed. On phones it still starts closed to save space.
+
+### Fixed
+
+- The dorkos.ai marketing pages and blog no longer break when your computer is set to dark mode. Before, the install commands on the homepage showed as dark text on a dark pill, and the blog's email signup box had a muddy gray fill. These pages are light by design; the docs keep their dark mode.
+- Code examples in blog posts have their padding back, so commands no longer touch the edge of the box (a leftover from the docs engine upgrade).
+- Release posts now get their Install / Update section from one shared template instead of hand-written copies in all 55 posts, so install guidance stays current everywhere.
+- Blog dates no longer show one day early for readers west of UTC.
+- Same-day releases now list in the right order on the blog (0.45.1 above 0.45.0).
+- Opening a Markdown document in the canvas no longer hides the left sidebar or breaks the app layout.

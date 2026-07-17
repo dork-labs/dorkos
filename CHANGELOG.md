@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.51.0] - 2026-07-17
+
+> Watch messages reach your agents in real time on the topology map, and find every way to install DorkOS on one page at dorkos.ai/install.
+
+### Added
+
+- Watch inbound messages arrive at your agents on the topology map — each message delivered from a connected app sends a quiet pulse along its wire. (DOR-167)
+- New install page at dorkos.ai/install with every way to get DorkOS in one place: the Mac app, the one-line terminal install, npm, the Windows early alpha, and Docker, plus how to update. The same address still works with `curl | bash`, and dorkos.ai/download now sends you there. The site's "Get started" button and homepage link to it.
+
+### Changed
+
+- The left sidebar now starts open on desktop for new installs, so your agents are visible from the first launch. Your own toggle still wins: close it once and it stays closed. On phones it still starts closed to save space.
+
+### Fixed
+
+- The dorkos.ai marketing pages and blog no longer break when your computer is set to dark mode. Before, the install commands on the homepage showed as dark text on a dark pill, and the blog's email signup box had a muddy gray fill. These pages are light by design; the docs keep their dark mode.
+- Code examples in blog posts have their padding back, so commands no longer touch the edge of the box (a leftover from the docs engine upgrade).
+- Release posts now get their Install / Update section from one shared template instead of hand-written copies in all 55 posts, so install guidance stays current everywhere.
+- Blog dates no longer show one day early for readers west of UTC.
+- Same-day releases now list in the right order on the blog (0.45.1 above 0.45.0).
+- Opening a Markdown document in the canvas no longer hides the left sidebar or breaks the app layout.
+
 ## [0.50.0] - 2026-07-17
 
 > Organize your agents into sidebar groups that follow you across devices, see at a glance which sessions are running low on context room, and rest easier: the DorkOS tools that can change your machine are now token-protected.
@@ -482,33 +504,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.42.0] - 2026-06-05
-
-### Added
-
-- Surface SDK memory recall events in assistant bubbles
-- Render calm status copy from system_status.status
-- Enhance SDK event handling with memory recall and terminal reason support
-- Surface SDK terminal_reason as informational chip
-- Chat: Memory recall indicator — see which memory files shaped each response
-- Sunset deferred items from spec 244 prework
-- Per-session runtime ownership + capability gating + runtime-neutral relay
-- Add /app:runtime-upgrade command for strategic SDK upgrades
-- Add new shared skills for Linear workflows
-
-### Changed
-
-- Polish memory recall indicator per code review
-- Move shared skills to .agents/skills/ with symlinks
-- Add `pnpm dev:dogfood` to run the dev preview and built CLI cockpit side by side
-
-### Fixed
-
-- Downgrade fumadocs-openapi 10.7.1 → 10.6.8 to fix api-doc generation
-- Address code review on spec 244 implementation
-
 ---
 
-Older releases (v0.1.0 – v0.41.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.41.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.41.0.md).
+Older releases (v0.1.0 – v0.42.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.42.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.42.0.md).
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.50.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.51.0...HEAD

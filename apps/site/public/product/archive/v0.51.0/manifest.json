@@ -1,0 +1,76 @@
+{
+  "label": "v0.51.0",
+  "archivedAt": "2026-07-17T22:18:50.034Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-07-17T22:18:25.043Z",
+    "runId": "20260717-171324"
+  },
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "topology",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    }
+  ],
+  "count": 4,
+  "totalBytes": 1380465,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 107279,
+      "runId": "20260717-171324",
+      "capturedAt": "2026-07-17T22:16:51.963Z"
+    },
+    {
+      "source": "auto",
+      "file": "topology-dark.png",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 143902,
+      "runId": "20260717-171324",
+      "capturedAt": "2026-07-17T22:16:51.963Z"
+    },
+    {
+      "source": "auto",
+      "file": "topology-dark.webm",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 994386,
+      "durationMs": 6366,
+      "runId": "20260717-171324",
+      "capturedAt": "2026-07-17T22:16:51.963Z"
+    },
+    {
+      "source": "auto",
+      "file": "topology-light.png",
+      "surface": "topology",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 134898,
+      "runId": "20260717-171324",
+      "capturedAt": "2026-07-17T22:16:51.963Z"
+    }
+  ]
+}

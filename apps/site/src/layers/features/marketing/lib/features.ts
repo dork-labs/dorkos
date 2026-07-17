@@ -676,7 +676,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'A map of every agent you run',
-      'See which channel connects to which agent, drawn as lines',
+      'See which channel connects to which agent, and watch messages pulse along the wire as they arrive',
       'Agents group by project, so a big team stays readable',
       'Click any agent to see its details and settings',
       'Slows down or turns off animation if your device asks for it',
