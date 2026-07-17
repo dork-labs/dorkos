@@ -32,8 +32,8 @@ export interface ExternalMcpSnippets {
  * When `apiKey` is provided (in login-off mode this is the per-instance local
  * MCP token), the actual value is embedded in the `Authorization` header so the
  * block is paste-ready. Otherwise a `dork_mcp_YOUR_API_KEY` placeholder is used;
- * the reader finds their real token in Settings → Server → External MCP, or in
- * the `mcp-local-token` file in their DorkOS data folder.
+ * the reader finds their real token in Settings → Tools → External MCP Server,
+ * or in the `mcp-local-token` file in their DorkOS data folder.
  *
  * @param endpoint - Fully-qualified URL of the DorkOS external MCP endpoint.
  * @param apiKey - The token to embed (the local MCP token or a personal API

@@ -332,6 +332,8 @@ describe('MCP auth posture (end-to-end through the live /mcp mount)', () => {
     expect(body.error.code).toBe(-32001);
     expect(body.error.message).toContain(TOKEN_PATH);
     expect(body.error.message).toContain('Authorization: Bearer');
+    // The card lives in the Tools tab — the message must point there exactly.
+    expect(body.error.message).toContain('Settings → Tools → External MCP Server');
     expect(body.error.message).not.toContain(LOCAL_TOKEN);
   });
 
