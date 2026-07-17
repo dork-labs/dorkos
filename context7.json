@@ -1,0 +1,10 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "DorkOS",
+  "description": "Mission control for every coding agent you run: Claude Code, Codex, and OpenCode in one cockpit. Open source, self-hosted.",
+  "folders": ["docs"],
+  "excludeFolders": ["docs/api/api"],
+  "excludeFiles": ["docs/api/openapi.json"],
+  "rules": [],
+  "previousVersions": []
+}
