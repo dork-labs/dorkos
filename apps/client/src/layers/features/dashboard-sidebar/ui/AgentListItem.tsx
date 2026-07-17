@@ -17,6 +17,7 @@ import { useAgentHottestStatus, usePulseMotion, SessionRow } from '@/layers/enti
 import { AgentContextMenu } from './AgentContextMenu';
 import { AgentRowMenuItems } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
+import type { SortableBindings } from './SidebarDndPrimitives';
 
 /** Maximum sessions shown in the expanded agent preview. */
 const MAX_PREVIEW_SESSIONS = 3;
@@ -66,6 +67,8 @@ interface AgentListItemProps {
   onForkSession?: (sessionId: string) => void;
   /** Rename a session. When provided, rename option appears in session context menus. */
   onRenameSession?: (sessionId: string, title: string) => void;
+  /** Drag bindings applied to the row's root when the sidebar drag layer is active. */
+  sortable?: SortableBindings;
 }
 
 /**
@@ -94,6 +97,7 @@ export function AgentListItem({
   onNewSession,
   onForkSession,
   onRenameSession,
+  sortable,
 }: AgentListItemProps) {
   const isMobile = useIsMobile();
   const visual = useAgentVisual(agent, path);
@@ -127,7 +131,17 @@ export function AgentListItem({
   }, [isActive, onSelect, onToggleExpand]);
 
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem
+      ref={sortable?.setNodeRef}
+      style={sortable?.style}
+      {...(sortable?.handleProps ?? {})}
+      className={cn(
+        sortable &&
+          'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
+        sortable?.isDragging && 'opacity-40',
+        sortable?.isOver && 'ring-sidebar-ring ring-2'
+      )}
+    >
       <motion.div
         animate={borderAnimate}
         transition={borderTransition}

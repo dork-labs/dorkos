@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
+import { Droppable, SortableList, agentRowDndId } from './SidebarDndPrimitives';
 
 interface PinnedSectionProps {
   /** Pinned agent project paths, already filtered to the known roster and ordered. */
@@ -11,7 +12,8 @@ interface PinnedSectionProps {
 /**
  * The "Pinned" section. Pins are multi-presence *references*: a pinned agent
  * still renders in its home group / the ungrouped list, so rows here carry a
- * `pinned` key prefix to coexist with their home copy.
+ * `pinned` key prefix to coexist with their home copy. The whole section is a
+ * drop zone (drag an agent here to pin it) and a sortable list (reorder pins).
  */
 export function PinnedSection({ paths, renderRow }: PinnedSectionProps) {
   return (
@@ -19,7 +21,11 @@ export function PinnedSection({ paths, renderRow }: PinnedSectionProps) {
       <SidebarGroupLabel className="text-sidebar-foreground/70 text-xs font-medium tracking-wider uppercase">
         Pinned
       </SidebarGroupLabel>
-      <SidebarMenu>{paths.map((path) => renderRow(path, 'pinned'))}</SidebarMenu>
+      <Droppable id="container::pinned" data={{ type: 'container', container: { kind: 'pinned' } }}>
+        <SortableList items={paths.map((p) => agentRowDndId('pinned', p))}>
+          <SidebarMenu>{paths.map((path) => renderRow(path, 'pinned'))}</SidebarMenu>
+        </SortableList>
+      </Droppable>
     </SidebarGroup>
   );
 }

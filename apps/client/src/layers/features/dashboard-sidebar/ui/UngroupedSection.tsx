@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
 import { AddAgentMenu } from './AddAgentMenu';
+import { Droppable, SortableList, agentRowDndId } from './SidebarDndPrimitives';
 
 interface UngroupedSectionProps {
   /** Ungrouped agent paths (known roster, already sorted by the ungrouped sort mode). */
@@ -40,7 +41,14 @@ export function UngroupedSection({
         <div className="h-8" aria-hidden />
       )}
       <AddAgentMenu onNewGroup={onNewGroup} />
-      <SidebarMenu>{paths.map((path) => renderRow(path, 'ungrouped'))}</SidebarMenu>
+      <Droppable
+        id="container::ungrouped"
+        data={{ type: 'container', container: { kind: 'ungrouped' } }}
+      >
+        <SortableList items={paths.map((p) => agentRowDndId('ungrouped', p))}>
+          <SidebarMenu>{paths.map((path) => renderRow(path, 'ungrouped'))}</SidebarMenu>
+        </SortableList>
+      </Droppable>
     </SidebarGroup>
   );
 }
