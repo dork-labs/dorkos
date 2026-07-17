@@ -579,11 +579,13 @@ function deriveSourceProvenance(resolved: ResolvedPackageSource): {
  * Filter out sentinel/placeholder commit SHAs the fetcher returns for
  * non-git or degraded-resolution paths — these are never persisted as
  * `commitSha` provenance, per the "never fabricate" rule (DOR-147).
- * `RELATIVE_PATH_SENTINEL_SHA` covers same-repo monorepo packages (no
- * per-plugin commit is tracked, only the marketplace's); `'local'` covers
- * `file://` gitUrl resolutions; `tmp-<timestamp>` is
- * {@link PackageFetcher}'s degraded fallback when `git ls-remote` fails
- * (offline, missing git binary, malformed output).
+ * `RELATIVE_PATH_SENTINEL_SHA` covers same-repo packages from local
+ * (`file://`) marketplaces — remote same-repo packages never hit it,
+ * because {@link MarketplaceInstaller.buildFetchableSource} converts them
+ * to a `git-subdir` fetch that resolves the marketplace repo's real
+ * commit SHA; `'local'` covers `file://` gitUrl resolutions;
+ * `tmp-<timestamp>` is {@link PackageFetcher}'s degraded fallback when
+ * `git ls-remote` fails (offline, missing git binary, malformed output).
  *
  * @internal
  */

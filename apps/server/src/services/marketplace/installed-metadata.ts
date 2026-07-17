@@ -62,10 +62,11 @@ export interface InstallMetadata {
   /**
    * Resolved commit SHA the package tree was fetched at (DOR-147),
    * enabling reinstall integrity checks. `undefined` for local-directory
-   * installs, same-repo relative-path packages (no per-plugin commit is
-   * tracked, only the marketplace's), installs where SHA resolution
-   * degraded to a placeholder (e.g. offline `git ls-remote`), and
-   * sidecars written before this field existed.
+   * installs, local (`file://`) relative-path marketplaces (where the
+   * sentinel is filtered), installs where SHA resolution degraded to a
+   * placeholder (e.g. offline `git ls-remote`), and sidecars written
+   * before this field existed. Remote same-repo packages record the
+   * marketplace repo's resolved commit SHA.
    */
   commitSha?: string;
 }

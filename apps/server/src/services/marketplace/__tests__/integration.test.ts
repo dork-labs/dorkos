@@ -27,7 +27,7 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -498,5 +498,48 @@ describe('marketplace install pipeline — integration', () => {
       'utf-8'
     );
     expect(JSON.parse(preservedSecrets)).toEqual({ key: 'secret-value' });
+  });
+
+  // DOR-147 happy path: a git-sourced install must persist real source
+  // provenance (sourceRepo + commitSha) into the on-disk sidecar. Only the
+  // git network boundary is stubbed — the harness's designated seam: the
+  // template downloader "clone" copies the valid-plugin fixture, and the
+  // fetcher's `git ls-remote` SHA resolution is pinned to a fixed SHA so
+  // the test is deterministic offline. Everything downstream — cache
+  // materialization, validation, the plugin flow, and the unmocked
+  // writeInstallMetadata — runs for real against the temp dorkHome.
+  it('records sourceRepo and commitSha in the on-disk sidecar for a git-sourced install', async () => {
+    const { installer, spies } = buildInstallerForTests(dorkHome);
+    const gitUrl = 'https://example.com/valid-plugin.git';
+    const commitSha = 'e2e0123456789abcdef0123456789abcdef01234';
+
+    // "Clone" by copying the fixture into the clone destination.
+    spies.templateClone.mockImplementation(async (_url: unknown, destDir: unknown) => {
+      await cp(fixturePath('valid-plugin'), destDir as string, { recursive: true });
+    });
+
+    // Pin the fetcher's `git ls-remote` SHA resolution (its only direct
+    // system call) to a fixed value.
+    vi.spyOn(
+      installer['deps'].fetcher as unknown as {
+        resolveCommitSha(url: string, ref?: string): Promise<string>;
+      },
+      'resolveCommitSha'
+    ).mockResolvedValue(commitSha);
+
+    const result = await installer.install({ name: 'valid-plugin', source: gitUrl });
+    expect(result.ok).toBe(true);
+
+    const metadataRaw = await readFile(
+      path.join(result.installPath, '.dork', 'install-metadata.json'),
+      'utf-8'
+    );
+    const metadata: Record<string, unknown> = JSON.parse(metadataRaw) as Record<string, unknown>;
+    expect(metadata.sourceRepo).toBe(gitUrl);
+    expect(metadata.commitSha).toBe(commitSha);
+    // A direct git-URL install requests no explicit ref and has no
+    // marketplace — both stay absent rather than being fabricated.
+    expect(metadata.sourceRef).toBeUndefined();
+    expect(metadata.installedFrom).toBeUndefined();
   });
 });
