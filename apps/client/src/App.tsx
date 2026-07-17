@@ -40,6 +40,13 @@ export function App({ transformContent }: AppProps) {
   useDefaultCwd();
 
   const [selectedCwd] = useDirectoryState();
+  // The embedded sidebar is a modal overlay with a scrim (unlike AppShell's
+  // inset panel), so it must always start closed regardless of the shared
+  // sidebarOpen default or a persisted value — same rule as mobile.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [setSidebarOpen]);
+
   const isStreaming = useAppStore((s) => s.isStreaming);
   const activeForm = useAppStore((s) => s.activeForm);
   const isWaitingForUser = useAppStore((s) => s.isWaitingForUser);
