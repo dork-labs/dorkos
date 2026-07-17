@@ -76,16 +76,17 @@ main();
 // lost in it. Placed after `main()` returns (not inside it, and not guarded
 // by any env check): a failed rebuild throws out of `main()`, which exits
 // the process before this line is ever reached, so the warning only fires on
-// the success path where the shared binary was actually poisoned.
+// the success path where the shared binaries were actually poisoned.
+const RULE = '═'.repeat(70);
 console.log(`
-${'═'.repeat(70)}
+${RULE}
 ⚠️  ${NATIVE_MODULES.join(' and ')} are now built for Electron's ABI, not
-   system Node. This binary lives in the pnpm store shared by the whole
+   system Node. These binaries live in the pnpm store shared by the whole
    monorepo — expect mesh/relay/site/client vitest workers to fail until
-   you rebuild it for system Node:
+   you rebuild them for system Node:
 
-       pnpm rebuild better-sqlite3
+       pnpm rebuild ${NATIVE_MODULES.join(' ')}
 
    Details: contributing/desktop-app-development.md §2.
-${'═'.repeat(70)}
+${RULE}
 `);

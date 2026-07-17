@@ -56,7 +56,7 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 
 `better-sqlite3`/`node-pty` are compiled for **system Node** in the pnpm store (so dev + vitest work). Packaging needs them compiled for **Electron's** ABI. That rebuild:
 
-- runs in the `pack`/`dist` scripts and the release workflow — **never** in a plain `pnpm build`. Putting it in `build` flips the store-shared binary to Electron's ABI and **breaks plain-Node vitest across the whole monorepo** (mesh/relay/site/client workers get SIGKILLed). Recover with `pnpm rebuild better-sqlite3` from the repo root.
+- runs in the `pack`/`dist` scripts and the release workflow — **never** in a plain `pnpm build`. Putting it in `build` flips the store-shared binary to Electron's ABI and **breaks plain-Node vitest across the whole monorepo** (mesh/relay/site/client workers get SIGKILLed). Recover with `pnpm rebuild better-sqlite3 node-pty` from the repo root.
 - is done by `scripts/rebuild-natives.ts` calling `@electron/rebuild` **directly**. `electron-builder`'s own `npmRebuild` is disabled (`npmRebuild: false`) because it was observed producing a `better-sqlite3` that passed size/hash checks yet failed to `dlopen` with a misleading `NODE_MODULE_VERSION` error.
 
 ## 3. Bundling Claude Code
