@@ -2,6 +2,33 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260717-001409",
+      "slug": "sidebar-organization-in-user-config",
+      "title": "Sidebar organization state lives in server user config, not localStorage or agent manifests",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "agent-sidebar-organization",
+      "specSlug": "agent-sidebar-organization"
+    },
+    {
+      "id": "260717-001410",
+      "slug": "recent-sessions-fanout-endpoint",
+      "title": "Cross-agent recent sessions via a server-side fan-out endpoint with a per-agent activity map",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "agent-sidebar-organization",
+      "specSlug": "agent-sidebar-organization"
+    },
+    {
+      "id": "260717-001411",
+      "slug": "dnd-kit-for-sidebar-drag-and-drop",
+      "title": "Adopt dnd-kit for sidebar drag-and-drop with a mandatory non-drag path for every operation",
+      "status": "proposed",
+      "created": "2026-07-17",
+      "extractedFrom": "agent-sidebar-organization",
+      "specSlug": "agent-sidebar-organization"
+    },
+    {
       "id": "260713-133412",
       "slug": "windows-unsigned-alpha-azure-signing",
       "title": "Ship the Windows desktop as an unsigned alpha; adopt Azure Artifact Signing later",
