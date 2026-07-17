@@ -12,6 +12,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
+import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../relay/adapter-manager.js';
 import type { ConflictReport } from './types.js';
 
@@ -325,7 +326,7 @@ export class ConflictDetector {
    */
   async #readInstalledExtensions(scopeRoot: string): Promise<ExtensionRecord[]> {
     const pluginsRoot = join(scopeRoot, 'plugins');
-    const packageNames = await listSubdirectories(pluginsRoot);
+    const packageNames = await listInstalledPackageNames(pluginsRoot);
     const records: ExtensionRecord[] = [];
     for (const packageName of packageNames) {
       const packageRoot = join(pluginsRoot, packageName);
@@ -340,7 +341,7 @@ export class ConflictDetector {
    */
   async #readInstalledSkills(scopeRoot: string): Promise<SkillRecord[]> {
     const pluginsRoot = join(scopeRoot, 'plugins');
-    const packageNames = await listSubdirectories(pluginsRoot);
+    const packageNames = await listInstalledPackageNames(pluginsRoot);
     const records: SkillRecord[] = [];
     for (const packageName of packageNames) {
       const packageRoot = join(pluginsRoot, packageName);
@@ -398,6 +399,19 @@ async function listSubdirectories(dir: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * List package directories under an install root, skipping crash-left
+ * install backups (`<name>.dorkos-bak-<timestamp>-<uuid>`, DOR-175). A
+ * backup is a byte-for-byte copy of a previous installation carrying the
+ * same skills and extensions, so without this skip the detector would raise
+ * phantom conflicts — including a blocking `skill-name` error against a
+ * package's own crash-left backup on reinstall.
+ */
+async function listInstalledPackageNames(pluginsRoot: string): Promise<string[]> {
+  const names = await listSubdirectories(pluginsRoot);
+  return names.filter((name) => !name.includes(MARKETPLACE_BACKUP_DIR_MARKER));
 }
 
 /** Best-effort `stat` to test for path existence without throwing. */

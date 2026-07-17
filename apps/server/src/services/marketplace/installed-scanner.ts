@@ -15,6 +15,7 @@ import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
+import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { readInstallMetadata } from './installed-metadata.js';
 
 /**
@@ -109,7 +110,7 @@ export async function scanInstalledPackages(
 
   for (const rootName of INSTALL_ROOTS) {
     const root = join(dorkHome, rootName);
-    const entries = await safeReaddir(root);
+    const entries = await listPackageDirEntries(root);
     for (const entry of entries) {
       const packagePath = join(root, entry);
       const installed = await readInstalledPackage(packagePath);
@@ -133,7 +134,7 @@ export async function scanInstalledPackages(
   }
 
   const localRoot = join(projectPath, '.dork', 'plugins');
-  const localEntries = await safeReaddir(localRoot);
+  const localEntries = await listPackageDirEntries(localRoot);
 
   for (const entry of localEntries) {
     const packagePath = join(localRoot, entry);
@@ -185,7 +186,7 @@ export async function scanInstallationsAcrossScopes(
     seenPaths.add(agent.projectPath);
 
     const localRoot = join(agent.projectPath, '.dork', 'plugins');
-    for (const entry of await safeReaddir(localRoot)) {
+    for (const entry of await listPackageDirEntries(localRoot)) {
       const installed = await readInstalledPackage(join(localRoot, entry));
       if (!installed) continue;
       agentEntries.push({
@@ -218,7 +219,7 @@ export async function scanInstallationsAcrossScopes(
 export async function scanAgentLocalInstalls(projectPath: string): Promise<InstalledPackage[]> {
   const localRoot = join(projectPath, '.dork', 'plugins');
   const results: InstalledPackage[] = [];
-  for (const entry of await safeReaddir(localRoot)) {
+  for (const entry of await listPackageDirEntries(localRoot)) {
     const installed = await readInstalledPackage(join(localRoot, entry));
     if (installed) {
       results.push({ ...installed, scope: 'agent-local', agentPath: projectPath });
@@ -383,4 +384,21 @@ async function safeReaddir(dir: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Enumerate a package-root directory, skipping crash-left install backups
+ * (`<target>.dorkos-bak-<timestamp>-<uuid>`, written by the transaction
+ * engine's move-aside and orphaned by a hard crash mid-install — DOR-175,
+ * ADR-0304). A backup is a byte-for-byte copy of a previous installation, so
+ * it carries a valid manifest under the same package name; without this skip
+ * a walker would list it as a phantom duplicate package (and the merged-by-name
+ * views could non-deterministically resolve `installPath` to the backup).
+ *
+ * Only for package-root walks (`plugins/`, `agents/`, `.dork/plugins/`) —
+ * backups are always siblings of an install target, never package-internal,
+ * so the `computeProvides` helpers keep plain {@link safeReaddir}.
+ */
+async function listPackageDirEntries(dir: string): Promise<string[]> {
+  return (await safeReaddir(dir)).filter((name) => !name.includes(MARKETPLACE_BACKUP_DIR_MARKER));
 }

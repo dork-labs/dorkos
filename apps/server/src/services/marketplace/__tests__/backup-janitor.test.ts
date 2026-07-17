@@ -39,6 +39,7 @@ describe('sweepStaleInstallBackups', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
     await rm(dorkHome, { recursive: true, force: true }).catch(() => undefined);
   });
 
@@ -96,6 +97,34 @@ describe('sweepStaleInstallBackups', () => {
 
     expect(removed).toBe(0);
     expect(await pathExists(livePath)).toBe(true);
+  });
+
+  it('spares a backup timestamped exactly at the cutoff (>= is spared; 1ms older is swept)', async () => {
+    // Pin the boundary semantics of `timestamp >= cutoff → spared` with a
+    // frozen clock, so the comparison is exercised at exact equality rather
+    // than depending on wall-clock drift between setup and sweep.
+    const frozenNow = new Date('2026-07-17T12:00:00.000Z').getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(frozenNow);
+
+    const maxAgeMs = 60_000;
+    const pluginsRoot = path.join(dorkHome, 'plugins');
+    await mkdir(pluginsRoot, { recursive: true });
+    // cutoff = frozenNow - maxAgeMs. Exactly-at-cutoff → spared (>=).
+    const atCutoffPath = path.join(pluginsRoot, backupName('at-cutoff', frozenNow - maxAgeMs));
+    // One millisecond older than the cutoff → swept.
+    const justPastPath = path.join(
+      pluginsRoot,
+      backupName('past-cutoff', frozenNow - maxAgeMs - 1)
+    );
+    await mkdir(atCutoffPath, { recursive: true });
+    await mkdir(justPastPath, { recursive: true });
+
+    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger, { maxAgeMs });
+
+    expect(removed).toBe(1);
+    expect(await pathExists(atCutoffPath)).toBe(true);
+    expect(await pathExists(justPastPath)).toBe(false);
   });
 
   it('never touches directories that are not backups, even in a swept root', async () => {

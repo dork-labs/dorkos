@@ -215,6 +215,29 @@ describe('ConflictDetector', () => {
     });
   });
 
+  it('does not raise a skill-name conflict against a crash-left install backup (DOR-175)', async () => {
+    // A crash mid-reinstall leaves `<name>.dorkos-bak-<ts>-<uuid>` beside the
+    // install target — a byte-for-byte copy of the previous installation, so
+    // it carries the SAME skill names as the package being reinstalled.
+    // Without the exclusion the detector would raise a blocking skill-name
+    // error against the package's own crash residue.
+    const backupRoot = await installPluginSkeleton(
+      dorkHome,
+      `staged-plugin.dorkos-bak-${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`
+    );
+    await writeSkill(backupRoot, 'shared-skill', { description: 'crash-left backup' });
+
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'skill-name')).toHaveLength(0);
+  });
+
   it('reports a cron warning when two task SKILL.md files share the same minute field', async () => {
     const installedRoot = await installPluginSkeleton(dorkHome, 'installed-plugin');
     await writeSkill(installedRoot, 'installed-task', {

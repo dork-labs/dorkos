@@ -23,6 +23,7 @@ import { gt as semverGt, valid as semverValid, coerce as semverCoerce } from 'se
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplaceJson, MarketplaceJsonEntry, PackageType } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
+import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import type { InstallRequest, InstallResult, MarketplaceSource } from '../types.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 
@@ -204,6 +205,11 @@ export class UpdateFlow {
       const entries = await readDirSafe(root.dir);
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
+        // Skip crash-left install backups (`<name>.dorkos-bak-<ts>-<uuid>`,
+        // DOR-175) — a backup carries the previous installation's valid
+        // manifest under the same name, so without this guard update-all
+        // would target the backup path as a phantom duplicate package.
+        if (entry.name.includes(MARKETPLACE_BACKUP_DIR_MARKER)) continue;
         const installPath = path.join(root.dir, entry.name);
         const manifest = await readInstalledManifest(installPath);
         if (!manifest) continue;
