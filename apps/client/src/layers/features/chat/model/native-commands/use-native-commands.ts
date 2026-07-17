@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { resolveCommandIntent } from '@dorkos/shared/command-intents';
 import { useRenameSession } from '@/layers/entities/session';
 import { useTransport } from '@/layers/shared/model';
+import { dispatchCompactIntent } from './dispatch-compact-intent';
 import { useUsageReveal } from '../use-usage-reveal';
 import { parseNativeCommand } from './registry';
 
@@ -114,17 +115,10 @@ export function useNativeCommands(
         // Trigger-only (202); the compaction rides the durable /events stream. Do
         // NOT POST a message and never render a phantom user bubble. Trailing
         // instructions (the remainder after the token) ride along so runtimes
-        // that accept compaction guidance receive them verbatim.
-        transport
-          .runCommandIntent(sessionId, 'compact', slash.rest || undefined)
-          .catch((err: unknown) => {
-            const locked = (err as { code?: string }).code === 'SESSION_LOCKED';
-            toast.error(
-              locked
-                ? 'The agent is busy — try compacting again in a moment.'
-                : "Couldn't compact the conversation."
-            );
-          });
+        // that accept compaction guidance receive them verbatim. Shared with the
+        // proactive compaction chip (DOR-112) so a failed dispatch always shows
+        // the same toast on both surfaces.
+        void dispatchCompactIntent(transport, sessionId, slash.rest || undefined);
         return { handled: true, ran: true };
       }
 
