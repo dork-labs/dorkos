@@ -3,10 +3,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { blog } from '@/lib/source';
+import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { getMDXComponents } from '@/components/mdx-components';
 import { siteConfig } from '@/config/site';
 import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 import { BlogTOCSidebar } from './_components/BlogTOCSidebar';
+import { ReleaseInstallFooter } from './_components/ReleaseInstallFooter';
 
 export function generateStaticParams() {
   return blog.getPages().map((page) => ({
@@ -54,9 +56,7 @@ export default async function BlogPost(props: { params: Promise<{ slug: string }
   const Mdx = page.data.body;
 
   // Sorted posts for prev/next navigation (newest-first, same as index)
-  const allPosts = blog
-    .getPages()
-    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+  const allPosts = sortBlogPagesNewestFirst(blog.getPages());
 
   const currentIndex = allPosts.findIndex((p) => p.slugs[0] === params.slug);
   const prevPost = currentIndex < allPosts.length - 1 ? allPosts[currentIndex + 1] : null;
@@ -136,6 +136,9 @@ export default async function BlogPost(props: { params: Promise<{ slug: string }
                   year: 'numeric',
                   month: 'long',
                   day: 'numeric',
+                  // Frontmatter dates parse as UTC midnight; render in UTC so
+                  // the day doesn't shift in negative-offset timezones.
+                  timeZone: 'UTC',
                 })}
               </time>
               {page.data.author && <span>{page.data.author}</span>}
@@ -170,6 +173,12 @@ export default async function BlogPost(props: { params: Promise<{ slug: string }
           <div className="prose prose-headings:text-charcoal prose-p:text-warm-gray prose-li:text-warm-gray prose-strong:text-charcoal prose-code:text-charcoal prose-a:text-charcoal prose-a:underline max-w-none">
             <Mdx components={getMDXComponents()} />
           </div>
+
+          {/* Install / Update — rendered by the template for every release post
+              so install guidance stays current instead of drifting per-post. */}
+          {page.data.category === 'release' && (
+            <ReleaseInstallFooter title={page.data.title} slug={params.slug} />
+          )}
 
           {/* Newsletter CTA — release notes + fleet reports, ~2/month */}
           <aside className="border-warm-gray-light/30 mt-16 rounded-xl border p-6">

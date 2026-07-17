@@ -28,7 +28,7 @@ const socialLinks = [
 /**
  * Layout for blog pages within the marketing route group.
  *
- * Imports fumadocs-ui styles for DOcsPage TOC and MDX component rendering.
+ * Imports fumadocs-ui styles for DocsPage TOC and MDX component rendering.
  * Forces light theme since the marketing site uses a cream background.
  * Overrides fumadocs CSS custom properties to match the marketing palette.
  */
@@ -37,7 +37,6 @@ export default function BlogLayout({ children }: { children: ReactNode }) {
     <RootProvider theme={{ forcedTheme: 'light' }}>
       <MarketingHeader />
       <div
-        className="blog-layout not-fumadocs-codeblock"
         style={
           {
             // Override fumadocs CSS variables to match marketing palette
@@ -48,9 +47,6 @@ export default function BlogLayout({ children }: { children: ReactNode }) {
             '--color-fd-background': 'var(--cream-primary)',
             '--color-fd-card': 'var(--cream-primary)',
             '--color-fd-border': 'var(--warm-gray-light)',
-            // Restore code block padding excluded by not-fumadocs-codeblock
-            '--padding-left': '1rem',
-            '--padding-right': '1rem',
           } as React.CSSProperties
         }
       >

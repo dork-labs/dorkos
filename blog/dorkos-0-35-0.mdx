@@ -42,15 +42,3 @@ The Marketplace in the client was silently returning zero packages on v0.34.x. T
 ### Fixed
 
 - The Marketplace now loads correctly. Previously it showed zero packages because the default community source URL pointed at `github.com/dorkos/marketplace` (an org that doesn't exist — the real repo is at `dork-labs/marketplace`) AND the upstream parser rejected the real Anthropic `claude-plugins-official` catalog entirely because of a strict reserved-name check and a kebab-case regex that couldn't handle the `wordpress.com` plugin. Existing users' `~/.dork/marketplaces.json` files get auto-migrated to the correct URL on first read — no manual editing required. End-to-end verified: 8 plugins from the Dork Labs community marketplace + 126 from the Anthropic catalog now load successfully.
-
-## Install / Update
-
-```
-npm install -g dorkos@0.35.0
-```
-
-Existing installs can update in place:
-
-```
-npm update -g dorkos
-```

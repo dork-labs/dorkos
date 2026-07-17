@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Rss } from 'lucide-react';
 import { blog } from '@/lib/source';
+import { sortBlogPagesNewestFirst } from '@/lib/blog-order';
 import { siteConfig } from '@/config/site';
 
 export const metadata: Metadata = {
@@ -29,9 +30,7 @@ const categoryColors: Record<string, string> = {
 };
 
 export default function BlogIndex() {
-  const posts = blog
-    .getPages()
-    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+  const posts = sortBlogPagesNewestFirst(blog.getPages());
 
   return (
     <div className="mx-auto max-w-3xl px-6 pt-32 pb-24">
@@ -60,6 +59,9 @@ export default function BlogIndex() {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric',
+                    // Frontmatter dates parse as UTC midnight; render in UTC so
+                    // the day doesn't shift in negative-offset timezones.
+                    timeZone: 'UTC',
                   })}
                 </time>
                 {post.data.category && (

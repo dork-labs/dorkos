@@ -22,6 +22,13 @@ const nextConfig: NextConfig = {
   // Docs pages that moved in the 2026-07 docs reorganization
   async redirects() {
     return [
+      // /download is a guessable URL people type; the real routes are
+      // /download/mac and /download/windows. Send it to the install page.
+      {
+        source: '/download',
+        destination: '/install',
+        permanent: false,
+      },
       {
         source: '/docs/guides/tunnel-setup',
         destination: '/docs/self-hosting/tunnel-setup',
