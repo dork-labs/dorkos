@@ -67,7 +67,6 @@ const mockAgent = {
   capabilities: [],
   runtime: 'claude-code' as const,
   behavior: { responseMode: 'always' as const },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: new Date().toISOString(),
   registeredBy: 'test',
   personaEnabled: true,

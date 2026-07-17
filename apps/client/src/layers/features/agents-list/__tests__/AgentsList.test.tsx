@@ -118,7 +118,6 @@ const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): Topology
     runtime: 'claude-code',
     capabilities: [],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     namespace: overrides.namespace,
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',

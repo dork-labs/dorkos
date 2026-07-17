@@ -59,7 +59,6 @@ const AGENT: AgentManifest = {
   runtime: 'claude-code',
   capabilities: ['testing'],
   behavior: { responseMode: 'always' },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: NOW,
   registeredBy: 'test',
   personaEnabled: true,

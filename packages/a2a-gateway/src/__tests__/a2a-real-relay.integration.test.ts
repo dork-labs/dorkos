@@ -102,7 +102,6 @@ function makeManifest(): AgentManifest {
     runtime: 'claude-code',
     capabilities: ['code-review'],
     behavior: { responseMode: 'always' },
-    budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
     namespace: 'default',
     registeredAt: '2026-01-01T00:00:00Z',
     registeredBy: 'mesh',

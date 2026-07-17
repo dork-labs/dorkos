@@ -37,7 +37,6 @@ const mockAgent: AgentManifest = {
   runtime: 'claude-code',
   capabilities: [],
   behavior: { responseMode: 'always' },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: '2025-01-01T00:00:00.000Z',
   registeredBy: 'test',
   personaEnabled: true,
