@@ -100,7 +100,66 @@ describe('TraceStore', () => {
     expect(metrics.totalMessages).toBe(0);
     expect(metrics.deliveredCount).toBe(0);
     expect(metrics.avgDeliveryLatencyMs).toBeNull();
+    expect(metrics.p50DeliveryLatencyMs).toBeNull();
     expect(metrics.p95DeliveryLatencyMs).toBeNull();
+    expect(metrics.p99DeliveryLatencyMs).toBeNull();
+  });
+
+  it('does not fabricate a latency percentile when spans exist but none delivered', () => {
+    // Every span is still 'sent' -- deliveredAt is NULL for all of them, so
+    // percentile_cont() sees zero non-NULL inputs and must return NULL, not 0.
+    store.insertSpan({ messageId: 'pending-1', traceId: 't1', subject: 's1' });
+    store.insertSpan({ messageId: 'pending-2', traceId: 't2', subject: 's1' });
+
+    const metrics = store.getMetrics();
+    expect(metrics.totalMessages).toBe(2);
+    expect(metrics.avgDeliveryLatencyMs).toBeNull();
+    expect(metrics.p50DeliveryLatencyMs).toBeNull();
+    expect(metrics.p95DeliveryLatencyMs).toBeNull();
+    expect(metrics.p99DeliveryLatencyMs).toBeNull();
+  });
+
+  describe('delivery-latency percentiles (DOR-166)', () => {
+    it('computes p50/p95/p99 delivery latency in one SQL pass, verified against hand-computed values', () => {
+      // 10 delivered spans with latencies 1000ms, 2000ms, ..., 10000ms (whole
+      // seconds -- the underlying expression truncates to strftime('%s')
+      // resolution, so sub-second latencies would round away precision here).
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const sentAt = new Date().toISOString();
+
+      for (let k = 1; k <= 10; k++) {
+        store.insertSpan({ messageId: `lat-${k}`, traceId: `trace-${k}`, subject: 's1' });
+      }
+
+      for (let k = 1; k <= 10; k++) {
+        vi.setSystemTime(new Date(Date.parse('2026-01-01T00:00:00.000Z') + k * 1000));
+        store.updateSpan(`lat-${k}`, {
+          status: 'delivered',
+          deliveredAt: new Date().toISOString(),
+        });
+      }
+      vi.useRealTimers();
+
+      // Hand-computed linear-interpolation percentile (the standard
+      // percentile_cont formula) over the sorted latency set
+      // [1000, 2000, ..., 10000], independent of the query under test:
+      //   rank = fraction * (n - 1); interpolate between the values that
+      //   straddle `rank` in the sorted array.
+      const sorted = Array.from({ length: 10 }, (_, i) => (i + 1) * 1000);
+      const handComputedPercentile = (fraction: number) => {
+        const rank = fraction * (sorted.length - 1);
+        const lo = Math.floor(rank);
+        const hi = Math.ceil(rank);
+        return sorted[lo] + (rank - lo) * (sorted[hi] - sorted[lo]);
+      };
+
+      const metrics = store.getMetrics({ since: sentAt });
+      expect(metrics.avgDeliveryLatencyMs).toBe(5500); // mean of 1000..10000
+      expect(metrics.p50DeliveryLatencyMs).toBe(handComputedPercentile(0.5)); // 5500
+      expect(metrics.p95DeliveryLatencyMs).toBeCloseTo(handComputedPercentile(0.95), 6); // 9550
+      expect(metrics.p99DeliveryLatencyMs).toBe(handComputedPercentile(0.99)); // 9910
+    });
   });
 
   describe('getMetrics date filter', () => {

@@ -49,6 +49,11 @@ export type Db = ReturnType<typeof createDb>;
 // Re-export all schema tables and inferred types
 export * from './schema/index.js';
 
+// Re-export the percentile-extension feature probe (DOR-166) — shared by any
+// store that aggregates with `percentile_cont()` so a build predating
+// better-sqlite3 12.10 degrades to `NULL` instead of throwing.
+export { hasPercentileSupport, resetPercentileSupportCache } from './sql-features.js';
+
 // Re-export commonly used Drizzle query helpers so consumers share the same
 // drizzle-orm instance as @dorkos/db (avoids duplicate-package type conflicts).
 export {

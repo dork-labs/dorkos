@@ -38,7 +38,9 @@ const mockMetrics = {
   failedCount: 3,
   deadLetteredCount: 1,
   avgDeliveryLatencyMs: 45,
+  p50DeliveryLatencyMs: 30,
   p95DeliveryLatencyMs: 120,
+  p99DeliveryLatencyMs: 180,
   activeEndpoints: 2,
   budgetRejections: defaultBudgetRejections,
 };
@@ -113,7 +115,9 @@ const emptyMetrics = {
   failedCount: 0,
   deadLetteredCount: 0,
   avgDeliveryLatencyMs: null,
+  p50DeliveryLatencyMs: null,
   p95DeliveryLatencyMs: null,
+  p99DeliveryLatencyMs: null,
   activeEndpoints: 0,
   budgetRejections: defaultBudgetRejections,
 };

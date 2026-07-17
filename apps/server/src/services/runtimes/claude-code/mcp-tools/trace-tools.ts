@@ -48,7 +48,8 @@ export function getTraceTools(deps: McpToolDeps) {
     ),
     tool(
       'relay_get_metrics',
-      'Get aggregate delivery metrics for the Relay message bus. Includes counts, latency stats, and budget rejections.',
+      'Get aggregate delivery metrics for the Relay message bus. Includes counts, delivery-latency stats ' +
+        '(avg, p50, p95, p99, all in ms — null when no deliveries are in the window), and budget rejections.',
       {},
       createRelayGetMetricsHandler(deps)
     ),
