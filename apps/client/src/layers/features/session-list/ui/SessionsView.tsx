@@ -10,6 +10,7 @@ import {
 import { SessionRow } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
+import { FleetContextBar } from './FleetContextBar';
 
 interface SessionGroup {
   label: string;
@@ -68,6 +69,9 @@ export function SessionsView({
           ))}
         </div>
       )}
+      {/* Fleet-level context health — complements the per-runtime warnings above
+          and hides itself when there is nothing to report (spec §8b). */}
+      <FleetContextBar />
       <motion.div layout>
         {groupedSessions.length > 0 ? (
           <>
