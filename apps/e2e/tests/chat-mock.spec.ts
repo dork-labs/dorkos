@@ -77,6 +77,85 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     await expect(chatPage.toolCallCards.first()).toBeVisible({ timeout: 10_000 });
   });
 
+  test('long messages lay out with true row heights — no overlap, full scroll height', async ({
+    page,
+    request,
+  }) => {
+    // Regression class for the frozen-measurement bug (DOR-163 review): a
+    // measurer that answers from a never-seeded cache freezes every row at the
+    // 80px estimate, so tall messages overlap and the scroll height collapses
+    // to count * estimate. This drives real long messages through the real
+    // virtualizer and asserts the *layout*, which unit tests (mocked
+    // virtualizer) can never see.
+    await request.post(`${API_URL}/api/test/scenario`, {
+      data: { name: 'simple-text' },
+    });
+
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: agentDir });
+
+    // Three long prompts; simple-text echoes each back, so every turn adds a
+    // user row AND an assistant row that both wrap far past the 80px estimate.
+    const filler =
+      'This sentence pads the message so the rendered row wraps well past the height estimate. ';
+    for (let i = 1; i <= 3; i++) {
+      await chatPage.sendMessage(`Long message ${i}: ${filler.repeat(6)}`);
+      await expect(page.getByText(new RegExp(`Echo: Long message ${i}:`))).toBeVisible({
+        timeout: 10_000,
+      });
+    }
+
+    // Every virtualizer row is rendered (6 messages, overscan 5).
+    const rows = chatPage.messageList.locator('[data-index]');
+    await expect(rows).toHaveCount(6);
+
+    /** Viewport boxes of every rendered row, sorted by message index. */
+    const collectBoxes = async () => {
+      const count = await rows.count();
+      const boxes: { index: number; y: number; height: number }[] = [];
+      for (let i = 0; i < count; i++) {
+        const row = rows.nth(i);
+        const index = Number(await row.getAttribute('data-index'));
+        const box = await row.boundingBox();
+        if (!box) throw new Error(`row ${index} has no bounding box`);
+        boxes.push({ index, y: box.y, height: box.height });
+      }
+      return boxes.sort((a, b) => a.index - b.index);
+    };
+
+    // Measurements propagate through a ResizeObserver tick after the last
+    // token lands, so poll the worst consecutive-row overlap down to sub-pixel
+    // rounding (2px) instead of asserting a single racy snapshot.
+    await expect
+      .poll(
+        async () => {
+          const boxes = await collectBoxes();
+          let worstOverlap = 0;
+          for (let i = 1; i < boxes.length; i++) {
+            worstOverlap = Math.max(
+              worstOverlap,
+              boxes[i - 1].y + boxes[i - 1].height - boxes[i].y
+            );
+          }
+          return worstOverlap;
+        },
+        { timeout: 10_000 }
+      )
+      .toBeLessThanOrEqual(2);
+
+    const boxes = await collectBoxes();
+
+    // Rows were REALLY measured: a frozen-at-estimate layout positions rows
+    // 80px apart, while these long messages render far taller than that.
+    expect(Math.max(...boxes.map((b) => b.height))).toBeGreaterThan(120);
+
+    // The scrollable height covers the true content: at least the sum of the
+    // rendered rows' heights (a collapsed total would be count * 80 + padding).
+    const sumOfRowHeights = boxes.reduce((acc, b) => acc + b.height, 0);
+    const scrollHeight = await page.locator('.chat-scroll-area').evaluate((el) => el.scrollHeight);
+    expect(scrollHeight).toBeGreaterThanOrEqual(sumOfRowHeights);
+  });
+
   test('scenario endpoint rejects unknown scenario names', async ({ request }) => {
     const res = await request.post(`${API_URL}/api/test/scenario`, {
       data: { name: 'nonexistent-scenario' },

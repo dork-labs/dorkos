@@ -11,16 +11,6 @@ import {
 import type { ChatMessage } from '../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 
-// jsdom does not implement IntersectionObserver
-globalThis.IntersectionObserver = vi.fn().mockImplementation(function () {
-  // Vitest 4 spies honor `new` semantics; the implementation must be constructible.
-  return {
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-  };
-});
-
 afterEach(() => {
   cleanup();
   // Reset store to defaults between tests
@@ -57,16 +47,10 @@ vi.mock('../ui/ScrollThumb', () => ({
   ScrollThumb: () => null,
 }));
 
-const mockScrollToBottom = vi.fn();
-vi.mock('use-stick-to-bottom', () => ({
-  useStickToBottom: () => ({
-    scrollRef: { current: document.createElement('div') },
-    contentRef: { current: document.createElement('div') },
-    isAtBottom: true,
-    scrollToBottom: mockScrollToBottom,
-  }),
-}));
-
+// Native end-anchor scroll now rides the virtualizer (DOR-163): scrollToBottom
+// calls `scrollToEnd()`, and pinned state derives from `isAtEnd()`. The mock
+// reports pinned (isAtEnd true) so the scroll-state contract holds.
+const mockScrollToEnd = vi.fn();
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getVirtualItems: () =>
@@ -78,8 +62,8 @@ vi.mock('@tanstack/react-virtual', () => ({
       })),
     getTotalSize: () => count * 80,
     measureElement: () => {},
-    scrollToIndex: () => {},
-    scrollToOffset: () => {},
+    scrollToEnd: mockScrollToEnd,
+    isAtEnd: () => true,
   }),
 }));
 
@@ -339,8 +323,10 @@ describe('MessageList', () => {
       },
     ];
     render(<MessageList ref={ref} sessionId="test-session" messages={messages} />);
+    // Ignore the initial land-at-bottom call; assert the handle itself fires.
+    mockScrollToEnd.mockClear();
     ref.current?.scrollToBottom();
-    expect(mockScrollToBottom).toHaveBeenCalled();
+    expect(mockScrollToEnd).toHaveBeenCalled();
   });
 
   it('scroll container has overflow-anchor none', () => {
