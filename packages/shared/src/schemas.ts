@@ -453,7 +453,7 @@ export type SessionListResponse = z.infer<typeof SessionListResponseSchema>;
 /**
  * Query for `GET /api/sessions/recent` (DOR-329): how many most-recent sessions
  * to return across all agents. `limit` is coerced from the query string and
- * clamped to 1-50 (default 10).
+ * validated to 1-50 (default 10); out-of-range values are rejected (400).
  */
 export const RecentSessionsQuerySchema = z
   .object({

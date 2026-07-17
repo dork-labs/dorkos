@@ -10,7 +10,7 @@
  *
  * @module entities/config/model/use-sidebar-prefs
  */
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { SidebarPrefs, SidebarGroup } from '@dorkos/shared/config-schema';
@@ -52,14 +52,26 @@ export interface UpdateSidebarPrefs {
  * Persist sidebar organization changes with an optimistic cache update.
  *
  * The returned `update` takes an immutable updater `(prev) => next`; the next
- * prefs are computed once from the current cache, written optimistically into
- * the config query (`onMutate` cancels in-flight config reads + snapshots),
- * sent as the COMPLETE `ui.sidebar` via `transport.updateConfig`, rolled back on
- * error, and re-validated by invalidating the config query on settle.
+ * prefs are computed once, written optimistically into the config query
+ * (`onMutate` cancels in-flight config reads + snapshots), sent as the COMPLETE
+ * `ui.sidebar` via `transport.updateConfig`, rolled back on error, and
+ * re-validated by invalidating the config query on settle.
+ *
+ * Same-tick composition: because every write carries the whole section, two
+ * `update()` calls in one tick must not both read the pre-mutation cache (the
+ * second PATCH would clobber the first). `resolveNext` therefore composes on a
+ * pending "head" — the latest optimistic {@link SidebarPrefs} held in a ref
+ * while any mutation is in flight — and clears it once the last in-flight
+ * mutation settles, so batched helper applications (e.g. Phase 3 drag gestures)
+ * all survive in the final payload.
  */
 export function useUpdateSidebarPrefs(): UpdateSidebarPrefs {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  /** Latest optimistic prefs while mutations are in flight; null when idle. */
+  const pendingHeadRef = useRef<SidebarPrefs | null>(null);
+  /** Number of unsettled mutations backing {@link pendingHeadRef}. */
+  const inFlightRef = useRef(0);
 
   const mutation = useMutation<void, Error, SidebarPrefs, { previous: ServerConfig | undefined }>({
     mutationFn: (next) => transport.updateConfig({ ui: { sidebar: next } }),
@@ -77,14 +89,26 @@ export function useUpdateSidebarPrefs(): UpdateSidebarPrefs {
       }
     },
     onSettled: () => {
+      inFlightRef.current -= 1;
+      if (inFlightRef.current <= 0) {
+        // Last in-flight write settled: drop the head so the next update reads
+        // the (invalidated, soon-refetched) cache — including after a rollback.
+        inFlightRef.current = 0;
+        pendingHeadRef.current = null;
+      }
       void queryClient.invalidateQueries({ queryKey: configKeys.current() });
     },
   });
 
   const resolveNext = useCallback(
     (updater: (prev: SidebarPrefs) => SidebarPrefs): SidebarPrefs => {
-      const current = selectSidebar(queryClient.getQueryData<ServerConfig>(configKeys.current()));
-      return updater(current);
+      const base =
+        pendingHeadRef.current ??
+        selectSidebar(queryClient.getQueryData<ServerConfig>(configKeys.current()));
+      const next = updater(base);
+      pendingHeadRef.current = next;
+      inFlightRef.current += 1;
+      return next;
     },
     [queryClient]
   );

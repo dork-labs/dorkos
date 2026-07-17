@@ -237,6 +237,28 @@ describe('useUpdateSidebarPrefs optimistic behavior', () => {
     });
   });
 
+  it('composes two same-tick updates: both survive in the final PATCH payload', async () => {
+    const transport = createMockTransport({ updateConfig: vi.fn().mockResolvedValue(undefined) });
+    const { queryClient, wrapper } = createHarness(transport);
+    queryClient.setQueryData(configKeys.current(), makeServerConfig(prefs()));
+
+    const { result } = renderHook(() => useUpdateSidebarPrefs(), { wrapper });
+
+    // Two synchronous updates in one tick — the second must compose on the
+    // first's pending head, not the pre-mutation cache (whole-section writes
+    // would otherwise clobber each other).
+    act(() => {
+      result.current.update((p) => pinPath(p, '/a'));
+      result.current.update((p) => pinPath(p, '/b'));
+    });
+
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(2));
+    // The last write carries BOTH pins.
+    expect(transport.updateConfig).toHaveBeenLastCalledWith({
+      ui: { sidebar: expect.objectContaining({ pinned: ['/a', '/b'] }) },
+    });
+  });
+
   it('rolls back to the snapshot when the transport write fails', async () => {
     // A deferred promise lets the test hold the write in flight, observe the
     // optimistic state, then reject deterministically (no timing race).
