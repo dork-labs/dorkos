@@ -135,8 +135,9 @@ export class TranscriptReader {
   }
 
   /**
-   * Get metadata for a single session.
-   * Reads both head (for title/timestamps) and tail (for latest model/context).
+   * Get metadata for a single session. Both the head (title/timestamps) and the
+   * tail (latest model/context/auto-compaction) are read inside
+   * {@link extractSessionMeta} — the single tail-read path shared with the list.
    */
   async getSession(vaultRoot: string, sessionId: string): Promise<Session | null> {
     await validateBoundary(vaultRoot);
@@ -146,11 +147,6 @@ export class TranscriptReader {
       // Attribute a head-record-less transcript to the directory it was
       // fetched from — same rule as listSessions (ADR 260707-193314).
       if (session.cwd === undefined) session.cwd = vaultRoot;
-      // Enrich with latest status from file tail
-      const tailStatus = await this.readTailStatus(filePath);
-      if (tailStatus.model) session.model = tailStatus.model;
-      if (tailStatus.permissionMode) session.permissionMode = tailStatus.permissionMode;
-      if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
       return session;
     } catch {
       return null;
@@ -158,13 +154,16 @@ export class TranscriptReader {
   }
 
   /**
-   * Read the tail of a JSONL file to get the most recent model, permissionMode, and context tokens.
-   * Reads the last ~16KB which typically contains the final assistant messages.
+   * Read the tail of a JSONL file to get the most recent model, permissionMode,
+   * context tokens, and auto-compaction marker. Reads the last ~16KB which
+   * typically contains the final assistant messages and any recent
+   * `compact_boundary` record.
    */
   private async readTailStatus(filePath: string): Promise<{
     model?: string;
     permissionMode?: PermissionMode;
     contextTokens?: number;
+    lastAutoCompactAt?: string;
   }> {
     const TAIL_SIZE = TRANSCRIPT.TAIL_BUFFER_BYTES;
     try {
@@ -180,6 +179,7 @@ export class TranscriptReader {
         let model: string | undefined;
         let permissionMode: PermissionMode | undefined;
         let contextTokens: number | undefined;
+        let lastAutoCompactAt: string | undefined;
 
         // Iterate forward — last occurrence wins
         for (const line of lines) {
@@ -212,9 +212,20 @@ export class TranscriptReader {
               permissionMode = 'default';
             }
           }
+          // Auto-triggered compaction is a context-pressure signal; a manual
+          // compaction is user-driven and deliberately ignored. The top-level
+          // record timestamp is the marker's "as of" time.
+          if (
+            parsed.type === 'system' &&
+            parsed.subtype === 'compact_boundary' &&
+            parsed.compactMetadata?.trigger === 'auto' &&
+            parsed.timestamp
+          ) {
+            lastAutoCompactAt = parsed.timestamp;
+          }
         }
 
-        return { model, permissionMode, contextTokens };
+        return { model, permissionMode, contextTokens, lastAutoCompactAt };
       } finally {
         await fileHandle.close();
       }
@@ -224,8 +235,12 @@ export class TranscriptReader {
   }
 
   /**
-   * Extract session metadata from a JSONL file.
-   * Reads only the first ~8KB for title/permissionMode, and uses file stat for timestamps.
+   * Extract session metadata from a JSONL file. Reads the first ~8KB for
+   * title/permissionMode/timestamps, then folds in a single tail read (~16KB)
+   * so both the list path and {@link getSession} carry the latest model, a
+   * best-effort `contextTokens` reading, and any auto-compaction marker — the
+   * enriched result is what {@link listSessionsInDir} caches under the file
+   * mtime, so an unchanged transcript pays for neither read again.
    */
   private async extractSessionMeta(
     filePath: string,
@@ -334,7 +349,7 @@ export class TranscriptReader {
     // title; fall back to the first-message derivation for untitled sessions.
     const title = (await this.resolveSdkTitle(sessionId, cwd)) ?? derivedTitle;
 
-    return {
+    const session: Session = {
       id: sessionId,
       title,
       createdAt: firstTimestamp || stat.birthtime.toISOString(),
@@ -345,6 +360,18 @@ export class TranscriptReader {
       model,
       cwd,
     };
+
+    // Fold in the tail read: the latest model overlays the head's, and a
+    // best-effort context reading + auto-compaction marker ride onto the row.
+    // Absent tail values leave the head-derived fields untouched and the
+    // optional reading fields unset (an honest "unknown" downstream).
+    const tailStatus = await this.readTailStatus(filePath);
+    if (tailStatus.model) session.model = tailStatus.model;
+    if (tailStatus.permissionMode) session.permissionMode = tailStatus.permissionMode;
+    if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
+    if (tailStatus.lastAutoCompactAt) session.lastAutoCompactAt = tailStatus.lastAutoCompactAt;
+
+    return session;
   }
 
   /**
