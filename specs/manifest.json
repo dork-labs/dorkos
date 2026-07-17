@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260717-191228",
+      "slug": "capture-cloud-link-stub",
+      "title": "Test-mode cloud-link stub for the Accounts capture shot",
+      "created": "2026-07-17",
+      "status": "ideation"
+    },
+    {
       "id": "260717-170853",
       "slug": "relay-flow-animation",
       "title": "Animate live relay message flow along topology edges",
