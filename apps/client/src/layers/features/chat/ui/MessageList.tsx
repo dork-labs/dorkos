@@ -104,7 +104,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 80,
     overscan: 5,
-    measureElement: (el) => el?.getBoundingClientRect().height ?? 80,
+    // Reuse the last real height for an item instead of re-measuring it to zero
+    // when the scroll container is hidden (`display: none` — e.g. an Obsidian
+    // sidebar tab switched away). virtual-core 3.17 honors this inside its
+    // default `measureElement`, so scroll position survives a hide/re-show
+    // without the bespoke IntersectionObserver workaround this replaces. NOTE:
+    // this only takes effect with the library's default measurer — a custom
+    // `measureElement` would bypass the cache.
+    useCachedMeasurements: true,
   });
 
   // Sync isAtBottom state to the onScrollStateChange callback for useScrollOverlay compatibility.
@@ -114,31 +121,6 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       distanceFromBottom: isAtBottom ? 0 : 200,
     });
   }, [isAtBottom, onScrollStateChange]);
-
-  // When the scroll container becomes visible again (e.g. switching Obsidian
-  // sidebar tabs), the virtualizer loses its scroll position. Detect
-  // visibility changes and scroll to bottom when re-shown.
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (!container || messages.length === 0) return;
-    let wasHidden = false;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry.isIntersecting) {
-          wasHidden = true;
-        } else if (wasHidden) {
-          wasHidden = false;
-          // Small delay so the virtualizer can re-measure after layout
-          requestAnimationFrame(() => {
-            scrollToBottom();
-          });
-        }
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [scrollRef, messages.length, scrollToBottom]);
 
   useImperativeHandle(
     ref,
