@@ -5,6 +5,9 @@ import {
   SENSITIVE_CONFIG_KEYS,
   LOG_LEVEL_MAP,
   ONBOARDING_STEPS,
+  SidebarGroupSchema,
+  SidebarPrefsSchema,
+  SIDEBAR_PREFS_DEFAULTS,
 } from '../config-schema.js';
 import type { UserConfig } from '../config-schema.js';
 
@@ -20,7 +23,18 @@ describe('UserConfigSchema', () => {
         authtoken: null,
         auth: null,
       },
-      ui: { theme: 'system', dismissedUpgradeVersions: [] },
+      ui: {
+        theme: 'system',
+        dismissedUpgradeVersions: [],
+        sidebar: {
+          pinned: [],
+          groups: [],
+          ungroupedSortMode: 'name',
+          ungroupedCollapsed: false,
+          recentsCollapsed: false,
+          groupsHintDismissed: false,
+        },
+      },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
@@ -43,6 +57,7 @@ describe('UserConfigSchema', () => {
         lastPromptedVersion: null,
         usage: true,
         linkAnalyticsToAccount: false,
+        aiMetadata: false,
       },
       workspace: {
         enabled: true,
@@ -240,7 +255,18 @@ describe('USER_CONFIG_DEFAULTS', () => {
         authtoken: null,
         auth: null,
       },
-      ui: { theme: 'system', dismissedUpgradeVersions: [] },
+      ui: {
+        theme: 'system',
+        dismissedUpgradeVersions: [],
+        sidebar: {
+          pinned: [],
+          groups: [],
+          ungroupedSortMode: 'name',
+          ungroupedCollapsed: false,
+          recentsCollapsed: false,
+          groupsHintDismissed: false,
+        },
+      },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
@@ -263,6 +289,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         lastPromptedVersion: null,
         usage: true,
         linkAnalyticsToAccount: false,
+        aiMetadata: false,
       },
       workspace: {
         enabled: true,
@@ -461,6 +488,7 @@ describe('UserConfigSchema telemetry', () => {
     lastPromptedVersion: null,
     usage: true,
     linkAnalyticsToAccount: false,
+    aiMetadata: false,
   };
 
   it('telemetry defaults the Tier 1 channels on and errorReporting off when omitted', () => {
@@ -486,6 +514,7 @@ describe('UserConfigSchema telemetry', () => {
       lastPromptedVersion: null,
       usage: true,
       linkAnalyticsToAccount: false,
+      aiMetadata: false,
     });
   });
 
@@ -592,6 +621,65 @@ describe('UserConfigSchema runtimes', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, runtimes: { opencode: { port: 42.5 } } })
     ).toThrow();
+  });
+});
+
+describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
+  const SIDEBAR_DEFAULTS = {
+    pinned: [],
+    groups: [],
+    ungroupedSortMode: 'name',
+    ungroupedCollapsed: false,
+    recentsCollapsed: false,
+    groupsHintDismissed: false,
+  };
+
+  it('parsing an empty config yields ui.sidebar with all documented defaults', () => {
+    const result = UserConfigSchema.parse({ version: 1 });
+    expect(result.ui.sidebar).toEqual(SIDEBAR_DEFAULTS);
+  });
+
+  it('SIDEBAR_PREFS_DEFAULTS matches the documented defaults', () => {
+    expect(SIDEBAR_PREFS_DEFAULTS).toEqual(SIDEBAR_DEFAULTS);
+  });
+
+  it('SidebarPrefsSchema fills defaults from an empty object', () => {
+    expect(SidebarPrefsSchema.parse({})).toEqual(SIDEBAR_DEFAULTS);
+  });
+
+  it('a group parses with its own defaults', () => {
+    const group = SidebarGroupSchema.parse({ id: 'g1', name: 'Clients' });
+    expect(group).toEqual({
+      id: 'g1',
+      name: 'Clients',
+      agentPaths: [],
+      sortMode: 'manual',
+      collapsed: false,
+    });
+  });
+
+  it('rejects a group name longer than 40 chars', () => {
+    expect(() => SidebarGroupSchema.parse({ id: 'g1', name: 'x'.repeat(41) })).toThrow();
+  });
+
+  it('rejects an empty group name', () => {
+    expect(() => SidebarGroupSchema.parse({ id: 'g1', name: '' })).toThrow();
+    expect(() => SidebarGroupSchema.parse({ id: 'g1', name: '   ' })).toThrow();
+  });
+
+  it('round-trips a fully-populated sidebar', () => {
+    const sidebar = {
+      pinned: ['/a', '/b'],
+      groups: [
+        { id: 'g1', name: 'Clients', agentPaths: ['/a'], sortMode: 'recent', collapsed: true },
+      ],
+      ungroupedSortMode: 'recent',
+      ungroupedCollapsed: true,
+      recentsCollapsed: true,
+      groupsHintDismissed: true,
+    };
+    const result = UserConfigSchema.parse({ version: 1, ui: { sidebar } });
+    expect(result.ui.sidebar).toEqual(sidebar);
   });
 });
 
