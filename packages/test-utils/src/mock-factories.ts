@@ -131,6 +131,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
   return {
     // Aggregated-list envelope (ADR-0310): { sessions, warnings? }, not a bare array.
     listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+    listRecentSessions: vi
+      .fn()
+      .mockResolvedValue({ sessions: [], agentActivity: {}, warnings: [] }),
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),

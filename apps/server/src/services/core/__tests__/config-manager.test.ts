@@ -5,6 +5,7 @@ import {
   initConfigManager,
   backfillExtensionsDisabled,
   backfillHarnessDefaults,
+  backfillSidebarDefaults,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
   backfillCloudDefaults,
@@ -837,6 +838,59 @@ describe('backfillHarnessDefaults migration', () => {
     const store = createMockStore({ harness: { autoSync: false } });
     backfillHarnessDefaults(store);
     expect(store.data.harness).toEqual({ autoSync: false });
+  });
+});
+
+describe('backfillSidebarDefaults migration (DOR-329)', () => {
+  const SIDEBAR_DEFAULTS = {
+    pinned: [],
+    groups: [],
+    ungroupedSortMode: 'name',
+    ungroupedCollapsed: false,
+    recentsCollapsed: false,
+    groupsHintDismissed: false,
+  };
+
+  it('adds ui.sidebar to an existing ui block, preserving other ui fields', () => {
+    const store = createMockStore({ ui: { theme: 'dark', dismissedUpgradeVersions: ['1.0.0'] } });
+    backfillSidebarDefaults(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      dismissedUpgradeVersions: ['1.0.0'],
+      sidebar: SIDEBAR_DEFAULTS,
+    });
+  });
+
+  it('is idempotent — does not overwrite existing sidebar organization', () => {
+    const existing = {
+      theme: 'system',
+      dismissedUpgradeVersions: [],
+      sidebar: {
+        pinned: ['/projects/api'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/api'],
+            sortMode: 'recent',
+            collapsed: false,
+          },
+        ],
+        ungroupedSortMode: 'recent',
+        ungroupedCollapsed: true,
+        recentsCollapsed: false,
+        groupsHintDismissed: true,
+      },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillSidebarDefaults(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when the ui section is absent (schema default owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillSidebarDefaults(store);
+    expect(store.data.ui).toBeUndefined();
   });
 });
 

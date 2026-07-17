@@ -216,6 +216,15 @@ describe('GET /api/config', () => {
     expect(res.body).toHaveProperty('relay');
     expect(res.body).toHaveProperty('mesh');
   });
+
+  it('includes ui.sidebar organization prefs (DOR-329)', async () => {
+    const res = await request(app).get('/api/config').expect(200);
+
+    expect(res.body.ui.sidebar).toBeDefined();
+    expect(Array.isArray(res.body.ui.sidebar.pinned)).toBe(true);
+    expect(Array.isArray(res.body.ui.sidebar.groups)).toBe(true);
+    expect(res.body.ui.sidebar.ungroupedSortMode).toBe('name');
+  });
 });
 
 describe('PUT /api/config/agents/defaultAgent', () => {

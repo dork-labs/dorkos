@@ -52,12 +52,12 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 
 The central UI store lives at `apps/client/src/layers/shared/model/app-store/app-store.ts`. It uses the `devtools` middleware for Redux DevTools support and is composed from four slices, each responsible for a distinct domain:
 
-| Slice              | File                       | Purpose                                                                      |
-| ------------------ | -------------------------- | ---------------------------------------------------------------------------- |
-| `CoreSlice`        | `app-store.ts`             | Sidebar, session, navigation, streaming status, context files, pinned agents |
-| `PanelsSlice`      | `app-store-panels.ts`      | Transient dialog/panel open-close state                                      |
-| `PreferencesSlice` | `app-store-preferences.ts` | Persisted boolean settings, font, promo dismissals                           |
-| `CanvasSlice`      | `app-store-canvas.ts`      | Per-session canvas UI state                                                  |
+| Slice              | File                       | Purpose                                                       |
+| ------------------ | -------------------------- | ------------------------------------------------------------- |
+| `CoreSlice`        | `app-store.ts`             | Sidebar, session, navigation, streaming status, context files |
+| `PanelsSlice`      | `app-store-panels.ts`      | Transient dialog/panel open-close state                       |
+| `PreferencesSlice` | `app-store-preferences.ts` | Persisted boolean settings, font, promo dismissals            |
+| `CanvasSlice`      | `app-store-canvas.ts`      | Per-session canvas UI state                                   |
 
 The combined `AppState` type is the intersection of all four slices, defined in `app-store-types.ts` to break circular type dependencies between slice files.
 
@@ -66,7 +66,6 @@ Key state owned by the app store:
 - `sidebarOpen` — persisted to localStorage; always `false` on mobile on first load
 - `sidebarLevel` — transient (`'dashboard' | 'session'`); controls whether the sidebar shows the top-level agent list or the agent-scoped session view
 - `previousCwd` — transient; used by command palette for "switch back" suggestions
-- `pinnedAgentPaths` — persisted to localStorage; ordered list of user-pinned agent paths for the sidebar
 - Dialog open states (`settingsOpen`, `tasksOpen`, `relayOpen`, etc.) — transient, not persisted
 - Canvas panel state (`canvasOpen`, `canvasContent`, `canvasPreferredWidth`) — transient; controls the agent-driven canvas side panel visibility, content, and width
 - `selectedCwd` — writes to `recentCwds` in localStorage on change
@@ -94,15 +93,6 @@ export const useAppStore = create<AppState>()(
           }),
         sidebarLevel: 'dashboard' as const,
         setSidebarLevel: (level) => set({ sidebarLevel: level }),
-        pinnedAgentPaths: hydratePinnedAgents(), // from localStorage
-        pinAgent: (path) =>
-          set((s) => {
-            /* append + persist */
-          }),
-        unpinAgent: (path) =>
-          set((s) => {
-            /* filter + persist */
-          }),
         // ...core slice fields
         ...createPanelsSlice(...a),
         ...createPreferencesSlice(...a),
@@ -114,7 +104,7 @@ export const useAppStore = create<AppState>()(
 );
 ```
 
-**Agent pinning**: `pinnedAgentPaths` is hydrated from `localStorage` at store creation and persisted on every `pinAgent`/`unpinAgent` call. The `resetPreferences` action clears pinned agents along with all other persisted state. Pinning is idempotent (no duplicates) and order-preserving (appends to end).
+**Agent pinning (server-persisted, DOR-329)**: pinned agents are NOT app-store state. Sidebar organization (pinned agents, user-defined groups, per-section sort/collapse) lives in the server config at `ui.sidebar` and is read/written through `useSidebarPrefs()` / `useUpdateSidebarPrefs()` from `@/layers/entities/config` — TanStack Query server state with optimistic writes, not Zustand. localStorage is no longer involved; the legacy `dorkos-pinned-agents` key is migrated into config once on `DashboardSidebar` mount and removed. Because it is config, `resetPreferences` does not touch it, and the organization syncs across every browser and the desktop app connected to the instance.
 
 ### Using Selectors (Prevent Re-renders)
 

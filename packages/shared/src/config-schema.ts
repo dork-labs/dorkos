@@ -72,6 +72,42 @@ export const OnboardingStateSchema = z.object({
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
 
+export const SidebarGroupSchema = z.object({
+  /** Stable id, `crypto.randomUUID()` minted client-side at creation. */
+  id: z.string().min(1),
+  /** Display name. Duplicates allowed (ids disambiguate). */
+  name: z.string().trim().min(1).max(40),
+  /** Ordered member agent projectPaths - the durable manual order. */
+  agentPaths: z.array(z.string()).default(() => []),
+  /** How rows inside this group are ordered. Switching away from 'manual' never mutates agentPaths. */
+  sortMode: z.enum(['manual', 'recent', 'name']).default('manual'),
+  collapsed: z.boolean().default(false),
+});
+
+/** A single user-defined sidebar group (Slack-style section). */
+export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
+
+export const SidebarPrefsSchema = z.object({
+  /** Ordered pinned agent projectPaths. Multi-presence references - membership in groups is unaffected. */
+  pinned: z.array(z.string()).default(() => []),
+  groups: z.array(SidebarGroupSchema).default(() => []),
+  /** Ungrouped section ("Agents"): no manual mode - groups are the place for manual curation. */
+  ungroupedSortMode: z.enum(['name', 'recent']).default('name'),
+  ungroupedCollapsed: z.boolean().default(false),
+  recentsCollapsed: z.boolean().default(false),
+  groupsHintDismissed: z.boolean().default(false),
+});
+
+/** Server-persisted sidebar organization preferences (`ui.sidebar`). */
+export type SidebarPrefs = z.infer<typeof SidebarPrefsSchema>;
+
+/**
+ * Fully-defaulted {@link SidebarPrefs}. Parsed once from an empty object so the
+ * config route and the client selector share one canonical default (the sidebar
+ * always renders even before the first user write).
+ */
+export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = SidebarPrefsSchema.parse({});
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -108,8 +144,28 @@ export const UserConfigSchema = z.object({
         .array(z.string())
         .default(() => [])
         .describe('Version strings the user has dismissed upgrade notifications for'),
+      /** Server-persisted sidebar organization (groups, pinned, per-section sort/collapse). */
+      sidebar: SidebarPrefsSchema.default(() => ({
+        pinned: [],
+        groups: [],
+        ungroupedSortMode: 'name' as const,
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+      })),
     })
-    .default(() => ({ theme: 'system' as const, dismissedUpgradeVersions: [] })),
+    .default(() => ({
+      theme: 'system' as const,
+      dismissedUpgradeVersions: [],
+      sidebar: {
+        pinned: [],
+        groups: [],
+        ungroupedSortMode: 'name' as const,
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+      },
+    })),
   logging: LoggingConfigSchema.default(() => ({
     level: 'info' as const,
     maxLogSizeKb: 500,

@@ -13,6 +13,7 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
 import { ClientContextSchema } from './additional-context.js';
+import { SidebarPrefsSchema } from './config-schema.js';
 // Type-only import: `ui-widget.ts` value-imports `UiCommandSchema` from this
 // module, so a value import of `WidgetDocumentSchema` here would form a
 // load-time cycle. The canvas `widget` content carries the document typed but
@@ -448,6 +449,40 @@ export const SessionListResponseSchema = z
   .openapi('SessionListResponse');
 
 export type SessionListResponse = z.infer<typeof SessionListResponseSchema>;
+
+/**
+ * Query for `GET /api/sessions/recent` (DOR-329): how many most-recent sessions
+ * to return across all agents. `limit` is coerced from the query string and
+ * validated to 1-50 (default 10); out-of-range values are rejected (400).
+ */
+export const RecentSessionsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).default(10),
+  })
+  .openapi('RecentSessionsQuery');
+
+export type RecentSessionsQuery = z.infer<typeof RecentSessionsQuerySchema>;
+
+/**
+ * Response envelope for `GET /api/sessions/recent` (DOR-329, ADR-0310).
+ *
+ * `sessions` are the most-recent sessions merged across every registered agent,
+ * sorted `updatedAt` descending and trimmed to the requested limit.
+ * `agentActivity` maps each agent's `projectPath` to its latest session
+ * `updatedAt` (ISO string), computed before the trim so it is complete even for
+ * agents with no session in the top `limit` — it powers the client's per-group
+ * "Recent activity" sort. `warnings` carries per-runtime degradation
+ * (ADR-0310), aggregated across the fan-out.
+ */
+export const RecentSessionsResponseSchema = z
+  .object({
+    sessions: z.array(SessionSchema),
+    agentActivity: z.record(z.string(), z.string()),
+    warnings: z.array(SessionListWarningSchema).optional(),
+  })
+  .openapi('RecentSessionsResponse');
+
+export type RecentSessionsResponse = z.infer<typeof RecentSessionsResponseSchema>;
 
 export const CommandsQuerySchema = z
   .object({
@@ -2284,6 +2319,16 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Right-panel workbench configuration' }),
+    ui: z
+      .object({
+        // Server-persisted sidebar organization: groups, pinned agents,
+        // per-section sort and collapse state (DOR-329). Defined in
+        // config-schema.ts (no OpenAPI extension), so it is embedded rather than
+        // `.openapi()`-annotated here.
+        sidebar: SidebarPrefsSchema,
+      })
+      .optional()
+      .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
   })
   .openapi('ServerConfig');
 

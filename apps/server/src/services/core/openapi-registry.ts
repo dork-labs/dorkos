@@ -11,6 +11,8 @@ import { env } from '../../env.js';
 import {
   SessionSchema,
   SessionListResponseSchema,
+  RecentSessionsQuerySchema,
+  RecentSessionsResponseSchema,
   UpdateSessionRequestSchema,
   SendMessageRequestSchema,
   SendMessageResponseSchema,
@@ -250,6 +252,30 @@ registry.registerPath({
       description: 'Session list envelope (merged across runtimes, sorted by updatedAt desc)',
       content: {
         'application/json': { schema: SessionListResponseSchema },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/recent',
+  tags: ['Sessions'],
+  summary: 'List recent sessions across all agents',
+  description:
+    'Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310).',
+  request: {
+    query: RecentSessionsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Recent sessions envelope with per-agent activity map',
+      content: {
+        'application/json': { schema: RecentSessionsResponseSchema },
       },
     },
     400: {

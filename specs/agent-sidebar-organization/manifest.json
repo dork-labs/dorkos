@@ -3,6 +3,6 @@
   "slug": "agent-sidebar-organization",
   "title": "Agent sidebar organization: user-defined groups, favorites, and recent sessions",
   "created": "2026-07-16",
-  "status": "specified",
+  "status": "implemented",
   "linearIssue": "DOR-329"
 }

@@ -1,7 +1,7 @@
 ---
 id: 260717-001409
 title: Sidebar organization state lives in server user config, not localStorage or agent manifests
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: agent-sidebar-organization
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

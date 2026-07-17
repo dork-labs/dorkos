@@ -1,46 +1,59 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Activity,
-  FolderGit2,
-  LayoutDashboard,
-  Plus,
-  Search,
-  Store,
-  Users,
-  Zap,
-} from 'lucide-react';
-import {
-  SidebarHeader,
-  SidebarContent,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarGroup,
-  SidebarGroupLabel,
-  Kbd,
-} from '@/layers/shared/ui';
+import { useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence, motion } from 'motion/react';
+import { Plus } from 'lucide-react';
+import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
-import { cn, formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 import { useResolvedAgents } from '@/layers/entities/agent';
+import {
+  useConfig,
+  useSidebarPrefs,
+  useUpdateSidebarPrefs,
+  createGroup,
+  moveToGroup,
+  setGroupsHintDismissed,
+} from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useAgentSessions, useRenameSession } from '@/layers/entities/session';
+import { useAgentSessions, useRenameSession, useRecentSessions } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
-import { AddAgentMenu } from './AddAgentMenu';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
+import { SidebarNavHeader } from './SidebarNavHeader';
+import { RecentSessionsSection } from './RecentSessionsSection';
+import { PinnedSection } from './PinnedSection';
+import { AgentGroupSection } from './AgentGroupSection';
+import { UngroupedSection } from './UngroupedSection';
+import { GroupCreateInput } from './GroupCreateInput';
+import { GroupsHintCard } from './GroupsHintCard';
+import { SidebarDnd } from './SidebarDnd';
+import { Sortable, SortableList, agentRowDndId, agentDndData } from './SidebarDndPrimitives';
+import { sortAgentPaths } from '../model/sort-agents';
+import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 
 /**
- * Unified dashboard sidebar — top-level navigation and expandable agent list.
+ * Legacy localStorage key that held pinned agent paths before organization moved
+ * to server config (DOR-329). Its presence is the one-time migration flag.
+ */
+const LEGACY_PINNED_STORAGE_KEY = 'dorkos-pinned-agents';
+
+/** Pending group-create flow: `pendingPath` (if set) is moved into the group on commit. */
+interface GroupCreationState {
+  pendingPath: string | null;
+}
+
+/**
+ * Unified dashboard sidebar — top-level navigation plus the organized agent
+ * roster (DOR-329): Recent sessions, Pinned references, user-defined groups, and
+ * the ungrouped "Agents" list, with progressive disclosure so a small unorganized
+ * fleet stays as clean as before.
  *
- * The dashboard sidebar is the primary sidebar that persists across all routes.
- * Agents are sourced from the mesh registry (full roster, no cap), sorted
- * alphabetically by display name (falling back to the directory name), and
- * split into a Pinned section and an All section.
+ * This component is a slim orchestrator: it wires data (roster, sidebar prefs,
+ * recent sessions), computes membership maps, and composes the section
+ * components. Section chrome, sorting, and CRUD live in those children.
  */
 export function DashboardSidebar() {
   const navigate = useNavigate();
@@ -48,103 +61,107 @@ export function DashboardSidebar() {
   const queryClient = useQueryClient();
   const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
-  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
-  const pinnedAgentPaths = useAppStore((s) => s.pinnedAgentPaths);
-  const pinAgent = useAppStore((s) => s.pinAgent);
-  const unpinAgent = useAppStore((s) => s.unpinAgent);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
-  // ── Default agent from config ──
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => transport.getConfig(),
-    staleTime: 30_000,
-  });
-  const defaultAgentName = config?.agents?.defaultAgent ?? 'dorkbot';
-  const defaultAgentDir = config?.agents?.defaultDirectory ?? '~/.dork/agents';
-  const defaultAgentPath = `${defaultAgentDir}/${defaultAgentName}`;
+  // ── Server-persisted sidebar organization (DOR-329) ──
+  const { data: config } = useConfig();
+  const sidebarPrefs = useSidebarPrefs();
+  const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
+  const pinnedAgentPaths = sidebarPrefs.pinned;
 
-  // ── Full mesh roster (unsorted; display-name sort is derived below) ──
+  // ── Full mesh roster (unsorted; per-section sorting is derived below) ──
   const { data: meshData } = useMeshAgentPaths();
-
   const rawPaths = useMemo(() => (meshData?.agents ?? []).map((a) => a.projectPath), [meshData]);
-
   const { data: agents } = useResolvedAgents(rawPaths);
 
-  // ── Disambiguate duplicate display names (e.g. two "server" dirs) ──
-  const displayNames = useMemo(() => {
-    const result = new Map<string, string>();
-    const nameGroups = new Map<string, string[]>();
+  // ── Cross-agent recent sessions + per-agent activity (drives the "recent" sort) ──
+  const recentQuery = useRecentSessions();
+  const recentSessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
+  const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
 
-    // Group paths by their base display name
-    for (const p of rawPaths) {
-      const base = getAgentDisplayName(agents?.[p], p.split('/').pop() ?? 'Agent');
-      const group = nameGroups.get(base) ?? [];
-      group.push(p);
-      nameGroups.set(base, group);
+  // ── Display names (duplicates disambiguated) + the per-section sort context ──
+  const displayNamesRecord = useMemo(
+    () => disambiguateDisplayNames(rawPaths, agents ?? {}),
+    [rawPaths, agents]
+  );
+  const sortCtx = useMemo(
+    () => ({ displayNames: displayNamesRecord, agentActivity }),
+    [displayNamesRecord, agentActivity]
+  );
+
+  // ── Membership maps (stale paths filtered at render, never pruned on write) ──
+  const knownSet = useMemo(() => new Set(rawPaths), [rawPaths]);
+
+  const pinnedPaths = useMemo(
+    () => pinnedAgentPaths.filter((p) => knownSet.has(p)),
+    [pinnedAgentPaths, knownSet]
+  );
+
+  const groupedSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of sidebarPrefs.groups) {
+      for (const p of g.agentPaths) if (knownSet.has(p)) set.add(p);
     }
+    return set;
+  }, [sidebarPrefs.groups, knownSet]);
 
-    for (const [base, paths] of nameGroups) {
-      if (paths.length === 1) {
-        result.set(paths[0], base);
-        continue;
-      }
-      // Walk up from the end of each path until we find a differentiating segment.
-      // Paths may have different lengths, so compare by offset from the end.
-      const splitPaths = paths.map((p) => p.split('/').filter(Boolean));
-      for (const [i, p] of paths.entries()) {
-        const segments = splitPaths[i];
-        let suffix = '';
-        for (let offset = 2; offset < segments.length; offset++) {
-          const candidate = segments[segments.length - offset];
-          const isUnique = splitPaths.every(
-            (other, j) =>
-              j === i || other.length < offset || other[other.length - offset] !== candidate
-          );
-          if (isUnique) {
-            suffix = candidate;
-            break;
-          }
-        }
-        result.set(p, suffix ? `${base} (${suffix})` : base);
-      }
+  const knownGroupMembers = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const g of sidebarPrefs.groups) {
+      map.set(
+        g.id,
+        g.agentPaths.filter((p) => knownSet.has(p))
+      );
     }
+    return map;
+  }, [sidebarPrefs.groups, knownSet]);
 
-    return result;
-  }, [rawPaths, agents]);
+  const ungroupedPaths = useMemo(
+    () =>
+      sortAgentPaths(
+        rawPaths.filter((p) => !groupedSet.has(p)),
+        sidebarPrefs.ungroupedSortMode,
+        sortCtx
+      ),
+    [rawPaths, groupedSet, sidebarPrefs.ungroupedSortMode, sortCtx]
+  );
 
-  // ── Roster sorted alphabetically by resolved display name ──
-  // getAgentDisplayName resolves displayName → name → directory name, so agents
-  // without a custom name fall back to sorting by their directory name. Sorting
-  // by the disambiguated label keeps the order consistent with what's rendered.
-  const allPaths = useMemo(() => {
-    return [...rawPaths].sort((a, b) => {
-      const nameA = (displayNames.get(a) ?? '').toLowerCase();
-      const nameB = (displayNames.get(b) ?? '').toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-  }, [rawPaths, displayNames]);
+  const agentCount = rawPaths.length;
+  const organized = sidebarPrefs.groups.length > 0 || pinnedPaths.length > 0;
+  const showRecent = agentCount >= 2 && (recentQuery.isLoading || recentSessions.length > 0);
+  // Discovery nudge: only for a fleet big enough to benefit, with no groups yet,
+  // and never again once dismissed (Resolved Q — organization is user investment).
+  const showGroupsHint =
+    agentCount >= 8 && sidebarPrefs.groups.length === 0 && !sidebarPrefs.groupsHintDismissed;
 
-  // ── Pinned paths filtered to those that exist in the full roster ──
-  const pinnedPaths = useMemo(() => {
-    const pathSet = new Set(allPaths);
-    return pinnedAgentPaths.filter((p) => pathSet.has(p));
-  }, [pinnedAgentPaths, allPaths]);
-
-  // ── Unpinned paths — agents not in the pinned section ──
-  const unpinnedPaths = useMemo(() => {
-    const pinnedSet = new Set(pinnedPaths);
-    return allPaths.filter((p) => !pinnedSet.has(p));
-  }, [allPaths, pinnedPaths]);
-
-  // ── Auto-pin default agent on first install (once, when no pins exist) ──
+  // ── One-time migration of legacy localStorage pins → server config (DOR-329) ──
+  // If the old `dorkos-pinned-agents` key exists and the server has no pins yet,
+  // seed the server pins from it (order preserved); server state wins when it
+  // already has pins. The key's presence IS the migration flag — it is removed
+  // afterward either way, so re-mounts and reloads are no-ops.
+  const pinMigrationDoneRef = useRef(false);
   useEffect(() => {
-    if (pinnedAgentPaths.length === 0 && defaultAgentPath && allPaths.includes(defaultAgentPath)) {
-      pinAgent(defaultAgentPath);
+    if (pinMigrationDoneRef.current) return;
+    if (config === undefined) return; // wait for real server config
+    const raw = localStorage.getItem(LEGACY_PINNED_STORAGE_KEY);
+    if (raw === null) {
+      pinMigrationDoneRef.current = true;
+      return;
     }
-  }, [pinnedAgentPaths.length, defaultAgentPath, allPaths, pinAgent]);
+    pinMigrationDoneRef.current = true;
+    let stored: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) stored = parsed.filter((v): v is string => typeof v === 'string');
+    } catch {
+      stored = [];
+    }
+    if (pinnedAgentPaths.length === 0 && stored.length > 0) {
+      updateSidebarPrefs((prev) => ({ ...prev, pinned: [...stored] }));
+    }
+    localStorage.removeItem(LEGACY_PINNED_STORAGE_KEY);
+  }, [config, pinnedAgentPaths.length, updateSidebarPrefs]);
 
   // ── Sessions for the active agent (canonical cwd-scoped selector, DOR-203) ──
   const {
@@ -156,18 +173,38 @@ export function DashboardSidebar() {
 
   // ── Expanded agent tracking — auto-expand active agent ──
   const [expandedPath, setExpandedPath] = useState<string | null>(selectedCwd);
-
   useEffect(() => {
     setExpandedPath(selectedCwd);
   }, [selectedCwd]);
 
+  // ── Inline group-create flow ──
+  const [groupCreation, setGroupCreation] = useState<GroupCreationState | null>(null);
+  const handleRequestNewGroup = useCallback((path?: string) => {
+    setGroupCreation({ pendingPath: path ?? null });
+  }, []);
+  const handleCommitNewGroup = useCallback(
+    (name: string) => {
+      const pending = groupCreation?.pendingPath ?? null;
+      updateSidebarPrefs((prev) => {
+        const { next, id } = createGroup(prev, name);
+        return pending ? moveToGroup(next, pending, id) : next;
+      });
+      setGroupCreation(null);
+    },
+    [groupCreation, updateSidebarPrefs]
+  );
+  const handleCancelNewGroup = useCallback(() => setGroupCreation(null), []);
+  const handleDismissGroupsHint = useCallback(
+    () => updateSidebarPrefs((prev) => setGroupsHintDismissed(prev, true)),
+    [updateSidebarPrefs]
+  );
+
   // ── Handlers ──
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
-      // Include a session ID so the URL always has ?session=, which ensures
-      // ChatPanel's focus effect fires on every agent switch.  Mirror the
-      // sessionRouteLoader logic: reuse the most-recent cached session for the
-      // target agent, or generate a fresh UUID.
+      // Include a session ID so the URL always has ?session=, ensuring ChatPanel's
+      // focus effect fires on every agent switch. Reuse the most-recent cached
+      // session for the target agent, or generate a fresh UUID.
       const cached = queryClient.getQueryData<Session[]>(['sessions', agentPath]);
       const sessionId = cached?.[0]?.id ?? crypto.randomUUID();
       navigate({ to: '/session', search: { dir: agentPath, session: sessionId } });
@@ -177,37 +214,32 @@ export function DashboardSidebar() {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      navigate({
-        to: '/session',
-        search: (prev) => ({ ...prev, session: sessionId }),
-      });
+      navigate({ to: '/session', search: (prev) => ({ ...prev, session: sessionId }) });
     },
     [navigate]
   );
 
-  const handleNewSession = useCallback(() => {
-    navigate({
-      to: '/session',
-      search: { dir: selectedCwd ?? undefined, session: crypto.randomUUID() },
-    });
-  }, [navigate, selectedCwd]);
+  const handleResumeRecentSession = useCallback(
+    (session: Session) => {
+      navigate({ to: '/session', search: { dir: session.cwd ?? undefined, session: session.id } });
+    },
+    [navigate]
+  );
+
+  const handleNewSession = useCallback(
+    (dir?: string) => {
+      navigate({
+        to: '/session',
+        search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },
+      });
+    },
+    [navigate, selectedCwd]
+  );
 
   const handleToggleExpand = useCallback((path: string) => {
     setExpandedPath((prev) => (prev === path ? null : path));
   }, []);
 
-  const handleTogglePin = useCallback(
-    (path: string) => {
-      if (pinnedAgentPaths.includes(path)) {
-        unpinAgent(path);
-      } else {
-        pinAgent(path);
-      }
-    },
-    [pinnedAgentPaths, pinAgent, unpinAgent]
-  );
-
-  /** Open the Agent Hub right panel for a given agent path. */
   const handleOpenProfile = useCallback(
     (path: string) => {
       useAgentHubStore.getState().openHub(path);
@@ -238,195 +270,160 @@ export function DashboardSidebar() {
     [renameSession]
   );
 
+  // ── Shared agent-row renderer (keeps section components lean; keyPrefix lets a
+  // pinned reference coexist with its home copy) ──
+  const renderAgentRow = useCallback(
+    (path: string, keyPrefix: string): ReactNode => {
+      const isActive = selectedCwd === path && pathname === '/session';
+      return (
+        <Sortable
+          key={`${keyPrefix}-${path}`}
+          id={agentRowDndId(keyPrefix, path)}
+          data={agentDndData(keyPrefix, path)}
+        >
+          {(bindings) => (
+            <AgentListItem
+              path={path}
+              agent={agents?.[path] ?? null}
+              displayName={displayNamesRecord[path]}
+              isActive={isActive}
+              isExpanded={expandedPath === path}
+              onSelect={() => handleSelectAgent(path)}
+              onToggleExpand={() => handleToggleExpand(path)}
+              onOpenProfile={() => handleOpenProfile(path)}
+              onRequestNewGroup={handleRequestNewGroup}
+              sessions={isActive ? previewSessions : []}
+              isLoadingSessions={isActive && sessionsLoading}
+              activeSessionId={activeSessionId}
+              onSessionClick={handleSessionClick}
+              onNewSession={() => handleNewSession(path)}
+              onForkSession={handleForkSession}
+              onRenameSession={handleRenameSession}
+              sortable={bindings}
+            />
+          )}
+        </Sortable>
+      );
+    },
+    [
+      selectedCwd,
+      pathname,
+      agents,
+      displayNamesRecord,
+      expandedPath,
+      previewSessions,
+      sessionsLoading,
+      activeSessionId,
+      handleSelectAgent,
+      handleToggleExpand,
+      handleOpenProfile,
+      handleRequestNewGroup,
+      handleSessionClick,
+      handleNewSession,
+      handleForkSession,
+      handleRenameSession,
+    ]
+  );
+
   return (
     <>
-      <SidebarHeader className="border-b p-3">
-        <SidebarMenu>
-          <NavButton
-            icon={LayoutDashboard}
-            label="Dashboard"
-            isActive={pathname === '/'}
-            onClick={() => navigate({ to: '/' })}
-          />
-          <NavButton
-            icon={Activity}
-            label="Activity"
-            isActive={pathname === '/activity'}
-            onClick={() => navigate({ to: '/activity' })}
-          />
-          <NavButton
-            icon={Users}
-            label="Agents"
-            isActive={pathname === '/agents'}
-            onClick={() => navigate({ to: '/agents' })}
-          />
-          <NavButton
-            icon={Zap}
-            label="Tasks"
-            isActive={pathname === '/tasks'}
-            onClick={() => navigate({ to: '/tasks' })}
-          />
-          <NavButton
-            icon={FolderGit2}
-            label="Workspaces"
-            isActive={pathname === '/workspaces'}
-            onClick={() => navigate({ to: '/workspaces' })}
-          />
-          <NavButton
-            icon={Store}
-            label="Marketplace"
-            isActive={pathname === '/marketplace' || pathname.startsWith('/marketplace/')}
-            onClick={() => navigate({ to: '/marketplace' })}
-          />
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => setGlobalPaletteOpen(true)}
-              className="group text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
-            >
-              <span className="flex items-center gap-1.5">
-                <Search className="size-(--size-icon-sm)" />
-                Search
-              </span>
-              <Kbd className="shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                {formatShortcutKey(SHORTCUTS.COMMAND_PALETTE)}
-              </Kbd>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
+      <SidebarNavHeader />
 
       <SidebarContent className="p-3">
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-muted-foreground/70 text-[10px] font-medium tracking-wider uppercase">
-            Agents
-          </SidebarGroupLabel>
-          <AddAgentMenu />
+        <SidebarDnd displayNames={displayNamesRecord}>
+          {showRecent && (
+            <RecentSessionsSection
+              sessions={recentSessions}
+              isLoading={recentQuery.isLoading}
+              warnings={recentQuery.data?.warnings}
+              agents={agents ?? {}}
+              displayNames={displayNamesRecord}
+              onSelectSession={handleResumeRecentSession}
+            />
+          )}
 
-          {/* Pinned section — only if pins exist */}
           {pinnedPaths.length > 0 && (
-            <>
-              <SidebarGroupLabel className="text-muted-foreground/50 mt-1 text-[9px] font-medium tracking-wider uppercase">
-                Pinned
-              </SidebarGroupLabel>
-              <SidebarMenu>
-                {pinnedPaths.map((path) => {
-                  const isActive = selectedCwd === path && pathname === '/session';
-                  return (
-                    <AgentListItem
-                      key={`pinned-${path}`}
-                      path={path}
-                      agent={agents?.[path] ?? null}
-                      displayName={displayNames.get(path)}
-                      isActive={isActive}
-                      isExpanded={expandedPath === path}
-                      isPinned={true}
-                      onSelect={() => handleSelectAgent(path)}
-                      onToggleExpand={() => handleToggleExpand(path)}
-                      onTogglePin={() => handleTogglePin(path)}
-                      onOpenProfile={() => handleOpenProfile(path)}
-                      sessions={isActive ? previewSessions : []}
-                      isLoadingSessions={isActive && sessionsLoading}
-                      activeSessionId={activeSessionId}
-                      onSessionClick={handleSessionClick}
-                      onNewSession={handleNewSession}
-                      onForkSession={handleForkSession}
-                      onRenameSession={handleRenameSession}
+            <PinnedSection paths={pinnedPaths} renderRow={renderAgentRow} />
+          )}
+
+          <SortableList items={sidebarPrefs.groups.map((g) => `group-header::${g.id}`)}>
+            <AnimatePresence initial={false}>
+              {sidebarPrefs.groups.map((group) => (
+                <motion.div
+                  key={group.id}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    transition: { duration: 0.2, ease: [0, 0, 0.2, 1] },
+                  }}
+                  exit={{ opacity: 0, y: -6, transition: { duration: 0.15 } }}
+                >
+                  <AgentGroupSection
+                    group={group}
+                    memberPaths={knownGroupMembers.get(group.id) ?? []}
+                    sortCtx={sortCtx}
+                    renderRow={renderAgentRow}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </SortableList>
+
+          <AnimatePresence>
+            {groupCreation !== null && (
+              <motion.div
+                key="group-create"
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: [0, 0, 0.2, 1] } }}
+                exit={{ opacity: 0, y: -6, transition: { duration: 0.15 } }}
+              >
+                <SidebarGroup>
+                  <SidebarMenu>
+                    <GroupCreateInput
+                      onCommit={handleCommitNewGroup}
+                      onCancel={handleCancelNewGroup}
                     />
-                  );
-                })}
-              </SidebarMenu>
-            </>
-          )}
+                  </SidebarMenu>
+                </SidebarGroup>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* Unpinned agents — only shown when there are pinned agents to separate from */}
-          {pinnedPaths.length > 0 && unpinnedPaths.length > 0 && (
-            <SidebarGroupLabel className="text-muted-foreground/50 mt-3 text-[9px] font-medium tracking-wider uppercase">
-              Other
-            </SidebarGroupLabel>
-          )}
-          <SidebarMenu>
-            {(pinnedPaths.length > 0 ? unpinnedPaths : allPaths).map((path) => {
-              const isActive = selectedCwd === path && pathname === '/session';
-              return (
-                <AgentListItem
-                  key={path}
-                  path={path}
-                  agent={agents?.[path] ?? null}
-                  displayName={displayNames.get(path)}
-                  isActive={isActive}
-                  isExpanded={expandedPath === path}
-                  isPinned={pinnedAgentPaths.includes(path)}
-                  onSelect={() => handleSelectAgent(path)}
-                  onToggleExpand={() => handleToggleExpand(path)}
-                  onTogglePin={() => handleTogglePin(path)}
-                  onOpenProfile={() => handleOpenProfile(path)}
-                  sessions={isActive ? previewSessions : []}
-                  isLoadingSessions={isActive && sessionsLoading}
-                  activeSessionId={activeSessionId}
-                  onSessionClick={handleSessionClick}
-                  onNewSession={handleNewSession}
-                  onForkSession={handleForkSession}
-                  onRenameSession={handleRenameSession}
-                />
-              );
-            })}
-          </SidebarMenu>
+          <UngroupedSection
+            paths={ungroupedPaths}
+            organized={organized}
+            renderRow={renderAgentRow}
+            onNewGroup={() => handleRequestNewGroup()}
+          />
+        </SidebarDnd>
 
-          {/* Progressive empty state — less prominent as the roster grows */}
-          {allPaths.length <= 2 && (
-            <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
+        <AnimatePresence>
+          {showGroupsHint && (
+            <GroupsHintCard
+              onNewGroup={() => handleRequestNewGroup()}
+              onDismiss={handleDismissGroupsHint}
+            />
           )}
-          {allPaths.length >= 3 && allPaths.length <= 4 && (
-            <button
-              type="button"
-              onClick={() => useAgentCreationStore.getState().open()}
-              className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1.5 px-2 text-xs font-medium transition-colors"
-            >
-              <Plus className="size-3.5" />
-              Add agent
-            </button>
-          )}
-          {/* 5+ agents: no prompt — the + button in the header is sufficient */}
-        </SidebarGroup>
+        </AnimatePresence>
+
+        {/* Progressive empty state — less prominent as the roster grows */}
+        {agentCount <= 2 && (
+          <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
+        )}
+        {agentCount >= 3 && agentCount <= 4 && (
+          <button
+            type="button"
+            onClick={() => useAgentCreationStore.getState().open()}
+            className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1.5 px-2 text-xs font-medium transition-colors"
+          >
+            <Plus className="size-3.5" />
+            Add agent
+          </button>
+        )}
+
         <PromoSlot placement="dashboard-sidebar" maxUnits={3} />
       </SidebarContent>
     </>
-  );
-}
-
-// ── Private helper ──
-
-function NavButton({
-  icon: Icon,
-  label,
-  isActive,
-  onClick,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  isActive: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        isActive={isActive}
-        onClick={onClick}
-        className={cn(
-          'relative flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium',
-          isActive &&
-            'before:bg-primary before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full'
-        )}
-      >
-        <Icon
-          className={cn(
-            'size-(--size-icon-sm) transition-colors duration-150',
-            !isActive &&
-              'text-muted-foreground group-hover/menu-item:text-sidebar-accent-foreground'
-          )}
-        />
-        {label}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
   );
 }

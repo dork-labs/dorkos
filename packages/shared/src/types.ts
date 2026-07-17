@@ -11,6 +11,8 @@ export type {
   Session,
   SessionListWarning,
   SessionListResponse,
+  RecentSessionsQuery,
+  RecentSessionsResponse,
   CreateSessionRequest,
   UpdateSessionRequest,
   SessionSettings,

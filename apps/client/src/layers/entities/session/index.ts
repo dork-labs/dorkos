@@ -59,6 +59,7 @@ export {
   resetSessionStreamBinding,
 } from './model/session-stream-binding';
 export { useGlobalSessionStream } from './model/use-global-session-stream';
+export { useRecentSessions } from './model/use-recent-sessions';
 
 export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';
@@ -72,6 +73,7 @@ export type { SessionContextHealth } from './model/use-session-context-health';
 // Fleet-level context rollup — runtime-neutral counts for the summary surfaces.
 export { useFleetContextRollup } from './model/use-fleet-context-rollup';
 export type { FleetContextRollup } from './model/use-fleet-context-rollup';
+export { useAgentsAggregateStatus } from './model/use-agents-aggregate-status';
 export { usePulseMotion } from './model/use-pulse-motion';
 export { useRenameSession } from './model/use-rename-session';
 

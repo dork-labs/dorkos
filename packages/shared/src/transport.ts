@@ -10,6 +10,7 @@
 import type {
   Session,
   SessionListResponse,
+  RecentSessionsResponse,
   UpdateSessionRequest,
   BrowseDirectoryResponse,
   CommandRegistry,
@@ -297,6 +298,18 @@ export interface Transport {
    * failed request).
    */
   listSessions(cwd?: string): Promise<SessionListResponse>;
+  /**
+   * List the most-recent sessions across ALL registered agents (DOR-329),
+   * backing the sidebar's cross-agent "Recent" section. Returns the merged,
+   * `updatedAt`-descending sessions trimmed to `limit`, plus `agentActivity` (a
+   * per-agent `projectPath` → latest-session-`updatedAt` map that drives the
+   * per-group "Recent activity" sort) and optional per-runtime `warnings`
+   * (ADR-0310 degradation). Embedded mode has no multi-agent roster and returns
+   * an empty envelope.
+   *
+   * @param limit - Maximum sessions to return (1-50, default 10).
+   */
+  listRecentSessions(limit?: number): Promise<RecentSessionsResponse>;
   /** Get metadata for a single session by ID. */
   getSession(id: string, cwd?: string): Promise<Session>;
   /**

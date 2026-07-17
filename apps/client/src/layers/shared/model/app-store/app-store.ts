@@ -168,37 +168,6 @@ export const useAppStore = create<AppState>()(
           set((s) => ({ contextFiles: s.contextFiles.filter((f) => f.id !== id) })),
         clearContextFiles: () => set({ contextFiles: [] }),
 
-        // ── Pinned agents ──────────────────────────────────────────────────
-        pinnedAgentPaths: (() => {
-          try {
-            const raw: unknown = JSON.parse(
-              localStorage.getItem(STORAGE_KEYS.PINNED_AGENTS) || '[]'
-            );
-            return Array.isArray(raw) ? (raw as string[]).filter((v) => typeof v === 'string') : [];
-          } catch {
-            return [];
-          }
-        })(),
-
-        pinAgent: (path) =>
-          set((s) => {
-            if (s.pinnedAgentPaths.includes(path)) return s;
-            const next = [...s.pinnedAgentPaths, path];
-            try {
-              localStorage.setItem(STORAGE_KEYS.PINNED_AGENTS, JSON.stringify(next));
-            } catch {}
-            return { pinnedAgentPaths: next };
-          }),
-
-        unpinAgent: (path) =>
-          set((s) => {
-            const next = s.pinnedAgentPaths.filter((p) => p !== path);
-            try {
-              localStorage.setItem(STORAGE_KEYS.PINNED_AGENTS, JSON.stringify(next));
-            } catch {}
-            return { pinnedAgentPaths: next };
-          }),
-
         // ── Preferences reset (cross-slice — lives here where set is fully typed) ──
         resetPreferences: () => {
           try {
@@ -210,7 +179,6 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem('dorkos-sidebar-active-tab');
             localStorage.removeItem('dorkos-dismissed-promo-ids');
             localStorage.removeItem(STORAGE_KEYS.CANVAS_SESSIONS);
-            localStorage.removeItem(STORAGE_KEYS.PINNED_AGENTS);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
             localStorage.removeItem(STORAGE_KEYS.PIP_PANEL_STATE);
@@ -227,7 +195,6 @@ export const useAppStore = create<AppState>()(
             fontFamily: DEFAULT_FONT as FontFamilyKey,
             sidebarActiveTab: 'overview' as const,
             dismissedPromoIds: [],
-            pinnedAgentPaths: [],
             rightPanelOpen: false,
             activeRightPanelTab: null,
             rightPanelLayoutKey: null,

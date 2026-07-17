@@ -18,7 +18,9 @@ import type {
   McpAppResourceRequest,
   McpAppResourceResponse,
   DevtoolsIngest,
+  RecentSessionsResponse,
 } from '@dorkos/shared/schemas';
+import { RecentSessionsResponseSchema } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { fetchJSON, buildQueryString } from './http-client';
@@ -50,6 +52,12 @@ export function createSessionMethods(
       const qs = buildQueryString({ cwd });
       // Aggregated-list envelope (ADR-0310): { sessions, warnings? }.
       return fetchJSON<SessionListResponse>(baseUrl, `/sessions${qs}`);
+    },
+
+    async listRecentSessions(limit?: number): Promise<RecentSessionsResponse> {
+      const qs = buildQueryString({ limit });
+      const data = await fetchJSON<unknown>(baseUrl, `/sessions/recent${qs}`);
+      return RecentSessionsResponseSchema.parse(data);
     },
 
     getSession(id: string, cwd?: string): Promise<Session> {

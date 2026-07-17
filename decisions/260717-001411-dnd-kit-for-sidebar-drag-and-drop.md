@@ -1,7 +1,7 @@
 ---
 id: 260717-001411
 title: Adopt dnd-kit for sidebar drag-and-drop with a mandatory non-drag path for every operation
-status: proposed
+status: accepted
 created: 2026-07-17
 spec: agent-sidebar-organization
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

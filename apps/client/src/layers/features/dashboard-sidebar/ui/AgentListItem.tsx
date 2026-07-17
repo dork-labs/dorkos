@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
-import { Plus, MoreHorizontal, Pin, PinOff, User } from 'lucide-react';
+import { Plus, MoreHorizontal } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
@@ -10,14 +10,15 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useAgentVisual, AgentIdentity } from '@/layers/entities/agent';
 import { useAgentHottestStatus, usePulseMotion, SessionRow } from '@/layers/entities/session';
 import { AgentContextMenu } from './AgentContextMenu';
+import { AgentRowMenuItems } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
+import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
+import type { SortableBindings } from './SidebarDndPrimitives';
 
 /** Maximum sessions shown in the expanded agent preview. */
 const MAX_PREVIEW_SESSIONS = 3;
@@ -50,14 +51,12 @@ interface AgentListItemProps {
   displayName?: string;
   isActive: boolean;
   isExpanded: boolean;
-  /** Whether this agent is currently pinned. */
-  isPinned: boolean;
   onSelect: () => void;
   onToggleExpand: () => void;
-  /** Toggle pin state for this agent. */
-  onTogglePin: () => void;
   /** Open agent profile in the right panel hub. */
   onOpenProfile: () => void;
+  /** Open the inline group-create flow, moving this agent into the new group on commit. */
+  onRequestNewGroup: (agentPath: string) => void;
   /** Recent sessions for this agent (only needed when expanded). */
   sessions: Session[];
   /** True while the initial sessions fetch is in-flight (no cached data yet). */
@@ -69,6 +68,8 @@ interface AgentListItemProps {
   onForkSession?: (sessionId: string) => void;
   /** Rename a session. When provided, rename option appears in session context menus. */
   onRenameSession?: (sessionId: string, title: string) => void;
+  /** Drag bindings applied to the row's root when the sidebar drag layer is active. */
+  sortable?: SortableBindings;
 }
 
 /**
@@ -86,11 +87,10 @@ export function AgentListItem({
   displayName: displayNameProp,
   isActive,
   isExpanded,
-  isPinned,
   onSelect,
   onToggleExpand,
-  onTogglePin,
   onOpenProfile,
+  onRequestNewGroup,
   sessions,
   isLoadingSessions,
   activeSessionId,
@@ -98,6 +98,7 @@ export function AgentListItem({
   onNewSession,
   onForkSession,
   onRenameSession,
+  sortable,
 }: AgentListItemProps) {
   const isMobile = useIsMobile();
   const visual = useAgentVisual(agent, path);
@@ -130,8 +131,23 @@ export function AgentListItem({
     }
   }, [isActive, onSelect, onToggleExpand]);
 
+  // "New group…" mounts an inline editor; the dropdown's close-time focus
+  // restore would blur (and blur-cancel) it, so that item arms this guard
+  // (DOR-329). The context-menu variant guards itself inside AgentContextMenu.
+  const { arm: armCloseFocusGuard, onCloseAutoFocus } = useMenuCloseFocusGuard();
+
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem
+      ref={sortable?.setNodeRef}
+      style={sortable?.style}
+      {...(sortable?.handleProps ?? {})}
+      className={cn(
+        sortable &&
+          'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
+        sortable?.isDragging && 'opacity-40',
+        sortable?.isOver && 'ring-sidebar-ring ring-2'
+      )}
+    >
       <motion.div
         animate={borderAnimate}
         transition={borderTransition}
@@ -139,10 +155,10 @@ export function AgentListItem({
         className="rounded-md border-l-2"
       >
         <AgentContextMenu
-          isPinned={isPinned}
-          onTogglePin={onTogglePin}
+          path={path}
           onOpenProfile={onOpenProfile}
           onNewSession={onNewSession}
+          onRequestNewGroup={onRequestNewGroup}
         >
           <div
             data-slot="agent-list-item"
@@ -168,30 +184,22 @@ export function AgentListItem({
                   <MoreHorizontal className="size-4" />
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="right" align="start" className="w-48">
-                <DropdownMenuItem onClick={onTogglePin}>
-                  {isPinned ? (
-                    <>
-                      <PinOff className="mr-2 size-4" />
-                      Unpin agent
-                    </>
-                  ) : (
-                    <>
-                      <Pin className="mr-2 size-4" />
-                      Pin agent
-                    </>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onOpenProfile}>
-                  <User className="mr-2 size-4" />
-                  Agent profile
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onNewSession}>
-                  <Plus className="mr-2 size-4" />
-                  New session
-                </DropdownMenuItem>
+              <DropdownMenuContent
+                side="right"
+                align="start"
+                className="w-48"
+                onCloseAutoFocus={onCloseAutoFocus}
+              >
+                <AgentRowMenuItems
+                  variant="dropdown"
+                  path={path}
+                  onOpenProfile={onOpenProfile}
+                  onNewSession={onNewSession}
+                  onRequestNewGroup={(agentPath) => {
+                    armCloseFocusGuard();
+                    onRequestNewGroup(agentPath);
+                  }}
+                />
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
