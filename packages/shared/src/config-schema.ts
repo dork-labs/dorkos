@@ -108,6 +108,38 @@ export type SidebarPrefs = z.infer<typeof SidebarPrefsSchema>;
  */
 export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = SidebarPrefsSchema.parse({});
 
+/**
+ * Person-scoped Shape state (`ui.shapes`, DOR-355). Holds the currently-applied
+ * Shape, the reverse affinity hints (agent → preferred Shape), and the
+ * offer-vs-follow toggle. Kept in user config — never on `.dork/agent.json` —
+ * exactly per ADR 260717-001409 (a personal cockpit preference, not an agent
+ * property). Whole-object writes per section (deepMerge replaces arrays).
+ */
+export const ShapeUserPrefsSchema = z.object({
+  /** Installed Shape name currently applied, or null. */
+  active: z.string().nullable().default(null),
+  /**
+   * Reverse affinity hint: agent `projectPath` → preferred Shape name. The
+   * "soft default hint on an agent" from D2, kept OFF the agent manifest and in
+   * person-scoped config, exactly per ADR 260717-001409.
+   */
+  agentDefaults: z.record(z.string(), z.string()).default(() => ({})),
+  /**
+   * When true, applying a Shape auto-follows to its `default` agent instead of
+   * only offering. Off by default (offer, don't force).
+   */
+  autoFollowAgent: z.boolean().default(false),
+});
+
+/** Person-scoped Shape state (`ui.shapes`). */
+export type ShapeUserPrefs = z.infer<typeof ShapeUserPrefsSchema>;
+
+/**
+ * Fully-defaulted {@link ShapeUserPrefs}. Parsed once so the config route,
+ * the client, and the conf migration share one canonical default.
+ */
+export const SHAPE_USER_PREFS_DEFAULTS: ShapeUserPrefs = ShapeUserPrefsSchema.parse({});
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -153,6 +185,12 @@ export const UserConfigSchema = z.object({
         recentsCollapsed: false,
         groupsHintDismissed: false,
       })),
+      /** Person-scoped Shape state (active Shape, reverse affinity hints, follow toggle). */
+      shapes: ShapeUserPrefsSchema.default(() => ({
+        active: null,
+        agentDefaults: {},
+        autoFollowAgent: false,
+      })),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -164,6 +202,11 @@ export const UserConfigSchema = z.object({
         ungroupedCollapsed: false,
         recentsCollapsed: false,
         groupsHintDismissed: false,
+      },
+      shapes: {
+        active: null,
+        agentDefaults: {},
+        autoFollowAgent: false,
       },
     })),
   logging: LoggingConfigSchema.default(() => ({

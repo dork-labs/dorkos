@@ -6,6 +6,7 @@ import {
   backfillExtensionsDisabled,
   backfillHarnessDefaults,
   backfillSidebarDefaults,
+  backfillShapesDefaults,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
   backfillCloudDefaults,
@@ -890,6 +891,52 @@ describe('backfillSidebarDefaults migration (DOR-329)', () => {
   it('is a no-op when the ui section is absent (schema default owns that case)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillSidebarDefaults(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillShapesDefaults migration (DOR-355)', () => {
+  const SHAPES_DEFAULTS = {
+    active: null,
+    agentDefaults: {},
+    autoFollowAgent: false,
+  };
+
+  it('adds ui.shapes to an existing ui block, preserving other ui fields', () => {
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        dismissedUpgradeVersions: ['1.0.0'],
+        sidebar: { pinned: [], groups: [] },
+      },
+    });
+    backfillShapesDefaults(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      dismissedUpgradeVersions: ['1.0.0'],
+      sidebar: { pinned: [], groups: [] },
+      shapes: SHAPES_DEFAULTS,
+    });
+  });
+
+  it('is idempotent — does not overwrite an existing ui.shapes', () => {
+    const existing = {
+      theme: 'system',
+      dismissedUpgradeVersions: [],
+      shapes: {
+        active: 'linear-ops',
+        agentDefaults: { '/projects/api': 'linear-ops' },
+        autoFollowAgent: true,
+      },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillShapesDefaults(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when the ui section is absent (schema default owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillShapesDefaults(store);
     expect(store.data.ui).toBeUndefined();
   });
 });

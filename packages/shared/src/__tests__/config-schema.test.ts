@@ -34,6 +34,11 @@ describe('UserConfigSchema', () => {
           recentsCollapsed: false,
           groupsHintDismissed: false,
         },
+        shapes: {
+          active: null,
+          agentDefaults: {},
+          autoFollowAgent: false,
+        },
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
@@ -147,6 +152,27 @@ describe('UserConfigSchema', () => {
 
     const system = UserConfigSchema.parse({ version: 1, ui: { theme: 'system' } });
     expect(system.ui.theme).toBe('system');
+  });
+
+  it('fills ui.shapes defaults and round-trips an explicit shapes block (DOR-355)', () => {
+    const empty = UserConfigSchema.parse({ version: 1 });
+    expect(empty.ui.shapes).toEqual({ active: null, agentDefaults: {}, autoFollowAgent: false });
+
+    const explicit = UserConfigSchema.parse({
+      version: 1,
+      ui: {
+        shapes: {
+          active: 'linear-ops',
+          agentDefaults: { '/projects/api': 'linear-ops' },
+          autoFollowAgent: true,
+        },
+      },
+    });
+    expect(explicit.ui.shapes).toEqual({
+      active: 'linear-ops',
+      agentDefaults: { '/projects/api': 'linear-ops' },
+      autoFollowAgent: true,
+    });
   });
 
   it('accepts string values for nullable string fields', () => {
@@ -265,6 +291,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
           ungroupedCollapsed: false,
           recentsCollapsed: false,
           groupsHintDismissed: false,
+        },
+        shapes: {
+          active: null,
+          agentDefaults: {},
+          autoFollowAgent: false,
         },
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },

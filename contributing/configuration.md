@@ -83,6 +83,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `ui.theme`                          | `"light"` \| `"dark"` \| `"system"`                                      | `"system"`         | UI color theme                                                                                         |
 | `ui.dismissedUpgradeVersions`       | string[]                                                                 | `[]`               | Version strings the user has dismissed upgrade notifications for                                       |
 | `ui.sidebar`                        | object                                                                   | see below          | Sidebar organization (DOR-329): pinned agents, user-defined groups, per-section sort + collapse state  |
+| `ui.shapes`                         | object                                                                   | see below          | Shape state (DOR-355): active Shape, reverse affinity hints (agent → Shape), and the follow toggle     |
 | `relay.enabled`                     | boolean                                                                  | `true`             | Enable Relay subsystem (config-level toggle, distinct from `DORKOS_RELAY_ENABLED`)                     |
 | `relay.dataDir`                     | string \| null                                                           | `null`             | Override Relay data directory (`null` = default under `DORK_HOME`)                                     |
 | `scheduler.enabled`                 | boolean                                                                  | `true`             | Enable Tasks scheduler subsystem (config-level toggle)                                                 |
@@ -341,13 +342,16 @@ The `0.50.0` migration exists because the tunnel passcode auth path and the `coo
 
 ### Shipped migrations: agent sidebar organization
 
-One migration landed with the sidebar organization work (DOR-329). Append-only and idempotent:
+Two `ui.*` backfills have landed. Both are append-only and idempotent:
 
 | Version  | Body                      | Effect                                                                                                                         |
 | -------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `0.50.0` | `backfillSidebarDefaults` | Writes `ui.sidebar` (empty pins/groups, `name` ungrouped sort, all sections expanded) onto an existing `ui` block when absent. |
+| `0.52.0` | `backfillShapesDefaults`  | Writes `ui.shapes` (no active Shape, no affinity hints, follow off) onto an existing `ui` block when absent.                   |
 
 `ui.sidebar` holds the server-persisted sidebar organization — pinned agents, user-defined groups (each with its own member order, sort mode, and collapse state), and per-section sort/collapse preferences. conf merges top-level defaults shallowly, so a `ui` object already on disk never inherits the new nested `sidebar` default; this migration supplies it. It never overwrites an existing `ui.sidebar`, so a user's organization survives untouched.
+
+`ui.shapes` holds person-scoped Shape state (DOR-355): the currently-applied Shape (`active`), the reverse affinity hints that map an agent's `projectPath` to a preferred Shape (`agentDefaults`), and whether applying a Shape auto-follows to its default agent (`autoFollowAgent`, off by default). It lives in user config — never on `.dork/agent.json` — per ADR 260717-001409. Each section is written as a whole object (deepMerge replaces arrays). The same shallow-merge caveat applies, so `backfillShapesDefaults` supplies the nested default onto an existing `ui` block and never overwrites an existing `ui.shapes`.
 
 ### Interaction with `/system:release`
 

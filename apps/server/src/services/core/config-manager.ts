@@ -606,6 +606,36 @@ export function backfillSidebarDefaults(store: {
   }
 }
 
+/**
+ * Migration body: backfill `ui.shapes` (person-scoped Shape state — active
+ * Shape, reverse affinity hints, follow toggle; DOR-355) onto an EXISTING `ui`
+ * block. conf merges top-level defaults SHALLOWLY, so a `ui` object already on
+ * disk never inherits the new nested `shapes` default — this supplies it.
+ * Additive + idempotent: only writes when `ui.shapes` is absent, never
+ * overwrites an existing value. The whole-`ui`-absent case is handled by the
+ * schema default on read (which already yields the shapes defaults). Seeds no
+ * active Shape, no affinity hints, and follow off.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillShapesDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (ui && typeof ui === 'object' && (ui as { shapes?: unknown }).shapes === undefined) {
+    store.set('ui', {
+      ...(ui as Record<string, unknown>),
+      shapes: {
+        active: null,
+        agentDefaults: {},
+        autoFollowAgent: false,
+      },
+    });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -705,6 +735,12 @@ const CONFIG_MIGRATIONS = {
   // pinned, per-section sort/collapse; DOR-329) onto an existing `ui` block.
   // Additive + idempotent; seeds an empty, unorganized sidebar.
   '0.50.0': backfillSidebarDefaults,
+  // Backfill `ui.shapes` (person-scoped Shape state — active Shape, reverse
+  // affinity hints, follow toggle; DOR-355) onto an existing `ui` block.
+  // Additive + idempotent; seeds no active Shape. Keyed to the next unreleased
+  // version (0.51.0 is already tagged); /system:release reconciles the key at
+  // tag time if the real release differs.
+  '0.52.0': backfillShapesDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
