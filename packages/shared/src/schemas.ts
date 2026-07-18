@@ -13,7 +13,7 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
 import { ClientContextSchema } from './additional-context.js';
-import { SidebarPrefsSchema } from './config-schema.js';
+import { SidebarPrefsSchema, ShapeUserPrefsSchema } from './config-schema.js';
 // Type-only import: `ui-widget.ts` value-imports `UiCommandSchema` from this
 // module, so a value import of `WidgetDocumentSchema` here would form a
 // load-time cycle. The canvas `widget` content carries the document typed but
@@ -2326,6 +2326,9 @@ export const ServerConfigSchema = z
         // config-schema.ts (no OpenAPI extension), so it is embedded rather than
         // `.openapi()`-annotated here.
         sidebar: SidebarPrefsSchema,
+        // Person-scoped Shape state: active Shape, reverse affinity hints, and
+        // the offer-vs-follow toggle (DOR-355). Also defined in config-schema.ts.
+        shapes: ShapeUserPrefsSchema,
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
@@ -2885,9 +2888,9 @@ export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 20 variants covering panels, sidebar, canvas,
+ * Discriminated on `action` — 22 variants covering panels, sidebar, canvas,
  * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
- * switching, command palette, and celebration.
+ * switching, shape switching, command palette, and celebration.
  */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
@@ -2993,6 +2996,18 @@ export const UiCommandSchema = z
     z.object({
       action: z.literal('switch_agent'),
       cwd: z.string(),
+    }),
+
+    // Shape switching
+    z.object({
+      action: z.literal('apply_layout'),
+      /**
+       * Installed Shape name to apply. The client resolves its manifest
+       * server-side (via the apply-shape flow), which owns layout resolution,
+       * connection prompts, and per-piece degradation — inlining a raw layout
+       * would duplicate the manifest and skip that handling.
+       */
+      shape: z.string().min(1),
     }),
 
     // Command palette

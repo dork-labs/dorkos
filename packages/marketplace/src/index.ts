@@ -16,11 +16,13 @@
 export {
   MarketplacePackageManifestSchema,
   PackageNameSchema,
+  shapeCrossFieldChecks,
   type MarketplacePackageManifest,
   type PluginPackageManifest,
   type AgentPackageManifest,
   type SkillPackPackageManifest,
   type AdapterPackageManifest,
+  type ShapePackageManifest,
 } from './manifest-schema.js';
 
 // marketplace.json schemas

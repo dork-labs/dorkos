@@ -65,7 +65,7 @@ import { z } from 'zod';
  * Zod 4 OpenAPI registry, so we redeclare it here. Keep in sync with
  * `packages/marketplace/src/package-types.ts`.
  */
-const LocalPackageTypeSchema = z.enum(['agent', 'plugin', 'skill-pack', 'adapter']);
+const LocalPackageTypeSchema = z.enum(['agent', 'plugin', 'skill-pack', 'adapter', 'shape']);
 
 /**
  * Local Zod 4 mirror of `@dorkos/marketplace`'s `MarketplaceJsonSchema` shape.

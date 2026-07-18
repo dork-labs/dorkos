@@ -6,14 +6,15 @@ The fixture trees are intentionally minimal — just enough files to satisfy (or
 
 ## Valid fixtures
 
-Each of the four valid fixtures exercises one `PackageType` from the discriminated union in `@dorkos/marketplace/manifest-schema`. They all parse cleanly and `validatePackage` returns `ok: true`.
+Each of the five valid fixtures exercises one `PackageType` from the discriminated union in `@dorkos/marketplace/manifest-schema`. They all parse cleanly and `validatePackage` returns `ok: true`.
 
-| Fixture            | Type         | Notes                                                                                                                              |
-| ------------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `valid-plugin`     | `plugin`     | Has `.claude-plugin/plugin.json`, an extension stub under `.dork/extensions/sample-ext/`, and a bundled task under `.dork/tasks/`. |
-| `valid-agent`      | `agent`      | Pure DorkOS package — no `.claude-plugin/plugin.json` (per `requiresClaudePlugin`). Includes `agentDefaults`.                      |
-| `valid-skill-pack` | `skill-pack` | Three SKILL.md files under `skills/` (`analyzer`, `summarizer`, `translator`).                                                     |
-| `valid-adapter`    | `adapter`    | Declares `adapterType: slack`. Adapter implementation stub under `.dork/adapters/slack/`.                                          |
+| Fixture            | Type         | Notes                                                                                                                                                                                                                                                                                                                           |
+| ------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `valid-plugin`     | `plugin`     | Has `.claude-plugin/plugin.json`, an extension stub under `.dork/extensions/sample-ext/`, and a bundled task under `.dork/tasks/`.                                                                                                                                                                                              |
+| `valid-agent`      | `agent`      | Pure DorkOS package — no `.claude-plugin/plugin.json` (per `requiresClaudePlugin`). Includes `agentDefaults`.                                                                                                                                                                                                                   |
+| `valid-skill-pack` | `skill-pack` | Three SKILL.md files under `skills/` (`analyzer`, `summarizer`, `translator`).                                                                                                                                                                                                                                                  |
+| `valid-adapter`    | `adapter`    | Declares `adapterType: slack`. Adapter implementation stub under `.dork/adapters/slack/`.                                                                                                                                                                                                                                       |
+| `valid-shape`      | `shape`      | The Linear Ops worked example (DOR-355): `activates` `linear-issues`, a `default` `linear-tender` agent, an inbox-tick schedule, and a `linear_api_key` extension-secret connection. Manifest `name` is `linear-ops` (not the dir), so `validatePackage` adds a `NAME_DIRECTORY_MISMATCH` warning but still returns `ok: true`. |
 
 ## Broken fixtures
 

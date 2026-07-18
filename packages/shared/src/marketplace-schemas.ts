@@ -29,7 +29,7 @@
  * (which is fine but adds a dependency that may not be desired in all
  * client contexts).
  */
-export type MarketplacePackageType = 'agent' | 'plugin' | 'skill-pack' | 'adapter';
+export type MarketplacePackageType = 'agent' | 'plugin' | 'skill-pack' | 'adapter' | 'shape';
 
 // ---------------------------------------------------------------------------
 // Browse / discovery

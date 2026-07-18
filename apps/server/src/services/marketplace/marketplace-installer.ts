@@ -484,6 +484,15 @@ export class MarketplaceInstaller implements InstallerLike {
         return this.deps.skillPackFlow.install(packagePath, manifest, req);
       case 'adapter':
         return this.deps.adapterFlow.install(packagePath, manifest, req);
+      case 'shape':
+        // The shape install flow lands in Phase 2 (DOR-355 task 2.1), which
+        // replaces this throw with a real ShapeInstallFlow dispatch and adds an
+        // explicit `assertNever` exhaustiveness guard. Until then, installing a
+        // shape package fails loudly rather than silently no-op'ing — the fifth
+        // package type exists in the schema (Phase 1) before its installer does.
+        throw new Error(
+          `Installing 'shape' packages is not yet supported (requested '${manifest.name}').`
+        );
     }
   }
 

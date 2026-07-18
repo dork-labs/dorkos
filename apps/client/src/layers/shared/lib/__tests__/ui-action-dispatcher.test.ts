@@ -43,6 +43,7 @@ function makeMockCtx(storeOverrides: Partial<DispatcherStore> = {}): DispatcherC
     setTheme: vi.fn(),
     scrollToMessage: vi.fn(),
     switchAgent: vi.fn(),
+    applyShape: vi.fn(),
   };
 }
 
@@ -488,6 +489,24 @@ describe('executeUiCommand — switch_agent', () => {
     ctx.switchAgent = undefined;
     expect(() =>
       executeUiCommand(ctx, { action: 'switch_agent', cwd: '/tmp/x' }, 'agent')
+    ).not.toThrow();
+  });
+});
+
+// --- Shape switching ---
+
+describe('executeUiCommand — apply_layout', () => {
+  it('calls applyShape with the provided shape name', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'apply_layout', shape: 'linear-ops' }, 'agent');
+    expect(ctx.applyShape).toHaveBeenCalledWith('linear-ops');
+  });
+
+  it('is a no-op when applyShape is not provided (unwired until Phase 3)', () => {
+    const ctx = makeMockCtx();
+    ctx.applyShape = undefined;
+    expect(() =>
+      executeUiCommand(ctx, { action: 'apply_layout', shape: 'linear-ops' }, 'agent')
     ).not.toThrow();
   });
 });

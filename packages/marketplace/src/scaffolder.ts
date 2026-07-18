@@ -168,6 +168,9 @@ function defaultLayersForType(type: PackageType): string[] {
       return ['adapters'];
     case 'agent':
       return ['skills', 'tasks', 'agents'];
+    case 'shape':
+      // A Shape composes extensions, suggested agents, and schedules into a place.
+      return ['extensions', 'agents', 'tasks'];
     default: {
       const _exhaustive: never = type;
       return _exhaustive;
@@ -190,6 +193,9 @@ function starterDirsForType(type: PackageType): string[] {
       return ['.dork/adapters'];
     case 'agent':
       return ['.claude/skills', '.dork/tasks'];
+    case 'shape':
+      // Inline extensions the Shape bundles live here (mirrors a plugin's layout).
+      return ['extensions'];
     default: {
       const _exhaustive: never = type;
       return _exhaustive;
