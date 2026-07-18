@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260718-050609",
+      "slug": "connector-gateway",
+      "title": "ConnectorProvider gateway — one port for many connector backends",
+      "created": "2026-07-18",
+      "status": "specified"
+    },
+    {
       "id": "260717-191228",
       "slug": "capture-cloud-link-stub",
       "title": "Test-mode cloud-link stub for the Accounts capture shot",
