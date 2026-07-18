@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { useEventSubscription } from '@/layers/shared/model';
@@ -62,8 +70,25 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   const loaderRef = useRef<ExtensionLoader | null>(null);
   const queryClient = useQueryClient();
 
-  // Watch for CWD changes and reload the page if the extension set differs.
-  useCwdExtensionSync();
+  // Live-remount every extension slot for the new working directory's set.
+  // reloadAll() is fetch-then-swap: it resolves the new set before tearing the
+  // current one down, so a failed fetch rejects here with the previous
+  // extensions still live — the rejection propagates to the cwd sync hook,
+  // which owns the success/error toasts. Slot hosts watch the reactive
+  // registry, so components remount cleanly without a page reload.
+  const reloadAllExtensions = useCallback(async () => {
+    const loader = loaderRef.current;
+    if (!loader) return;
+
+    const { extensions, loaded } = await loader.reloadAll();
+    setState({ extensions, loaded, ready: true });
+    // Sync TanStack Query so UI consumers of the extension list reflect the
+    // cwd-scoped set immediately, not on the next poll interval.
+    queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
+  }, [queryClient]);
+
+  // Watch for CWD changes and live-remount the extension slots if the set differs.
+  useCwdExtensionSync(reloadAllExtensions);
 
   // Mirror the selected cwd's agent id into the app store so the extension host
   // can tell extensions which agent they run beside (getState().agentId).

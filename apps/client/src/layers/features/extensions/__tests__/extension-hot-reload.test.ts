@@ -328,3 +328,229 @@ describe('ExtensionLoader.reloadExtensions', () => {
     await expect(loader.reloadExtensions(['phantom'])).resolves.toBeDefined();
   });
 });
+
+describe('ExtensionLoader.reloadAll', () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it('tears down every currently loaded extension before re-initializing', async () => {
+    const deactivateA = vi.fn();
+    const cleanupA = vi.fn();
+    const deactivateB = vi.fn();
+    const cleanupB = vi.fn();
+
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-a', deactivate: deactivateA, cleanups: [cleanupA] });
+    seedLoaded(loader, { id: 'ext-b', deactivate: deactivateB, cleanups: [cleanupB] });
+
+    // The new working directory's set from the server.
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve([makeRecord({ id: 'ext-c', status: 'disabled', bundleReady: false })]),
+    });
+
+    await loader.reloadAll();
+
+    // Every previous extension was deactivated and cleaned up (contributions
+    // and subscriptions removed) so nothing carries over from the old cwd.
+    expect(deactivateA).toHaveBeenCalledOnce();
+    expect(cleanupA).toHaveBeenCalledOnce();
+    expect(deactivateB).toHaveBeenCalledOnce();
+    expect(cleanupB).toHaveBeenCalledOnce();
+
+    // The old extensions are gone from the loaded map.
+    expect(loader.getLoaded().has('ext-a')).toBe(false);
+    expect(loader.getLoaded().has('ext-b')).toBe(false);
+  });
+
+  it('re-fetches and returns the extension set for the new working directory', async () => {
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-old' });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve([makeRecord({ id: 'ext-new', status: 'disabled', bundleReady: false })]),
+    });
+    global.fetch = fetchMock;
+
+    const { extensions } = await loader.reloadAll();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(extensions.map((e) => e.id)).toEqual(['ext-new']);
+  });
+
+  it('keeps the loader live (not disposed) so it can reload again', async () => {
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-a' });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+
+    await loader.reloadAll();
+
+    const disposed = (loader as unknown as { disposed: boolean }).disposed;
+    expect(disposed).toBe(false);
+
+    // A second reload still works — the loader was not disposed.
+    await expect(loader.reloadAll()).resolves.toBeDefined();
+  });
+
+  it('does not throw when a teardown handler fails during reload', async () => {
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, {
+      id: 'crash-ext',
+      deactivate: () => {
+        throw new Error('deactivate boom');
+      },
+      cleanups: [
+        () => {
+          throw new Error('cleanup boom');
+        },
+      ],
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+
+    await expect(loader.reloadAll()).resolves.toBeDefined();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[extensions] Error calling deactivate for crash-ext:'),
+      expect.anything()
+    );
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[extensions] Error in cleanup for crash-ext:'),
+      expect.anything()
+    );
+  });
+
+  it('leaves the current extension set live when the list fetch fails (fetch-then-swap)', async () => {
+    const deactivate = vi.fn();
+    const cleanup = vi.fn();
+
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-live', deactivate, cleanups: [cleanup] });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: 'boom' }),
+    });
+
+    // The reload rejects — the caller surfaces an error toast.
+    await expect(loader.reloadAll()).rejects.toThrow('Failed to fetch extension list: 500');
+
+    // Nothing was torn down: the previous extensions are still fully live.
+    expect(deactivate).not.toHaveBeenCalled();
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(loader.getLoaded().has('ext-live')).toBe(true);
+  });
+});
+
+describe('ExtensionLoader generation guard (rapid-switch races)', () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  /** Build a deferred fetch response the test resolves on demand. */
+  function deferredFetch() {
+    let resolve!: (records: ExtensionRecordPublic[]) => void;
+    const promise = new Promise<{ ok: boolean; json: () => Promise<ExtensionRecordPublic[]> }>(
+      (r) => {
+        resolve = (records) => r({ ok: true, json: () => Promise.resolve(records) });
+      }
+    );
+    return { promise, resolve };
+  }
+
+  it('a superseded reloadAll neither tears down nor activates (rapid cwd switch)', async () => {
+    const deactivate = vi.fn();
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-old', deactivate });
+
+    const fetch1 = deferredFetch();
+    const fetch2 = deferredFetch();
+    global.fetch = vi
+      .fn()
+      .mockImplementationOnce(() => fetch1.promise)
+      .mockImplementationOnce(() => fetch2.promise);
+
+    // Two cwd switches in quick succession: #2 supersedes #1.
+    const reload1 = loader.reloadAll();
+    const reload2 = loader.reloadAll();
+
+    // The superseded load's fetch resolves first, with a stale-cwd set.
+    fetch1.resolve([makeRecord({ id: 'stale-ext', status: 'compiled', bundleReady: true })]);
+    await reload1;
+
+    // #1 registered nothing: no teardown, no import attempt of the stale set.
+    expect(deactivate).not.toHaveBeenCalled();
+    expect(loader.getLoaded().has('ext-old')).toBe(true);
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('[extensions] Failed to import stale-ext:'),
+      expect.anything()
+    );
+
+    // The winning load completes normally: teardown happens exactly once.
+    fetch2.resolve([]);
+    await reload2;
+
+    expect(deactivate).toHaveBeenCalledOnce();
+    expect(loader.getLoaded().size).toBe(0);
+  });
+
+  it('a superseded SSE reload does not resurrect extensions after a cwd-switch reloadAll', async () => {
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-a' });
+
+    const sseFetch = deferredFetch();
+    global.fetch = vi
+      .fn()
+      // First call: the SSE reload's list fetch, held pending.
+      .mockImplementationOnce(() => sseFetch.promise)
+      // Second call: the cwd-switch reloadAll's fetch, resolves immediately.
+      .mockImplementation(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) }));
+
+    // SSE hot-reload starts (tears ext-a down synchronously, then awaits fetch)...
+    const sseReload = loader.reloadExtensions(['ext-a']);
+    // ...and a cwd switch supersedes it. The new cwd has no extensions.
+    await loader.reloadAll();
+    expect(loader.getLoaded().size).toBe(0);
+
+    // The stale SSE fetch now resolves, still listing the pre-switch extension.
+    sseFetch.resolve([makeRecord({ id: 'ext-a', status: 'compiled', bundleReady: true })]);
+    await sseReload;
+
+    // The superseded SSE reload must not have re-imported or re-registered it.
+    expect(loader.getLoaded().size).toBe(0);
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('[extensions] Failed to hot-reload ext-a:'),
+      expect.anything()
+    );
+  });
+});
