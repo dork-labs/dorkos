@@ -7,7 +7,7 @@
  * plus the 404 (not installed) and 409 (fork name taken) mappings.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import express from 'express';
@@ -170,5 +170,55 @@ describe('shapes router', () => {
     await installShapeOnDisk(dorkHome, 'taken');
     const res = await request(app).post('/api/shapes/linear-ops/fork').send({ as: 'taken' });
     expect(res.status).toBe(409);
+  });
+
+  it('POST /api/shapes/:name/fork returns 400 for a malformed target name (--as)', async () => {
+    // A bad name in the request BODY is a client error (400), not a conflict
+    // (409) with an existing Shape.
+    const { app } = await buildApp();
+    const res = await request(app).post('/api/shapes/linear-ops/fork').send({ as: 'Not A Slug!' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/kebab-case slug/);
+  });
+
+  describe('path traversal via :name (security)', () => {
+    // Express URL-decodes route params, so `..%2F..%2Fsecret` reaches the
+    // handler as `../../secret` — which, joined into `{dorkHome}/shapes/<name>`,
+    // escapes the shapes/ root. Both :name handlers must 400 before any
+    // filesystem resolution. (The proven exploit: fork copied a tree from
+    // OUTSIDE shapes/ and returned 201.)
+    it('POST /api/shapes/:name/apply rejects a traversal name with 400', async () => {
+      const { app } = await buildApp();
+      const res = await request(app).post('/api/shapes/..%2F..%2Fsecret/apply').send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/kebab-case slug/);
+    });
+
+    it('POST /api/shapes/:name/fork rejects a traversal name with 400 and copies nothing', async () => {
+      const { app, dorkHome } = await buildApp();
+      // Plant a directory OUTSIDE shapes/ that the exploit would have cloned.
+      const secretDir = path.join(dorkHome, 'secret');
+      await mkdir(secretDir, { recursive: true });
+      await writeFile(path.join(secretDir, 'credentials.txt'), 'TOP SECRET', 'utf-8');
+
+      // `{dorkHome}/shapes/../../secret` — for a temp dorkHome at <parent>/<home>,
+      // two levels up from shapes/ is <parent>; target dorkHome/secret via one
+      // level: shapes/../secret. Use the one-level form the exploit used.
+      const res = await request(app).post('/api/shapes/..%2Fsecret/fork').send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/kebab-case slug/);
+
+      // Nothing was cloned into shapes/ and no fork target appeared anywhere.
+      const shapeEntries = await readdir(path.join(dorkHome, 'shapes'));
+      expect(shapeEntries.sort()).toEqual(['linear-ops']);
+    });
+
+    it('still 404s for a well-formed but absent name (semantics preserved)', async () => {
+      const { app } = await buildApp();
+      const applyRes = await request(app).post('/api/shapes/ghost/apply').send({});
+      expect(applyRes.status).toBe(404);
+      const forkRes = await request(app).post('/api/shapes/ghost/fork').send({});
+      expect(forkRes.status).toBe(404);
+    });
   });
 });

@@ -42,16 +42,16 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
   constructor(private readonly deps: ShapeScheduleServiceDeps) {}
 
   /**
-   * The names of schedules already present for a target — global schedules
-   * (no agent) for `'global'`, or the agent's schedules for an agent id.
+   * Every existing schedule name, across all scopes (global + agents). The
+   * apply flow checks existence by NAME only — a Shape schedule's target flips
+   * from `'global'` to a concrete agent id once the offered agent appears, so a
+   * per-target check would miss the earlier global copy and duplicate the
+   * schedule on re-apply.
    *
-   * @param target - Agent id or `'global'`.
-   * @returns Existing schedule names at that target.
+   * @returns All existing schedule names.
    */
-  existingScheduleNames(target: string): string[] {
-    const tasks = this.deps.taskStore.getTasks();
-    if (target === 'global') return tasks.filter((t) => !t.agentId).map((t) => t.name);
-    return tasks.filter((t) => t.agentId === target).map((t) => t.name);
+  existingScheduleNames(): string[] {
+    return this.deps.taskStore.getTasks().map((t) => t.name);
   }
 
   /**

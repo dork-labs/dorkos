@@ -211,6 +211,28 @@ describe('forkShape', () => {
     expect(result.manifest.schedules.map((s) => s.name)).toEqual(['tick']);
   });
 
+  it('captureCurrent drops extension-secret connections whose extension left activates (no ZodError)', async () => {
+    // Exact review repro: the source declares a secret connection for
+    // 'linear-issues', but that extension is currently DISABLED, so the capture
+    // narrows activates to ['other-ext'] only. Cross-field rule 3 (a secret must
+    // target an extension the Shape turns on) would refuse the forked manifest
+    // at the re-validate step — the narrowing must drop the now-dangling
+    // connection instead of surfacing a ZodError.
+    const { dorkHome, deps: base } = await makeHome();
+    await installShape(dorkHome, 'linear-ops', sourceManifest());
+    const deps: ForkShapeDeps = {
+      ...base,
+      getActiveShape: () => 'linear-ops',
+      getEnabledExtensions: () => ['other-ext'], // 'linear-issues' disabled
+    };
+
+    const result = await forkShape('linear-ops', { captureCurrent: true }, deps);
+
+    expect(result.manifest.activates).toEqual(['other-ext']);
+    // The connection targeting the dropped extension is gone; nothing throws.
+    expect(result.manifest.connections).toEqual([]);
+  });
+
   it('ignores captureCurrent when the Shape is not the active one (plain clone)', async () => {
     const { dorkHome, deps: base } = await makeHome();
     await installShape(dorkHome, 'linear-ops', sourceManifest());
@@ -221,8 +243,10 @@ describe('forkShape', () => {
     };
 
     const result = await forkShape('linear-ops', { captureCurrent: true }, deps);
-    // Not active → capture skipped → all activates preserved.
+    // Not active → capture skipped → all activates preserved (and the secret
+    // connection stays with them).
     expect(result.manifest.activates).toEqual(['linear-issues', 'other-ext']);
+    expect(result.manifest.connections).toHaveLength(1);
   });
 
   it('errors cleanly with zero residue when forking a Shape that is not installed', async () => {

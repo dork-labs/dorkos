@@ -36,6 +36,8 @@ export type ShapeLayout = ShapePackageManifest['layout'];
  */
 export class ShapeNotInstalledError extends Error {
   /**
+   * Build the not-installed error for a Shape name.
+   *
    * @param shapeName - The Shape name that could not be resolved on disk.
    */
   constructor(public readonly shapeName: string) {
@@ -151,15 +153,18 @@ export interface ShapeAgentRegistryLike {
 }
 
 /**
- * Creates schedules idempotently (by name + target). `target` is a concrete
- * agent id or the sentinel `'global'`.
+ * Creates schedules idempotently. Existence is checked by schedule NAME across
+ * every scope (global + all agents) — never by name + target — because a Shape
+ * schedule's target can legitimately flip between applies: the first apply may
+ * create it globally-disabled (agent missing, §7), and once the offered agent
+ * exists a re-apply resolves the same schedule to the agent's id. A per-target
+ * check would miss the earlier copy and create a duplicate.
  */
 export interface ShapeScheduleServiceLike {
   /**
-   * @param target - Agent id or `'global'`.
-   * @returns The names of schedules already present for that target.
+   * @returns Every existing schedule name, across all scopes (global + agents).
    */
-  existingScheduleNames(target: string): Promise<string[]> | string[];
+  existingScheduleNames(): Promise<string[]> | string[];
   /**
    * @param req - The task-creation request built from a Shape schedule.
    */
@@ -252,7 +257,11 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
   const agentByRef = new Map(agents.map((a) => [a.entry.ref, a] as const));
 
   // Step 4 — Schedules. Bind each to its agent (via agentRef); a missing agent
-  // yields a disabled schedule + warning. Idempotent by name + target.
+  // yields a disabled schedule + warning. Idempotent by NAME across all scopes:
+  // the target flips 'global' → agentId once an offered agent appears, so a
+  // per-target existence check would miss the earlier global copy and create a
+  // duplicate on re-apply (plus an orphaned disabled global schedule).
+  const existingNames = new Set(await deps.scheduleService.existingScheduleNames());
   const schedulesCreated: string[] = [];
   for (const schedule of manifest.schedules) {
     const resolved = agentByRef.get(schedule.agentRef);
@@ -261,16 +270,16 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     const agentPresent = match !== null;
     const enabled = agentPresent && !schedule.startDisabled;
 
+    if (existingNames.has(schedule.name)) {
+      // Idempotent no-op: a schedule with this name already exists somewhere
+      // (possibly created globally-disabled by an earlier apply).
+      continue;
+    }
+
     if (!agentPresent) {
       warnings.push(
         `Schedule '${schedule.name}' created disabled — agent '${schedule.agentRef}' missing`
       );
-    }
-
-    const existing = await deps.scheduleService.existingScheduleNames(target);
-    if (existing.includes(schedule.name)) {
-      // Idempotent no-op: an identically-named schedule already exists here.
-      continue;
     }
 
     const request: CreateTaskRequest = {
@@ -284,6 +293,7 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       permissionMode: schedule.permissionMode,
     };
     await deps.scheduleService.createSchedule(request);
+    existingNames.add(schedule.name);
     schedulesCreated.push(schedule.name);
   }
 

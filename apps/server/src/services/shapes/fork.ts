@@ -73,6 +73,8 @@ export interface ForkShapeResult {
 /** Thrown when a fork target name is invalid or already taken. */
 export class ShapeForkConflictError extends Error {
   /**
+   * Build the conflict error with a human-readable reason.
+   *
    * @param message - Human-readable reason the fork cannot proceed.
    */
   constructor(message: string) {
@@ -132,6 +134,8 @@ export async function forkShape(
 
   // Build the forked manifest: rewrite name, stamp lineage, and — when forking
   // the ACTIVE Shape with captureCurrent — snapshot the live arrangement.
+  // (Q2: schedules are carried from the source manifest unchanged — only
+  // Shape-originated schedules, never live tasks vacuumed from elsewhere.)
   const shouldCapture = opts.captureCurrent === true && deps.getActiveShape?.() === name;
   const forkedManifest: ShapePackageManifest = {
     ...sourceManifest,
@@ -142,14 +146,7 @@ export async function forkShape(
       forkedAt: new Date().toISOString(),
     },
     ...(shouldCapture
-      ? {
-          // Keep only the activates candidates that are currently enabled.
-          activates: filterEnabled(sourceManifest.activates, deps.getEnabledExtensions?.() ?? []),
-          // Client chrome when the route supplied it; otherwise keep the source.
-          layout: opts.liveLayout ?? sourceManifest.layout,
-          // Q2: carry only Shape-originated schedules (the source manifest's).
-          schedules: sourceManifest.schedules,
-        }
+      ? captureCurrentFields(sourceManifest, deps.getEnabledExtensions?.() ?? [], opts.liveLayout)
       : {}),
   };
 
@@ -216,6 +213,40 @@ async function readShapeManifest(manifestPath: string): Promise<ShapePackageMani
 function filterEnabled(candidates: string[], enabled: string[]): string[] {
   const set = new Set(enabled);
   return candidates.filter((id) => set.has(id));
+}
+
+/**
+ * The capture-current-arrangement snapshot fields (spec §6.2):
+ *
+ * - `activates` narrows to the candidates currently enabled;
+ * - `layout` takes the client's live chrome when supplied (the server cannot
+ *   observe UI chrome on its own — until the client passes `liveLayout`, e.g.
+ *   the Phase-3 switcher, the source manifest's layout is kept);
+ * - `connections` drops every `extension-secret` whose target extension left
+ *   the narrowed `activates` ∪ `extensions` set. Without this, cross-field
+ *   rule 3 ("a secret must target an extension the Shape turns on") correctly
+ *   refuses the forked manifest at the re-validate step — the narrowing must
+ *   be mirrored onto connections, not discovered as a ZodError.
+ *
+ * @param source - The source Shape manifest.
+ * @param enabledExtensions - Currently-enabled extension ids.
+ * @param liveLayout - The client's live chrome, when the caller supplied it.
+ * @returns The manifest fields to overlay for a capture-current fork.
+ */
+function captureCurrentFields(
+  source: ShapePackageManifest,
+  enabledExtensions: string[],
+  liveLayout: ShapeLayout | undefined
+): Pick<ShapePackageManifest, 'activates' | 'layout' | 'connections'> {
+  const activates = filterEnabled(source.activates, enabledExtensions);
+  const stillEnabled = new Set([...activates, ...source.extensions]);
+  return {
+    activates,
+    layout: liveLayout ?? source.layout,
+    connections: source.connections.filter(
+      (c) => c.kind !== 'extension-secret' || stillEnabled.has(c.extension)
+    ),
+  };
 }
 
 /**

@@ -16,7 +16,11 @@ export interface ShapeForkArgs {
   name: string;
   /** New Shape name (defaults server-side to `<name>-fork`). */
   as?: string;
-  /** Snapshot the live arrangement when forking the active Shape. */
+  /**
+   * Snapshot the live arrangement when forking the active Shape. From the CLI
+   * this captures the enabled-extension set only — live window chrome can only
+   * be captured when the client passes it (the Phase-3 switcher).
+   */
   captureCurrent?: boolean;
 }
 
@@ -36,6 +40,10 @@ const SHAPE_USAGE = `Usage: dorkos shape <subcommand>
 
 Subcommands:
   fork <name> [--as <newName>] [--capture-current]   Fork an installed Shape
+
+Note: from the CLI, --capture-current snapshots which extensions are enabled.
+It cannot see your window layout — only the in-app switcher (coming in a later
+release) can pass the live layout along.
 
 Examples:
   dorkos shape fork linear-ops

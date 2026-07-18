@@ -99,7 +99,10 @@ function makeDeps(opts: {
     secretChecker: { isSet: async (ext, key) => setSecrets.has(`${ext}:${key}`) },
     agentRegistry: { listWithPaths: () => opts.registeredAgents ?? [] },
     scheduleService: {
-      existingScheduleNames: (target) => existingSchedules[target] ?? [],
+      // Cross-scope by NAME (the real service's semantics): the record is still
+      // keyed by target so tests can assert WHERE a schedule landed, but
+      // existence is the union of every scope's names.
+      existingScheduleNames: () => Object.values(existingSchedules).flat(),
       createSchedule,
     },
     configStore: {
@@ -284,7 +287,7 @@ describe('applyShape', () => {
     const first = await applyShape('linear-ops', shared.deps);
     const second = await applyShape('linear-ops', shared.deps);
 
-    // First apply creates the schedule; the second is a no-op (name+target match).
+    // First apply creates the schedule; the second is a no-op (name match).
     expect(first.applied.schedulesCreated).toEqual(['inbox-tick']);
     expect(second.applied.schedulesCreated).toEqual([]);
     expect(shared.createSchedule).toHaveBeenCalledTimes(1);
@@ -294,5 +297,39 @@ describe('applyShape', () => {
     // Active Shape recorded identically both times.
     expect(shared.setActiveShape).toHaveBeenNthCalledWith(1, 'linear-ops');
     expect(shared.setActiveShape).toHaveBeenNthCalledWith(2, 'linear-ops');
+  });
+
+  it('(c) creates no duplicate when the schedule target flips global → agent between applies', async () => {
+    // First apply: the offered agent does not exist yet, so the schedule is
+    // created globally-disabled. Then the user accepts the offer (the agent now
+    // exists) and re-applies: the SAME schedule resolves to the agent's id. A
+    // name+target existence check would miss the earlier global copy and create
+    // a duplicate — existence must be by name across scopes.
+    const registeredAgents: RegisteredAgentView[] = [];
+    const shared = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents,
+    });
+
+    const first = await applyShape('linear-ops', shared.deps);
+    expect(first.applied.schedulesCreated).toEqual(['inbox-tick']);
+    expect(shared.createSchedule.mock.calls[0][0]).toMatchObject({
+      target: 'global',
+      enabled: false,
+    });
+
+    // The offered agent is created between applies.
+    registeredAgents.push(LINEAR_TENDER_AGENT);
+
+    const second = await applyShape('linear-ops', shared.deps);
+    // No duplicate: the earlier global copy satisfies the name check.
+    expect(second.applied.schedulesCreated).toEqual([]);
+    expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    // And no repeat of the created-disabled warning for a schedule that was not created.
+    expect(second.warnings).not.toContain(
+      "Schedule 'inbox-tick' created disabled — agent 'linear-tender' missing"
+    );
   });
 });
