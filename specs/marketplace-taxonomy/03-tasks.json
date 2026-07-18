@@ -1,0 +1,211 @@
+{
+  "spec": "specs/marketplace-taxonomy/02-specification.md",
+  "slug": "marketplace-taxonomy",
+  "generatedAt": "2026-07-17T21:30:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-07-17",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Vocabulary + schema",
+      "subject": "[marketplace-taxonomy] [P1] Add categories.ts closed vocabulary + barrel export + unit test",
+      "description": "Create packages/marketplace/src/categories.ts — the single source of truth for the closed category vocabulary. Follow Detailed Design §A verbatim: export MARKETPLACE_CATEGORIES (the ordered 16-slug `as const` array), MarketplaceCategorySchema (z.enum), the MarketplaceCategory type, CATEGORY_LABELS and CATEGORY_DESCRIPTIONS (both typed Record<MarketplaceCategory, string> so omissions are compile errors), primaryCategory(categories, category), and asMarketplaceCategory(value). Browser-safe: import only `zod` (mirror package-types.ts — no Node imports). TSDoc on every export (Hard Rule 4). Barrel-export all of it from packages/marketplace/src/index.ts.\n\nWrite packages/marketplace/src/__tests__/categories.test.ts (each case a purpose comment, no always-pass): (1) CATEGORY_LABELS key-set === MARKETPLACE_CATEGORIES set; (2) CATEGORY_DESCRIPTIONS key-set === MARKETPLACE_CATEGORIES set; (3) primaryCategory(['a'],'b')==='a', primaryCategory(undefined,'b')==='b', primaryCategory(undefined,undefined)===undefined; (4) asMarketplaceCategory('security')==='security', asMarketplaceCategory('nope')===undefined.\n\nFILES: packages/marketplace/src/categories.ts (new), packages/marketplace/src/index.ts (edit — add exports), packages/marketplace/src/__tests__/categories.test.ts (new).\n\nACCEPTANCE: categories.ts exports exactly the §A surface; the two label/description Records are exhaustive over the enum (compile-time via Record type, runtime via test); barrel re-exports resolve; typecheck + lint + the unit test pass.\n\nVERIFY: pnpm --filter @dorkos/marketplace build && pnpm vitest run packages/marketplace/src/__tests__/categories.test.ts && pnpm --filter @dorkos/marketplace lint.\n\nDEPENDENCIES: none — foundational; unblocks every other task. Spec cite: Detailed Design §A, Decisions D2/D3.",
+      "activeForm": "Adding the categories.ts closed vocabulary",
+      "size": "sm",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": []
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Vocabulary + schema",
+      "subject": "[marketplace-taxonomy] [P1] Wire categories[] into sidecar + author manifest schemas with coherence refine",
+      "description": "Add the controlled categories[] field to both DorkOS-authored schemas and enforce primary-category coherence. Follow Detailed Design §B1/§B2 exactly.\n\n(a) packages/marketplace/src/dorkos-sidecar-schema.ts: import MarketplaceCategorySchema from './categories.js'; add `categories: z.array(MarketplaceCategorySchema).max(4).refine(unique).optional()` to DorkosEntrySchema with the §B1 TSDoc (note: NOT CC-native, rides the sidecar).\n\n(b) packages/marketplace/src/manifest-schema.ts: on BasePackageManifestSchema, replace line 98 `category: z.string().max(64).optional()` with `category: MarketplaceCategorySchema.optional()` (DorkOS-only surface — safe to tighten) and add the same `categories` array field. Wrap the exported MarketplacePackageManifestSchema discriminatedUnion in a top-level `.refine` enforcing `category === categories[0]` when both present (path: ['category']) — the refine must sit OUTSIDE the union (Zod can't refine a union member and keep the discriminator). Confirm the inferred MarketplacePackageManifest type still narrows on `.type` (a union `.refine` preserves the union).\n\nDO NOT touch marketplace-json-schema.ts or cc-validator.ts — §B3: the registry entry + CC oracle `category` stay z.string().max(64) to preserve the ADR-0236 inbound-lenient invariant.\n\nExtend/add tests: packages/marketplace/src/__tests__ — sidecar accepts ['security'], rejects ['not-a-cat'] and ['security','security'] (dup); manifest rejects category not in enum, rejects category !== categories[0], accepts coherent pair, accepts singular-only legacy manifest, accepts categories-only.\n\nFILES: dorkos-sidecar-schema.ts (edit), manifest-schema.ts (edit), sidecar + manifest test files (edit/new).\n\nACCEPTANCE: both schemas carry the deduped, max-4, enum-constrained categories[]; the coherence refine rejects incoherent pairs; marketplace-json-schema.ts/cc-validator.ts are unchanged; typecheck + lint + tests pass.\n\nVERIFY: pnpm --filter @dorkos/marketplace build && pnpm vitest run packages/marketplace/src/__tests__ && pnpm --filter @dorkos/marketplace typecheck.\n\nDEPENDENCIES: 1.1 (imports MarketplaceCategorySchema). Spec cite: Detailed Design §B1/§B2/§B3, Decisions D4/D5/D6.",
+      "activeForm": "Wiring categories[] into the sidecar and manifest schemas",
+      "size": "sm",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": []
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Vocabulary + schema",
+      "subject": "[marketplace-taxonomy] [P1] Surface categories[] through AggregatedPackage, flattenMergedEntry, and site ranking",
+      "description": "Make categories[] visible to every browse consumer. Follow Detailed Design §B4/§C.\n\n(a) packages/shared/src/marketplace-schemas.ts: add `categories?: string[]` to AggregatedPackage (after the `category?` line) with the §B4 TSDoc. Typed string[] (wire shape must not import the schema).\n\n(b) apps/server/src/routes/marketplace.ts flattenMergedEntry (line ~719): add `categories: entry.dorkos?.categories` and set `category: primaryCategory(entry.dorkos?.categories, entry.category)` (import primaryCategory from '@dorkos/marketplace'). This keeps existing single-category consumers working while exposing the list.\n\n(c) apps/site/src/layers/features/marketplace/lib/ranking.ts (line ~47): change the category filter to membership with singular fallback: `filtered.filter((p) => p.dorkos?.categories?.includes(wanted) ?? p.category === wanted)`.\n\nTests: server flatten test — a merged entry with dorkos.categories=['security','code-review'] yields AggregatedPackage.categories=['security','code-review'] and category==='security'; an entry with only inline category (no sidecar) yields category set and categories undefined. Site ranking test — membership filter matches a package whose sidecar categories includes the slug, plus the singular fallback.\n\nFILES: packages/shared/src/marketplace-schemas.ts (edit), apps/server/src/routes/marketplace.ts (edit), apps/site/src/layers/features/marketplace/lib/ranking.ts (edit), the corresponding test files (edit/new).\n\nACCEPTANCE: AggregatedPackage carries categories; flatten prefers categories[0] for the primary category and passes the list through; site ranking filters by membership with singular fallback; typecheck + tests pass across shared/server/site.\n\nVERIFY: pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/site typecheck && pnpm vitest run apps/server/src/routes/__tests__ apps/site/src/layers/features/marketplace/lib.\n\nDEPENDENCIES: 1.1, 1.2. Spec cite: Detailed Design §B4/§C1/§C2.",
+      "activeForm": "Surfacing categories[] through the flatten/merge path",
+      "size": "sm",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
+      "parallelWith": []
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — Validator + scaffolder + CI",
+      "subject": "[marketplace-taxonomy] [P2] Validator CATEGORY_MISSING warning + scaffolder --categories support",
+      "description": "Follow Detailed Design §D1/§D2. Off-list categories and incoherent category/categories[0] already fail as MANIFEST_SCHEMA_INVALID (1.2's schema) — no new hard branch needed. Add the soft case + author ergonomics.\n\n(a) packages/marketplace/src/package-validator.ts: after successful manifest parse, push a WARNING issue `{ level:'warning', code:'CATEGORY_MISSING', message:'Package declares no category — it will browse as \"Uncategorized\".' }` when the manifest has neither `category` nor a non-empty `categories`. Keep code stable (tests assert on it).\n\n(b) packages/marketplace/src/scaffolder.ts: add optional `categories?: MarketplaceCategory[]` to CreatePackageOptions; write `categories: opts.categories ?? []` into baseManifest and, when non-empty, also `category: opts.categories[0]` (coherence). Import the type from './categories.js'.\n\nTests: validator test — a manifest with no categories yields ok:true + a CATEGORY_MISSING warning; a manifest with categories yields no such warning; an off-list category yields ok:false MANIFEST_SCHEMA_INVALID (regression guard on 1.2). Scaffolder test — createPackage({categories:['security','code-review']}) writes categories:['security','code-review'] and category:'security'; omitting categories writes categories:[] and no category key.\n\nFILES: package-validator.ts (edit), scaffolder.ts (edit), their test files (edit).\n\nACCEPTANCE: CATEGORY_MISSING is a warning (not an error) with a stable code; scaffolder threads categories into a coherent starter manifest; typecheck + lint + tests pass.\n\nVERIFY: pnpm vitest run packages/marketplace/src/__tests__ && pnpm --filter @dorkos/marketplace typecheck && pnpm --filter @dorkos/marketplace lint.\n\nDEPENDENCIES: 1.1, 1.2. PARALLELIZABLE with 2.2, 3.x, 4.x, 5.x (disjoint files). Spec cite: Detailed Design §D1/§D2.",
+      "activeForm": "Adding the validator warning and scaffolder category support",
+      "size": "sm",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.2",
+        "3.1",
+        "4.1",
+        "5.1"
+      ]
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — Validator + scaffolder + CI",
+      "subject": "[marketplace-taxonomy] [P2] CI vocabulary exhaustiveness + fixture-coherence check",
+      "description": "Follow Detailed Design §D3. Add a runtime guard backing the compile-time Record exhaustiveness and prove every bundled fixture manifest parses under the tightened schema.\n\nCreate packages/marketplace/scripts/check-categories.ts (runnable via node --experimental-strip-types) that: (1) asserts Object.keys(CATEGORY_LABELS) and Object.keys(CATEGORY_DESCRIPTIONS) each equal the MARKETPLACE_CATEGORIES set (exit non-zero on drift); (2) loads every .dork/manifest.json fixture under packages/marketplace/fixtures/** and apps/server/src/services/marketplace/fixtures/** and runs MarketplacePackageManifestSchema.safeParse, failing on any error. Wire it into the marketplace package's test run (e.g. an entry in its package.json `test`/`check` script that `pnpm verify` reaches) so a taxonomy drift or an off-list fixture category is caught in CI.\n\nNOTE (document, do not implement here): the external registry gate — every dork-labs/marketplace package's categories[] ∈ the closed list and category===categories[0] — runs in that repo's CI via the same exported MarketplaceCategorySchema (see task 6.1). This repo cannot validate an external registry at build time.\n\nAlso add a co-located test packages/marketplace/src/__tests__/check-categories.test.ts asserting the exhaustiveness function returns clean for the shipped vocabulary and detects an injected fake drift.\n\nFILES: packages/marketplace/scripts/check-categories.ts (new), packages/marketplace/package.json (edit — wire the check), packages/marketplace/src/__tests__/check-categories.test.ts (new).\n\nACCEPTANCE: the check fails on label/description drift and on an off-list fixture category; it passes for the shipped vocabulary + fixtures; it runs in CI via pnpm verify; typecheck + the test pass.\n\nVERIFY: node --experimental-strip-types packages/marketplace/scripts/check-categories.ts && pnpm vitest run packages/marketplace/src/__tests__/check-categories.test.ts.\n\nDEPENDENCIES: 1.1, 1.2. PARALLELIZABLE with 2.1, 3.x, 4.x, 5.x. Spec cite: Detailed Design §D3.",
+      "activeForm": "Adding the CI vocabulary exhaustiveness check",
+      "size": "sm",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — Client facet chips",
+      "subject": "[marketplace-taxonomy] [P3] Category facet chips in MarketplaceHeader wired to ?category=",
+      "description": "Follow Detailed Design §E1. Add a category-chip row to apps/client/src/layers/features/marketplace/ui/MarketplaceHeader.tsx below the existing type-filter tabs. Derive chips from MARKETPLACE_CATEGORIES + CATEGORY_LABELS (import from '@dorkos/marketplace'). Read/write the filter via useMarketplaceParams() (category, setCategory — already plumbed; no new URL wiring). Include an 'All' chip that calls setCategory(null); each category chip toggles setCategory(slug) / setCategory(null) when re-clicked.\n\nPresent-only policy (spec decision): only render chips for categories that have >=1 package in the currently-loaded list. Compute a Set<string> of present categories in the parent Marketplace.tsx (union of each package's categories[] plus its singular category) and pass it to the header; the header renders chips filtered by that set. Reuse the existing pill styling (rounded-full, data-[state=active]:bg-primary). Accessibility: wrap the row in a group labelled aria-label=\"Filter by category\"; each chip is a real <button> with aria-pressed reflecting active state; never bare focus: (use focus-visible:). FSD: features layer may import shared/ui + the marketplace entity; import @dorkos/marketplace as a cross-package import (allowed).\n\nComponent test (RTL + jsdom + mock Transport via TransportProvider, per .claude/rules/testing.md): chips render only for present categories; clicking 'Security' sets ?category=security and aria-pressed=true; clicking it again clears; 'All' clears. \n\nFILES: MarketplaceHeader.tsx (edit), Marketplace.tsx (edit — compute + pass present-categories set), __tests__/MarketplaceHeader.test.tsx (edit).\n\nACCEPTANCE: the chip row renders present categories, toggles ?category= via setCategory, is keyboard-accessible with correct aria-pressed, and matches the design-system pill styling; typecheck + lint + component test pass; no FSD layer violation.\n\nVERIFY: pnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint && pnpm vitest run apps/client/src/layers/features/marketplace/__tests__/MarketplaceHeader.test.tsx.\n\nDEPENDENCIES: 1.1 (vocabulary), 1.3 (AggregatedPackage.categories for present-set computation). PARALLELIZABLE with 3.2 (disjoint: header/chips vs filter/empty-state), 2.x, 4.x, 5.x. Spec cite: Detailed Design §E1, User Experience.",
+      "activeForm": "Adding category facet chips to the marketplace header",
+      "size": "md",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.3"
+      ],
+      "parallelWith": [
+        "3.2",
+        "2.1",
+        "4.1",
+        "5.1"
+      ]
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "P3 — Client facet chips",
+      "subject": "[marketplace-taxonomy] [P3] Membership category filter + zero-result empty state",
+      "description": "Follow Detailed Design §E2/§E3. Two changes to the client filter + empty state.\n\n(a) apps/client/src/layers/features/marketplace/lib/package-filter.ts (line ~67): match the category filter against categories[] with singular fallback — `const inList = pkg.categories?.includes(criteria.category) ?? false; if (!inList && pkg.category !== criteria.category) return false;`. Update the function TSDoc (the '@' exact-match note) to describe membership.\n\n(b) apps/client/src/layers/features/marketplace/ui/PackageEmptyState.tsx + Marketplace.tsx: when a category filter yields zero packages, show a category-specific message ('No packages in {label} yet') with a 'Clear category' button calling setCategory(null). Thread the active category's label (CATEGORY_LABELS[category]) through Marketplace.tsx into the empty state (existing component takes a message/action prop — extend minimally if needed, keeping the generic empty state intact for the no-filter case).\n\nTests: package-filter test — matches a package whose categories[] includes the slug; matches a legacy singular-category package; excludes a non-member; empty-search still matches all. Empty-state/component test — a zero-result category renders the category message + a Clear button that calls setCategory(null).\n\nFILES: package-filter.ts (edit), PackageEmptyState.tsx (edit), Marketplace.tsx (edit), package-filter + empty-state test files (edit/new).\n\nACCEPTANCE: filterPackages matches by membership with singular fallback; a zero-result category shows a clear, category-named empty state with a working Clear affordance; typecheck + lint + tests pass.\n\nVERIFY: pnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint && pnpm vitest run apps/client/src/layers/features/marketplace.\n\nDEPENDENCIES: 1.1, 1.3. PARALLELIZABLE with 3.1. Spec cite: Detailed Design §E2/§E3.",
+      "activeForm": "Adding membership filtering and the category empty state",
+      "size": "sm",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.3"
+      ],
+      "parallelWith": [
+        "3.1"
+      ]
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "P4 — Site SEO route",
+      "subject": "[marketplace-taxonomy] [P4] /marketplace/category/[slug] SEO route cloned from features/category template",
+      "description": "Follow Detailed Design §F. Create apps/site/src/app/(marketing)/marketplace/category/[category]/page.tsx by cloning the STRUCTURE of apps/site/src/app/(marketing)/features/category/[category]/page.tsx, but sourced from the marketplace vocabulary + registry.\n\nStructure: (1) generateStaticParams() over MARKETPLACE_CATEGORIES (from '@dorkos/marketplace') → 16 static pages; (2) generateMetadata(): title `${CATEGORY_LABELS[slug]} — DorkOS Marketplace`, description seeded from CATEGORY_DESCRIPTIONS[slug] + in-category package names, openGraph { url:`/marketplace/category/${slug}`, siteName }, twitterFromOpenGraph, alternates.canonical + rssFeedAlternateTypes (reuse @/lib/metadata + @/config/site); (3) notFound() when asMarketplaceCategory(slug) is undefined; (4) data via fetchMarketplaceJson() then rankPackages(plugins, installCounts, { category: slug }) (the §C2 membership filter); render the existing MarketplaceGrid/PackageCard; (5) BreadcrumbList (Home → Marketplace → {label}) + CollectionPage JSON-LD (hasPart → SoftwareApplication per package), same shape as the features template; (6) registry-down degradation: mirror marketplace/page.tsx — on fetch throw, render a 'no packages yet' state, never a 500. DEMO-CLAIM GATE: copy asserts only what each package's own description says; the subhead is 'Browse {label} packages for DorkOS' — no capability/pillar claims.\n\nRoute smoke test (site test conventions): generateStaticParams returns 16 slugs; an unknown slug → notFound; generateMetadata for a sample category has the correct title + canonical.\n\nFILES: apps/site/src/app/(marketing)/marketplace/category/[category]/page.tsx (new), a co-located route test.\n\nACCEPTANCE: 16 statically-generated category pages exist; each has correct metadata/OG/canonical + BreadcrumbList + CollectionPage JSON-LD; unknown slug 404s; registry-down degrades gracefully; copy passes the demo-claim gate; site build + typecheck + the route test pass.\n\nVERIFY: pnpm --filter @dorkos/site typecheck && pnpm --filter @dorkos/site build (asserts static generation of the category routes) && pnpm vitest run apps/site/src/app.\n\nDEPENDENCIES: 1.1 (vocabulary), 1.3 (site ranking membership filter). PARALLELIZABLE with 4.2, 2.x, 3.x, 5.x. Spec cite: Detailed Design §F, plans/shapes-program.md success criterion 4.",
+      "activeForm": "Cloning the category SEO route for the marketplace",
+      "size": "md",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.3"
+      ],
+      "parallelWith": [
+        "4.2",
+        "2.1",
+        "3.1",
+        "5.1"
+      ]
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "P4 — Site SEO route",
+      "subject": "[marketplace-taxonomy] [P4] PackageCard category links + per-category OG image",
+      "description": "Follow Detailed Design §F2/§F3. Make the SEO routes internally linked and give them an OG image.\n\n(a) apps/site/src/layers/features/marketplace/ui/PackageCard.tsx: render the package's primary category (primaryCategory(p.dorkos?.categories, p.category) — or the merged AggregatedPackage.category) as a small Link chip to `/marketplace/category/${slug}` so the browse grid cross-links to the landing pages (crawlable internal links). Guard on undefined (uncategorized → no chip). Keep it visually a quiet chip, not a loud button.\n\n(b) apps/site/src/app/(marketing)/marketplace/category/[category]/opengraph-image.tsx: clone apps/site/src/app/(marketing)/marketplace/opengraph-image.tsx, rendering the category label (CATEGORY_LABELS[slug]) as the OG title. generateStaticParams over MARKETPLACE_CATEGORIES so each category ships its own card. If time-boxed out, the route inherits the marketplace default OG (acceptable per §F2) — but prefer shipping it.\n\nTests: PackageCard test — a package with a category renders a link to /marketplace/category/<slug>; an uncategorized package renders no chip.\n\nFILES: PackageCard.tsx (edit), marketplace/category/[category]/opengraph-image.tsx (new), PackageCard test (edit).\n\nACCEPTANCE: browse cards link to the matching category landing page; each category has an OG image with its label; uncategorized packages render no category chip; typecheck + build + test pass.\n\nVERIFY: pnpm --filter @dorkos/site typecheck && pnpm --filter @dorkos/site build && pnpm vitest run apps/site/src/layers/features/marketplace/ui.\n\nDEPENDENCIES: 1.1, 1.3, 4.1 (the route the links point at). PARALLELIZABLE with 2.x, 3.x, 5.x. Spec cite: Detailed Design §F2/§F3.",
+      "activeForm": "Adding category links and OG images to the site",
+      "size": "sm",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.3",
+        "4.1"
+      ],
+      "parallelWith": []
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "P5 — MCP category-awareness",
+      "subject": "[marketplace-taxonomy] [P5] marketplace_search: merge sidecar + membership category filter + categories in payload",
+      "description": "Follow Detailed Design §G1/§G2. Today collectEntries (apps/server/src/services/marketplace-mcp/tool-search.ts:104) iterates raw json.plugins and never fetches the sidecar, so no sidecar field is visible — teach it to merge.\n\n(a) In collectEntries, fetch the sidecar alongside marketplace.json (deps.fetcher.fetchDorkosSidecar — the same call the HTTP route uses at marketplace.ts:646) and mergeMarketplace(json, sidecar); aggregate MergedMarketplaceEntry (carrying dorkos?.categories) + the marketplace tag, instead of bare MarketplaceJsonEntry. Preserve the existing per-source fetch-failure tolerance (log + skip).\n\n(b) SearchInputSchema.category: tighten to MarketplaceCategorySchema.optional() (from '@dorkos/marketplace').\n\n(c) applyFilters category pass (line ~142): membership with singular fallback — `results.filter((r) => r.dorkos?.categories?.includes(wanted) ?? r.category === wanted)`.\n\n(d) payload (line ~82): add `categories: r.dorkos?.categories` and set `category: primaryCategory(r.dorkos?.categories, r.category)`.\n\nTests (apps/server/src/services/marketplace-mcp/__tests__/tool-search.test.ts): with a stub fetcher returning a sidecar, a category filter returns only member packages (including a multi-membership match) and the singular fallback still works for a sidecar-less package; the payload includes categories; an off-enum category input is rejected by the schema.\n\nFILES: tool-search.ts (edit), __tests__/tool-search.test.ts (edit).\n\nACCEPTANCE: marketplace_search sees sidecar categories via merge, filters by membership with singular fallback, tightens the category input to the enum, and returns categories in the payload; per-source fetch failures still degrade gracefully; typecheck + tests pass.\n\nVERIFY: pnpm --filter @dorkos/server typecheck && pnpm vitest run apps/server/src/services/marketplace-mcp/__tests__/tool-search.test.ts.\n\nDEPENDENCIES: 1.1, 1.2. PARALLELIZABLE with 5.2 (disjoint files), 2.x, 3.x, 4.x. Spec cite: Detailed Design §G1/§G2, ideation §2 (MCP tools don't fetch the sidecar today).",
+      "activeForm": "Making marketplace_search category-aware",
+      "size": "md",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
+      "parallelWith": [
+        "5.2",
+        "2.1",
+        "3.1",
+        "4.1"
+      ]
+    },
+    {
+      "id": "5.2",
+      "phase": 5,
+      "phaseName": "P5 — MCP category-awareness",
+      "subject": "[marketplace-taxonomy] [P5] marketplace_recommend: sidecar merge + optional category filter + category boost",
+      "description": "Follow Detailed Design §G1/§G3. Add category-awareness to the recommender.\n\n(a) apps/server/src/services/marketplace-mcp/tool-recommend.ts: merge the sidecar in the collector loop (same fetchDorkosSidecar + mergeMarketplace as 5.1) so entries are MergedMarketplaceEntry; add an optional `category` input (MarketplaceCategorySchema.optional()) that pre-filters by membership before scoring.\n\n(b) apps/server/src/services/marketplace-mcp/recommend-engine.ts: change ScoredRecommendation.entry / the recommend() + scoreEntry() signatures to MergedMarketplaceEntry; add CATEGORY_MATCH_WEIGHT (a new constant between TAG_MATCH_WEIGHT=5 and NAME_MATCH_WEIGHT=10, e.g. 7); in scoreEntry, when a context token equals a category slug OR a lowercased word of its CATEGORY_LABELS label, add the boost + a reason fragment (e.g. `category \"security\"`). Read categories from entry.dorkos?.categories.\n\nTests (recommend-engine + tool-recommend __tests__): a context mentioning 'security' boosts a security-category package above an equal-keyword non-security one; the optional category input pre-filters to members; a sidecar-less package still scores on keyword/tag only.\n\nFILES: tool-recommend.ts (edit), recommend-engine.ts (edit), the two __tests__ files (edit).\n\nACCEPTANCE: marketplace_recommend merges the sidecar, accepts an optional enum category filter, and boosts category-matching packages with an explanatory reason; existing keyword/tag scoring is preserved; typecheck + tests pass.\n\nVERIFY: pnpm --filter @dorkos/server typecheck && pnpm vitest run apps/server/src/services/marketplace-mcp/__tests__/tool-recommend.test.ts apps/server/src/services/marketplace-mcp/__tests__/recommend-engine* .\n\nDEPENDENCIES: 1.1, 1.2. PARALLELIZABLE with 5.1. Spec cite: Detailed Design §G1/§G3.",
+      "activeForm": "Making marketplace_recommend category-aware",
+      "size": "sm",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
+      "parallelWith": [
+        "5.1"
+      ]
+    },
+    {
+      "id": "6.1",
+      "phase": 6,
+      "phaseName": "P6 — Registry backfill (dork-labs/marketplace, external)",
+      "subject": "[marketplace-taxonomy] [P6] Backfill categories[] sidecar + canonicalize inline category in dork-labs/marketplace",
+      "description": "EXTERNAL to this repo — executed in the dork-labs/marketplace checkout. Follow Detailed Design §H exactly; the map is ideation §5. Mechanical, listable.\n\n(1) Create .claude-plugin/dorkos.json (schemaVersion:1, plugins:{...}) with a categories[] entry per package per the §H sidecar block (code-reviewer→[code-review], security-auditor→[security], security-audit-pack→[security], docs-keeper→[documentation], linear-integration→[project-management,integrations], discord-adapter→[integrations], posthog-monitor→[observability], release-pack→[release-ops], marketplace-dev→[dev-tools], lifeos-starter→[productivity], flow→[agent-ops,project-management]).\n(2) Rewrite each inline marketplace.json `category` to categories[0]: code-quality→code-review, release→release-ops, development→dev-tools, workflow→agent-ops, integration→project-management (linear-integration) / integrations (discord-adapter). Leave security/documentation/observability/productivity as-is.\n(3) Mirror categories[] + category into each package's own .dork/manifest.json.\n(4) Run `dorkos package validate-marketplace` (uses the exported MarketplaceCategorySchema published by 1.1) — every entry must be in-vocabulary and coherent (category===categories[0]).\n(5) Add a CI step in dork-labs/marketplace that runs the same validate on every PR (the registry vocabulary gate that this repo cannot run against an external registry).\n\nFILES (in dork-labs/marketplace): .claude-plugin/dorkos.json (new), .claude-plugin/marketplace.json (edit — canonicalize category), each plugin's .dork/manifest.json (edit), CI workflow (edit/new).\n\nACCEPTANCE: the sidecar exists with correct categories[] for all live packages; every inline category equals categories[0] and is in-vocabulary; validate-marketplace passes; the site (via fetch.ts merge) and cockpit (via flattenMergedEntry) surface the categories; a registry CI gate blocks off-list categories going forward.\n\nVERIFY (external repo): dorkos package validate-marketplace against the updated registry passes with zero category errors; the DorkOS site /marketplace/category/security lists the two security packages after ISR revalidation.\n\nDEPENDENCIES: 1.1 (the published vocabulary + schema). Independent of 3.x/4.x/5.x. Spec cite: Detailed Design §H, ideation §5, plans/shapes-program.md W3 (registry backfill).",
+      "activeForm": "Backfilling the registry categories sidecar",
+      "size": "sm",
+      "priority": "medium",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": []
+    }
+  ]
+}
