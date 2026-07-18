@@ -624,3 +624,9 @@ always passes is caught.
 - `turbo.json` + `package.json` `verify` — the Turbo-affected mechanism the
   memoized gate reuses.
 - `.claude/commands/system/release.md` — the release command the gate hooks into.
+
+## Errata (2026-07-18, post-Phase-1 implementation)
+
+- **In-process boot recipe**: `createApp()` + `finalizeApp()` alone 500s — `sessionGate` reads the config store, so the harness must also call `initConfigManager(sandboxDorkHome)` (exported via the additive `@dorkos/server/services/core/config-manager` subpath, alongside `./app`). Two additive server exports, not one.
+- **Transcript layout**: transcripts land under `<outDir>/<runId>/` (default `.evals-runs/`), not `transcripts/<run-id>/`.
+- **Phase-2 preconditions** (from the PR #331 review, filed as a tracker task): fix `driveTurn`'s pre-snapshot ready-error hang and the `/events` connection leak on `DriveError` paths; restore `process.env` + the configManager singleton in `dispose()`; consolidate on `collectDurableEventsAt` or document the dual SSE path; test or remove `betweenTurns`.
