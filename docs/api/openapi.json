@@ -8237,7 +8237,8 @@
                               "agent",
                               "plugin",
                               "skill-pack",
-                              "adapter"
+                              "adapter",
+                              "shape"
                             ]
                           },
                           "installPath": {
@@ -8328,7 +8329,8 @@
                               "agent",
                               "plugin",
                               "skill-pack",
-                              "adapter"
+                              "adapter",
+                              "shape"
                             ]
                           },
                           "installPath": {
@@ -8653,7 +8655,8 @@
                             "agent",
                             "plugin",
                             "skill-pack",
-                            "adapter"
+                            "adapter",
+                            "shape"
                           ]
                         },
                         "description": {
@@ -9108,7 +9111,8 @@
                             "agent",
                             "plugin",
                             "skill-pack",
-                            "adapter"
+                            "adapter",
+                            "shape"
                           ]
                         },
                         "description": {
@@ -9224,7 +9228,8 @@
                         "agent",
                         "plugin",
                         "skill-pack",
-                        "adapter"
+                        "adapter",
+                        "shape"
                       ]
                     },
                     "installPath": {
@@ -9248,7 +9253,8 @@
                             "agent",
                             "plugin",
                             "skill-pack",
-                            "adapter"
+                            "adapter",
+                            "shape"
                           ]
                         },
                         "description": {
@@ -9544,7 +9550,8 @@
                               "agent",
                               "plugin",
                               "skill-pack",
-                              "adapter"
+                              "adapter",
+                              "shape"
                             ]
                           },
                           "installPath": {
@@ -9568,7 +9575,8 @@
                                   "agent",
                                   "plugin",
                                   "skill-pack",
-                                  "adapter"
+                                  "adapter",
+                                  "shape"
                                 ]
                               },
                               "description": {

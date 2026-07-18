@@ -31,9 +31,10 @@ export interface PackageInitArgs {
 /** Allowed values for the `--type` flag, derived from the canonical schema. */
 const ALLOWED_PACKAGE_TYPES: readonly PackageType[] = PackageTypeSchema.options;
 
-/** One-line usage string surfaced in error messages. */
+/** One-line usage string surfaced in error messages. Type list stays in sync
+ * with {@link ALLOWED_PACKAGE_TYPES} (derived from the canonical schema). */
 const USAGE_LINE =
-  'Usage: dorkos package init <name> [--type agent|plugin|skill-pack|adapter] ' +
+  `Usage: dorkos package init <name> [--type ${ALLOWED_PACKAGE_TYPES.join('|')}] ` +
   '[--parent-dir <path>] [--description <text>] [--author <text>] [--adapter-type <id>]';
 
 /**
