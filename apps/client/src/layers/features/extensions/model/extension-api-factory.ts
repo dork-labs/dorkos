@@ -156,12 +156,19 @@ export function createExtensionAPI(
       selector: (state: ExtensionReadableState) => unknown,
       callback: (value: unknown) => void
     ): () => void {
-      // Zustand's subscribe takes a selector over the raw store state.
-      // We project it to ExtensionReadableState before passing to the extension selector.
-      const unsub = deps.appStore.subscribe(
-        (rawState: unknown) => selector(projectState(rawState)),
-        callback
-      );
+      // The app store exposes the plain single-listener subscribe, so the
+      // selector-diffing extensions expect lives here: project the raw state,
+      // run the extension's selector, and fire only when the selected value
+      // changes (Object.is). Seed `current` from the store so the first real
+      // change — not the initial value — triggers the callback.
+      let current = selector(projectState(deps.appStore.getState()));
+      const unsub = deps.appStore.subscribe((rawState: unknown) => {
+        const next = selector(projectState(rawState));
+        if (!Object.is(next, current)) {
+          current = next;
+          callback(next);
+        }
+      });
       cleanups.push(unsub);
       return unsub;
     },
@@ -220,17 +227,21 @@ export function createExtensionAPI(
 /**
  * Project raw app store state into the read-only extension state shape.
  *
- * Maps the app store's `selectedCwd` and `sessionId` fields to the
- * `ExtensionReadableState` interface. `agentId` is not yet tracked in the
- * app store so it always resolves to null.
+ * Maps the app store's `selectedCwd`, `sessionId`, and `currentAgentId` fields
+ * to the `ExtensionReadableState` interface. `currentAgentId` is resolved from
+ * the selected cwd by `useSyncCurrentAgentId`; it is null when no agent is
+ * registered there or resolution hasn't completed.
  */
 function projectState(store: unknown): ExtensionReadableState {
-  const s = (store ?? {}) as { selectedCwd?: string | null; sessionId?: string | null };
+  const s = (store ?? {}) as {
+    selectedCwd?: string | null;
+    sessionId?: string | null;
+    currentAgentId?: string | null;
+  };
   return {
     currentCwd: s.selectedCwd ?? null,
     activeSessionId: s.sessionId ?? null,
-    // agentId not yet in app store — reserved for future tracking
-    agentId: null,
+    agentId: s.currentAgentId ?? null,
   };
 }
 
