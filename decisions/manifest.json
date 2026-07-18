@@ -2,6 +2,20 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260718-042209",
+      "slug": "shapes-monetization-guardrails-no-paid-chat-placement",
+      "title": "Shapes monetization guardrails: free community shapes, vendor affiliate/placement, no paid placement in chats ever",
+      "status": "accepted",
+      "created": "2026-07-17"
+    },
+    {
+      "id": "260718-042153",
+      "slug": "two-act-positioning-gated-business-user-act-2",
+      "title": "Two-act positioning: launch on operator/dev framing now, gate business-user Act 2 on evidence triggers",
+      "status": "accepted",
+      "created": "2026-07-17"
+    },
+    {
       "id": "260717-180706",
       "slug": "relay-flow-metadata-only-broadcast",
       "title": "Relay flow animation broadcasts metadata-only relay_flow events at the inbound binding-routing boundary",

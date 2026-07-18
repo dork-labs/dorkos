@@ -24,6 +24,7 @@ import {
   EventStreamProvider,
 } from '@/layers/shared/model';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
+import { switchAgentCwd } from '@/layers/entities/session';
 import { useAutoOpenDiff } from '@/layers/features/diff-review';
 import { ExtensionProvider, createExtensionEventBridge } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
@@ -259,6 +260,16 @@ const extensionDeps: ExtensionAPIDeps = {
     // Gates the agent's `open_terminal` command: HttpTransport supports a
     // server-side PTY, so the Terminal tab exists and can be focused.
     supportsTerminal: transport.supportsTerminal,
+    // Wires the agent's `control_ui switch_agent` command to the same CWD switch
+    // the command palette performs (DOR-354). Reads the store fresh per call so
+    // the switch-back target reflects the current directory, and drives the
+    // router directly since dispatch happens outside React.
+    switchAgent: (cwd: string) =>
+      switchAgentCwd(cwd, {
+        store: useAppStore.getState(),
+        queryClient,
+        navigate: (search) => void router.navigate({ to: '/session', search }),
+      }),
   },
   // navigate is provided as a no-op here. Extensions calling navigate() after
   // mount should use the router instance directly. The no-op prevents crashes
