@@ -31,6 +31,12 @@ vi.mock('../model/use-marketplace-params', () => ({
   useMarketplaceParams: () => mockParams,
 }));
 
+// Marketplace reads the catalog to derive the header's present-category set.
+// Stub the entity hook so the test needs no QueryClient/Transport.
+vi.mock('@/layers/entities/marketplace', () => ({
+  useMarketplacePackages: () => ({ data: [] }),
+}));
+
 // Stub the heavy children so the test isolates the view-switch logic.
 vi.mock('../ui/MarketplaceHeader', () => ({
   MarketplaceHeader: () => <div data-testid="browse-header" />,

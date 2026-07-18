@@ -176,4 +176,83 @@ describe('MarketplaceHeader', () => {
     expect(mockParams.setSearch).toHaveBeenCalledTimes(1);
     expect(mockParams.setSearch).toHaveBeenCalledWith('reviewer');
   });
+
+  // -------------------------------------------------------------------------
+  // Category facet chips
+  // -------------------------------------------------------------------------
+
+  it('renders no category chip row when no categories are present', () => {
+    // Present-only policy: with an empty/omitted set there are no live facets.
+    render(<MarketplaceHeader />);
+    expect(screen.queryByRole('group', { name: 'Filter by category' })).not.toBeInTheDocument();
+  });
+
+  it('renders a facet chip only for present categories, plus an "All" chip', () => {
+    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
+
+    const group = screen.getByRole('group', { name: 'Filter by category' });
+    expect(group).toBeInTheDocument();
+    // Labels come from CATEGORY_LABELS.
+    expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Security' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Code Review' })).toBeInTheDocument();
+    // A category with no present packages gets no chip (no dead facet).
+    expect(screen.queryByRole('button', { name: 'Marketing' })).not.toBeInTheDocument();
+  });
+
+  it('renders chips in the canonical vocabulary order, not insertion order', () => {
+    // 'security' precedes 'code-review' in the set but code-review is earlier
+    // in MARKETPLACE_CATEGORIES, so it renders first.
+    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
+
+    const labels = screen
+      .getAllByRole('button')
+      .map((b) => b.textContent)
+      .filter((t) => t === 'Security' || t === 'Code Review');
+    expect(labels).toEqual(['Code Review', 'Security']);
+  });
+
+  it('clicking a category chip writes the slug to the URL via setCategory', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
+
+    await user.click(screen.getByRole('button', { name: 'Security' }));
+
+    expect(mockParams.setCategory).toHaveBeenCalledWith('security');
+  });
+
+  it('marks the active category chip with aria-pressed', () => {
+    mockParams.category = 'security';
+    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
+
+    expect(screen.getByRole('button', { name: 'Security' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Code Review' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+  });
+
+  it('clicking the active category chip clears the filter (toggle off)', async () => {
+    mockParams.category = 'security';
+    const user = userEvent.setup();
+    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
+
+    await user.click(screen.getByRole('button', { name: 'Security' }));
+
+    expect(mockParams.setCategory).toHaveBeenCalledWith(null);
+  });
+
+  it('clicking the "All" chip clears the category filter', async () => {
+    mockParams.category = 'security';
+    const user = userEvent.setup();
+    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
+
+    await user.click(screen.getByRole('button', { name: 'All' }));
+
+    expect(mockParams.setCategory).toHaveBeenCalledWith(null);
+  });
 });

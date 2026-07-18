@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
+import {
+  CATEGORY_DESCRIPTIONS,
+  CATEGORY_LABELS,
+  MARKETPLACE_CATEGORIES,
+} from '@dorkos/marketplace';
 import { Input, Label, Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import type { MarketplaceTypeFilter } from '../model/marketplace-search';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 
@@ -20,18 +26,46 @@ const TYPE_TABS: ReadonlyArray<{ value: MarketplaceTypeFilter; label: string }> 
 ] as const;
 
 // ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+interface MarketplaceHeaderProps {
+  /**
+   * Category slugs that at least one currently-loaded package belongs to.
+   * Only these get a facet chip, so the row never shows a dead filter that
+   * would return zero results. Omitted (or empty) renders no chip row — e.g.
+   * while the catalog is still loading or every package is uncategorized.
+   */
+  presentCategories?: ReadonlySet<string>;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 /**
  * Top section of the Marketplace browse page.
  *
- * Renders a debounced search input and a type-filter tab row. The `/` key
- * focuses the search input when no other input is focused.
+ * Renders a debounced search input, a type-filter tab row, and a category
+ * facet-chip row wired to the `?category=` URL param. The `/` key focuses the
+ * search input when no other input is focused.
+ *
+ * @param presentCategories - Category slugs with at least one package present;
+ *   controls which facet chips render (present-only, no dead facets).
  */
-export function MarketplaceHeader() {
-  const { search: committedSearch, type: activeType, setSearch, setType } = useMarketplaceParams();
+export function MarketplaceHeader({ presentCategories }: MarketplaceHeaderProps = {}) {
+  const {
+    search: committedSearch,
+    type: activeType,
+    category: activeCategory,
+    setSearch,
+    setType,
+    setCategory,
+  } = useMarketplaceParams();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Canonical-ordered subset of the vocabulary that actually has packages.
+  const visibleCategories = MARKETPLACE_CATEGORIES.filter((slug) => presentCategories?.has(slug));
 
   const [localSearch, setLocalSearch] = useState(committedSearch);
 
@@ -107,6 +141,74 @@ export function MarketplaceHeader() {
           ))}
         </TabsList>
       </Tabs>
+
+      {/* Category facet chips — only rendered for categories that have packages */}
+      {visibleCategories.length > 0 && (
+        <div role="group" aria-label="Filter by category" className="flex flex-wrap gap-1">
+          <CategoryChip active={activeCategory === null} onClick={() => setCategory(null)}>
+            All
+          </CategoryChip>
+          {visibleCategories.map((slug) => (
+            <CategoryChip
+              key={slug}
+              active={activeCategory === slug}
+              title={CATEGORY_DESCRIPTIONS[slug]}
+              // Re-clicking the active chip clears the filter (toggle).
+              onClick={() => setCategory(activeCategory === slug ? null : slug)}
+            >
+              {CATEGORY_LABELS[slug]}
+            </CategoryChip>
+          ))}
+        </div>
+      )}
     </header>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Category chip
+// ---------------------------------------------------------------------------
+
+interface CategoryChipProps {
+  /** Whether this chip's category is the active filter. */
+  active: boolean;
+  /** Toggle handler — sets or clears `?category=`. */
+  onClick: () => void;
+  /** Tooltip text (the category's one-line description). */
+  title?: string;
+  /** Chip label. */
+  children: ReactNode;
+}
+
+/**
+ * A single category facet chip. A real `<button>` with `aria-pressed` so it is
+ * keyboard-operable and announced as a toggle. Deliberately a distinct pill
+ * treatment (`rounded-full`, primary fill when active) rather than a mirror of
+ * the type tabs' segmented control (`rounded-md`, `bg-background` + shadow
+ * inside a `bg-muted` container) — the different affordance separates the two
+ * filter axes visually while reusing the same semantic color tokens and
+ * `focus-visible` ring.
+ *
+ * @param active - Whether this chip is the active category filter.
+ * @param onClick - Toggle handler.
+ * @param title - Tooltip text.
+ * @param children - Chip label.
+ */
+function CategoryChip({ active, onClick, title, children }: CategoryChipProps) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      title={title}
+      onClick={onClick}
+      className={cn(
+        'focus-visible:ring-ring inline-flex items-center rounded-full px-3 py-1 text-sm font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+        active
+          ? 'bg-primary text-primary-foreground'
+          : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+      )}
+    >
+      {children}
+    </button>
   );
 }

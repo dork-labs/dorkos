@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
+import { asMarketplaceCategory, CATEGORY_LABELS } from '@dorkos/marketplace';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/layers/shared/ui';
 import { useMarketplaceStore } from '../model/marketplace-store';
@@ -67,7 +68,7 @@ export function PackageGrid() {
   const { data: installed } = useInstalledPackages();
   const prefersReducedMotion = useReducedMotion();
 
-  const { type, category, search, sort, setSort, resetFilters, openDetail } =
+  const { type, category, search, sort, setSort, setCategory, resetFilters, openDetail } =
     useMarketplaceParams();
   const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 
@@ -80,7 +81,23 @@ export function PackageGrid() {
 
   if (isLoading) return <PackageLoadingSkeleton />;
   if (error) return <PackageErrorState error={error as Error} onRetry={() => void refetch()} />;
-  if (visible.length === 0) return <PackageEmptyState onResetFilters={resetFilters} />;
+  if (visible.length === 0) {
+    // A category filter with no matches gets a category-named message and a
+    // single "Clear category" affordance rather than the generic reset.
+    if (category !== null) {
+      const known = asMarketplaceCategory(category);
+      const label = known ? CATEGORY_LABELS[known] : category;
+      return (
+        <PackageEmptyState
+          title={`No packages in ${label} yet`}
+          description="No packages match this category. Try another category or clear the filter."
+          resetLabel="Clear category"
+          onResetFilters={() => setCategory(null)}
+        />
+      );
+    }
+    return <PackageEmptyState onResetFilters={resetFilters} />;
+  }
 
   return (
     <div className="space-y-4">

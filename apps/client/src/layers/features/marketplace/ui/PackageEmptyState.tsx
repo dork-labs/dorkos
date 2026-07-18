@@ -3,11 +3,15 @@ import { Button } from '@/layers/shared/ui';
 
 interface PackageEmptyStateProps {
   /**
-   * Called when the user clicks "Reset filters". Omit to hide the button
-   * (e.g., when the store has no active filters and there are simply no
-   * packages available at all).
+   * Escape-hatch handler shown as a button. Omit to hide the button (e.g.,
+   * when the store has no active filters and there are simply no packages
+   * available at all). The label defaults to "Reset filters" — override it
+   * via {@link PackageEmptyStateProps.resetLabel} for a scoped action like
+   * clearing a single category.
    */
   onResetFilters?: () => void;
+  /** Label for the escape-hatch button (default: "Reset filters"). */
+  resetLabel?: string;
   /** Override the default heading. */
   title?: string;
   /** Override the default supporting text. */
@@ -17,16 +21,19 @@ interface PackageEmptyStateProps {
 /**
  * Empty state displayed when the active filter combination returns zero packages.
  *
- * Distinguishes a filter-induced empty state (provides "Reset filters" action)
+ * Distinguishes a filter-induced empty state (provides an escape-hatch action)
  * from a true empty catalog (no action button). Pass `onResetFilters` when
- * filters are active so the user has a clear escape hatch.
+ * filters are active so the user has a clear escape hatch; use `resetLabel` to
+ * scope the action (e.g. "Clear category" when only a category filter is set).
  *
- * @param onResetFilters - Reset handler shown as a "Reset filters" button.
+ * @param onResetFilters - Escape-hatch handler shown as a button.
+ * @param resetLabel - Button label (default "Reset filters").
  * @param title - Heading text.
  * @param description - Supporting body text.
  */
 export function PackageEmptyState({
   onResetFilters,
+  resetLabel = 'Reset filters',
   title = 'No packages match your filters',
   description = 'Try adjusting your search or category filters.',
 }: PackageEmptyStateProps) {
@@ -37,7 +44,7 @@ export function PackageEmptyState({
       <p className="text-muted-foreground mb-4 max-w-sm text-sm">{description}</p>
       {onResetFilters && (
         <Button variant="outline" onClick={onResetFilters}>
-          Reset filters
+          {resetLabel}
         </Button>
       )}
     </div>
