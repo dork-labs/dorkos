@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import { registerExtensionRemount } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { useSyncCurrentAgentId } from '@/layers/entities/agent';
 import type { LoadedExtension, ExtensionAPIDeps } from './types.js';
@@ -89,6 +90,11 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
 
   // Watch for CWD changes and live-remount the extension slots if the set differs.
   useCwdExtensionSync(reloadAllExtensions);
+
+  // Expose the same fetch-then-swap remount to non-React callers (the Shape
+  // apply flow enables extensions server-side, then requests a remount so the
+  // newly-activated slots appear without a reload — DOR-355 W1c).
+  useEffect(() => registerExtensionRemount(reloadAllExtensions), [reloadAllExtensions]);
 
   // Mirror the selected cwd's agent id into the app store so the extension host
   // can tell extensions which agent they run beside (getState().agentId).

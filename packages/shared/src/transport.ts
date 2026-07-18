@@ -107,6 +107,8 @@ import type {
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
+  InstalledShapeSummary,
+  ApplyShapeResult,
 } from './marketplace-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackSubmission } from './telemetry-events.js';
@@ -1400,6 +1402,25 @@ export interface Transport {
    * @param name - Source name. Will be URL-encoded.
    */
   removeMarketplaceSource(name: string): Promise<void>;
+
+  // --- Shapes (DOR-355) ---
+
+  /**
+   * List every installed Shape, each tagged with its active flag
+   * (`ui.shapes.active`) and fork lineage.
+   */
+  listShapes(): Promise<InstalledShapeSummary[]>;
+
+  /**
+   * Apply an installed Shape: enable its extensions, resolve connections, stand
+   * up schedules, offer its agents (never force one), and record it active. The
+   * result's `applied.layout` carries the chrome the client restores without a
+   * second fetch; `warnings[]` holds every per-piece degradation (spec §7).
+   * Rejects only when the Shape is not installed (the one fatal case, 404).
+   *
+   * @param name - Installed Shape name. Will be URL-encoded.
+   */
+  applyShape(name: string): Promise<ApplyShapeResult>;
 
   // --- DorkOS account link (accounts-and-auth P2) ---
 

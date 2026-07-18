@@ -135,6 +135,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'createAgent':
           useAgentCreationStore.getState().open();
           return;
+        case 'switchShape':
+          useAppStore.getState().setShapeSwitcherOpen(true);
+          return;
         case 'toggleCanvas':
           // Read current value at dispatch time so we flip, not set.
           setCanvasOpen(!useAppStore.getState().canvasOpen);

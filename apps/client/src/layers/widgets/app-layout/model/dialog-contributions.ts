@@ -1,4 +1,5 @@
 import type { DialogContribution } from '@/layers/shared/model';
+import { ShapeSwitcherDialog } from '@/layers/features/shapes';
 import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
 import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
@@ -39,5 +40,13 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     component: ServerRestartOverlayWrapper,
     openStateKey: 'restartOverlayOpen',
     priority: 7,
+  },
+  {
+    // The switcher already renders its own Dialog chrome (open/onOpenChange), so
+    // it registers directly — no passthrough wrapper needed (DOR-355).
+    id: 'shape-switcher',
+    component: ShapeSwitcherDialog,
+    openStateKey: 'shapeSwitcherOpen',
+    priority: 6,
   },
 ];
