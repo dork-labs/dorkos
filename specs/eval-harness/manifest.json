@@ -1,0 +1,13 @@
+{
+  "id": "260718-044329",
+  "slug": "eval-harness",
+  "title": "Eval harness v1 (packages/evals) — outcome-oracle evals + D5 CI cadence",
+  "status": "specified",
+  "created": "2026-07-17",
+  "linearIssue": "DOR-357",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md",
+    "tasks": "03-tasks.json"
+  }
+}

@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260718-044329",
+      "slug": "eval-harness",
+      "title": "Eval harness v1 (packages/evals) — outcome-oracle evals + D5 CI cadence",
+      "created": "2026-07-17",
+      "status": "specified"
+    },
+    {
       "id": "260718-043238",
       "slug": "marketplace-taxonomy",
       "title": "Marketplace category taxonomy: controlled vocabulary, categories[] sidecar, and SEO routes",
