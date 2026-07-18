@@ -382,7 +382,7 @@ Executed in the `dork-labs/marketplace` repo (not this one). Deliverable: a new 
 3. Mirror `categories[]` and `category` into each package's own `.dork/manifest.json` (author source).
 4. Run `dorkos package validate-marketplace` (uses the exported `MarketplaceCategorySchema`) — every entry must be in-vocabulary and coherent.
 
-Backfill sidecar (illustrative, complete for all 12):
+Backfill sidecar (illustrative, complete for all 11):
 
 ```json
 {
