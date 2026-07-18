@@ -79,6 +79,7 @@ import { PluginInstallFlow } from './services/marketplace/flows/install-plugin.j
 import { AgentInstallFlow } from './services/marketplace/flows/install-agent.js';
 import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill-pack.js';
 import { AdapterInstallFlow } from './services/marketplace/flows/install-adapter.js';
+import { ShapeInstallFlow } from './services/marketplace/flows/install-shape.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
@@ -1141,6 +1142,11 @@ async function start() {
       adapterManager,
       logger,
     });
+    const marketplaceShapeFlow = new ShapeInstallFlow({
+      dorkHome,
+      extensionCompiler: extensionManager.getCompiler(),
+      logger,
+    });
     const marketplaceUninstallFlow = new UninstallFlow({
       dorkHome,
       extensionManager,
@@ -1157,6 +1163,7 @@ async function start() {
       agentFlow: marketplaceAgentFlow,
       skillPackFlow: marketplaceSkillPackFlow,
       adapterFlow: marketplaceAdapterFlow,
+      shapeFlow: marketplaceShapeFlow,
       uninstallFlow: marketplaceUninstallFlow,
       logger,
     });

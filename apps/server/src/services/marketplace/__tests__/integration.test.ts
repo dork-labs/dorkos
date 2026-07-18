@@ -45,6 +45,7 @@ import type { TemplateDownloader } from '../../core/template-downloader.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
+import { ShapeInstallFlow } from '../flows/install-shape.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import { UninstallFlow } from '../flows/uninstall.js';
 
@@ -55,7 +56,9 @@ const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 
 /** Resolve the absolute path of a valid fixture directory. */
-function fixturePath(name: 'valid-plugin' | 'valid-agent' | 'valid-skill-pack' | 'valid-adapter') {
+function fixturePath(
+  name: 'valid-plugin' | 'valid-agent' | 'valid-skill-pack' | 'valid-adapter' | 'valid-shape'
+) {
   return path.join(FIXTURES_DIR, name);
 }
 
@@ -172,6 +175,11 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
   });
   const skillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
   const adapterFlow = new AdapterInstallFlow({ dorkHome, adapterManager, logger });
+  const shapeFlow = new ShapeInstallFlow({
+    dorkHome,
+    extensionCompiler,
+    logger,
+  });
   const uninstallFlow = new UninstallFlow({
     dorkHome,
     extensionManager,
@@ -188,6 +196,7 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
     agentFlow,
     skillPackFlow,
     adapterFlow,
+    shapeFlow,
     uninstallFlow,
     logger,
   });
@@ -257,6 +266,31 @@ describe('marketplace install pipeline — integration', () => {
 
     // The template downloader must not have been invoked: local paths
     // resolve via `kind: 'local'` and skip the fetcher entirely.
+    expect(spies.templateClone).not.toHaveBeenCalled();
+  });
+
+  it('installs a shape package end-to-end via MarketplaceInstaller (staged, not activated)', async () => {
+    const { installer, spies } = buildInstallerForTests(dorkHome);
+
+    const result = await installer.install({ name: fixturePath('valid-shape') });
+
+    const expectedInstallRoot = path.join(dorkHome, 'shapes', 'linear-ops');
+    expect(result.ok).toBe(true);
+    expect(result.type).toBe('shape');
+    expect(result.packageName).toBe('linear-ops');
+    expect(result.version).toBe('1.0.0');
+    expect(result.installPath).toBe(expectedInstallRoot);
+
+    // Disk state: the Shape manifest landed under the shapes/ root.
+    expect(await pathExists(path.join(expectedInstallRoot, '.dork', 'manifest.json'))).toBe(true);
+
+    // Install STAGES a Shape; it never ACTIVATES one. The Linear Ops fixture
+    // ships no inline extensions, and even a Shape that did would leave them
+    // compiled-but-disabled — enabling is applyShape's job (spec §6.1). So no
+    // extension is enabled by the install pipeline.
+    expect(spies.extensionEnable).not.toHaveBeenCalled();
+
+    // The template downloader must not have been invoked (local path).
     expect(spies.templateClone).not.toHaveBeenCalled();
   });
 

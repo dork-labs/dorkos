@@ -6,18 +6,23 @@
  * extension, then atomically activate the staging directory onto the install
  * root and enable each compiled extension. The cross-cutting transaction
  * lifecycle (staging dir creation, target backup, cleanup on failure) is
- * delegated to {@link runTransaction} from `../transaction`.
+ * delegated to {@link runTransaction} from `../transaction`. The shared
+ * discover + compile machinery lives in `../lib/staged-extensions`.
  *
  * @module services/marketplace/flows/install-plugin
  */
-import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
-import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { PluginPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
 import { stagePackageContents } from '../lib/stage-package.js';
+import {
+  compileStagedExtensions,
+  discoverExtensionIds,
+  discoverStagedExtensions,
+} from '../lib/staged-extensions.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -57,13 +62,6 @@ export interface PluginFlowDeps {
   extensionManager: ExtensionManagerLike;
   /** Logger for diagnostic output. */
   logger: Logger;
-}
-
-/** Discovered extension within a staged plugin package. */
-interface StagedExtension {
-  id: string;
-  path: string;
-  manifest: ExtensionManifest;
 }
 
 /**
@@ -173,18 +171,12 @@ export class PluginInstallFlow {
    */
   private async stage(stagingDir: string, packagePath: string): Promise<void> {
     await stagePackageContents(packagePath, stagingDir, this.deps.logger);
-    const extensions = await discoverStagedExtensions(stagingDir);
-
-    for (const ext of extensions) {
-      const record = buildCompilerRecord(ext);
-      const result = await this.deps.extensionCompiler.compile(record);
-      if ('error' in result) {
-        throw new Error(
-          `[install-plugin] Extension '${ext.id}' failed to compile: ${result.error.message}`
-        );
-      }
-      this.deps.logger.info(`[install-plugin] Compiled extension ${ext.id}`);
-    }
+    await compileStagedExtensions(
+      stagingDir,
+      this.deps.extensionCompiler,
+      this.deps.logger,
+      '[install-plugin]'
+    );
   }
 
   /**
@@ -233,90 +225,4 @@ function computeInstallRoot(
     return path.join(projectPath, '.dork', 'plugins', manifest.name);
   }
   return path.join(dorkHome, 'plugins', manifest.name);
-}
-
-/**
- * Walk `<root>/.dork/extensions/<id>/extension.json` and return every
- * extension found, with parsed manifests. Invalid manifests are skipped —
- * the package validator is responsible for surfacing schema errors before
- * this point.
- */
-async function discoverStagedExtensions(root: string): Promise<StagedExtension[]> {
-  const extRoot = path.join(root, '.dork', 'extensions');
-  if (!(await exists(extRoot))) return [];
-
-  const entries = await readdir(extRoot, { withFileTypes: true });
-  const found: StagedExtension[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const extDir = path.join(extRoot, entry.name);
-    const manifestPath = path.join(extDir, 'extension.json');
-    if (!(await exists(manifestPath))) continue;
-    const parsed = await readExtensionManifest(manifestPath);
-    if (parsed) {
-      found.push({ id: entry.name, path: extDir, manifest: parsed });
-    }
-  }
-  return found;
-}
-
-/**
- * List the bundled extension IDs under `<root>/.dork/extensions/` by directory
- * name, without parsing each `extension.json`. Used to capture the extension
- * set of an install so a reinstall can disable the ones the new version drops.
- * Unlike {@link discoverStagedExtensions}, this does not skip extensions whose
- * manifest fails to parse — a dangling extension must still be disabled even if
- * its manifest is malformed. Mirrors the directory walk in the uninstall flow's
- * `disableBundledExtensions`. Returns an empty array when `root` (a fresh
- * install) or its extensions directory does not exist.
- */
-async function discoverExtensionIds(root: string): Promise<string[]> {
-  const extRoot = path.join(root, '.dork', 'extensions');
-  if (!(await exists(extRoot))) return [];
-  const entries = await readdir(extRoot, { withFileTypes: true });
-  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-}
-
-/**
- * Parse a single `extension.json` file. Returns `null` on any read or
- * validation failure so the caller can skip the extension instead of
- * failing the entire install on a malformed manifest.
- */
-async function readExtensionManifest(manifestPath: string): Promise<ExtensionManifest | null> {
-  try {
-    const raw = await readFile(manifestPath, 'utf-8');
-    const parsed = ExtensionManifestSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Build the minimal {@link ExtensionRecord} the compiler needs. The record
- * is transient — it lives only for the duration of the compile call and is
- * never persisted.
- */
-function buildCompilerRecord(ext: StagedExtension): ExtensionRecord {
-  return {
-    id: ext.id,
-    manifest: ext.manifest,
-    status: 'discovered',
-    scope: 'global',
-    origin: 'user',
-    path: ext.path,
-    bundleReady: false,
-    hasServerEntry: false,
-    hasDataProxy: ext.manifest.dataProxy !== undefined,
-  };
-}
-
-/** Returns true if the supplied path exists on disk (file or directory). */
-async function exists(target: string): Promise<boolean> {
-  try {
-    await stat(target);
-    return true;
-  } catch {
-    return false;
-  }
 }
