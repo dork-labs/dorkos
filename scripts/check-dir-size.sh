@@ -28,11 +28,13 @@ for dir in $dirs; do
   #   */shared/ui, */components/ui — shadcn primitives (one file per component)
   #   dev/showcases — playground showcase files
   #   server/routes — Express routes, one-per-resource convention
+  #   cli/src/commands — CLI subcommand handlers, one-per-command convention
   #   shared/lib — independent utility modules
   #   packages/*/src — package source roots
   #   marketing/ui — independent page section components
   [[ "$dir" == *"/shared/ui" || "$dir" == *"/components/ui" || "$dir" == *"dev/showcases" ]] && continue
   [[ "$dir" == *"server/src/routes" || "$dir" == *"/shared/lib" ]] && continue
+  [[ "$dir" == *"cli/src/commands" ]] && continue
   [[ "$dir" == *"packages/"*"/src" || "$dir" == *"marketing/ui" ]] && continue
 
   # Count source files (not directories, not tests)

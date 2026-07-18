@@ -255,6 +255,16 @@ if (process.argv[2] === 'marketplace') {
   process.exit(exitCode);
 }
 
+// `shape` subcommand has its own subcommand namespace (`fork`). Intercept before
+// the top-level parseArgs call so its sub-flags (`--as`, `--capture-current`)
+// aren't rejected as unknown options. Talks to a running DorkOS server via the
+// Shape HTTP API; does not boot the server itself.
+if (process.argv[2] === 'shape') {
+  const { runShapeDispatcher } = await import('./commands/shape.js');
+  const exitCode = await runShapeDispatcher(process.argv.slice(3));
+  process.exit(exitCode);
+}
+
 // Resolve the data directory once (explicit env var > ~/.dork; the CLI always
 // runs in production mode). Shared by the early `auth` interception here and the
 // main command flow below.

@@ -1,0 +1,335 @@
+/**
+ * Tests for {@link applyShape} (DOR-355, spec §5 + §7).
+ *
+ * Three concerns, all against injected fakes (no disk, no config singleton):
+ *   (a) an all-present manifest enables every extension, creates every schedule
+ *       enabled, offers the default agent, and records the active Shape;
+ *   (b) EACH degradation row in spec §7 emits exactly its warning with ok:true
+ *       (and the one fatal case throws);
+ *   (c) applying twice creates no duplicate schedule and writes identical config.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import type { ShapePackageManifest } from '@dorkos/marketplace';
+import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
+import type { CreateTaskRequest } from '@dorkos/shared/schemas';
+import {
+  applyShape,
+  ShapeNotInstalledError,
+  type ApplyShapeDeps,
+  type RegisteredAgentView,
+} from '../apply-shape.js';
+
+/** Parse a partial manifest through the union so all defaults + cross-field rules apply. */
+function buildManifest(overrides: Record<string, unknown> = {}): ShapePackageManifest {
+  return MarketplacePackageManifestSchema.parse({
+    schemaVersion: 1,
+    name: 'test-shape',
+    version: '1.0.0',
+    type: 'shape',
+    description: 'A test shape.',
+    author: 'test',
+    ...overrides,
+  }) as ShapePackageManifest;
+}
+
+/** A fully-satisfiable Linear-Ops-shaped manifest used by the happy-path + idempotency tests. */
+function linearOpsManifest(): ShapePackageManifest {
+  return buildManifest({
+    activates: ['linear-issues'],
+    layout: { sidebarOpen: true, sidebarTab: 'overview', focusDashboardSections: ['x:y'] },
+    agents: [
+      {
+        ref: 'linear-tender',
+        affinity: 'default',
+        matchName: 'Linear Tender',
+        template: { displayName: 'Linear Tender', persona: 'tend the tracker' },
+      },
+    ],
+    schedules: [
+      {
+        name: 'inbox-tick',
+        description: 'poll the inbox',
+        prompt: 'run one tick',
+        cron: '*/15 * * * *',
+        agentRef: 'linear-tender',
+        permissionMode: 'acceptEdits',
+      },
+    ],
+    connections: [
+      { kind: 'extension-secret', extension: 'linear-issues', secret: 'linear_api_key' },
+    ],
+  });
+}
+
+/** A registered agent that satisfies the Linear Tender entry by display name. */
+const LINEAR_TENDER_AGENT: RegisteredAgentView = {
+  id: 'agent-tender',
+  name: 'linear-tender',
+  displayName: 'Linear Tender',
+  projectPath: '/projects/linear-tender',
+};
+
+/** Configurable fakes for {@link ApplyShapeDeps}. Every collaborator is observable. */
+function makeDeps(opts: {
+  manifest: ShapePackageManifest | null;
+  presentExtensions?: string[];
+  enablableExtensions?: string[];
+  setSecrets?: [string, string][];
+  registeredAgents?: RegisteredAgentView[];
+  existingSchedules?: Record<string, string[]>;
+  autoFollowAgent?: boolean;
+}) {
+  const present = new Set(opts.presentExtensions ?? []);
+  const enablable = new Set(opts.enablableExtensions ?? opts.presentExtensions ?? []);
+  const setSecrets = new Set((opts.setSecrets ?? []).map(([e, k]) => `${e}:${k}`));
+  const existingSchedules: Record<string, string[]> = { ...(opts.existingSchedules ?? {}) };
+
+  const createSchedule = vi.fn(async (req: CreateTaskRequest) => {
+    existingSchedules[req.target] = [...(existingSchedules[req.target] ?? []), req.name];
+  });
+  const enable = vi.fn(async (id: string) => (enablable.has(id) ? { reloadRequired: true } : null));
+  const setActiveShape = vi.fn();
+
+  const deps: ApplyShapeDeps = {
+    manifestResolver: { resolve: vi.fn(async () => opts.manifest) },
+    extensionManager: {
+      get: (id) => (present.has(id) ? { manifest: { serverCapabilities: {} } } : undefined),
+      enable,
+    },
+    secretChecker: { isSet: async (ext, key) => setSecrets.has(`${ext}:${key}`) },
+    agentRegistry: { listWithPaths: () => opts.registeredAgents ?? [] },
+    scheduleService: {
+      // Cross-scope by NAME (the real service's semantics): the record is still
+      // keyed by target so tests can assert WHERE a schedule landed, but
+      // existence is the union of every scope's names.
+      existingScheduleNames: () => Object.values(existingSchedules).flat(),
+      createSchedule,
+    },
+    configStore: {
+      getShapePrefs: () => ({
+        active: null,
+        agentDefaults: {},
+        autoFollowAgent: opts.autoFollowAgent ?? false,
+      }),
+      setActiveShape,
+    },
+  };
+  return { deps, createSchedule, enable, setActiveShape };
+}
+
+describe('applyShape', () => {
+  it('(a) all-present: enables extensions, creates enabled schedules, offers the default agent, records active', async () => {
+    const { deps, createSchedule, enable, setActiveShape } = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents: [LINEAR_TENDER_AGENT],
+    });
+
+    const result = await applyShape('linear-ops', deps);
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([]);
+    expect(result.applied.activatedExtensions).toEqual(['linear-issues']);
+    expect(enable).toHaveBeenCalledWith('linear-issues');
+    // The schedule is created bound to the resolved agent, enabled.
+    expect(result.applied.schedulesCreated).toEqual(['inbox-tick']);
+    expect(createSchedule).toHaveBeenCalledTimes(1);
+    const req = createSchedule.mock.calls[0][0];
+    expect(req.target).toBe('agent-tender');
+    expect(req.enabled).toBe(true);
+    // The default agent is satisfied → surfaced as the arrival offer (not auto-followed).
+    expect(result.offeredAgents).toHaveLength(1);
+    expect(result.offeredAgents[0]).toMatchObject({
+      ref: 'linear-tender',
+      satisfied: true,
+      arrival: true,
+      autoFollow: false,
+      agentId: 'agent-tender',
+    });
+    // Chrome round-trips for the client to apply.
+    expect(result.applied.layout.sidebarTab).toBe('overview');
+    // Active Shape recorded.
+    expect(setActiveShape).toHaveBeenCalledWith('linear-ops');
+  });
+
+  it('(a) auto-follows the satisfied default agent when the user opted in', async () => {
+    const { deps } = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      autoFollowAgent: true,
+    });
+
+    const result = await applyShape('linear-ops', deps);
+    expect(result.offeredAgents[0].autoFollow).toBe(true);
+  });
+
+  // === (b) Degradation rows (spec §7) — one warning each, still ok ===
+
+  it('(b) Shape not installed → the ONE fatal case throws ShapeNotInstalledError', async () => {
+    const { deps } = makeDeps({ manifest: null });
+    await expect(applyShape('ghost', deps)).rejects.toBeInstanceOf(ShapeNotInstalledError);
+    await expect(applyShape('ghost', deps)).rejects.toThrow("Shape 'ghost' is not installed");
+  });
+
+  it('(b) activated extension not found → skip + warn, layout still applies', async () => {
+    const { deps, enable } = makeDeps({
+      manifest: buildManifest({ activates: ['missing-ext'] }),
+      presentExtensions: [],
+    });
+    const result = await applyShape('s', deps);
+    expect(result.ok).toBe(true);
+    expect(enable).not.toHaveBeenCalled();
+    expect(result.applied.activatedExtensions).toEqual([]);
+    expect(result.warnings).toContain(
+      "Extension 'missing-ext' not found; install it to complete this Shape"
+    );
+  });
+
+  it('(b) bundled inline extension failed to compile → present but not enablable → warn', async () => {
+    const { deps } = makeDeps({
+      manifest: buildManifest({ activates: ['broken-ext'] }),
+      presentExtensions: ['broken-ext'],
+      enablableExtensions: [], // present via get(), but enable() returns null
+    });
+    const result = await applyShape('s', deps);
+    expect(result.ok).toBe(true);
+    expect(result.applied.activatedExtensions).toEqual([]);
+    expect(result.warnings).toContain("Extension 'broken-ext' failed to compile");
+  });
+
+  it('(b) extension secret unset → warn (no block)', async () => {
+    const { deps } = makeDeps({
+      manifest: buildManifest({
+        activates: ['linear-issues'],
+        connections: [
+          { kind: 'extension-secret', extension: 'linear-issues', secret: 'linear_api_key' },
+        ],
+      }),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [], // secret NOT set
+    });
+    const result = await applyShape('s', deps);
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContain(
+      "Connection 'linear_api_key' for 'linear-issues' needs setup"
+    );
+  });
+
+  it('(b) MCP server connection absent → surface setup hint', async () => {
+    const { deps } = makeDeps({
+      manifest: buildManifest({
+        connections: [{ kind: 'mcp-server', server: 'linear-mcp' }],
+      }),
+    });
+    const result = await applyShape('s', deps);
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContain("MCP server 'linear-mcp' not configured");
+  });
+
+  it('(b) suggested/default agent absent → not created, returned as an offer + warn', async () => {
+    const { deps } = makeDeps({
+      manifest: buildManifest({
+        agents: [{ ref: 'tender', affinity: 'default', template: { displayName: 'Tender' } }],
+      }),
+      registeredAgents: [], // no agent matches
+    });
+    const result = await applyShape('s', deps);
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContain("Agent 'tender' not present — offered");
+    expect(result.offeredAgents[0]).toMatchObject({
+      ref: 'tender',
+      satisfied: false,
+      arrival: true,
+    });
+  });
+
+  it('(b) schedule target agent absent → schedule created disabled + warn', async () => {
+    const { deps, createSchedule } = makeDeps({
+      manifest: buildManifest({
+        agents: [{ ref: 'tender', affinity: 'default', template: { displayName: 'T' } }],
+        schedules: [
+          {
+            name: 'tick',
+            description: 'poll',
+            prompt: 'go',
+            cron: '*/5 * * * *',
+            agentRef: 'tender',
+            permissionMode: 'acceptEdits',
+          },
+        ],
+      }),
+      registeredAgents: [], // the agent the schedule targets is missing
+    });
+    const result = await applyShape('s', deps);
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContain("Schedule 'tick' created disabled — agent 'tender' missing");
+    expect(result.applied.schedulesCreated).toEqual(['tick']);
+    const req = createSchedule.mock.calls[0][0];
+    expect(req.enabled).toBe(false);
+    expect(req.target).toBe('global');
+  });
+
+  // === (c) Idempotency ===
+
+  it('(c) applying twice creates no duplicate schedule and writes identical config', async () => {
+    const existingSchedules: Record<string, string[]> = {};
+    const shared = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      existingSchedules,
+    });
+
+    const first = await applyShape('linear-ops', shared.deps);
+    const second = await applyShape('linear-ops', shared.deps);
+
+    // First apply creates the schedule; the second is a no-op (name match).
+    expect(first.applied.schedulesCreated).toEqual(['inbox-tick']);
+    expect(second.applied.schedulesCreated).toEqual([]);
+    expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    // Extensions + offers are identical across applies.
+    expect(second.applied.activatedExtensions).toEqual(first.applied.activatedExtensions);
+    expect(second.offeredAgents).toEqual(first.offeredAgents);
+    // Active Shape recorded identically both times.
+    expect(shared.setActiveShape).toHaveBeenNthCalledWith(1, 'linear-ops');
+    expect(shared.setActiveShape).toHaveBeenNthCalledWith(2, 'linear-ops');
+  });
+
+  it('(c) creates no duplicate when the schedule target flips global → agent between applies', async () => {
+    // First apply: the offered agent does not exist yet, so the schedule is
+    // created globally-disabled. Then the user accepts the offer (the agent now
+    // exists) and re-applies: the SAME schedule resolves to the agent's id. A
+    // name+target existence check would miss the earlier global copy and create
+    // a duplicate — existence must be by name across scopes.
+    const registeredAgents: RegisteredAgentView[] = [];
+    const shared = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents,
+    });
+
+    const first = await applyShape('linear-ops', shared.deps);
+    expect(first.applied.schedulesCreated).toEqual(['inbox-tick']);
+    expect(shared.createSchedule.mock.calls[0][0]).toMatchObject({
+      target: 'global',
+      enabled: false,
+    });
+
+    // The offered agent is created between applies.
+    registeredAgents.push(LINEAR_TENDER_AGENT);
+
+    const second = await applyShape('linear-ops', shared.deps);
+    // No duplicate: the earlier global copy satisfies the name check.
+    expect(second.applied.schedulesCreated).toEqual([]);
+    expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    // And no repeat of the created-disabled warning for a schedule that was not created.
+    expect(second.warnings).not.toContain(
+      "Schedule 'inbox-tick' created disabled — agent 'linear-tender' missing"
+    );
+  });
+});

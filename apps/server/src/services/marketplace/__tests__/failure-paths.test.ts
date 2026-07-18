@@ -40,6 +40,7 @@ import type { TemplateDownloader } from '../../core/template-downloader.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
+import { ShapeInstallFlow } from '../flows/install-shape.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import { UninstallFlow } from '../flows/uninstall.js';
 
@@ -146,6 +147,7 @@ function buildHarness(dorkHome: string): Harness {
   });
   const skillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
   const adapterFlow = new AdapterInstallFlow({ dorkHome, adapterManager, logger });
+  const shapeFlow = new ShapeInstallFlow({ dorkHome, extensionCompiler, logger });
   const uninstallFlow = new UninstallFlow({
     dorkHome,
     extensionManager,
@@ -162,6 +164,7 @@ function buildHarness(dorkHome: string): Harness {
     agentFlow,
     skillPackFlow,
     adapterFlow,
+    shapeFlow,
     uninstallFlow,
     logger,
   });

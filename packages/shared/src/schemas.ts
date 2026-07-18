@@ -2549,6 +2549,32 @@ export type CreateTaskRequest = z.infer<typeof CreateTaskRequestSchema>;
 /** Input type for creating a schedule (before Zod defaults are applied). */
 export type CreateTaskInput = z.input<typeof CreateTaskRequestSchema>;
 
+// === Shapes (DOR-355) ===
+
+/**
+ * Request body for `POST /api/shapes/:name/fork`. `as` names the new Shape
+ * (defaults to `<name>-fork`); `captureCurrent` snapshots the live arrangement
+ * when forking the active Shape.
+ */
+export const ForkShapeRequestSchema = z
+  .object({
+    as: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('New Shape name (kebab-case). Defaults to `<name>-fork`.'),
+    captureCurrent: z
+      .boolean()
+      .optional()
+      .describe(
+        'Snapshot the live arrangement (enabled extensions + chrome) when forking the active Shape.'
+      ),
+  })
+  .openapi('ForkShapeRequest');
+
+/** Request body for forking a Shape. */
+export type ForkShapeRequest = z.infer<typeof ForkShapeRequestSchema>;
+
 export const UpdateTaskRequestSchema = z
   .object({
     name: z.string().min(1).optional(),

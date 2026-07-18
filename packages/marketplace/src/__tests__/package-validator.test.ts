@@ -113,6 +113,115 @@ describe('validatePackage', () => {
     });
   });
 
+  describe('shape packages (DOR-355)', () => {
+    const baseShape = (overrides: Record<string, unknown>) => ({
+      schemaVersion: 1,
+      name: 'test-shape',
+      version: '1.0.0',
+      type: 'shape',
+      description: 'A test shape.',
+      author: 'test',
+      ...overrides,
+    });
+
+    /** Write a shape package (manifest + the required plugin manifest) to disk. */
+    async function writeShape(pkg: string, manifest: unknown): Promise<void> {
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), manifest);
+      await writeJson(path.join(pkg, CLAUDE_PLUGIN_MANIFEST_PATH), {
+        name: 'test-shape',
+        version: '1.0.0',
+        description: 'A test shape.',
+      });
+    }
+
+    it('accepts a valid shape package', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'test-shape');
+      await writeShape(
+        pkg,
+        baseShape({
+          activates: ['linear-issues'],
+          agents: [{ ref: 'tender', affinity: 'default', matchName: 'Tender' }],
+          schedules: [
+            {
+              name: 'tick',
+              description: 'poll',
+              prompt: 'go',
+              cron: '*/15 * * * *',
+              agentRef: 'tender',
+              permissionMode: 'acceptEdits',
+            },
+          ],
+          connections: [{ kind: 'extension-secret', extension: 'linear-issues', secret: 'k' }],
+        })
+      );
+
+      const result = await validatePackage(pkg);
+      expect(result.issues.filter((i) => i.level === 'error')).toEqual([]);
+      expect(result.ok).toBe(true);
+      expect(result.manifest!.type).toBe('shape');
+    });
+
+    // The install path parses through `MarketplacePackageManifestSchema`, which
+    // carries the shape cross-field rules (task 1.1). Each crafted-invalid shape
+    // must be rejected with a clear, field-scoped message.
+    const invalidCases: { label: string; manifest: Record<string, unknown>; message: RegExp }[] = [
+      {
+        label: 'a schedule referencing an undeclared agent',
+        manifest: baseShape({
+          agents: [{ ref: 'a', affinity: 'suggested', matchName: 'A' }],
+          schedules: [
+            {
+              name: 'tick',
+              description: 'd',
+              prompt: 'p',
+              cron: '* * * * *',
+              agentRef: 'ghost',
+              permissionMode: 'acceptEdits',
+            },
+          ],
+        }),
+        message: /references agent 'ghost'/,
+      },
+      {
+        label: 'two default agents',
+        manifest: baseShape({
+          agents: [
+            { ref: 'a', affinity: 'default', matchName: 'A' },
+            { ref: 'b', affinity: 'default', matchName: 'B' },
+          ],
+        }),
+        message: /At most one agent may have affinity 'default'/,
+      },
+      {
+        label: 'an extension-secret for a non-activated extension',
+        manifest: baseShape({
+          activates: [],
+          connections: [{ kind: 'extension-secret', extension: 'ghost', secret: 'k' }],
+        }),
+        message: /not in activates or extensions/,
+      },
+      {
+        label: 'an agent with neither template nor matchName',
+        manifest: baseShape({ agents: [{ ref: 'a', affinity: 'suggested' }] }),
+        message: /must declare a template or a matchName/,
+      },
+    ];
+
+    for (const { label, manifest, message } of invalidCases) {
+      it(`rejects ${label}`, async () => {
+        const dir = await tempDir();
+        const pkg = path.join(dir, 'test-shape');
+        await writeShape(pkg, manifest);
+
+        const result = await validatePackage(pkg);
+        expect(result.ok).toBe(false);
+        const schemaErrors = result.issues.filter((i) => i.code === 'MANIFEST_SCHEMA_INVALID');
+        expect(schemaErrors.some((i) => message.test(i.message))).toBe(true);
+      });
+    }
+  });
+
   describe('CLAUDE_PLUGIN_MISSING', () => {
     it('reports CLAUDE_PLUGIN_MISSING for a plugin package without .claude-plugin/plugin.json', async () => {
       const dir = await tempDir();

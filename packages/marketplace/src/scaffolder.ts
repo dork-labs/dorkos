@@ -116,10 +116,14 @@ export async function createPackage(opts: CreatePackageOptions): Promise<CreateP
   // Adapter packages require an `adapterType` field per the discriminated
   // union schema. Default to the package name when not provided so the
   // scaffolded manifest is always valid; the author is expected to edit it.
-  const manifest =
-    opts.type === 'adapter'
-      ? { ...baseManifest, adapterType: opts.adapterType ?? opts.name }
-      : baseManifest;
+  // Shape packages get a valid starter skeleton: empty chrome, one suggested
+  // agent template, and empty schedules/connections the author fills in.
+  let manifest: Record<string, unknown> = baseManifest;
+  if (opts.type === 'adapter') {
+    manifest = { ...baseManifest, adapterType: opts.adapterType ?? opts.name };
+  } else if (opts.type === 'shape') {
+    manifest = { ...baseManifest, ...shapeStarterFields() };
+  }
   await fs.writeFile(
     path.join(packagePath, PACKAGE_MANIFEST_PATH),
     JSON.stringify(manifest, null, 2) + '\n',
@@ -132,7 +136,7 @@ export async function createPackage(opts: CreatePackageOptions): Promise<CreateP
     const pluginManifest = {
       name: opts.name,
       version: '0.0.1',
-      description: manifest.description,
+      description: baseManifest.description,
     };
     await fs.writeFile(
       path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH),
@@ -142,7 +146,7 @@ export async function createPackage(opts: CreatePackageOptions): Promise<CreateP
     filesWritten.push(CLAUDE_PLUGIN_MANIFEST_PATH);
   }
 
-  const readme = `# ${opts.name}\n\n${manifest.description}\n\nCreated with \`dorkos package init\`.\n`;
+  const readme = `# ${opts.name}\n\n${baseManifest.description}\n\nCreated with \`dorkos package init\`.\n`;
   await fs.writeFile(path.join(packagePath, 'README.md'), readme, 'utf-8');
   filesWritten.push('README.md');
 
@@ -151,6 +155,36 @@ export async function createPackage(opts: CreatePackageOptions): Promise<CreateP
   }
 
   return { packagePath, filesWritten };
+}
+
+/**
+ * Shape-specific starter fields written into a freshly scaffolded `shape`
+ * manifest — a valid skeleton the author fills in: empty chrome, one *suggested*
+ * agent template (satisfies the "template or matchName" cross-field rule), and
+ * empty `schedules` / `connections` arrays. The result validates green through
+ * `MarketplacePackageManifestSchema` as-is.
+ *
+ * @returns The shape-specific manifest fields to merge onto the base manifest.
+ */
+function shapeStarterFields(): Record<string, unknown> {
+  return {
+    activates: [],
+    extensions: [],
+    layout: { sidebarOpen: true, openPanels: [], focusDashboardSections: [] },
+    agents: [
+      {
+        ref: 'assistant',
+        affinity: 'suggested',
+        template: {
+          displayName: 'Assistant',
+          persona: 'Describe what this agent does inside your Shape.',
+          skills: [],
+        },
+      },
+    ],
+    schedules: [],
+    connections: [],
+  };
 }
 
 /**

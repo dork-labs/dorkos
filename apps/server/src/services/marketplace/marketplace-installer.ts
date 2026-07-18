@@ -34,6 +34,7 @@ import type { PermissionPreviewBuilder } from './permission-preview.js';
 import type { AdapterInstallFlow } from './flows/install-adapter.js';
 import type { AgentInstallFlow } from './flows/install-agent.js';
 import type { PluginInstallFlow } from './flows/install-plugin.js';
+import type { ShapeInstallFlow } from './flows/install-shape.js';
 import type { SkillPackInstallFlow } from './flows/install-skill-pack.js';
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
@@ -109,6 +110,8 @@ export interface InstallerDeps {
   skillPackFlow: SkillPackInstallFlow;
   /** Flow for `type: 'adapter'` packages. */
   adapterFlow: AdapterInstallFlow;
+  /** Flow for `type: 'shape'` packages. */
+  shapeFlow: ShapeInstallFlow;
   /** Flow for uninstalling packages — wired here for HTTP route symmetry. */
   uninstallFlow: UninstallFlow;
   /** Structured logger for diagnostic output. */
@@ -485,14 +488,17 @@ export class MarketplaceInstaller implements InstallerLike {
       case 'adapter':
         return this.deps.adapterFlow.install(packagePath, manifest, req);
       case 'shape':
-        // The shape install flow lands in Phase 2 (DOR-355 task 2.1), which
-        // replaces this throw with a real ShapeInstallFlow dispatch and adds an
-        // explicit `assertNever` exhaustiveness guard. Until then, installing a
-        // shape package fails loudly rather than silently no-op'ing — the fifth
-        // package type exists in the schema (Phase 1) before its installer does.
+        return this.deps.shapeFlow.install(packagePath, manifest, req);
+      default: {
+        // Exhaustiveness guard: a sixth package type added to the schema
+        // without a dispatch case here fails to compile (the `never`
+        // assignment), and — belt and braces — throws at runtime rather than
+        // silently no-op'ing if one ever reaches this arm untyped.
+        const _exhaustive: never = manifest;
         throw new Error(
-          `Installing 'shape' packages is not yet supported (requested '${manifest.name}').`
+          `Unsupported package type '${(_exhaustive as { type?: string }).type ?? 'unknown'}'`
         );
+      }
     }
   }
 

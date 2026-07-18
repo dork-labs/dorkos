@@ -36,6 +36,7 @@ import {
   UpdateTaskRequestSchema,
   ListTaskRunsQuerySchema,
   ModelOptionSchema,
+  ForkShapeRequestSchema,
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
@@ -2022,6 +2023,139 @@ registry.registerPath({
     200: {
       description: 'Linked state, account label, and last heartbeat',
       content: { 'application/json': { schema: CloudSummarySchema } },
+    },
+  },
+});
+
+// --- Shapes (DOR-355) ---
+
+/**
+ * Local Zod 4 mirror of the resolved Shape chrome (`ShapeLayoutSchema`). The
+ * source is the Zod-3 `@dorkos/marketplace` schema, which cannot compose with
+ * this Zod-4 registry — keep in sync with `packages/marketplace/manifest-schema.ts`.
+ */
+const LocalShapeLayoutSchema = z.object({
+  sidebarOpen: z.boolean(),
+  sidebarTab: z.enum(['overview', 'sessions', 'schedules', 'connections']).optional(),
+  openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),
+  focusDashboardSections: z.array(z.string()),
+});
+
+/** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').OfferedAgent}. */
+const LocalOfferedAgentSchema = z.object({
+  ref: z.string(),
+  affinity: z.enum(['suggested', 'default']),
+  satisfied: z.boolean(),
+  arrival: z.boolean(),
+  autoFollow: z.boolean(),
+  agentId: z.string().optional(),
+  projectPath: z.string().optional(),
+  displayName: z.string(),
+  template: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').ApplyShapeResult}. */
+const LocalApplyShapeResultSchema = z
+  .object({
+    ok: z.boolean(),
+    applied: z.object({
+      layout: LocalShapeLayoutSchema,
+      activatedExtensions: z.array(z.string()),
+      schedulesCreated: z.array(z.string()),
+    }),
+    warnings: z.array(z.string()),
+    offeredAgents: z.array(LocalOfferedAgentSchema),
+  })
+  .openapi('ApplyShapeResult');
+
+/** Local Zod 4 mirror of {@link import('../shapes/shape-services.js').InstalledShapeSummary}. */
+const LocalInstalledShapeSummarySchema = z.object({
+  name: z.string(),
+  displayName: z.string().optional(),
+  active: z.boolean(),
+  lineage: z
+    .object({
+      forkedFrom: z.string(),
+      forkedFromVersion: z.string().optional(),
+      forkedAt: z.string(),
+    })
+    .optional(),
+});
+
+/** Local Zod 4 mirror of {@link import('../shapes/fork.js').ForkShapeResult}. */
+const LocalForkShapeResultSchema = z
+  .object({
+    ok: z.literal(true),
+    name: z.string(),
+    forkedFrom: z.string(),
+    installPath: z.string(),
+    manifest: z.record(z.string(), z.unknown()),
+  })
+  .openapi('ForkShapeResult');
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/shapes',
+  tags: ['Shapes'],
+  summary: 'List installed Shapes',
+  description:
+    'Returns every installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage.',
+  responses: {
+    200: {
+      description: 'Installed Shapes',
+      content: {
+        'application/json': {
+          schema: z.object({ shapes: z.array(LocalInstalledShapeSummarySchema) }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/shapes/{name}/apply',
+  tags: ['Shapes'],
+  summary: 'Apply an installed Shape',
+  description:
+    'Enables the Shape’s extensions, resolves connections, stands up schedules, offers agents (never forces one), and records the active Shape. Only "Shape not installed" is fatal (404); every other missing piece degrades to a `warnings[]` entry. `applied.layout` carries the chrome the client restores without a second fetch (spec §5/§9).',
+  request: { params: z.object({ name: z.string() }) },
+  responses: {
+    200: {
+      description:
+        'Apply result (chrome + activated extensions + created schedules, warnings, offers)',
+      content: { 'application/json': { schema: LocalApplyShapeResultSchema } },
+    },
+    404: {
+      description: 'Shape is not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/shapes/{name}/fork',
+  tags: ['Shapes'],
+  summary: 'Fork an installed Shape',
+  description:
+    'Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: { content: { 'application/json': { schema: ForkShapeRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The forked Shape descriptor',
+      content: { 'application/json': { schema: LocalForkShapeResultSchema } },
+    },
+    404: {
+      description: 'Source Shape is not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Fork name is invalid or already taken',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
