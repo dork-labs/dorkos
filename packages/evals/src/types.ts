@@ -14,6 +14,7 @@
  */
 import { z } from 'zod';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
+import type { UiActionRequest } from '@dorkos/shared/schemas';
 
 /**
  * Which backend an eval runs against.
@@ -167,6 +168,15 @@ export interface EvalCase extends EvalCaseMeta {
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */
   rubric?: RubricJudge;
+  /**
+   * Optional widget action driven AFTER the prompt(s) establish the session —
+   * the `widget-round-trip` structural eval's mechanism. When set, the runner
+   * drives the prompt(s) to create the session, then POSTs this action to
+   * `/api/sessions/:id/ui-action` (a fresh turn, runtime-agnostic, so it runs on
+   * `test-mode` with no model), collecting the resulting turn. The oracle then
+   * asserts the injected `<ui_action>` trigger content on the collected stream.
+   */
+  widgetAction?: UiActionRequest;
 }
 
 /**

@@ -25,6 +25,8 @@ export interface RunSuiteOptions {
   runId?: string;
   /** Per-turn timeout guard in ms. */
   timeoutMs?: number;
+  /** Cheap model for the credentialed tiers (`ANTHROPIC_MODEL`); defaults per the boot. */
+  model?: string;
 }
 
 /** The outcome of a suite run: the summary and where it was written. */
@@ -85,6 +87,7 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
         runDir,
         tracker,
         timeoutMs: opts.timeoutMs,
+        model: opts.model,
       })
     );
   }

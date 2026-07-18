@@ -24,6 +24,7 @@ interface Cli {
   tier: RuntimeTier;
   budgetUsd?: number;
   outDir: string;
+  model?: string;
 }
 
 /** Read `--flag value` pairs (and the optional leading command) out of argv. */
@@ -50,6 +51,7 @@ function parseArgs(rawArgv: string[]): Cli {
     tier,
     budgetUsd: budget !== undefined ? Number(budget) : undefined,
     outDir: flags.get('out') ?? path.join(process.cwd(), '.evals-runs'),
+    model: flags.get('model'),
   };
 }
 
@@ -73,6 +75,7 @@ async function main(): Promise<void> {
     tier: cli.tier,
     budgetUsd: cli.budgetUsd,
     outDir: cli.outDir,
+    model: cli.model,
   });
 
   process.stdout.write(formatSummaryTable(summary) + '\n');
