@@ -18,14 +18,17 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { driveTurn, driveConversation, DriveError } from '../drive.js';
+import { driveTurn, driveConversation, driveWidgetAction, DriveError } from '../drive.js';
 
 let server: http.Server | undefined;
+/** The last trigger POST the fake server received (path + parsed body). */
+let capturedPost: { path: string; body: unknown } | undefined;
 
 afterEach(async () => {
   server?.closeAllConnections?.();
   await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
   server = undefined;
+  capturedPost = undefined;
   vi.restoreAllMocks();
 });
 
@@ -74,26 +77,34 @@ async function startFakeServer(
       return;
     }
 
-    if (req.method === 'POST' && url.pathname.endsWith('/messages')) {
-      if (opts.lockCode) {
-        res.writeHead(opts.lockCode, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ code: 'SESSION_LOCKED' }));
-        return;
-      }
-      res.writeHead(202, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ sessionId }));
-      // Stream the turn onto the held /events connection.
-      void (async () => {
-        const sink = live.get(sessionId);
-        if (!sink) return;
-        let seq = 1;
-        sink.write(sse('turn_start', { type: 'turn_start', seq: seq++ }));
-        for await (const ev of runtime.sendMessage(sessionId, 'x', {})) {
-          const frame = projectEvent(ev as StreamEvent, seq++);
-          if (frame) sink.write(frame);
+    if (
+      req.method === 'POST' &&
+      (url.pathname.endsWith('/messages') || url.pathname.endsWith('/ui-action'))
+    ) {
+      let body = '';
+      req.on('data', (chunk: Buffer) => (body += chunk.toString()));
+      req.on('end', () => {
+        capturedPost = { path: url.pathname, body: body ? JSON.parse(body) : undefined };
+        if (opts.lockCode) {
+          res.writeHead(opts.lockCode, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 'SESSION_LOCKED' }));
+          return;
         }
-        sink.write(sse('turn_end', { type: 'turn_end', seq: seq++ }));
-      })();
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ sessionId }));
+        // Stream the turn onto the held /events connection.
+        void (async () => {
+          const sink = live.get(sessionId);
+          if (!sink) return;
+          let seq = 1;
+          sink.write(sse('turn_start', { type: 'turn_start', seq: seq++ }));
+          for await (const ev of runtime.sendMessage(sessionId, 'x', {})) {
+            const frame = projectEvent(ev as StreamEvent, seq++);
+            if (frame) sink.write(frame);
+          }
+          sink.write(sse('turn_end', { type: 'turn_end', seq: seq++ }));
+        })();
+      });
       return;
     }
 
@@ -112,7 +123,8 @@ async function startFakeServer(
  */
 async function startSilentEventsServer(): Promise<string> {
   server = http.createServer((req, res) => {
-    if (req.method === 'GET' && (req.url ?? '').endsWith('/events')) {
+    const pathname = new URL(req.url ?? '', 'http://x').pathname;
+    if (req.method === 'GET' && pathname.endsWith('/events')) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       // Deliberately write nothing: no snapshot ever arrives.
       return;
@@ -280,6 +292,82 @@ describe('driveTurn', () => {
     // It must trip the ready-wait timeout (~100ms), not the 5000ms turn timeout.
     expect(elapsed).toBeLessThan(2000);
     expect(destroySpy).toHaveBeenCalled();
+  });
+
+  it('fires NO trigger POST when the turn timeout beats the snapshot (no phantom, uncollected turn)', async () => {
+    // The turn timer (80ms) wins the race against the ready gate (5000ms), so
+    // `finish('timeout')` runs BEFORE the subscribe gate ever opened. It must
+    // REJECT `ready` (not resolve it), or the driver would POST a trigger into
+    // an already-destroyed stream — a lost turn. Regression guard for the
+    // Phase-2 `finish()` hardening (spec Errata, PR #333 review).
+    const baseUrl = await startSilentEventsServer();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(
+      driveTurn({
+        baseUrl,
+        sessionId: 's',
+        content: 'go',
+        cwd: '/tmp',
+        timeoutMs: 80,
+        readyTimeoutMs: 5000,
+      })
+    ).rejects.toMatchObject({ code: 'STREAM_ERROR' });
+
+    // The gate never opened, so the trigger was never fired.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('driveWidgetAction', () => {
+  it('POSTs the widget action to /ui-action (with the injected cwd) and collects the resulting turn', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'ack' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    const result = await driveWidgetAction({
+      baseUrl,
+      sessionId: 'sess-w',
+      cwd: '/tmp/proj',
+      action: { actionId: 'confirm', payload: { choice: 'yes' }, widgetTitle: 'Probe' },
+    });
+
+    expect(result.outcome).toBe('done');
+    expect(result.canonicalId).toBe('sess-w');
+    expect(result.frames.map((f) => f.event)).toEqual([
+      'snapshot',
+      'turn_start',
+      'text_delta',
+      'turn_end',
+    ]);
+    // It hit the ui-action endpoint, forwarding the action plus the drive cwd.
+    expect(capturedPost?.path).toBe('/api/sessions/sess-w/ui-action');
+    expect(capturedPost?.body).toMatchObject({
+      actionId: 'confirm',
+      cwd: '/tmp/proj',
+      payload: { choice: 'yes' },
+    });
+  });
+
+  it('throws a DriveError on a 409 SESSION_LOCKED', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([async function* () {}]);
+    const baseUrl = await startFakeServer(runtime, { lockCode: 409 });
+
+    await expect(
+      driveWidgetAction({
+        baseUrl,
+        sessionId: 's',
+        cwd: '/tmp',
+        action: { actionId: 'x' },
+        timeoutMs: 500,
+      })
+    ).rejects.toMatchObject({ code: 'SESSION_LOCKED' });
   });
 });
 

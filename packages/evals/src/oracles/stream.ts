@@ -23,6 +23,12 @@ interface UiCommandFrameData {
   command?: unknown;
 }
 
+/** A durable `turn_start` frame's data payload — carries the trigger `userMessage` (ADR-0264). */
+interface TurnStartFrameData {
+  type?: string;
+  userMessage?: string;
+}
+
 /** All frames of a given SessionEvent `type` from the collected stream. */
 function framesOfType(frames: SseFrame[], type: string): SseFrame[] {
   return frames.filter((f) => f.event === type || (f.data as { type?: string })?.type === type);
@@ -96,6 +102,36 @@ export function uiCommandEmitted(predicate: (command: unknown) => boolean, label
       passed,
       evidence: { commandCount: commands.length },
       detail: passed ? undefined : 'no ui_command frame matched the predicate',
+    };
+  };
+}
+
+/**
+ * Oracle: a `turn_start` frame's injected trigger content (`userMessage`) is the
+ * `<ui_action>` block for `actionId` — proof a widget action POSTed to
+ * `/api/sessions/:id/ui-action` started a real NEW turn carrying that exact
+ * action (the `widget-round-trip` structural eval, §6 note 7). Asserts the
+ * runtime-neutral injected user message (`formatUiActionMessage`, which rides
+ * `turn_start.userMessage`, ADR-0264), NEVER the assistant's prose.
+ *
+ * @param actionId - The widget action id that must appear in the trigger block.
+ * @param label - Human-readable label; defaults to a round-trip message.
+ * @returns An {@link Oracle}.
+ */
+export function uiActionTriggerObserved(actionId: string, label?: string): Oracle {
+  return async (ctx) => {
+    const triggers = framesOfType(ctx.frames, 'turn_start')
+      .map((f) => (f.data as TurnStartFrameData).userMessage)
+      .filter((m): m is string => typeof m === 'string');
+    const matched = triggers.find(
+      (m) => m.includes('<ui_action>') && m.includes(`Action: ${actionId}`)
+    );
+    const passed = matched !== undefined;
+    return {
+      label: label ?? `widget action "${actionId}" started a new turn`,
+      passed,
+      evidence: { actionId, turnStarts: triggers.length, matched },
+      detail: passed ? undefined : `no turn_start carried a <ui_action> trigger for "${actionId}"`,
     };
   };
 }

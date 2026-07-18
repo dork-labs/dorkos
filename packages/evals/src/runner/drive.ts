@@ -24,6 +24,7 @@
  */
 import http from 'node:http';
 import { parseFrames, type SseFrame } from '@dorkos/test-utils/sse-test-helpers';
+import type { UiActionRequest } from '@dorkos/shared/schemas';
 
 /** Default per-turn collection timeout (ms): how long a turn may run before it resolves `timeout`. */
 const DEFAULT_TURN_TIMEOUT_MS = 90_000;
@@ -59,16 +60,23 @@ export class DriveError extends Error {
   }
 }
 
-/** Options for {@link driveTurn}. */
-export interface DriveTurnOptions {
+/**
+ * Shared subscribe-first stream options — everything {@link openStream} needs to
+ * open, gate, and collect a `/events` connection, independent of WHICH trigger
+ * (a message or a widget action) starts the turn.
+ */
+export interface OpenStreamOptions {
   /** Base URL of the running harness server. */
   baseUrl: string;
   /** Session id to trigger and subscribe under. */
   sessionId: string;
-  /** The user message content. */
-  content: string;
-  /** Project cwd the turn runs in (the sandbox project dir). */
-  cwd: string;
+  /**
+   * Project cwd, forwarded as the `/events` `?cwd=` param so the subscribe mints
+   * the session's projector with the SANDBOX cwd (inside the server's filesystem
+   * boundary) — the real client passes it too; without it the subscribe defaults
+   * to the vault root and a sandbox turn's cwd fails boundary validation (403).
+   */
+  cwd?: string;
   /** Per-turn timeout guard in ms; a turn that never ends resolves `timeout`. Default 90000. */
   timeoutMs?: number;
   /**
@@ -83,6 +91,14 @@ export interface DriveTurnOptions {
    * `aborted` outcome.
    */
   abortWhen?: (frames: SseFrame[]) => boolean;
+}
+
+/** Options for {@link driveTurn}: a message-triggered turn. */
+export interface DriveTurnOptions extends OpenStreamOptions {
+  /** The user message content. */
+  content: string;
+  /** Project cwd the turn runs in (the sandbox project dir). */
+  cwd: string;
 }
 
 /** The result of one driven turn. */
@@ -142,10 +158,10 @@ function isTurnEnd(frame: SseFrame): boolean {
  * Both paths already share the one thing that must not diverge: the SSE frame
  * parser (`parseFrames` from `@dorkos/test-utils`).
  *
- * @param opts - The drive options (baseUrl, sessionId, timeouts, abort guard).
+ * @param opts - The stream options (baseUrl, sessionId, timeouts, abort guard).
  * @returns A {@link LiveStream} with `ready`, `done`, and `close`.
  */
-function openStream(opts: DriveTurnOptions): LiveStream {
+function openStream(opts: OpenStreamOptions): LiveStream {
   const url = new URL(opts.baseUrl);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const readyTimeoutMs = opts.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
@@ -184,19 +200,6 @@ function openStream(opts: DriveTurnOptions): LiveStream {
     signalReady();
   };
 
-  /** Settle `done` with an outcome and tear the connection down. Idempotent. */
-  const finish = (outcome: TurnOutcome): void => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timers.turn);
-    clearTimeout(timers.ready);
-    req.destroy();
-    // A fast turn may terminate before the snapshot line was observed; unblock
-    // any pending `await ready` so the driver never hangs on a completed turn.
-    markReady();
-    resolveDone({ frames: parseFrames(raw), outcome });
-  };
-
   /** Reject both gates on a connection error / subscribe-gate timeout and tear down. */
   const fail = (err: Error): void => {
     if (settled) return;
@@ -211,11 +214,46 @@ function openStream(opts: DriveTurnOptions): LiveStream {
     rejectDone(err);
   };
 
+  /**
+   * Settle `done` with an outcome and tear the connection down. Idempotent.
+   *
+   * A turn may only settle `done` AFTER the subscribe gate has opened. If a
+   * terminal frame, the turn timeout, or an abort fires BEFORE the cold snapshot
+   * arrived (`readySettled` still false), the collector was never confirmed
+   * live: resolving `ready` here would release the driver to POST a trigger into
+   * an already-destroyed stream — a phantom, uncollected turn. That race is
+   * reachable only when a caller sets `timeoutMs` below `readyTimeoutMs`, so the
+   * turn timer beats the ready-gate timer. Reject the gate via {@link fail}
+   * instead, so the driver fails fast rather than firing a lost trigger. On the
+   * happy path the snapshot always precedes any terminal frame, so `readySettled`
+   * is already true by the time this runs.
+   */
+  const finish = (outcome: TurnOutcome): void => {
+    if (settled) return;
+    if (!readySettled) {
+      fail(
+        new DriveError(
+          `Turn ended '${outcome}' before the /events snapshot arrived; the subscribe gate never opened`,
+          'STREAM_ERROR'
+        )
+      );
+      return;
+    }
+    settled = true;
+    clearTimeout(timers.turn);
+    clearTimeout(timers.ready);
+    req.destroy();
+    resolveDone({ frames: parseFrames(raw), outcome });
+  };
+
+  const eventsPath =
+    `/api/sessions/${opts.sessionId}/events` +
+    (opts.cwd ? `?cwd=${encodeURIComponent(opts.cwd)}` : '');
   const req = http.request(
     {
       host: url.hostname,
       port: Number(url.port),
-      path: `/api/sessions/${opts.sessionId}/events`,
+      path: eventsPath,
       method: 'GET',
     },
     (res) => {
@@ -260,29 +298,30 @@ function openStream(opts: DriveTurnOptions): LiveStream {
 }
 
 /**
- * Trigger a turn and collect it to completion. Subscribe-first: opens the
- * stream, waits for the snapshot, POSTs the trigger (expecting 202), then
- * collects to `turn_end` / timeout / abort.
+ * Subscribe-first trigger + collect: await the stream's `ready` gate, fire the
+ * trigger POST (via `post`), validate the trigger-only 202 contract, then
+ * resolve with the collected frames + outcome. The `/events` stream is torn
+ * down on EVERY exit — a clean turn, a rejected trigger (`DriveError`), or a
+ * connection error — so a locked/rejected trigger can never leave the durable
+ * GET open. Shared by {@link driveTurn} (POST `/messages`) and
+ * {@link driveWidgetAction} (POST `/ui-action`): they differ ONLY in which
+ * endpoint + body they POST, so the drive contract lives here once.
  *
- * The `/events` stream is torn down on EVERY exit — a clean turn, a rejected
- * trigger (`DriveError`), or a connection error — so a locked/rejected trigger
- * can never leave the durable GET open.
- *
- * @param opts - See {@link DriveTurnOptions}.
+ * @param stream - The open {@link LiveStream} (subscribe-first collector).
+ * @param sessionId - Fallback session id when the 202 body omits one.
+ * @param post - Fires the trigger POST and resolves with its `Response`.
  * @returns The canonical id, collected frames, and the turn outcome.
  * @throws {DriveError} On a `409 SESSION_LOCKED`, any non-202 trigger, or a `/events` stream error.
  */
-export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult> {
-  const stream = openStream(opts);
+async function triggerAndCollect(
+  stream: LiveStream,
+  sessionId: string,
+  post: () => ReturnType<typeof fetch>
+): Promise<DriveTurnResult> {
   try {
     await stream.ready;
 
-    const res = await fetch(`${opts.baseUrl}/api/sessions/${opts.sessionId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: opts.content, cwd: opts.cwd }),
-    });
-
+    const res = await post();
     if (res.status === 409) {
       throw new DriveError('Session is locked by another client', 'SESSION_LOCKED', 409);
     }
@@ -294,7 +333,7 @@ export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult
       );
     }
     const body = (await res.json()) as { sessionId?: string };
-    const canonicalId = body.sessionId ?? opts.sessionId;
+    const canonicalId = body.sessionId ?? sessionId;
 
     const { frames, outcome } = await stream.done;
     return { canonicalId, frames, outcome };
@@ -305,6 +344,62 @@ export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult
     stream.close();
     throw err;
   }
+}
+
+/**
+ * Trigger a turn and collect it to completion. Subscribe-first: opens the
+ * stream, waits for the snapshot, POSTs the message trigger (expecting 202),
+ * then collects to `turn_end` / timeout / abort.
+ *
+ * @param opts - See {@link DriveTurnOptions}.
+ * @returns The canonical id, collected frames, and the turn outcome.
+ * @throws {DriveError} On a `409 SESSION_LOCKED`, any non-202 trigger, or a `/events` stream error.
+ */
+export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult> {
+  const stream = openStream(opts);
+  return triggerAndCollect(stream, opts.sessionId, () =>
+    fetch(`${opts.baseUrl}/api/sessions/${opts.sessionId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: opts.content, cwd: opts.cwd }),
+    })
+  );
+}
+
+/** Options for {@link driveWidgetAction}: a widget-action-triggered turn. */
+export interface DriveWidgetActionOptions extends OpenStreamOptions {
+  /**
+   * The `agent`-kind widget action POSTed to `/ui-action` — its `actionId` +
+   * `payload` become the injected `<ui_action>` user turn (`formatUiActionMessage`).
+   */
+  action: UiActionRequest;
+  /** Project cwd the turn runs in (the sandbox project dir). */
+  cwd: string;
+}
+
+/**
+ * Trigger a turn via a WIDGET ACTION and collect it to completion. Same
+ * subscribe-first contract as {@link driveTurn}, but the trigger is
+ * `POST /api/sessions/:id/ui-action` (the runtime-agnostic generative-UI return
+ * channel) instead of a message — the one product path that starts a real turn
+ * with NO model prompt, so it runs deterministically on `test-mode`. The
+ * session must already exist (a prior turn rendered the widget); the injected
+ * `<ui_action>` block rides the new turn's `turn_start.userMessage`, which is
+ * the widget-round-trip oracle's assertion surface.
+ *
+ * @param opts - See {@link DriveWidgetActionOptions}.
+ * @returns The canonical id, collected frames, and the turn outcome.
+ * @throws {DriveError} On a `409 SESSION_LOCKED`, any non-202 trigger, or a `/events` stream error.
+ */
+export async function driveWidgetAction(opts: DriveWidgetActionOptions): Promise<DriveTurnResult> {
+  const stream = openStream(opts);
+  return triggerAndCollect(stream, opts.sessionId, () =>
+    fetch(`${opts.baseUrl}/api/sessions/${opts.sessionId}/ui-action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...opts.action, cwd: opts.cwd }),
+    })
+  );
 }
 
 /** Options for {@link driveConversation}. */

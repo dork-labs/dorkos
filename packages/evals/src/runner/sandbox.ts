@@ -10,7 +10,7 @@
  *
  * @module evals/runner/sandbox
  */
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { EvalSandbox } from '../types.js';
@@ -47,7 +47,12 @@ export interface CreateSandboxOptions {
  */
 export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sandbox> {
   const retainOnFailure = opts.retainOnFailure ?? true;
-  const root = await mkdtemp(path.join(tmpdir(), SANDBOX_PREFIX));
+  // Canonicalize the temp root: on macOS `os.tmpdir()` is `/var/...`, a symlink
+  // to `/private/var/...`. The server's filesystem boundary realpath's its root
+  // (`initBoundary`), so an un-canonicalized sandbox cwd fails boundary
+  // validation (a 403 on `/events`). realpath here so every sandbox path is the
+  // canonical form the boundary compares against.
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), SANDBOX_PREFIX)));
   const dorkHome = path.join(root, '.dork');
   const projectCwd = path.join(root, 'project');
   await mkdir(dorkHome, { recursive: true });
