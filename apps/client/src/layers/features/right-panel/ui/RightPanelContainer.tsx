@@ -50,16 +50,24 @@ export function RightPanelContainer() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
   const transport = useTransport();
+  // The active agent + working directory let tabs scope visibility to a specific
+  // agent or folder. `currentAgentId` is kept in sync by useSyncCurrentAgentId;
+  // both are null when no agent/folder is resolved (the honest degraded value).
+  const agentId = useAppStore((s) => s.currentAgentId);
+  const cwd = useAppStore((s) => s.selectedCwd);
 
   // Get all right-panel contributions, sorted by priority
   const allContributions = useSlotContributions('right-panel');
 
-  // Filter to only visible contributions, passing router + transport to each
-  // predicate. Memoized so the auto-select effect below only re-runs when the
-  // inputs actually change, not on every render.
+  // Filter to only visible contributions, passing router + transport + agent
+  // context to each predicate. Memoized so the auto-select effect below only
+  // re-runs when the inputs actually change, not on every render.
   const visibleContributions = useMemo(
-    () => allContributions.filter((c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })),
-    [allContributions, pathname, transport]
+    () =>
+      allContributions.filter(
+        (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport, agentId, cwd })
+      ),
+    [allContributions, pathname, transport, agentId, cwd]
   );
 
   // Auto-select first visible tab if active tab is not visible. View-only: this

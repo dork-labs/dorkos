@@ -15,6 +15,10 @@ let mockContributions: RightPanelContribution[] = [];
 // The active transport gates capability-scoped tabs (e.g. the web-only
 // terminal); mutate per-test to exercise the transport-gated visibility path.
 let mockTransport: { supportsTerminal: boolean } = { supportsTerminal: true };
+// The active agent id + selected working directory feed agent/folder-scoped
+// visibility predicates; mutate per-test to exercise those paths.
+let mockCurrentAgentId: string | null = null;
+let mockSelectedCwd: string | null = null;
 const mockToggleRightPanel = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
@@ -22,6 +26,8 @@ vi.mock('@/layers/shared/model', () => ({
     selector({
       rightPanelOpen: mockRightPanelOpen,
       toggleRightPanel: mockToggleRightPanel,
+      currentAgentId: mockCurrentAgentId,
+      selectedCwd: mockSelectedCwd,
     }),
   useSlotContributions: () => mockContributions,
   useTransport: () => mockTransport,
@@ -108,6 +114,8 @@ describe('RightPanelToggle', () => {
     mockPathname = '/session';
     mockContributions = [];
     mockTransport = { supportsTerminal: true };
+    mockCurrentAgentId = null;
+    mockSelectedCwd = null;
     mockToggleRightPanel.mockClear();
   });
 
@@ -193,5 +201,64 @@ describe('RightPanelToggle', () => {
     ];
     await renderToggle();
     expect(screen.getByRole('button')).toBeInTheDocument();
+  });
+
+  // DOR-364: the toggle threads the active agent id + selected cwd into every
+  // visibleWhen context, so agent/folder-scoped tabs gate the toggle too.
+  it('hides when the only contribution is agent-scoped and the agent id does not match', async () => {
+    mockCurrentAgentId = 'agent-other';
+    mockContributions = [
+      makeContribution('scoped', { visibleWhen: ({ agentId }) => agentId === 'agent-x' }),
+    ];
+    const { container } = await renderToggle();
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('shows when an agent-scoped contribution matches the active agent id', async () => {
+    mockCurrentAgentId = 'agent-x';
+    mockContributions = [
+      makeContribution('scoped', { visibleWhen: ({ agentId }) => agentId === 'agent-x' }),
+    ];
+    await renderToggle();
+    expect(screen.getByRole('button')).toBeInTheDocument();
+  });
+
+  it('hides when the only contribution is folder-scoped and the selected cwd does not match', async () => {
+    mockSelectedCwd = '/repo/other';
+    mockContributions = [
+      makeContribution('scoped', { visibleWhen: ({ cwd }) => cwd === '/repo/a' }),
+    ];
+    const { container } = await renderToggle();
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('shows when a folder-scoped contribution matches the selected cwd', async () => {
+    mockSelectedCwd = '/repo/a';
+    mockContributions = [
+      makeContribution('scoped', { visibleWhen: ({ cwd }) => cwd === '/repo/a' }),
+    ];
+    await renderToggle();
+    expect(screen.getByRole('button')).toBeInTheDocument();
+  });
+
+  // Regression guard for the previously-hardcoded context site: the toggle must
+  // forward the real agentId + cwd (not undefined) to each predicate.
+  it('forwards the full agent context (agentId + cwd) to visibleWhen', async () => {
+    mockPathname = '/session';
+    mockCurrentAgentId = 'agent-x';
+    mockSelectedCwd = '/repo/a';
+    const predicate = vi.fn(() => true);
+    mockContributions = [makeContribution('a', { visibleWhen: predicate })];
+
+    await renderToggle();
+
+    expect(predicate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pathname: '/session',
+        transport: mockTransport,
+        agentId: 'agent-x',
+        cwd: '/repo/a',
+      })
+    );
   });
 });

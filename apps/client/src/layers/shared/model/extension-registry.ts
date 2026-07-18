@@ -110,14 +110,26 @@ export interface RightPanelContribution extends BaseContribution {
    */
   headerActions?: ComponentType;
   /**
-   * Optional predicate evaluated against the current route pathname and the
-   * active {@link Transport}. Return false to hide this contribution where it is
-   * not relevant (e.g. a wrong route, or a transport that lacks a capability —
-   * the terminal tab is web-only and hides under the in-process transport). When
-   * omitted, the contribution is always visible. `transport` is optional so unit
-   * callers can pass a bare `{ pathname }`; the container always supplies it.
+   * Optional predicate evaluated against the current route pathname, the active
+   * {@link Transport}, and the active agent context — the id of the agent
+   * registered at the selected working directory and that directory itself.
+   * Return false to hide this contribution where it is not relevant: a wrong
+   * route, a transport that lacks a capability (the terminal tab is web-only and
+   * hides under the in-process transport), or an agent/folder the tab does not
+   * apply to. When omitted, the contribution is always visible.
+   *
+   * `transport`, `agentId`, and `cwd` are optional so unit callers can pass a
+   * bare `{ pathname }`; the shell (RightPanelContainer / RightPanelToggle)
+   * always supplies all four. `agentId` and `cwd` are `string | null` — null is
+   * the honest value while no agent is registered at the selected folder, no
+   * folder is selected, or the lookup hasn't resolved yet.
    */
-  visibleWhen?: (ctx: { pathname: string; transport?: Transport }) => boolean;
+  visibleWhen?: (ctx: {
+    pathname: string;
+    transport?: Transport;
+    agentId?: string | null;
+    cwd?: string | null;
+  }) => boolean;
 }
 
 // --- Slot Contribution Map ---

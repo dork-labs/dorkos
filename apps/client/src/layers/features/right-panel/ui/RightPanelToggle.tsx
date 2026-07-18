@@ -19,9 +19,13 @@ export function RightPanelToggle() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
   const transport = useTransport();
+  // The active agent + working directory let tabs scope visibility to a specific
+  // agent or folder; both are null when unresolved.
+  const agentId = useAppStore((s) => s.currentAgentId);
+  const cwd = useAppStore((s) => s.selectedCwd);
   const allContributions = useSlotContributions('right-panel');
   const visibleContributions = allContributions.filter(
-    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })
+    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport, agentId, cwd })
   );
 
   // Hide when there is nothing to show on this route
