@@ -4413,6 +4413,181 @@
           "deniedBy",
           "deniedAt"
         ]
+      },
+      "ApplyShapeResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "applied": {
+            "type": "object",
+            "properties": {
+              "layout": {
+                "type": "object",
+                "properties": {
+                  "sidebarOpen": {
+                    "type": "boolean"
+                  },
+                  "sidebarTab": {
+                    "type": "string",
+                    "enum": [
+                      "overview",
+                      "sessions",
+                      "schedules",
+                      "connections"
+                    ]
+                  },
+                  "openPanels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "settings",
+                        "tasks",
+                        "relay",
+                        "picker"
+                      ]
+                    }
+                  },
+                  "focusDashboardSections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "sidebarOpen",
+                  "openPanels",
+                  "focusDashboardSections"
+                ]
+              },
+              "activatedExtensions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "schedulesCreated": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "layout",
+              "activatedExtensions",
+              "schedulesCreated"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "offeredAgents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "affinity": {
+                  "type": "string",
+                  "enum": [
+                    "suggested",
+                    "default"
+                  ]
+                },
+                "satisfied": {
+                  "type": "boolean"
+                },
+                "arrival": {
+                  "type": "boolean"
+                },
+                "autoFollow": {
+                  "type": "boolean"
+                },
+                "agentId": {
+                  "type": "string"
+                },
+                "projectPath": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "template": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "ref",
+                "affinity",
+                "satisfied",
+                "arrival",
+                "autoFollow",
+                "displayName"
+              ]
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "applied",
+          "warnings",
+          "offeredAgents"
+        ]
+      },
+      "ForkShapeResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "forkedFrom": {
+            "type": "string"
+          },
+          "installPath": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "ok",
+          "name",
+          "forkedFrom",
+          "installPath",
+          "manifest"
+        ]
+      },
+      "ForkShapeRequest": {
+        "type": "object",
+        "properties": {
+          "as": {
+            "type": "string",
+            "minLength": 1,
+            "description": "New Shape name (kebab-case). Defaults to `<name>-fork`."
+          },
+          "captureCurrent": {
+            "type": "boolean",
+            "description": "Snapshot the live arrangement (enabled extensions + chrome) when forking the active Shape."
+          }
+        }
       }
     },
     "parameters": {}
@@ -9825,6 +10000,172 @@
                     "accountLabel",
                     "lastHeartbeatAt"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shapes": {
+      "get": {
+        "tags": [
+          "Shapes"
+        ],
+        "summary": "List installed Shapes",
+        "description": "Returns every installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage.",
+        "responses": {
+          "200": {
+            "description": "Installed Shapes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shapes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "lineage": {
+                            "type": "object",
+                            "properties": {
+                              "forkedFrom": {
+                                "type": "string"
+                              },
+                              "forkedFromVersion": {
+                                "type": "string"
+                              },
+                              "forkedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "forkedFrom",
+                              "forkedAt"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "active"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "shapes"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shapes/{name}/apply": {
+      "post": {
+        "tags": [
+          "Shapes"
+        ],
+        "summary": "Apply an installed Shape",
+        "description": "Enables the Shape’s extensions, resolves connections, stands up schedules, offers agents (never forces one), and records the active Shape. Only \"Shape not installed\" is fatal (404); every other missing piece degrades to a `warnings[]` entry. `applied.layout` carries the chrome the client restores without a second fetch (spec §5/§9).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Apply result (chrome + activated extensions + created schedules, warnings, offers)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyShapeResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shape is not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shapes/{name}/fork": {
+      "post": {
+        "tags": [
+          "Shapes"
+        ],
+        "summary": "Fork an installed Shape",
+        "description": "Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForkShapeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The forked Shape descriptor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForkShapeResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source Shape is not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Fork name is invalid or already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

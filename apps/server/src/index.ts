@@ -80,6 +80,16 @@ import { AgentInstallFlow } from './services/marketplace/flows/install-agent.js'
 import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill-pack.js';
 import { AdapterInstallFlow } from './services/marketplace/flows/install-adapter.js';
 import { ShapeInstallFlow } from './services/marketplace/flows/install-shape.js';
+import { createShapesRouter } from './routes/shapes.js';
+import type { ApplyShapeDeps } from './services/shapes/apply-shape.js';
+import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
+import {
+  createFsShapeManifestResolver,
+  createShapeConfigStore,
+  createShapeSecretChecker,
+  getActiveShapeName,
+  getEnabledExtensionIds,
+} from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
@@ -1221,6 +1231,43 @@ async function start() {
       })
     );
     logger.info('[Marketplace] Routes mounted');
+
+    // Mount Shape routes (DOR-355). Apply/fork ride the marketplace block
+    // because apply enables extensions (needs `extensionManager`). Schedules
+    // degrade to a no-op when the scheduler is off; extensions, chrome, and
+    // agent offers still apply.
+    const shapeScheduleService =
+      taskStore && schedulerService
+        ? new ShapeScheduleService({
+            taskStore,
+            scheduler: schedulerService,
+            meshCore,
+            dorkHome,
+            logger,
+          })
+        : { existingScheduleNames: () => [], createSchedule: async () => undefined };
+    const shapeApplyDeps: ApplyShapeDeps = {
+      manifestResolver: createFsShapeManifestResolver(dorkHome),
+      extensionManager,
+      secretChecker: createShapeSecretChecker(dorkHome),
+      agentRegistry: { listWithPaths: () => meshCore?.listWithPaths() ?? [] },
+      scheduleService: shapeScheduleService,
+      configStore: createShapeConfigStore(),
+    };
+    app.use(
+      '/api/shapes',
+      createShapesRouter({
+        dorkHome,
+        applyDeps: shapeApplyDeps,
+        forkDeps: {
+          dorkHome,
+          logger,
+          getEnabledExtensions: getEnabledExtensionIds,
+          getActiveShape: getActiveShapeName,
+        },
+      })
+    );
+    logger.info('[Shapes] Routes mounted');
 
     // Personal marketplace bootstrap — runs after the source manager is wired
     // but before the MCP server fields its first request so the personal
