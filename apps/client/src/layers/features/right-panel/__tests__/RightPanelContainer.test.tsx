@@ -82,6 +82,10 @@ let mockContributions: RightPanelContribution[] = [];
 // active transport; mutate per-test to exercise the transport-gated path.
 let mockTransport: { supportsTerminal: boolean } = { supportsTerminal: true };
 let mockPathname = '/session';
+// The active agent id + selected working directory feed agent/folder-scoped
+// visibility predicates; mutate per-test to exercise those paths.
+let mockCurrentAgentId: string | null = null;
+let mockSelectedCwd: string | null = null;
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -91,6 +95,8 @@ vi.mock('@/layers/shared/model', () => ({
       activeRightPanelTab: mockActiveRightPanelTab,
       setActiveRightPanelTab: mockSetActiveRightPanelTab,
       setActiveRightPanelTabView: mockSetActiveRightPanelTabView,
+      currentAgentId: mockCurrentAgentId,
+      selectedCwd: mockSelectedCwd,
     }),
   useIsMobile: () => mockIsMobile,
   useSlotContributions: () => mockContributions,
@@ -134,6 +140,8 @@ describe('RightPanelContainer', () => {
     mockContributions = [];
     mockTransport = { supportsTerminal: true };
     mockPathname = '/session';
+    mockCurrentAgentId = null;
+    mockSelectedCwd = null;
   });
 
   it('renders collapsed panel in DOM when rightPanelOpen is false but contributions exist', () => {
@@ -250,6 +258,126 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer />);
 
     expect(screen.getByRole('tab', { name: 'Terminal' })).toBeInTheDocument();
+  });
+
+  // DOR-364: the container threads the active agent id and selected working
+  // directory into every visibleWhen context, so tabs can scope visibility to a
+  // specific agent or folder.
+  describe('agent + folder context', () => {
+    it('hides an agent-scoped tab when the active agent id does not match', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'agent-hub';
+      mockCurrentAgentId = 'agent-other';
+      mockContributions = [
+        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('canvas', { title: 'Canvas' }),
+        makeContribution('scoped', {
+          title: 'Scoped',
+          visibleWhen: ({ agentId }) => agentId === 'agent-x',
+        }),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+      expect(screen.queryByRole('tab', { name: 'Scoped' })).not.toBeInTheDocument();
+    });
+
+    it('shows an agent-scoped tab when the active agent id matches', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'agent-hub';
+      mockCurrentAgentId = 'agent-x';
+      mockContributions = [
+        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('scoped', {
+          title: 'Scoped',
+          visibleWhen: ({ agentId }) => agentId === 'agent-x',
+        }),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.getByRole('tab', { name: 'Scoped' })).toBeInTheDocument();
+    });
+
+    it('hides a folder-scoped tab when the selected cwd does not match', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'agent-hub';
+      mockSelectedCwd = '/repo/other';
+      mockContributions = [
+        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('canvas', { title: 'Canvas' }),
+        makeContribution('scoped', {
+          title: 'Scoped',
+          visibleWhen: ({ cwd }) => cwd === '/repo/a',
+        }),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.queryByRole('tab', { name: 'Scoped' })).not.toBeInTheDocument();
+    });
+
+    it('shows a folder-scoped tab when the selected cwd matches', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'agent-hub';
+      mockSelectedCwd = '/repo/a';
+      mockContributions = [
+        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('scoped', {
+          title: 'Scoped',
+          visibleWhen: ({ cwd }) => cwd === '/repo/a',
+        }),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.getByRole('tab', { name: 'Scoped' })).toBeInTheDocument();
+    });
+
+    // Regression guard for the previously-hardcoded context site: the container
+    // must pass the real agentId + cwd (not undefined) alongside pathname +
+    // transport to every predicate.
+    it('passes the full agent context (agentId + cwd) to visibleWhen', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'a';
+      mockPathname = '/session';
+      mockCurrentAgentId = 'agent-x';
+      mockSelectedCwd = '/repo/a';
+      const predicate = vi.fn(() => true);
+      mockContributions = [makeContribution('a', { visibleWhen: predicate })];
+
+      render(<RightPanelContainer />);
+
+      expect(predicate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pathname: '/session',
+          transport: mockTransport,
+          agentId: 'agent-x',
+          cwd: '/repo/a',
+        })
+      );
+    });
+
+    // Existing pathname-only predicates are unaffected by the added fields.
+    it('leaves a pathname-only predicate unaffected by the agent context', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'agent-hub';
+      mockPathname = '/session';
+      mockCurrentAgentId = 'agent-x';
+      mockSelectedCwd = '/repo/a';
+      mockContributions = [
+        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('session-only', {
+          title: 'Session Only',
+          visibleWhen: ({ pathname }) => pathname === '/session',
+        }),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.getByRole('tab', { name: 'Session Only' })).toBeInTheDocument();
+    });
   });
 
   it('auto-selects first visible tab (view-only) when active tab is not visible', () => {
