@@ -5,20 +5,34 @@
  * contract (202 + subscribe-first delivery, ADR-0264). Pins: the subscribe→POST
  * →collect loop, the `turn_end` terminator, a `409 SESSION_LOCKED` runner error,
  * the timeout guard, and the live abort guard.
+ *
+ * Hardening pins (PR #331 review): the `/events` connection is destroyed on
+ * EVERY exit path (success, timeout, abort, connection error, rejected trigger)
+ * so the durable GET is never leaked; `ready` rejects — never hangs — when the
+ * connection errors before the snapshot or the snapshot never arrives; and
+ * `driveConversation` threads the canonical id across turns and stops early on a
+ * non-`done` outcome.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { driveTurn, DriveError } from '../drive.js';
+import { driveTurn, driveConversation, DriveError } from '../drive.js';
 
 let server: http.Server | undefined;
 
 afterEach(async () => {
+  server?.closeAllConnections?.();
   await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
   server = undefined;
+  vi.restoreAllMocks();
 });
+
+/** Spy on the shared ClientRequest.destroy so a test can assert the /events GET was torn down. */
+function spyOnConnectionDestroy(): ReturnType<typeof vi.spyOn> {
+  return vi.spyOn(http.ClientRequest.prototype, 'destroy');
+}
 
 /** Serialize one durable SessionEvent to SSE wire text. */
 function sse(event: string, data: unknown): string {
@@ -91,8 +105,37 @@ async function startFakeServer(
   return `http://127.0.0.1:${port}`;
 }
 
+/**
+ * A server that accepts GET `/events` with a 200 but writes NO snapshot and
+ * holds the connection open — so the subscribe gate never resolves on its own
+ * and only the ready-wait timeout can end the wait.
+ */
+async function startSilentEventsServer(): Promise<string> {
+  server = http.createServer((req, res) => {
+    if (req.method === 'GET' && (req.url ?? '').endsWith('/events')) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      // Deliberately write nothing: no snapshot ever arrives.
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+  const { port } = server!.address() as AddressInfo;
+  return `http://127.0.0.1:${port}`;
+}
+
+/** Bind then immediately release a port so nothing listens on it — a connect there yields ECONNREFUSED. */
+async function closedBaseUrl(): Promise<string> {
+  const s = http.createServer();
+  await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', resolve));
+  const { port } = s.address() as AddressInfo;
+  await new Promise<void>((resolve) => s.close(() => resolve()));
+  return `http://127.0.0.1:${port}`;
+}
+
 describe('driveTurn', () => {
-  it('POST→collect→terminal turn_end, returning the canonical id and ordered frames', async () => {
+  it('POST→collect→terminal turn_end, returning the canonical id and ordered frames, and destroys the /events GET', async () => {
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([
       async function* () {
@@ -101,6 +144,7 @@ describe('driveTurn', () => {
       },
     ]);
     const baseUrl = await startFakeServer(runtime);
+    const destroySpy = spyOnConnectionDestroy();
 
     const result = await driveTurn({
       baseUrl,
@@ -113,6 +157,8 @@ describe('driveTurn', () => {
     expect(result.canonicalId).toBe('sess-1');
     const events = result.frames.map((f) => f.event);
     expect(events).toEqual(['snapshot', 'turn_start', 'text_delta', 'turn_end']);
+    // Success path must tear the durable GET down, not leak it.
+    expect(destroySpy).toHaveBeenCalled();
   });
 
   it('collects a session_status cost frame so the budget guard can read it', async () => {
@@ -135,20 +181,24 @@ describe('driveTurn', () => {
     );
   });
 
-  it('throws a DriveError on a 409 SESSION_LOCKED (a runner error, not an eval failure)', async () => {
+  it('throws a DriveError on a 409 SESSION_LOCKED and destroys the /events GET (no leaked connection)', async () => {
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([async function* () {}]);
     const baseUrl = await startFakeServer(runtime, { lockCode: 409 });
+    const destroySpy = spyOnConnectionDestroy();
 
     await expect(
       driveTurn({ baseUrl, sessionId: 's', content: 'go', cwd: '/tmp', timeoutMs: 500 })
     ).rejects.toMatchObject({ code: 'SESSION_LOCKED' });
+    // The rejected-trigger path must still destroy the durable GET.
+    expect(destroySpy).toHaveBeenCalled();
+
     await expect(
       driveTurn({ baseUrl, sessionId: 's', content: 'go', cwd: '/tmp', timeoutMs: 500 })
     ).rejects.toBeInstanceOf(DriveError);
   });
 
-  it('resolves `timeout` when the turn never reaches turn_end', async () => {
+  it('resolves `timeout` when the turn never reaches turn_end, and destroys the /events GET', async () => {
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([
       async function* () {
@@ -157,6 +207,7 @@ describe('driveTurn', () => {
       },
     ]);
     const baseUrl = await startFakeServer(runtime);
+    const destroySpy = spyOnConnectionDestroy();
 
     const result = await driveTurn({
       baseUrl,
@@ -166,9 +217,10 @@ describe('driveTurn', () => {
       timeoutMs: 150,
     });
     expect(result.outcome).toBe('timeout');
+    expect(destroySpy).toHaveBeenCalled();
   });
 
-  it('stops with `aborted` when the live abort guard trips (budget ceiling)', async () => {
+  it('stops with `aborted` when the live abort guard trips (budget ceiling), and destroys the /events GET', async () => {
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([
       async function* () {
@@ -177,6 +229,7 @@ describe('driveTurn', () => {
       },
     ]);
     const baseUrl = await startFakeServer(runtime);
+    const destroySpy = spyOnConnectionDestroy();
 
     const result = await driveTurn({
       baseUrl,
@@ -192,5 +245,99 @@ describe('driveTurn', () => {
         ),
     });
     expect(result.outcome).toBe('aborted');
+    expect(destroySpy).toHaveBeenCalled();
+  });
+
+  it('rejects (never hangs) when the /events connection errors before the snapshot, and destroys the request', async () => {
+    const baseUrl = await closedBaseUrl();
+    const destroySpy = spyOnConnectionDestroy();
+
+    // A connection error before any snapshot must reject `ready` (and therefore
+    // the turn) rather than block forever on `await stream.ready`.
+    await expect(
+      driveTurn({ baseUrl, sessionId: 's', content: 'go', cwd: '/tmp', timeoutMs: 5000 })
+    ).rejects.toMatchObject({ code: 'STREAM_ERROR' });
+    expect(destroySpy).toHaveBeenCalled();
+  });
+
+  it('rejects (never hangs) when the snapshot never arrives within readyTimeoutMs, without waiting for the turn timeout', async () => {
+    const baseUrl = await startSilentEventsServer();
+    const destroySpy = spyOnConnectionDestroy();
+
+    const start = Date.now();
+    await expect(
+      driveTurn({
+        baseUrl,
+        sessionId: 's',
+        content: 'go',
+        cwd: '/tmp',
+        readyTimeoutMs: 100,
+        timeoutMs: 5000,
+      })
+    ).rejects.toMatchObject({ code: 'STREAM_ERROR' });
+    const elapsed = Date.now() - start;
+
+    // It must trip the ready-wait timeout (~100ms), not the 5000ms turn timeout.
+    expect(elapsed).toBeLessThan(2000);
+    expect(destroySpy).toHaveBeenCalled();
+  });
+});
+
+describe('driveConversation', () => {
+  it('runs each prompt as a turn in order, threading the canonical id, and collects every turn', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'one' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'two' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    const result = await driveConversation({
+      baseUrl,
+      sessionId: 'sess-multi',
+      cwd: '/tmp/proj',
+      prompts: ['first', 'second'],
+    });
+
+    expect(result.outcome).toBe('done');
+    expect(result.canonicalId).toBe('sess-multi');
+    // Both turns were driven and collected: two turn boundaries end-to-end.
+    expect(result.frames.filter((f) => f.event === 'turn_start')).toHaveLength(2);
+    expect(result.frames.filter((f) => f.event === 'turn_end')).toHaveLength(2);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops early when a turn does not end `done`, leaving later prompts undriven', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'stuck' } } as StreamEvent;
+        await new Promise(() => {}); // never yields done → the turn times out
+      },
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'never' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    const result = await driveConversation({
+      baseUrl,
+      sessionId: 'sess-stop',
+      cwd: '/tmp/proj',
+      prompts: ['first', 'second'],
+      timeoutMs: 150,
+    });
+
+    expect(result.outcome).toBe('timeout');
+    // Only the first turn ran; the loop broke before the second prompt.
+    expect(result.frames.filter((f) => f.event === 'turn_start')).toHaveLength(1);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 });
