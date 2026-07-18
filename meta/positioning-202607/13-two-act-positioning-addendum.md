@@ -40,10 +40,10 @@ positioning is a different narrative, not a patch to the developer one.
 
 ## Where this shows up in the existing plan
 
-- `09-gtm-plan.md` Part 4 already states "no Act-1 launch-message changes" and that Shapes is the Script-2 /
-  second-visit story; this addendum is the decision record behind that line, not a new instruction to it.
-- `plans/shapes-program.md` Phase 4 restates the same rule and adds the mechanism: Act 2 "gets its own
-  positioning review cycle (not an edit-in-place of Act 1 copy)."
+- `plans/shapes-program.md` Phase 4 states the operational rule — "No Act-1 launch-message changes," Shapes
+  stays the Script-2 / second-visit story, and Act 2 "gets its own positioning review cycle (not an
+  edit-in-place of Act 1 copy)"; this addendum is the decision record behind those lines, not a new
+  instruction to them.
 - `plans/shapes-program.md` success criterion 5 calls for an **Act-2 trigger dashboard** (even a checklist)
   so the repositioning decision stays evidence-driven — that dashboard is the accountability structure for
   the triggers above and does not exist yet.
