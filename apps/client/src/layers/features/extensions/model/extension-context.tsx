@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { useEventSubscription } from '@/layers/shared/model';
+import { useSyncCurrentAgentId } from '@/layers/entities/agent';
 import type { LoadedExtension, ExtensionAPIDeps } from './types.js';
 import { ExtensionLoader } from './extension-loader.js';
 import { useCwdExtensionSync } from './use-cwd-extension-sync.js';
@@ -63,6 +64,10 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
 
   // Watch for CWD changes and reload the page if the extension set differs.
   useCwdExtensionSync();
+
+  // Mirror the selected cwd's agent id into the app store so the extension host
+  // can tell extensions which agent they run beside (getState().agentId).
+  useSyncCurrentAgentId();
 
   // Initial load — store the loader in a ref so the SSE effect can access it.
   useEffect(() => {

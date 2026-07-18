@@ -130,6 +130,12 @@ export const useAppStore = create<AppState>()(
           }
         })(),
 
+        // Derived from selectedCwd by useSyncCurrentAgentId; transient.
+        // Guard against no-op writes so subscribers only fire on real changes.
+        currentAgentId: null,
+        setCurrentAgentId: (id) =>
+          set((s) => (s.currentAgentId === id ? s : { currentAgentId: id })),
+
         // Shared pending pre-launch runtime selection — see CoreSlice docs.
         // Transient: seeded from ?runtime= per session by useRuntimeChip and
         // written by the chip's onChangeRuntime; the URL is the durable channel.
