@@ -3,10 +3,18 @@ import { DorkosSidecarSchema, DorkosEntrySchema, PricingSchema } from '../dorkos
 
 describe('DorkosEntrySchema', () => {
   it('accepts all valid type enum values', () => {
-    for (const type of ['agent', 'plugin', 'skill-pack', 'adapter'] as const) {
+    for (const type of ['agent', 'plugin', 'skill-pack', 'adapter', 'shape'] as const) {
       const result = DorkosEntrySchema.safeParse({ type });
       expect(result.success, `expected type=${type} to parse`).toBe(true);
     }
+  });
+
+  it('accepts a sidecar entry that declares type: "shape"', () => {
+    // Regression guard for the #335 miss: the sidecar `type` enum omitted
+    // `shape`, so a shape package's sidecar entry failed the strict parse and
+    // browse-facet inference fell back to `plugin`.
+    const result = DorkosEntrySchema.safeParse({ type: 'shape', layers: ['extensions', 'agents'] });
+    expect(result.success).toBe(true);
   });
 
   it('rejects invalid type value', () => {
@@ -47,10 +55,15 @@ describe('DorkosEntrySchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts requires with all four dependency types', () => {
+  it('accepts requires with all five dependency types', () => {
     const result = DorkosEntrySchema.safeParse({
-      requires: ['agent:one', 'plugin:two', 'skill-pack:three', 'adapter:four'],
+      requires: ['agent:one', 'plugin:two', 'skill-pack:three', 'adapter:four', 'shape:five'],
     });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a shape: dependency with a version range', () => {
+    const result = DorkosEntrySchema.safeParse({ requires: ['shape:linear-ops@^1.0.0'] });
     expect(result.success).toBe(true);
   });
 
