@@ -68,6 +68,9 @@ export function filterPackages(
   return packages.filter((pkg) => {
     if (!matchesType(pkg, criteria.type)) return false;
     if (criteria.category !== null) {
+      // Always-check-singular fallback: differs from site ranking.ts's `??`
+      // short-circuit only for coherence-violating data (category outside
+      // categories[]), which the schema refine + server flatten make unreachable.
       const inList = pkg.categories?.includes(criteria.category) ?? false;
       if (!inList && pkg.category !== criteria.category) return false;
     }

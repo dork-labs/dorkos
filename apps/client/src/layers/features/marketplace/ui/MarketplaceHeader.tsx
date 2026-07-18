@@ -182,8 +182,12 @@ interface CategoryChipProps {
 
 /**
  * A single category facet chip. A real `<button>` with `aria-pressed` so it is
- * keyboard-operable and announced as a toggle. Mirrors the type-filter pill
- * styling (`rounded-full`, primary fill when active).
+ * keyboard-operable and announced as a toggle. Deliberately a distinct pill
+ * treatment (`rounded-full`, primary fill when active) rather than a mirror of
+ * the type tabs' segmented control (`rounded-md`, `bg-background` + shadow
+ * inside a `bg-muted` container) — the different affordance separates the two
+ * filter axes visually while reusing the same semantic color tokens and
+ * `focus-visible` ring.
  *
  * @param active - Whether this chip is the active category filter.
  * @param onClick - Toggle handler.

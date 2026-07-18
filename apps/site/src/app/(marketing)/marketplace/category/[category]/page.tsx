@@ -61,7 +61,9 @@ export async function generateMetadata(props: {
   const title = `${label} — DorkOS Marketplace`;
   // Seed the meta description with the honest category blurb, then append the
   // real package names so the snippet reflects what the page actually lists.
-  const names = (await fetchCategoryPackages(category, {})).map((p) => p.name);
+  // Capped at 5 names so a busy post-backfill category never produces an
+  // engine-truncated description.
+  const names = (await fetchCategoryPackages(category, {})).map((p) => p.name).slice(0, 5);
   const description =
     names.length > 0
       ? `${CATEGORY_DESCRIPTIONS[category]} Includes ${names.join(', ')}.`
