@@ -70,23 +70,21 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   const loaderRef = useRef<ExtensionLoader | null>(null);
   const queryClient = useQueryClient();
 
-  // Live-remount every extension slot for the new working directory's set:
-  // tear down the current extensions (removing their registry contributions and
-  // subscriptions), then re-fetch, re-import, and re-activate. Slot hosts watch
-  // the reactive registry, so components remount cleanly without a page reload.
+  // Live-remount every extension slot for the new working directory's set.
+  // reloadAll() is fetch-then-swap: it resolves the new set before tearing the
+  // current one down, so a failed fetch rejects here with the previous
+  // extensions still live — the rejection propagates to the cwd sync hook,
+  // which owns the success/error toasts. Slot hosts watch the reactive
+  // registry, so components remount cleanly without a page reload.
   const reloadAllExtensions = useCallback(async () => {
     const loader = loaderRef.current;
     if (!loader) return;
 
-    try {
-      const { extensions, loaded } = await loader.reloadAll();
-      setState({ extensions, loaded, ready: true });
-      // Sync TanStack Query so UI consumers of the extension list reflect the
-      // cwd-scoped set immediately, not on the next poll interval.
-      queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
-    } catch (err) {
-      console.error('[extensions] Failed to remount extensions after CWD change:', err);
-    }
+    const { extensions, loaded } = await loader.reloadAll();
+    setState({ extensions, loaded, ready: true });
+    // Sync TanStack Query so UI consumers of the extension list reflect the
+    // cwd-scoped set immediately, not on the next poll interval.
+    queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
   }, [queryClient]);
 
   // Watch for CWD changes and live-remount the extension slots if the set differs.

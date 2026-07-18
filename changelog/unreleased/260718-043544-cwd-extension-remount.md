@@ -1,3 +1,3 @@
 ### Changed
 
-- Switching agents no longer reloads the whole page — when a project brings its own extensions, only the extension panels swap in place, so your open session, scroll position, and unsent message survive the switch (DOR-363)
+- Switching agents now live-remounts the extension slots for the new folder (cwd) instead of reloading the whole page — your open session, scroll position, and unsent message survive the switch (DOR-363)

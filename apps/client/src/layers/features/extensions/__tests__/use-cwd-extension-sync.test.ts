@@ -84,10 +84,17 @@ describe('useCwdExtensionSync', () => {
     expect(onChanged).not.toHaveBeenCalled();
   });
 
-  it('shows toast and remounts extensions when the set changed', async () => {
+  it('remounts extensions and toasts success only after the remount resolves', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: true, added: ['ext-new'], removed: [] }));
 
-    const onChanged = vi.fn();
+    // Deferred remount — the success toast must wait for it.
+    let resolveRemount!: () => void;
+    const onChanged = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRemount = resolve;
+        })
+    );
     renderHook(() => useCwdExtensionSync(onChanged));
 
     act(() => {
@@ -95,9 +102,40 @@ describe('useCwdExtensionSync', () => {
     });
 
     await vi.waitFor(() => {
+      expect(onChanged).toHaveBeenCalledTimes(1);
+    });
+    // Remount still pending — no toast yet.
+    expect(toast.info).not.toHaveBeenCalled();
+
+    resolveRemount();
+
+    await vi.waitFor(() => {
       expect(toast.info).toHaveBeenCalledWith('Project extensions updated');
     });
-    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('shows an error toast (not success) when the remount fails', async () => {
+    mockFetch.mockReturnValue(mockCwdResponse({ changed: true, added: ['ext-new'], removed: [] }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const onChanged = vi.fn().mockRejectedValue(new Error('fetch boom'));
+    renderHook(() => useCwdExtensionSync(onChanged));
+
+    act(() => {
+      useAppStore.getState().setSelectedCwd('/project-fail');
+    });
+
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Couldn't load this project's extensions");
+    });
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[extensions] Failed to apply the new extension set:',
+      expect.any(Error)
+    );
+
+    errorSpy.mockRestore();
   });
 
   it('never reloads the page when the extension set changes', async () => {

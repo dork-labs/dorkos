@@ -2,9 +2,9 @@
  * Watch for CWD changes and re-resolve the working directory's extension set.
  *
  * When the working directory changes and the discovered extension set differs
- * (new extensions added or existing ones removed), a toast is shown and the
- * caller's `onExtensionsChanged` handler runs, which live-remounts the
- * extension slots for the new set — no full-page reload.
+ * (new extensions added or existing ones removed), the caller's
+ * `onExtensionsChanged` handler live-remounts the extension slots for the new
+ * set and a toast confirms the swap — no full-page reload.
  *
  * @module features/extensions/model/use-cwd-extension-sync
  */
@@ -50,18 +50,19 @@ async function notifyCwdChanged(cwd: string | null): Promise<CwdChangedResponse 
 /**
  * Hook that subscribes to CWD changes in the app store and notifies the server
  * when the working directory switches. If the server reports that the extension
- * set changed (added or removed extensions), a toast is shown and
- * `onExtensionsChanged` runs to live-remount the extension slots with the new
- * set — everything unrelated (session view, scroll, composer text, router
+ * set changed (added or removed extensions), `onExtensionsChanged` runs to
+ * live-remount the extension slots with the new set, then a toast confirms the
+ * swap — everything unrelated (session view, scroll, composer text, router
  * state) is preserved.
  *
  * Placed inside `ExtensionProvider` so it runs once for the app lifetime.
  *
  * @param onExtensionsChanged - Runs after the server confirms the cwd-scoped
  *   extension set changed. The handler re-resolves and remounts the extension
- *   slots. Kept in a ref so the effect stays keyed on the CWD alone.
+ *   slots; the success toast waits for it to resolve, and a rejection surfaces
+ *   as an error toast. Kept in a ref so the effect stays keyed on the CWD alone.
  */
-export function useCwdExtensionSync(onExtensionsChanged: () => void): void {
+export function useCwdExtensionSync(onExtensionsChanged: () => void | Promise<void>): void {
   const selectedCwd = useAppStore((s) => s.selectedCwd);
 
   // Track the previous CWD to detect actual changes (not the initial mount).
@@ -89,11 +90,19 @@ export function useCwdExtensionSync(onExtensionsChanged: () => void): void {
     prevCwdRef.current = selectedCwd;
 
     // Fire-and-forget: notify the server, then live-remount if the set differs.
-    void notifyCwdChanged(selectedCwd).then((result) => {
+    void notifyCwdChanged(selectedCwd).then(async (result) => {
       if (!result || !result.changed) return;
 
-      toast.info('Project extensions updated');
-      onChangedRef.current();
+      try {
+        // Remount first, announce after — a failed swap must not toast success.
+        // reloadAll() fetches the new set before tearing anything down, so a
+        // rejection here means the previous extensions are still live.
+        await onChangedRef.current();
+        toast.info('Project extensions updated');
+      } catch (err) {
+        console.error('[extensions] Failed to apply the new extension set:', err);
+        toast.error("Couldn't load this project's extensions");
+      }
     });
   }, [selectedCwd]);
 }

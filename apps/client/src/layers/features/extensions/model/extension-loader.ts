@@ -26,6 +26,22 @@ async function fetchExtensions(): Promise<ExtensionRecordPublic[]> {
 }
 
 /**
+ * Fetch the extension list from the server, rejecting on an HTTP error status.
+ *
+ * Used by {@link ExtensionLoader.reloadAll}, whose fetch-then-swap contract
+ * needs a failed fetch to be distinguishable from a genuinely empty extension
+ * set — an empty array must mean "this cwd has no extensions", never "the
+ * request failed".
+ */
+async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
+  const res = await fetch(extensionApiUrl('/extensions'));
+  if (!res.ok) {
+    throw new Error(`Failed to fetch extension list: ${res.status}`);
+  }
+  return res.json() as Promise<ExtensionRecordPublic[]>;
+}
+
+/**
  * Dynamically import a compiled extension bundle from the server.
  *
  * Returns `null` on import failure so the caller can skip and report the error.
@@ -90,10 +106,11 @@ export class ExtensionLoader {
    */
   private disposed = false;
   /**
-   * Monotonic load token. Each {@link initialize} run claims the current value;
-   * a later load (e.g. {@link reloadAll} on a CWD change) increments it, so a
-   * superseded in-flight load stops activating instead of registering
-   * contributions discovered under the previous working directory.
+   * Monotonic load token. Every load path — {@link initialize},
+   * {@link reloadAll}, and {@link reloadExtensions} — claims the current value
+   * on entry by incrementing it, so starting any load supersedes all older
+   * in-flight loads. A superseded load stops activating instead of registering
+   * contributions that a newer load (e.g. a cwd switch) has made stale.
    */
   private generation = 0;
 
@@ -110,11 +127,32 @@ export class ExtensionLoader {
     extensions: ExtensionRecordPublic[];
     loaded: Map<string, LoadedExtension>;
   }> {
-    // Claim this load; a newer initialize()/reloadAll() supersedes it.
+    // Claim this load; any newer load supersedes it.
     const gen = ++this.generation;
 
     const extensions = await fetchExtensions();
+    return this.activateFrom(extensions, gen);
+  }
 
+  /**
+   * Import and activate every ready extension from a pre-fetched list.
+   *
+   * Shared by {@link initialize} (initial load) and {@link reloadAll} (cwd
+   * switch), which fetch the list themselves so each can apply its own error
+   * policy before any activation happens.
+   *
+   * @param extensions - The extension records to load from
+   * @param gen - The generation this load claimed on entry; activation stops
+   *   if a newer load has claimed a later generation in the meantime
+   * @returns The provided extension list and the map of loaded extensions
+   */
+  private async activateFrom(
+    extensions: ExtensionRecordPublic[],
+    gen: number
+  ): Promise<{
+    extensions: ExtensionRecordPublic[];
+    loaded: Map<string, LoadedExtension>;
+  }> {
     // Only load extensions that have been compiled and have a ready bundle.
     const ready = extensions.filter((ext) => ext.status === 'compiled' && ext.bundleReady);
 
@@ -188,6 +226,11 @@ export class ExtensionLoader {
       console.log(`[extensions] Activated: ${activated.join(', ')}`);
     }
 
+    // If this load was superseded mid-flight, `extensions` reflects the fetch
+    // this load performed, not necessarily the newest one — the returned list is
+    // best-effort context state; the TanStack extension-list query (invalidated
+    // by every reload caller) is the source of truth for list consumers. The
+    // `loaded` map is the loader's single live instance, so it is always current.
     return { extensions, loaded: this.loaded };
   }
 
@@ -202,15 +245,21 @@ export class ExtensionLoader {
   }
 
   /**
-   * Tear down every loaded extension, then re-run the full load lifecycle
-   * against the server's current extension set.
+   * Swap the loaded extension set for the server's current one (fetch-then-swap).
    *
-   * Unlike {@link deactivateAll}, the loader stays live: it deactivates each
-   * extension (running its cleanups, so all registry contributions and
-   * event/state subscriptions are removed), then re-fetches, re-imports, and
-   * re-activates the fresh set. Slot hosts observe the contributions leave the
+   * The new working directory's extension list is fetched FIRST; only once it
+   * resolves does the loader tear down the current extensions (running each
+   * cleanup, so all registry contributions and event/state subscriptions are
+   * removed) and import + activate the fresh set. A failed fetch rejects before
+   * any teardown, leaving every current extension live and registered — the
+   * caller reports the error and the UI keeps the previous set instead of
+   * ending up with empty slots. Slot hosts observe the contributions leave the
    * reactive registry and return, so extension components remount cleanly with
    * no state carried over from the previous working directory.
+   *
+   * Bundles are imported without cache-busting on purpose: a cwd switch changes
+   * WHICH extensions load, not their compiled content — recompile-driven
+   * cache-busting belongs to the SSE hot-reload path ({@link reloadExtensions}).
    *
    * Used by the CWD sync when the working directory changes and its scoped
    * extension set differs — a live swap that replaces the old page reload.
@@ -221,8 +270,20 @@ export class ExtensionLoader {
     extensions: ExtensionRecordPublic[];
     loaded: Map<string, LoadedExtension>;
   }> {
+    // Claim this load; any newer load supersedes it.
+    const gen = ++this.generation;
+
+    // Fetch-then-swap: resolve the new set before touching the current one.
+    const extensions = await fetchExtensionsOrThrow();
+
+    // Superseded while fetching (rapid cwd switch) — the newer load owns the
+    // teardown and activation now; touch nothing.
+    if (this.disposed || gen !== this.generation) {
+      return { extensions, loaded: this.loaded };
+    }
+
     this.teardownLoaded();
-    return this.initialize();
+    return this.activateFrom(extensions, gen);
   }
 
   /**
@@ -269,6 +330,12 @@ export class ExtensionLoader {
     extensions: ExtensionRecordPublic[];
     loaded: Map<string, LoadedExtension>;
   }> {
+    // Claim this load; any newer load supersedes it. Without this, an
+    // SSE-triggered reload that was awaiting its fetch when a cwd-switch
+    // reloadAll() ran would resurrect the pre-switch extensions into the
+    // fresh set.
+    const gen = ++this.generation;
+
     // 1. Deactivate only the specified extensions
     for (const id of ids) {
       const ext = this.loaded.get(id);
@@ -296,6 +363,10 @@ export class ExtensionLoader {
 
     // 3. Re-import and reactivate the specified extensions
     for (const id of ids) {
+      // Stop reactivating if a newer load (cwd-switch reloadAll, unmount) has
+      // superseded this one — it owns the loaded map now.
+      if (this.disposed || gen !== this.generation) break;
+
       const rec = extensions.find((e) => e.id === id);
       if (!rec || rec.status !== 'compiled' || !rec.bundleReady) {
         continue;
@@ -308,6 +379,10 @@ export class ExtensionLoader {
         const module = (await import(
           /* @vite-ignore */ extensionApiUrl(`/extensions/${id}/bundle?t=${Date.now()}`)
         )) as ExtensionModule;
+
+        // Re-check after the import await — a newer load may have started
+        // while the bundle was in flight.
+        if (this.disposed || gen !== this.generation) break;
 
         const { api, cleanups } = createExtensionAPI(id, this.deps);
         const deactivateFn = module.activate(api);
