@@ -1,0 +1,39 @@
+{
+  "name": "@dorkos/evals",
+  "version": "0.0.0",
+  "description": "Headless outcome-oracle eval harness: prompt a real DorkOS agent session, collect the durable SSE stream, and assert on API / filesystem state — never on prose.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "evals": "tsx bin/evals.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./dist/types.js"
+    }
+  },
+  "dependencies": {
+    "@dorkos/server": "workspace:*",
+    "@dorkos/shared": "workspace:*",
+    "@dorkos/test-utils": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/node": "^24",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
