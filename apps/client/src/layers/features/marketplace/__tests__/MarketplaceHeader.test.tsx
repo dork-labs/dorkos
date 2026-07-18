@@ -187,17 +187,35 @@ describe('MarketplaceHeader', () => {
     expect(screen.queryByRole('group', { name: 'Filter by category' })).not.toBeInTheDocument();
   });
 
-  it('renders a facet chip only for present categories, plus an "All" chip', () => {
+  it('renders a facet chip only for present categories, and no redundant "All" chip', () => {
     render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
 
     const group = screen.getByRole('group', { name: 'Filter by category' });
     expect(group).toBeInTheDocument();
     // Labels come from CATEGORY_LABELS.
-    expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Security' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Code Review' })).toBeInTheDocument();
     // A category with no present packages gets no chip (no dead facet).
     expect(screen.queryByRole('button', { name: 'Marketing' })).not.toBeInTheDocument();
+    // The old ambiguous "All" chip is gone — clearing happens via the active
+    // chip's clear affordance, not a duplicate of the type row's "All" tab.
+    expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument();
+  });
+
+  it('labels each filter axis so the two chip rows are distinguishable', () => {
+    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
+
+    // Muted leading labels name each axis (the founder-reported fix: two
+    // adjacent "All"-first rows are no longer indistinguishable).
+    expect(screen.getByText('Type')).toBeInTheDocument();
+    expect(screen.getByText('Category')).toBeInTheDocument();
+  });
+
+  it('omits the Category label when no categories are present', () => {
+    render(<MarketplaceHeader />);
+
+    expect(screen.getByText('Type')).toBeInTheDocument();
+    expect(screen.queryByText('Category')).not.toBeInTheDocument();
   });
 
   it('renders chips in the canonical vocabulary order, not insertion order', () => {
@@ -229,7 +247,6 @@ describe('MarketplaceHeader', () => {
       'aria-pressed',
       'true'
     );
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Code Review' })).toHaveAttribute(
       'aria-pressed',
       'false'
@@ -246,13 +263,15 @@ describe('MarketplaceHeader', () => {
     expect(mockParams.setCategory).toHaveBeenCalledWith(null);
   });
 
-  it('clicking the "All" chip clears the category filter', async () => {
+  it('shows a clear (✕) affordance only on the active category chip', () => {
     mockParams.category = 'security';
-    const user = userEvent.setup();
-    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
+    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
 
-    await user.click(screen.getByRole('button', { name: 'All' }));
-
-    expect(mockParams.setCategory).toHaveBeenCalledWith(null);
+    // The active chip renders an icon signalling that clicking it clears the
+    // filter; inactive chips do not.
+    const active = screen.getByRole('button', { name: 'Security' });
+    const inactive = screen.getByRole('button', { name: 'Code Review' });
+    expect(active.querySelector('svg')).toBeInTheDocument();
+    expect(inactive.querySelector('svg')).not.toBeInTheDocument();
   });
 });
