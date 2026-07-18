@@ -48,7 +48,10 @@ function matchesType(pkg: AggregatedPackage, typeFilter: MarketplaceTypeFilter):
  * Filter a list of marketplace packages by type, category, and search text.
  *
  * - Type filter: packages with no `type` field are treated as `'plugin'`.
- * - Category filter: exact match against `pkg.category`.
+ * - Category filter: membership match against the multi-membership
+ *   `categories[]` list, falling back to the singular `category` for packages
+ *   that predate the sidecar. A package matches when the wanted slug is in its
+ *   `categories[]` or equals its primary `category`.
  * - Search: case-insensitive substring match across `name`, `description`,
  *   `keywords`, and `tags`. Empty search string matches everything.
  *
@@ -64,7 +67,10 @@ export function filterPackages(
 
   return packages.filter((pkg) => {
     if (!matchesType(pkg, criteria.type)) return false;
-    if (criteria.category !== null && pkg.category !== criteria.category) return false;
+    if (criteria.category !== null) {
+      const inList = pkg.categories?.includes(criteria.category) ?? false;
+      if (!inList && pkg.category !== criteria.category) return false;
+    }
     if (needle && !matchesMarketplaceSearch(pkg, needle)) return false;
     return true;
   });

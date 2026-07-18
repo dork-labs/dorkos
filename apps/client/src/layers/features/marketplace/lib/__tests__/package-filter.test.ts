@@ -104,6 +104,63 @@ describe('filterPackages — category filter', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Category membership filter (categories[] with singular fallback)
+// ---------------------------------------------------------------------------
+
+describe('filterPackages — category membership', () => {
+  // Primary member: 'security' is categories[0] and the singular category.
+  const MULTI = pkg({
+    name: 'multi',
+    categories: ['security', 'code-review'],
+    category: 'security',
+  });
+  // Non-primary member: 'security' is present but not first.
+  const SECONDARY = pkg({ name: 'secondary', categories: ['documentation', 'security'] });
+  // Legacy: singular category only, no categories[] list.
+  const LEGACY = pkg({ name: 'legacy', category: 'security' });
+  // Not a security package at all.
+  const OTHER = pkg({ name: 'other', categories: ['documentation'], category: 'documentation' });
+  const MEMBERS = [MULTI, SECONDARY, LEGACY, OTHER];
+
+  it('matches a package whose categories[] includes the slug (primary member)', () => {
+    const result = filterPackages([MULTI, OTHER], {
+      type: 'all',
+      category: 'security',
+      search: '',
+    });
+    expect(result.map((p) => p.name)).toEqual(['multi']);
+  });
+
+  it('matches a package whose categories[] includes the slug as a non-primary member', () => {
+    const result = filterPackages([SECONDARY, OTHER], {
+      type: 'all',
+      category: 'security',
+      search: '',
+    });
+    expect(result.map((p) => p.name)).toEqual(['secondary']);
+  });
+
+  it('matches a legacy singular-category package via the fallback', () => {
+    const result = filterPackages([LEGACY, OTHER], {
+      type: 'all',
+      category: 'security',
+      search: '',
+    });
+    expect(result.map((p) => p.name)).toEqual(['legacy']);
+  });
+
+  it('matches every member (categories[] and singular) for a shared slug', () => {
+    const result = filterPackages(MEMBERS, { type: 'all', category: 'security', search: '' });
+    expect(result.map((p) => p.name)).toEqual(['multi', 'secondary', 'legacy']);
+  });
+
+  it('excludes non-members', () => {
+    const result = filterPackages(MEMBERS, { type: 'all', category: 'code-review', search: '' });
+    expect(result.map((p) => p.name)).toEqual(['multi']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Search filter
 // ---------------------------------------------------------------------------
 
