@@ -9,6 +9,8 @@ export {
   ExtensionManifestSchema,
   SettingOptionSchema,
   SettingDeclarationSchema,
+  StorageMigrationSchema,
+  StorageDeclarationSchema,
 } from './manifest-schema.js';
 export type {
   ExtensionManifest,
@@ -18,6 +20,8 @@ export type {
   DataProxyConfig,
   ServerCapabilities,
   ExtensionCapabilities,
+  StorageMigration,
+  StorageDeclaration,
 } from './manifest-schema.js';
 export type { ExtensionAPI, ExtensionPointId, ExtensionReadableState } from './extension-api.js';
 export {

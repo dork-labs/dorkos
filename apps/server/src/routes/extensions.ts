@@ -14,6 +14,7 @@ import { logger } from '../lib/logger.js';
 import { eventFanOut } from '../services/core/event-fan-out.js';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
+import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
 
 /** Connected SSE clients for extension lifecycle events. */
 const sseClients = new Set<Response>();
@@ -268,7 +269,7 @@ export function createExtensionsRouter(
     try {
       const { id } = req.params;
       if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      const dataPath = resolveDataPath(id, extensionManager, dorkHome, getCwd);
+      const dataPath = resolveBlobPath(id, extensionManager, dorkHome, getCwd);
       if (!dataPath) {
         return res.status(404).json({ error: `Extension '${id}' not found` });
       }
@@ -291,7 +292,7 @@ export function createExtensionsRouter(
     try {
       const { id } = req.params;
       if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      const dataPath = resolveDataPath(id, extensionManager, dorkHome, getCwd);
+      const dataPath = resolveBlobPath(id, extensionManager, dorkHome, getCwd);
       if (!dataPath) {
         return res.status(404).json({ error: `Extension '${id}' not found` });
       }
@@ -521,33 +522,4 @@ export function createExtensionsRouter(
   });
 
   return router;
-}
-
-/**
- * Resolve the data.json path for an extension based on its scope.
- *
- * Global extensions store data in `{dorkHome}/extension-data/{ext-id}/data.json`.
- * Local extensions store data in `{cwd}/.dork/extension-data/{ext-id}/data.json`.
- *
- * @param id - Extension identifier
- * @param manager - ExtensionManager for record lookup
- * @param dorkHome - Resolved data directory
- * @param getCwd - Function returning the current working directory
- */
-function resolveDataPath(
-  id: string,
-  manager: ExtensionManager,
-  dorkHome: string,
-  getCwd: () => string | null
-): string | null {
-  const record = manager.get(id);
-  if (!record) return null;
-
-  if (record.scope === 'local') {
-    const cwd = getCwd();
-    if (!cwd) return null;
-    return path.join(cwd, '.dork', 'extension-data', id, 'data.json');
-  }
-
-  return path.join(dorkHome, 'extension-data', id, 'data.json');
 }
