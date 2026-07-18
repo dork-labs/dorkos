@@ -170,6 +170,7 @@ function buildDeps(): {
   const agentFlow = { install: vi.fn() };
   const skillPackFlow = { install: vi.fn() };
   const adapterFlow = { install: vi.fn() };
+  const shapeFlow = { install: vi.fn() };
   const uninstallFlow = { uninstall: vi.fn() };
   const logger = buildLogger();
 
@@ -182,6 +183,7 @@ function buildDeps(): {
     agentFlow: agentFlow as unknown as InstallerDeps['agentFlow'],
     skillPackFlow: skillPackFlow as unknown as InstallerDeps['skillPackFlow'],
     adapterFlow: adapterFlow as unknown as InstallerDeps['adapterFlow'],
+    shapeFlow: shapeFlow as unknown as InstallerDeps['shapeFlow'],
     uninstallFlow: uninstallFlow as unknown as InstallerDeps['uninstallFlow'],
     logger,
   };
