@@ -79,7 +79,11 @@ export function useUpdateSidebarPrefs(): UpdateSidebarPrefs {
       await queryClient.cancelQueries({ queryKey: configKeys.current() });
       const previous = queryClient.getQueryData<ServerConfig>(configKeys.current());
       queryClient.setQueryData<ServerConfig>(configKeys.current(), (old) =>
-        old ? { ...old, ui: { ...old.ui, sidebar: next } } : old
+        // Preserve the whole `ui` section (incl. `ui.shapes`) and only replace
+        // `sidebar`. When `ui` is absent from the cache there is nothing to
+        // patch optimistically (the settle-time invalidate refetches it), so
+        // leave it undefined rather than fabricate a partial `ui`.
+        old ? { ...old, ui: old.ui ? { ...old.ui, sidebar: next } : old.ui } : old
       );
       return { previous };
     },

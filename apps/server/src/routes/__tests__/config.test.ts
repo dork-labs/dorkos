@@ -225,6 +225,15 @@ describe('GET /api/config', () => {
     expect(Array.isArray(res.body.ui.sidebar.groups)).toBe(true);
     expect(res.body.ui.sidebar.ungroupedSortMode).toBe('name');
   });
+
+  it('includes ui.shapes state (DOR-355)', async () => {
+    const res = await request(app).get('/api/config').expect(200);
+
+    expect(res.body.ui.shapes).toBeDefined();
+    expect(res.body.ui.shapes.active).toBeNull();
+    expect(res.body.ui.shapes.agentDefaults).toEqual({});
+    expect(res.body.ui.shapes.autoFollowAgent).toBe(false);
+  });
 });
 
 describe('PUT /api/config/agents/defaultAgent', () => {
