@@ -18,6 +18,7 @@ import path from 'node:path';
 
 import { CLAUDE_PLUGIN_MANIFEST_PATH, PACKAGE_MANIFEST_PATH } from './constants.js';
 import { requiresClaudePlugin, type PackageType } from './package-types.js';
+import { type MarketplaceCategory } from './categories.js';
 
 /**
  * Options accepted by {@link createPackage}.
@@ -41,6 +42,14 @@ export interface CreatePackageOptions {
    * Ignored for non-adapter package types.
    */
   adapterType?: string;
+  /**
+   * Controlled multi-membership categories written into the starter manifest.
+   * The first element also becomes the singular `category` (primary-category
+   * coherence). When omitted, an empty `categories: []` is written so the
+   * author sees the field and the validator's `CATEGORY_MISSING` warning nudges
+   * them to pick one.
+   */
+  categories?: MarketplaceCategory[];
 }
 
 /**
@@ -98,6 +107,10 @@ export async function createPackage(opts: CreatePackageOptions): Promise<CreateP
     author: opts.author,
     license: 'MIT',
     tags: [],
+    categories: opts.categories ?? [],
+    // Keep the singular category coherent with categories[0] when categories
+    // are supplied; omit it entirely otherwise (uncategorized starter).
+    ...(opts.categories?.length ? { category: opts.categories[0] } : {}),
     layers: defaultLayersForType(opts.type),
   };
   // Adapter packages require an `adapterType` field per the discriminated

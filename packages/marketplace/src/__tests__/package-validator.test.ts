@@ -253,6 +253,94 @@ describe('validatePackage', () => {
     });
   });
 
+  describe('CATEGORY_MISSING', () => {
+    it('warns (not errors) when a package declares no category at all', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'uncategorized');
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'uncategorized',
+        version: '1.0.0',
+        type: 'agent',
+        description: 'A package with no category',
+        license: 'MIT',
+        tags: [],
+        layers: [],
+      });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(true);
+      const warning = result.issues.find((i) => i.code === 'CATEGORY_MISSING');
+      expect(warning).toBeDefined();
+      expect(warning?.level).toBe('warning');
+    });
+
+    it('does not warn when the package declares categories', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'categorized');
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'categorized',
+        version: '1.0.0',
+        type: 'agent',
+        description: 'A package with categories',
+        license: 'MIT',
+        tags: [],
+        categories: ['security'],
+        layers: [],
+      });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(true);
+      expect(result.issues.some((i) => i.code === 'CATEGORY_MISSING')).toBe(false);
+    });
+
+    it('rejects an off-list entry inside categories[] as MANIFEST_SCHEMA_INVALID', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'bad-category');
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'bad-category',
+        version: '1.0.0',
+        type: 'agent',
+        description: 'A package with an off-list category',
+        license: 'MIT',
+        tags: [],
+        categories: ['not-a-cat'],
+        layers: [],
+      });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      expect(result.issues.some((i) => i.code === 'MANIFEST_SCHEMA_INVALID')).toBe(true);
+    });
+
+    it('still accepts a legacy free-string singular-only category (harness regression guard)', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'legacy-category');
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'legacy-category',
+        version: '1.0.0',
+        type: 'agent',
+        description: 'A package with a legacy free-string category',
+        license: 'MIT',
+        tags: [],
+        category: 'workflow',
+        layers: [],
+      });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(true);
+      // A declared (even legacy) category suppresses the CATEGORY_MISSING nudge.
+      expect(result.issues.some((i) => i.code === 'CATEGORY_MISSING')).toBe(false);
+    });
+  });
+
   describe('valid fixtures', () => {
     const validFixtures = [
       'valid-plugin',

@@ -177,6 +177,19 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
 
   const manifest = parseResult.data;
 
+  // 3a. Advisory: a package with no category at all browses as "Uncategorized".
+  //     Off-list categories[] and incoherent category/categories[0] pairs
+  //     already failed the schema parse above (MANIFEST_SCHEMA_INVALID); a
+  //     legacy free-string singular category deliberately still parses. This
+  //     warning covers only the soft "no category declared" case.
+  if (!manifest.category && !manifest.categories?.length) {
+    issues.push({
+      level: 'warning',
+      code: 'CATEGORY_MISSING',
+      message: 'Package declares no category — it will browse as "Uncategorized".',
+    });
+  }
+
   // 4. Claude Code plugin manifest required for plugin/skill-pack/adapter
   if (requiresClaudePlugin(manifest.type)) {
     const ccPath = path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);

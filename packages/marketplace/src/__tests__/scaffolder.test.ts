@@ -293,4 +293,43 @@ describe('createPackage', () => {
       expect(manifest.description).toBe('undescribed-pkg — a DorkOS skill-pack');
     });
   });
+
+  describe('category options', () => {
+    it('writes categories[] and sets the singular category to categories[0]', async () => {
+      const parentDir = await tempDir();
+
+      const result = await createPackage({
+        parentDir,
+        name: 'categorized-pkg',
+        type: 'plugin',
+        categories: ['security', 'code-review'],
+      });
+
+      const manifest = (await readJson(path.join(result.packagePath, PACKAGE_MANIFEST_PATH))) as {
+        categories: string[];
+        category?: string;
+      };
+
+      expect(manifest.categories).toEqual(['security', 'code-review']);
+      expect(manifest.category).toBe('security');
+    });
+
+    it('writes an empty categories[] and no singular category when omitted', async () => {
+      const parentDir = await tempDir();
+
+      const result = await createPackage({
+        parentDir,
+        name: 'uncategorized-pkg',
+        type: 'skill-pack',
+      });
+
+      const manifest = (await readJson(path.join(result.packagePath, PACKAGE_MANIFEST_PATH))) as {
+        categories: string[];
+        category?: string;
+      };
+
+      expect(manifest.categories).toEqual([]);
+      expect(manifest.category).toBeUndefined();
+    });
+  });
 });
