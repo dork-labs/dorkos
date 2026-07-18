@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as apiRequest } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import fs from 'fs/promises';
+import path from 'path';
 import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 
@@ -440,5 +443,179 @@ test.describe('Fleet context health — per-row gauge + honest unknown', () => {
     // itself (spec §8b: hidden when nothing to report), rather than showing a
     // hollow "0 near full".
     await expect(page.getByTestId('fleet-context-bar')).toHaveCount(0);
+  });
+});
+
+// Live-remount extension slots on an agent/cwd switch instead of reloading the page
+// (DOR-363, PR #322). Switching agents changes the selected working directory, and
+// extension discovery is cwd-scoped (global `~/.dork/extensions` + `{cwd}/.dork/extensions`),
+// so a switch can add or remove extensions. The fix replaced a full `location.reload()`
+// (fired ~1.5s after a toast) with an in-place slot remount — every scrap of in-flight
+// SPA state (open session, scroll, unsent composer draft) is preserved.
+//
+// These tests live in chat-mock.spec.ts on purpose: the mock server is shared mutable
+// state and the `chromium-mock` project runs this single file sequentially (see
+// playwright.config.ts). They are NOT in CI (same precedent as send-message.spec.ts).
+// Run locally against the built mock stack:
+//   pnpm --filter @dorkos/e2e exec playwright test --project=chromium-mock -g "live remount"
+//
+// Two agents are registered via the mesh (so they appear in the command palette) at
+// derived sibling dirs of the seed-agent boundary path. Test B additionally drops a
+// minimal cwd-scoped extension into project A only — a valid manifest is enough: server
+// discovery counts it in the cwd diff even though it never compiles or activates, which
+// is exactly what flips `useCwdExtensionSync` into its remount branch (the branch that
+// used to reload). No extension build pipeline is needed.
+test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () => {
+  /** cwd-scoped extension id dropped into project A for Test B. */
+  const EXT_ID = 'e2e-remount-probe';
+  /** Project A — the agent switched TO; carries the cwd-scoped extension in Test B. */
+  let dirA: string;
+  /** Project B — the agent the page loads on; never carries a cwd-scoped extension. */
+  let dirB: string;
+
+  /** `.dork/extensions` root for a project dir. */
+  const extRoot = (dir: string) => path.join(dir, '.dork', 'extensions');
+
+  test.beforeAll(async () => {
+    const ctx = await apiRequest.newContext();
+    // Learn a boundary-safe base directory from the seed route, then derive two
+    // siblings so registration passes the server's homedir boundary check.
+    const seed = await ctx.post(`${API_URL}/api/test/seed-agent`);
+    const { agentDir: baseDir } = (await seed.json()) as { agentDir: string };
+    dirA = `${baseDir}-remount-a`;
+    dirB = `${baseDir}-remount-b`;
+    await fs.mkdir(dirA, { recursive: true });
+    await fs.mkdir(dirB, { recursive: true });
+    // Register both with the mesh so the command palette lists them as switchable
+    // agents. `registerByPath` writes each agent's manifest and returns 201.
+    for (const [dir, name] of [
+      [dirA, 'Alpha Remount Agent'],
+      [dirB, 'Bravo Remount Agent'],
+    ] as const) {
+      const res = await ctx.post(`${API_URL}/api/mesh/agents`, {
+        data: { path: dir, overrides: { name, runtime: 'claude-code' } },
+      });
+      if (!res.ok()) throw new Error(`Failed to register ${name}: ${res.status()}`);
+    }
+    await ctx.dispose();
+  });
+
+  test.afterAll(async () => {
+    await fs.rm(extRoot(dirA), { recursive: true, force: true }).catch(() => {});
+    await fs.rm(extRoot(dirB), { recursive: true, force: true }).catch(() => {});
+  });
+
+  /**
+   * Open the global command palette (Cmd/Ctrl+K), filter to `agentName`, drill into
+   * its actions sub-menu, and click "Open Here" — the exact user path
+   * `handleAgentSelect` → `setDir`, which sets `selectedCwd` and client-navigates
+   * (never a full document load).
+   */
+  async function switchAgentViaPalette(page: Page, agentName: string): Promise<void> {
+    await page.keyboard.press('Meta+k');
+    const search = page.getByPlaceholder('Search agents, features, commands...');
+    await search.waitFor({ state: 'visible', timeout: 10_000 });
+    await search.fill(agentName);
+    await page
+      .getByRole('option', { name: new RegExp(agentName, 'i') })
+      .first()
+      .click();
+    // The sub-menu clears the search and auto-selects "Open Here".
+    await page.getByRole('option', { name: /open here/i }).click();
+  }
+
+  /**
+   * Assert no full document reload happened: no `load` event fires within the window
+   * where the old code reloaded (~1.5s after the switch), and the in-memory marker —
+   * a faithful proxy for all preserved SPA state, including the unsent composer draft,
+   * which lives in the same in-memory session store — survived. A `location.reload()`
+   * wipes both.
+   */
+  async function expectNoReload(page: Page): Promise<void> {
+    const reloaded = await page
+      .waitForEvent('load', { timeout: 2_500 })
+      .then(() => true)
+      .catch(() => false);
+    expect(reloaded, 'a full document reload fired (regression: location.reload is back)').toBe(
+      false
+    );
+    const marker = await page.evaluate(
+      () => (window as Window & { __remountSentinel?: string }).__remountSentinel
+    );
+    expect(marker, 'window marker was wiped — the page did a full reload').toBe('alive');
+  }
+
+  /** Type an unsent draft, then plant the in-memory reload marker. */
+  async function primeComposerAndMarker(chatPage: ChatPage, page: Page): Promise<void> {
+    await chatPage.input.fill('SENTINEL-unsent-draft');
+    await page.evaluate(() => {
+      (window as Window & { __remountSentinel?: string }).__remountSentinel = 'alive';
+    });
+  }
+
+  // Test A — the baseline the founder actually saw. With NO project-scoped extension,
+  // the discovered set is identical in both projects, so `useCwdExtensionSync` reports
+  // `changed: false` and never touches the slots (no toast, and — pre-fix OR post-fix —
+  // no reload). This is precisely why the remount fix is invisible without a
+  // project-scoped extension: switching agents is already a pure client-side transition.
+  test('switching agents with no scoped extension is a pure SPA transition (no reload)', async ({
+    page,
+  }) => {
+    await fs.rm(extRoot(dirA), { recursive: true, force: true });
+    await fs.rm(extRoot(dirB), { recursive: true, force: true });
+
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: dirB });
+    await primeComposerAndMarker(chatPage, page);
+
+    await switchAgentViaPalette(page, 'Alpha Remount Agent');
+
+    // The cockpit switched to the target agent's working directory.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('dir'), { timeout: 10_000 })
+      .toBe(dirA);
+
+    await expectNoReload(page);
+  });
+
+  // Test B — the regression guard. Project A carries a cwd-scoped extension and B does
+  // not, so switching B → A flips the discovered set (`changed: true`). That fires the
+  // exact branch the old code reloaded from — here it must instead show the quiet
+  // "Project extensions updated" toast and live-remount, with NO page reload.
+  test('an extension-set change on switch live-remounts (toast), never reloads', async ({
+    page,
+    request,
+  }) => {
+    // Drop a minimal valid manifest into project A only; ensure B has none.
+    const extDir = path.join(extRoot(dirA), EXT_ID);
+    await fs.mkdir(extDir, { recursive: true });
+    await fs.writeFile(
+      path.join(extDir, 'extension.json'),
+      JSON.stringify({
+        id: EXT_ID,
+        name: 'E2E Remount Probe',
+        version: '0.0.0',
+        description: 'Cwd-scoped extension present only in project A (e2e fixture).',
+      })
+    );
+    await fs.rm(extRoot(dirB), { recursive: true, force: true });
+
+    // Prime the server's cwd to B so the measured switch into A yields a deterministic
+    // `added` diff regardless of any prior cwd left by an earlier test.
+    await request.post(`${API_URL}/api/extensions/cwd-changed`, { data: { cwd: dirB } });
+
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: dirB });
+    await primeComposerAndMarker(chatPage, page);
+
+    await switchAgentViaPalette(page, 'Alpha Remount Agent');
+
+    // The scoped set changed → the remount branch runs: a quiet toast, no reload.
+    await expect(page.getByText('Project extensions updated')).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('dir'), { timeout: 10_000 })
+      .toBe(dirA);
+
+    await expectNoReload(page);
   });
 });
