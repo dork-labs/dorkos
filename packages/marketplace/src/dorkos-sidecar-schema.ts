@@ -40,7 +40,7 @@ export const PricingSchema = z.object({
  */
 export const DorkosEntrySchema = z.object({
   /** DorkOS package type discriminator. Defaults to `plugin` when absent. */
-  type: z.enum(['agent', 'plugin', 'skill-pack', 'adapter']).optional(),
+  type: z.enum(['agent', 'plugin', 'skill-pack', 'adapter', 'shape']).optional(),
   /** Layer/content categories the plugin contributes to. */
   layers: z
     .array(
@@ -59,12 +59,16 @@ export const DorkosEntrySchema = z.object({
     .optional(),
   /**
    * Dependency declarations, each of the form
-   * `<type>:<name>[@<version-range>]`. The four dependency types mirror the
-   * DorkOS package types.
+   * `<type>:<name>[@<version-range>]`. The five dependency types mirror the
+   * DorkOS package types (the `shape:` prefix lets a Shape compose other
+   * Shapes into shape sets — parity with `DependencyDeclarationSchema` in
+   * `manifest-schema.ts`).
    */
   requires: z
     .array(
-      z.string().regex(/^(adapter|plugin|skill-pack|agent):[a-z][a-z0-9-]*([@][\w.~^>=<!*-]+)?$/)
+      z
+        .string()
+        .regex(/^(adapter|plugin|skill-pack|agent|shape):[a-z][a-z0-9-]*([@][\w.~^>=<!*-]+)?$/)
     )
     .optional(),
   /**

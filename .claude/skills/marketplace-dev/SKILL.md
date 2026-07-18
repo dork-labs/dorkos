@@ -19,21 +19,22 @@ Build packages that work for both DorkOS and Claude Code. Every package must pas
 
 ## Package Types
 
-There are exactly 4 types. Choose based on what the package delivers:
+There are exactly 5 types. Choose based on what the package delivers:
 
-| Type             | What It Is                                            | Has `.claude-plugin/plugin.json`? | Key Directories                   |
-| ---------------- | ----------------------------------------------------- | --------------------------------- | --------------------------------- |
-| **`agent`**      | Reusable agent definition with persona, skills, tasks | No                                | `.claude/skills/`, `.dork/tasks/` |
-| **`plugin`**     | Claude Code extension with commands, hooks, UI        | Yes                               | `skills/`, `hooks/`, `commands/`  |
-| **`skill-pack`** | Bundle of SKILL.md files providing reusable expertise | Yes                               | `skills/`                         |
-| **`adapter`**    | Integration bridge (relay transport, mesh discovery)  | Yes                               | `.dork/adapters/`                 |
+| Type             | What It Is                                                  | Has `.claude-plugin/plugin.json`? | Key Directories                   |
+| ---------------- | ----------------------------------------------------------- | --------------------------------- | --------------------------------- |
+| **`agent`**      | Reusable agent definition with persona, skills, tasks       | No                                | `.claude/skills/`, `.dork/tasks/` |
+| **`plugin`**     | Claude Code extension with commands, hooks, UI              | Yes                               | `skills/`, `hooks/`, `commands/`  |
+| **`skill-pack`** | Bundle of SKILL.md files providing reusable expertise       | Yes                               | `skills/`                         |
+| **`adapter`**    | Integration bridge (relay transport, mesh discovery)        | Yes                               | `.dork/adapters/`                 |
+| **`shape`**      | A "place" composing packages, agents, schedules, and chrome | Yes                               | `extensions/`                     |
 
-**Decision rule:** If it defines an agent identity (persona, traits) → `agent`. If it adds UI slots or commands → `plugin`. If it's just skills → `skill-pack`. If it bridges an external service → `adapter`.
+**Decision rule:** If it defines an agent identity (persona, traits) → `agent`. If it adds UI slots or commands → `plugin`. If it's just skills → `skill-pack`. If it bridges an external service → `adapter`. If it composes existing packages, agents, schedules, and workspace chrome into a switchable place → `shape`.
 
 ## Scaffolding
 
 ```bash
-dorkos package init <name> [--type agent|plugin|skill-pack|adapter] \
+dorkos package init <name> [--type agent|plugin|skill-pack|adapter|shape] \
   [--parent-dir <path>] [--description <text>] [--author <text>] [--adapter-type <id>]
 ```
 
@@ -48,18 +49,19 @@ dorkos package init <name> [--type agent|plugin|skill-pack|adapter] \
 - `.dork/manifest.json` — DorkOS package manifest (schemaVersion 1, version 0.0.1, MIT)
 - `README.md`
 
-**plugin/skill-pack/adapter additionally:**
+**plugin/skill-pack/adapter/shape additionally:**
 
 - `.claude-plugin/plugin.json` — CC-compatible manifest stub
 
 **Type-specific directories:**
 
-| Type         | Directories Created               | Manifest `layers`               |
-| ------------ | --------------------------------- | ------------------------------- |
-| `plugin`     | `skills/`, `hooks/`, `commands/`  | `['skills', 'extensions']`      |
-| `skill-pack` | `skills/`                         | `['skills']`                    |
-| `adapter`    | `.dork/adapters/`                 | `['adapters']`                  |
-| `agent`      | `.claude/skills/`, `.dork/tasks/` | `['skills', 'tasks', 'agents']` |
+| Type         | Directories Created               | Manifest `layers`                   |
+| ------------ | --------------------------------- | ----------------------------------- |
+| `plugin`     | `skills/`, `hooks/`, `commands/`  | `['skills', 'extensions']`          |
+| `skill-pack` | `skills/`                         | `['skills']`                        |
+| `adapter`    | `.dork/adapters/`                 | `['adapters']`                      |
+| `agent`      | `.claude/skills/`, `.dork/tasks/` | `['skills', 'tasks', 'agents']`     |
+| `shape`      | `extensions/`                     | `['extensions', 'agents', 'tasks']` |
 
 ## Manifest Reference
 
@@ -70,7 +72,7 @@ dorkos package init <name> [--type agent|plugin|skill-pack|adapter] \
   "schemaVersion": 1, // Always 1
   "name": "my-package", // Kebab-case, matches directory name
   "version": "1.0.0", // Semver
-  "type": "plugin", // "agent" | "plugin" | "skill-pack" | "adapter"
+  "type": "plugin", // "agent" | "plugin" | "skill-pack" | "adapter" | "shape"
   "description": "What it does", // 1-1024 chars, required
   "displayName": "My Package", // Optional, max 128 chars
   "author": "Dork Labs", // Optional, max 256 chars
@@ -129,7 +131,7 @@ dorkos package init <name> [--type agent|plugin|skill-pack|adapter] \
 
 **Skill-pack** — no additional fields.
 
-### `.claude-plugin/plugin.json` (Required for plugin, skill-pack, adapter)
+### `.claude-plugin/plugin.json` (Required for plugin, skill-pack, adapter, shape)
 
 ```json
 {
@@ -192,7 +194,7 @@ dorkos package validate [path]   # path defaults to cwd
 | ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | `MANIFEST_MISSING`        | No `.dork/` directory                                        | Run `dorkos package init` or create manually                              |
 | `MANIFEST_SCHEMA_INVALID` | Bad name (uppercase), bad version (not semver), missing type | Fix the specific field — name must be kebab-case, version must be `X.Y.Z` |
-| `CLAUDE_PLUGIN_MISSING`   | Plugin/skill-pack/adapter missing CC manifest                | Create `.claude-plugin/plugin.json` with name, version, description       |
+| `CLAUDE_PLUGIN_MISSING`   | Plugin/skill-pack/adapter/shape missing CC manifest          | Create `.claude-plugin/plugin.json` with name, version, description       |
 | `SKILL_INVALID`           | SKILL.md missing frontmatter or invalid fields               | Add `---` frontmatter block with name, description, kind                  |
 | `NAME_DIRECTORY_MISMATCH` | Directory named differently than manifest.name               | Rename directory or update manifest.name (warning only)                   |
 
@@ -236,7 +238,7 @@ The official marketplace at `dork-labs/marketplace` uses a same-repo monorepo pa
   "schemaVersion": 1,
   "plugins": {
     "my-package": {
-      "type": "agent", // agent | plugin | skill-pack | adapter
+      "type": "agent", // agent | plugin | skill-pack | adapter | shape
       "layers": ["agents", "tasks"],
       "icon": "🔍",
       "featured": true,
