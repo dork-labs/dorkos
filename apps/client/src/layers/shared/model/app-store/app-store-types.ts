@@ -47,6 +47,17 @@ export interface CoreSlice {
   recentCwds: RecentCwd[];
 
   /**
+   * ID of the agent registered at {@link selectedCwd}, or null when none is
+   * registered there (or resolution hasn't completed yet). Kept fresh by
+   * `useSyncCurrentAgentId`; transient — derived from the cwd, never persisted.
+   * Lets synchronous readers (the extension host) tell which agent is active
+   * without re-fetching.
+   */
+  currentAgentId: string | null;
+  /** Set the resolved current-agent id (null clears it). No-op when unchanged. */
+  setCurrentAgentId: (id: string | null) => void;
+
+  /**
    * Pending pre-launch runtime selection made from the status-bar chip (the
    * `?runtime=` choice), lifted here so every `useRuntimeChip` consumer — the
    * status bar and ChatPanel's command-palette query among them — reads one

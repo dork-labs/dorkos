@@ -1,6 +1,6 @@
 # DorkOS — Brand & Product Foundation
 
-> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house) and 2026-07-09 by the hero reframe. Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, the villain gained the vendor-silo pattern, and — 2026-07-09 — the primary tagline is now **"You, Multiplied."** with the coordination thesis demoted to manifesto line (the customer is the hero; the roof speaks about them, not about our theory). Persona set expanded the same day: two grounded non-developer operators (Ikechi, Lil — see `personas/`) and an anti-persona boundary redrawn on operator mentality. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections).
+> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house) and 2026-07-09 by the hero reframe. Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, the villain gained the vendor-silo pattern, and — 2026-07-09 — the primary tagline is now **"You, Multiplied."** with the coordination thesis demoted to manifesto line (the customer is the hero; the roof speaks about them, not about our theory). Persona set expanded the same day: two grounded non-developer operators (Ikechi, Lil — see `personas/`) and an anti-persona boundary redrawn on operator mentality. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections). Amended again 2026-07-17 by the Shapes naming addendum (§19; decision D3 in `plans/shapes-program.md`): the place-noun **Home Base** now supersedes "cockpit" and "mission control" in future copy. Existing occurrences of both terms are inventoried, not yet swapped — the copy-swaps are tracked separately in `plans/shapes-program.md` (site swap: S1; `meta/` swap: S3).
 
 ## 1. Executive Summary
 
@@ -596,3 +596,35 @@ It is for developers who:
 It is a tool for operators.
 
 Built by dorks. For dorks. Run by you.
+
+---
+
+## 19. Shapes — Naming Addendum (2026-07-17)
+
+Decision D3 of the Shapes program, ratified by the founder 2026-07-17. Full evidence trail: `research/20260717_shapes-byoa-positioning.md` §2; program plan: `plans/shapes-program.md`. This section governs vocabulary for **Shapes** — installable, forkable bundles (extensions, layout, agents, skills, connections, schedules) that change what DorkOS is for you. Shapes are a capability under active build, not a shipped pillar: the demo-claim gate applies (AGENTS.md → Product state) — none of the terms below appear in marketing copy until a reference Shape ships end-to-end.
+
+### Verb and noun
+
+- **Verb: "shape-shift(ing)."** The capability brand — what DorkOS does, not what DorkOS is. Use it as a modifier on a concrete noun ("the shape-shifting sidekick," "shape-shift into a CRM"), never as a standalone identity claim.
+- **Noun: "Shapes."** The installable, forkable unit — what you install, fork, and share. Fallback noun, held in reserve only if `shapes.inc` (a Discord AI-companion app — different category, same word) grows into an adjacent product category: **"Loadouts."**
+
+### Meme line
+
+**"Never its final form."** Built for spreading — forks, screenshots, social posts. Pairs with the verb; it is not a tagline in its own right (tagline governance stays in §12).
+
+### Explainer metaphor
+
+The **game console and cartridge**: same console, different cartridge, different machine. This is the five-second explanation of a Shape — DorkOS is the console, a Shape is the cartridge, installing one changes what the console is for without changing the console itself.
+
+### Narrative role
+
+DorkOS is the shape-shifting **sidekick**. The user is always the hero — this is the same line drawn in §10 ("Guide, not hero"): Shapes multiply what the user can do; DorkOS never becomes the protagonist.
+
+### Place-noun: "Home Base"
+
+**"Home Base" replaces "cockpit" and "mission control" in all future copy** — e.g., "your agents report back to base." It passes the hero test (§10, §12): the base is _yours_, not the product's. This is a naming decision, not yet a copy sweep: every existing "cockpit"/"mission control" occurrence in `meta/` stays as written until the follow-up swap lands (in `plans/shapes-program.md`: the site swap is S1; the `meta/` swap is S3).
+
+### Rejected
+
+- **"Malleable."** Academically flavored, boring for marketing. Survives only as a lineage footnote (Ink & Switch, "Malleable Software," June 2025) for Priya-tier credibility in a manifesto essay — never in customer-facing copy.
+- **"World's first meta-harness" as identity claim.** "Meta-harness" stays in category/SEO vocabulary (docs, comparison surfaces) but is never a brand identity claim — Databricks' Omnigent already self-describes that way (June 2026).

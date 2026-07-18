@@ -1,10 +1,5 @@
 import type { ExtensionAPI, ExtensionModule, ExtensionManifest } from '@dorkos/extension-api';
-import type {
-  ExtensionPointId,
-  ExtensionReadableState,
-  ExtensionEvent,
-  ExtensionEventKind,
-} from '@dorkos/extension-api';
+import type { ExtensionPointId, ExtensionEvent, ExtensionEventKind } from '@dorkos/extension-api';
 import type { DispatcherContext } from '@/layers/shared/lib/ui-action-dispatcher';
 
 /** A fully loaded and activated extension on the client side. */
@@ -44,10 +39,12 @@ export interface ExtensionAPIDeps {
   appStore: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getState: () => any;
-    subscribe: (
-      selector: (state: ExtensionReadableState) => unknown,
-      callback: (value: unknown) => void
-    ) => () => void;
+    /**
+     * Raw store subscribe — a single listener that fires on every state change.
+     * The factory layers selector projection and change-diffing on top (see
+     * `ExtensionAPI.subscribe`).
+     */
+    subscribe: (listener: (state: unknown, prevState: unknown) => void) => () => void;
   };
   /** Set of slot IDs rendered in the current host context. */
   availableSlots: Set<ExtensionPointId>;

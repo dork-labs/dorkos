@@ -58,6 +58,28 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
   };
 }
 
+/**
+ * Minimal reactive store matching the plain single-listener subscribe contract
+ * the factory expects. `setState` merges a partial and notifies listeners,
+ * mirroring how the real app store drives extension subscriptions.
+ */
+function makeReactiveStore(initial: Record<string, unknown>) {
+  let state = { ...initial };
+  const listeners = new Set<(s: unknown, prev: unknown) => void>();
+  return {
+    getState: () => state,
+    subscribe: (listener: (s: unknown, prev: unknown) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    setState: (partial: Record<string, unknown>) => {
+      const prev = state;
+      state = { ...state, ...partial };
+      for (const l of listeners) l(state, prev);
+    },
+  };
+}
+
 // --- Test suite ---
 
 describe('createExtensionAPI', () => {
@@ -325,6 +347,28 @@ describe('createExtensionAPI', () => {
       expect(state.activeSessionId).toBeNull();
       expect(state.agentId).toBeNull();
     });
+
+    it('resolves agentId from the store currentAgentId (cwd matched an agent)', () => {
+      vi.mocked(deps.appStore.getState).mockReturnValue({
+        selectedCwd: '/home/kai/project',
+        sessionId: 'sess-xyz',
+        currentAgentId: '01HZ0000000000000000000001',
+      });
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      expect(api.getState().agentId).toBe('01HZ0000000000000000000001');
+    });
+
+    it('leaves agentId null when the cwd matched no agent', () => {
+      vi.mocked(deps.appStore.getState).mockReturnValue({
+        selectedCwd: '/home/kai/no-agent',
+        sessionId: 'sess-xyz',
+        currentAgentId: null,
+      });
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      expect(api.getState().agentId).toBeNull();
+    });
   });
 
   // 10. subscribe
@@ -355,6 +399,43 @@ describe('createExtensionAPI', () => {
 
       const returned = api.subscribe(() => null, vi.fn());
       expect(returned).toBe(unsub);
+    });
+
+    it('fires the callback with the new agentId when the cwd resolves to a different agent', () => {
+      const store = makeReactiveStore({
+        selectedCwd: '/p/a',
+        sessionId: 's1',
+        currentAgentId: 'agent-a',
+      });
+      deps = makeDeps({ appStore: store as unknown as ExtensionAPIDeps['appStore'] });
+      const { api } = createExtensionAPI('my-ext', deps);
+      const received: unknown[] = [];
+
+      api.subscribe(
+        (s) => s.agentId,
+        (v) => received.push(v)
+      );
+      // A cwd switch updates both the cwd and the resolved agent id.
+      store.setState({ selectedCwd: '/p/b', currentAgentId: 'agent-b' });
+
+      expect(received).toEqual(['agent-b']);
+    });
+
+    it('does not fire when the selected agentId is unchanged', () => {
+      const store = makeReactiveStore({
+        selectedCwd: '/p/a',
+        sessionId: 's1',
+        currentAgentId: 'agent-a',
+      });
+      deps = makeDeps({ appStore: store as unknown as ExtensionAPIDeps['appStore'] });
+      const { api } = createExtensionAPI('my-ext', deps);
+      const callback = vi.fn();
+
+      api.subscribe((s) => s.agentId, callback);
+      // An unrelated field changes; the projected agentId does not.
+      store.setState({ sessionId: 's2' });
+
+      expect(callback).not.toHaveBeenCalled();
     });
   });
 
