@@ -23,7 +23,7 @@ export interface DurableEventsResult {
   status: number;
 }
 
-/** Options for {@link collectDurableEvents}. */
+/** Options for {@link collectDurableEvents} and {@link collectDurableEventsAt}. */
 export interface CollectDurableEventsOptions {
   /**
    * Stop condition: once satisfied the connection is destroyed and the
@@ -40,7 +40,7 @@ export interface CollectDurableEventsOptions {
 }
 
 /** Parse SSE wire text into frames, attaching the most recent `id:` to each. */
-function parseFrames(raw: string): SseFrame[] {
+export function parseFrames(raw: string): SseFrame[] {
   const frames: SseFrame[] = [];
   let id: string | undefined;
   let event = '';
@@ -58,6 +58,61 @@ function parseFrames(raw: string): SseFrame[] {
   return frames;
 }
 
+/** Build the `/events` request path for a session, with the optional resume cursor. */
+function eventsPath(sessionId: string, after: number | undefined): string {
+  const query = after !== undefined ? `?after=${after}` : '';
+  return `/api/sessions/${sessionId}/events${query}`;
+}
+
+/**
+ * Connect to an already-listening `/events` endpoint and collect SSE frames,
+ * resolving when `until` is satisfied (the connection is destroyed and the
+ * frames so far returned) or when the server ends the stream. The single
+ * implementation of the frame parser + `until` loop shared by both
+ * {@link collectDurableEvents} (which owns the server) and
+ * {@link collectDurableEventsAt} (which targets an existing port).
+ *
+ * @param reqOptions - Node `http.request` options (host, port, path, headers).
+ * @param until - Stop predicate over the frames collected so far.
+ * @returns The collected frames, raw text, headers, and status.
+ */
+function collectSseFrames(
+  reqOptions: http.RequestOptions,
+  until: ((frames: SseFrame[]) => boolean) | undefined
+): Promise<DurableEventsResult> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const req = http.request(reqOptions, (res) => {
+      let raw = '';
+      res.setEncoding('utf8');
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        req.destroy();
+        resolve({
+          frames: parseFrames(raw),
+          raw,
+          headers: res.headers,
+          status: res.statusCode ?? 0,
+        });
+      };
+      res.on('data', (chunk: string) => {
+        raw += chunk;
+        // Re-parse the full buffer each chunk: SSE frames may split across
+        // chunk boundaries, and full re-parsing keeps the predicate simple.
+        if (until?.(parseFrames(raw))) finish();
+      });
+      res.on('end', finish);
+    });
+    req.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    req.end();
+  });
+}
+
 /**
  * Open the durable `GET /api/sessions/:id/events` stream (ADR-0264: turn
  * delivery rides this stream, never the trigger-only POST response) against a
@@ -71,6 +126,7 @@ function parseFrames(raw: string): SseFrame[] {
  * @param app - Express app instance (from `createApp()` + `finalizeApp()`)
  * @param sessionId - Target session UUID
  * @param opts - Stop condition and resume signals; see {@link CollectDurableEventsOptions}
+ * @returns The collected frames, raw text, headers, and status.
  */
 export function collectDurableEvents(
   app: Express,
@@ -81,47 +137,56 @@ export function collectDurableEvents(
     const server = app.listen(0, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const query = opts.after !== undefined ? `?after=${opts.after}` : '';
-      let settled = false;
-      const req = http.request(
+      collectSseFrames(
         {
           host: '127.0.0.1',
           port,
-          path: `/api/sessions/${sessionId}/events${query}`,
+          path: eventsPath(sessionId, opts.after),
           method: 'GET',
           headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
         },
-        (res) => {
-          let raw = '';
-          res.setEncoding('utf8');
-          const finish = (): void => {
-            if (settled) return;
-            settled = true;
-            req.destroy();
-            server.close();
-            resolve({
-              frames: parseFrames(raw),
-              raw,
-              headers: res.headers,
-              status: res.statusCode ?? 0,
-            });
-          };
-          res.on('data', (chunk: string) => {
-            raw += chunk;
-            // Re-parse the full buffer each chunk: SSE frames may split across
-            // chunk boundaries, and full re-parsing keeps the predicate simple.
-            if (opts.until?.(parseFrames(raw))) finish();
-          });
-          res.on('end', finish);
-        }
-      );
-      req.on('error', (err) => {
-        if (settled) return;
-        settled = true;
-        server.close();
-        reject(err);
-      });
-      req.end();
+        opts.until
+      )
+        .then((result) => {
+          server.close();
+          resolve(result);
+        })
+        .catch((err) => {
+          server.close();
+          reject(err);
+        });
     });
   });
+}
+
+/**
+ * The URL-targeting sibling of {@link collectDurableEvents}: open the durable
+ * `/events` stream against an ALREADY-LISTENING server (a base URL from a
+ * separate process or an `app.listen(0)` the caller owns) and collect SSE
+ * frames with the same parser and `until` loop. This is the collector the eval
+ * harness uses for both the in-process (own `baseUrl`) and the credentialed
+ * child-process (a foreign port) modes — `collectDurableEvents` cannot serve
+ * the latter because it CREATES the server.
+ *
+ * @param baseUrl - Base URL of the running server (e.g. `http://127.0.0.1:53511`).
+ * @param sessionId - Target session id.
+ * @param opts - Stop condition and resume signals; see {@link CollectDurableEventsOptions}.
+ * @returns The collected frames, raw text, headers, and status.
+ */
+export function collectDurableEventsAt(
+  baseUrl: string,
+  sessionId: string,
+  opts: CollectDurableEventsOptions = {}
+): Promise<DurableEventsResult> {
+  const url = new URL(baseUrl);
+  return collectSseFrames(
+    {
+      host: url.hostname,
+      port: Number(url.port),
+      path: eventsPath(sessionId, opts.after),
+      method: 'GET',
+      headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
+    },
+    opts.until
+  );
 }

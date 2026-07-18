@@ -9,7 +9,8 @@
     "./db": "./src/db.ts",
     "./mock-factories": "./src/mock-factories.ts",
     "./react-helpers": "./src/react-helpers.tsx",
-    "./sse-helpers": "./src/sse-helpers.ts"
+    "./sse-helpers": "./src/sse-helpers.ts",
+    "./sse-test-helpers": "./src/sse-test-helpers.ts"
   },
   "scripts": {
     "lint": "eslint ."
