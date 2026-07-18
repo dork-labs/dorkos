@@ -17,11 +17,11 @@ provenance: { tracker: linear, issue: DOR-356 }
 
 Give the DorkOS marketplace a **controlled category vocabulary** — a closed, CI-checked list of 16 slugs — and the end-to-end plumbing that makes it discoverable: multi-membership `categories[]` on packages carried through the ADR-0236 sidecar, validator + scaffolder support, client facet chips wired to the already-reserved `?category=` URL param, per-category SEO landing pages on the marketing site, category-aware `marketplace_search` / `marketplace_recommend` MCP tools, and a mechanical backfill for the `dork-labs/marketplace` registry.
 
-The singular `category` field is **retained** as the Claude-Code-interop field and the package's **primary** category (`categories[0]`); the new plural `categories[]` is the DorkOS multi-membership signal and lives only in the sidecar (never inline in `marketplace.json`, which would break `claude plugin validate`).
+The singular `category` field is **retained** as the Claude-Code-interop field and the package's **primary** category (`categories[0]`), and it **stays a lenient string** — never the enum — so already-installed packages with legacy free-string categories keep parsing (see §B2's harness-consumer note). The new plural `categories[]` is the DorkOS multi-membership signal, is enum-typed, and lives only in the sidecar (never inline in `marketplace.json`, which would break `claude plugin validate`).
 
 ## Background / Problem Statement
 
-Today the registry uses **free-string** singular `category` values with no controlled vocabulary and no sidecar (`packages/marketplace/src/marketplace-json-schema.ts:216`, `manifest-schema.ts:98`). The cached `dork-labs/marketplace` registry has 12 packages spread across nine ad-hoc strings (`code-quality`, `security`, `documentation`, `integration`, `observability`, `release`, `development`, `productivity`, `workflow` — see ideation §5). Three consequences:
+Today the registry uses **free-string** singular `category` values with no controlled vocabulary and no sidecar (`packages/marketplace/src/marketplace-json-schema.ts:216`, `manifest-schema.ts:98`). The cached `dork-labs/marketplace` registry has 11 packages spread across nine ad-hoc strings (`code-quality`, `security`, `documentation`, `integration`, `observability`, `release`, `development`, `productivity`, `workflow` — see ideation §5). Three consequences:
 
 1. **No SEO surface.** The Shapes program (`plans/shapes-program.md`, success criterion 4) needs "≥6 category SEO routes with zero unverified claims." Static generation needs a **closed** set of slugs.
 2. **No multi-membership.** `linear-integration` is both project-management and an integration; `flow` is both agent-ops and project-management. A scalar `category` forces a wrong single choice.
@@ -31,7 +31,7 @@ The founder decided (2026-07-17, DOR-368) on **`categories[]` (multi) via the AD
 
 ## Goals
 
-- A **closed** 16-slug category vocabulary in code (a Zod enum), CI-checked so an off-list category fails validation.
+- A **closed** 16-slug category vocabulary in code (a Zod enum), CI-checked so an off-list `categories[]` entry fails validation.
 - `categories[]` multi-membership on packages via the ADR-0236 sidecar (`.claude-plugin/dorkos.json`), plus in the author-source `.dork/manifest.json`.
 - Singular `category` preserved as CC-interop + primary-category fallback, with a validator coherence rule (`category === categories[0]` when both present).
 - Client facet chips wiring the reserved `?category=` param; a clear empty state for a zero-result category.
@@ -47,6 +47,15 @@ The founder decided (2026-07-17, DOR-368) on **`categories[]` (multi) via the AD
 - No category-management admin UI; the vocabulary ships in code and changes via PR + migration.
 - No change to Claude Code's marketplace format; no tightening of the inbound-lenient `marketplace.json` parser (a foreign CC marketplace with any `category` string must still parse).
 - No Act-2 marketing of the business-seed categories (they exist as vocabulary; no shape claims them yet — the demo-claim gate holds).
+
+## Assumptions
+
+Restated from ideation §1, updated for the harness-consumer finding:
+
+1. **Multi-membership with a primary.** A package belongs to one or more categories; the singular `category` remains the primary category (`categories[0]`) and the Claude-Code-interop field.
+2. **The enum binds `categories[]` only.** The closed list constrains the `categories[]` field (sidecar + `.dork/manifest.json`) and the CI vocabulary check on our own registry. It never constrains the inbound `marketplace.json` parser (foreign CC marketplaces may carry any `category` string — the ADR-0236 inbound invariant), and it never constrains the singular `category` field, which stays a lenient `z.string()`: `packages/harness/src/sources/installed.ts:117` safeParses installed packages' on-disk manifests and returns `undefined` on failure, so an enum there would make legacy-categorized installed packages invisible to Harness projection (the DOR-264 regression class). The coherence refine (`category === categories[0]`, with `categories[0]` enum-typed) is the effective constraint for newly-authored packages.
+3. **Keyword/no-ML v1.** Category filtering and boosting are exact-slug set operations, consistent with the existing `recommend-engine` non-goal.
+4. **External backfill.** The `dork-labs/marketplace` registry backfill executes in that repo; this spec ships the mechanical map + checklist (§H) so it is a listable mechanical change, not research.
 
 ## Technical Dependencies
 
@@ -206,12 +215,18 @@ import { MarketplaceCategorySchema } from './categories.js';
     .optional(),
 ```
 
-**B2 — Author manifest (`packages/marketplace/src/manifest-schema.ts`).** On `BasePackageManifestSchema`: add the same `categories` field, and **tighten** the DorkOS-only singular `category` to the enum (it is a DorkOS surface, not CC-inbound). Add a top-level cross-field refine for coherence:
+**B2 — Author manifest (`packages/marketplace/src/manifest-schema.ts`).** On `BasePackageManifestSchema`: add the same enum-typed `categories` field, and **keep the singular `category` lenient** (`z.string().max(64)` — exactly as it is today at line 98; do **not** tighten it to the enum). Add a top-level cross-field refine for coherence:
 
 ```typescript
-// replace line 98:
-  /** Primary category (controlled). Kept for CC-interop; equals categories[0]. */
-  category: MarketplaceCategorySchema.optional(),
+// line 98 stays LENIENT — do NOT replace it with the enum (see the harness note below):
+  /**
+   * Primary category. Kept CC-interop and deliberately LENIENT (`z.string()`,
+   * not the enum): installed packages' on-disk manifests may carry legacy
+   * free-string categories, and the harness safeParses them (see below).
+   * Coherence with the enum-typed `categories[0]` provides the effective
+   * constraint for newly-authored packages.
+   */
+  category: z.string().max(64).optional(),
   /** Controlled multi-membership categories (ADR-0236). Dedup, max 4. */
   categories: z
     .array(MarketplaceCategorySchema)
@@ -219,6 +234,8 @@ import { MarketplaceCategorySchema } from './categories.js';
     .refine((c) => new Set(c).size === c.length, 'categories must be unique')
     .optional(),
 ```
+
+**Why `category` stays lenient (blast-radius consumer):** `packages/harness/src/sources/installed.ts:117` (`readPluginManifest`) runs `MarketplacePackageManifestSchema.safeParse` over every installed package's on-disk `.dork/manifest.json` during Harness projection and **returns `undefined` on failure** — a failed parse makes the package invisible and Harness Sync silently projects zero files (exactly the DOR-264 class that function's own docstring records). Manifests installed before this spec carry free-string categories (`workflow`, `code-quality`, …), so an enum on the singular field would break every one of them on upgrade. The closed vocabulary is enforced where it is _new_: the enum-typed `categories[]`, the coherence refine below (`category === categories[0]` forces the primary onto the enum whenever `categories` is present), the scaffolder (§D2), and the registry CI gate (§H).
 
 The coherence refine must sit **outside** the discriminated union (Zod cannot `.refine` a `discriminatedUnion` member and keep the discriminator). Wrap the union:
 
@@ -275,7 +292,7 @@ if (filters.category) {
 
 ### D. Validator + scaffolder + CI
 
-**D1 — Validator (`packages/marketplace/src/package-validator.ts`).** No new branch is needed for the _hard_ case: an off-list category or an incoherent `category`/`categories[0]` now fails `MarketplacePackageManifestSchema.safeParse` and is surfaced as the existing `MANIFEST_SCHEMA_INVALID` error (lines 165-176). Add **one advisory warning** for the soft case — a package with no categories at all:
+**D1 — Validator (`packages/marketplace/src/package-validator.ts`).** No new branch is needed for the _hard_ case: an off-list entry inside `categories[]` or an incoherent `category`/`categories[0]` pair now fails `MarketplacePackageManifestSchema.safeParse` and is surfaced as the existing `MANIFEST_SCHEMA_INVALID` error (lines 165-176). A legacy free-string **singular** `category` deliberately still parses (§B2 — the singular field is lenient). Add **one advisory warning** for the soft case — a package with no categories at all:
 
 ```typescript
 if (!manifest.category && !manifest.categories?.length) {
@@ -342,7 +359,7 @@ Clone the pattern of `apps/site/src/app/(marketing)/features/category/[category]
 
 ### G. MCP tools — category-awareness
 
-**G1 — Merge the sidecar (both tools).** Today `collectEntries` (`tool-search.ts:104`) and the `tool-recommend` collector (`tool-recommend.ts:67`) iterate raw `json.plugins` and never fetch the sidecar, so no sidecar field is visible. Add a sidecar fetch + `mergeMarketplace` (the fetcher already exposes `fetchDorkosSidecar`, used by the HTTP route at `marketplace.ts:646`). Aggregate `MergedMarketplaceEntry` (with `dorkos?.categories`) instead of bare `MarketplaceJsonEntry`.
+**G1 — Merge the sidecar (both tools).** Today `collectEntries` (`tool-search.ts:104`) and the `tool-recommend` collector (`tool-recommend.ts:70`) iterate raw `json.plugins` and never fetch the sidecar, so no sidecar field is visible. Add a sidecar fetch + `mergeMarketplace` (the fetcher already exposes `fetchDorkosSidecar`, used by the HTTP route at `marketplace.ts:646`). Aggregate `MergedMarketplaceEntry` (with `dorkos?.categories`) instead of bare `MarketplaceJsonEntry`.
 
 **G2 — `marketplace_search` (`tool-search.ts`).** Tighten the `category` input to `MarketplaceCategorySchema.optional()`; change the filter (line 142) to membership with singular fallback; add `categories` to the result payload (line 82):
 
@@ -386,7 +403,7 @@ Backfill sidecar (illustrative, complete for all 12):
 }
 ```
 
-(11 rows — the 12th cached entry, if any duplicate, folds in; the current cache lists 11 distinct plugins after de-dupe. The map is exhaustive over the live registry at spec time.)
+(11 packages — exhaustive over the live registry at spec time.)
 
 ## User Experience
 
@@ -398,7 +415,7 @@ Backfill sidecar (illustrative, complete for all 12):
 ## Testing Strategy
 
 - **Unit — vocabulary (`categories.ts`):** `CATEGORY_LABELS`/`CATEGORY_DESCRIPTIONS` key-sets equal `MARKETPLACE_CATEGORIES`; `primaryCategory` prefers `categories[0]`, falls back to `category`, returns `undefined` when both absent; `asMarketplaceCategory` narrows valid / rejects invalid.
-- **Unit — schemas:** sidecar accepts `categories: ["security"]`, rejects `["not-a-cat"]` and duplicates; author manifest rejects `category` ∉ enum and rejects `category !== categories[0]`; accepts coherent pairs and singular-only legacy manifests.
+- **Unit — schemas:** sidecar accepts `categories: ["security"]`, rejects `["not-a-cat"]` and duplicates; author manifest **accepts a legacy free-string singular-only `category`** (e.g. `"workflow"` — the harness regression guard, §B2), rejects an off-list entry inside `categories[]`, rejects `category !== categories[0]`, accepts coherent pairs and categories-only manifests.
 - **Unit — flatten/merge:** `flattenMergedEntry` surfaces `entry.dorkos?.categories` and sets `category = categories[0]`; a package with only inline `category` (no sidecar) still yields `category` and `categories: undefined`.
 - **Unit — client filter:** `filterPackages` matches a package whose `categories[]` includes the slug; matches a legacy singular-`category` package; excludes non-members.
 - **Component — `MarketplaceHeader`:** chips render for present categories only; clicking sets/clears `?category=`; `aria-pressed` reflects state (jsdom + mock `Transport` per `.claude/rules/testing.md`).
