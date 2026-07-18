@@ -26,7 +26,9 @@
       "activeForm": "Adding the connectorConformance suite and FakeConnectorProvider",
       "size": "md",
       "priority": "high",
-      "dependencies": ["1.1"],
+      "dependencies": [
+        "1.1"
+      ],
       "parallelWith": []
     },
     {
@@ -38,7 +40,10 @@
       "activeForm": "Implementing the raw-MCP baseline adapter",
       "size": "md",
       "priority": "high",
-      "dependencies": ["1.1", "1.2"],
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
       "parallelWith": []
     },
     {
@@ -46,12 +51,16 @@
       "phase": 2,
       "phaseName": "P2 — Custody-disclosure primitive",
       "subject": "[connector-gateway] [P2] Custody-disclosure module: exact plain-language copy per custody class, no account row renderable without a disclosure line",
-      "description": "Add apps/server/src/services/connectors/custody-disclosure.ts exposing disclosure copy keyed by ConnectorCustody. Copy is verbatim from spec §Detailed Design 4 (writing-for-humans bar): managed (Composio, 'those keys live on Composio's servers, not on this computer'), self-host (Nango, 'stored in your database, on infrastructure you control'), external (raw MCP, '{server} manages its own sign-in', with a server-name interpolation slot). The module is the single source of truth for disclosure text so the connect picker and the per-account list render identical, truthful copy. Structural rule enforced by test: there is no code path that renders a ConnectedAccount row or a connect confirmation without a disclosure line for its custody class (a missing custody => a loud failure, not a blank). Ship this WITH the port so no provider can be added without a truthful disclosure (the demo-claim gate made structural). Follow the writing-for-humans skill. Acceptance: custody-disclosure.ts returns the exact copy for all three classes; a unit test asserts each class's copy and that an unknown/absent custody throws rather than renders blank. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint && pnpm vitest run apps/server/src/services/connectors/__tests__/custody-disclosure.test.ts. Cites: spec §Detailed Design 4 (exact copy), §Security Considerations (disclosure is a security control), §Decisions (LOCKED 5). Depends on 1.1.",
+      "description": "Add apps/server/src/services/connectors/custody-disclosure.ts exposing disclosure copy keyed by ConnectorCustody. Copy is verbatim from spec §Detailed Design 4 (writing-for-humans bar): managed (Composio — MUST contain, verbatim, the accepted D4 ADR's canonical sentence from decisions/260718-045630-connector-provider-custody-composio-nango-raw-mcp.md §Custody disclosure: 'Composio stores your connected accounts' login access in its own secure vault, not on your computer.'), self-host (Nango, 'stored in your database, on infrastructure you control'), external (raw MCP, '{server} manages its own sign-in', with a server-name interpolation slot). The module is the single source of truth for disclosure text so the connect picker and the per-account list render identical, truthful copy. Structural rule enforced by test: there is no code path that renders a ConnectedAccount row or a connect confirmation without a disclosure line for its custody class (a missing custody => a loud failure, not a blank). Ship this WITH the port so no provider can be added without a truthful disclosure (the demo-claim gate made structural). Follow the writing-for-humans skill. Add a unit test asserting the managed copy contains the ADR's canonical sentence exactly, so a future copy edit cannot silently drop it. Acceptance: custody-disclosure.ts returns the exact copy for all three classes (managed copy contains the canonical ADR sentence verbatim); a unit test asserts each class's copy and that an unknown/absent custody throws rather than renders blank. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint && pnpm vitest run apps/server/src/services/connectors/__tests__/custody-disclosure.test.ts. Cites: spec §Detailed Design 4 (exact copy), §Security Considerations (disclosure is a security control), §Decisions (LOCKED 5). Depends on 1.1.",
       "activeForm": "Building the custody-disclosure copy module",
       "size": "sm",
       "priority": "high",
-      "dependencies": ["1.1"],
-      "parallelWith": ["1.3"]
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3"
+      ]
     },
     {
       "id": "3.1",
@@ -62,8 +71,13 @@
       "activeForm": "Adding the connected_accounts table and migration",
       "size": "sm",
       "priority": "high",
-      "dependencies": ["1.1"],
-      "parallelWith": ["1.3", "2.1"]
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3",
+        "2.1"
+      ]
     },
     {
       "id": "3.2",
@@ -74,19 +88,24 @@
       "activeForm": "Building the ConnectorRegistry and account routing",
       "size": "md",
       "priority": "high",
-      "dependencies": ["1.1", "3.1"],
+      "dependencies": [
+        "1.1",
+        "3.1"
+      ],
       "parallelWith": []
     },
     {
       "id": "3.3",
       "phase": 3,
       "phaseName": "P3 — Registry + connected-account table + routing",
-      "subject": "[connector-gateway] [P3] recommendConnector(serviceSlug) routing surface: Relay-adapter > gateway > raw-mcp precedence, reading relay AdapterManager.manifests",
-      "description": "Add apps/server/src/services/connectors/routing.ts with ConnectorRecommendationKindSchema ('relay-adapter'|'gateway'|'raw-mcp'), ConnectorRecommendationSchema (kind, target, provider?, rank, reason, custody?), and recommendConnector(serviceSlug): ConnectorRecommendation[] sorted ascending by rank. Precedence (spec §Detailed Design 5): rank 0 = a purpose-built relay adapter if relay AdapterManager.manifests holds a manifest whose type matches serviceSlug (e.g. 'slack') — the relay manifests map (adapter-manager.ts) is the authority for 'is there a purpose-built adapter'; rank 1 = a registered gateway provider that lists serviceSlug in listToolkits() (prefer Composio managed default unless a self-host default is configured), carrying custody for the picker; rank 2 = a known remote MCP server. THIS IS THE CRUX FOR W4: recommendConnector('slack')[0] must be { kind:'relay-adapter', target:'slack', rank:0 } ranked ABOVE any gateway entry; recommendConnector('gmail')[0] must be { kind:'gateway', target:'gmail' } (no relay adapter for Gmail). Add the two schemas to the @dorkos/shared connector-provider module (or a routing subpath) so the client/eval can import them. Acceptance: 'slack' tops with relay-adapter above gateway; 'gmail' tops with gateway; a service with neither returns raw-mcp only or empty; schemas exported. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/shared build && pnpm vitest run apps/server/src/services/connectors/__tests__/routing.test.ts. Cites: spec §Detailed Design 5 (exact precedence + schemas), §Testing Strategy (routing eval), §References (adapter-manager.ts manifests). Depends on 3.2.",
+      "subject": "[connector-gateway] [P3] recommendConnector(serviceSlug) routing surface: Relay-adapter > gateway > raw-mcp precedence, reading relay AdapterManager.getManifest/getCatalog",
+      "description": "Add apps/server/src/services/connectors/routing.ts with ConnectorRecommendationKindSchema ('relay-adapter'|'gateway'|'raw-mcp'), ConnectorRecommendationSchema (kind, target, provider?, rank, reason, custody?), and recommendConnector(serviceSlug): ConnectorRecommendation[] sorted ascending by rank. Precedence (spec §Detailed Design 5): rank 0 = a purpose-built relay adapter if relay AdapterManager.getManifest(serviceSlug) (adapter-manager.ts:905-907) returns a manifest (e.g. 'slack'); use getCatalog() (:882-903) for the full discovery list — read the catalog ONLY through these public accessors, never the private manifests field; rank 1 = a registered gateway provider that lists serviceSlug in listToolkits() (prefer Composio managed default unless a self-host default is configured), carrying custody for the picker; rank 2 = a known remote MCP server. THIS IS THE CRUX FOR W4: recommendConnector('slack')[0] must be { kind:'relay-adapter', target:'slack', rank:0 } ranked ABOVE any gateway entry; recommendConnector('gmail')[0] must be { kind:'gateway', target:'gmail' } (no relay adapter for Gmail). Add the two schemas to the @dorkos/shared connector-provider module (or a routing subpath) so the client/eval can import them. Acceptance: 'slack' tops with relay-adapter above gateway; 'gmail' tops with gateway; a service with neither returns raw-mcp only or empty; schemas exported. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/shared build && pnpm vitest run apps/server/src/services/connectors/__tests__/routing.test.ts. Cites: spec §Detailed Design 5 (exact precedence + schemas), §Testing Strategy (routing eval), §References (adapter-manager.ts getManifest :905-907 / getCatalog :882-903). Depends on 3.2.",
       "activeForm": "Building the recommendConnector routing surface",
       "size": "md",
       "priority": "high",
-      "dependencies": ["3.2"],
+      "dependencies": [
+        "3.2"
+      ],
       "parallelWith": []
     },
     {
@@ -98,7 +117,11 @@
       "activeForm": "Adding the /api/connectors REST routes",
       "size": "md",
       "priority": "high",
-      "dependencies": ["3.2", "3.3", "2.1"],
+      "dependencies": [
+        "3.2",
+        "3.3",
+        "2.1"
+      ],
       "parallelWith": []
     },
     {
@@ -106,11 +129,14 @@
       "phase": 4,
       "phaseName": "P4 — Session tool exposure + consent binding",
       "subject": "[connector-gateway] [P4] Wire toolServerForAccount -> setMcpServerFactory (two Gmail accounts = two named servers, no provider leakage), the surfaced null branch, and per-account->session attach binding",
-      "description": "Wire connected accounts into a session as MCP tool servers through the EXISTING seam only (spec §Detailed Design 3) — add no new session-side machinery. The connector service assembles McpAppServerConnection[] for the accounts attached to a session and injects them via AgentRuntime.setMcpServerFactory; RuntimeCapabilities.supportsMcp gates receipt. Each server is NAMED by toolkit + label (e.g. 'gmail-personal', 'gmail-work') — the injected config carries NO provider identity (assert: no 'composio'/'nango' string in any injected server name or config). THE NULL BRANCH (LOCKED): when toolServerForAccount returns null (expired/revoked/unavailable), skip that account and surface a per-account warning { accountId, label, reason } in the session's connector status — never a throw, never a silent drop. CONSENT BINDING (RESOLVED per-account->session, modeled on relay BindingSubsystem): add POST/DELETE /api/sessions/:id/connectors/:accountId to attach/detach; a session receives a tool server ONLY for explicitly attached accounts; re-show the custody disclosure at attach. Cache the resolved McpAppServerConnection per (session,account) for the session lifetime; invalidate on status change; never cache secrets. Acceptance: two attached Gmail accounts inject two distinct named MCP servers with no provider string; a null toolServerForAccount surfaces a warning rather than throwing; an unattached account is never injected; attach re-shows disclosure. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint && pnpm vitest run apps/server/src/services/connectors/__tests__/session-exposure.test.ts. Cites: spec §Detailed Design 3, §Goals G2/G3, §Testing Strategy (session-exposure units), §Security Considerations, §Decisions resolved (OQ5 per-account->session). Depends on 3.2, 3.4.",
+      "description": "Wire connected accounts into a session as MCP tool servers through the EXISTING seam only (spec §Detailed Design 3) — add no new session-side machinery. The connector service assembles McpAppServerConnection[] for the accounts attached to a session and injects them via AgentRuntime.setMcpServerFactory. SHAPE ADAPTATION: setMcpServerFactory takes a factory returning Record<string, unknown> keyed by server name (agent-runtime.ts:721), so fold the per-account array into that record — each McpAppServerConnection becomes one named entry ('gmail-personal', 'gmail-work'). RuntimeCapabilities.supportsMcp is the gate for runtimes without the seam: supportsMcp:false (or a missing setMcpServerFactory) means the session receives no connector tool servers, surfaced as a session-level notice, not an error. Each server is NAMED by toolkit + label (e.g. 'gmail-personal', 'gmail-work') — the injected config carries NO provider identity (assert: no 'composio'/'nango' string in any injected server name or config). THE NULL BRANCH (LOCKED): when toolServerForAccount returns null (expired/revoked/unavailable), skip that account and surface a per-account warning { accountId, label, reason } in the session's connector status — never a throw, never a silent drop. CONSENT BINDING (RESOLVED per-account->session, modeled on relay BindingSubsystem): add POST/DELETE /api/sessions/:id/connectors/:accountId to attach/detach; a session receives a tool server ONLY for explicitly attached accounts; re-show the custody disclosure at attach. Cache the resolved McpAppServerConnection per (session,account) for the session lifetime; invalidate on status change; never cache secrets. Acceptance: two attached Gmail accounts inject two distinct named MCP servers with no provider string; a null toolServerForAccount surfaces a warning rather than throwing; an unattached account is never injected; attach re-shows disclosure. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint && pnpm vitest run apps/server/src/services/connectors/__tests__/session-exposure.test.ts. Cites: spec §Detailed Design 3, §Goals G2/G3, §Testing Strategy (session-exposure units), §Security Considerations, §Decisions resolved (OQ5 per-account->session). Depends on 3.2, 3.4.",
       "activeForm": "Wiring session tool exposure and the consent binding",
       "size": "lg",
       "priority": "high",
-      "dependencies": ["3.2", "3.4"],
+      "dependencies": [
+        "3.2",
+        "3.4"
+      ],
       "parallelWith": []
     },
     {
@@ -122,7 +148,11 @@
       "activeForm": "Implementing the Composio managed adapter",
       "size": "lg",
       "priority": "high",
-      "dependencies": ["1.2", "3.2", "4.1"],
+      "dependencies": [
+        "1.2",
+        "3.2",
+        "4.1"
+      ],
       "parallelWith": []
     },
     {
@@ -134,31 +164,46 @@
       "activeForm": "Establishing connector distribution and docs",
       "size": "md",
       "priority": "medium",
-      "dependencies": ["5.1"],
-      "parallelWith": ["6.2"]
+      "dependencies": [
+        "5.1"
+      ],
+      "parallelWith": [
+        "6.2"
+      ]
     },
     {
       "id": "6.2",
       "phase": 6,
       "phaseName": "P6 — Distribution + W4 eval hooks",
       "subject": "[connector-gateway] [P6] Wire the two W4 connector evals against this interface: 'Connect to my Gmail' (gateway) + 'Connect to Slack' (routes to Relay adapter)",
-      "description": "Express the two W4 connector evals (plans/shapes-program.md W4) against the ConnectorProvider interface, in packages/evals (or the agreed eval harness). 'CONNECT TO MY GMAIL' (default-gateway eval; CI vs a MOCK OAuth provider, real weekly per D5): assert recommendConnector('gmail')[0].kind === 'gateway'; drive startConnect('gmail') -> pollConnect to an 'active' ConnectedAccount; connect a second Gmail with a distinct label -> listAccounts({toolkit:'gmail'}) returns TWO distinct ConnectedAccountIds, both yielding a non-null toolServerForAccount; assert the injected session tool servers carry no provider string (G2). 'CONNECT TO SLACK' (routing eval): assert recommendConnector('slack')[0] is { kind:'relay-adapter', target:'slack' } ranked ABOVE any gateway entry — proving the agent picks the purpose-built Relay Slack adapter over the generic gateway. These are the two evals spec §Testing Strategy G5 requires be expressible against the interface. Acceptance: both evals run green against mock providers in CI; the Gmail eval proves two-account addressing with no provider leakage; the Slack eval proves relay-adapter-first routing. Verify: pnpm vitest run packages/evals/src/__tests__/connector-gmail.test.ts packages/evals/src/__tests__/connector-slack-routing.test.ts. Cites: spec §Testing Strategy (the two W4 evals), §Goals G5, §Detailed Design 5, plans/shapes-program.md W4. Depends on 3.3, 4.1, 5.1.",
+      "description": "Express the two W4 connector evals (plans/shapes-program.md W4) against the ConnectorProvider interface, in packages/evals (or the agreed eval harness). 'CONNECT TO MY GMAIL' (default-gateway eval; CI vs a MOCK OAuth provider, real weekly per D5): assert recommendConnector('gmail')[0].kind === 'gateway'; drive startConnect('gmail') -> pollConnect to an 'active' ConnectedAccount; connect a second Gmail with a distinct label -> listAccounts({toolkit:'gmail'}) returns TWO distinct ConnectedAccountIds, both yielding a non-null toolServerForAccount; assert the injected session tool servers carry no provider string (G2). 'CONNECT TO SLACK' (routing eval): assert recommendConnector('slack')[0] is { kind:'relay-adapter', target:'slack' } ranked ABOVE any gateway entry — proving the agent picks the purpose-built Relay Slack adapter over the generic gateway. These are the two evals spec §Testing Strategy G5 requires be expressible against the interface. ORACLE REFINEMENT OF EVAL 13 (specs/eval-harness/02-specification.md:286 — 'a credential ref is persisted via credential-provider.ts'): on the managed gateway path the persisted reference is the VENDOR API-KEY ref (the Composio key's file: reference), never per-account token refs — upstream OAuth tokens live in the vendor vault and never touch DorkOS's credential store. Implement the refined oracle; do not implement the stale per-account-ref assertion. Acceptance: both evals run green against mock providers in CI; the Gmail eval proves two-account addressing with no provider leakage; the Slack eval proves relay-adapter-first routing. Verify: pnpm vitest run packages/evals/src/__tests__/connector-gmail.test.ts packages/evals/src/__tests__/connector-slack-routing.test.ts. Cites: spec §Testing Strategy (the two W4 evals), §Goals G5, §Detailed Design 5, plans/shapes-program.md W4. Depends on 3.3, 4.1, 5.1.",
       "activeForm": "Wiring the two W4 connector evals",
       "size": "md",
       "priority": "high",
-      "dependencies": ["3.3", "4.1", "5.1"],
-      "parallelWith": ["6.1"]
+      "dependencies": [
+        "3.3",
+        "4.1",
+        "5.1"
+      ],
+      "parallelWith": [
+        "6.1"
+      ]
     },
     {
       "id": "7.1",
       "phase": 7,
       "phaseName": "P7 — Nango adapter (gated follow-on)",
       "subject": "[connector-gateway] [P7] Build-time self-host re-check, then the Nango adapter (custody:'self-host'): file: refs, MANDATORY NANGO_ENCRYPTION_KEY, wrap Auth+Proxy (no Enterprise MCP dependency)",
-      "description": "GATED FOLLOW-ON. FIRST re-run the self-host maturity re-check (spec OQ2 / spike §4.1): compare Nango vs oomol-lab/open-connector at this moment (a second maintainer/vendor? a >v1.3.0 release? a measurable adoption jump?) and record the outcome in the PR; only proceed with the pick the evidence supports. Then add apps/server/src/services/connectors/providers/nango.ts implementing ConnectorProvider (spike §1.3): capabilities type 'nango', supportsMultiAccount:true (via connectionId + tags), custody:'self-host', exposesOverMcp:true. Store the Nango base URL + secret key as file: references via CredentialStore (DOR-280 funnel), resolved in-memory only. ENFORCE NANGO_ENCRYPTION_KEY: the adapter/setup refuses to operate (loud, helpful error) unless the 256-bit base64 key is set, or the 'tokens safe in your infra' promise is false (spec §Detailed Design 4, §Security Considerations). WRAP NANGO'S FREE AUTH+PROXY into DorkOS MCP tools for toolServerForAccount — do NOT depend on Nango's Enterprise-gated MCP server (spike §1.3). connectionId <-> ConnectedAccountId mapping in one place; label from a Nango tag. Fill in the docs/connectors Nango guide with the mandatory-key gate. CI uses a mock Nango; real self-host runs are weekly. Acceptance: the re-check outcome is recorded; nango.ts passes connectorConformance against a mock; startup/adapter refuses without NANGO_ENCRYPTION_KEY; no Enterprise MCP dependency; only base URL + secret key stored as refs. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint && pnpm vitest run apps/server/src/services/connectors/providers/__tests__/nango.test.ts. Cites: spec §Detailed Design 4 (encryption enforcement), §Open Questions OQ2, spike §1.3/§4.1/§6 (Nango specifics + re-check). Depends on 1.2, 4.1.",
+      "description": "GATED FOLLOW-ON (gating encoded in dependencies: requires the Composio adapter 5.1 and the eval hooks 6.2 — the whole first implementation phase — to have landed, not phase framing alone). FIRST re-run the self-host maturity re-check (spec OQ2 / spike §4.1): compare Nango vs oomol-lab/open-connector at this moment (a second maintainer/vendor? a >v1.3.0 release? a measurable adoption jump?) and record the outcome in the PR; only proceed with the pick the evidence supports. Then add apps/server/src/services/connectors/providers/nango.ts implementing ConnectorProvider (spike §1.3): capabilities type 'nango', supportsMultiAccount:true (via connectionId + tags), custody:'self-host', exposesOverMcp:true. Store the Nango base URL + secret key as file: references via CredentialStore (DOR-280 funnel), resolved in-memory only. ENFORCE NANGO_ENCRYPTION_KEY: the adapter/setup refuses to operate (loud, helpful error) unless the 256-bit base64 key is set, or the 'tokens safe in your infra' promise is false (spec §Detailed Design 4, §Security Considerations). WRAP NANGO'S FREE AUTH+PROXY into DorkOS MCP tools for toolServerForAccount — do NOT depend on Nango's Enterprise-gated MCP server (spike §1.3). connectionId <-> ConnectedAccountId mapping in one place; label from a Nango tag. Fill in the docs/connectors Nango guide with the mandatory-key gate. CI uses a mock Nango; real self-host runs are weekly. Acceptance: the re-check outcome is recorded; nango.ts passes connectorConformance against a mock; startup/adapter refuses without NANGO_ENCRYPTION_KEY; no Enterprise MCP dependency; only base URL + secret key stored as refs. Verify: pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint && pnpm vitest run apps/server/src/services/connectors/providers/__tests__/nango.test.ts. Cites: spec §Detailed Design 4 (encryption enforcement), §Open Questions OQ2, spike §1.3/§4.1/§6 (Nango specifics + re-check). Depends on 1.2, 4.1.",
       "activeForm": "Building the Nango self-host adapter after the re-check",
       "size": "lg",
       "priority": "medium",
-      "dependencies": ["1.2", "4.1"],
+      "dependencies": [
+        "1.2",
+        "4.1",
+        "5.1",
+        "6.2"
+      ],
       "parallelWith": []
     }
   ]

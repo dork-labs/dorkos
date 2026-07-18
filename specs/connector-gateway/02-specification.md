@@ -204,7 +204,7 @@ The port speaks one `ConnectedAccountId`. A backend maps it to its own handle (`
 
 ### 3. Session tool exposure (the MCP seam, null branch, consent)
 
-- **Path (reused, nothing new):** the connector service assembles the `McpAppServerConnection[]` for the accounts a session is authorized to use and injects them through `AgentRuntime.setMcpServerFactory` / `getMcpServerConfig`. `RuntimeCapabilities.supportsMcp` gates whether a runtime can receive them.
+- **Path (reused, nothing new):** the connector service assembles the `McpAppServerConnection[]` for the accounts a session is authorized to use and injects them through `AgentRuntime.setMcpServerFactory` / `getMcpServerConfig`. **Shape adaptation:** `setMcpServerFactory` takes a factory returning a `Record<string, unknown>` keyed by server name (`agent-runtime.ts:721`), so the connector service folds the per-account array into that record — each `McpAppServerConnection` becomes one named entry (`gmail-personal`, `gmail-work`). `RuntimeCapabilities.supportsMcp` is the gate: a runtime without the seam (`supportsMcp: false`, or no `setMcpServerFactory`) simply receives no connector tool servers, surfaced as a session-level notice rather than an error.
 - **The null branch (LOCKED, spike-review correction).** `toolServerForAccount` returns `McpAppServerConnection | null`. When null, that account is **skipped and surfaced** as a per-account warning in the session's connector status (`{ accountId, label, reason: 'expired' | 'revoked' | 'unavailable' }`) — mirroring the aggregation-degradation pattern. It is never a thrown error and never a silent drop. The accounts settings UI shows the same status so the user can reconnect.
 - **Consent gate (RESOLVED per-account→session).** A session gets a tool server only for accounts explicitly attached to it, modeled on relay's `BindingSubsystem` ("this connected account is exposed to this session"). Attaching is the consent point; custody is disclosed at connect and re-shown at attach.
 
@@ -214,7 +214,9 @@ Custody is where "be honest by design" bites hardest — a connector moves the u
 
 **Managed (Composio) — tokens leave the machine:**
 
-> "Connecting Gmail takes you to Google to sign in. Our connector service, Composio, then keeps that connection in its secure vault so your agents can act for you. Your password is never shared, and you can disconnect anytime. One thing to know up front: those keys live on Composio's servers, not on this computer."
+> "Connecting Gmail takes you to Google to sign in. Composio stores your connected accounts' login access in its own secure vault, not on your computer. Your agents can then act for you; your password is never shared, and you can disconnect anytime."
+
+The second sentence is **verbatim from the accepted D4 ADR** (`decisions/260718-045630-connector-provider-custody-composio-nango-raw-mcp.md` §Custody disclosure), which mandates that product copy reuse it exactly. This block is the single source of truth task 2.1 locks — any future edit must keep the ADR sentence intact.
 
 **Self-host (Nango) — tokens stay in your infrastructure:**
 
@@ -254,7 +256,7 @@ export type ConnectorRecommendation = z.infer<typeof ConnectorRecommendationSche
 
 **`recommendConnector(serviceSlug): ConnectorRecommendation[]`** (sorted ascending by `rank`), built in `apps/server/src/services/connectors/routing.ts`:
 
-1. **rank 0 — Relay adapter**, if `relay AdapterManager.manifests` holds a manifest whose type matches `serviceSlug` (e.g. `slack`). Reason: "Slack has a purpose-built two-way adapter in DorkOS — richer than the generic connector." This is a real seam: the relay `manifests` map (`adapter-manager.ts`) is the authority for "is there a purpose-built adapter for this service?"
+1. **rank 0 — Relay adapter**, if the relay `AdapterManager.getManifest(serviceSlug)` (`adapter-manager.ts:905-907`) returns a manifest (e.g. `slack`); `getCatalog()` (`:882-903`) lists the full set for discovery. Reason: "Slack has a purpose-built two-way adapter in DorkOS — richer than the generic connector." This is a real seam: the relay adapter catalog, read through these **public accessors** (never the private `manifests` field), is the authority for "is there a purpose-built adapter for this service?"
 2. **rank 1 — gateway**, if a `ConnectorProvider` gateway backend is registered and lists `serviceSlug` in `listToolkits()`. Prefers the managed default (Composio) unless the operator configured a self-host default (Nango). Carries `custody` for the picker.
 3. **rank 2 — raw-mcp**, if a known remote MCP server exists for the service.
 
@@ -273,7 +275,7 @@ Connectors ship as the existing marketplace `adapter` type with `adapterType: 'c
 | `packages/test-utils/src/connector-conformance.ts`          | **new**           | `connectorConformance(makeProvider)` suite + `FakeConnectorProvider`.                              |
 | `packages/db/src/schema/connected-accounts.ts`              | **new**           | `connected_accounts` Drizzle table + migration.                                                    |
 | `apps/server/src/services/connectors/registry.ts`           | **new**           | `ConnectorRegistry` + id→provider routing + aggregation/degradation.                               |
-| `apps/server/src/services/connectors/routing.ts`            | **new**           | `recommendConnector`; reads relay `AdapterManager.manifests`.                                      |
+| `apps/server/src/services/connectors/routing.ts`            | **new**           | `recommendConnector`; reads relay `AdapterManager.getManifest`/`getCatalog`.                       |
 | `apps/server/src/services/connectors/custody-disclosure.ts` | **new**           | Disclosure copy per custody class (§4).                                                            |
 | `apps/server/src/services/connectors/providers/raw-mcp.ts`  | **new**           | Baseline adapter (`supportsMultiAccount:false`, `custody:'external'`).                             |
 | `apps/server/src/services/connectors/providers/composio.ts` | **new (Phase 3)** | Managed adapter; Composio API key via `CredentialStore`; Rube MCP → `toolServerForAccount`.        |
@@ -313,7 +315,7 @@ One new SQLite table, `connected_accounts` (derived cache; migration in `@dorkos
 - **Custody-disclosure units** — each custody class renders its exact copy; no account row can render without a disclosure line.
 - **Session-exposure units** — attached `active` accounts inject two distinct named MCP servers with no provider string; a `null` `toolServerForAccount` surfaces a warning, not a throw; no provider identity appears in the injected server config.
 - **The two W4 evals, expressible against this interface (G5):**
-  - **"Connect to my Gmail"** (default-gateway eval; CI vs mock OAuth, real weekly): `recommendConnector('gmail')` tops with `kind:'gateway'`; drive `startConnect('gmail')`→`pollConnect` to an `active` account; connect a second → `listAccounts({toolkit:'gmail'})` returns two distinct ids, both yielding non-null `toolServerForAccount`.
+  - **"Connect to my Gmail"** (default-gateway eval; CI vs mock OAuth, real weekly): `recommendConnector('gmail')` tops with `kind:'gateway'`; drive `startConnect('gmail')`→`pollConnect` to an `active` account; connect a second → `listAccounts({toolkit:'gmail'})` returns two distinct ids, both yielding non-null `toolServerForAccount`. **Oracle refinement of eval 13** (`specs/eval-harness/02-specification.md:286` states "a credential ref is persisted via `credential-provider.ts`"): on the managed gateway path the persisted reference is the **vendor API-key ref** (the Composio key's `file:` reference), **never per-account token refs** — upstream OAuth tokens live in the vendor vault and by design never touch DorkOS's credential store (§Security Considerations). The W4 eval author should implement this refined oracle, not the stale per-account-ref reading.
   - **"Connect to Slack"** (routing eval): `recommendConnector('slack')[0]` is `{kind:'relay-adapter', target:'slack'}`, ranked above any `gateway` entry — proving the agent chooses the purpose-built adapter over the generic gateway.
 - Server/client tests follow repo patterns (`FakeConnectorProvider` + scenarios; mock `Transport` for any client UI). Vitest, `__tests__/` alongside source.
 
@@ -340,7 +342,7 @@ One new SQLite table, `connected_accounts` (derived cache; migration in `@dorkos
 
 ## Implementation Phases
 
-Follows spike §6 sequencing. Each phase is independently shippable.
+**Deliberately refines spike §6's sequencing** (not a straight copy): the registry/routing surface (Phase 3) and session exposure + consent (Phase 4) are pulled **ahead of** the Composio adapter, so the W4-testable routing surface and the consent binding exist against mocks before any vendor integration lands; distribution rides with the eval hooks (Phase 6) instead of standing alone. The spike's ordering principles — port + raw-MCP first, custody with the port, Nango last behind its re-check — are preserved. Each phase is independently shippable.
 
 1. **Port + raw-MCP baseline + conformance** — land the Zod port, `FakeConnectorProvider`, `connectorConformance`, and the raw-MCP adapter (exercises the whole seam against existing machinery). Baseline, no vendor dependency.
 2. **Custody-disclosure primitive** — ship with the port so no provider is addable without truthful disclosure.
@@ -361,10 +363,14 @@ Phases 1–6 are the first implementation phase's scope (Composio + baseline); P
 
 ## Related ADRs
 
+**Accepted (already on main):**
+
+- **ADR `260718-045630`** (`decisions/260718-045630-connector-provider-custody-composio-nango-raw-mcp.md`) — the D4 custody stance: provider picks (Composio/Nango/raw-MCP), the `ConnectorCustody` field, the canonical managed-custody disclosure sentence (reused verbatim in §Detailed Design 4), the `NANGO_ENCRYPTION_KEY` mandate, and the open-connector re-check clause. This spec implements that ADR; the custody-disclosure seed below is **partly satisfied by it** already.
+
 Seed at implementation time (`/adr:from-spec`):
 
 - **The `ConnectorProvider` port** — the third swappable seam (custody-aware capability flags; opaque `ConnectedAccountId`; MCP-seam reuse; nullable `toolServerForAccount`). Cross-links ADR-0255 (`runtimeRegistry` first-write-wins), ADR-0310 (aggregation/degradation), ADR-0043 (derived cache), `260708-141143` (MCP Apps / `McpAppServerConnection`).
-- **Custody disclosure as a structural gate** — records the "no provider addable without truthful, per-account disclosure" rule and the `NANGO_ENCRYPTION_KEY` enforcement.
+- **Custody disclosure as a structural gate** — the stance and the canonical sentence are already recorded in accepted ADR `260718-045630`; what remains to seed is the **structural** half: the "no provider addable without a truthful, per-account disclosure" enforcement (the disclosure module as a hard dependency of provider registration) and its test proof.
 - **Connectors distribute as `adapter` (not a new type)** — records the reuse decision and its rationale (RESOLVED above).
 
 ## References
@@ -374,14 +380,16 @@ Seed at implementation time (`/adr:from-spec`):
 - `packages/shared/src/agent-runtime.ts:54` (`McpAppServerConnection`), `:747` (`getMcpServerConfig?(): McpAppServerConnection | null` — optional/nullable), `:266` (`RuntimeCapabilities.supportsMcp`), `:721` (`setMcpServerFactory`).
 - `packages/shared/src/transport.ts` — `startOpenRouterOAuth`/`getOpenRouterOAuthStatus`, `storeRuntimeCredential` (reference-not-secret).
 - `apps/server/src/services/core/credential-provider.ts` — `CredentialProvider`/`CredentialStore`/`EncryptedFileCredentialStore`/`initCredentialProvider`; `keychain:`/`env:`/`file:` scheme.
-- `apps/server/src/services/relay/adapter-manager.ts` (`manifests`, `addAdapter`/`removeAdapter`/`enable`/`disable`/`testConnection`), `adapter-secrets.ts` (`materializeAdapterSecrets`, DOR-280), `base-adapter.ts`; `packages/shared/src/relay-adapter-schemas.ts:275` (`multiInstance`).
+- `apps/server/src/services/relay/adapter-manager.ts` (`getManifest` `:905-907`, `getCatalog` `:882-903` — the public accessors routing reads; `addAdapter`/`removeAdapter`/`enable`/`disable`/`testConnection`), `adapter-secrets.ts` (`materializeAdapterSecrets`, DOR-280), `base-adapter.ts`; `packages/shared/src/relay-adapter-schemas.ts:275` (`multiInstance`).
 - `packages/marketplace/src/package-types.ts:38` (`PackageTypeSchema`), `manifest-schema.ts:160-162` (`adapter`/`adapterType`); `apps/server/src/services/marketplace/marketplace-installer.ts`.
 - Adjacent: `apps/server/src/services/runtimes/connect/credentials.ts`; `apps/server/src/services/core/auth/cloud-link.ts`.
 
-**Research + plan:**
+**Research + plan + decisions:**
 
 - `research/20260718_connector-gateway-spike.md` — the full evidence base (provider matrix, seams §3, interface sketch §2, custody §4, AGPL §5, recommendation + sequencing §6).
 - `plans/shapes-program.md` — D4 (custody stance), W5 (this workstream), P4 (CRM-lite, first consumer), W4 (connector evals).
+- `decisions/260718-045630-connector-provider-custody-composio-nango-raw-mcp.md` — the accepted D4 ADR (provider picks, canonical custody sentence, `NANGO_ENCRYPTION_KEY` mandate, re-check clause).
+- `specs/eval-harness/02-specification.md:286` — eval 13/14 (`connector-gmail`/`connector-slack`), whose eval-13 oracle §Testing Strategy refines.
 
 **External (open-connector re-check, accessed 2026-07-18):**
 
