@@ -1,0 +1,3 @@
+### Added
+
+- **Shapes: install a whole setup, not just a tool.** Shapes are a new kind of marketplace package. Where a plugin adds one capability, a Shape changes what DorkOS is set up for: applying one arranges your dashboard and sidebar, turns on the extensions it needs, offers a suggested agent to run it, and stands up its schedules — in a single step. Anything a Shape expects but you don't have yet (an extension you haven't installed, an agent you don't have, an unset API key) never blocks it: the setup still applies and just tells you what's left to finish. Fork a Shape to keep your own version with a "forked from" trail, from the command line with `dorkos shape fork`. (DOR-355)
