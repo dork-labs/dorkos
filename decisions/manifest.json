@@ -2,6 +2,13 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260718-045630",
+      "slug": "connector-provider-custody-composio-nango-raw-mcp",
+      "title": "Connector custody stance: a ConnectorProvider abstraction — Composio (managed), Nango (self-host), raw MCP (baseline)",
+      "status": "accepted",
+      "created": "2026-07-17"
+    },
+    {
       "id": "260718-042209",
       "slug": "shapes-monetization-guardrails-no-paid-chat-placement",
       "title": "Shapes monetization guardrails: free community shapes, vendor affiliate/placement, no paid placement in chats ever",
