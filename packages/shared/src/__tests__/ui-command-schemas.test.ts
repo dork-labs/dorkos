@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   UiCommandSchema,
+  type UiCommand,
   UiCanvasContentSchema,
   UiStateSchema,
   UiPanelIdSchema,
@@ -177,6 +178,26 @@ describe('UiCommandSchema', () => {
     });
   });
 
+  it('parses apply_layout command with a shape name', () => {
+    expect(UiCommandSchema.parse({ action: 'apply_layout', shape: 'linear-ops' })).toEqual({
+      action: 'apply_layout',
+      shape: 'linear-ops',
+    });
+  });
+
+  it('rejects apply_layout with an empty shape name', () => {
+    expect(() => UiCommandSchema.parse({ action: 'apply_layout', shape: '' })).toThrow();
+  });
+
+  it('infers the apply_layout member on the UiCommand type', () => {
+    const command: UiCommand = { action: 'apply_layout', shape: 'flow-board' };
+    if (command.action === 'apply_layout') {
+      expect(command.shape).toBe('flow-board');
+    } else {
+      throw new Error('expected apply_layout variant');
+    }
+  });
+
   it('parses open_command_palette command', () => {
     expect(UiCommandSchema.parse({ action: 'open_command_palette' })).toEqual({
       action: 'open_command_palette',
@@ -185,6 +206,13 @@ describe('UiCommandSchema', () => {
 
   it('rejects invalid action', () => {
     expect(() => UiCommandSchema.parse({ action: 'invalid_action' })).toThrow();
+  });
+
+  it('has a doc-comment variant count that matches the actual member count', () => {
+    // The union's TSDoc claims "22 variants". Guard the count so the comment
+    // and the schema never silently drift (the stale "20" this change fixed).
+    const memberCount = UiCommandSchema.options.length;
+    expect(memberCount).toBe(22);
   });
 
   it('rejects invalid panel id', () => {

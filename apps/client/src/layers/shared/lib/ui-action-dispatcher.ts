@@ -90,6 +90,13 @@ export interface DispatcherContext {
   /** Optional: agent switching handler */
   switchAgent?: (cwd: string) => void;
   /**
+   * Optional: shape switching handler. Given an installed Shape name, applies it
+   * (server resolves the manifest + degrades per-piece). Absent until the app
+   * shell provides the real implementation (Phase 3, DOR-355 task 3.1) — when
+   * absent, `apply_layout` is a safe no-op, matching `switchAgent`.
+   */
+  applyShape?: (shape: string) => void;
+  /**
    * Optional extension → viewer overrides (config `workbench.defaultViewers`)
    * consulted when resolving an `open_file` command's viewer. Omit to use only
    * the built-in registry defaults.
@@ -274,6 +281,15 @@ export function executeUiCommand(
     // --- Agent ---
     case 'switch_agent':
       ctx.switchAgent?.(command.cwd);
+      break;
+
+    // --- Shape ---
+    // Minimal exhaustiveness seam: the real app-shell handler (POST
+    // /api/shapes/:name/apply + live re-mount) and the switcher UI land in
+    // Phase 3 (DOR-355 task 3.1). Optional-context, so unwired it is a safe
+    // no-op — mirrors `switch_agent`.
+    case 'apply_layout':
+      ctx.applyShape?.(command.shape);
       break;
 
     // --- Command Palette ---

@@ -2885,9 +2885,9 @@ export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 20 variants covering panels, sidebar, canvas,
+ * Discriminated on `action` — 22 variants covering panels, sidebar, canvas,
  * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
- * switching, command palette, and celebration.
+ * switching, shape switching, command palette, and celebration.
  */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
@@ -2993,6 +2993,18 @@ export const UiCommandSchema = z
     z.object({
       action: z.literal('switch_agent'),
       cwd: z.string(),
+    }),
+
+    // Shape switching
+    z.object({
+      action: z.literal('apply_layout'),
+      /**
+       * Installed Shape name to apply. The client resolves its manifest
+       * server-side (via the apply-shape flow), which owns layout resolution,
+       * connection prompts, and per-piece degradation — inlining a raw layout
+       * would duplicate the manifest and skip that handling.
+       */
+      shape: z.string().min(1),
     }),
 
     // Command palette
