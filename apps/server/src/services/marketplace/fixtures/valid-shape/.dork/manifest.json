@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "name": "linear-ops",
+  "version": "1.0.0",
+  "type": "shape",
+  "displayName": "Linear Ops",
+  "description": "Your Linear issues on the dashboard, tended by an agent on a 15-minute inbox check.",
+  "author": "dorkos",
+  "category": "project-management",
+  "icon": "📋",
+  "layers": ["extensions", "agents", "tasks"],
+  "requires": [],
+  "activates": ["linear-issues"],
+  "extensions": [],
+  "layout": {
+    "sidebarOpen": true,
+    "sidebarTab": "overview",
+    "openPanels": [],
+    "focusDashboardSections": ["linear-issues:linear-loop-dashboard"]
+  },
+  "agents": [
+    {
+      "ref": "linear-tender",
+      "affinity": "default",
+      "matchName": "Linear Tender",
+      "template": {
+        "displayName": "Linear Tender",
+        "runtime": "claude-code",
+        "persona": "You tend the Linear tracker like a teammate: each tick you poll your inbox, act on what you can, and ask when you're genuinely stuck.",
+        "capabilities": ["linear", "triage"],
+        "skills": ["flow__tending-tracker", "flow__linear-adapter"]
+      }
+    }
+  ],
+  "schedules": [
+    {
+      "name": "inbox-tick",
+      "description": "Poll the Linear inbox and act on assigned/mentioned issues.",
+      "prompt": "Run one tending tick: poll your inbox (assigned-to-me + @mentions + new comments) and respond/act/ignore per the tending rules.",
+      "cron": "*/15 * * * *",
+      "agentRef": "linear-tender",
+      "permissionMode": "acceptEdits",
+      "startDisabled": false
+    }
+  ],
+  "connections": [
+    {
+      "kind": "extension-secret",
+      "extension": "linear-issues",
+      "secret": "linear_api_key",
+      "required": true
+    }
+  ]
+}
