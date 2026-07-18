@@ -11,6 +11,7 @@ const TYPE_STYLES: Record<MarketplacePackageType, string> = {
   plugin: 'border-purple-500/20 bg-purple-500/10 text-purple-600 dark:text-purple-400',
   'skill-pack': 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   adapter: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  shape: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400',
 };
 
 const TYPE_LABELS: Record<MarketplacePackageType, string> = {
@@ -18,6 +19,7 @@ const TYPE_LABELS: Record<MarketplacePackageType, string> = {
   plugin: 'PLUGIN',
   'skill-pack': 'SKILL PACK',
   adapter: 'ADAPTER',
+  shape: 'SHAPE',
 };
 
 // ---------------------------------------------------------------------------
@@ -39,7 +41,7 @@ interface PackageTypeBadgeProps {
  * Color-coded badge representing a marketplace package type.
  *
  * Each type maps to a distinct hue so users can distinguish agents, plugins,
- * skill-packs, and adapters at a glance in the browse grid.
+ * skill-packs, adapters, and shapes at a glance in the browse grid.
  *
  * @param type - The package type to render.
  * @param className - Optional additional class names.
