@@ -25,6 +25,7 @@ import {
 } from '@/layers/shared/model';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { switchAgentCwd } from '@/layers/entities/session';
+import { applyShapeAction } from '@/layers/entities/shapes';
 import { useAutoOpenDiff } from '@/layers/features/diff-review';
 import { ExtensionProvider, createExtensionEventBridge } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
@@ -269,6 +270,28 @@ const extensionDeps: ExtensionAPIDeps = {
         store: useAppStore.getState(),
         queryClient,
         navigate: (search) => void router.navigate({ to: '/session', search }),
+      }),
+    // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
+    // shared action) to the real apply flow (DOR-355 task 3.1). Reads the store
+    // fresh per dispatch so the restored chrome applies against live state, and
+    // reuses the same cwd switch for the arrival agent's auto-follow (W1a). The
+    // `extensionDeps` self-reference resolves at call time, never construction.
+    applyShape: (shape: string) =>
+      void applyShapeAction(shape, {
+        transport,
+        queryClient,
+        dispatch: (command) =>
+          executeUiCommand(
+            { ...extensionDeps.dispatcherContext, store: useAppStore.getState() },
+            command,
+            'agent'
+          ),
+        switchAgent: (cwd) =>
+          switchAgentCwd(cwd, {
+            store: useAppStore.getState(),
+            queryClient,
+            navigate: (search) => void router.navigate({ to: '/session', search }),
+          }),
       }),
   },
   // navigate is provided as a no-op here. Extensions calling navigate() after

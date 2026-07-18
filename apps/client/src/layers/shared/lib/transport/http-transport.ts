@@ -16,6 +16,7 @@ import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
+import { createShapeMethods } from './shape-methods';
 import { createWorkspaceMethods } from './workspace-methods';
 import { createCloudMethods } from './cloud-methods';
 import { createTerminalMethods } from './terminal-methods';
@@ -40,6 +41,7 @@ export interface HttpTransport
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
     ReturnType<typeof createMarketplaceMethods>,
+    ReturnType<typeof createShapeMethods>,
     ReturnType<typeof createWorkspaceMethods>,
     ReturnType<typeof createCloudMethods>,
     ReturnType<typeof createTerminalMethods>,
@@ -67,6 +69,7 @@ export class HttpTransport implements Transport {
       createSessionStreamMethods(baseUrl),
       createSystemMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
+      createShapeMethods(baseUrl),
       createWorkspaceMethods(baseUrl),
       createCloudMethods(baseUrl),
       createTerminalMethods(baseUrl),

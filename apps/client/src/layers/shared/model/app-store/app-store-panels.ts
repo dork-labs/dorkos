@@ -57,6 +57,10 @@ export interface PanelsSlice {
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
 
+  /** The Shape switcher dialog — pick/apply an installed Shape (DOR-355). */
+  shapeSwitcherOpen: boolean;
+  setShapeSwitcherOpen: (open: boolean) => void;
+
   onboardingStep: number | null;
   setOnboardingStep: (step: number | null) => void;
   /** First message generated during onboarding, used for the magic transition animation. */
@@ -114,6 +118,8 @@ export const createPanelsSlice: StateCreator<
   setRestartOverlayOpen: (open) => set({ restartOverlayOpen: open }),
   pickerOpen: false,
   setPickerOpen: (open) => set({ pickerOpen: open }),
+  shapeSwitcherOpen: false,
+  setShapeSwitcherOpen: (open) => set({ shapeSwitcherOpen: open }),
 
   onboardingStep: null,
   setOnboardingStep: (step) => set({ onboardingStep: step }),

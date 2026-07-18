@@ -113,6 +113,7 @@ export {
   type DispatcherStore,
   type UiCommandOrigin,
 } from './ui-action-dispatcher';
+export { registerExtensionRemount, requestExtensionRemount } from './extension-remount';
 export {
   buildUiStateSnapshot,
   prepareUiStateForSend,

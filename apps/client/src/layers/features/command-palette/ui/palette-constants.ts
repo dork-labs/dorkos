@@ -1,4 +1,14 @@
-import { Clock, Radio, Globe, Settings, Plus, Search, FolderOpen, Moon } from 'lucide-react';
+import {
+  Clock,
+  Radio,
+  Globe,
+  Settings,
+  Plus,
+  Search,
+  FolderOpen,
+  Moon,
+  Shapes,
+} from 'lucide-react';
 
 /** Lucide icon name → component mapping for palette items. */
 export const ICON_MAP: Record<string, React.ElementType> = {
@@ -10,6 +20,7 @@ export const ICON_MAP: Record<string, React.ElementType> = {
   Search,
   FolderOpen,
   Moon,
+  Shapes,
 };
 
 /** Ease-out curve for entrances (design system standard). */

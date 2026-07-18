@@ -91,9 +91,10 @@ export interface DispatcherContext {
   switchAgent?: (cwd: string) => void;
   /**
    * Optional: shape switching handler. Given an installed Shape name, applies it
-   * (server resolves the manifest + degrades per-piece). Absent until the app
-   * shell provides the real implementation (Phase 3, DOR-355 task 3.1) — when
-   * absent, `apply_layout` is a safe no-op, matching `switchAgent`.
+   * (server resolves the manifest + degrades per-piece, then the client restores
+   * the returned chrome + live-remounts extensions). Wired from the app shell to
+   * `applyShapeAction` (DOR-355 task 3.1); when absent, `apply_layout` is a safe
+   * no-op, matching `switchAgent`.
    */
   applyShape?: (shape: string) => void;
   /**
@@ -284,10 +285,10 @@ export function executeUiCommand(
       break;
 
     // --- Shape ---
-    // Minimal exhaustiveness seam: the real app-shell handler (POST
-    // /api/shapes/:name/apply + live re-mount) and the switcher UI land in
-    // Phase 3 (DOR-355 task 3.1). Optional-context, so unwired it is a safe
-    // no-op — mirrors `switch_agent`.
+    // The app shell wires `applyShape` to the real flow (POST
+    // /api/shapes/:name/apply → restore chrome + live re-mount, DOR-355 task
+    // 3.1). Optional-context, so unwired (e.g. Obsidian) it is a safe no-op —
+    // mirrors `switch_agent`.
     case 'apply_layout':
       ctx.applyShape?.(command.shape);
       break;

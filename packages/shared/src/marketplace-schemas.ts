@@ -12,6 +12,9 @@
  *     InstallRequest, MarketplaceSource, ConflictReport
  *   - `apps/server/src/services/marketplace/flows/uninstall.ts` — UninstallResult
  *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult
+ *   - `apps/server/src/services/shapes/apply-shape.ts` — ApplyShapeResult, AppliedShape,
+ *     OfferedAgent, ShapeLayout (DOR-355 §5/§9)
+ *   - `apps/server/src/services/shapes/shape-services.ts` — InstalledShapeSummary
  *   - `packages/marketplace` — MarketplaceJsonEntry, MarketplacePackageManifest, PackageType
  *
  * @module shared/marketplace-schemas
@@ -374,3 +377,110 @@ export interface AddSourceInput {
  * `packages/mesh` already depend on `@dorkos/shared`.
  */
 export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';
+
+// ---------------------------------------------------------------------------
+// Shapes (DOR-355) — the fifth package type's list/apply API response shapes.
+//
+// These mirror the server contract frozen in spec §5/§9 (`applyShape` returns
+// `{ ok, applied, warnings[], offeredAgents[] }`, and `applied` carries the
+// resolved chrome the client restores WITHOUT a second fetch). The server keeps
+// its own structurally-identical types + local Zod OpenAPI mirrors; these are
+// the browser-safe view the client transport + switcher UI consume.
+// ---------------------------------------------------------------------------
+
+/**
+ * The workspace chrome a Shape restores on apply (`ShapeLayoutSchema`). The
+ * literal unions mirror `UiSidebarTab` / `UiPanelId` (`./types`) — redeclared
+ * here to keep this module import-free and browser-safe.
+ */
+export interface ShapeLayout {
+  /** Sidebar open on arrival. */
+  sidebarOpen: boolean;
+  /** Default built-in sidebar tab, when the Shape pins one. */
+  sidebarTab?: 'overview' | 'sessions' | 'schedules' | 'connections';
+  /** Panels to open on arrival. */
+  openPanels: ('settings' | 'tasks' | 'relay' | 'picker')[];
+  /** Extension dashboard-section ids to order first (ordering hint only). */
+  focusDashboardSections: string[];
+}
+
+/** Scaffold seed for an offered agent (mirrors the manifest `template`). */
+export interface ShapeAgentTemplate {
+  displayName?: string;
+  persona?: string;
+  runtime?: 'claude-code' | 'codex' | 'opencode';
+  capabilities?: string[];
+  skills?: string[];
+}
+
+/**
+ * An agent a Shape surfaces on arrival — offered, never forced (affinity, not
+ * ownership). A satisfied `default` is the highlighted arrival offer; an
+ * unsatisfied entry carries the `template` to scaffold on accept.
+ */
+export interface ShapeOfferedAgent {
+  /** Shape-local agent slug (`agents[].ref`). */
+  ref: string;
+  /** Soft affinity — `default` is the arrival offer, `suggested` is listed only. */
+  affinity: 'suggested' | 'default';
+  /** True when an existing agent already satisfies this entry (`matchName` hit). */
+  satisfied: boolean;
+  /** The single highlighted arrival offer (satisfied-or-offered `default`). */
+  arrival: boolean;
+  /** The server asks the client to switch into this agent (satisfied default + opt-in). */
+  autoFollow: boolean;
+  /** Resolved agent id, when satisfied. */
+  agentId?: string;
+  /** Resolved agent project path, when satisfied (the `switch_agent` target). */
+  projectPath?: string;
+  /** Display name for the offer card. */
+  displayName: string;
+  /** Scaffold seed for an unsatisfied offer. */
+  template?: ShapeAgentTemplate;
+}
+
+/**
+ * The resolved outcome the client acts on without a second fetch — the
+ * `applied` field of the apply response.
+ */
+export interface AppliedShape {
+  /** The chrome to restore (sidebar, panels, dashboard focus). */
+  layout: ShapeLayout;
+  /** Extension ids actually enabled this apply (post-degradation). */
+  activatedExtensions: string[];
+  /** Schedule names created this apply (idempotent skips excluded). */
+  schedulesCreated: string[];
+}
+
+/** Response body for `POST /api/shapes/:name/apply`. */
+export interface ApplyShapeResult {
+  /** Always true — the apply only throws for an uninstalled Shape (404). */
+  ok: boolean;
+  /** The resolved chrome + outcomes the client applies from the response. */
+  applied: AppliedShape;
+  /** Per-piece degradation notes (spec §7) — surfaced to the user, not the console. */
+  warnings: string[];
+  /** Agents the Shape offers on arrival (never auto-created). */
+  offeredAgents: ShapeOfferedAgent[];
+}
+
+/** Fork lineage on a Shape summary — present only on forked Shapes. */
+export interface ShapeLineageInfo {
+  /** `<name>@<source>` the Shape was forked from. */
+  forkedFrom: string;
+  forkedFromVersion?: string;
+  /** ISO-8601. */
+  forkedAt: string;
+}
+
+/** One installed Shape as returned by `GET /api/shapes`. */
+export interface InstalledShapeSummary {
+  /** Shape name (install directory + manifest name). */
+  name: string;
+  /** Human-facing display name, when the manifest declares one. */
+  displayName?: string;
+  /** Whether this Shape is the currently-applied one (`ui.shapes.active`). */
+  active: boolean;
+  /** Fork lineage, present only on forked Shapes. */
+  lineage?: ShapeLineageInfo;
+}

@@ -17,6 +17,7 @@ import {
   serverOnlyStubs,
   activityStubs,
   marketplaceStubs,
+  shapeStubs,
   workspaceStubs,
   cloudStubs,
 } from '../embedded-mode-stubs';
@@ -32,6 +33,7 @@ export function createEmbeddedStubMethods() {
     ...activityStubs,
     ...meshStubs,
     ...marketplaceStubs,
+    ...shapeStubs,
     ...workspaceStubs,
     ...cloudStubs,
   };

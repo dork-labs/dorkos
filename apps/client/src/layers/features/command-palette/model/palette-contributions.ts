@@ -95,12 +95,20 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
     priority: 6,
   },
   {
+    id: 'switch-shape',
+    label: 'Switch Shape',
+    icon: 'Shapes',
+    action: 'switchShape',
+    category: 'quick-action',
+    priority: 7,
+  },
+  {
     id: 'canvas',
     label: 'Toggle Canvas',
     icon: 'PanelRight',
     action: 'toggleCanvas',
     category: 'quick-action',
-    priority: 7,
+    priority: 8,
   },
   {
     id: 'report-issue',
@@ -108,7 +116,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
     icon: 'Bug',
     action: 'reportIssue',
     category: 'quick-action',
-    priority: 8,
+    priority: 9,
   },
 ];
 

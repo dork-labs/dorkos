@@ -76,6 +76,8 @@ import type {
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
+  InstalledShapeSummary,
+  ApplyShapeResult,
 } from '@dorkos/shared/marketplace-schemas';
 import type {
   CloudLinkStatus,
@@ -588,6 +590,17 @@ export const marketplaceStubs = {
 
   async removeMarketplaceSource(_name: string): Promise<void> {
     throw new Error('Marketplace is not supported in embedded mode');
+  },
+};
+
+/** Shapes (DOR-355) are a server-only marketplace concept — inert in embedded mode. */
+export const shapeStubs = {
+  async listShapes(): Promise<InstalledShapeSummary[]> {
+    return [];
+  },
+
+  async applyShape(_name: string): Promise<ApplyShapeResult> {
+    throw new Error('Shapes are not supported in embedded mode');
   },
 };
 
