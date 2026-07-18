@@ -17,6 +17,7 @@
  */
 
 import { z } from 'zod';
+import { MarketplaceCategorySchema } from './categories.js';
 
 /**
  * Pricing metadata for a plugin. Always optional — plugins default to free
@@ -65,6 +66,19 @@ export const DorkosEntrySchema = z.object({
     .array(
       z.string().regex(/^(adapter|plugin|skill-pack|agent):[a-z][a-z0-9-]*([@][\w.~^>=<!*-]+)?$/)
     )
+    .optional(),
+  /**
+   * Controlled multi-membership categories (ADR-0236 sidecar field; not
+   * CC-native — Claude Code's strict validator would reject a plural
+   * `categories` key inline, so it rides the sidecar). Deduplicated,
+   * max 4 to keep browse facets meaningful. The first element is the
+   * package's primary category and SHOULD equal the CC-inline singular
+   * `category` (validator enforces coherence).
+   */
+  categories: z
+    .array(MarketplaceCategorySchema)
+    .max(4)
+    .refine((c) => new Set(c).size === c.length, 'categories must be unique')
     .optional(),
   /** Whether to feature the plugin in browse UI. */
   featured: z.boolean().optional(),

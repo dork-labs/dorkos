@@ -83,6 +83,17 @@ export {
 // Types & helpers
 export { PackageTypeSchema, type PackageType, requiresClaudePlugin } from './package-types.js';
 
+// Controlled category vocabulary
+export {
+  MARKETPLACE_CATEGORIES,
+  MarketplaceCategorySchema,
+  CATEGORY_LABELS,
+  CATEGORY_DESCRIPTIONS,
+  primaryCategory,
+  asMarketplaceCategory,
+  type MarketplaceCategory,
+} from './categories.js';
+
 // Search
 export { matchesMarketplaceSearch, type SearchablePackage } from './search.js';
 

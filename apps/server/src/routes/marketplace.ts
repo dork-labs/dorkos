@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import {
   mergeMarketplace,
+  primaryCategory,
   type MergedMarketplaceEntry,
   type PluginSource,
 } from '@dorkos/marketplace';
@@ -731,7 +732,10 @@ function flattenMergedEntry(
     repository: entry.repository,
     license: entry.license,
     keywords: entry.keywords,
-    category: entry.category,
+    categories: entry.dorkos?.categories,
+    // Primary category prefers the sidecar's categories[0], falling back to the
+    // CC-inline singular category so single-category consumers keep working.
+    category: primaryCategory(entry.dorkos?.categories, entry.category),
     tags: entry.tags,
     type: entry.dorkos?.type,
     icon: entry.dorkos?.icon,

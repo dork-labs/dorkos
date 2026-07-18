@@ -8,6 +8,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
+    "check-categories": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/check-categories.ts",
     "lint": "eslint src/"
   },
   "exports": {

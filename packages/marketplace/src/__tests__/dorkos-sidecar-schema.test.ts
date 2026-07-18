@@ -74,6 +74,28 @@ describe('DorkosEntrySchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts an in-vocabulary categories array', () => {
+    const result = DorkosEntrySchema.safeParse({ categories: ['security', 'code-review'] });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an off-list category slug', () => {
+    const result = DorkosEntrySchema.safeParse({ categories: ['not-a-cat'] });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects duplicate categories', () => {
+    const result = DorkosEntrySchema.safeParse({ categories: ['security', 'security'] });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects more than four categories', () => {
+    const result = DorkosEntrySchema.safeParse({
+      categories: ['security', 'code-review', 'documentation', 'observability', 'agent-ops'],
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('accepts all pricing.model enum values', () => {
     for (const model of ['free', 'paid', 'freemium', 'byo-license'] as const) {
       const result = PricingSchema.safeParse({ model });
