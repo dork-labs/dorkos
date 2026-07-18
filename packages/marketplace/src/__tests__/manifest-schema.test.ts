@@ -142,6 +142,83 @@ describe('MarketplacePackageManifestSchema — valid manifests', () => {
   });
 });
 
+describe('MarketplacePackageManifestSchema — categories + coherence', () => {
+  // Harness regression guard (§B2 / DOR-264): the singular `category` stays a
+  // lenient z.string(), so a package installed before the taxonomy shipped —
+  // carrying a legacy free-string category and NO categories[] — must still
+  // parse. Tightening the singular field to the enum would make every such
+  // installed package invisible to Harness projection.
+  it('accepts a legacy free-string singular-only category', () => {
+    const result = MarketplacePackageManifestSchema.safeParse({
+      ...baseFields,
+      type: 'plugin',
+      category: 'workflow',
+    });
+    expect(result.success, 'legacy free-string category must still parse').toBe(true);
+  });
+
+  // The enum binds categories[] only: an off-list entry there fails.
+  it('rejects an off-list entry inside categories[]', () => {
+    const result = MarketplacePackageManifestSchema.safeParse({
+      ...baseFields,
+      type: 'plugin',
+      categories: ['not-a-cat'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // Coherence refine: when both are present, the singular category must equal
+  // the primary (categories[0]).
+  it('rejects an incoherent category / categories[0] pair', () => {
+    const result = MarketplacePackageManifestSchema.safeParse({
+      ...baseFields,
+      type: 'plugin',
+      category: 'code-review',
+      categories: ['security', 'code-review'],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['category']);
+    }
+  });
+
+  it('accepts a coherent category / categories[0] pair', () => {
+    const result = MarketplacePackageManifestSchema.safeParse({
+      ...baseFields,
+      type: 'plugin',
+      category: 'security',
+      categories: ['security', 'code-review'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // categories-only (no singular category) is valid — the primary is derived
+  // from categories[0].
+  it('accepts a categories-only manifest', () => {
+    const result = MarketplacePackageManifestSchema.safeParse({
+      ...baseFields,
+      type: 'plugin',
+      categories: ['security'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // The coherence refine preserves the union: narrowing on `type` still works.
+  it('preserves discriminated-union narrowing after the refine', () => {
+    const result: MarketplacePackageManifest = MarketplacePackageManifestSchema.parse({
+      ...baseFields,
+      type: 'adapter',
+      adapterType: 'slack',
+      categories: ['integrations'],
+    });
+    if (result.type === 'adapter') {
+      expect(result.adapterType).toBe('slack');
+    } else {
+      throw new Error('expected adapter variant');
+    }
+  });
+});
+
 describe('MarketplacePackageManifestSchema — default value application', () => {
   it('defaults schemaVersion to 1 when omitted', () => {
     const result = MarketplacePackageManifestSchema.parse({

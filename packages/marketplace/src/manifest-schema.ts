@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import { SkillNameSchema } from '@dorkos/skills/schema';
 import { PackageTypeSchema } from './package-types.js';
+import { MarketplaceCategorySchema } from './categories.js';
 
 /**
  * Semver version string. Loose validation — full semver parsing is the
@@ -94,8 +95,30 @@ const BasePackageManifestSchema = z.object({
   /** Searchable tags. */
   tags: z.array(z.string().max(32)).max(20).default([]),
 
-  /** Primary category for browse UI. */
+  /**
+   * Primary category. Kept CC-interop and deliberately LENIENT (`z.string()`,
+   * not the enum): installed packages' on-disk manifests may carry legacy
+   * free-string categories, and the harness safeParses them
+   * (`packages/harness/src/sources/installed.ts` `readPluginManifest` returns
+   * `undefined` on a failed parse, which would make every legacy-categorized
+   * installed package invisible to Harness projection — the DOR-264 regression
+   * class). Coherence with the enum-typed `categories[0]` provides the
+   * effective constraint for newly-authored packages.
+   */
   category: z.string().max(64).optional(),
+
+  /**
+   * Controlled multi-membership categories (ADR-0236). Enum-constrained,
+   * deduplicated, max 4. The first element is the primary category and must
+   * equal the singular `category` when both are present (coherence refine
+   * below). Rides the sidecar for CC-authored packages; carried inline here
+   * in the DorkOS author source (`.dork/manifest.json`).
+   */
+  categories: z
+    .array(MarketplaceCategorySchema)
+    .max(4)
+    .refine((c) => new Set(c).size === c.length, 'categories must be unique')
+    .optional(),
 
   /** Icon emoji or icon identifier (e.g., "🔍" or "package"). */
   icon: z.string().max(64).optional(),
@@ -165,13 +188,28 @@ const AdapterManifestSchema = BasePackageManifestSchema.extend({
 /**
  * Discriminated union over package type. Validates type-specific fields
  * based on the `type` discriminator.
+ *
+ * The primary-category coherence refine (`category === categories[0]` when both
+ * are present) wraps the union: Zod cannot `.refine` a `discriminatedUnion`
+ * member and keep the discriminator, so the check sits at the top level. The
+ * inferred {@link MarketplacePackageManifest} type is unaffected — a `.refine`
+ * on a discriminated union preserves the union, so consumers still narrow on
+ * `manifest.type`. Because `categories[0]` is enum-typed, coherent manifests
+ * are effectively enum-constrained on their primary category, while legacy
+ * singular-only manifests (no `categories`) still parse (the singular field
+ * stays lenient).
  */
-export const MarketplacePackageManifestSchema = z.discriminatedUnion('type', [
-  PluginManifestSchema,
-  AgentManifestSchema,
-  SkillPackManifestSchema,
-  AdapterManifestSchema,
-]);
+export const MarketplacePackageManifestSchema = z
+  .discriminatedUnion('type', [
+    PluginManifestSchema,
+    AgentManifestSchema,
+    SkillPackManifestSchema,
+    AdapterManifestSchema,
+  ])
+  .refine((m) => !(m.category && m.categories?.length) || m.category === m.categories[0], {
+    message: 'category must equal categories[0] when both are present',
+    path: ['category'],
+  });
 
 /**
  * The package `name` field schema (kebab-case slug, 1-64 chars), exported for
