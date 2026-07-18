@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260718-043822",
+      "slug": "shapes",
+      "title": "The Shape primitive — the fifth marketplace package type",
+      "created": "2026-07-18",
+      "status": "specified"
+    },
+    {
       "id": "260718-043238",
       "slug": "marketplace-taxonomy",
       "title": "Marketplace category taxonomy: controlled vocabulary, categories[] sidecar, and SEO routes",
