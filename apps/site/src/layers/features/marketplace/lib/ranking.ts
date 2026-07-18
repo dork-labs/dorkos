@@ -45,7 +45,14 @@ export function rankPackages(
     filtered = filtered.filter((p) => (p.dorkos?.type ?? 'plugin') === filters.type);
   }
   if (filters.category) {
-    filtered = filtered.filter((p) => p.category === filters.category);
+    const wanted = filters.category;
+    // Membership match against the sidecar categories[], with a fallback to the
+    // singular CC-inline category for packages that predate the sidecar.
+    // `.some` (rather than `.includes`) keeps the comparison well-typed against
+    // the enum-typed categories[] while `wanted` is an unvalidated URL string.
+    filtered = filtered.filter(
+      (p) => p.dorkos?.categories?.some((c) => c === wanted) ?? p.category === wanted
+    );
   }
   if (filters.q) {
     const q = filters.q.toLowerCase();

@@ -611,6 +611,46 @@ describe('Marketplace Routes', () => {
       expect(pkg.icon).toBeUndefined();
       expect(pkg.featured).toBeUndefined();
     });
+
+    it('surfaces sidecar categories[] and derives the primary category from categories[0]', async () => {
+      fetcher.fetchDorkosSidecar.mockResolvedValue({
+        schemaVersion: 1 as const,
+        plugins: {
+          'sample-plugin': {
+            categories: ['security', 'code-review'] as const,
+          },
+        },
+      });
+
+      const res = await request(app).get('/api/marketplace/packages');
+      expect(res.status).toBe(200);
+      const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
+      expect(pkg.categories).toEqual(['security', 'code-review']);
+      // primaryCategory prefers categories[0].
+      expect(pkg.category).toBe('security');
+    });
+
+    it('falls back to the inline singular category when the sidecar has no categories', async () => {
+      fetcher.fetchDorkosSidecar.mockResolvedValue(null);
+      fetcher.fetchMarketplaceJson.mockResolvedValue({
+        name: 'dorkos-community',
+        plugins: [
+          {
+            name: 'sample-plugin',
+            source: 'https://github.com/dorkos/sample-plugin',
+            description: 'A sample plugin',
+            version: '1.0.0',
+            category: 'security',
+          },
+        ],
+      });
+
+      const res = await request(app).get('/api/marketplace/packages');
+      expect(res.status).toBe(200);
+      const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
+      expect(pkg.category).toBe('security');
+      expect(pkg.categories).toBeUndefined();
+    });
   });
 
   describe('GET /packages/:name', () => {

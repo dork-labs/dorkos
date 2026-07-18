@@ -62,8 +62,10 @@ export interface AggregatedPackage {
   keywords?: string[];
   /** DorkOS extension: package type (defaults to `plugin` when absent). */
   type?: MarketplacePackageType;
-  /** DorkOS extension: browsing category. */
+  /** DorkOS extension: browsing category (primary — equals `categories[0]` when present). */
   category?: string;
+  /** DorkOS extension: controlled multi-membership categories (ADR-0236 sidecar). */
+  categories?: string[];
   /** DorkOS extension: searchable tags. */
   tags?: string[];
   /** DorkOS extension: icon emoji or identifier. */
