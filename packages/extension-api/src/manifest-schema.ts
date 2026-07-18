@@ -87,6 +87,51 @@ const ServerCapabilitiesSchema = z.object({
   settings: z.array(SettingDeclarationSchema).optional(),
 });
 
+/**
+ * One forward-only schema migration for an extension's database.
+ *
+ * `.strict()` rejects unknown keys so a typo (e.g. `down`) fails validation
+ * rather than being silently ignored — migrations are append-only and never
+ * edited once shipped, so the envelope must be exact.
+ */
+export const StorageMigrationSchema = z
+  .object({
+    /** Monotonic, 1-based version. Must equal its array index + 1 (enforced by the declaration). */
+    version: z.number().int().positive(),
+    /** Optional human note surfaced in migration errors/logs. */
+    name: z.string().optional(),
+    /**
+     * The migration body: one or more DDL/DML statements applied in a single
+     * SQLite transaction. DDL (CREATE/ALTER/DROP TABLE|INDEX, CREATE TRIGGER)
+     * is allowed HERE and only here — the runtime query API forbids it.
+     */
+    up: z.string().min(1),
+  })
+  .strict();
+
+/**
+ * Per-extension storage declaration: the byte quota and the ordered,
+ * append-only list of schema migrations that build the extension's database.
+ *
+ * `.strict()` rejects unknown keys; the refinement enforces that migrations are
+ * numbered `1..N` in order with no gaps or duplicates, so a mis-numbered
+ * migration set fails at manifest-parse time rather than at apply time.
+ */
+export const StorageDeclarationSchema = z
+  .object({
+    /**
+     * Requested byte quota for this extension's database. Clamped to the host
+     * maximum (`extensions.dataQuotaBytes`, config-manager). Omitted = host default.
+     */
+    quotaBytes: z.number().int().positive().optional(),
+    /** Ordered, append-only migrations. Versions must be 1..N with no gaps. */
+    migrations: z.array(StorageMigrationSchema),
+  })
+  .strict()
+  .refine((s) => s.migrations.every((m, i) => m.version === i + 1), {
+    message: 'storage.migrations must be numbered 1..N in order with no gaps',
+  });
+
 /** Zod schema for `extension.json` manifest files. */
 export const ExtensionManifestSchema = z.object({
   /** Unique extension identifier (kebab-case). Used as directory name and registry key. */
@@ -114,6 +159,8 @@ export const ExtensionManifestSchema = z.object({
   serverCapabilities: ServerCapabilitiesSchema.optional(),
   /** Declarative proxy config for zero-code API passthrough. */
   dataProxy: DataProxySchema.optional(),
+  /** Per-extension SQLite storage declaration: byte quota + versioned schema migrations. */
+  storage: StorageDeclarationSchema.optional(),
   /** For core extensions: whether this ships enabled. Omitted/true = on, false = off. Ignored for user extensions. */
   defaultEnabled: z.boolean().optional(),
   /** Whether the user may disable this extension. Defaults to true. false = always on, no toggle shown. */
@@ -127,3 +174,5 @@ export type SettingDeclaration = z.infer<typeof SettingDeclarationSchema>;
 export type DataProxyConfig = z.infer<typeof DataProxySchema>;
 export type ServerCapabilities = z.infer<typeof ServerCapabilitiesSchema>;
 export type ExtensionCapabilities = z.infer<typeof ExtensionCapabilitiesSchema>;
+export type StorageMigration = z.infer<typeof StorageMigrationSchema>;
+export type StorageDeclaration = z.infer<typeof StorageDeclarationSchema>;
