@@ -5,9 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./app": "./src/app.ts",
     "./harness-boot": "./src/harness-boot.ts",
-    "./services/core/config-manager": "./src/services/core/config-manager.ts",
     "./services/runtimes/claude-code": "./src/services/runtimes/claude-code/index.ts",
     "./services/session": "./src/services/session/index.ts"
   },

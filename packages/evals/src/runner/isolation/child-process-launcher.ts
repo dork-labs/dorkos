@@ -1,7 +1,9 @@
 /**
- * The child-process {@link IsolationLauncher}: boots the built `@dorkos/server`
- * as a Node subprocess with its own sandbox `DORK_HOME` and port — the default
- * credentialed isolation tier (the judgment suite Phase 3 builds on).
+ * The child-process {@link IsolationLauncher}: runs `@dorkos/server` from its
+ * TypeScript source (`src/index.ts`, via `node --import tsx`) as a subprocess
+ * with its own sandbox `DORK_HOME` and port — the default credentialed
+ * isolation tier (the judgment suite Phase 3 builds on). No build step is
+ * required; the workspace source is the entry, same as `pnpm dev`.
  *
  * The subprocess is spawned DETACHED (its own process group) so `kill()` can
  * signal the WHOLE group and take the runtime's descendant binaries (the real
@@ -23,7 +25,7 @@ const STDERR_TAIL_BYTES = 8_192;
 /** Grace period (ms) to wait for a killed process to be reaped before returning. */
 const KILL_GRACE_MS = 5_000;
 
-/** Resolve the built server's entry (`apps/server/src/index.ts`) via its package export. */
+/** Resolve the server's TS source entry (`apps/server/src/index.ts`) via its package export. */
 function resolveServerEntry(): string {
   // `require.resolve` honors the `@dorkos/server` `.` export (`./src/index.ts`),
   // so the launcher never hard-codes a path relative to `packages/evals`.

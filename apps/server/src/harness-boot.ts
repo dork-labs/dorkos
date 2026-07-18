@@ -43,6 +43,14 @@ export interface InProcessTestServer {
  * end-to-end with no real model. Safe to call repeatedly in one process — the
  * registry, DB handle, and event store are OVERWRITTEN each boot (serial only).
  *
+ * KEEP IN SYNC with `start()` in `index.ts`: this mirrors the subset of its
+ * singleton wiring a driven turn needs (config store, boundary, DB + event
+ * store, runtime registration), with NO compile-time link between the two. If
+ * `start()` grows a new process-global singleton that the turn path reads,
+ * this boot must wire it too — the eval harness's structural self-test
+ * (`@dorkos/evals` widget-round-trip on test-mode) is the tripwire that goes
+ * red when they drift.
+ *
  * @param dorkHome - The sandbox data directory every wired singleton is scoped to.
  * @returns The built app and a teardown that closes the DB.
  */

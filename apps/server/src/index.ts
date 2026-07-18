@@ -167,6 +167,13 @@ let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let terminalManager: TerminalManager | undefined;
 
 async function start() {
+  // KEEP IN SYNC with `bootInProcessTestServer()` in `harness-boot.ts`: the
+  // eval harness mirrors the subset of this function's singleton wiring a
+  // driven turn needs (config store, boundary, DB + session-event store,
+  // runtime registration), with no compile-time link. If a new process-global
+  // singleton lands here and the turn path reads it, wire it there too — the
+  // harness's structural self-test is the tripwire that goes red on drift.
+  //
   // Resolve data directory once and make it available to all downstream services.
   // Priority: DORK_HOME env var > .temp/.dork (dev) > ~/.dork (production)
   const dorkHome = resolveDorkHome();

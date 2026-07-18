@@ -12,8 +12,9 @@
  * home.
  *
  * The credentialed CHILD-PROCESS mode ({@link startChildProcessServer}):
- * an {@link IsolationLauncher} spawns the built server against a sandbox
- * `DORK_HOME` with `ANTHROPIC_API_KEY` + a cheap model, and this module polls
+ * an {@link IsolationLauncher} runs the server from its TS source (via tsx)
+ * against a sandbox `DORK_HOME` with `ANTHROPIC_API_KEY` + a cheap model, and
+ * this module polls
  * `/api/health` until it is ready. Because the process is out-of-band, that tier
  * gets REAL per-eval isolation (no shared singletons / env mutation), unlike the
  * serial-only in-process mode. The launcher is the seam a future `docker` tier

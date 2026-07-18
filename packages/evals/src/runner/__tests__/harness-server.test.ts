@@ -1,8 +1,10 @@
 /**
  * In-process harness server: boots a real DorkOS server against a sandbox
  * `DORK_HOME`, serves `GET /api/health` (200), and frees its port on
- * `dispose()`. This proves the additive `@dorkos/server/app` export path and
- * the `createApp()`/`finalizeApp()` + `listen(0)` boot the spec calls for.
+ * `dispose()`. This proves the additive `@dorkos/server/harness-boot` export
+ * path — `bootInProcessTestServer()` wiring the config store, sandbox DB,
+ * session-event store, and a default `TestModeRuntime` — plus the `listen(0)`
+ * bind a real driven turn needs.
  *
  * Also pins the PR #331 hardening: `dispose()` restores the `process.env` the
  * boot mutated (`DORK_HOME`, `DORKOS_TEST_RUNTIME`) — a prior value is put back,
@@ -240,8 +242,8 @@ describe('startChildProcessServer (isolation seam)', () => {
 
 // Gated: only runs when a real ANTHROPIC_API_KEY is present (the judgment CI
 // tier), never in the default vitest run. Proves the real child-process boot
-// end-to-end: spawn the built server, drive a trivial prompt, collect a
-// terminal `done`.
+// end-to-end: spawn the server from its TS source (via tsx), drive a trivial
+// prompt, collect a terminal `done`.
 // eslint-disable-next-line no-restricted-syntax -- gating on the real credentialed secret is the whole point of this test.
 const HAS_ANTHROPIC_KEY = !!process.env.ANTHROPIC_API_KEY;
 
