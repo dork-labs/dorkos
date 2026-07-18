@@ -1,9 +1,10 @@
 /**
- * Watch for CWD changes and notify the server to re-scan local extensions.
+ * Watch for CWD changes and re-resolve the working directory's extension set.
  *
- * When the working directory changes and the extension set differs (new
- * extensions added or existing ones removed), a toast is shown and the
- * page reloads after 1.5 seconds so the new extension set takes effect.
+ * When the working directory changes and the discovered extension set differs
+ * (new extensions added or existing ones removed), a toast is shown and the
+ * caller's `onExtensionsChanged` handler runs, which live-remounts the
+ * extension slots for the new set — no full-page reload.
  *
  * @module features/extensions/model/use-cwd-extension-sync
  */
@@ -11,9 +12,6 @@ import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/layers/shared/model';
 import { extensionApiUrl } from './extension-api-url';
-
-/** Delay between toast and page reload (ms). */
-const RELOAD_DELAY_MS = 1500;
 
 /** Response shape from POST /api/extensions/cwd-changed. */
 interface CwdChangedResponse {
@@ -23,8 +21,10 @@ interface CwdChangedResponse {
 }
 
 /**
- * Notify the server that the CWD changed and trigger a page reload if
- * the set of discovered extensions differs.
+ * Notify the server that the CWD changed and return the diff of discovered
+ * extensions. The server re-scans and re-scopes its extension set as a side
+ * effect, so a subsequent extension-list fetch reflects the new working
+ * directory.
  *
  * @param cwd - New working directory (null clears the CWD)
  * @returns The diff response, or null on network/server error
@@ -48,21 +48,34 @@ async function notifyCwdChanged(cwd: string | null): Promise<CwdChangedResponse 
 }
 
 /**
- * Hook that subscribes to CWD changes in the app store and notifies the
- * server when the working directory switches. If the server reports that
- * the extension set changed (added or removed extensions), a toast is
- * shown and the page reloads after {@link RELOAD_DELAY_MS}.
+ * Hook that subscribes to CWD changes in the app store and notifies the server
+ * when the working directory switches. If the server reports that the extension
+ * set changed (added or removed extensions), a toast is shown and
+ * `onExtensionsChanged` runs to live-remount the extension slots with the new
+ * set — everything unrelated (session view, scroll, composer text, router
+ * state) is preserved.
  *
  * Placed inside `ExtensionProvider` so it runs once for the app lifetime.
+ *
+ * @param onExtensionsChanged - Runs after the server confirms the cwd-scoped
+ *   extension set changed. The handler re-resolves and remounts the extension
+ *   slots. Kept in a ref so the effect stays keyed on the CWD alone.
  */
-export function useCwdExtensionSync(): void {
+export function useCwdExtensionSync(onExtensionsChanged: () => void): void {
   const selectedCwd = useAppStore((s) => s.selectedCwd);
 
   // Track the previous CWD to detect actual changes (not the initial mount).
   const prevCwdRef = useRef<string | null | undefined>(undefined);
 
+  // Keep the latest handler in a ref so a new callback identity never re-runs
+  // the CWD effect (which would re-notify the server for an unchanged cwd).
+  const onChangedRef = useRef(onExtensionsChanged);
   useEffect(() => {
-    // Skip the initial mount — we don't want to trigger a reload on first render.
+    onChangedRef.current = onExtensionsChanged;
+  }, [onExtensionsChanged]);
+
+  useEffect(() => {
+    // Skip the initial mount — we don't want to re-scan on first render.
     if (prevCwdRef.current === undefined) {
       prevCwdRef.current = selectedCwd;
       return;
@@ -75,17 +88,12 @@ export function useCwdExtensionSync(): void {
 
     prevCwdRef.current = selectedCwd;
 
-    // Fire-and-forget: notify server and handle response.
+    // Fire-and-forget: notify the server, then live-remount if the set differs.
     void notifyCwdChanged(selectedCwd).then((result) => {
       if (!result || !result.changed) return;
 
-      toast.info('Project extensions changed. Reloading...', {
-        duration: RELOAD_DELAY_MS,
-      });
-
-      setTimeout(() => {
-        location.reload();
-      }, RELOAD_DELAY_MS);
+      toast.info('Project extensions updated');
+      onChangedRef.current();
     });
   }, [selectedCwd]);
 }

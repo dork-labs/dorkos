@@ -39,15 +39,17 @@ function mockCwdResponse(body: { changed: boolean; added: string[]; removed: str
 
 describe('useCwdExtensionSync', () => {
   it('does not call the server on initial mount', () => {
-    renderHook(() => useCwdExtensionSync());
+    const onChanged = vi.fn();
+    renderHook(() => useCwdExtensionSync(onChanged));
 
     expect(mockFetch).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it('calls POST /api/extensions/cwd-changed when CWD changes', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
 
-    renderHook(() => useCwdExtensionSync());
+    renderHook(() => useCwdExtensionSync(vi.fn()));
 
     // Simulate a CWD change via the store
     act(() => {
@@ -64,10 +66,11 @@ describe('useCwdExtensionSync', () => {
     });
   });
 
-  it('does not show toast when extensions are unchanged', async () => {
+  it('does not remount or toast when extensions are unchanged', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
 
-    renderHook(() => useCwdExtensionSync());
+    const onChanged = vi.fn();
+    renderHook(() => useCwdExtensionSync(onChanged));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/project-a');
@@ -78,32 +81,31 @@ describe('useCwdExtensionSync', () => {
     });
 
     expect(toast.info).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
-  it('shows toast when extensions changed', async () => {
+  it('shows toast and remounts extensions when the set changed', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: true, added: ['ext-new'], removed: [] }));
 
-    renderHook(() => useCwdExtensionSync());
+    const onChanged = vi.fn();
+    renderHook(() => useCwdExtensionSync(onChanged));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/project-b');
     });
 
     await vi.waitFor(() => {
-      expect(toast.info).toHaveBeenCalledWith('Project extensions changed. Reloading...', {
-        duration: 1500,
-      });
+      expect(toast.info).toHaveBeenCalledWith('Project extensions updated');
     });
+    expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('schedules page reload 1.5s after showing toast', async () => {
-    vi.useFakeTimers();
-
+  it('never reloads the page when the extension set changes', async () => {
     mockFetch.mockReturnValue(
       mockCwdResponse({ changed: true, added: ['ext-new'], removed: ['ext-old'] })
     );
 
-    // Mock location.reload
+    // Spy on location.reload to prove it is never invoked.
     const reloadSpy = vi.fn();
     const originalLocation = window.location;
     Object.defineProperty(window, 'location', {
@@ -112,25 +114,18 @@ describe('useCwdExtensionSync', () => {
       configurable: true,
     });
 
-    renderHook(() => useCwdExtensionSync());
+    const onChanged = vi.fn();
+    renderHook(() => useCwdExtensionSync(onChanged));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/project-c');
     });
 
-    // Let the fetch promise resolve
-    await vi.advanceTimersByTimeAsync(50);
-
-    // Toast should be shown
-    expect(toast.info).toHaveBeenCalledTimes(1);
-
-    // Reload should not have been called yet
+    // Wait until the remount handler ran, then assert no reload ever happened.
+    await vi.waitFor(() => {
+      expect(onChanged).toHaveBeenCalledTimes(1);
+    });
     expect(reloadSpy).not.toHaveBeenCalled();
-
-    // Advance past the 1.5s reload delay
-    await vi.advanceTimersByTimeAsync(1500);
-
-    expect(reloadSpy).toHaveBeenCalledTimes(1);
 
     // Restore
     Object.defineProperty(window, 'location', {
@@ -138,7 +133,6 @@ describe('useCwdExtensionSync', () => {
       writable: true,
       configurable: true,
     });
-    vi.useRealTimers();
   });
 
   it('does not call the server when CWD is set to the same value', async () => {
@@ -147,7 +141,8 @@ describe('useCwdExtensionSync', () => {
     // Pre-set CWD before mounting the hook
     useAppStore.setState({ selectedCwd: '/same/project' });
 
-    renderHook(() => useCwdExtensionSync());
+    const onChanged = vi.fn();
+    renderHook(() => useCwdExtensionSync(onChanged));
 
     // Clear any mocks that may have fired during mount
     mockFetch.mockClear();
@@ -162,6 +157,7 @@ describe('useCwdExtensionSync', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(mockFetch).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   describe('desktop (Electron) origin resolution', () => {
@@ -176,7 +172,7 @@ describe('useCwdExtensionSync', () => {
 
       mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
 
-      renderHook(() => useCwdExtensionSync());
+      renderHook(() => useCwdExtensionSync(vi.fn()));
 
       act(() => {
         useAppStore.getState().setSelectedCwd('/desktop/project');
@@ -196,7 +192,8 @@ describe('useCwdExtensionSync', () => {
     mockFetch.mockRejectedValue(new Error('Network error'));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    renderHook(() => useCwdExtensionSync());
+    const onChanged = vi.fn();
+    renderHook(() => useCwdExtensionSync(onChanged));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/error/project');
@@ -207,6 +204,7 @@ describe('useCwdExtensionSync', () => {
     });
 
     expect(toast.info).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
 
     errorSpy.mockRestore();
   });

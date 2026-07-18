@@ -328,3 +328,115 @@ describe('ExtensionLoader.reloadExtensions', () => {
     await expect(loader.reloadExtensions(['phantom'])).resolves.toBeDefined();
   });
 });
+
+describe('ExtensionLoader.reloadAll', () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it('tears down every currently loaded extension before re-initializing', async () => {
+    const deactivateA = vi.fn();
+    const cleanupA = vi.fn();
+    const deactivateB = vi.fn();
+    const cleanupB = vi.fn();
+
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-a', deactivate: deactivateA, cleanups: [cleanupA] });
+    seedLoaded(loader, { id: 'ext-b', deactivate: deactivateB, cleanups: [cleanupB] });
+
+    // The new working directory's set from the server.
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve([makeRecord({ id: 'ext-c', status: 'disabled', bundleReady: false })]),
+    });
+
+    await loader.reloadAll();
+
+    // Every previous extension was deactivated and cleaned up (contributions
+    // and subscriptions removed) so nothing carries over from the old cwd.
+    expect(deactivateA).toHaveBeenCalledOnce();
+    expect(cleanupA).toHaveBeenCalledOnce();
+    expect(deactivateB).toHaveBeenCalledOnce();
+    expect(cleanupB).toHaveBeenCalledOnce();
+
+    // The old extensions are gone from the loaded map.
+    expect(loader.getLoaded().has('ext-a')).toBe(false);
+    expect(loader.getLoaded().has('ext-b')).toBe(false);
+  });
+
+  it('re-fetches and returns the extension set for the new working directory', async () => {
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-old' });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve([makeRecord({ id: 'ext-new', status: 'disabled', bundleReady: false })]),
+    });
+    global.fetch = fetchMock;
+
+    const { extensions } = await loader.reloadAll();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(extensions.map((e) => e.id)).toEqual(['ext-new']);
+  });
+
+  it('keeps the loader live (not disposed) so it can reload again', async () => {
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, { id: 'ext-a' });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+
+    await loader.reloadAll();
+
+    const disposed = (loader as unknown as { disposed: boolean }).disposed;
+    expect(disposed).toBe(false);
+
+    // A second reload still works — the loader was not disposed.
+    await expect(loader.reloadAll()).resolves.toBeDefined();
+  });
+
+  it('does not throw when a teardown handler fails during reload', async () => {
+    const loader = new ExtensionLoader(makeDeps());
+    seedLoaded(loader, {
+      id: 'crash-ext',
+      deactivate: () => {
+        throw new Error('deactivate boom');
+      },
+      cleanups: [
+        () => {
+          throw new Error('cleanup boom');
+        },
+      ],
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+
+    await expect(loader.reloadAll()).resolves.toBeDefined();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[extensions] Error calling deactivate for crash-ext:'),
+      expect.anything()
+    );
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[extensions] Error in cleanup for crash-ext:'),
+      expect.anything()
+    );
+  });
+});

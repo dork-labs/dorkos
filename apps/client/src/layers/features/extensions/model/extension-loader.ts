@@ -89,6 +89,13 @@ export class ExtensionLoader {
    * async work after React StrictMode unmounts the owning component.
    */
   private disposed = false;
+  /**
+   * Monotonic load token. Each {@link initialize} run claims the current value;
+   * a later load (e.g. {@link reloadAll} on a CWD change) increments it, so a
+   * superseded in-flight load stops activating instead of registering
+   * contributions discovered under the previous working directory.
+   */
+  private generation = 0;
 
   constructor(deps: ExtensionAPIDeps) {
     this.deps = deps;
@@ -103,6 +110,9 @@ export class ExtensionLoader {
     extensions: ExtensionRecordPublic[];
     loaded: Map<string, LoadedExtension>;
   }> {
+    // Claim this load; a newer initialize()/reloadAll() supersedes it.
+    const gen = ++this.generation;
+
     const extensions = await fetchExtensions();
 
     // Only load extensions that have been compiled and have a ready bundle.
@@ -128,9 +138,11 @@ export class ExtensionLoader {
     const serverInits: Promise<void>[] = [];
 
     for (const { rec, module } of bundleResults) {
-      // If deactivateAll() was called (e.g. React StrictMode unmount) while
-      // the async initialize was in flight, stop activating further extensions.
-      if (this.disposed) break;
+      // Stop activating if this load was torn down (deactivateAll on a
+      // StrictMode unmount) or superseded by a newer load (reloadAll on a rapid
+      // CWD switch) while the async work was in flight — otherwise we would
+      // register stale contributions from a previous working directory.
+      if (this.disposed || gen !== this.generation) break;
 
       if (!module) {
         // importBundle already logged the error; nothing more to do here.
@@ -180,15 +192,49 @@ export class ExtensionLoader {
   }
 
   /**
-   * Deactivate all loaded extensions.
-   *
-   * Calls each extension's optional `deactivate()` function first, then runs
-   * all registered cleanup functions. Errors in individual cleanups are caught
-   * and logged so they cannot prevent the remaining extensions from being torn down.
+   * Permanently dispose the loader: mark it disposed (so any in-flight
+   * {@link initialize} stops activating) and tear down every loaded extension
+   * via {@link teardownLoaded}. Used as the owning component's unmount cleanup.
    */
   deactivateAll(): void {
     this.disposed = true;
+    this.teardownLoaded();
+  }
 
+  /**
+   * Tear down every loaded extension, then re-run the full load lifecycle
+   * against the server's current extension set.
+   *
+   * Unlike {@link deactivateAll}, the loader stays live: it deactivates each
+   * extension (running its cleanups, so all registry contributions and
+   * event/state subscriptions are removed), then re-fetches, re-imports, and
+   * re-activates the fresh set. Slot hosts observe the contributions leave the
+   * reactive registry and return, so extension components remount cleanly with
+   * no state carried over from the previous working directory.
+   *
+   * Used by the CWD sync when the working directory changes and its scoped
+   * extension set differs — a live swap that replaces the old page reload.
+   *
+   * @returns The refreshed extension list and the map of re-activated extensions
+   */
+  async reloadAll(): Promise<{
+    extensions: ExtensionRecordPublic[];
+    loaded: Map<string, LoadedExtension>;
+  }> {
+    this.teardownLoaded();
+    return this.initialize();
+  }
+
+  /**
+   * Deactivate every loaded extension and empty the loaded map.
+   *
+   * Calls each extension's optional `deactivate()` first, then runs all
+   * registered cleanup functions. Errors in individual teardowns are caught and
+   * logged so they cannot prevent the remaining extensions from being torn down.
+   * Shared by {@link deactivateAll} and {@link reloadAll}; does not touch the
+   * `disposed` flag, so a reload can re-activate afterwards.
+   */
+  private teardownLoaded(): void {
     for (const [id, ext] of this.loaded) {
       try {
         ext.deactivate?.();
