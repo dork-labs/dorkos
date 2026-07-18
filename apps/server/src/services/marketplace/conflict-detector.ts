@@ -16,6 +16,25 @@ import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schema
 import type { AdapterManager } from '../relay/adapter-manager.js';
 import type { ConflictReport } from './types.js';
 
+/** The install-root directory names, one per package-type family. */
+const INSTALL_ROOTS = ['agents', 'plugins', 'shapes'] as const;
+
+/**
+ * The install-root directory for a package type. Agents live under `agents/`,
+ * Shapes under `shapes/`, and everything else (plugin / skill-pack / adapter)
+ * under `plugins/`.
+ *
+ * @param type - The package type.
+ * @returns The directory name the package installs into.
+ */
+function installRootForType(
+  type: MarketplacePackageManifest['type']
+): (typeof INSTALL_ROOTS)[number] {
+  if (type === 'agent') return 'agents';
+  if (type === 'shape') return 'shapes';
+  return 'plugins';
+}
+
 /**
  * Input to {@link ConflictDetector.detect}. Captures everything the
  * detector needs to compare a staged package against the active scope.
@@ -172,7 +191,7 @@ export class ConflictDetector {
     ctx: ConflictDetectionContext,
     scopeRoot: string
   ): Promise<ConflictReport[]> {
-    const installRoot = ctx.manifest.type === 'agent' ? 'agents' : 'plugins';
+    const installRoot = installRootForType(ctx.manifest.type);
     const targetPath = join(scopeRoot, installRoot, ctx.manifest.name);
     if (await pathExists(targetPath)) {
       return [
@@ -185,30 +204,32 @@ export class ConflictDetector {
       ];
     }
 
-    // Cross-type warning: a same-name package of a DIFFERENT type occupies the
-    // OTHER root (`agents/` vs `plugins/`). The install won't overwrite it (it
-    // lands in this type's slot), so both silently coexist — the scanner then
-    // emits duplicates and an uninstall can never reach the shadowed slot. Surface
-    // it as a non-blocking warning so the collision isn't invisible.
-    const otherRoot = installRoot === 'agents' ? 'plugins' : 'agents';
-    const otherTypePath = join(scopeRoot, otherRoot, ctx.manifest.name);
-    if (await pathExists(otherTypePath)) {
-      return [
-        {
-          level: 'warning',
-          type: 'package-name',
-          description: `A different package named "${ctx.manifest.name}" is already installed under "${otherRoot}/". Installing this one under "${installRoot}/" will leave both in place.`,
-          conflictingPackage: ctx.manifest.name,
-        },
-      ];
+    // Cross-type warning: a same-name package of a DIFFERENT type occupies one
+    // of the OTHER roots (`agents/`, `plugins/`, `shapes/`). The install won't
+    // overwrite it (it lands in this type's slot), so both silently coexist —
+    // the scanner then emits duplicates and an uninstall can never reach the
+    // shadowed slot. Surface it as a non-blocking warning so the collision isn't
+    // invisible.
+    for (const otherRoot of INSTALL_ROOTS) {
+      if (otherRoot === installRoot) continue;
+      const otherTypePath = join(scopeRoot, otherRoot, ctx.manifest.name);
+      if (await pathExists(otherTypePath)) {
+        return [
+          {
+            level: 'warning',
+            type: 'package-name',
+            description: `A different package named "${ctx.manifest.name}" is already installed under "${otherRoot}/". Installing this one under "${installRoot}/" will leave both in place.`,
+            conflictingPackage: ctx.manifest.name,
+          },
+        ];
+      }
     }
 
     // Cross-scope warning: agent-local install shadowing a global package
     if (ctx.projectPath) {
-      const globalCandidates = [
-        join(this.#dorkHome, 'plugins', ctx.manifest.name),
-        join(this.#dorkHome, 'agents', ctx.manifest.name),
-      ];
+      const globalCandidates = INSTALL_ROOTS.map((root) =>
+        join(this.#dorkHome, root, ctx.manifest.name)
+      );
       for (const candidate of globalCandidates) {
         if (await pathExists(candidate)) {
           return [

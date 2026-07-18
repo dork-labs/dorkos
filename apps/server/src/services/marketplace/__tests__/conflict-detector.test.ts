@@ -66,6 +66,26 @@ function adapterManifest(name: string, adapterType: string) {
   } as unknown as MarketplacePackageManifest;
 }
 
+/** Build a minimal shape package manifest for tests. */
+function shapeManifest(name: string) {
+  return {
+    schemaVersion: 1,
+    name,
+    version: '1.0.0',
+    type: 'shape',
+    description: 'A test shape package.',
+    tags: [],
+    layers: [],
+    requires: [],
+    activates: [],
+    extensions: [],
+    layout: { sidebarOpen: true, openPanels: [], focusDashboardSections: [] },
+    agents: [],
+    schedules: [],
+    connections: [],
+  } as unknown as MarketplacePackageManifest;
+}
+
 /** Write a SKILL.md file with the given frontmatter into a directory. */
 async function writeSkill(
   root: string,
@@ -154,6 +174,41 @@ describe('ConflictDetector', () => {
       type: 'package-name',
       conflictingPackage: 'duplicate-plugin',
     });
+  });
+
+  it('reports a reinstall warning when a Shape already owns the name under shapes/', async () => {
+    await mkdir(join(dorkHome, 'shapes', 'linear-ops'), { recursive: true });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: shapeManifest('linear-ops'),
+      dorkHome,
+    });
+
+    // A Shape installs under shapes/ — the reinstall must be detected there, not
+    // missed because the check only looked at plugins/ (the pre-DOR-355 bug).
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'package-name',
+      conflictingPackage: 'linear-ops',
+    });
+  });
+
+  it('warns about cross-type coexistence when a plugin already owns a Shape name', async () => {
+    await installPluginSkeleton(dorkHome, 'ambient');
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: shapeManifest('ambient'),
+      dorkHome,
+    });
+
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0].description).toMatch(/plugins\//);
   });
 
   it('reports a warning when two extensions register the same slot at the same priority', async () => {

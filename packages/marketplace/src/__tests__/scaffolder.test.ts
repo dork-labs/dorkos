@@ -205,11 +205,43 @@ describe('createPackage', () => {
     });
   });
 
+  describe('shape packages', () => {
+    it('creates a valid shape skeleton with one suggested agent', async () => {
+      const parentDir = await tempDir();
+
+      const result = await createPackage({ parentDir, name: 'test-shape', type: 'shape' });
+
+      expect(result.filesWritten).toContain(PACKAGE_MANIFEST_PATH);
+      expect(result.filesWritten).toContain(CLAUDE_PLUGIN_MANIFEST_PATH);
+      await assertExists(path.join(result.packagePath, 'extensions'));
+
+      const manifest = (await readJson(
+        path.join(result.packagePath, PACKAGE_MANIFEST_PATH)
+      )) as Record<string, unknown>;
+      expect(manifest.type).toBe('shape');
+      expect(manifest.layout).toBeDefined();
+      expect(Array.isArray(manifest.agents)).toBe(true);
+      expect((manifest.agents as unknown[]).length).toBe(1);
+      // The one starter agent is a soft suggestion with a template (so it
+      // satisfies the "template or matchName" cross-field rule).
+      const agent = (manifest.agents as Record<string, unknown>[])[0];
+      expect(agent.affinity).toBe('suggested');
+      expect(agent.template).toBeDefined();
+    });
+  });
+
   describe('round-trip with validatePackage', () => {
-    // All four package types round-trip cleanly. The adapter case relies on
+    // All five package types round-trip cleanly. The adapter case relies on
     // the scaffolder defaulting `adapterType` to the package name when an
-    // explicit value isn't provided.
-    const roundTripTypes: readonly PackageType[] = ['plugin', 'skill-pack', 'agent', 'adapter'];
+    // explicit value isn't provided; the shape case relies on the starter
+    // skeleton being a valid Shape manifest.
+    const roundTripTypes: readonly PackageType[] = [
+      'plugin',
+      'skill-pack',
+      'agent',
+      'adapter',
+      'shape',
+    ];
 
     it.each(roundTripTypes)('createPackage(%s) -> validatePackage passes', async (type) => {
       const parentDir = await tempDir();
