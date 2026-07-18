@@ -98,8 +98,9 @@ ISO-text timestamps, TSDoc on every table.
   client extension (over the bridge) and a server extension (in-process), with
   **zero escape hatches** for the CRM-lite validation case.
 - **Schema declared in the manifest** as Zod-validated versioned SQL migrations,
-  applied append-only, with a byte-for-byte rollback on failure consistent with
-  ADR-0304.
+  applied append-only inside one SQLite transaction, whose failure leaves the
+  previous schema and data intact (the ADR-0304 guarantee, delivered by SQLite's
+  own atomicity).
 - **Per-extension size quota** + result row/byte caps, enforced server-side.
 - **Injection-proof by construction**; DDL confined to migrations; `ATTACH`,
   `PRAGMA`, and multi-statement input rejected at runtime.
@@ -118,7 +119,10 @@ ISO-text timestamps, TSDoc on every table.
   (raw parameterized SQL is the surface; an ergonomic wrapper is a later option).
 - Full-text search, vector columns, cross-extension shared tables.
 - A per-statement wall-clock timeout (**A-BSQLITE-SYNC**: `better-sqlite3` is
-  synchronous; v1 relies on row/byte/quota caps, worker-thread timeout deferred).
+  synchronous; the row/byte/quota caps bound data volume, **not compute** — v1
+  rejects `WITH RECURSIVE` outright and defers the worker-thread executor, §4c).
+- Recursive CTEs (`WITH RECURSIVE`) — unavailable in v1 (the compute-DoS guard,
+  §4c); they return with the worker-thread executor.
 - Removing `loadData`/`saveData` in this spec (Decision 9: additive now,
   collapse onto a reserved KV table as a fast-follow).
 
@@ -231,18 +235,20 @@ Zod-expressible:
 
 ```ts
 /** One forward-only schema migration for an extension's database. */
-export const StorageMigrationSchema = z.object({
-  /** Monotonic, 1-based version. Must equal its 1-based index + 1 across the array. */
-  version: z.number().int().positive(),
-  /** Optional human note surfaced in migration errors/logs. */
-  name: z.string().optional(),
-  /**
-   * The migration body: one or more DDL/DML statements applied in a single
-   * SQLite transaction. DDL (CREATE/ALTER/DROP TABLE|INDEX, CREATE TRIGGER) is
-   * allowed HERE and only here — the runtime query API forbids it (§4).
-   */
-  up: z.string().min(1),
-});
+export const StorageMigrationSchema = z
+  .object({
+    /** Monotonic, 1-based version. Must equal its 1-based index + 1 across the array. */
+    version: z.number().int().positive(),
+    /** Optional human note surfaced in migration errors/logs. */
+    name: z.string().optional(),
+    /**
+     * The migration body: one or more DDL/DML statements applied in a single
+     * SQLite transaction. DDL (CREATE/ALTER/DROP TABLE|INDEX, CREATE TRIGGER) is
+     * allowed HERE and only here — the runtime query API forbids it (§4).
+     */
+    up: z.string().min(1),
+  })
+  .strict();
 
 /** Per-extension storage declaration. */
 export const StorageDeclarationSchema = z
@@ -339,22 +345,45 @@ build a statement by concatenating untrusted values into`sql` and have it
 treated as anything but the literal statement text. This is the injection
 guarantee, by construction.
 
-#### 4b. Statement guard (server-side, `sql-guard.ts`)
+#### 4b. Statement guard (server-side, `sql-guard.ts` + post-prepare authority)
 
-Every incoming statement passes a guard before execution:
+Every incoming statement passes two layers before execution. The split matters:
+a keyword scan alone **cannot** enforce the read contract — SQLite permits
+`WITH cte AS (…) DELETE FROM …`, so a leading-token check would happily pass
+`api.data.query('WITH x AS (SELECT 1) DELETE FROM contacts')`. The authority is
+therefore the compiled statement itself.
 
-- **Single statement only.** `better-sqlite3`'s `db.prepare(sql)` compiles
-  exactly one statement and throws on trailing SQL — a structural guard against
-  `"…; DROP TABLE …"`. The guard additionally rejects any input whose tokenizer
-  finds a statement separator outside a string/comment.
-- **Leading-keyword allowlist:**
-  - `query` → `SELECT` or `WITH` (a CTE resolving to a SELECT). Nothing else.
-  - `run` → `INSERT`, `UPDATE`, or `DELETE`.
-  - `transaction` → each step classified as `run`.
+**Layer 1 — keyword pre-filter (`sql-guard.ts`, pure, cheap, advisory):**
+
+- **Single statement only.** Reject any input whose tokenizer finds a statement
+  separator outside a string/comment (defense-in-depth against
+  `"…; DROP TABLE …"`).
+- **Leading-keyword check:** `query` → `SELECT` or `WITH`; `run` → `INSERT`,
+  `UPDATE`, `DELETE`, or `WITH`; `transaction` → each step classified as `run`.
 - **Denylist (rejected on any surface):** `ATTACH`, `DETACH`, `PRAGMA`, `VACUUM`,
   `ALTER`, `DROP`, `CREATE`, `REINDEX`, `ANALYZE`, and transaction control
   (`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`) — the executor owns transactions.
-  DDL is reachable **only** through migrations (§3).
+  DDL is reachable **only** through migrations (§3). (`PRAGMA` sits here because
+  some pragmas compile as read-only yet still mutate connection state.)
+- **`WITH RECURSIVE` rejected on both surfaces** — the compute-DoS guard (§4c).
+
+**Layer 2 — post-prepare authority (`Statement.readonly`):**
+
+After `db.prepare(sql)` succeeds (which itself structurally guarantees exactly
+one statement — `better-sqlite3` throws on trailing SQL), the executor consults
+`stmt.readonly` — better-sqlite3's binding of `sqlite3_stmt_readonly`, i.e. the
+SQLite engine's own verdict on whether the compiled statement can write:
+
+- `query` surface → **reject unless `stmt.readonly === true`**. This is what
+  actually stops `WITH x AS (SELECT 1) DELETE FROM contacts`: it compiles as a
+  writer, `readonly` is `false`, rejected — regardless of what the keyword scan
+  thought.
+- `run` / `transaction` steps → must be non-readonly writers of the allowed DML
+  forms (the pre-filter already screened the verb).
+
+The pre-filter exists for fast, clear error messages and for rules the engine
+cannot express (denylist, `WITH RECURSIVE`); **`stmt.readonly` is the contract
+enforcement** for the read surface.
 
 Guard failures return a typed `ExtensionDbError` with `code: 'STATEMENT_REJECTED'`
 and a message naming the reason (never echoing bound values).
@@ -375,12 +404,21 @@ and a message naming the reason (never echoing bound values).
   **25 MB**). Because writes run inside a transaction, an over-quota write rolls
   back cleanly.
 - **Lock contention.** `busy_timeout=5000` (pragma) handles concurrent writers.
-- **Statement wall-clock timeout: deferred (A-BSQLITE-SYNC).**
-  `better-sqlite3` is synchronous and exposes no progress handler, so a true
-  per-statement timeout would require running each extension DB on a worker
-  thread. v1 relies on the row/byte/quota caps + the single-writer, small-DB
-  reality; the worker-thread timeout is a documented follow-up. This is stated
-  honestly rather than claimed.
+- **Compute is NOT covered by the caps — named honestly (A-BSQLITE-SYNC).** The
+  row/byte/quota caps bound **data volume**, not **CPU time**. The concrete
+  uncovered case: `WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r)
+SELECT count(*) FROM r` returns **one row** (row/byte caps never trip), reads
+  **no disk** (quota irrelevant), and — because `better-sqlite3` is synchronous —
+  freezes the entire single-threaded server event loop, i.e. the whole cockpit.
+  v1 guard: **`WITH RECURSIVE` is rejected on both surfaces** by the keyword
+  pre-filter (§4b) — recursive CTEs are simply unavailable until the real fix
+  lands. That real fix is the **worker-thread executor** (a true wall-clock
+  timeout via terminating the worker), which stays a documented follow-up;
+  `better-sqlite3` exposes no progress handler, so no in-process timeout exists.
+  Unbounded-but-non-recursive compute (e.g. a large cross join) remains possible
+  in principle; it is at least disk-bounded by the quota, and is part of the same
+  deferred worker-thread fix. The caps are presented as what they are — volume
+  limits, not a compute sandbox.
 
 ### 5. Migration execution & rollback
 
@@ -394,19 +432,32 @@ The migrator (`extension-migrator.ts`) runs when an extension is enabled/loaded
    version (installed an older extension over newer data), **refuse to enable**
    with `SCHEMA_DOWNGRADE` — forward-only, no destructive down-migrations
    (matching config-manager's forward-only stance). Nothing is mutated.
-3. If `pending` is non-empty: **back up the DB file aside** —
-   `cp store.db → store.db.bak-<applied>-<uuid>` — mirroring the marketplace
-   backup-aside (ADR-0304, `transaction.ts:128-133`).
-4. Apply all pending migrations **inside one SQLite transaction**
-   (`BEGIN … COMMIT`), in ascending version order, updating
+3. Apply all pending migrations **inside one SQLite transaction**
+   (`db.transaction(...)`), in ascending version order, updating
    `_dork_meta.schema_version` to the highest applied within the same
    transaction.
-5. **On any error:** `ROLLBACK`, close + restore the backup file byte-for-byte
-   over `store.db`, mark the extension `error` with the migration message
+4. **On any error:** the transaction rolls back — SQLite DDL is transactional,
+   so a failed migration leaves the schema, the data, and `schema_version`
+   exactly as they were. Mark the extension `error` with the migration message
    (surfaced in the UI the same way a failed server-init is today,
-   `extension-server-lifecycle.ts`), and **refuse to enable**. This delivers the
-   ADR-0304 "previous state intact" guarantee at the row level.
-6. On success: delete the backup.
+   `extension-server-lifecycle.ts`) and **refuse to enable**. This delivers the
+   same "previous state intact" guarantee the marketplace install transaction
+   makes (ADR-0304) — via SQLite's own atomicity, not a file copy.
+5. On success: the extension proceeds to initialize.
+
+**Deliberately no file-level backup/restore.** An earlier draft copied
+`store.db → store.db.bak` before migrating and restored it byte-for-byte on
+failure. That is **WAL-unsafe**: under `journal_mode=WAL`, committed rows can
+live in `store.db-wal` rather than the main file, so (a) a copy of `store.db`
+alone silently misses them — the "backup" loses data; and (b) restoring a stale
+main file while the `-wal`/`-shm` sidecars persist makes SQLite replay the WAL
+against the wrong base — corruption. A safe physical backup would require
+`PRAGMA wal_checkpoint(TRUNCATE)` + closing the handle + copying/restoring all
+three files as a set and deleting stale sidecars on restore — machinery that
+buys nothing on the hot path, because the migration transaction already
+guarantees rollback, including across a process crash mid-migration (SQLite's
+WAL recovery). The transaction **is** the rollback mechanism; no `.bak` files
+exist.
 
 Failure is isolated: one extension's migration failure disables only that
 extension; every other extension DB is a separate file and untouched. A
@@ -427,7 +478,11 @@ DB where practical.
   root) and applies the delta. This is the safe-update guarantee.
 - **Uninstall (default, `purge:false`).** Data **survives** — `extension-data/:id/`
   is outside every install root, so `uninstall.ts:116-140` never removes it.
-  Reinstalling re-attaches to the existing DB.
+  Reinstalling re-attaches to the existing DB. One consequence deserves stating:
+  uninstalling a v2 extension and reinstalling **v1** refuses to enable with
+  `SCHEMA_DOWNGRADE` (the surviving `store.db` is ahead of the v1 manifest) until
+  the user deletes `store.db` or reinstalls v2 — correct forward-only behavior,
+  surfaced in the error message.
 - **Uninstall `--purge`.** Extend `flows/uninstall.ts` to additionally remove
   `extension-data/:id/` (global) and, when a `projectPath` is given,
   `<projectPath>/.dork/extension-data/:id/` (local). This **closes the current
@@ -581,11 +636,15 @@ falling back to string-built SQL, a second store, or an unsafe primitive.
   `resolveBlobPath` / `resolveDbPath` return the correct scope-aware paths
   (global vs local); `resolveBlobPath` matches the pre-refactor `resolveDataPath`
   exactly (a golden test proving no behavior change). `SAFE_EXT_ID` rejection.
-- **Unit — statement guard (`sql-guard.ts`):** allow single `SELECT`/`WITH` on
-  `query`; allow `INSERT`/`UPDATE`/`DELETE` on `run`; reject `ATTACH`, `PRAGMA`,
-  `DROP`, `CREATE`, transaction control, and any multi-statement
-  (`"SELECT 1; DROP TABLE t"`) on both surfaces — each case a purpose comment,
-  each able to fail.
+- **Unit — statement guard (pre-filter + readonly authority):** allow single
+  `SELECT`/`WITH…SELECT` on `query`; allow `INSERT`/`UPDATE`/`DELETE` (incl.
+  `WITH`-prefixed DML) on `run`; reject `ATTACH`, `PRAGMA`, `DROP`, `CREATE`,
+  transaction control, `WITH RECURSIVE` (both surfaces), and any multi-statement
+  (`"SELECT 1; DROP TABLE t"`); **the load-bearing case:**
+  `WITH x AS (SELECT 1) DELETE FROM contacts` submitted to `query` passes the
+  keyword pre-filter but is rejected by `stmt.readonly === false` — proving the
+  authority layer, not the scan, enforces the read contract. Each case a purpose
+  comment, each able to fail.
 - **Unit — executor (`extension-database.ts` + executor, `:memory:` DB):**
   parameterized round-trips (bound `?` values, incl. `null`/`bigint`/`Uint8Array`);
   an injection attempt via a param value is stored as data, never executed; row
@@ -593,9 +652,11 @@ falling back to string-built SQL, a second store, or an unsafe primitive.
   `QUOTA_EXCEEDED` and rolls the write back (row count unchanged); `transaction`
   is all-or-nothing (a failing step reverts prior steps).
 - **Unit — migrator:** fresh DB applies 1..N and stamps `_dork_meta`; a bump
-  applies only the delta; a failing migration rolls back, restores the backup
-  byte-for-byte, and leaves `schema_version` unchanged; a downgrade refuses with
-  `SCHEMA_DOWNGRADE`; append-only 1..N gap is rejected at load.
+  applies only the delta; a failing migration rolls back transactionally —
+  schema unchanged, `schema_version` unchanged, and **previously committed rows
+  still readable afterwards** (the WAL-correctness proof: data in the WAL
+  survives a failed migration; no `.bak` file is ever created); a downgrade
+  refuses with `SCHEMA_DOWNGRADE`; append-only 1..N gap is rejected at load.
 - **Integration — routes (`apps/server`, real Express + real SQLite):** the three
   `/db/*` routes end-to-end for an installed extension; 404 for an unknown `:id`;
   400 for a malformed `:id`; a mutating statement on `/db/query` rejected; a
@@ -623,17 +684,21 @@ falling back to string-built SQL, a second store, or an unsafe primitive.
 - WAL + `synchronous=NORMAL` (house pragmas) give good write throughput with
   single-writer safety; `busy_timeout` absorbs contention.
 - Because `better-sqlite3` is synchronous, a pathological query blocks the event
-  loop. Mitigations: row/byte caps (hard), the small single-extension DB size
-  (quota-bounded), and — deferred — a worker-thread executor for a true
-  statement timeout (A-BSQLITE-SYNC). Called out honestly, not hidden.
+  loop — and the row/byte/quota caps do **not** bound compute (§4c names the
+  recursive-CTE freeze case explicitly). v1 mitigations: `WITH RECURSIVE`
+  rejected outright, plus quota-bounded DB size keeping table scans small. The
+  real fix — a worker-thread executor with a wall-clock timeout — is deferred
+  (A-BSQLITE-SYNC). Called out honestly, not hidden.
 - Indexes are author-declared in migrations (see §8) — the layer neither adds nor
   prevents them.
 
 ## Security Considerations
 
 - **Injection:** parameterized-only surface (§4a) + prepared-statement binding →
-  values are never executed as SQL. The statement guard (§4b) rejects
-  multi-statement input and DDL/`ATTACH`/`PRAGMA` on the runtime path.
+  values are never executed as SQL. The guard (§4b) rejects multi-statement
+  input and DDL/`ATTACH`/`PRAGMA` on the runtime path, and the read surface is
+  enforced by the engine's own `stmt.readonly` verdict — not by keyword
+  matching, which SQLite's `WITH…DELETE` grammar defeats.
 - **Isolation:** structural (§2) — one file, one connection, server-derived path,
   no `ATTACH`. Cross-extension reads are impossible, not merely disallowed.
 - **Authorization at the bridge:** the server resolves the DB from the `:id` path
@@ -641,7 +706,9 @@ falling back to string-built SQL, a second store, or an unsafe primitive.
   settings routes already use. Per-caller authentication is the existing
   localhost posture (A-LOCALHOST-TRUST, DOR-278); this spec does not weaken it and
   does not claim to strengthen it.
-- **Resource exhaustion:** quota + row cap + byte cap + `busy_timeout` (§4c). The
+- **Resource exhaustion:** quota + row cap + byte cap + `busy_timeout` bound
+  data volume; `WITH RECURSIVE` is rejected because the caps do **not** bound
+  compute (§4c names the one-row event-loop-freeze case). The remaining
   wall-clock-timeout gap is disclosed, not glossed.
 - **DDL confinement:** schema change is reachable only through reviewed,
   append-only manifest migrations run in a rolled-back-on-failure transaction.
@@ -667,8 +734,8 @@ falling back to string-built SQL, a second store, or an unsafe primitive.
 ## Implementation Phases
 
 - **Phase 1 — Substrate:** manifest `storage` schema; shared path resolver;
-  `ExtensionDatabase` connection + `_dork_meta`; migrator with backup-aside
-  rollback.
+  `ExtensionDatabase` connection + `_dork_meta`; transactional migrator
+  (rollback via SQLite atomicity — no file backups).
 - **Phase 2 — Query engine:** `sql-guard`; executor (query/run/transaction) with
   row/byte/quota caps + typed errors; `ctx.data` in-process wiring.
 - **Phase 3 — Bridge:** `/db/*` routes + Zod DTOs; client `api.data` on
@@ -691,16 +758,19 @@ falling back to string-built SQL, a second store, or an unsafe primitive.
   dimension — a new key not present in any existing extension store. Not decided
   here.
 - **Worker-thread executor (A-BSQLITE-SYNC).** Whether/when to move extension DBs
-  onto a worker for a true statement timeout. Deferred; row/byte/quota caps cover
-  v1.
+  onto a worker for a true statement timeout — the real fix for compute DoS
+  (§4c). Deferred; v1's honest posture is volume caps + the `WITH RECURSIVE`
+  rejection, not a compute sandbox. Lifting the `WITH RECURSIVE` ban rides this
+  follow-up.
 - **Transport promotion (A-WEB-FIRST).** Whether to lift extension data (blob +
   DB) onto the `Transport` port for Obsidian in-process parity. Deferred.
 
 ## Related ADRs
 
 - `decisions/0304-file-scoped-rollback-for-marketplace-installs.md` — the
-  backup-aside → atomic-activate → restore-on-failure pattern the migrator
-  mirrors at the row level.
+  "previous state intact on failure" guarantee the migrator matches; the
+  migrator delivers it via SQLite transactional atomicity rather than file
+  backup/restore (file-level copies are WAL-unsafe for a live SQLite DB — §5).
 - `decisions/0043-file-canonical-source-of-truth-for-mesh-registry.md` —
   file-first write-through + derived cache + reconciler; the **contrast** (the
   extension DB is a source of truth, so it has no reconciler).

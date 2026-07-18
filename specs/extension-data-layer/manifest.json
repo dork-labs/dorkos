@@ -1,8 +1,0 @@
-{
-  "id": "260718-042902",
-  "slug": "extension-data-layer",
-  "title": "Per-extension scoped SQLite data layer",
-  "created": "2026-07-17",
-  "status": "specified",
-  "linearIssue": "DOR-358"
-}
