@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import {
   CATEGORY_DESCRIPTIONS,
   CATEGORY_LABELS,
@@ -46,27 +46,96 @@ interface MarketplaceHeaderProps {
 /**
  * Top section of the Marketplace browse page.
  *
- * Renders a debounced search input, a type-filter tab row, and a category
- * facet-chip row wired to the `?category=` URL param. The `/` key focuses the
- * search input when no other input is focused.
+ * Renders a debounced search input and two clearly-labelled filter axes — a
+ * "Type" segmented-pill row and a "Category" facet-chip row. Each row carries a
+ * small muted label so a first-time user can tell the two `All`-first rows apart
+ * at a glance (the label is the disambiguator; the type row keeps its existing
+ * look). The category row is present-only: chips render for `presentCategories`
+ * in the canonical vocabulary order, and the active chip carries an `✕` that
+ * clears the filter — there is no redundant "All" chip.
+ *
+ * The search input owns its own transient keystroke state (see
+ * {@link MarketplaceSearchInput}), so typing never re-renders the type tabs or
+ * the category chips.
  *
  * @param presentCategories - Category slugs with at least one package present;
  *   controls which facet chips render (present-only, no dead facets).
  */
 export function MarketplaceHeader({ presentCategories }: MarketplaceHeaderProps = {}) {
   const {
-    search: committedSearch,
     type: activeType,
     category: activeCategory,
-    setSearch,
     setType,
     setCategory,
   } = useMarketplaceParams();
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Canonical-ordered subset of the vocabulary that actually has packages.
+  // Runs only when the header itself re-renders (a committed param change), not
+  // per keystroke — search state is isolated in MarketplaceSearchInput.
   const visibleCategories = MARKETPLACE_CATEGORIES.filter((slug) => presentCategories?.has(slug));
 
+  return (
+    <header className="space-y-3">
+      <MarketplaceSearchInput />
+
+      {/* Type filter — segmented pills, keeps its established look */}
+      <FacetRow label="Type">
+        <Tabs
+          value={activeType}
+          onValueChange={(v) => setType(v as MarketplaceTypeFilter)}
+          aria-label="Filter by package type"
+        >
+          <TabsList className="h-auto flex-wrap gap-1 bg-transparent p-0">
+            {TYPE_TABS.map((tab) => (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-full"
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </FacetRow>
+
+      {/* Category facet chips — only rendered for categories that have packages */}
+      {visibleCategories.length > 0 && (
+        <FacetRow label="Category">
+          <div role="group" aria-label="Filter by category" className="flex flex-wrap gap-1">
+            {visibleCategories.map((slug) => (
+              <CategoryChip
+                key={slug}
+                active={activeCategory === slug}
+                title={CATEGORY_DESCRIPTIONS[slug]}
+                // Re-clicking the active chip clears the filter (toggle off).
+                onClick={() => setCategory(activeCategory === slug ? null : slug)}
+              >
+                {CATEGORY_LABELS[slug]}
+              </CategoryChip>
+            ))}
+          </div>
+        </FacetRow>
+      )}
+    </header>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Search input
+// ---------------------------------------------------------------------------
+
+/**
+ * Debounced marketplace search field.
+ *
+ * Owns the transient keystroke state locally and commits it to the URL after a
+ * short debounce, so rapid typing re-renders only this field — never the type
+ * tabs or category chips that sit beside it. Also wires the `/` shortcut that
+ * focuses the input when no other field is focused.
+ */
+function MarketplaceSearchInput() {
+  const { search: committedSearch, setSearch } = useMarketplaceParams();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [localSearch, setLocalSearch] = useState(committedSearch);
 
   // Debounce the local input before committing it to the URL.
@@ -98,70 +167,61 @@ export function MarketplaceHeader({ presentCategories }: MarketplaceHeaderProps 
   }, [handleKeyDown]);
 
   return (
-    <header className="space-y-3">
-      {/* Search row */}
-      <div className="group/search relative">
-        <Label htmlFor="marketplace-search" className="sr-only">
-          Search packages
-        </Label>
-        <Search
-          className="text-muted-foreground group-focus-within/search:text-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 transition-colors duration-200"
-          aria-hidden
-        />
-        <Input
-          ref={inputRef}
-          id="marketplace-search"
-          data-testid="marketplace-search"
-          value={localSearch}
-          onChange={(e) => setLocalSearch(e.target.value)}
-          placeholder="Search packages…"
-          className="pr-10 pl-9 transition-shadow duration-200 focus:shadow-md"
-        />
-        {/* Keyboard shortcut hint */}
-        <kbd className="text-muted-foreground/60 pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-current/20 px-1.5 py-0.5 font-mono text-[10px] leading-none group-focus-within/search:opacity-0">
-          /
-        </kbd>
-      </div>
+    <div className="group/search relative">
+      <Label htmlFor="marketplace-search" className="sr-only">
+        Search packages
+      </Label>
+      <Search
+        className="text-muted-foreground group-focus-within/search:text-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 transition-colors duration-200"
+        aria-hidden
+      />
+      <Input
+        ref={inputRef}
+        id="marketplace-search"
+        data-testid="marketplace-search"
+        value={localSearch}
+        onChange={(e) => setLocalSearch(e.target.value)}
+        placeholder="Search packages…"
+        className="pr-10 pl-9 transition-shadow duration-200 focus:shadow-md"
+      />
+      {/* Keyboard shortcut hint */}
+      <kbd className="text-muted-foreground/60 pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-current/20 px-1.5 py-0.5 font-mono text-[10px] leading-none group-focus-within/search:opacity-0">
+        /
+      </kbd>
+    </div>
+  );
+}
 
-      {/* Type filter tabs */}
-      <Tabs
-        value={activeType}
-        onValueChange={(v) => setType(v as MarketplaceTypeFilter)}
-        aria-label="Filter by package type"
-      >
-        <TabsList className="h-auto flex-wrap gap-1 bg-transparent p-0">
-          {TYPE_TABS.map((tab) => (
-            <TabsTrigger
-              key={tab.value}
-              value={tab.value}
-              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-full"
-            >
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+// ---------------------------------------------------------------------------
+// Facet row
+// ---------------------------------------------------------------------------
 
-      {/* Category facet chips — only rendered for categories that have packages */}
-      {visibleCategories.length > 0 && (
-        <div role="group" aria-label="Filter by category" className="flex flex-wrap gap-1">
-          <CategoryChip active={activeCategory === null} onClick={() => setCategory(null)}>
-            All
-          </CategoryChip>
-          {visibleCategories.map((slug) => (
-            <CategoryChip
-              key={slug}
-              active={activeCategory === slug}
-              title={CATEGORY_DESCRIPTIONS[slug]}
-              // Re-clicking the active chip clears the filter (toggle).
-              onClick={() => setCategory(activeCategory === slug ? null : slug)}
-            >
-              {CATEGORY_LABELS[slug]}
-            </CategoryChip>
-          ))}
-        </div>
-      )}
-    </header>
+interface FacetRowProps {
+  /** Short muted label naming the filter axis (e.g. "Type", "Category"). */
+  label: string;
+  /** The filter control for this axis (tab row or chip group). */
+  children: ReactNode;
+}
+
+/**
+ * One labelled filter axis: a small muted uppercase label beside its control.
+ *
+ * On narrow viewports the label stacks above the control; from `sm` up it
+ * becomes a fixed-width leading column so the Type and Category controls align
+ * into a tidy control-panel grid. The label is a sighted-user affordance — the
+ * control keeps its own `aria-label` for assistive tech.
+ *
+ * @param label - Short axis name shown in the leading column.
+ * @param children - The control rendered beside the label.
+ */
+function FacetRow({ label, children }: FacetRowProps) {
+  return (
+    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3">
+      <span className="text-muted-foreground shrink-0 text-[10px] font-medium tracking-wider uppercase sm:w-16 sm:pt-2">
+        {label}
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
   );
 }
 
@@ -182,12 +242,10 @@ interface CategoryChipProps {
 
 /**
  * A single category facet chip. A real `<button>` with `aria-pressed` so it is
- * keyboard-operable and announced as a toggle. Deliberately a distinct pill
- * treatment (`rounded-full`, primary fill when active) rather than a mirror of
- * the type tabs' segmented control (`rounded-md`, `bg-background` + shadow
- * inside a `bg-muted` container) — the different affordance separates the two
- * filter axes visually while reusing the same semantic color tokens and
- * `focus-visible` ring.
+ * keyboard-operable and announced as a toggle. Inactive chips carry a `bg-muted`
+ * pill fill, which distinguishes the row from the type filter's transparent
+ * segmented pills; the active chip fills with `bg-primary` and shows an `✕` to
+ * signal that clicking it again clears the filter (the removable-tag idiom).
  *
  * @param active - Whether this chip is the active category filter.
  * @param onClick - Toggle handler.
@@ -202,13 +260,14 @@ function CategoryChip({ active, onClick, title, children }: CategoryChipProps) {
       title={title}
       onClick={onClick}
       className={cn(
-        'focus-visible:ring-ring inline-flex items-center rounded-full px-3 py-1 text-sm font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+        'focus-visible:ring-ring inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
         active
-          ? 'bg-primary text-primary-foreground'
+          ? 'bg-primary text-primary-foreground pr-2'
           : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
       )}
     >
       {children}
+      {active && <X className="size-3" aria-hidden />}
     </button>
   );
 }
