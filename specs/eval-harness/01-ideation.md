@@ -170,9 +170,14 @@ linearIssue: DOR-357
   gitignored cache keyed by SHA + path-set hash.
 - **Potential blast radius:** additive. New package + new workflow + one new
   pre-flight check in the release command. No production runtime code changes.
-  The only shared-surface touch is a possible small extension to
+  Two small additive shared-surface touches: (a) a possible extension to
   `@dorkos/test-utils` if the runner needs an HTTP-port variant of the SSE
-  collector (kept in `packages/evals` if it does not generalize cleanly).
+  collector (kept in `packages/evals` if it does not generalize cleanly), and
+  (b) `apps/server/package.json` must **expose `createApp`/`finalizeApp`**
+  (`src/app.ts:70`/`:158`) — its `exports` map today carries only `.` plus two
+  service subpaths, so those symbols are not importable by another workspace
+  package as-is; the in-process boot needs a re-export from `index.ts` or a
+  `./app` subpath (export-map addition only, no behavior change).
 
 ## 4) Root Cause Analysis
 

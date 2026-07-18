@@ -195,7 +195,11 @@ call the running API, or inspect the collected stream.
 - **In-process** (`test-mode` tier): `createApp()` + `finalizeApp()` with
   `DORKOS_TEST_RUNTIME=true`, `app.listen(0)`. Fast; the oracle reads the sandbox
   filesystem directly. This is exactly the shape `collectDurableEvents` already
-  targets (`app.listen(0)` + `http.request`).
+  targets (`app.listen(0)` + `http.request`). **Prerequisite:** those symbols
+  live in `apps/server/src/app.ts:70`/`:158` but are not in `@dorkos/server`'s
+  `exports` map (only `.` + two service subpaths today) — task 1.2 adds an
+  additive export (re-export from `index.ts` or a `./app` subpath) before the
+  harness can import them.
 - **Child-process** (`claude-code-cheap` / `real-provider` tiers): spawn the
   built server with a sandbox `DORK_HOME`, a cheap default model, and
   `ANTHROPIC_API_KEY`; poll `/api/health` until ready (the `apps/e2e`
@@ -325,7 +329,7 @@ cheapest, fastest, highest-signal five. ~cents/run.
    remains (`transaction.ts:130`). Route: `POST
 /api/marketplace/packages/:name/uninstall` (`marketplace.ts:513`).
 6. **`control_ui`** — the `control_ui` MCP tool
-   (`apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts:139`,
+   (`apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts:145`,
    `createControlUiHandler`) pushes a `ui_command` StreamEvent and folds it into
    `session.uiState` via `applyUiCommandToState` (`ui-tools.ts:62`). Oracle:
    the `ui_command` frame in the collected stream + the `uiState` fold. Schema:
@@ -334,7 +338,7 @@ cheapest, fastest, highest-signal five. ~cents/run.
    `AgentWidgetActionSchema` payload to `POST /api/sessions/:id/ui-action`
    (`apps/server/src/routes/sessions.ts:597` →
    `session-ui-action-handler.ts:43`); `formatUiActionMessage`
-   (`packages/shared/src/ui-widget.ts:797`) builds the `<ui_action>` trigger and
+   (`packages/shared/src/ui-action-message.ts:77`) builds the `<ui_action>` trigger and
    `triggerTurn` starts a fresh turn (202). Oracle: a new turn appears carrying
    the action payload and terminates in `done`. Runtime-agnostic → runs on
    `test-mode`, free.
@@ -499,9 +503,14 @@ real model).
   - `oracles/*` — each oracle against a seeded sandbox (filesystem oracle on a
     temp dir, api oracle against a stub server, stream oracle over canned frames).
   - `report/transcript.ts` — round-trips a frame sequence to JSONL and back.
-- **Integration (structural tier, `test-mode`):** the `control_ui`, `widget`, and
-  `switch-agent` evals run in-process against `test-mode` in CI on every eval
-  run — fully deterministic, zero cost, so they are always in the `smoke` subset.
+- **Integration (structural tier, `test-mode`):** the harness's own **structural
+  self-tests** — booting the in-process server, driving a scripted turn through
+  POST→`/events`, exercising the collectors and oracles end-to-end — run against
+  `test-mode` in CI on every eval run: fully deterministic, zero cost. The only
+  _product_ eval that runs here is **`widget-round-trip`** (§6 eval #7), because
+  `POST /api/sessions/:id/ui-action` is runtime-agnostic. `control_ui` and
+  `switch-agent` canNOT run on `test-mode` (it exposes no `control_ui` MCP tool
+  — the §6 keystone finding); they are judgment-tier evals.
 - **Judgment tier (real `claude-code`, cheap model):** exercised nightly and on
   labeled PRs, never in the default `vitest` run (no API key in unit CI).
 - **Mocking strategy:** the runner's own tests mock the runtime
