@@ -16,6 +16,13 @@
       "status": "specified"
     },
     {
+      "id": "260718-042902",
+      "slug": "extension-data-layer",
+      "title": "Per-extension scoped SQLite data layer",
+      "created": "2026-07-17",
+      "status": "specified"
+    },
+    {
       "id": "260717-191228",
       "slug": "capture-cloud-link-stub",
       "title": "Test-mode cloud-link stub for the Accounts capture shot",
