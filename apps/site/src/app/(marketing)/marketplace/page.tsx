@@ -7,8 +7,9 @@ import {
   fetchMarketplaceJson,
   fetchInstallCounts,
   rankPackages,
+  selectFeatured,
   MarketplaceHeader,
-  FeaturedAgentsRail,
+  FeaturedRail,
   MarketplaceGrid,
   MarketplaceBrowseTracker,
 } from '@/layers/features/marketplace';
@@ -86,13 +87,15 @@ export default async function MarketplacePage(props: {
 
   const marketplace = marketplaceResult.marketplace;
   const ranked = rankPackages(marketplace.plugins, installCounts, { type, category, q });
-  const featured = ranked.filter((p) => p.featured && p.type === 'agent');
+  // Curated, unfiltered front door: featured packages of every type, hidden
+  // entirely while any type/category/search filter is active.
+  const featured = selectFeatured(ranked, { type, category, q });
 
   return (
     <main className="mx-auto max-w-6xl px-6 pt-32 pb-24">
       <MarketplaceBrowseTracker type={type} category={category} q={q} />
       <MarketplaceHeader />
-      <FeaturedAgentsRail packages={featured} installCounts={installCounts} />
+      <FeaturedRail packages={featured} installCounts={installCounts} />
       <MarketplaceGrid
         packages={ranked}
         installCounts={installCounts}

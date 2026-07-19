@@ -1,7 +1,7 @@
 /**
  * PackageCard — compact card for a single marketplace package.
  *
- * Used in the main browse grid and the featured agents rail. Pure server
+ * Used in the main browse grid and the featured rail. Pure server
  * component (no `'use client'`). Mirrors the visual idiom of
  * `apps/site/src/layers/features/marketing/ui/FeatureCard.tsx`.
  *

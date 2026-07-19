@@ -72,3 +72,27 @@ function scorePackage(pkg: MergedMarketplaceEntry, installCount: number): number
   const installScore = Math.log(Math.max(1, installCount)) * INSTALL_LOG_WEIGHT;
   return featuredScore + installScore;
 }
+
+/**
+ * Select the packages for the Featured rail on the /marketplace page.
+ *
+ * The rail is a curated, unfiltered front door: it surfaces every package
+ * whose DorkOS sidecar sets `featured` — any package type — and disappears
+ * entirely the moment any browse filter (type, category, or search text) is
+ * active, so it never competes with a narrowed grid.
+ *
+ * The flag lives only on the sidecar (`pkg.dorkos.featured`), never top-level
+ * on the CC entry — `MarketplaceJsonEntrySchema` is `.passthrough()`, so a
+ * top-level `pkg.featured` read types as `unknown` and compiles without
+ * error while always being absent at runtime. Keep reads on the sidecar.
+ *
+ * @param packages - Ranked packages (typically the full ranked list)
+ * @param filters - Active filters from the page query string
+ */
+export function selectFeatured(
+  packages: RankedPackage[],
+  filters: RankFilters = {}
+): RankedPackage[] {
+  if (filters.type || filters.category || filters.q) return [];
+  return packages.filter((p) => p.dorkos?.featured);
+}

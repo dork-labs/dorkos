@@ -40,7 +40,7 @@ describe('MarketplaceGrid', () => {
     expect(screen.getByText('two')).toBeTruthy();
   });
 
-  it('renders all four type filter tabs plus "All"', () => {
+  it('renders all five type filter tabs plus "All"', () => {
     render(<MarketplaceGrid packages={[]} installCounts={{}} initialFilters={{}} />);
 
     expect(screen.getByText('All')).toBeTruthy();
@@ -48,6 +48,7 @@ describe('MarketplaceGrid', () => {
     expect(screen.getByText('plugin')).toBeTruthy();
     expect(screen.getByText('skill-pack')).toBeTruthy();
     expect(screen.getByText('adapter')).toBeTruthy();
+    expect(screen.getByText('shape')).toBeTruthy();
   });
 
   it('marks the "All" tab active when no type filter is set', () => {
