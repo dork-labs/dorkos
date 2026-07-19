@@ -15,6 +15,7 @@ import {
   useInstallPackage,
   useInstalledPackages,
 } from '@/layers/entities/marketplace';
+import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useMarketplaceStore } from '../model/marketplace-store';
 import { InstallConfirmationDialog } from '../ui/InstallConfirmationDialog';
 
@@ -404,6 +405,69 @@ describe('InstallConfirmationDialog', () => {
     render(<InstallConfirmationDialog />);
 
     expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Shape scope honesty — Shapes are global-only (install-shape.ts); the
+  // scope choice offered to every other package type is a silent no-op for
+  // Shapes, so the dialog must not offer it.
+  // ---------------------------------------------------------------------------
+
+  it('hides the scope selector and explains global-only install for a shape package', () => {
+    useMarketplaceStore.getState().openInstallConfirm(makePackage({ type: 'shape' }));
+    setPreviewState({ data: makeDetail() });
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.queryByText('Install for')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('All agents (global)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Specific agent')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Shapes set up your whole cockpit, so they install once for you — not per agent.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('sends no projectPath for a shape install even with a stale agent-local selection', async () => {
+    const user = userEvent.setup();
+    const agent = { id: 'agent-1', name: 'Agent One', projectPath: '/tmp/agent-one' };
+    vi.mocked(useMeshAgentPaths).mockReturnValue({
+      data: { agents: [agent] },
+    } as unknown as ReturnType<typeof useMeshAgentPaths>);
+
+    // Open on a non-shape package first and pick "Specific agent" — leaves
+    // agent-local selection state behind.
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({ data: makeDetail() });
+    const { rerender } = render(<InstallConfirmationDialog />);
+
+    await user.click(screen.getByLabelText('Specific agent'));
+    await user.click(screen.getByRole('button', { name: /select an agent/i }));
+    await user.click(await screen.findByText('Agent One'));
+
+    // Now switch the pending package to a shape without closing the dialog.
+    useMarketplaceStore
+      .getState()
+      .openInstallConfirm(makePackage({ type: 'shape', name: 'my-shape' }));
+    rerender(<InstallConfirmationDialog />);
+
+    expect(screen.queryByText('Install for')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^install$/i }));
+
+    expect(installMutateAsync).toHaveBeenCalledWith({ name: 'my-shape' });
+  });
+
+  it('keeps the scope selector for a non-shape package (regression guard)', () => {
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({ data: makeDetail() });
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByText('Install for')).toBeInTheDocument();
+    expect(screen.getByLabelText('All agents (global)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Specific agent')).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
