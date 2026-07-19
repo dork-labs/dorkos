@@ -8813,7 +8813,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Package manifest, staged path, and permission preview",
+            "description": "Package manifest, staged path, permission preview, and optional README",
             "content": {
               "application/json": {
                 "schema": {
@@ -9023,6 +9023,9 @@
                         "requires",
                         "conflicts"
                       ]
+                    },
+                    "readme": {
+                      "type": "string"
                     }
                   },
                   "required": [

@@ -10,6 +10,7 @@ import {
 } from '@/layers/shared/model';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 import { RightPanelHeader, RIGHT_PANEL_PANEL_ID, rightPanelTabDomId } from './RightPanelHeader';
+import { useRightPanelSizing } from '../model/use-right-panel-sizing';
 
 /** CSS transition for the Panel's flex-grow during programmatic open/close. */
 const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
@@ -84,17 +85,24 @@ export function RightPanelContainer() {
 
   const shouldShow = rightPanelOpen && visibleContributions.length > 0;
 
+  // Live constraints: the pixel floor as a % of the measured group (DOR-388).
+  const { minPct, defaultPct } = useRightPanelSizing();
+
   // Sync Panel collapsed/expanded state. The defaultSize prop handles the
   // initial render; this effect handles subsequent open/close toggles.
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
     if (shouldShow && panel.isCollapsed()) {
-      panel.expand();
+      // The default is a floor, not a fixed size: expand() restores a larger
+      // remembered width, but without the floor it falls back to minSize when
+      // none is remembered — and drag-to-close records ~minSize — so the panel
+      // kept reopening squished (DOR-388).
+      panel.expand(defaultPct);
     } else if (!shouldShow && panel.isExpanded()) {
       panel.collapse();
     }
-  }, [shouldShow]);
+  }, [shouldShow, defaultPct]);
 
   // No contributions at all — remove panel from the DOM entirely
   if (visibleContributions.length === 0) return null;
@@ -187,8 +195,8 @@ export function RightPanelContainer() {
         ref={panelRef}
         id="right-panel"
         order={2}
-        defaultSize={shouldShow ? 35 : 0}
-        minSize={20}
+        defaultSize={shouldShow ? defaultPct : 0}
+        minSize={minPct}
         collapsible
         collapsedSize={0}
         onCollapse={() => setRightPanelOpen(false)}

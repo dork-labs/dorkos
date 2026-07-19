@@ -9,10 +9,12 @@
  */
 
 import Link from 'next/link';
+import { PackageTypeSchema } from '@dorkos/marketplace';
 import type { RankedPackage } from '../lib/ranking';
 import { PackageCard } from './PackageCard';
 
-const PACKAGE_TYPES = ['agent', 'plugin', 'skill-pack', 'adapter'] as const;
+/** Every controlled package type, in taxonomy order — drives the filter strip. */
+const PACKAGE_TYPES = PackageTypeSchema.options;
 
 interface MarketplaceGridProps {
   packages: RankedPackage[];

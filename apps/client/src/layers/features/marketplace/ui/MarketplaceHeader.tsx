@@ -23,6 +23,7 @@ const TYPE_TABS: ReadonlyArray<{ value: MarketplaceTypeFilter; label: string }> 
   { value: 'plugin', label: 'Plugins' },
   { value: 'skill-pack', label: 'Skill Packs' },
   { value: 'adapter', label: 'Adapters' },
+  { value: 'shape', label: 'Shapes' },
 ] as const;
 
 // ---------------------------------------------------------------------------

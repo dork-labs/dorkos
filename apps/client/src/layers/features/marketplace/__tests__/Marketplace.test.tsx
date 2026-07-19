@@ -41,8 +41,8 @@ vi.mock('@/layers/entities/marketplace', () => ({
 vi.mock('../ui/MarketplaceHeader', () => ({
   MarketplaceHeader: () => <div data-testid="browse-header" />,
 }));
-vi.mock('../ui/FeaturedAgentsRail', () => ({
-  FeaturedAgentsRail: () => <div data-testid="featured-rail" />,
+vi.mock('../ui/FeaturedRail', () => ({
+  FeaturedRail: () => <div data-testid="featured-rail" />,
 }));
 vi.mock('../ui/PackageGrid', () => ({ PackageGrid: () => <div data-testid="package-grid" /> }));
 vi.mock('../ui/InstalledPackagesView', () => ({

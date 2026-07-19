@@ -6,6 +6,10 @@ import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { RightPanelContribution } from '@/layers/shared/model';
 
+// Spy on the imperative expand so tests can assert the open-floor argument
+// (DOR-388). Hoisted because the vi.mock factory below closes over it.
+const { mockPanelExpand } = vi.hoisted(() => ({ mockPanelExpand: vi.fn() }));
+
 // Mock react-resizable-panels with imperative handle support for panelRef
 vi.mock('react-resizable-panels', async () => {
   const { useImperativeHandle } = await import('react');
@@ -13,7 +17,7 @@ vi.mock('react-resizable-panels', async () => {
   function MockPanel({ children, id, ref }: React.PropsWithChildren<Record<string, unknown>>) {
     useImperativeHandle(ref as React.Ref<unknown>, () => ({
       collapse: () => {},
-      expand: () => {},
+      expand: mockPanelExpand,
       isCollapsed: () => true,
       isExpanded: () => false,
       getSize: () => 0,
@@ -110,6 +114,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 // Import after mocks are set up
 import { RightPanelContainer } from '../ui/RightPanelContainer';
+import { RIGHT_PANEL_DEFAULT_PCT } from '../model/use-right-panel-sizing';
 
 afterEach(() => {
   cleanup();
@@ -172,6 +177,19 @@ describe('RightPanelContainer', () => {
 
     expect(screen.getByTestId('right-panel')).toBeInTheDocument();
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+  });
+
+  it('expands with the default size as a floor when opening (DOR-388)', () => {
+    mockRightPanelOpen = true;
+    mockActiveRightPanelTab = 'a';
+    mockContributions = [makeContribution('a')];
+
+    render(<RightPanelContainer />);
+
+    // The mock panel reports isCollapsed, so the open-sync effect fires. A bare
+    // expand() falls back to minSize when no size is remembered — the floor
+    // argument is what keeps the panel from reopening squished.
+    expect(mockPanelExpand).toHaveBeenCalledWith(RIGHT_PANEL_DEFAULT_PCT);
   });
 
   it('renders the active tab component content', () => {

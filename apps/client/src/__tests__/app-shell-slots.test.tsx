@@ -146,6 +146,7 @@ vi.mock('@/layers/features/right-panel', () => ({
   useRightPanelPersistence: () => {},
   useRightPanelShortcut: () => {},
   useAgentProfileShortcut: () => {},
+  RIGHT_PANEL_GROUP_ID: 'app-shell-right-panel',
 }));
 
 vi.mock('@/layers/shared/model/use-favicon', () => ({

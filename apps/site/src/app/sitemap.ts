@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { MARKETPLACE_CATEGORIES } from '@dorkos/marketplace';
 import { siteConfig } from '@/config/site';
 import { source, blog } from '@/lib/source';
 import { gitLastModified } from '@/lib/metadata';
@@ -8,19 +9,25 @@ import { fetchMarketplaceJson } from '@/layers/features/marketplace';
 const BASE_URL = siteConfig.url;
 
 /**
- * Build sitemap entries for the marketplace browse page, privacy page, and one
- * entry per published package.
+ * Build sitemap entries for the marketplace browse page, privacy page, the 16
+ * statically generated category landing pages, and one entry per published
+ * package.
  *
  * These are static/registry-driven URLs with no reliable modification signal, so
  * `lastModified` is omitted entirely (fabricating a date is actively harmful for
  * Google's trust model). Wraps {@link fetchMarketplaceJson} in try/catch so a
- * registry outage degrades to just the two static entries — the sitemap must
+ * registry outage degrades to just the static entries — the sitemap must
  * keep generating even when the upstream registry is unavailable.
  */
 async function buildMarketplaceEntries(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     { url: `${BASE_URL}/marketplace`, changeFrequency: 'daily', priority: 0.9 },
     { url: `${BASE_URL}/marketplace/privacy`, changeFrequency: 'monthly', priority: 0.4 },
+    ...MARKETPLACE_CATEGORIES.map((category) => ({
+      url: `${BASE_URL}/marketplace/category/${category}`,
+      changeFrequency: 'weekly' as const,
+      priority: 0.6,
+    })),
   ];
 
   try {

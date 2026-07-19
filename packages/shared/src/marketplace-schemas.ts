@@ -86,8 +86,6 @@ export interface AggregatedPackage {
  * of that dimension.
  */
 export interface PackageFilter {
-  /** Filter by package type. */
-  type?: MarketplacePackageType;
   /** Filter by marketplace source name. */
   marketplace?: string;
   /** Free-text search across name, description, and tags. */
@@ -113,6 +111,12 @@ export interface MarketplacePackageDetail {
   packagePath: string;
   /** Permission preview computed for this package. */
   preview: PermissionPreview;
+  /**
+   * Raw markdown of the package's root `README.md`, read from the staged clone
+   * (case-insensitive, capped at 200 KB). Omitted when the package ships no
+   * README so the UI renders nothing rather than an empty section.
+   */
+  readme?: string;
 }
 
 /** Minimal manifest summary included in detail and preview responses. */

@@ -8,7 +8,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * and converts spaces to hyphens (e.g. "Package Primitives" → "package-primitives").
  *
  * Sources: MarketplaceShowcases — PackageCard, PackageTypeBadge, PackageGrid,
- * FeaturedAgentsRail, PackageDetailSheet, InstallConfirmationDialog,
+ * FeaturedRail, PackageDetailSheet, InstallConfirmationDialog,
  * PermissionPreviewSection, InstalledPackagesView, MarketplaceSourcesView,
  * MarketplaceHeader, Package Primitives.
  */
@@ -35,11 +35,11 @@ export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['package', 'grid', 'browse', 'loading', 'error', 'empty', 'catalog'],
   },
   {
-    id: 'featuredagentsrail',
-    title: 'FeaturedAgentsRail',
+    id: 'featuredrail',
+    title: 'FeaturedRail',
     page: 'marketplace',
     category: 'Marketplace',
-    keywords: ['featured', 'agents', 'rail', 'hero', 'carousel', 'marketplace'],
+    keywords: ['featured', 'rail', 'hero', 'carousel', 'marketplace'],
   },
   {
     id: 'packagedetailsheet',

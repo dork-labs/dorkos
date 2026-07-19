@@ -88,40 +88,6 @@ describe('sortPackages — name', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Popular sort (falls back to name)
-// ---------------------------------------------------------------------------
-
-describe('sortPackages — popular', () => {
-  it('falls back to alphabetical order (installCount not present on AggregatedPackage)', () => {
-    const result = sortPackages(PACKAGES, 'popular');
-    expect(result.map((p) => p.name)).toEqual(['alpha', 'bravo', 'charlie', 'delta']);
-  });
-
-  it('does not mutate the input array', () => {
-    const input = [...PACKAGES];
-    sortPackages(input, 'popular');
-    expect(input[0].name).toBe('charlie');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Recent sort (falls back to name)
-// ---------------------------------------------------------------------------
-
-describe('sortPackages — recent', () => {
-  it('falls back to alphabetical order (updatedAt not present on AggregatedPackage)', () => {
-    const result = sortPackages(PACKAGES, 'recent');
-    expect(result.map((p) => p.name)).toEqual(['alpha', 'bravo', 'charlie', 'delta']);
-  });
-
-  it('does not mutate the input array', () => {
-    const input = [...PACKAGES];
-    sortPackages(input, 'recent');
-    expect(input[0].name).toBe('charlie');
-  });
-});
-
-// ---------------------------------------------------------------------------
 // General
 // ---------------------------------------------------------------------------
 

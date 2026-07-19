@@ -34,11 +34,10 @@ interface TemplatePickerProps {
 export function TemplatePicker({ onSelect, typeFilter = 'agent' }: TemplatePickerProps) {
   const [customUrl, setCustomUrl] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const { data: allPackages, error: marketplaceError } = useMarketplacePackages({
-    type: typeFilter,
-  });
+  const { data: allPackages, error: marketplaceError } = useMarketplacePackages();
 
-  // Client-side filter as a safety net in case the server doesn't honour the type param
+  // The catalog endpoint returns every package; narrow to the requested type
+  // client-side (this is the real filter — the list is small and cached).
   const marketplaceAgents = useMemo(
     () => allPackages?.filter((pkg) => pkg.type === typeFilter),
     [allPackages, typeFilter]

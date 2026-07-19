@@ -8,7 +8,7 @@
  */
 
 export { fetchMarketplaceJson, fetchPackageReadme } from './lib/fetch';
-export { rankPackages } from './lib/ranking';
+export { rankPackages, selectFeatured } from './lib/ranking';
 export type { RankFilters, RankedPackage } from './lib/ranking';
 export { fetchInstallCount, fetchInstallCounts } from './lib/telemetry';
 export { formatPermissions } from './lib/format-permissions';
@@ -16,7 +16,7 @@ export type { PermissionClaim } from './lib/format-permissions';
 export { PermissionPreviewServer } from './ui/PermissionPreviewServer';
 export { PackageCard } from './ui/PackageCard';
 export { MarketplaceGrid } from './ui/MarketplaceGrid';
-export { FeaturedAgentsRail } from './ui/FeaturedAgentsRail';
+export { FeaturedRail } from './ui/FeaturedRail';
 export { MarketplaceHeader } from './ui/MarketplaceHeader';
 export { PackageHeader } from './ui/PackageHeader';
 export { PackageReadme } from './ui/PackageReadme';

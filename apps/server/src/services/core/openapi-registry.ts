@@ -1776,13 +1776,16 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'Package manifest, staged path, and permission preview',
+      description: 'Package manifest, staged path, permission preview, and optional README',
       content: {
         'application/json': {
           schema: z.object({
             manifest: LocalMarketplacePackageManifestSchema,
             packagePath: z.string(),
             preview: LocalPermissionPreviewSchema,
+            // Raw README markdown read from the staged clone; omitted when the
+            // package ships no README (see routes/marketplace.ts readPackageReadme).
+            readme: z.string().optional(),
           }),
         },
       },

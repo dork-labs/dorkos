@@ -10,6 +10,7 @@
  * @module features/marketplace/model/marketplace-search
  */
 import { z } from 'zod';
+import { PackageTypeSchema } from '@dorkos/marketplace';
 import type { MarketplacePackageType } from '@dorkos/shared/marketplace-schemas';
 
 /**
@@ -20,8 +21,14 @@ import type { MarketplacePackageType } from '@dorkos/shared/marketplace-schemas'
  */
 export type MarketplaceTypeFilter = 'all' | MarketplacePackageType;
 
-/** Sort order for the Marketplace browse grid. */
-export type MarketplaceSort = 'featured' | 'popular' | 'recent' | 'name';
+/**
+ * Sort order for the Marketplace browse grid.
+ *
+ * Only sorts backed by real data ship: `featured` (the `featured` flag) and
+ * `name` (alphabetical). `popular` and `recent` return once `AggregatedPackage`
+ * carries `installCount`/`updatedAt` — until then an honest menu offers neither.
+ */
+export type MarketplaceSort = 'featured' | 'name';
 
 /**
  * Top-level Marketplace view. `'browse'` is the catalog (search, featured rail,
@@ -40,11 +47,21 @@ export type MarketplaceView = 'browse' | 'installed';
  * defaults on read and omits them on write. `q` is the debounced free-text
  * search, `category` is a reserved slug filter (no UI yet), and `pkg` holds the
  * open package's unique `name` for the detail drawer.
+ *
+ * The closed-enum facets (`type`, `sort`) use `.catch(undefined)` so a stale
+ * shared link — an old bookmark whose value this release changed, e.g.
+ * `?sort=popular` after Popular/Recent were retired — degrades to the default
+ * instead of throwing a route validation error.
  */
 export const marketplaceSearchSchema = z.object({
   view: z.enum(['browse', 'installed']).optional(),
-  type: z.enum(['all', 'agent', 'plugin', 'skill-pack', 'adapter']).optional(),
-  sort: z.enum(['featured', 'popular', 'recent', 'name']).optional(),
+  // Derive the type facet from the package taxonomy so a future 6th type can't
+  // go stale here the way `shape` once did — `'all'` plus every PackageType.
+  type: z
+    .enum(['all', ...PackageTypeSchema.options])
+    .optional()
+    .catch(undefined),
+  sort: z.enum(['featured', 'name']).optional().catch(undefined),
   q: z.string().optional(),
   category: z.string().optional(),
   pkg: z.string().optional(),
