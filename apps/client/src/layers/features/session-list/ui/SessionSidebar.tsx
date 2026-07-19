@@ -17,9 +17,11 @@ import { TasksView } from './TasksView';
 import { ConnectionsView } from './ConnectionsView';
 import { OverviewTabPanel } from './OverviewTabPanel';
 import { SidebarAgentHeader } from './SidebarAgentHeader';
+import { SidebarTabErrorBoundary } from './SidebarTabErrorBoundary';
 import { useConnectionsStatus } from '../model/use-connections-status';
 import { useTaskNotifications } from '../model/use-task-notifications';
 import { useSidebarTabs } from '../model/use-sidebar-tabs';
+import { isBuiltinSidebarTab } from '../model/sidebar-contributions';
 import { useSidebarNavigation } from '../model/use-sidebar-navigation';
 
 /** Primary sidebar body — session list, schedule tabs, and connections. Footer and rail render in AppShell. */
@@ -68,6 +70,15 @@ export function SessionSidebar() {
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
   const recentSessions = useMemo(() => sessions.slice(0, 3), [sessions]);
 
+  // The extension-contributed tab that is active, if any. Built-in panels render
+  // from the prop-fed markup below; a contributed tab renders its self-contained
+  // component (behind an error boundary so a throwing extension can't take the
+  // sidebar down with it).
+  const activeContributedTab = useMemo(
+    () => visibleTabs.find((t) => t.id === sidebarActiveTab && !isBuiltinSidebarTab(t.id)),
+    [visibleTabs, sidebarActiveTab]
+  );
+
   return (
     <>
       <SidebarAgentHeader
@@ -77,11 +88,11 @@ export function SessionSidebar() {
       />
 
       <SidebarTabRow
+        tabs={visibleTabs}
         activeTab={sidebarActiveTab}
         onTabChange={setSidebarActiveTab}
         schedulesBadge={activeRunCount}
         connectionsStatus={connectionsStatus}
-        visibleTabs={visibleTabs}
       />
 
       <SidebarContent data-testid="session-list" className="!overflow-hidden">
@@ -133,6 +144,21 @@ export function SessionSidebar() {
             activeSessionId={activeSessionId}
           />
         </div>
+
+        {/* Extension-contributed tab panel — mounted only while active so its
+            component (e.g. a polling widget) isn't running in the background. */}
+        {activeContributedTab && (
+          <div
+            role="tabpanel"
+            id={`sidebar-tabpanel-${activeContributedTab.id}`}
+            aria-labelledby={`sidebar-tab-${activeContributedTab.id}`}
+            className="h-full overflow-y-auto"
+          >
+            <SidebarTabErrorBoundary tabId={activeContributedTab.id}>
+              <activeContributedTab.component />
+            </SidebarTabErrorBoundary>
+          </div>
+        )}
       </SidebarContent>
     </>
   );

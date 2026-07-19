@@ -73,19 +73,16 @@ export const useAppStore = create<AppState>()(
           set({ sidebarOpen: open });
         },
 
+        // Persist whatever tab id was active — built-in or extension-contributed
+        // (`${extId}:${id}`). A stored id whose tab no longer exists is
+        // reconciled to 'overview' by useSidebarTabs, not here, so an extension
+        // tab survives a reload while its extension is still installed.
         sidebarActiveTab: (() => {
           try {
-            const stored = localStorage.getItem('dorkos-sidebar-active-tab');
-            if (
-              stored === 'overview' ||
-              stored === 'sessions' ||
-              stored === 'schedules' ||
-              stored === 'connections'
-            )
-              return stored;
+            return localStorage.getItem('dorkos-sidebar-active-tab') ?? 'overview';
           } catch {}
           return 'overview';
-        })() as 'overview' | 'sessions' | 'schedules' | 'connections',
+        })(),
         setSidebarActiveTab: (tab) => {
           try {
             localStorage.setItem('dorkos-sidebar-active-tab', tab);

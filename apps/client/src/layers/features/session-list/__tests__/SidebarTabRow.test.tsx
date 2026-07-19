@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { MessageSquare, Clock, Plug2 } from 'lucide-react';
 import { TooltipProvider } from '@/layers/shared/ui';
+import type { SidebarTabContribution } from '@/layers/shared/model';
 import { SidebarTabRow } from '../ui/SidebarTabRow';
 
 const mockCreationOpen = vi.fn();
@@ -43,16 +45,26 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return <TooltipProvider>{children}</TooltipProvider>;
 }
 
+function tab(
+  id: string,
+  label: string,
+  icon?: SidebarTabContribution['icon']
+): SidebarTabContribution {
+  return { id, label, icon, component: () => null, priority: 1 };
+}
+
+const defaultTabs: SidebarTabContribution[] = [
+  tab('sessions', 'Sessions', MessageSquare),
+  tab('schedules', 'Schedules', Clock),
+  tab('connections', 'Connections', Plug2),
+];
+
 const defaultProps = {
-  activeTab: 'sessions' as const,
+  tabs: defaultTabs,
+  activeTab: 'sessions',
   onTabChange: vi.fn(),
   schedulesBadge: 0,
   connectionsStatus: 'none' as const,
-  visibleTabs: ['sessions', 'schedules', 'connections'] as (
-    | 'sessions'
-    | 'schedules'
-    | 'connections'
-  )[],
 };
 
 describe('SidebarTabRow', () => {
@@ -62,7 +74,7 @@ describe('SidebarTabRow', () => {
     mockCreationOpen.mockReset();
   });
 
-  it('renders three tabs with correct ARIA attributes', () => {
+  it('renders a tab per contribution with correct ARIA attributes', () => {
     render(<SidebarTabRow {...defaultProps} />, { wrapper: Wrapper });
 
     const tablist = screen.getByRole('tablist');
@@ -154,8 +166,8 @@ describe('SidebarTabRow', () => {
     expect(dots).toHaveLength(0);
   });
 
-  it('only renders visible tabs', () => {
-    render(<SidebarTabRow {...defaultProps} visibleTabs={['sessions', 'connections']} />, {
+  it('only renders the tabs it is given', () => {
+    render(<SidebarTabRow {...defaultProps} tabs={[defaultTabs[0], defaultTabs[2]]} />, {
       wrapper: Wrapper,
     });
 
@@ -188,6 +200,19 @@ describe('SidebarTabRow', () => {
     expect(tabs[0]).toHaveAttribute('aria-controls', 'sidebar-tabpanel-sessions');
     expect(tabs[1]).toHaveAttribute('aria-controls', 'sidebar-tabpanel-schedules');
     expect(tabs[2]).toHaveAttribute('aria-controls', 'sidebar-tabpanel-connections');
+  });
+
+  it('renders an extension-contributed tab with a default puzzle icon', () => {
+    const contributed = tab('linear-issues:linear-loop-sidebar', 'Linear'); // no icon
+    const { container } = render(
+      <SidebarTabRow {...defaultProps} tabs={[...defaultTabs, contributed]} />,
+      { wrapper: Wrapper }
+    );
+
+    const tabIds = screen.getAllByRole('tab').map((t) => t.id);
+    expect(tabIds).toContain('sidebar-tab-linear-issues:linear-loop-sidebar');
+    // The icon falls back to the lucide puzzle piece when the contribution has none.
+    expect(container.querySelector('.lucide-puzzle')).toBeInTheDocument();
   });
 
   it('renders New Agent button with correct aria-label', () => {

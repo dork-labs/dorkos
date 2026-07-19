@@ -178,6 +178,7 @@ export function activate(api: ExtensionAPI): () => void {
   cleanups.push(
     api.registerComponent('sidebar.tabs', 'linear-loop-sidebar', LoopSidebar, {
       priority: 5,
+      label: 'Linear',
     })
   );
 

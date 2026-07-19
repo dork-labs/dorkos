@@ -2845,10 +2845,17 @@ export const UiPanelIdSchema = z
 
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
 
-/** Identifies a tab in the sidebar navigation. */
-export const UiSidebarTabSchema = z
-  .enum(['overview', 'sessions', 'schedules', 'connections'])
-  .openapi('UiSidebarTab');
+/**
+ * Identifies a tab in the sidebar navigation.
+ *
+ * The four built-ins (`overview`, `sessions`, `schedules`, `connections`) are
+ * always present, but the sidebar tab strip is an extension point: an extension
+ * can contribute its own tab via `sidebar.tabs`, registered under a namespaced
+ * id like `linear-issues:linear-loop-sidebar`. So the honest type is a free
+ * string, not a closed enum — a `switch_sidebar_tab` command or a Shape's
+ * pinned tab may target any registered tab id, built-in or contributed.
+ */
+export const UiSidebarTabSchema = z.string().openapi('UiSidebarTab');
 
 export type UiSidebarTab = z.infer<typeof UiSidebarTabSchema>;
 

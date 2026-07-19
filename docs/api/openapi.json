@@ -2480,13 +2480,7 @@
         ]
       },
       "UiSidebarTab": {
-        "type": "string",
-        "enum": [
-          "overview",
-          "sessions",
-          "schedules",
-          "connections"
-        ]
+        "type": "string"
       },
       "UiCanvasContent": {
         "oneOf": [
@@ -4430,13 +4424,7 @@
                     "type": "boolean"
                   },
                   "sidebarTab": {
-                    "type": "string",
-                    "enum": [
-                      "overview",
-                      "sessions",
-                      "schedules",
-                      "connections"
-                    ]
+                    "type": "string"
                   },
                   "openPanels": {
                     "type": "array",

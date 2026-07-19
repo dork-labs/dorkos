@@ -2036,7 +2036,9 @@ registry.registerPath({
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
-  sidebarTab: z.enum(['overview', 'sessions', 'schedules', 'connections']).optional(),
+  // Any registered tab id — a built-in or an extension-contributed tab
+  // (`${extId}:${id}`). Mirrors the widened `sidebarTab` in manifest-schema.ts.
+  sidebarTab: z.string().optional(),
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),
   focusDashboardSections: z.array(z.string()),
 });

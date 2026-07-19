@@ -30,12 +30,20 @@ export interface ExtensionAPI {
   /**
    * Register a React component in a UI slot.
    * Returns an unsubscribe function (auto-called on deactivate).
+   *
+   * @param slot - The UI slot to contribute to.
+   * @param id - Slot-local id; the host namespaces it as `${extId}:${id}`.
+   * @param component - The React component to render.
+   * @param options - `priority` orders the contribution (lower = earlier).
+   *   `label` is the human name shown where the slot has a label or tab (e.g.
+   *   the sidebar tab strip); it defaults to the namespaced id when omitted, so
+   *   set it for any tabbed or labelled slot.
    */
   registerComponent(
     slot: ExtensionPointId,
     id: string,
     component: ComponentType,
-    options?: { priority?: number }
+    options?: { priority?: number; label?: string }
   ): () => void;
 
   /**

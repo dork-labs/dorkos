@@ -125,6 +125,26 @@ describe('createExtensionAPI', () => {
       expect(contribution.priority).toBe(10);
     });
 
+    it('uses the label option for a sidebar tab, defaulting to the namespaced id', () => {
+      const { api } = createExtensionAPI('linear-issues', deps);
+
+      api.registerComponent('sidebar.tabs', 'loop', () => null, { label: 'Linear' });
+      api.registerComponent('sidebar.tabs', 'unlabelled', () => null);
+
+      const [, labelled] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      const [, unlabelled] = vi.mocked(deps.registry.register).mock.calls[1] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(labelled.label).toBe('Linear');
+      // No icon is carried for extension tabs — the strip supplies a default.
+      expect(labelled.icon).toBeUndefined();
+      expect(unlabelled.label).toBe('linear-issues:unlabelled');
+    });
+
     it('returns the unsubscribe function from registry.register', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);

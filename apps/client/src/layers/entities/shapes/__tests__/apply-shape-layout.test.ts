@@ -24,6 +24,18 @@ describe('buildShapeLayoutCommands', () => {
     expect(commands).not.toContainEqual({ action: 'open_sidebar' });
   });
 
+  it('emits switch_sidebar_tab for an extension-contributed tab id', () => {
+    // A Shape may pin an extension tab (`${extId}:${id}`); the command carries
+    // it verbatim to the dispatcher, which the store + sidebar resolve.
+    const commands = buildShapeLayoutCommands(
+      layout({ sidebarOpen: true, sidebarTab: 'linear-issues:linear-loop-sidebar' })
+    );
+    expect(commands).toContainEqual({
+      action: 'switch_sidebar_tab',
+      tab: 'linear-issues:linear-loop-sidebar',
+    });
+  });
+
   it('emits open_sidebar when open with no pinned tab', () => {
     expect(buildShapeLayoutCommands(layout({ sidebarOpen: true }))).toEqual([
       { action: 'open_sidebar' },

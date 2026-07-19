@@ -308,8 +308,14 @@ const ShapeConnectionSchema = z.discriminatedUnion('kind', [
 const ShapeLayoutSchema = z.object({
   /** Sidebar open on arrival. */
   sidebarOpen: z.boolean().default(true),
-  /** Default built-in sidebar tab (mirrors `UiSidebarTabSchema` values). */
-  sidebarTab: z.enum(['overview', 'sessions', 'schedules', 'connections']).optional(),
+  /**
+   * Sidebar tab to select on arrival (mirrors `UiSidebarTabSchema`). Any
+   * registered tab id — a built-in (`overview` | `sessions` | `schedules` |
+   * `connections`) or an extension-contributed tab (`${extId}:${id}`, e.g.
+   * `linear-issues:linear-loop-sidebar`). A pinned id whose tab never
+   * registers falls back to the overview tab at apply time.
+   */
+  sidebarTab: z.string().optional(),
   /** Panels to open on arrival (mirrors `UiPanelIdSchema` values). */
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])).default([]),
   /**

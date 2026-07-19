@@ -83,9 +83,9 @@ const mockSetAgentDialogOpen = vi.fn();
 const mockSetOnboardingStep = vi.fn();
 const mockSetRelayOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
-let mockSidebarActiveTab: 'overview' | 'sessions' | 'schedules' | 'connections' = 'overview';
+let mockSidebarActiveTab: string = 'overview';
 const mockSetSidebarActiveTab = vi.fn((tab: string) => {
-  mockSidebarActiveTab = tab as 'overview' | 'sessions' | 'schedules' | 'connections';
+  mockSidebarActiveTab = tab;
 });
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
@@ -220,7 +220,6 @@ function registerMockTabContributions() {
       icon: LayoutDashboard,
       label: 'Overview',
       component: () => null,
-      shortcut: '\u23181',
       priority: 1,
     },
     {
@@ -228,7 +227,6 @@ function registerMockTabContributions() {
       icon: MessageSquare,
       label: 'Sessions',
       component: () => null,
-      shortcut: '\u23182',
       priority: 2,
     },
     {
@@ -237,7 +235,6 @@ function registerMockTabContributions() {
       label: 'Schedules',
       component: () => null,
       visibleWhen: () => mockToolStatus.tasks !== 'disabled-by-server',
-      shortcut: '\u23183',
       priority: 3,
     },
     {
@@ -245,7 +242,6 @@ function registerMockTabContributions() {
       icon: Radio,
       label: 'Connections',
       component: () => null,
-      shortcut: '\u23184',
       priority: 4,
     },
   ];
@@ -526,6 +522,57 @@ describe('SessionSidebar', () => {
 
       // The fallback effect should call setSidebarActiveTab('overview')
       expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('overview');
+    });
+  });
+
+  describe('extension-contributed tabs', () => {
+    /** Register an extra `sidebar.tabs` contribution (as an extension would). */
+    function registerContributedTab(component: SidebarTabContribution['component']) {
+      useExtensionRegistry.getState().register('sidebar.tabs', {
+        id: 'linear-issues:linear-loop-sidebar',
+        label: 'Linear',
+        component,
+        priority: 5,
+      });
+    }
+
+    it('renders the contributed tab in the strip after the built-ins', () => {
+      registerContributedTab(() => <div>Linear panel content</div>);
+      renderWithQuery(<SessionSidebar />);
+
+      const tabIds = screen.getAllByRole('tab').map((t) => t.id);
+      // The contributed tab (priority 5) sorts after the four built-ins.
+      expect(tabIds).toContain('sidebar-tab-linear-issues:linear-loop-sidebar');
+      expect(tabIds.indexOf('sidebar-tab-linear-issues:linear-loop-sidebar')).toBe(
+        tabIds.length - 1
+      );
+    });
+
+    it('renders the contributed panel component when its tab is active', () => {
+      mockSidebarActiveTab = 'linear-issues:linear-loop-sidebar';
+      registerContributedTab(() => <div>Linear panel content</div>);
+
+      renderWithQuery(<SessionSidebar />);
+
+      expect(screen.getByText('Linear panel content')).toBeInTheDocument();
+      // It should not have fallen back to overview — the tab is registered.
+      expect(mockSetSidebarActiveTab).not.toHaveBeenCalledWith('overview');
+    });
+
+    it('error boundary catches a throwing contributed tab without killing the sidebar', () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockSidebarActiveTab = 'linear-issues:linear-loop-sidebar';
+      registerContributedTab(() => {
+        throw new Error('boom');
+      });
+
+      renderWithQuery(<SessionSidebar />);
+
+      // Fallback message shows, and the rest of the sidebar (tab strip) survives.
+      expect(screen.getByText('Something went wrong in this tab.')).toBeInTheDocument();
+      expect(screen.getByRole('tablist')).toBeInTheDocument();
+
+      consoleError.mockRestore();
     });
   });
 });
