@@ -17,11 +17,11 @@ import { PackageErrorState } from './PackageErrorState';
 // Constants
 // ---------------------------------------------------------------------------
 
+// Only sorts backed by real data are offered. `Recent` and `Popular` return
+// when AggregatedPackage carries `updatedAt`/`installCount` (tracked in Linear).
 const SORT_OPTIONS: ReadonlyArray<{ value: MarketplaceSort; label: string }> = [
   { value: 'featured', label: 'Featured' },
   { value: 'name', label: 'A–Z' },
-  { value: 'recent', label: 'Recent' },
-  { value: 'popular', label: 'Popular' },
 ];
 
 /** Cap stagger to avoid slow entry on large catalogs. */

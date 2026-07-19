@@ -73,7 +73,7 @@ describe('MarketplaceHeader', () => {
     vi.useRealTimers();
   });
 
-  it('renders all five type filter tabs', () => {
+  it('renders all six type filter tabs (one per package type, plus All)', () => {
     render(<MarketplaceHeader />);
 
     expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
@@ -81,6 +81,7 @@ describe('MarketplaceHeader', () => {
     expect(screen.getByRole('tab', { name: 'Plugins' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Skill Packs' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Adapters' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Shapes' })).toBeInTheDocument();
   });
 
   it('renders the search input with an accessible label and the marketplace-search test id', () => {
@@ -117,6 +118,15 @@ describe('MarketplaceHeader', () => {
     await user.click(screen.getByRole('tab', { name: 'Skill Packs' }));
 
     expect(mockParams.setType).toHaveBeenCalledWith('skill-pack');
+  });
+
+  it('clicking the Shapes tab maps to the "shape" filter value', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceHeader />);
+
+    await user.click(screen.getByRole('tab', { name: 'Shapes' }));
+
+    expect(mockParams.setType).toHaveBeenCalledWith('shape');
   });
 
   it('seeds the input from the committed URL search on mount', () => {

@@ -107,16 +107,19 @@ describe('useMarketplacePackages', () => {
     const transport = createMockTransport();
     vi.mocked(transport.listMarketplacePackages).mockResolvedValue([mockPackage]);
 
-    const { result } = renderHook(() => useMarketplacePackages({ type: 'agent', q: 'review' }), {
-      wrapper: createWrapper(transport),
-    });
+    const { result } = renderHook(
+      () => useMarketplacePackages({ marketplace: 'official', q: 'review' }),
+      {
+        wrapper: createWrapper(transport),
+      }
+    );
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
 
     expect(transport.listMarketplacePackages).toHaveBeenCalledWith({
-      type: 'agent',
+      marketplace: 'official',
       q: 'review',
     });
   });

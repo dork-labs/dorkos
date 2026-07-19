@@ -9,7 +9,7 @@ import type { AggregatedPackage, PackageFilter } from '@dorkos/shared/marketplac
  * Browse data is treated as fairly static — staleTime of 60 s means the user
  * can navigate between pages without re-fetching on every mount.
  *
- * @param filter - Optional filter by type, marketplace source name, or free-text query.
+ * @param filter - Optional filter by marketplace source name or free-text query.
  */
 export function useMarketplacePackages(filter?: PackageFilter) {
   const transport = useTransport();

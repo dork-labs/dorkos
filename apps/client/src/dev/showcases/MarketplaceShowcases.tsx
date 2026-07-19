@@ -24,7 +24,7 @@ import { PackageGrid } from '@/layers/features/marketplace/ui/PackageGrid';
 import { PackageLoadingSkeleton } from '@/layers/features/marketplace/ui/PackageLoadingSkeleton';
 import { PackageEmptyState } from '@/layers/features/marketplace/ui/PackageEmptyState';
 import { PackageErrorState } from '@/layers/features/marketplace/ui/PackageErrorState';
-import { FeaturedAgentsRail } from '@/layers/features/marketplace/ui/FeaturedAgentsRail';
+import { FeaturedRail } from '@/layers/features/marketplace/ui/FeaturedRail';
 import { PackageDetailSheet } from '@/layers/features/marketplace/ui/PackageDetailSheet';
 import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/InstallConfirmationDialog';
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
@@ -203,46 +203,46 @@ function PackageGridShowcase() {
 }
 
 // ---------------------------------------------------------------------------
-// FeaturedAgentsRail showcase
+// FeaturedRail showcase
 // ---------------------------------------------------------------------------
 
-/** FeaturedAgentsRail with 3 featured mocks and with zero featured (renders nothing). */
-function FeaturedAgentsRailShowcase() {
+/** FeaturedRail with 3 featured mocks and with zero featured (renders nothing). */
+function FeaturedRailShowcase() {
   const featuredPackages = [
     MOCK_PKG_FEATURED_AGENT,
     MOCK_PKG_FEATURED_DEPLOY,
     MOCK_PKG_FEATURED_DOCS,
   ];
-  // Non-featured packages — FeaturedAgentsRail filters to featured: true, so
-  // seeding only non-featured items should cause it to return null.
+  // Non-featured packages — FeaturedRail filters to featured: true, so seeding
+  // only non-featured items should cause it to return null.
   const nonFeaturedPackages = [MOCK_PKG_PLUGIN, MOCK_PKG_SKILL_PACK_NO_DESC];
 
   return (
     <PlaygroundSection
-      title="FeaturedAgentsRail"
-      description="Hero rail shown when featured agent packages are available. Returns null when none are featured."
+      title="FeaturedRail"
+      description="Hero rail highlighting featured packages of any type. Returns null when none are featured."
     >
-      <ShowcaseLabel>With 3 featured agents</ShowcaseLabel>
+      <ShowcaseLabel>With 3 featured packages</ShowcaseLabel>
       <ShowcaseDemo>
         <IsolatedQueryProvider
           seed={(qc) => {
-            qc.setQueryData(marketplaceKeys.packageList({ type: 'agent' }), featuredPackages);
+            qc.setQueryData(marketplaceKeys.packageList(), featuredPackages);
           }}
         >
-          <FeaturedAgentsRail />
+          <FeaturedRail />
         </IsolatedQueryProvider>
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Zero featured agents (renders nothing — empty div below is ShowcaseDemo)
+        Zero featured packages (renders nothing — empty div below is ShowcaseDemo)
       </ShowcaseLabel>
       <ShowcaseDemo>
         <IsolatedQueryProvider
           seed={(qc) => {
-            qc.setQueryData(marketplaceKeys.packageList({ type: 'agent' }), nonFeaturedPackages);
+            qc.setQueryData(marketplaceKeys.packageList(), nonFeaturedPackages);
           }}
         >
-          <FeaturedAgentsRail />
+          <FeaturedRail />
         </IsolatedQueryProvider>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -547,7 +547,7 @@ export function MarketplaceShowcases() {
       <PackageCardShowcase />
       <PackageTypeBadgeShowcase />
       <PackageGridShowcase />
-      <FeaturedAgentsRailShowcase />
+      <FeaturedRailShowcase />
       <PackageDetailSheetShowcase />
       <InstallConfirmationDialogShowcase />
       <PermissionPreviewSectionShowcase />

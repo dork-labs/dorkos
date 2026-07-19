@@ -86,8 +86,6 @@ export interface AggregatedPackage {
  * of that dimension.
  */
 export interface PackageFilter {
-  /** Filter by package type. */
-  type?: MarketplacePackageType;
   /** Filter by marketplace source name. */
   marketplace?: string;
   /** Free-text search across name, description, and tags. */
