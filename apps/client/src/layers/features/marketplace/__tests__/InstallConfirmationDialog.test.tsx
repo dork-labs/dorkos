@@ -141,6 +141,18 @@ function setInstalledPackages(installed: InstalledPackage[] = []) {
   } as unknown as ReturnType<typeof useInstalledPackages>);
 }
 
+/**
+ * Set the registered agents the mesh hook reports. Called in `beforeEach` so a
+ * per-test override (e.g. the stale agent-local selection test) never bleeds
+ * into later tests — `vi.clearAllMocks()` clears call history, not the
+ * implementation set by `mockReturnValue`.
+ */
+function setMeshAgents(agents: Array<{ id: string; name: string; projectPath: string }> = []) {
+  vi.mocked(useMeshAgentPaths).mockReturnValue({
+    data: { agents },
+  } as unknown as ReturnType<typeof useMeshAgentPaths>);
+}
+
 /** Build a minimal InstalledPackage record for reinstall-detection tests. */
 function makeInstalled(overrides: Partial<InstalledPackage> = {}): InstalledPackage {
   return {
@@ -199,6 +211,7 @@ describe('InstallConfirmationDialog', () => {
     setPreviewState();
     setInstallState();
     setInstalledPackages();
+    setMeshAgents();
     // Default: mutateAsync resolves with a stub result. Individual tests
     // override with `.mockRejectedValueOnce(...)` to exercise the error path.
     installMutateAsync.mockResolvedValue({ success: true });
@@ -431,10 +444,7 @@ describe('InstallConfirmationDialog', () => {
 
   it('sends no projectPath for a shape install even with a stale agent-local selection', async () => {
     const user = userEvent.setup();
-    const agent = { id: 'agent-1', name: 'Agent One', projectPath: '/tmp/agent-one' };
-    vi.mocked(useMeshAgentPaths).mockReturnValue({
-      data: { agents: [agent] },
-    } as unknown as ReturnType<typeof useMeshAgentPaths>);
+    setMeshAgents([{ id: 'agent-1', name: 'Agent One', projectPath: '/tmp/agent-one' }]);
 
     // Open on a non-shape package first and pick "Specific agent" — leaves
     // agent-local selection state behind.
