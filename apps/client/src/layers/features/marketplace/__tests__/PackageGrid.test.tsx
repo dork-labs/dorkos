@@ -28,12 +28,14 @@ const mockParams = vi.hoisted(() => ({
   type: 'all' as string,
   sort: 'featured' as string,
   search: '' as string,
-  category: null as string | null,
+  categories: [] as string[],
   selectedPackageName: null as string | null,
   setType: vi.fn(),
   setSort: vi.fn(),
   setSearch: vi.fn(),
-  setCategory: vi.fn(),
+  toggleCategory: vi.fn(),
+  setCategories: vi.fn(),
+  clearCategories: vi.fn(),
   resetFilters: vi.fn(),
   openDetail: vi.fn(),
   closeDetail: vi.fn(),
@@ -126,7 +128,7 @@ describe('PackageGrid', () => {
     mockParams.type = 'all';
     mockParams.sort = 'featured';
     mockParams.search = '';
-    mockParams.category = null;
+    mockParams.categories = [];
     mockParams.selectedPackageName = null;
   });
 

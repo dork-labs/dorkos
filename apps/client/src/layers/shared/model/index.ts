@@ -53,6 +53,7 @@ export {
   type BaseContribution,
   type SidebarFooterContribution,
   type SidebarTabContribution,
+  type SidebarBodyContribution,
   type DashboardSectionContribution,
   type HeaderActionContribution,
   type CommandPaletteContribution,

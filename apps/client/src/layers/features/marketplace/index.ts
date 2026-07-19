@@ -9,6 +9,7 @@
  * @module features/marketplace
  */
 export { Marketplace } from './ui/Marketplace';
+export { MarketplaceSidebar } from './ui/MarketplaceSidebar';
 export { PackageCard } from './ui/PackageCard';
 export { InstalledPackagesView } from './ui/InstalledPackagesView';
 export { MarketplaceSourcesView } from './ui/MarketplaceSourcesView';

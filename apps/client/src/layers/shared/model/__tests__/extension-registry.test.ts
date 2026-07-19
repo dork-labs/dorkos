@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useExtensionRegistry, createInitialSlots, SLOT_IDS } from '../extension-registry';
-import type { SidebarFooterContribution, RightPanelContribution } from '../extension-registry';
+import type {
+  SidebarFooterContribution,
+  RightPanelContribution,
+  SidebarBodyContribution,
+} from '../extension-registry';
 
 // Test contributions via getState() without React rendering.
 // Reset between tests per Zustand testing guide.
@@ -24,6 +28,29 @@ const makeRightPanel = (
   component: () => null,
   ...overrides,
 });
+
+const makeSidebarBody = (
+  overrides: Partial<SidebarBodyContribution> = {}
+): SidebarBodyContribution => ({
+  id: 'test-body',
+  component: () => null,
+  visibleWhen: () => true,
+  ...overrides,
+});
+
+/**
+ * Mirror how AppShell resolves the winning body: the highest-priority (lowest
+ * number) contribution whose `visibleWhen(pathname)` passes, or `undefined`
+ * when none match (the shell then renders its built-in dashboard/session body).
+ */
+function resolveBody(
+  contributions: SidebarBodyContribution[],
+  pathname: string
+): SidebarBodyContribution | undefined {
+  return [...contributions]
+    .sort((a, b) => (a.priority ?? 50) - (b.priority ?? 50))
+    .find((c) => c.visibleWhen({ pathname }));
+}
 
 describe('extension-registry', () => {
   beforeEach(() => {
@@ -157,6 +184,67 @@ describe('extension-registry', () => {
       const { getContributions } = useExtensionRegistry.getState();
       expect(getContributions('right-panel')).toEqual([]);
       expect(getContributions('sidebar.footer')).toEqual([]);
+    });
+  });
+
+  describe('sidebar.body slot', () => {
+    it('SLOT_IDS.SIDEBAR_BODY equals "sidebar.body"', () => {
+      expect(SLOT_IDS.SIDEBAR_BODY).toBe('sidebar.body');
+    });
+
+    it('starts empty — no takeover, the shell falls back to its built-in body', () => {
+      const { getContributions } = useExtensionRegistry.getState();
+      expect(getContributions('sidebar.body')).toEqual([]);
+      expect(resolveBody([], '/marketplace')).toBeUndefined();
+    });
+
+    it('registers and retrieves a sidebar-body contribution', () => {
+      const { register, getContributions } = useExtensionRegistry.getState();
+      register(
+        'sidebar.body',
+        makeSidebarBody({
+          id: 'marketplace-facets',
+          visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+        })
+      );
+
+      const items = getContributions('sidebar.body');
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe('marketplace-facets');
+    });
+
+    it('resolves the winning body by visibleWhen pathname matching', () => {
+      const body = makeSidebarBody({
+        id: 'marketplace-facets',
+        visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+      });
+
+      // Matches on the marketplace route and its children, not elsewhere.
+      expect(resolveBody([body], '/marketplace')?.id).toBe('marketplace-facets');
+      expect(resolveBody([body], '/marketplace/sources')?.id).toBe('marketplace-facets');
+      expect(resolveBody([body], '/session')).toBeUndefined();
+      expect(resolveBody([body], '/')).toBeUndefined();
+    });
+
+    it('picks the highest-priority (lowest number) matching contribution', () => {
+      const low = makeSidebarBody({ id: 'low', priority: 50 });
+      const high = makeSidebarBody({ id: 'high', priority: 10 });
+      // A matching high-priority body wins over a matching low-priority one.
+      expect(resolveBody([low, high], '/marketplace')?.id).toBe('high');
+    });
+
+    it('skips a higher-priority body whose route predicate does not match', () => {
+      const high = makeSidebarBody({
+        id: 'high-but-scoped',
+        priority: 10,
+        visibleWhen: ({ pathname }) => pathname === '/tasks',
+      });
+      const low = makeSidebarBody({
+        id: 'low-but-matches',
+        priority: 50,
+        visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+      });
+      expect(resolveBody([high, low], '/marketplace')?.id).toBe('low-but-matches');
     });
   });
 });

@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
 import { MarketplaceHeader } from './MarketplaceHeader';
 import { FeaturedRail } from './FeaturedRail';
@@ -13,8 +11,9 @@ import type { MarketplaceView } from '../model/marketplace-search';
 /**
  * Root Marketplace experience with two URL-driven views.
  *
- * `browse` (default) composes `MarketplaceHeader` (search + type filters),
- * `FeaturedRail`, and `PackageGrid`. `installed` renders
+ * `browse` (default) composes `MarketplaceHeader` (search + sort), `FeaturedRail`,
+ * and `PackageGrid`. The type and category filter facets live in the sidebar
+ * takeover panel (`MarketplaceSidebar`), not here. `installed` renders
  * `InstalledPackagesView` — every installation across scopes with per-scope
  * management. The active view lives in the URL (`?view=` via
  * `useMarketplaceParams`), so it survives refresh and is shareable, matching
@@ -27,21 +26,6 @@ import type { MarketplaceView } from '../model/marketplace-search';
  */
 export function Marketplace() {
   const { view, setView } = useMarketplaceParams();
-
-  // The full catalog powers both the browse grid and the header's facet chips.
-  // Reading it here (the query is shared/cached with `PackageGrid`) lets us
-  // derive which categories actually have packages, so the header only shows
-  // live facets. Fetching while on the `installed` view simply prefetches the
-  // browse data — switching to browse is then instant.
-  const { data: packages } = useMarketplacePackages();
-  const presentCategories = useMemo(() => {
-    const present = new Set<string>();
-    for (const pkg of packages ?? []) {
-      for (const slug of pkg.categories ?? []) present.add(slug);
-      if (pkg.category) present.add(pkg.category);
-    }
-    return present;
-  }, [packages]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-8">
@@ -68,7 +52,7 @@ export function Marketplace() {
         </section>
       ) : (
         <>
-          <MarketplaceHeader presentCategories={presentCategories} />
+          <MarketplaceHeader />
           <FeaturedRail />
           <section aria-label="All packages">
             <PackageGrid />

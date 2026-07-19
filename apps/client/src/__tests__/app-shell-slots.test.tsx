@@ -33,6 +33,11 @@ vi.mock('@/layers/features/session-list', () => ({
 vi.mock('@/layers/features/top-nav', () => ({
   SessionHeader: () => <div data-testid="session-header">Session</div>,
   DashboardHeader: () => <div data-testid="dashboard-header">Dashboard</div>,
+  MarketplaceHeader: () => <div data-testid="marketplace-header">Marketplace</div>,
+  MarketplaceSourcesHeader: () => <div data-testid="marketplace-sources-header">Sources</div>,
+  AgentsHeader: () => <div data-testid="agents-header">Agents</div>,
+  ActivityHeader: () => <div data-testid="activity-header">Activity</div>,
+  TasksHeader: () => <div data-testid="tasks-header">Tasks</div>,
 }));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
@@ -167,6 +172,11 @@ vi.mock('sonner', () => ({
 // ── Import AppShell after all mocks are set up ──
 
 import { AppShell } from '../AppShell';
+// The extension registry is a real (unmocked) singleton — the app-store mock
+// above only replaces `@/layers/shared/model/app-store`, so `useSlotContributions`
+// still reads this store. Tests register a `sidebar.body` contribution to
+// exercise the takeover path.
+import { useExtensionRegistry } from '@/layers/shared/model/extension-registry';
 
 // ── Test setup ──
 
@@ -236,6 +246,52 @@ describe('AppShell slot integration', () => {
       renderAppShell();
       expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('sidebar body takeover (sidebar.body slot)', () => {
+    let unregister: () => void;
+
+    beforeEach(() => {
+      unregister = useExtensionRegistry.getState().register('sidebar.body', {
+        id: 'marketplace-facets',
+        component: () => <div data-testid="marketplace-sidebar-fake">Marketplace facets</div>,
+        visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+        priority: 10,
+      });
+    });
+
+    afterEach(() => {
+      unregister?.();
+    });
+
+    it('replaces the roster with the contributed body on /marketplace', () => {
+      mockPathname = '/marketplace';
+      renderAppShell();
+      expect(screen.getByTestId('marketplace-sidebar-fake')).toBeInTheDocument();
+      expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
+    });
+
+    it('takes over on a nested marketplace route too', () => {
+      mockPathname = '/marketplace/sources';
+      renderAppShell();
+      expect(screen.getByTestId('marketplace-sidebar-fake')).toBeInTheDocument();
+    });
+
+    it('restores the dashboard roster when navigating away from marketplace', () => {
+      mockPathname = '/';
+      renderAppShell();
+      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-sidebar-fake')).not.toBeInTheDocument();
+    });
+
+    it('does not hijack the session sidebar', () => {
+      mockPathname = '/session';
+      mockSidebarLevel = 'session';
+      renderAppShell();
+      expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-sidebar-fake')).not.toBeInTheDocument();
     });
   });
 

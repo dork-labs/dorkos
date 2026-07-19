@@ -47,6 +47,22 @@ export function initializeExtensions(): void {
     register('dashboard.sections', section);
   }
 
+  // Marketplace sidebar takeover (lazy-loaded). The `sidebar.body` slot is
+  // FIRST-PARTY ONLY in v1: it is registered here, from client init, and is
+  // deliberately absent from `ExtensionPointId` in `@dorkos/extension-api`, so
+  // `api.registerComponent` cannot target it. Replacing the whole sidebar body
+  // is a high-trust surface; opening it to third-party extensions is a future
+  // product decision, not an oversight. This body takes over on `/marketplace`
+  // paths, swapping the agent roster for the type + category filter facets.
+  register('sidebar.body', {
+    id: 'marketplace-facets',
+    component: lazy(() =>
+      import('@/layers/features/marketplace').then((m) => ({ default: m.MarketplaceSidebar }))
+    ),
+    visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+    priority: 10,
+  });
+
   // Dialog contributions
   for (const dialog of DIALOG_CONTRIBUTIONS) {
     register('dialog', dialog);

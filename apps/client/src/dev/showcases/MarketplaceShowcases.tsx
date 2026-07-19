@@ -31,6 +31,7 @@ import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/Permi
 import { InstalledPackagesView } from '@/layers/features/marketplace/ui/InstalledPackagesView';
 import { MarketplaceSourcesView } from '@/layers/features/marketplace/ui/MarketplaceSourcesView';
 import { MarketplaceHeader } from '@/layers/features/marketplace/ui/MarketplaceHeader';
+import { MarketplaceSidebar } from '@/layers/features/marketplace/ui/MarketplaceSidebar';
 import { useMarketplaceStore } from '@/layers/features/marketplace/model/marketplace-store';
 import { useMarketplaceParams } from '@/layers/features/marketplace/model/use-marketplace-params';
 
@@ -475,16 +476,42 @@ function MarketplaceSourcesViewShowcase() {
 // MarketplaceHeader showcase
 // ---------------------------------------------------------------------------
 
-/** MarketplaceHeader — search input and type filter tabs. */
+/** MarketplaceHeader — search input and sort selector. */
 function MarketplaceHeaderShowcase() {
   return (
     <PlaygroundSection
       title="MarketplaceHeader"
-      description="Search input (debounced) and type-filter tab row. Writes the search and type filter to the URL via useMarketplaceParams."
+      description="Debounced search input and the sort selector. Writes the search term and sort order to the URL via useMarketplaceParams. The type + category filter facets live in the MarketplaceSidebar takeover panel now."
     >
       <ShowcaseDemo>
         <div className="max-w-2xl">
           <MarketplaceHeader />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MarketplaceSidebar showcase
+// ---------------------------------------------------------------------------
+
+/** MarketplaceSidebar — the /marketplace sidebar takeover panel (type + category facets). */
+function MarketplaceSidebarShowcase() {
+  return (
+    <PlaygroundSection
+      title="MarketplaceSidebar"
+      description="Sidebar takeover panel for the /marketplace routes: a single-select type facet and a multi-select, OR-combined category facet, each with live result counts derived from the cached catalog. Writes the same URL params the browse grid reads."
+    >
+      <ShowcaseDemo>
+        <div className="bg-sidebar text-sidebar-foreground flex h-[32rem] w-72 flex-col overflow-hidden rounded-lg border">
+          <IsolatedQueryProvider
+            seed={(qc) => {
+              qc.setQueryData(marketplaceKeys.packageList(), MOCK_PACKAGES);
+            }}
+          >
+            <MarketplaceSidebar />
+          </IsolatedQueryProvider>
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -554,6 +581,7 @@ export function MarketplaceShowcases() {
       <InstalledPackagesViewShowcase />
       <MarketplaceSourcesViewShowcase />
       <MarketplaceHeaderShowcase />
+      <MarketplaceSidebarShowcase />
       <PackagePrimitivesShowcase />
     </>
   );
