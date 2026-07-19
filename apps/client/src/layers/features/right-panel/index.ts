@@ -11,3 +11,4 @@ export {
 } from './model/use-right-panel-persistence';
 export { useRightPanelShortcut } from './model/use-right-panel-shortcut';
 export { useAgentProfileShortcut } from './model/use-agent-profile-shortcut';
+export { RIGHT_PANEL_GROUP_ID } from './model/use-right-panel-sizing';

@@ -51,6 +51,7 @@ import {
   useRightPanelPersistence,
   useRightPanelShortcut,
   useAgentProfileShortcut,
+  RIGHT_PANEL_GROUP_ID,
 } from '@/layers/features/right-panel';
 
 // ── Private slot types ────────────────────────────────────────
@@ -351,7 +352,13 @@ export function AppShell() {
                       {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
                           routed content above the 64px bar — nothing occluded. */}
                       <main className="flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">
-                        <PanelGroup direction="horizontal" autoSaveId="app-shell-right-panel">
+                        {/* The explicit id doubles as the DOM hook (data-panel-group-id)
+                            that useRightPanelSizing measures for the pixel floor. */}
+                        <PanelGroup
+                          direction="horizontal"
+                          id={RIGHT_PANEL_GROUP_ID}
+                          autoSaveId={RIGHT_PANEL_GROUP_ID}
+                        >
                           <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
                             <Outlet />
                           </Panel>
