@@ -115,6 +115,17 @@ describe('executeUiCommand — sidebar commands', () => {
     expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('connections');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
+
+  it('switch_sidebar_tab activates an extension-contributed tab id', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(
+      ctx,
+      { action: 'switch_sidebar_tab', tab: 'linear-issues:linear-loop-sidebar' },
+      'agent'
+    );
+    expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('linear-issues:linear-loop-sidebar');
+    expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
+  });
 });
 
 // --- Canvas commands ---

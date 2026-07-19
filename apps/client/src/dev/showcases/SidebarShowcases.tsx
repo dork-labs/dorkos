@@ -3,7 +3,12 @@ import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { SessionsView, SidebarTabRow, SidebarFooterBar } from '@/layers/features/session-list';
+import {
+  SessionsView,
+  SidebarTabRow,
+  SidebarFooterBar,
+  SIDEBAR_TAB_CONTRIBUTIONS,
+} from '@/layers/features/session-list';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
 import { SidebarGroup, SidebarMenu, SidebarMenuItem, TooltipProvider } from '@/layers/shared/ui';
 
@@ -309,16 +314,13 @@ function SessionsViewShowcase() {
 // SidebarTabRow
 // ---------------------------------------------------------------------------
 
+// The three non-overview built-in tabs, exercising badges + status dots.
+const SHOWCASE_TABS = SIDEBAR_TAB_CONTRIBUTIONS.filter((t) => t.id !== 'overview');
+
 function SidebarTabRowShowcase() {
-  const [tab1, setTab1] = useState<'overview' | 'sessions' | 'schedules' | 'connections'>(
-    'sessions'
-  );
-  const [tab2, setTab2] = useState<'overview' | 'sessions' | 'schedules' | 'connections'>(
-    'sessions'
-  );
-  const [tab3, setTab3] = useState<'overview' | 'sessions' | 'schedules' | 'connections'>(
-    'sessions'
-  );
+  const [tab1, setTab1] = useState('sessions');
+  const [tab2, setTab2] = useState('sessions');
+  const [tab3, setTab3] = useState('sessions');
 
   return (
     <PlaygroundSection
@@ -330,11 +332,11 @@ function SidebarTabRowShowcase() {
         <ShowcaseDemo>
           <div className="w-64">
             <SidebarTabRow
+              tabs={SHOWCASE_TABS}
               activeTab={tab1}
               onTabChange={setTab1}
               schedulesBadge={0}
               connectionsStatus="none"
-              visibleTabs={['sessions', 'schedules', 'connections']}
             />
           </div>
         </ShowcaseDemo>
@@ -343,11 +345,11 @@ function SidebarTabRowShowcase() {
         <ShowcaseDemo>
           <div className="w-64">
             <SidebarTabRow
+              tabs={SHOWCASE_TABS}
               activeTab={tab2}
               onTabChange={setTab2}
               schedulesBadge={3}
               connectionsStatus="partial"
-              visibleTabs={['sessions', 'schedules', 'connections']}
             />
           </div>
         </ShowcaseDemo>
@@ -356,11 +358,11 @@ function SidebarTabRowShowcase() {
         <ShowcaseDemo>
           <div className="w-64">
             <SidebarTabRow
+              tabs={SHOWCASE_TABS}
               activeTab={tab3}
               onTabChange={setTab3}
               schedulesBadge={0}
               connectionsStatus="error"
-              visibleTabs={['sessions', 'schedules', 'connections']}
             />
           </div>
         </ShowcaseDemo>

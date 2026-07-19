@@ -400,8 +400,13 @@ export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';
 export interface ShapeLayout {
   /** Sidebar open on arrival. */
   sidebarOpen: boolean;
-  /** Default built-in sidebar tab, when the Shape pins one. */
-  sidebarTab?: 'overview' | 'sessions' | 'schedules' | 'connections';
+  /**
+   * Sidebar tab to select on arrival, when the Shape pins one. Any registered
+   * tab id — a built-in (`overview` | `sessions` | `schedules` | `connections`)
+   * or an extension-contributed tab (e.g. `linear-issues:linear-loop-sidebar`),
+   * mirroring `UiSidebarTab` (`./types`).
+   */
+  sidebarTab?: string;
   /** Panels to open on arrival. */
   openPanels: ('settings' | 'tasks' | 'relay' | 'picker')[];
   /** Extension dashboard-section ids to order first (ordering hint only). */

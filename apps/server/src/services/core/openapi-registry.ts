@@ -2039,7 +2039,19 @@ registry.registerPath({
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
-  sidebarTab: z.enum(['overview', 'sessions', 'schedules', 'connections']).optional(),
+  // Any registered tab id — a built-in or an extension-contributed tab
+  // (`${extId}:${id}`). Mirrors the bounded `sidebarTab` in manifest-schema.ts
+  // and `UiSidebarTabSchema` in @dorkos/shared.
+  sidebarTab: z
+    .string()
+    .min(1)
+    .max(200)
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/)
+    .describe(
+      "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') " +
+        "or an extension-contributed tab's contribution id ('extId:tabId')."
+    )
+    .optional(),
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),
   focusDashboardSections: z.array(z.string()),
 });

@@ -37,7 +37,12 @@ describe('AdapterBindingSchema', () => {
   };
 
   it('validates a complete binding', () => {
-    expect(AdapterBindingSchema.parse(validBinding)).toEqual({ ...validBinding, enabled: true });
+    // Parse fills the schema defaults: enabled + notifyOnTaskComplete.
+    expect(AdapterBindingSchema.parse(validBinding)).toEqual({
+      ...validBinding,
+      enabled: true,
+      notifyOnTaskComplete: true,
+    });
   });
 
   it('applies permission defaults when not provided', () => {
@@ -82,7 +87,11 @@ describe('AdapterBindingSchema', () => {
       channelType: 'dm',
       sessionStrategy: 'per-user',
     };
-    expect(AdapterBindingSchema.parse(binding)).toEqual({ ...binding, enabled: true });
+    expect(AdapterBindingSchema.parse(binding)).toEqual({
+      ...binding,
+      enabled: true,
+      notifyOnTaskComplete: true,
+    });
   });
 
   it('rejects invalid UUID for id', () => {
@@ -158,6 +167,7 @@ describe('BindingListResponseSchema', () => {
           canInitiate: false,
           canReply: true,
           canReceive: true,
+          notifyOnTaskComplete: true,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -185,6 +195,7 @@ describe('BindingResponseSchema', () => {
         canInitiate: false,
         canReply: true,
         canReceive: true,
+        notifyOnTaskComplete: true,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       },

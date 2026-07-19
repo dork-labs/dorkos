@@ -1,7 +1,6 @@
 import type { ComponentType } from 'react';
-import { Settings, Sun, Bug, LayoutDashboard, MessageSquare, Clock, Radio } from 'lucide-react';
+import { Settings, Sun, Bug, LayoutGrid, MessageSquare, Clock, Plug2 } from 'lucide-react';
 import type { SidebarFooterContribution, SidebarTabContribution } from '@/layers/shared/model';
-import { useAppStore } from '@/layers/shared/model';
 
 // These components currently accept props from their parent (SessionSidebar).
 // They are cast to ComponentType here because the contribution interface requires
@@ -58,16 +57,19 @@ export const SIDEBAR_FOOTER_BUTTONS: SidebarFooterContribution[] = [
 /**
  * Built-in sidebar tab contributions.
  *
- * Components are cast to `ComponentType` because they currently accept props
- * from SessionSidebar. Phase 3 migration will refactor them to be self-contained.
+ * Registered into the `sidebar.tabs` slot alongside any extension-contributed
+ * tabs (which append after these by priority). Built-in panels still render
+ * from hardcoded, prop-fed markup in `SessionSidebar` \u2014 their `component` here
+ * is a placeholder the tab strip never mounts (it renders the strip from this
+ * metadata; `SessionSidebar` renders the panels). Extension tabs, by contrast,
+ * are self-contained and DO mount their `component`.
  */
 export const SIDEBAR_TAB_CONTRIBUTIONS: SidebarTabContribution[] = [
   {
     id: 'overview',
-    icon: LayoutDashboard,
+    icon: LayoutGrid,
     label: 'Overview',
     component: OverviewTabPanel as unknown as ComponentType,
-    shortcut: '\u23181',
     priority: 1,
   },
   {
@@ -75,7 +77,6 @@ export const SIDEBAR_TAB_CONTRIBUTIONS: SidebarTabContribution[] = [
     icon: MessageSquare,
     label: 'Sessions',
     component: SessionsView as unknown as ComponentType,
-    shortcut: '\u23182',
     priority: 2,
   },
   {
@@ -83,19 +84,33 @@ export const SIDEBAR_TAB_CONTRIBUTIONS: SidebarTabContribution[] = [
     icon: Clock,
     label: 'Schedules',
     component: TasksView as unknown as ComponentType,
-    // visibleWhen will be wired to actual tasks tool status during phase 3 migration.
-    // Currently returns true because tasksToolEnabled is derived locally in SessionSidebar,
-    // not stored in the app store.
-    visibleWhen: () => true,
-    shortcut: '\u23183',
+    // Schedules visibility is gated locally in SessionSidebar (via the Tasks
+    // tool status), not here \u2014 the panel and its badge already live there.
     priority: 3,
   },
   {
     id: 'connections',
-    icon: Radio,
+    icon: Plug2,
     label: 'Connections',
     component: ConnectionsView as unknown as ComponentType,
-    shortcut: '\u23184',
     priority: 4,
   },
 ];
+
+/**
+ * Ids of the four built-in sidebar tabs, in strip order. The Cmd/Ctrl+1\u20134
+ * shortcuts and the tooltip shortcut hint key off a tab's index here, so the
+ * number that selects a built-in stays stable no matter which extension tabs
+ * are installed. Extension-contributed tabs are reachable by click and arrow
+ * keys, never by a number shortcut.
+ */
+export const BUILTIN_SIDEBAR_TAB_IDS = SIDEBAR_TAB_CONTRIBUTIONS.map((t) => t.id);
+
+/**
+ * Whether `id` is one of the four built-in tabs (vs an extension contribution).
+ *
+ * @param id - A sidebar tab id.
+ */
+export function isBuiltinSidebarTab(id: string): boolean {
+  return BUILTIN_SIDEBAR_TAB_IDS.includes(id);
+}

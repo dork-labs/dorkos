@@ -32,8 +32,15 @@ export interface CoreSlice {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
 
-  sidebarActiveTab: 'overview' | 'sessions' | 'schedules' | 'connections';
-  setSidebarActiveTab: (tab: 'overview' | 'sessions' | 'schedules' | 'connections') => void;
+  /**
+   * Active sidebar tab id. A built-in (`overview` | `sessions` | `schedules` |
+   * `connections`) or an extension-contributed tab id (`${extId}:${id}`). Stored
+   * as-is; `useSidebarTabs` reconciles an id whose tab isn't currently rendered
+   * (extension disabled/uninstalled, or a switch that raced its extension's
+   * registration) back to `overview`.
+   */
+  sidebarActiveTab: string;
+  setSidebarActiveTab: (tab: string) => void;
 
   /** Which sidebar level is visible: top-level dashboard nav or agent-scoped session view. */
   sidebarLevel: 'dashboard' | 'session';

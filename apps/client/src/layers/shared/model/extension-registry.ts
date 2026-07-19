@@ -41,13 +41,18 @@ export interface SidebarFooterContribution extends BaseContribution {
 }
 
 export interface SidebarTabContribution extends BaseContribution {
-  icon: LucideIcon;
+  /**
+   * Tab-strip icon. Optional: extension-contributed tabs register through
+   * `api.registerComponent('sidebar.tabs', …)`, which carries no icon, so the
+   * tab strip falls back to a default (a puzzle-piece) when this is absent.
+   * Built-in tabs always set it.
+   */
+  icon?: LucideIcon;
+  /** Human label shown in the tab tooltip. */
   label: string;
   component: ComponentType;
   /** Return false to hide this tab. Evaluated reactively. */
   visibleWhen?: () => boolean;
-  /** Keyboard shortcut label (e.g., "⌘1"). */
-  shortcut?: string;
 }
 
 export interface DashboardSectionContribution extends BaseContribution {

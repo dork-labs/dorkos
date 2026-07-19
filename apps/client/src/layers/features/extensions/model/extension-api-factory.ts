@@ -49,7 +49,7 @@ export function createExtensionAPI(
       slot: ExtensionPointId,
       id: string,
       component: ComponentType,
-      options?: { priority?: number }
+      options?: { priority?: number; label?: string }
     ): () => void {
       const contribution = adaptToContribution(slot, `${extId}:${id}`, component, options);
       const unsub = deps.registry.register(slot, contribution);
@@ -253,33 +253,31 @@ function adaptToContribution(
   slot: ExtensionPointId,
   id: string,
   component: ComponentType,
-  options?: { priority?: number }
+  options?: { priority?: number; label?: string }
 ): Record<string, unknown> {
   const base = { id, priority: options?.priority ?? DEFAULT_PRIORITY };
+  // Human label for labelled/tabbed slots; namespaced id is the honest fallback.
+  const label = options?.label ?? id;
 
   switch (slot) {
     case 'dashboard.sections':
       return { ...base, component };
     case 'sidebar.tabs':
-      // LucideIcon required by registry; extensions can patch icon separately.
-      return {
-        ...base,
-        component,
-        label: id,
-        icon: undefined as unknown as import('lucide-react').LucideIcon,
-      };
+      // `icon` is optional on SidebarTabContribution — the tab strip renders a
+      // default puzzle-piece icon for extension tabs that supply none.
+      return { ...base, component, label };
     case 'sidebar.footer':
       return {
         ...base,
         onClick: () => {},
-        label: id,
+        label,
         icon: undefined as unknown as import('lucide-react').LucideIcon,
       };
     case 'header.actions':
       return {
         ...base,
         onClick: () => {},
-        label: id,
+        label,
         icon: undefined as unknown as import('lucide-react').LucideIcon,
       };
     case 'right-panel':
@@ -290,7 +288,7 @@ function adaptToContribution(
       return {
         ...base,
         component,
-        title: id,
+        title: label,
         icon: undefined as unknown as import('lucide-react').LucideIcon,
         headerActions: undefined,
         visibleWhen: undefined,
@@ -299,7 +297,7 @@ function adaptToContribution(
       return {
         ...base,
         component,
-        label: id,
+        label,
         icon: undefined as unknown as import('lucide-react').LucideIcon,
       };
     case 'dialog':
@@ -307,7 +305,7 @@ function adaptToContribution(
     case 'command-palette.items':
       return {
         ...base,
-        label: id,
+        label,
         icon: FALLBACK_ICON,
         action: `ext:${id}`,
         category: 'feature' as const,

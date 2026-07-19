@@ -1,26 +1,19 @@
 import { useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { MessageSquare, Clock, Plug2, LayoutGrid, Plus } from 'lucide-react';
+import { Plus, Puzzle } from 'lucide-react';
 import { cn, isMac } from '@/layers/shared/lib';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { useAgentCreationStore, type SidebarTabContribution } from '@/layers/shared/model';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
-
-type SidebarTab = 'overview' | 'sessions' | 'schedules' | 'connections';
+import { BUILTIN_SIDEBAR_TAB_IDS } from '../model/sidebar-contributions';
 
 interface SidebarTabRowProps {
-  activeTab: SidebarTab;
-  onTabChange: (tab: SidebarTab) => void;
+  /** Visible tabs (built-ins + extension contributions), in strip order. */
+  tabs: SidebarTabContribution[];
+  activeTab: string;
+  onTabChange: (tab: string) => void;
   schedulesBadge: number;
   connectionsStatus: 'ok' | 'partial' | 'error' | 'none';
-  visibleTabs: readonly SidebarTab[];
 }
-
-const TAB_CONFIG = [
-  { id: 'overview' as const, icon: LayoutGrid, label: 'Overview', shortcut: 1 },
-  { id: 'sessions' as const, icon: MessageSquare, label: 'Sessions', shortcut: 2 },
-  { id: 'schedules' as const, icon: Clock, label: 'Schedules', shortcut: 3 },
-  { id: 'connections' as const, icon: Plug2, label: 'Connections', shortcut: 4 },
-] as const;
 
 const STATUS_DOT_COLORS: Record<string, string> = {
   ok: 'bg-green-500',
@@ -28,43 +21,50 @@ const STATUS_DOT_COLORS: Record<string, string> = {
   error: 'bg-red-500',
 };
 
+/** Cmd/Ctrl+N hint for a built-in tab, or null for extension-contributed tabs. */
+function builtinShortcut(tabId: string): number | null {
+  const index = BUILTIN_SIDEBAR_TAB_IDS.indexOf(tabId);
+  return index === -1 ? null : index + 1;
+}
+
 /**
- * Horizontal tab row for the agent sidebar. Renders icon tabs with ARIA tablist
+ * Horizontal tab row for the agent sidebar. Renders icon tabs — built-in and
+ * extension-contributed — from the passed contributions with ARIA tablist
  * semantics and a motion-animated sliding indicator below the active tab.
+ * Extension tabs that carry no icon fall back to a puzzle-piece.
  */
 export function SidebarTabRow({
+  tabs,
   activeTab,
   onTabChange,
   schedulesBadge,
   connectionsStatus,
-  visibleTabs,
 }: SidebarTabRowProps) {
   const tabListRef = useRef<HTMLDivElement>(null);
-  const modKey = isMac ? '\u2318' : 'Ctrl+';
+  const modKey = isMac ? '⌘' : 'Ctrl+';
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const currentIndex = visibleTabs.indexOf(activeTab);
+      const currentIndex = tabs.findIndex((t) => t.id === activeTab);
+      if (currentIndex === -1 || tabs.length === 0) return;
       let nextIndex = currentIndex;
 
       if (e.key === 'ArrowRight') {
-        nextIndex = (currentIndex + 1) % visibleTabs.length;
+        nextIndex = (currentIndex + 1) % tabs.length;
         e.preventDefault();
       } else if (e.key === 'ArrowLeft') {
-        nextIndex = (currentIndex - 1 + visibleTabs.length) % visibleTabs.length;
+        nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
         e.preventDefault();
       }
 
       if (nextIndex !== currentIndex) {
-        onTabChange(visibleTabs[nextIndex]);
+        onTabChange(tabs[nextIndex].id);
         // Focus the newly active tab button
         const buttons = tabListRef.current?.querySelectorAll('[role="tab"]');
         (buttons?.[nextIndex] as HTMLElement)?.focus();
       }
     },
-    [activeTab, onTabChange, visibleTabs]
+    [activeTab, onTabChange, tabs]
   );
-
-  const tabs = TAB_CONFIG.filter((t) => visibleTabs.includes(t.id));
 
   return (
     <div
@@ -80,7 +80,8 @@ export function SidebarTabRow({
       {/* Tab buttons */}
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
-        const Icon = tab.icon;
+        const Icon = tab.icon ?? Puzzle;
+        const shortcut = builtinShortcut(tab.id);
 
         return (
           <Tooltip key={tab.id}>
@@ -130,7 +131,8 @@ export function SidebarTabRow({
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {tab.label} {`${modKey}${tab.shortcut}`}
+              {tab.label}
+              {shortcut !== null && ` ${modKey}${shortcut}`}
             </TooltipContent>
           </Tooltip>
         );
