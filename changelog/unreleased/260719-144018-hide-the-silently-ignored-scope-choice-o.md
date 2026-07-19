@@ -1,3 +1,3 @@
 ### Fixed
 
-- The install dialog no longer offers a "specific agent" scope for Shapes. Shapes always install once, for your whole cockpit — choosing an agent used to be silently ignored.
+- Installing a Shape no longer offers the agent scope choice that was silently ignored — Shapes set up your whole cockpit, so they install once for you.
