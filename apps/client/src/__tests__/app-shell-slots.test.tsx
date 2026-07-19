@@ -177,6 +177,7 @@ import { AppShell } from '../AppShell';
 // still reads this store. Tests register a `sidebar.body` contribution to
 // exercise the takeover path.
 import { useExtensionRegistry } from '@/layers/shared/model/extension-registry';
+import type { SidebarBodyContribution } from '@/layers/shared/model/extension-registry';
 
 // ── Test setup ──
 
@@ -292,6 +293,53 @@ describe('AppShell slot integration', () => {
       renderAppShell();
       expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
       expect(screen.queryByTestId('marketplace-sidebar-fake')).not.toBeInTheDocument();
+    });
+
+    it('a throwing contributed body degrades to an inline fallback, not a dead shell', () => {
+      // React + the boundary both log the caught error — silence the noise.
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        // Replace the healthy body with one that throws during render —
+        // simulates a chunk-load 404 after a redeploy or a bug in the panel.
+        unregister();
+        unregister = useExtensionRegistry.getState().register('sidebar.body', {
+          id: 'marketplace-facets',
+          component: () => {
+            throw new Error('boom');
+          },
+          visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+          priority: 10,
+        });
+
+        mockPathname = '/marketplace';
+        renderAppShell();
+
+        // The shell survives: chrome, header, and footer all still render, and
+        // the sidebar body area shows the boundary's inline fallback instead of
+        // the whole app being replaced by the router's error component.
+        expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+        expect(screen.getByTestId('marketplace-header')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-body-error')).toBeInTheDocument();
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it('a malformed contribution without visibleWhen never takes over (runtime guard)', () => {
+      // Simulates a rogue generic registration that omitted the required
+      // predicate — the shell must treat it as never matching, not crash.
+      unregister();
+      unregister = useExtensionRegistry.getState().register('sidebar.body', {
+        id: 'marketplace-facets',
+        component: () => <div data-testid="rogue-body">rogue</div>,
+      } as unknown as SidebarBodyContribution);
+
+      mockPathname = '/marketplace';
+      renderAppShell();
+
+      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
+      expect(screen.queryByTestId('rogue-body')).not.toBeInTheDocument();
     });
   });
 

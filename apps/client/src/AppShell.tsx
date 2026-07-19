@@ -8,6 +8,7 @@ import {
 } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
+import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { getAgentDisplayName, cn } from '@/layers/shared/lib';
 import {
   useSessionId,
@@ -110,11 +111,30 @@ function useSidebarSlot(): SidebarSlot {
 
   // A contributed body whose route predicate matches wins the sidebar. It drills
   // in from the right like the session level; backing out to the roster slides
-  // the dashboard in from the left.
-  const takeover = bodyContributions.find((c) => c.visibleWhen({ pathname }));
+  // the dashboard in from the left. The optional chaining hardens against a
+  // contribution registered without `visibleWhen` (possible at runtime despite
+  // the required type, e.g. via a generic registry write) — missing predicate =
+  // never matches, so a malformed registration can't hijack every route.
+  const takeover = bodyContributions.find((c) => c.visibleWhen?.({ pathname }));
   if (takeover) {
     const Body = takeover.component;
-    return { key: `body:${takeover.id}`, body: <Body />, direction: 1 };
+    return {
+      key: `body:${takeover.id}`,
+      // Boundary + Suspense live here at the SLOT seam so every current and
+      // future sidebar.body consumer inherits them: contributed bodies are
+      // lazy-loaded, and AppShell is the _shell route component — without the
+      // boundary a chunk-load 404 (stale tab after a redeploy) or a render
+      // throw would escape to the router's defaultErrorComponent and replace
+      // the entire shell instead of just this panel.
+      body: (
+        <SidebarBodyErrorBoundary contributionId={takeover.id}>
+          <Suspense fallback={null}>
+            <Body />
+          </Suspense>
+        </SidebarBodyErrorBoundary>
+      ),
+      direction: 1,
+    };
   }
 
   if (pathname === '/session' && sidebarLevel === 'session') {
@@ -318,10 +338,11 @@ export function AppShell() {
                           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                           className="flex min-h-0 flex-1 flex-col overflow-hidden"
                         >
-                          {/* Contributed bodies (e.g. the marketplace facet
-                              panel) are lazy-loaded — the built-in dashboard/
+                          {/* Contributed takeover bodies arrive pre-wrapped in
+                              SidebarBodyErrorBoundary + Suspense at the slot
+                              seam (useSidebarSlot); the built-in dashboard/
                               session bodies are eager and never suspend. */}
-                          <Suspense fallback={null}>{sidebarSlot.body}</Suspense>
+                          {sidebarSlot.body}
                         </motion.div>
                       </AnimatePresence>
 

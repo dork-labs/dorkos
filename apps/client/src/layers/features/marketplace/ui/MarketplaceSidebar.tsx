@@ -123,7 +123,7 @@ export function MarketplaceSidebar() {
         <button
           type="button"
           onClick={() => void navigate({ to: '/' })}
-          className="text-muted-foreground hover:bg-accent hover:text-foreground -ml-1 flex w-fit items-center gap-1 rounded-md py-1 pr-2 pl-1 text-xs font-medium transition-colors"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground focus-ring -ml-1 flex w-fit items-center gap-1 rounded-md py-1 pr-2 pl-1 text-xs font-medium transition-colors"
         >
           <ChevronLeft className="size-4" aria-hidden />
           Dashboard
@@ -164,7 +164,7 @@ export function MarketplaceSidebar() {
                 <button
                   type="button"
                   onClick={clearCategories}
-                  className="text-muted-foreground hover:text-foreground text-[10px] font-medium tracking-wide uppercase transition-colors"
+                  className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-[10px] font-medium tracking-wide uppercase transition-colors"
                 >
                   Clear
                 </button>
@@ -187,7 +187,7 @@ export function MarketplaceSidebar() {
               <button
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
-                className="text-muted-foreground hover:text-foreground mt-1 px-2 text-left text-xs font-medium transition-colors"
+                className="text-muted-foreground hover:text-foreground focus-ring mt-1 rounded-sm px-2 text-left text-xs font-medium transition-colors"
               >
                 {expanded ? 'Show less' : `Show all ${presentCategories.length}`}
               </button>
@@ -235,7 +235,7 @@ function FacetButton({ label, count, active, onClick, swatch, title, multi }: Fa
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+        'focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
           : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'

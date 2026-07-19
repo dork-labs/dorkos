@@ -69,8 +69,10 @@ export interface SidebarBodyContribution extends BaseContribution {
    * Predicate against the current route pathname. Return true to take over the
    * sidebar body on that route. Required — unlike other slots' optional
    * `visibleWhen`, a body with no route scope would hijack the sidebar
-   * everywhere. The highest-priority (lowest number) matching contribution wins;
-   * when none match, the shell renders its built-in dashboard/session body.
+   * everywhere; the shell defensively treats a contribution that somehow lacks
+   * one at runtime as never matching. The highest-priority (lowest number)
+   * matching contribution wins; when none match, the shell renders its built-in
+   * dashboard/session body.
    */
   visibleWhen: (ctx: { pathname: string }) => boolean;
 }
