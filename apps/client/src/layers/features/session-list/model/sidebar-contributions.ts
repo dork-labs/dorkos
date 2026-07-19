@@ -84,8 +84,9 @@ export const SIDEBAR_TAB_CONTRIBUTIONS: SidebarTabContribution[] = [
     icon: Clock,
     label: 'Schedules',
     component: TasksView as unknown as ComponentType,
-    // Schedules visibility is gated locally in SessionSidebar (via the Tasks
-    // tool status), not here \u2014 the panel and its badge already live there.
+    // The Schedules tab itself is always visible in the strip; only the
+    // panel's content and badge react to the Tasks tool status, and that
+    // logic lives in SessionSidebar.
     priority: 3,
   },
   {
