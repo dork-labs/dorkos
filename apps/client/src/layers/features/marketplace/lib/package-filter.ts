@@ -15,8 +15,11 @@ import type { MarketplaceTypeFilter } from '../model/marketplace-search';
 export interface FilterCriteria {
   /** Package type filter — `'all'` returns every type. */
   type: MarketplaceTypeFilter;
-  /** Category slug filter, or `null` for no category restriction. */
-  category: string | null;
+  /**
+   * Selected category slugs, OR-combined: a package matches when it belongs to
+   * ANY selected category. Empty array = no category restriction.
+   */
+  categories: string[];
   /** Free-text search string (empty string disables search filtering). */
   search: string;
 }
@@ -48,10 +51,10 @@ function matchesType(pkg: AggregatedPackage, typeFilter: MarketplaceTypeFilter):
  * Filter a list of marketplace packages by type, category, and search text.
  *
  * - Type filter: packages with no `type` field are treated as `'plugin'`.
- * - Category filter: membership match against the multi-membership
+ * - Category filter: OR across the selected slugs — a package matches when it
+ *   belongs to ANY of them. Membership is checked against the multi-membership
  *   `categories[]` list, falling back to the singular `category` for packages
- *   that predate the sidecar. A package matches when the wanted slug is in its
- *   `categories[]` or equals its primary `category`.
+ *   that predate the sidecar. An empty selection imposes no restriction.
  * - Search: case-insensitive substring match across `name`, `description`,
  *   `keywords`, and `tags`. Empty search string matches everything.
  *
@@ -67,12 +70,15 @@ export function filterPackages(
 
   return packages.filter((pkg) => {
     if (!matchesType(pkg, criteria.type)) return false;
-    if (criteria.category !== null) {
-      // Always-check-singular fallback: differs from site ranking.ts's `??`
-      // short-circuit only for coherence-violating data (category outside
-      // categories[]), which the schema refine + server flatten make unreachable.
-      const inList = pkg.categories?.includes(criteria.category) ?? false;
-      if (!inList && pkg.category !== criteria.category) return false;
+    if (criteria.categories.length > 0) {
+      // OR: keep the package if it belongs to any selected category. The
+      // always-check-singular fallback differs from site ranking.ts's `??`
+      // short-circuit only for coherence-violating data (a `category` outside
+      // `categories[]`), which the schema refine + server flatten make unreachable.
+      const matchesAny = criteria.categories.some(
+        (slug) => (pkg.categories?.includes(slug) ?? false) || pkg.category === slug
+      );
+      if (!matchesAny) return false;
     }
     if (needle && !matchesMarketplaceSearch(pkg, needle)) return false;
     return true;

@@ -3,7 +3,6 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { MarketplaceHeader } from '../ui/MarketplaceHeader';
 
 // ---------------------------------------------------------------------------
@@ -11,19 +10,23 @@ import { MarketplaceHeader } from '../ui/MarketplaceHeader';
 //
 // MarketplaceHeader reads/writes browse state through `useMarketplaceParams`
 // (URL-backed). Mock the hook so tests can drive the committed values and
-// assert the setters that write to the URL.
+// assert the setters that write to the URL. The type + category filter facets
+// moved to the sidebar takeover panel (see MarketplaceSidebar.test.tsx); this
+// header is now just the search field and the sort selector.
 // ---------------------------------------------------------------------------
 
 const mockParams = vi.hoisted(() => ({
   type: 'all' as string,
   sort: 'featured' as string,
   search: '' as string,
-  category: null as string | null,
+  categories: [] as string[],
   selectedPackageName: null as string | null,
   setType: vi.fn(),
   setSort: vi.fn(),
   setSearch: vi.fn(),
-  setCategory: vi.fn(),
+  toggleCategory: vi.fn(),
+  setCategories: vi.fn(),
+  clearCategories: vi.fn(),
   resetFilters: vi.fn(),
   openDetail: vi.fn(),
   closeDetail: vi.fn(),
@@ -63,7 +66,7 @@ describe('MarketplaceHeader', () => {
     mockParams.type = 'all';
     mockParams.sort = 'featured';
     mockParams.search = '';
-    mockParams.category = null;
+    mockParams.categories = [];
     mockParams.selectedPackageName = null;
   });
 
@@ -73,16 +76,9 @@ describe('MarketplaceHeader', () => {
     vi.useRealTimers();
   });
 
-  it('renders all six type filter tabs (one per package type, plus All)', () => {
-    render(<MarketplaceHeader />);
-
-    expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Agents' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Plugins' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Skill Packs' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Adapters' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Shapes' })).toBeInTheDocument();
-  });
+  // -------------------------------------------------------------------------
+  // Search
+  // -------------------------------------------------------------------------
 
   it('renders the search input with an accessible label and the marketplace-search test id', () => {
     render(<MarketplaceHeader />);
@@ -92,41 +88,6 @@ describe('MarketplaceHeader', () => {
     expect(searchInput).toBeInTheDocument();
     expect(searchInput).toHaveAttribute('id', 'marketplace-search');
     expect(screen.getByTestId('marketplace-search')).toBe(searchInput);
-  });
-
-  it('marks the active type tab based on the URL filter', () => {
-    mockParams.type = 'agent';
-    render(<MarketplaceHeader />);
-
-    expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('data-state', 'active');
-    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('data-state', 'inactive');
-  });
-
-  it('clicking a type tab writes the filter to the URL via setType', async () => {
-    const user = userEvent.setup();
-    render(<MarketplaceHeader />);
-
-    await user.click(screen.getByRole('tab', { name: 'Plugins' }));
-
-    expect(mockParams.setType).toHaveBeenCalledWith('plugin');
-  });
-
-  it('clicking the Skill Packs tab maps to the "skill-pack" filter value', async () => {
-    const user = userEvent.setup();
-    render(<MarketplaceHeader />);
-
-    await user.click(screen.getByRole('tab', { name: 'Skill Packs' }));
-
-    expect(mockParams.setType).toHaveBeenCalledWith('skill-pack');
-  });
-
-  it('clicking the Shapes tab maps to the "shape" filter value', async () => {
-    const user = userEvent.setup();
-    render(<MarketplaceHeader />);
-
-    await user.click(screen.getByRole('tab', { name: 'Shapes' }));
-
-    expect(mockParams.setType).toHaveBeenCalledWith('shape');
   });
 
   it('seeds the input from the committed URL search on mount', () => {
@@ -188,100 +149,41 @@ describe('MarketplaceHeader', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Category facet chips
+  // Sort
   // -------------------------------------------------------------------------
 
-  it('renders no category chip row when no categories are present', () => {
-    // Present-only policy: with an empty/omitted set there are no live facets.
+  it('renders the sort selector reflecting the active sort from the URL', () => {
     render(<MarketplaceHeader />);
+
+    const sort = screen.getByRole('combobox', { name: 'Sort packages' });
+    expect(sort).toBeInTheDocument();
+    // The trigger shows the label of the committed sort (default: Featured).
+    expect(sort).toHaveTextContent('Featured');
+  });
+
+  it('reflects the "name" sort as the A–Z label', () => {
+    mockParams.sort = 'name';
+    render(<MarketplaceHeader />);
+
+    expect(screen.getByRole('combobox', { name: 'Sort packages' })).toHaveTextContent('A–Z');
+  });
+
+  // -------------------------------------------------------------------------
+  // The filter facets moved to the sidebar — they must NOT appear here anymore.
+  // -------------------------------------------------------------------------
+
+  it('no longer renders the type filter tabs (moved to the sidebar facet panel)', () => {
+    render(<MarketplaceHeader />);
+
+    expect(screen.queryByRole('tab', { name: 'All' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Agents' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+
+  it('no longer renders the category facet chips (moved to the sidebar facet panel)', () => {
+    render(<MarketplaceHeader />);
+
     expect(screen.queryByRole('group', { name: 'Filter by category' })).not.toBeInTheDocument();
-  });
-
-  it('renders a facet chip only for present categories, and no redundant "All" chip', () => {
-    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
-
-    const group = screen.getByRole('group', { name: 'Filter by category' });
-    expect(group).toBeInTheDocument();
-    // Labels come from CATEGORY_LABELS.
-    expect(screen.getByRole('button', { name: 'Security' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Code Review' })).toBeInTheDocument();
-    // A category with no present packages gets no chip (no dead facet).
-    expect(screen.queryByRole('button', { name: 'Marketing' })).not.toBeInTheDocument();
-    // The old ambiguous "All" chip is gone — clearing happens via the active
-    // chip's clear affordance, not a duplicate of the type row's "All" tab.
-    expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument();
-  });
-
-  it('labels each filter axis so the two chip rows are distinguishable', () => {
-    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
-
-    // Muted leading labels name each axis (the founder-reported fix: two
-    // adjacent "All"-first rows are no longer indistinguishable).
-    expect(screen.getByText('Type')).toBeInTheDocument();
-    expect(screen.getByText('Category')).toBeInTheDocument();
-  });
-
-  it('omits the Category label when no categories are present', () => {
-    render(<MarketplaceHeader />);
-
-    expect(screen.getByText('Type')).toBeInTheDocument();
     expect(screen.queryByText('Category')).not.toBeInTheDocument();
-  });
-
-  it('renders chips in the canonical vocabulary order, not insertion order', () => {
-    // 'security' precedes 'code-review' in the set but code-review is earlier
-    // in MARKETPLACE_CATEGORIES, so it renders first.
-    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
-
-    const labels = screen
-      .getAllByRole('button')
-      .map((b) => b.textContent)
-      .filter((t) => t === 'Security' || t === 'Code Review');
-    expect(labels).toEqual(['Code Review', 'Security']);
-  });
-
-  it('clicking a category chip writes the slug to the URL via setCategory', async () => {
-    const user = userEvent.setup();
-    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
-
-    await user.click(screen.getByRole('button', { name: 'Security' }));
-
-    expect(mockParams.setCategory).toHaveBeenCalledWith('security');
-  });
-
-  it('marks the active category chip with aria-pressed', () => {
-    mockParams.category = 'security';
-    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
-
-    expect(screen.getByRole('button', { name: 'Security' })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    );
-    expect(screen.getByRole('button', { name: 'Code Review' })).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    );
-  });
-
-  it('clicking the active category chip clears the filter (toggle off)', async () => {
-    mockParams.category = 'security';
-    const user = userEvent.setup();
-    render(<MarketplaceHeader presentCategories={new Set(['security'])} />);
-
-    await user.click(screen.getByRole('button', { name: 'Security' }));
-
-    expect(mockParams.setCategory).toHaveBeenCalledWith(null);
-  });
-
-  it('shows a clear (✕) affordance only on the active category chip', () => {
-    mockParams.category = 'security';
-    render(<MarketplaceHeader presentCategories={new Set(['security', 'code-review'])} />);
-
-    // The active chip renders an icon signalling that clicking it clears the
-    // filter; inactive chips do not.
-    const active = screen.getByRole('button', { name: 'Security' });
-    const inactive = screen.getByRole('button', { name: 'Code Review' });
-    expect(active.querySelector('svg')).toBeInTheDocument();
-    expect(inactive.querySelector('svg')).not.toBeInTheDocument();
   });
 });

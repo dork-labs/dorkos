@@ -2,10 +2,8 @@ import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { asMarketplaceCategory, CATEGORY_LABELS } from '@dorkos/marketplace';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/layers/shared/ui';
 import { useMarketplaceStore } from '../model/marketplace-store';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
-import type { MarketplaceSort } from '../model/marketplace-search';
 import { filterPackages } from '../lib/package-filter';
 import { sortPackages } from '../lib/package-sort';
 import { PackageCard } from './PackageCard';
@@ -16,13 +14,6 @@ import { PackageErrorState } from './PackageErrorState';
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-// Only sorts backed by real data are offered. `Recent` and `Popular` return
-// when AggregatedPackage carries `updatedAt`/`installCount` (tracked in Linear).
-const SORT_OPTIONS: ReadonlyArray<{ value: MarketplaceSort; label: string }> = [
-  { value: 'featured', label: 'Featured' },
-  { value: 'name', label: 'A–Z' },
-];
 
 /** Cap stagger to avoid slow entry on large catalogs. */
 const MAX_STAGGER_ITEMS = 20;
@@ -68,31 +59,32 @@ export function PackageGrid() {
   const { data: installed } = useInstalledPackages();
   const prefersReducedMotion = useReducedMotion();
 
-  const { type, category, search, sort, setSort, setCategory, resetFilters, openDetail } =
+  const { type, categories, search, sort, resetFilters, clearCategories, openDetail } =
     useMarketplaceParams();
   const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 
   const visible = useMemo(() => {
     if (!data) return [];
-    return sortPackages(filterPackages(data, { type, category, search }), sort);
-  }, [data, type, category, search, sort]);
+    return sortPackages(filterPackages(data, { type, categories, search }), sort);
+  }, [data, type, categories, search, sort]);
 
   const installedNames = useMemo(() => new Set((installed ?? []).map((p) => p.name)), [installed]);
 
   if (isLoading) return <PackageLoadingSkeleton />;
   if (error) return <PackageErrorState error={error as Error} onRetry={() => void refetch()} />;
   if (visible.length === 0) {
-    // A category filter with no matches gets a category-named message and a
-    // single "Clear category" affordance rather than the generic reset.
-    if (category !== null) {
-      const known = asMarketplaceCategory(category);
-      const label = known ? CATEGORY_LABELS[known] : category;
+    // A category filter with no matches gets a category-aware message and a
+    // single "Clear categories" affordance rather than the generic reset.
+    if (categories.length > 0) {
+      const only = categories.length === 1 ? categories[0] : null;
+      const known = only ? asMarketplaceCategory(only) : undefined;
+      const label = only ? (known ? CATEGORY_LABELS[known] : only) : null;
       return (
         <PackageEmptyState
-          title={`No packages in ${label} yet`}
-          description="No packages match this category. Try another category or clear the filter."
-          resetLabel="Clear category"
-          onResetFilters={() => setCategory(null)}
+          title={label ? `No packages in ${label} yet` : 'No packages in these categories yet'}
+          description="No packages match the selected categories. Try another category or clear the filter."
+          resetLabel={categories.length === 1 ? 'Clear category' : 'Clear categories'}
+          onResetFilters={clearCategories}
         />
       );
     }
@@ -101,24 +93,12 @@ export function PackageGrid() {
 
   return (
     <div className="space-y-4">
-      {/* Section header with count + sort */}
+      {/* Section header with count (sort lives in the page header now) */}
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-base font-semibold">
           All Packages
           <span className="text-muted-foreground ml-2 text-sm font-normal">({visible.length})</span>
         </h2>
-        <Select value={sort} onValueChange={(v) => setSort(v as MarketplaceSort)}>
-          <SelectTrigger className="h-8 w-32 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
       {/* Animated card grid */}

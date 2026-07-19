@@ -10,6 +10,7 @@ import type { Transport } from '@dorkos/shared/transport';
 export const SLOT_IDS = {
   SIDEBAR_FOOTER: 'sidebar.footer',
   SIDEBAR_TABS: 'sidebar.tabs',
+  SIDEBAR_BODY: 'sidebar.body',
   DASHBOARD_SECTIONS: 'dashboard.sections',
   HEADER_ACTIONS: 'header.actions',
   COMMAND_PALETTE_ITEMS: 'command-palette.items',
@@ -53,6 +54,27 @@ export interface SidebarTabContribution extends BaseContribution {
   component: ComponentType;
   /** Return false to hide this tab. Evaluated reactively. */
   visibleWhen?: () => boolean;
+}
+
+export interface SidebarBodyContribution extends BaseContribution {
+  /**
+   * The sidebar body component rendered when this contribution wins the slot.
+   * It replaces the app-shell's built-in dashboard/session body wholesale — the
+   * surrounding chrome (sidebar trigger, footer, rail, mobile Sheet) is owned by
+   * the shell and is never part of the swapped body, so a body contribution
+   * renders only its own header + content.
+   */
+  component: ComponentType;
+  /**
+   * Predicate against the current route pathname. Return true to take over the
+   * sidebar body on that route. Required — unlike other slots' optional
+   * `visibleWhen`, a body with no route scope would hijack the sidebar
+   * everywhere; the shell defensively treats a contribution that somehow lacks
+   * one at runtime as never matching. The highest-priority (lowest number)
+   * matching contribution wins; when none match, the shell renders its built-in
+   * dashboard/session body.
+   */
+  visibleWhen: (ctx: { pathname: string }) => boolean;
 }
 
 export interface DashboardSectionContribution extends BaseContribution {
@@ -146,6 +168,13 @@ export interface RightPanelContribution extends BaseContribution {
 export interface SlotContributionMap {
   'sidebar.footer': SidebarFooterContribution;
   'sidebar.tabs': SidebarTabContribution;
+  // First-party only (v1): `sidebar.body` is registered from client init code
+  // (`app/init-extensions.ts`), never through the extension-api factory — it is
+  // deliberately absent from `ExtensionPointId` in `@dorkos/extension-api`, so
+  // `api.registerComponent` cannot target it. Taking over the whole sidebar body
+  // is a high-trust surface; exposing it to third-party extensions is a future
+  // product decision, not an oversight.
+  'sidebar.body': SidebarBodyContribution;
   'dashboard.sections': DashboardSectionContribution;
   'header.actions': HeaderActionContribution;
   'command-palette.items': CommandPaletteContribution;

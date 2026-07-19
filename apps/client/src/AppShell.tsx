@@ -1,8 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
-import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useFavicon,
+  useDocumentTitle,
+  useSlotContributions,
+} from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
+import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { getAgentDisplayName, cn } from '@/layers/shared/lib';
 import {
   useSessionId,
@@ -77,17 +83,24 @@ interface HeaderSlot {
 // ── Private slot hooks ────────────────────────────────────────
 
 /**
- * Returns the sidebar body component based on `sidebarLevel` state.
+ * Returns the sidebar body component for the current route.
  *
- * The Dashboard sidebar is the default and persists across all routes.
- * Users drill into the Session sidebar via the active agent's "Sessions" action,
- * and return via the back button. Navigating away from `/session` auto-resets
- * to the dashboard level.
+ * A registered `sidebar.body` contribution whose `visibleWhen(pathname)` matches
+ * takes over the body wholesale (highest priority wins) — this is how the
+ * marketplace facet panel replaces the roster on `/marketplace`. When nothing
+ * matches, the built-in behavior applies: the Dashboard sidebar is the default
+ * and persists across all routes; users drill into the Session sidebar via the
+ * active agent's "Sessions" action and return via the back button. Navigating
+ * away from `/session` auto-resets to the dashboard level. The surrounding
+ * chrome (trigger, footer, rail) never swaps — only this body does.
  */
 function useSidebarSlot(): SidebarSlot {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const sidebarLevel = useAppStore((s) => s.sidebarLevel);
   const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
+  // Contributed body takeovers, already sorted ascending by priority — so the
+  // first route match is the highest-priority winner.
+  const bodyContributions = useSlotContributions('sidebar.body');
 
   // Auto-reset to dashboard when leaving the session route
   useEffect(() => {
@@ -95,6 +108,34 @@ function useSidebarSlot(): SidebarSlot {
       setSidebarLevel('dashboard');
     }
   }, [pathname, sidebarLevel, setSidebarLevel]);
+
+  // A contributed body whose route predicate matches wins the sidebar. It drills
+  // in from the right like the session level; backing out to the roster slides
+  // the dashboard in from the left. The optional chaining hardens against a
+  // contribution registered without `visibleWhen` (possible at runtime despite
+  // the required type, e.g. via a generic registry write) — missing predicate =
+  // never matches, so a malformed registration can't hijack every route.
+  const takeover = bodyContributions.find((c) => c.visibleWhen?.({ pathname }));
+  if (takeover) {
+    const Body = takeover.component;
+    return {
+      key: `body:${takeover.id}`,
+      // Boundary + Suspense live here at the SLOT seam so every current and
+      // future sidebar.body consumer inherits them: contributed bodies are
+      // lazy-loaded, and AppShell is the _shell route component — without the
+      // boundary a chunk-load 404 (stale tab after a redeploy) or a render
+      // throw would escape to the router's defaultErrorComponent and replace
+      // the entire shell instead of just this panel.
+      body: (
+        <SidebarBodyErrorBoundary contributionId={takeover.id}>
+          <Suspense fallback={null}>
+            <Body />
+          </Suspense>
+        </SidebarBodyErrorBoundary>
+      ),
+      direction: 1,
+    };
+  }
 
   if (pathname === '/session' && sidebarLevel === 'session') {
     return { key: 'session', body: <SessionSidebar />, direction: 1 };
@@ -297,6 +338,10 @@ export function AppShell() {
                           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                           className="flex min-h-0 flex-1 flex-col overflow-hidden"
                         >
+                          {/* Contributed takeover bodies arrive pre-wrapped in
+                              SidebarBodyErrorBoundary + Suspense at the slot
+                              seam (useSidebarSlot); the built-in dashboard/
+                              session bodies are eager and never suspend. */}
                           {sidebarSlot.body}
                         </motion.div>
                       </AnimatePresence>

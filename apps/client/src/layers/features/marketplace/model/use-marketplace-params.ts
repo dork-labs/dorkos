@@ -13,6 +13,7 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { MarketplaceSort, MarketplaceTypeFilter, MarketplaceView } from './marketplace-search';
+import { normalizeCategoryParam } from './marketplace-search';
 
 /** Browse state derived from the URL plus setters that write back to it. */
 export interface MarketplaceParams {
@@ -24,8 +25,13 @@ export interface MarketplaceParams {
   sort: MarketplaceSort;
   /** Committed free-text search string (`''` when absent). */
   search: string;
-  /** Active category slug filter, or `null` for no restriction. */
-  category: string | null;
+  /**
+   * Selected category slugs, OR-combined by the filter (empty array = no
+   * category restriction). The URL keeps the legacy single-value form for a
+   * lone selection (`?category=security`) and only switches to the array form
+   * for multiple, so single-category links stay clean and back-compatible.
+   */
+  categories: string[];
   /** Name of the package open in the detail drawer, or `null` when closed. */
   selectedPackageName: string | null;
   /** Switch the top-level view (browse vs installed). */
@@ -36,14 +42,29 @@ export interface MarketplaceParams {
   setSort: (sort: MarketplaceSort) => void;
   /** Set the free-text search string. */
   setSearch: (search: string) => void;
-  /** Set the category filter. Pass `null` to clear. */
-  setCategory: (category: string | null) => void;
+  /** Add the slug if absent, remove it if present (multi-select OR facet). */
+  toggleCategory: (slug: string) => void;
+  /** Replace the whole category selection. */
+  setCategories: (slugs: string[]) => void;
+  /** Clear every selected category. */
+  clearCategories: () => void;
   /** Reset type, sort, search, and category to their defaults (keeps the drawer). */
   resetFilters: () => void;
   /** Open the detail drawer for a package (pushes history so Back closes it). */
   openDetail: (name: string) => void;
   /** Close the detail drawer. */
   closeDetail: () => void;
+}
+
+/**
+ * Serialize the selected category slugs back into the URL: dropped when empty,
+ * a bare string for a single selection (clean + back-compatible with legacy
+ * `?category=slug` links), and the array form only once more than one is picked.
+ */
+function serializeCategories(slugs: string[]): string | string[] | undefined {
+  if (slugs.length === 0) return undefined;
+  if (slugs.length === 1) return slugs[0];
+  return slugs;
 }
 
 /**
@@ -59,7 +80,7 @@ function normalize(next: Record<string, unknown>): Record<string, unknown> {
     type: next.type === 'all' ? undefined : next.type,
     sort: next.sort === 'featured' ? undefined : next.sort,
     q,
-    category: next.category ?? undefined,
+    category: serializeCategories(normalizeCategoryParam(next.category)),
     pkg: next.pkg ?? undefined,
   };
 }
@@ -80,7 +101,7 @@ export function useMarketplaceParams(): MarketplaceParams {
   const type = (typeof search.type === 'string' ? search.type : 'all') as MarketplaceTypeFilter;
   const sort = (typeof search.sort === 'string' ? search.sort : 'featured') as MarketplaceSort;
   const q = typeof search.q === 'string' ? search.q : undefined;
-  const category = typeof search.category === 'string' ? search.category : undefined;
+  const categories = normalizeCategoryParam(search.category);
   const pkg = typeof search.pkg === 'string' ? search.pkg : undefined;
 
   const patch = useCallback(
@@ -105,10 +126,20 @@ export function useMarketplaceParams(): MarketplaceParams {
     [patch]
   );
   const setSearch = useCallback((next: string) => patch({ q: next }, { replace: true }), [patch]);
-  const setCategory = useCallback(
-    (next: string | null) => patch({ category: next ?? undefined }, { replace: true }),
+  const toggleCategory = useCallback(
+    (slug: string) => {
+      const next = categories.includes(slug)
+        ? categories.filter((c) => c !== slug)
+        : [...categories, slug];
+      patch({ category: next }, { replace: true });
+    },
+    [patch, categories]
+  );
+  const setCategories = useCallback(
+    (slugs: string[]) => patch({ category: slugs }, { replace: true }),
     [patch]
   );
+  const clearCategories = useCallback(() => patch({ category: [] }, { replace: true }), [patch]);
   const resetFilters = useCallback(
     () =>
       patch(
@@ -125,13 +156,15 @@ export function useMarketplaceParams(): MarketplaceParams {
     type,
     sort,
     search: q ?? '',
-    category: category ?? null,
+    categories,
     selectedPackageName: pkg ?? null,
     setView,
     setType,
     setSort,
     setSearch,
-    setCategory,
+    toggleCategory,
+    setCategories,
+    clearCategories,
     resetFilters,
     openDetail,
     closeDetail,

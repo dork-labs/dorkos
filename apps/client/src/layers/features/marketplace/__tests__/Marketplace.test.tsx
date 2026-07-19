@@ -15,13 +15,15 @@ const mockParams = vi.hoisted(() => ({
   type: 'all' as string,
   sort: 'featured' as string,
   search: '' as string,
-  category: null as string | null,
+  categories: [] as string[],
   selectedPackageName: null as string | null,
   setView: vi.fn(),
   setType: vi.fn(),
   setSort: vi.fn(),
   setSearch: vi.fn(),
-  setCategory: vi.fn(),
+  toggleCategory: vi.fn(),
+  setCategories: vi.fn(),
+  clearCategories: vi.fn(),
   resetFilters: vi.fn(),
   openDetail: vi.fn(),
   closeDetail: vi.fn(),
@@ -29,12 +31,6 @@ const mockParams = vi.hoisted(() => ({
 
 vi.mock('../model/use-marketplace-params', () => ({
   useMarketplaceParams: () => mockParams,
-}));
-
-// Marketplace reads the catalog to derive the header's present-category set.
-// Stub the entity hook so the test needs no QueryClient/Transport.
-vi.mock('@/layers/entities/marketplace', () => ({
-  useMarketplacePackages: () => ({ data: [] }),
 }));
 
 // Stub the heavy children so the test isolates the view-switch logic.

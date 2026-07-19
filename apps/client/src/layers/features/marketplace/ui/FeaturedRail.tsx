@@ -86,8 +86,8 @@ export function FeaturedRail() {
   const prefersReducedMotion = useReducedMotion();
 
   // Hide the rail whenever the user narrows the catalog by any axis.
-  const { search, type, category } = useMarketplaceParams();
-  const hasActiveFilters = search.length > 0 || type !== 'all' || category !== null;
+  const { search, type, categories } = useMarketplaceParams();
+  const hasActiveFilters = search.length > 0 || type !== 'all' || categories.length > 0;
 
   // Determine the content to render (or null if nothing to show).
   let railContent: React.ReactNode = null;
