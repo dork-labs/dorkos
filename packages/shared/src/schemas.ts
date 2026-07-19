@@ -2846,16 +2846,38 @@ export const UiPanelIdSchema = z
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
 
 /**
+ * The shape of a sidebar tab id: starts alphanumeric, then the characters that
+ * appear in real registry contribution ids — alphanumerics, `_`, `.`, `:`
+ * (the `extId:tabId` namespace separator), and `-`. Bounds the widened string
+ * so an agent-issued command or a Shape manifest can't carry arbitrary garbage
+ * into localStorage or `.dork/manifest.json`.
+ *
+ * Keep in sync with the mirrors in `@dorkos/marketplace` `manifest-schema.ts`
+ * (`sidebarTab`) and the server's `openapi-registry.ts` `LocalShapeLayoutSchema`.
+ */
+const SIDEBAR_TAB_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/;
+
+/**
  * Identifies a tab in the sidebar navigation.
  *
  * The four built-ins (`overview`, `sessions`, `schedules`, `connections`) are
  * always present, but the sidebar tab strip is an extension point: an extension
  * can contribute its own tab via `sidebar.tabs`, registered under a namespaced
- * id like `linear-issues:linear-loop-sidebar`. So the honest type is a free
+ * id like `linear-issues:linear-loop-sidebar`. So the honest type is a bounded
  * string, not a closed enum — a `switch_sidebar_tab` command or a Shape's
  * pinned tab may target any registered tab id, built-in or contributed.
  */
-export const UiSidebarTabSchema = z.string().openapi('UiSidebarTab');
+export const UiSidebarTabSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(SIDEBAR_TAB_ID_PATTERN, 'Not a valid sidebar tab id')
+  .describe(
+    "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') " +
+      "or an extension-contributed tab's contribution id " +
+      "('extId:tabId', e.g. 'linear-issues:linear-loop-sidebar')."
+  )
+  .openapi('UiSidebarTab');
 
 export type UiSidebarTab = z.infer<typeof UiSidebarTabSchema>;
 

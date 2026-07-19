@@ -76,16 +76,19 @@ describe('useSidebarTabs', () => {
     setActive(CONTRIBUTED_ID); // extension never registers
     registerBuiltins();
 
-    renderHook(() => useSidebarTabs());
+    const { result } = renderHook(() => useSidebarTabs());
 
-    // Still on the (orphaned) contributed id until the grace window elapses.
+    // Still on the (orphaned) contributed id until the grace window elapses —
+    // but the DISPLAYED tab is already the overview placeholder, never blank.
     expect(useAppStore.getState().sidebarActiveTab).toBe(CONTRIBUTED_ID);
+    expect(result.current.displayTab).toBe('overview');
 
     act(() => {
       vi.advanceTimersByTime(2000);
     });
 
     expect(useAppStore.getState().sidebarActiveTab).toBe('overview');
+    expect(result.current.displayTab).toBe('overview');
   });
 
   it('lands on a contributed tab that registers within the grace window (race)', () => {
@@ -93,7 +96,10 @@ describe('useSidebarTabs', () => {
     setActive(CONTRIBUTED_ID); // switch arrives before the extension registers
     registerBuiltins();
 
-    renderHook(() => useSidebarTabs());
+    const { result } = renderHook(() => useSidebarTabs());
+
+    // While pending, the overview placeholder is displayed.
+    expect(result.current.displayTab).toBe('overview');
 
     // Extension registers partway through the grace window (remount completes).
     act(() => {
@@ -106,6 +112,7 @@ describe('useSidebarTabs', () => {
 
     // Landed on the tab — the pending fallback was cancelled when it appeared.
     expect(useAppStore.getState().sidebarActiveTab).toBe(CONTRIBUTED_ID);
+    expect(result.current.displayTab).toBe(CONTRIBUTED_ID);
   });
 
   it('binds Cmd/Ctrl+1..4 to the four built-in tabs, ignoring higher numbers', () => {

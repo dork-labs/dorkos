@@ -2480,7 +2480,11 @@
         ]
       },
       "UiSidebarTab": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
+        "description": "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') or an extension-contributed tab's contribution id ('extId:tabId', e.g. 'linear-issues:linear-loop-sidebar')."
       },
       "UiCanvasContent": {
         "oneOf": [
@@ -4424,7 +4428,11 @@
                     "type": "boolean"
                   },
                   "sidebarTab": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
+                    "description": "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') or an extension-contributed tab's contribution id ('extId:tabId')."
                   },
                   "openPanels": {
                     "type": "array",

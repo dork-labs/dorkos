@@ -414,14 +414,34 @@ describe('UiPanelIdSchema', () => {
 });
 
 describe('UiSidebarTabSchema', () => {
-  it('accepts all sidebar tabs', () => {
+  it('accepts the built-in sidebar tabs', () => {
     expect(UiSidebarTabSchema.parse('overview')).toBe('overview');
     expect(UiSidebarTabSchema.parse('sessions')).toBe('sessions');
     expect(UiSidebarTabSchema.parse('schedules')).toBe('schedules');
     expect(UiSidebarTabSchema.parse('connections')).toBe('connections');
   });
 
-  it('rejects unknown tab', () => {
-    expect(() => UiSidebarTabSchema.parse('files')).toThrow();
+  it('accepts and round-trips an extension-contributed tab id', () => {
+    // Contributed tabs register under a namespaced `extId:tabId` id — the
+    // schema is a bounded string, not a closed enum, so these must parse.
+    const id = 'linear-issues:linear-loop-sidebar';
+    expect(UiSidebarTabSchema.parse(id)).toBe(id);
+  });
+
+  it('rejects an empty id', () => {
+    expect(() => UiSidebarTabSchema.parse('')).toThrow();
+  });
+
+  it('rejects ids outside the contribution-id alphabet', () => {
+    expect(() => UiSidebarTabSchema.parse('has space')).toThrow();
+    expect(() => UiSidebarTabSchema.parse('<script>alert(1)</script>')).toThrow();
+    // First character must be alphanumeric.
+    expect(() => UiSidebarTabSchema.parse(':leading-colon')).toThrow();
+    expect(() => UiSidebarTabSchema.parse('-leading-dash')).toThrow();
+  });
+
+  it('caps the id length at 200 characters', () => {
+    expect(UiSidebarTabSchema.parse('a'.repeat(200))).toBe('a'.repeat(200));
+    expect(() => UiSidebarTabSchema.parse('a'.repeat(201))).toThrow();
   });
 });

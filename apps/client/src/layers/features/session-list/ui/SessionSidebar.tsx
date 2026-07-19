@@ -39,7 +39,11 @@ export function SessionSidebar() {
 
   // Side-effect hooks
   useTaskNotifications();
-  const { visibleTabs, sidebarActiveTab, setSidebarActiveTab } = useSidebarTabs();
+  // `displayTab` (not the raw active id) drives ALL rendering below: while a
+  // contributed id has no registered tab yet (extension remount in flight, or
+  // orphaned after an uninstall), it resolves to 'overview' so the panel area
+  // shows the overview placeholder instead of going blank.
+  const { visibleTabs, displayTab, setSidebarActiveTab } = useSidebarTabs();
   const { handleNewSession, handleSessionClick, handleDashboard } = useSidebarNavigation();
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -70,13 +74,14 @@ export function SessionSidebar() {
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
   const recentSessions = useMemo(() => sessions.slice(0, 3), [sessions]);
 
-  // The extension-contributed tab that is active, if any. Built-in panels render
-  // from the prop-fed markup below; a contributed tab renders its self-contained
-  // component (behind an error boundary so a throwing extension can't take the
-  // sidebar down with it).
+  // The extension-contributed tab being displayed, if any. Built-in panels
+  // render from the prop-fed markup below; a contributed tab renders its
+  // self-contained component (behind an error boundary so a throwing extension
+  // can't take the sidebar down with it). `displayTab` only ever names a
+  // renderable tab, so this is defined exactly when a contributed tab shows.
   const activeContributedTab = useMemo(
-    () => visibleTabs.find((t) => t.id === sidebarActiveTab && !isBuiltinSidebarTab(t.id)),
-    [visibleTabs, sidebarActiveTab]
+    () => visibleTabs.find((t) => t.id === displayTab && !isBuiltinSidebarTab(t.id)),
+    [visibleTabs, displayTab]
   );
 
   return (
@@ -89,7 +94,7 @@ export function SessionSidebar() {
 
       <SidebarTabRow
         tabs={visibleTabs}
-        activeTab={sidebarActiveTab}
+        activeTab={displayTab}
         onTabChange={setSidebarActiveTab}
         schedulesBadge={activeRunCount}
         connectionsStatus={connectionsStatus}
@@ -101,7 +106,7 @@ export function SessionSidebar() {
           activeSessionId={activeSessionId}
           onSessionClick={handleSessionClick}
           onViewMore={() => setSidebarActiveTab('sessions')}
-          isVisible={sidebarActiveTab === 'overview'}
+          isVisible={displayTab === 'overview'}
         />
 
         {/* Sessions view */}
@@ -109,7 +114,7 @@ export function SessionSidebar() {
           role="tabpanel"
           id="sidebar-tabpanel-sessions"
           aria-labelledby="sidebar-tab-sessions"
-          className={cn('h-full', sidebarActiveTab !== 'sessions' && 'hidden')}
+          className={cn('h-full', displayTab !== 'sessions' && 'hidden')}
         >
           <SessionsView
             activeSessionId={activeSessionId}
@@ -126,7 +131,7 @@ export function SessionSidebar() {
           role="tabpanel"
           id="sidebar-tabpanel-schedules"
           aria-labelledby="sidebar-tab-schedules"
-          className={cn('h-full', sidebarActiveTab !== 'schedules' && 'hidden')}
+          className={cn('h-full', displayTab !== 'schedules' && 'hidden')}
         >
           <TasksView toolStatus={toolStatus.tasks} agentId={currentAgent?.id ?? null} />
         </div>
@@ -136,7 +141,7 @@ export function SessionSidebar() {
           role="tabpanel"
           id="sidebar-tabpanel-connections"
           aria-labelledby="sidebar-tab-connections"
-          className={cn('h-full', sidebarActiveTab !== 'connections' && 'hidden')}
+          className={cn('h-full', displayTab !== 'connections' && 'hidden')}
         >
           <ConnectionsView
             toolStatus={toolStatus}

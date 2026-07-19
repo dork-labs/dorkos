@@ -24,6 +24,15 @@ interface SidebarTabsResult {
   visibleTabs: SidebarTabContribution[];
   /** The active tab id — a built-in or a contributed `${extId}:${id}`. */
   sidebarActiveTab: string;
+  /**
+   * The tab to RENDER right now: {@link sidebarActiveTab} when a matching tab
+   * is registered and visible, else {@link FALLBACK_TAB}. While a contributed
+   * id waits out its {@link CONTRIBUTED_TAB_GRACE_MS} window (or an orphaned
+   * id waits to be reconciled), the overview panel shows as the visible
+   * placeholder instead of a blank panel area. Renderers use this, never the
+   * raw active id.
+   */
+  displayTab: string;
   setSidebarActiveTab: (tab: string) => void;
 }
 
@@ -52,6 +61,11 @@ export function useSidebarTabs(): SidebarTabsResult {
     () => visibleTabs.some((tab) => tab.id === sidebarActiveTab),
     [visibleTabs, sidebarActiveTab]
   );
+
+  // What actually renders. Diverges from the raw active id only while that id
+  // has no renderable tab (grace window / pre-reconciliation frame) — the
+  // overview placeholder keeps the panel area from ever going blank.
+  const displayTab = activeIsRenderable ? sidebarActiveTab : FALLBACK_TAB;
 
   // Reconcile a stale active tab back to the fallback.
   useEffect(() => {
@@ -92,5 +106,5 @@ export function useSidebarTabs(): SidebarTabsResult {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [sidebarOpen, visibleTabs, setSidebarActiveTab]);
 
-  return { visibleTabs, sidebarActiveTab, setSidebarActiveTab };
+  return { visibleTabs, sidebarActiveTab, displayTab, setSidebarActiveTab };
 }

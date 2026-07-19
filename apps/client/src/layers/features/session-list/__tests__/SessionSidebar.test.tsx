@@ -574,5 +574,22 @@ describe('SessionSidebar', () => {
 
       consoleError.mockRestore();
     });
+
+    it('shows the overview panel as placeholder while a contributed id has no registered tab', () => {
+      // Persisted active id references an uninstalled extension: no contributed
+      // tab registers. During the reconciliation grace window the panel area
+      // must show the overview panel, not go blank.
+      mockSidebarActiveTab = 'gone-ext:gone-tab';
+
+      renderWithQuery(<SessionSidebar />);
+
+      const overviewPanel = document.getElementById('sidebar-tabpanel-overview');
+      expect(overviewPanel?.classList.contains('hidden')).toBe(false);
+      // No contributed panel is mounted for the orphaned id.
+      expect(document.getElementById('sidebar-tabpanel-gone-ext:gone-tab')).toBeNull();
+      // The strip highlights overview (the displayed tab), not a phantom tab.
+      const overviewTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-overview');
+      expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+    });
   });
 });
