@@ -8,7 +8,7 @@
  */
 
 export { fetchMarketplaceJson, fetchPackageReadme } from './lib/fetch';
-export { rankPackages } from './lib/ranking';
+export { rankPackages, selectFeatured } from './lib/ranking';
 export type { RankFilters, RankedPackage } from './lib/ranking';
 export { fetchInstallCount, fetchInstallCounts } from './lib/telemetry';
 export { formatPermissions } from './lib/format-permissions';

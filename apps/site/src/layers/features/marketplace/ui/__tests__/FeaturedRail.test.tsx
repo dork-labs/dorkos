@@ -6,6 +6,7 @@ import { render, screen } from '@testing-library/react';
 import type { RankedPackage } from '../../lib/ranking';
 import { FeaturedRail } from '../FeaturedRail';
 
+/** Build a ranked fixture; DorkOS fields (type, featured) ride the sidecar. */
 function makeRanked(overrides: Partial<RankedPackage> & { name: string }): RankedPackage {
   return {
     name: overrides.name,
@@ -24,9 +25,9 @@ describe('FeaturedRail', () => {
 
   it('renders the "Featured" heading and all packages when populated', () => {
     const packages = [
-      makeRanked({ name: 'first', type: 'agent', featured: true }),
-      makeRanked({ name: 'second', type: 'agent', featured: true }),
-      makeRanked({ name: 'third', type: 'agent', featured: true }),
+      makeRanked({ name: 'first', dorkos: { type: 'agent', featured: true } }),
+      makeRanked({ name: 'second', dorkos: { type: 'agent', featured: true } }),
+      makeRanked({ name: 'third', dorkos: { type: 'agent', featured: true } }),
     ];
 
     render(
@@ -41,8 +42,8 @@ describe('FeaturedRail', () => {
 
   it('renders featured packages of any type, not just agents', () => {
     const packages = [
-      makeRanked({ name: 'a-shape', type: 'shape', featured: true }),
-      makeRanked({ name: 'a-plugin', type: 'plugin', featured: true }),
+      makeRanked({ name: 'a-shape', dorkos: { type: 'shape', featured: true } }),
+      makeRanked({ name: 'a-plugin', dorkos: { type: 'plugin', featured: true } }),
     ];
 
     render(<FeaturedRail packages={packages} installCounts={{}} />);
@@ -52,7 +53,7 @@ describe('FeaturedRail', () => {
   });
 
   it('passes install counts through to each card', () => {
-    const packages = [makeRanked({ name: 'counted', featured: true })];
+    const packages = [makeRanked({ name: 'counted', dorkos: { featured: true } })];
 
     render(<FeaturedRail packages={packages} installCounts={{ counted: 4242 }} />);
 
