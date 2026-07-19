@@ -11,7 +11,7 @@
  * @module routes/marketplace
  */
 import { Router } from 'express';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
@@ -438,7 +438,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         name: req.params.name,
         marketplace: parsedQuery.data.marketplace,
       });
-      return res.json({ manifest, packagePath, preview });
+      // The installer already staged the package locally, so read its README
+      // straight off disk — no extra network fetch. Omitted when absent so the
+      // response shape stays clean (the client shows nothing rather than an
+      // empty placeholder).
+      const readme = await readPackageReadme(packagePath);
+      return res.json({ manifest, packagePath, preview, ...(readme !== undefined && { readme }) });
     } catch (err) {
       logger.error(`[Marketplace] Failed to fetch package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
@@ -809,5 +814,43 @@ async function safeReaddir(dir: string): Promise<string[]> {
     return await readdir(dir);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Hard cap on the README payload the detail endpoint returns (200 KB). READMEs
+ * are a preview surface, not a source of truth — a pathological file is
+ * truncated to this many bytes rather than streamed in full.
+ */
+const MAX_README_BYTES = 200 * 1024;
+
+/**
+ * Read a package's root `README.md` from its staged directory for the detail
+ * endpoint. The match is case-insensitive (`README.md`, `readme.md`, …) and
+ * restricted to the package root — nested READMEs are ignored. The package is
+ * already cloned locally by the installer's preview step, so this is a pure
+ * filesystem read with no network access.
+ *
+ * Returns `undefined` when no README exists or the file is empty/whitespace, so
+ * the caller can omit the field entirely. Payloads over {@link MAX_README_BYTES}
+ * are truncated to that byte length (streamdown renders partial markdown fine).
+ *
+ * @param packagePath - Absolute path to the staged package directory.
+ */
+async function readPackageReadme(packagePath: string): Promise<string | undefined> {
+  const entries = await safeReaddir(packagePath);
+  const match = entries.find((entry) => entry.toLowerCase() === 'readme.md');
+  if (!match) return undefined;
+  try {
+    const raw = await readFile(join(packagePath, match), 'utf8');
+    if (raw.trim().length === 0) return undefined;
+    const bytes = Buffer.from(raw, 'utf8');
+    return bytes.length > MAX_README_BYTES
+      ? bytes.subarray(0, MAX_README_BYTES).toString('utf8')
+      : raw;
+  } catch {
+    // A README that vanished or is unreadable between the readdir and the read
+    // is treated as absent — the detail endpoint never fails over a preview.
+    return undefined;
   }
 }

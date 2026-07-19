@@ -677,6 +677,55 @@ describe('Marketplace Routes', () => {
       });
     });
 
+    it('includes the README markdown when the staged package ships one (case-insensitive)', async () => {
+      // A staged clone lives on disk under dorkHome (cleaned in afterEach). The
+      // lowercase filename exercises the case-insensitive root-README match.
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      const readmeBody = '# Linear Ops\n\nCreate and update Linear issues from chat.';
+      writeFileSync(join(pkgDir, 'readme.md'), readmeBody);
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      expect(res.body.readme).toBe(readmeBody);
+    });
+
+    it('omits the README field when the staged package has none', async () => {
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('readme');
+    });
+
+    it('truncates an oversized README to the 200 KB byte cap', async () => {
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      const oversized = 'a'.repeat(250 * 1024); // 250 KB of ASCII = 250 KB bytes
+      writeFileSync(join(pkgDir, 'README.md'), oversized);
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      expect(Buffer.byteLength(res.body.readme, 'utf8')).toBe(200 * 1024);
+      expect(res.body.readme.length).toBeLessThan(oversized.length);
+    });
+
     it('returns 400 when installer.preview throws InvalidPackageError', async () => {
       installer.preview.mockRejectedValue(new InvalidPackageError(['bad manifest']));
       const res = await request(app).get('/api/marketplace/packages/broken');

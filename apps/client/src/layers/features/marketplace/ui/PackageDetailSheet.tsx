@@ -38,6 +38,7 @@ import {
   Button,
   Badge,
   Skeleton,
+  MarkdownContent,
 } from '@/layers/shared/ui';
 import {
   useMarketplacePackage,
@@ -459,6 +460,20 @@ export function PackageDetailSheet() {
                 </section>
               ) : (
                 <p className="text-muted-foreground text-sm">No special permissions required.</p>
+              )}
+
+              {/* README ("About") — shown for every install state so the user can
+                  see what a package does before installing. Rendered below
+                  permissions to mirror the marketing site's header → permissions
+                  → readme ordering. Relative-path images won't resolve (no
+                  base-URL rewriting yet); streamdown degrades a broken image
+                  without breaking layout. linkSafety gates external links —
+                  README content is third-party and untrusted. */}
+              {!isLoading && detail?.readme && (
+                <section>
+                  <h3 className="mb-3 text-sm font-semibold">About</h3>
+                  <MarkdownContent content={detail.readme} className="text-sm" linkSafety />
+                </section>
               )}
             </div>
 
