@@ -200,9 +200,10 @@ function useHeaderSlot({ agentName }: { agentName: string | undefined }): Header
  * This is the `component` for the pathless `_shell` layout route.
  * All route pages (DashboardPage, SessionPage) render inside the Outlet.
  *
- * Sidebar body and header content cross-fade (100ms) on route change via
- * AnimatePresence. The sidebar footer and rail are static chrome — they
- * never animate.
+ * The sidebar body directional-slides (200ms) and header content
+ * cross-fades on route change via AnimatePresence, clipped inside the
+ * sidebar. The sidebar footer and rail are static chrome — they never
+ * animate.
  */
 export function AppShell() {
   const { sidebarOpen, setSidebarOpen } = useAppStore();
