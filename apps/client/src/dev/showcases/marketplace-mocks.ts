@@ -71,7 +71,7 @@ export const MOCK_PKG_ADAPTER_LONG_DESC: AggregatedPackage = {
   tags: ['slack', 'messaging', 'notifications'],
 };
 
-/** Featured agent for the FeaturedAgentsRail — second slot. */
+/** Featured agent for the FeaturedRail — second slot. */
 export const MOCK_PKG_FEATURED_DEPLOY: AggregatedPackage = {
   name: 'deploy-bot',
   source: 'https://github.com/dorkos-marketplace/deploy-bot',
@@ -85,7 +85,7 @@ export const MOCK_PKG_FEATURED_DEPLOY: AggregatedPackage = {
   tags: ['deploy', 'ci', 'cd'],
 };
 
-/** Featured agent for the FeaturedAgentsRail — third slot. */
+/** Featured agent for the FeaturedRail — third slot. */
 export const MOCK_PKG_FEATURED_DOCS: AggregatedPackage = {
   name: 'doc-writer',
   source: 'https://github.com/dorkos-marketplace/doc-writer',

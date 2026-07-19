@@ -15,15 +15,18 @@ const MAX_RAIL_ITEMS = 3;
 /** Number of skeleton placeholders shown while data is loading. */
 const SKELETON_COUNT = 3;
 
+/** Heading shown above the rail. */
+const RAIL_LABEL = 'Featured';
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
 /** Loading skeleton row shown while packages are being fetched. */
-function RailSkeleton({ label }: { label: string }) {
+function RailSkeleton() {
   return (
-    <section aria-label={label} className="space-y-3">
-      <h2 className="text-base font-semibold">{label}</h2>
+    <section aria-label={RAIL_LABEL} className="space-y-3">
+      <h2 className="text-base font-semibold">{RAIL_LABEL}</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
           <Skeleton key={i} className="h-48 rounded-xl" />
@@ -35,18 +38,16 @@ function RailSkeleton({ label }: { label: string }) {
 
 /** Responsive grid rail of package cards. */
 function RailGrid({
-  label,
   packages,
 }: {
-  label: string;
   packages: import('@dorkos/shared/marketplace-schemas').AggregatedPackage[];
 }) {
   const { openDetail } = useMarketplaceParams();
   const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 
   return (
-    <section aria-label={label} className="space-y-3">
-      <h2 className="text-base font-semibold">{label}</h2>
+    <section aria-label={RAIL_LABEL} className="space-y-3">
+      <h2 className="text-base font-semibold">{RAIL_LABEL}</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {packages.map((pkg) => (
           <div key={pkg.name} className="h-full">
@@ -67,59 +68,38 @@ function RailGrid({
 // ---------------------------------------------------------------------------
 
 /**
- * Hero rail at the top of Marketplace. Shows featured agents when available,
- * otherwise falls back to a "Popular Packages" selection from the full
- * catalog. Hides with a smooth transition when the user activates search
- * or type filters.
+ * Hero rail at the top of Marketplace.
+ *
+ * Highlights every package flagged `featured: true` — of any type (agents,
+ * plugins, skill packs, adapters, shapes) — capped at {@link MAX_RAIL_ITEMS}.
+ * The cards carry their own type badges, so a mixed rail reads clearly. When
+ * nothing is featured the rail renders nothing at all.
+ *
+ * The rail is a browse affordance, so it hides with a smooth transition the
+ * moment the user narrows the catalog — any active search text, type filter, or
+ * category filter collapses it, keeping the full result set in view.
  */
-export function FeaturedAgentsRail() {
-  const { data: agentData, isLoading: agentLoading } = useMarketplacePackages({ type: 'agent' });
-  const { data: allData, isLoading: allLoading } = useMarketplacePackages();
+export function FeaturedRail() {
+  // One unfiltered catalog fetch, shared (via TanStack Query cache) with the
+  // grid below. Featured selection happens client-side.
+  const { data, isLoading } = useMarketplacePackages();
   const prefersReducedMotion = useReducedMotion();
 
-  // Hide the rail when search or type filters are active.
-  const { search, type: typeFilter } = useMarketplaceParams();
-  const hasActiveFilters = search.length > 0 || typeFilter !== 'all';
-
-  const isLoading = agentLoading || allLoading;
+  // Hide the rail whenever the user narrows the catalog by any axis.
+  const { search, type, category } = useMarketplaceParams();
+  const hasActiveFilters = search.length > 0 || type !== 'all' || category !== null;
 
   // Determine the content to render (or null if nothing to show).
   let railContent: React.ReactNode = null;
 
-  if (isLoading && !hasActiveFilters) {
-    railContent = <RailSkeleton label="Featured" />;
-  } else if (!hasActiveFilters) {
-    // Primary: featured agents.
-    const featured = (agentData ?? []).filter((p) => p.featured).slice(0, MAX_RAIL_ITEMS);
+  if (hasActiveFilters) {
+    railContent = null;
+  } else if (isLoading) {
+    railContent = <RailSkeleton />;
+  } else {
+    const featured = (data ?? []).filter((p) => p.featured).slice(0, MAX_RAIL_ITEMS);
     if (featured.length > 0) {
-      railContent = <RailGrid label="Featured Agents" packages={featured} />;
-    } else {
-      // Fallback: pick a diverse set from the full catalog (first of each type).
-      const allPackages = allData ?? [];
-      if (allPackages.length > 0) {
-        const seenTypes = new Set<string>();
-        const diverse: typeof allPackages = [];
-        for (const pkg of allPackages) {
-          const type = pkg.type ?? 'plugin';
-          if (!seenTypes.has(type)) {
-            seenTypes.add(type);
-            diverse.push(pkg);
-          }
-          if (diverse.length >= MAX_RAIL_ITEMS) break;
-        }
-        // Fill remaining slots if we ran out of unique types.
-        if (diverse.length < MAX_RAIL_ITEMS) {
-          for (const pkg of allPackages) {
-            if (!diverse.some((d) => d.name === pkg.name)) {
-              diverse.push(pkg);
-            }
-            if (diverse.length >= MAX_RAIL_ITEMS) break;
-          }
-        }
-        railContent = (
-          <RailGrid label="Popular Packages" packages={diverse.slice(0, MAX_RAIL_ITEMS)} />
-        );
-      }
+      railContent = <RailGrid packages={featured} />;
     }
   }
 

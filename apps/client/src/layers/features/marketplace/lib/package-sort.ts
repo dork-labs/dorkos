@@ -42,10 +42,11 @@ function byFeatured(a: AggregatedPackage, b: AggregatedPackage): number {
  *
  * - `featured`: featured packages first, then alphabetical by name.
  * - `name`: alphabetical by name.
- * - `popular`: falls back to alphabetical by name — `installCount` is not
- *   present on `AggregatedPackage` yet and will be wired when that field lands.
- * - `recent`: falls back to alphabetical by name — `updatedAt` is not present
- *   on `AggregatedPackage` yet and will be wired when that field lands.
+ *
+ * `popular` and `recent` sorts were removed because the data behind them —
+ * `installCount` and `updatedAt` — isn't on `AggregatedPackage` yet, so both
+ * silently fell back to name order. Add them back here and in the sort menu
+ * once those fields land (tracked in Linear).
  *
  * @param packages - Package list to sort (original array is not mutated).
  * @param sort - Active sort order from the Marketplace store.
@@ -57,15 +58,11 @@ export function sortPackages(
 ): AggregatedPackage[] {
   const copy = [...packages];
 
+  // The switch exhausts all MarketplaceSort values, so adding a new sort
+  // variant produces a compile-time error here.
   switch (sort) {
     case 'featured':
       return copy.sort(byFeatured);
-
-    // `popular` and `recent` fall back to name until the backing fields land
-    // on AggregatedPackage. The switch exhausts all MarketplaceSort values so
-    // adding a new sort variant will produce a compile-time error here.
-    case 'popular':
-    case 'recent':
     case 'name':
       return copy.sort(byName);
   }

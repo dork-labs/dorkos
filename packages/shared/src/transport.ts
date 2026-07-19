@@ -1315,7 +1315,7 @@ export interface Transport {
   /**
    * List packages from all enabled marketplace sources, with optional filtering.
    *
-   * @param filter - Optional filter by type, marketplace source, or free-text query.
+   * @param filter - Optional filter by marketplace source or free-text query.
    */
   listMarketplacePackages(filter?: PackageFilter): Promise<AggregatedPackage[]>;
 

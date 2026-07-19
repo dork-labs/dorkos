@@ -4,10 +4,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
+import type { AggregatedPackage, MarketplacePackageType } from '@dorkos/shared/marketplace-schemas';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 
-import { FeaturedAgentsRail } from '../ui/FeaturedAgentsRail';
+import { FeaturedRail } from '../ui/FeaturedRail';
 import { useMarketplaceStore } from '../model/marketplace-store';
 
 // ---------------------------------------------------------------------------
@@ -18,9 +18,9 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackages: vi.fn(),
 }));
 
-// The rail hides itself when search/type filters are active and opens the
-// drawer through `useMarketplaceParams` (URL-backed). Install-confirm stays on
-// the store.
+// The rail hides itself when any browse filter (search, type, or category) is
+// active and opens the drawer through `useMarketplaceParams` (URL-backed).
+// Install-confirm stays on the store.
 const mockParams = vi.hoisted(() => ({
   type: 'all' as string,
   sort: 'featured' as string,
@@ -79,13 +79,16 @@ beforeAll(() => {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeAgent(name: string, featured = true): AggregatedPackage {
+function makePkg(
+  name: string,
+  { featured = true, type = 'agent' as MarketplacePackageType } = {}
+): AggregatedPackage {
   return {
     name,
     source: `github.com/dorkos/${name}`,
-    description: `Agent ${name}`,
+    description: `Package ${name}`,
     version: '1.0.0',
-    type: 'agent',
+    type,
     featured,
     marketplace: 'marketplace',
   };
@@ -105,12 +108,13 @@ function resetStore() {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('FeaturedAgentsRail', () => {
+describe('FeaturedRail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
     mockParams.type = 'all';
     mockParams.search = '';
+    mockParams.category = null;
   });
 
   afterEach(cleanup);
@@ -118,7 +122,7 @@ describe('FeaturedAgentsRail', () => {
   it('renders the loading skeleton while the packages query is pending', () => {
     setPackagesState({ isLoading: true });
 
-    render(<FeaturedAgentsRail />);
+    render(<FeaturedRail />);
 
     // Heading is present, and the skeletons are rendered (aria-busy via Skeleton primitive is
     // implementation-specific — assert on the heading + the fact that no PackageCard test IDs exist).
@@ -126,59 +130,102 @@ describe('FeaturedAgentsRail', () => {
     expect(screen.queryByTestId(/^package-card-/)).not.toBeInTheDocument();
   });
 
-  it('falls back to "Popular Packages" when there are zero featured agents', () => {
+  it('renders nothing when there are zero featured packages', () => {
     setPackagesState({
-      data: [makeAgent('@dorkos/a', false), makeAgent('@dorkos/b', false)],
+      data: [makePkg('@dorkos/a', { featured: false }), makePkg('@dorkos/b', { featured: false })],
     });
 
-    render(<FeaturedAgentsRail />);
+    const { container } = render(<FeaturedRail />);
 
-    // No featured agents → falls back to "Popular Packages" rail.
-    expect(screen.queryByText('Featured Agents')).not.toBeInTheDocument();
-    expect(screen.getByText('Popular Packages')).toBeInTheDocument();
-    expect(screen.getByTestId('package-card-@dorkos/a')).toBeInTheDocument();
+    // No featured packages → no fallback rail, nothing rendered.
+    expect(container.firstChild).toBeNull();
   });
 
   it('renders nothing when the data array is empty', () => {
     setPackagesState({ data: [] });
 
-    const { container } = render(<FeaturedAgentsRail />);
+    const { container } = render(<FeaturedRail />);
 
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders featured agents only (ignores non-featured)', () => {
+  it('renders featured packages only (ignores non-featured)', () => {
     setPackagesState({
       data: [
-        makeAgent('@dorkos/featured-1', true),
-        makeAgent('@dorkos/not-featured', false),
-        makeAgent('@dorkos/featured-2', true),
+        makePkg('@dorkos/featured-1', { featured: true }),
+        makePkg('@dorkos/not-featured', { featured: false }),
+        makePkg('@dorkos/featured-2', { featured: true }),
       ],
     });
 
-    render(<FeaturedAgentsRail />);
+    render(<FeaturedRail />);
 
-    expect(screen.getByText('Featured Agents')).toBeInTheDocument();
+    expect(screen.getByText('Featured')).toBeInTheDocument();
     expect(screen.getByTestId('package-card-@dorkos/featured-1')).toBeInTheDocument();
     expect(screen.getByTestId('package-card-@dorkos/featured-2')).toBeInTheDocument();
     expect(screen.queryByTestId('package-card-@dorkos/not-featured')).not.toBeInTheDocument();
   });
 
-  it('caps the rail at MAX_RAIL_ITEMS (3) even when more featured agents exist', () => {
-    const agents = Array.from({ length: 10 }, (_, i) => makeAgent(`@dorkos/agent-${i}`, true));
-    setPackagesState({ data: agents });
+  it('features packages of any type, not only agents', () => {
+    setPackagesState({
+      data: [
+        makePkg('@dorkos/an-agent', { type: 'agent' }),
+        makePkg('@dorkos/a-plugin', { type: 'plugin' }),
+        makePkg('@dorkos/a-shape', { type: 'shape' }),
+      ],
+    });
 
-    render(<FeaturedAgentsRail />);
+    render(<FeaturedRail />);
 
-    const rendered = screen.getAllByTestId(/^package-card-@dorkos\/agent-/);
+    expect(screen.getByTestId('package-card-@dorkos/an-agent')).toBeInTheDocument();
+    expect(screen.getByTestId('package-card-@dorkos/a-plugin')).toBeInTheDocument();
+    expect(screen.getByTestId('package-card-@dorkos/a-shape')).toBeInTheDocument();
+  });
+
+  it('caps the rail at MAX_RAIL_ITEMS (3) even when more featured packages exist', () => {
+    const pkgs = Array.from({ length: 10 }, (_, i) =>
+      makePkg(`@dorkos/pkg-${i}`, { featured: true })
+    );
+    setPackagesState({ data: pkgs });
+
+    render(<FeaturedRail />);
+
+    const rendered = screen.getAllByTestId(/^package-card-@dorkos\/pkg-/);
     expect(rendered).toHaveLength(3);
+  });
+
+  it('hides the rail when a search term is active', () => {
+    setPackagesState({ data: [makePkg('@dorkos/featured', { featured: true })] });
+    mockParams.search = 'anything';
+
+    const { container } = render(<FeaturedRail />);
+
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('hides the rail when a type filter is active', () => {
+    setPackagesState({ data: [makePkg('@dorkos/featured', { featured: true })] });
+    mockParams.type = 'agent';
+
+    const { container } = render(<FeaturedRail />);
+
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('hides the rail when a category filter is active', () => {
+    setPackagesState({ data: [makePkg('@dorkos/featured', { featured: true })] });
+    mockParams.category = 'devops';
+
+    const { container } = render(<FeaturedRail />);
+
+    expect(container.firstChild).toBeNull();
   });
 
   it('opens the detail drawer via the URL (openDetail) when a card is clicked', async () => {
     const user = userEvent.setup();
-    setPackagesState({ data: [makeAgent('@dorkos/reviewer', true)] });
+    setPackagesState({ data: [makePkg('@dorkos/reviewer', { featured: true })] });
 
-    render(<FeaturedAgentsRail />);
+    render(<FeaturedRail />);
 
     await user.click(screen.getByTestId('package-card-@dorkos/reviewer'));
 
@@ -187,9 +234,9 @@ describe('FeaturedAgentsRail', () => {
 
   it('opens the install confirmation dialog when the inner Install button is clicked', async () => {
     const user = userEvent.setup();
-    setPackagesState({ data: [makeAgent('@dorkos/reviewer', true)] });
+    setPackagesState({ data: [makePkg('@dorkos/reviewer', { featured: true })] });
 
-    render(<FeaturedAgentsRail />);
+    render(<FeaturedRail />);
 
     await user.click(screen.getByText('Install'));
 
@@ -199,11 +246,11 @@ describe('FeaturedAgentsRail', () => {
     expect(mockParams.openDetail).not.toHaveBeenCalled();
   });
 
-  it('has the aria-label "Featured agents" on its section', () => {
-    setPackagesState({ data: [makeAgent('@dorkos/x', true)] });
+  it('exposes an accessible "Featured" region', () => {
+    setPackagesState({ data: [makePkg('@dorkos/x', { featured: true })] });
 
-    render(<FeaturedAgentsRail />);
+    render(<FeaturedRail />);
 
-    expect(screen.getByRole('region', { name: /featured agents/i })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^featured$/i })).toBeInTheDocument();
   });
 });

@@ -30,7 +30,6 @@ export function createMarketplaceMethods(baseUrl: string) {
 
     listMarketplacePackages(filter?: PackageFilter): Promise<AggregatedPackage[]> {
       const qs = buildQueryString({
-        type: filter?.type,
         marketplace: filter?.marketplace,
         q: filter?.q,
       });

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
 import { MarketplaceHeader } from './MarketplaceHeader';
-import { FeaturedAgentsRail } from './FeaturedAgentsRail';
+import { FeaturedRail } from './FeaturedRail';
 import { PackageGrid } from './PackageGrid';
 import { PackageDetailSheet } from './PackageDetailSheet';
 import { InstallConfirmationDialog } from './InstallConfirmationDialog';
@@ -14,7 +14,7 @@ import type { MarketplaceView } from '../model/marketplace-search';
  * Root Marketplace experience with two URL-driven views.
  *
  * `browse` (default) composes `MarketplaceHeader` (search + type filters),
- * `FeaturedAgentsRail`, and `PackageGrid`. `installed` renders
+ * `FeaturedRail`, and `PackageGrid`. `installed` renders
  * `InstalledPackagesView` — every installation across scopes with per-scope
  * management. The active view lives in the URL (`?view=` via
  * `useMarketplaceParams`), so it survives refresh and is shareable, matching
@@ -69,7 +69,7 @@ export function Marketplace() {
       ) : (
         <>
           <MarketplaceHeader presentCategories={presentCategories} />
-          <FeaturedAgentsRail />
+          <FeaturedRail />
           <section aria-label="All packages">
             <PackageGrid />
           </section>
