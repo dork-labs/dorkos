@@ -552,4 +552,29 @@ describe('PackageDetailSheet', () => {
     // The footer "Install…" is disabled too.
     expect(screen.getByRole('button', { name: 'Install…' })).toBeDisabled();
   });
+
+  it('renders the README "About" section when the detail carries readme markdown', () => {
+    openPackage(makePackage());
+    setDetailState({
+      data: makeDetail({ readme: '# Linear Ops\n\nSync issues straight from your chat.' }),
+    });
+    setPreviewState({ data: makeDetail() });
+
+    render(<PackageDetailSheet />);
+
+    // The sheet's own "About" heading plus the streamdown-rendered README body.
+    expect(screen.getByRole('heading', { name: 'About' })).toBeInTheDocument();
+    expect(screen.getByText('Linear Ops')).toBeInTheDocument();
+    expect(screen.getByText('Sync issues straight from your chat.')).toBeInTheDocument();
+  });
+
+  it('omits the README section when the detail carries no readme', () => {
+    openPackage(makePackage());
+    setDetailState({ data: makeDetail() }); // makeDetail() sets no readme
+    setPreviewState({ data: makeDetail() });
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.queryByRole('heading', { name: 'About' })).not.toBeInTheDocument();
+  });
 });

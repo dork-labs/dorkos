@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
@@ -675,6 +675,102 @@ describe('Marketplace Routes', () => {
         name: 'sample-plugin',
         marketplace: 'dorkos-community',
       });
+    });
+
+    it('includes the README markdown when the staged package ships one (case-insensitive)', async () => {
+      // A staged clone lives on disk under dorkHome (cleaned in afterEach). The
+      // lowercase filename exercises the case-insensitive root-README match.
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      const readmeBody = '# Linear Ops\n\nCreate and update Linear issues from chat.';
+      writeFileSync(join(pkgDir, 'readme.md'), readmeBody);
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      expect(res.body.readme).toBe(readmeBody);
+    });
+
+    it('omits the README field when the staged package has none', async () => {
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('readme');
+    });
+
+    it('truncates an oversized README to the 200 KB byte cap', async () => {
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      const oversized = 'a'.repeat(250 * 1024); // 250 KB of ASCII = 250 KB bytes
+      writeFileSync(join(pkgDir, 'README.md'), oversized);
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      expect(Buffer.byteLength(res.body.readme, 'utf8')).toBe(200 * 1024);
+      expect(res.body.readme.length).toBeLessThan(oversized.length);
+    });
+
+    it('treats a symlinked README as absent instead of following it', async () => {
+      // Packages are staged via git clone, which preserves symlinks — a
+      // malicious package could commit README.md as a link to a sensitive file
+      // outside the clone and exfiltrate it at detail-view time. The route must
+      // refuse to follow the link and omit the field entirely.
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      const secretPath = join(dorkHome, 'outside-secret.txt');
+      const secretBody = 'provider-token: hunter2';
+      writeFileSync(secretPath, secretBody);
+      symlinkSync(secretPath, join(pkgDir, 'README.md'));
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('readme');
+      expect(JSON.stringify(res.body)).not.toContain(secretBody);
+    });
+
+    it('does not split a multibyte character at the truncation boundary', async () => {
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      // 'é' is 2 UTF-8 bytes; the leading ASCII byte shifts every 'é' onto an
+      // odd byte offset, so the 200 KB cap (an even offset) lands exactly
+      // between an é's lead and continuation byte.
+      const oversized = 'a' + 'é'.repeat(150 * 1024); // 1 + 300 KB of bytes
+      writeFileSync(join(pkgDir, 'README.md'), oversized);
+      installer.preview.mockResolvedValue({
+        manifest: buildSamplePluginManifest(),
+        preview: buildEmptyPermissionPreview(),
+        packagePath: pkgDir,
+      });
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(200);
+      const readme: string = res.body.readme;
+      // The split lead byte is dropped, never decoded to a U+FFFD glyph…
+      expect(readme).not.toContain('�');
+      expect(readme.endsWith('é')).toBe(true);
+      // …leaving one byte under the cap (the dangling lead was trimmed).
+      expect(Buffer.byteLength(readme, 'utf8')).toBe(200 * 1024 - 1);
     });
 
     it('returns 400 when installer.preview throws InvalidPackageError', async () => {
