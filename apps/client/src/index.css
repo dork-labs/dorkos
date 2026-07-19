@@ -7,6 +7,12 @@
    preflight (layer order trumps specificity). See layers/features/canvas/ui/blintz.css. */
 @layer theme, base, components, blintz, utilities;
 @import 'tailwindcss';
+/* Animation utilities for Radix/shadcn surfaces (data-[state]:animate-in,
+   slide-in-from-*, fade-*, zoom-*). Defined via Tailwind v4 `@utility`, so they
+   land in the `utilities` layer above — above `blintz` in the pin, so the layer
+   order is untouched. Without this, sheets/dialogs/popovers/menus/tooltips have
+   no enter/exit animation and simply pop. Must sit after `@import 'tailwindcss'`. */
+@import 'tw-animate-css';
 @import '@xyflow/react/dist/style.css';
 
 @custom-variant dark (&:is(.dark *));

@@ -343,6 +343,44 @@ describe('AppShell slot integration', () => {
     });
   });
 
+  describe('sidebar body clip (shell seam)', () => {
+    it('wraps the sliding body in an overflow-hidden clip ancestor', () => {
+      // The body swap slides the motion.div horizontally (x: ±100%). The
+      // transform lives on the motion.div itself, so its own `overflow-hidden`
+      // can only clip its children — never its own translated box. The clip must
+      // therefore live on the ancestor wrapper, or mid-flight content spills past
+      // the sidebar's edge. AnimatePresence renders no DOM node, so the swap
+      // element's DOM parent is that wrapper.
+      mockPathname = '/';
+      renderAppShell();
+      const body = screen.getByTestId('sidebar-body-swap');
+      const clipWrapper = body.parentElement;
+      expect(clipWrapper).not.toBeNull();
+      expect(clipWrapper).toHaveClass('overflow-hidden');
+    });
+
+    it('keeps the clip on every body swap, including contributed takeovers', () => {
+      // Register a marketplace-style takeover so the swapped-in body is a
+      // contributed one, not the built-in roster — the clip is a shell property,
+      // so it must hold for current and future bodies alike.
+      const unregister = useExtensionRegistry.getState().register('sidebar.body', {
+        id: 'clip-check-takeover',
+        component: () => <div data-testid="clip-check-body">takeover</div>,
+        visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+        priority: 10,
+      });
+      try {
+        mockPathname = '/marketplace';
+        renderAppShell();
+        const body = screen.getByTestId('sidebar-body-swap');
+        expect(body).toContainElement(screen.getByTestId('clip-check-body'));
+        expect(body.parentElement).toHaveClass('overflow-hidden');
+      } finally {
+        unregister();
+      }
+    });
+  });
+
   describe('header slots', () => {
     it('renders DashboardHeader at /', () => {
       mockPathname = '/';

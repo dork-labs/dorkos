@@ -322,29 +322,41 @@ export function AppShell() {
                   >
                     <Sidebar variant="inset">
                       <TitlebarDragStrip />
-                      {/* ── Dynamic sidebar body with directional slide ── */}
-                      <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
-                        <motion.div
-                          key={sidebarSlot.key}
-                          custom={sidebarSlot.direction}
-                          initial="enter"
-                          animate="center"
-                          exit="exit"
-                          variants={{
-                            enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
-                            center: { x: 0, opacity: 1 },
-                            exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
-                          }}
-                          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                        >
-                          {/* Contributed takeover bodies arrive pre-wrapped in
-                              SidebarBodyErrorBoundary + Suspense at the slot
-                              seam (useSidebarSlot); the built-in dashboard/
-                              session bodies are eager and never suspend. */}
-                          {sidebarSlot.body}
-                        </motion.div>
-                      </AnimatePresence>
+                      {/* ── Dynamic sidebar body with directional slide ──
+                          This wrapper is the clip boundary for the body swap. The
+                          slide transform lives on the motion.div below, so the
+                          motion.div's own `overflow-hidden` can only clip its
+                          children — never its own translated box. The clip must
+                          therefore sit on this ancestor: every body swap (dashboard,
+                          session, and contributed takeovers, current and future)
+                          slides within the sidebar shell seam, so mid-flight content
+                          can't spill past the sidebar's edge. The footer and rail are
+                          siblings of this wrapper, so they stay outside the clip. */}
+                      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                        <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
+                          <motion.div
+                            key={sidebarSlot.key}
+                            data-testid="sidebar-body-swap"
+                            custom={sidebarSlot.direction}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            variants={{
+                              enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
+                              center: { x: 0, opacity: 1 },
+                              exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
+                            }}
+                            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                          >
+                            {/* Contributed takeover bodies arrive pre-wrapped in
+                                SidebarBodyErrorBoundary + Suspense at the slot
+                                seam (useSidebarSlot); the built-in dashboard/
+                                session bodies are eager and never suspend. */}
+                            {sidebarSlot.body}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
 
                       {/* ── Static footer — never animates ── */}
                       <SidebarFooter className="border-t p-3">
