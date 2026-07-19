@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { RankedPackage } from '../../lib/ranking';
-import { FeaturedAgentsRail } from '../FeaturedAgentsRail';
+import { FeaturedRail } from '../FeaturedRail';
 
 function makeRanked(overrides: Partial<RankedPackage> & { name: string }): RankedPackage {
   return {
@@ -15,14 +15,14 @@ function makeRanked(overrides: Partial<RankedPackage> & { name: string }): Ranke
   };
 }
 
-describe('FeaturedAgentsRail', () => {
+describe('FeaturedRail', () => {
   it('returns null when packages is empty', () => {
-    const { container } = render(<FeaturedAgentsRail packages={[]} installCounts={{}} />);
+    const { container } = render(<FeaturedRail packages={[]} installCounts={{}} />);
 
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders the heading and all packages when populated', () => {
+  it('renders the "Featured" heading and all packages when populated', () => {
     const packages = [
       makeRanked({ name: 'first', type: 'agent', featured: true }),
       makeRanked({ name: 'second', type: 'agent', featured: true }),
@@ -30,19 +30,31 @@ describe('FeaturedAgentsRail', () => {
     ];
 
     render(
-      <FeaturedAgentsRail packages={packages} installCounts={{ first: 5, second: 10, third: 15 }} />
+      <FeaturedRail packages={packages} installCounts={{ first: 5, second: 10, third: 15 }} />
     );
 
-    expect(screen.getByText('Featured agents')).toBeTruthy();
+    expect(screen.getByText('Featured')).toBeTruthy();
     expect(screen.getByText('first')).toBeTruthy();
     expect(screen.getByText('second')).toBeTruthy();
     expect(screen.getByText('third')).toBeTruthy();
   });
 
+  it('renders featured packages of any type, not just agents', () => {
+    const packages = [
+      makeRanked({ name: 'a-shape', type: 'shape', featured: true }),
+      makeRanked({ name: 'a-plugin', type: 'plugin', featured: true }),
+    ];
+
+    render(<FeaturedRail packages={packages} installCounts={{}} />);
+
+    expect(screen.getByText('a-shape')).toBeTruthy();
+    expect(screen.getByText('a-plugin')).toBeTruthy();
+  });
+
   it('passes install counts through to each card', () => {
     const packages = [makeRanked({ name: 'counted', featured: true })];
 
-    render(<FeaturedAgentsRail packages={packages} installCounts={{ counted: 4242 }} />);
+    render(<FeaturedRail packages={packages} installCounts={{ counted: 4242 }} />);
 
     expect(screen.getByText('4,242 installs')).toBeTruthy();
   });

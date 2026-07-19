@@ -16,7 +16,7 @@ export type { PermissionClaim } from './lib/format-permissions';
 export { PermissionPreviewServer } from './ui/PermissionPreviewServer';
 export { PackageCard } from './ui/PackageCard';
 export { MarketplaceGrid } from './ui/MarketplaceGrid';
-export { FeaturedAgentsRail } from './ui/FeaturedAgentsRail';
+export { FeaturedRail } from './ui/FeaturedRail';
 export { MarketplaceHeader } from './ui/MarketplaceHeader';
 export { PackageHeader } from './ui/PackageHeader';
 export { PackageReadme } from './ui/PackageReadme';
