@@ -89,6 +89,12 @@ export function InstallConfirmationDialog() {
   const { data: agentsData } = useMeshAgentPaths();
   const agents = agentsData?.agents ?? [];
 
+  // Shapes are global-only by design (a Shape rearranges the whole cockpit, a
+  // person-scoped concept — see install-shape.ts) — the server silently
+  // ignores `projectPath` for them. The dialog must not offer a scope choice
+  // it can't honor.
+  const isShape = pkg?.type === 'shape';
+
   // Context-aware scope default: agent-local when opened from agent hub, global otherwise.
   const [installScope, setInstallScope] = useState<InstallScope>(
     installContext ? 'agent-local' : 'global'
@@ -107,18 +113,24 @@ export function InstallConfirmationDialog() {
     }
   }, [installContext, agents]);
 
+  // The scope actually in effect. Shapes are pinned to 'global' regardless of
+  // `installScope` state — which may carry a stale 'agent-local' selection
+  // left over from a prior, non-shape package — so a leftover choice can never
+  // leak a `projectPath` into a shape install.
+  const effectiveScope: InstallScope = isShape ? 'global' : installScope;
+
   // The project path of the currently-selected scope. Global → undefined; a
   // specific agent → that agent's project path. Everything scope-sensitive
   // (preview, conflicts, reinstall detection) is computed against this so the
   // dialog reflects the ACTUAL install target, not always the global scope.
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
   const selectedProjectPath =
-    installScope === 'agent-local' ? selectedAgent?.projectPath : undefined;
+    effectiveScope === 'agent-local' ? selectedAgent?.projectPath : undefined;
 
   // "Specific agent" chosen but no agent picked yet: the install target is
   // undetermined, so there is nothing truthful to preview — a fetch here would
   // show the GLOBAL scope's effects and conflicts for a non-global install.
-  const needsAgent = installScope === 'agent-local' && !selectedAgentId;
+  const needsAgent = effectiveScope === 'agent-local' && !selectedAgentId;
 
   const { data: detail, isLoading: previewLoading } = usePermissionPreview(pkg?.name ?? null, {
     enabled: pkg !== null && !needsAgent,
@@ -144,7 +156,7 @@ export function InstallConfirmationDialog() {
   const isReinstall =
     !needsAgent &&
     (installedPackages ?? []).some(
-      (p) => p.name === pkg?.name && occupiesScope(p.scope, installScope)
+      (p) => p.name === pkg?.name && occupiesScope(p.scope, effectiveScope)
     );
 
   const installDisabled =
@@ -187,41 +199,51 @@ export function InstallConfirmationDialog() {
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
 
-            {/* Scope selector — outside scroll area so AgentPicker dropdown isn't clipped */}
+            {/* Scope selector — outside scroll area so AgentPicker dropdown isn't clipped.
+                Shapes are global-only, so no scope choice is offered for them (a
+                choice the server would silently ignore is worse than no choice). */}
             <div className="shrink-0 space-y-2 px-4 sm:px-6">
-              <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
-                Install for
-              </div>
-              <RadioGroup
-                value={installScope}
-                onValueChange={(v) => {
-                  setInstallScope(v as InstallScope);
-                  if (v === 'global') setSelectedAgentId(undefined);
-                }}
-                className="gap-2"
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="global" id="scope-global" />
-                  <Label htmlFor="scope-global" className="text-sm font-normal">
-                    All agents (global)
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="agent-local" id="scope-agent" />
-                  <Label htmlFor="scope-agent" className="text-sm font-normal">
-                    Specific agent
-                  </Label>
-                </div>
-              </RadioGroup>
+              {isShape ? (
+                <p className="text-muted-foreground text-sm">
+                  Shapes set up your whole cockpit, so they install once for you — not per agent.
+                </p>
+              ) : (
+                <>
+                  <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+                    Install for
+                  </div>
+                  <RadioGroup
+                    value={installScope}
+                    onValueChange={(v) => {
+                      setInstallScope(v as InstallScope);
+                      if (v === 'global') setSelectedAgentId(undefined);
+                    }}
+                    className="gap-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="global" id="scope-global" />
+                      <Label htmlFor="scope-global" className="text-sm font-normal">
+                        All agents (global)
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="agent-local" id="scope-agent" />
+                      <Label htmlFor="scope-agent" className="text-sm font-normal">
+                        Specific agent
+                      </Label>
+                    </div>
+                  </RadioGroup>
 
-              {installScope === 'agent-local' && (
-                <div className="pl-6">
-                  <AgentPicker
-                    agents={agents}
-                    value={selectedAgentId}
-                    onValueChange={setSelectedAgentId}
-                  />
-                </div>
+                  {installScope === 'agent-local' && (
+                    <div className="pl-6">
+                      <AgentPicker
+                        agents={agents}
+                        value={selectedAgentId}
+                        onValueChange={setSelectedAgentId}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

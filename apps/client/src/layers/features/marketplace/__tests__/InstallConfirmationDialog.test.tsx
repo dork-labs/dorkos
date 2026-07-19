@@ -15,6 +15,7 @@ import {
   useInstallPackage,
   useInstalledPackages,
 } from '@/layers/entities/marketplace';
+import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useMarketplaceStore } from '../model/marketplace-store';
 import { InstallConfirmationDialog } from '../ui/InstallConfirmationDialog';
 
@@ -140,6 +141,18 @@ function setInstalledPackages(installed: InstalledPackage[] = []) {
   } as unknown as ReturnType<typeof useInstalledPackages>);
 }
 
+/**
+ * Set the registered agents the mesh hook reports. Called in `beforeEach` so a
+ * per-test override (e.g. the stale agent-local selection test) never bleeds
+ * into later tests — `vi.clearAllMocks()` clears call history, not the
+ * implementation set by `mockReturnValue`.
+ */
+function setMeshAgents(agents: Array<{ id: string; name: string; projectPath: string }> = []) {
+  vi.mocked(useMeshAgentPaths).mockReturnValue({
+    data: { agents },
+  } as unknown as ReturnType<typeof useMeshAgentPaths>);
+}
+
 /** Build a minimal InstalledPackage record for reinstall-detection tests. */
 function makeInstalled(overrides: Partial<InstalledPackage> = {}): InstalledPackage {
   return {
@@ -198,6 +211,7 @@ describe('InstallConfirmationDialog', () => {
     setPreviewState();
     setInstallState();
     setInstalledPackages();
+    setMeshAgents();
     // Default: mutateAsync resolves with a stub result. Individual tests
     // override with `.mockRejectedValueOnce(...)` to exercise the error path.
     installMutateAsync.mockResolvedValue({ success: true });
@@ -404,6 +418,66 @@ describe('InstallConfirmationDialog', () => {
     render(<InstallConfirmationDialog />);
 
     expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Shape scope honesty — Shapes are global-only (install-shape.ts); the
+  // scope choice offered to every other package type is a silent no-op for
+  // Shapes, so the dialog must not offer it.
+  // ---------------------------------------------------------------------------
+
+  it('hides the scope selector and explains global-only install for a shape package', () => {
+    useMarketplaceStore.getState().openInstallConfirm(makePackage({ type: 'shape' }));
+    setPreviewState({ data: makeDetail() });
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.queryByText('Install for')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('All agents (global)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Specific agent')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Shapes set up your whole cockpit, so they install once for you — not per agent.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('sends no projectPath for a shape install even with a stale agent-local selection', async () => {
+    const user = userEvent.setup();
+    setMeshAgents([{ id: 'agent-1', name: 'Agent One', projectPath: '/tmp/agent-one' }]);
+
+    // Open on a non-shape package first and pick "Specific agent" — leaves
+    // agent-local selection state behind.
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({ data: makeDetail() });
+    const { rerender } = render(<InstallConfirmationDialog />);
+
+    await user.click(screen.getByLabelText('Specific agent'));
+    await user.click(screen.getByRole('button', { name: /select an agent/i }));
+    await user.click(await screen.findByText('Agent One'));
+
+    // Now switch the pending package to a shape without closing the dialog.
+    useMarketplaceStore
+      .getState()
+      .openInstallConfirm(makePackage({ type: 'shape', name: 'my-shape' }));
+    rerender(<InstallConfirmationDialog />);
+
+    expect(screen.queryByText('Install for')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^install$/i }));
+
+    expect(installMutateAsync).toHaveBeenCalledWith({ name: 'my-shape' });
+  });
+
+  it('keeps the scope selector for a non-shape package (regression guard)', () => {
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({ data: makeDetail() });
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByText('Install for')).toBeInTheDocument();
+    expect(screen.getByLabelText('All agents (global)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Specific agent')).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
