@@ -5,5 +5,5 @@
  * @module features/dashboard-activity
  */
 export { RecentActivityFeed } from './ui/RecentActivityFeed';
-export { useDashboardActivity } from './model/use-activity-feed';
+export { useDashboardActivity, DASHBOARD_ACTIVITY_QUERY_KEY } from './model/use-activity-feed';
 export type { DashboardActivityGroup } from './model/use-activity-feed';

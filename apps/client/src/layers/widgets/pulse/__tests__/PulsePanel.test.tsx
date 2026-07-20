@@ -25,10 +25,16 @@ let mockActivity: { groups: { label: string; items: MockActivityItem[] }[]; isLo
 };
 
 const mockNavigate = vi.fn();
+// Current route the sections read to hide their self-referential overflow link.
+// Default to a neutral route so both "View all" links render unless a test opts in.
+let mockPathname = '/agents';
 
-// Router: only useNavigate is used by the sections.
+// Router: the sections use useNavigate (overflow links) and useRouterState
+// (current pathname, to omit a link that would self-navigate).
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
+  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
+    select({ location: { pathname: mockPathname } }),
 }));
 
 // dashboard-attention: stub the model + a faithful row that surfaces the item's
@@ -90,6 +96,7 @@ beforeEach(() => {
   mockAttentionItems = [];
   mockAttentionLoading = false;
   mockActivity = { groups: [], isLoading: false };
+  mockPathname = '/agents';
 });
 
 describe('PulsePanel', () => {
@@ -201,6 +208,42 @@ describe('PulsePanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open activity →' }));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/activity' });
+  });
+
+  it('hides the attention "View all" link on the dashboard (its own destination)', () => {
+    mockPathname = '/';
+    mockAttentionItems = makeAttention(2);
+    mockActivity = makeActivityGroup(2);
+
+    render(<PulsePanel />);
+
+    // Self-navigation no-op omitted on '/', but the activity link (→ /activity)
+    // still shows since we are not there.
+    expect(screen.queryByRole('button', { name: 'View all →' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open activity →' })).toBeInTheDocument();
+  });
+
+  it('hides the activity "Open activity" link on /activity (its own destination)', () => {
+    mockPathname = '/activity';
+    mockAttentionItems = makeAttention(2);
+    mockActivity = makeActivityGroup(2);
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByRole('button', { name: 'Open activity →' })).not.toBeInTheDocument();
+    // The attention link (→ /) still shows since we are not on the dashboard.
+    expect(screen.getByRole('button', { name: 'View all →' })).toBeInTheDocument();
+  });
+
+  it('shows both overflow links on an unrelated route', () => {
+    mockPathname = '/tasks';
+    mockAttentionItems = makeAttention(2);
+    mockActivity = makeActivityGroup(2);
+
+    render(<PulsePanel />);
+
+    expect(screen.getByRole('button', { name: 'View all →' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open activity →' })).toBeInTheDocument();
   });
 
   it('keeps the attention section a labelled block above the rows', () => {

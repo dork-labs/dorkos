@@ -7,3 +7,4 @@
  * @module widgets/pulse
  */
 export { PulsePanel } from './ui/PulsePanel';
+export { usePulseFreshness } from './model/use-pulse-freshness';

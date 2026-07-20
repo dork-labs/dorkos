@@ -85,8 +85,8 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
   };
 });
 
-// AppShell mounts useCommandsSync (UX-12), useBindingsSync, and
-// useRelayAdaptersSync — each subscribes via the event stream and so needs an
+// AppShell mounts useCommandsSync (UX-12), useBindingsSync, useRelayAdaptersSync,
+// and usePulseFreshness — each subscribes via the event stream and so needs an
 // EventStreamProvider. This slot test isolates AppShell and provides no such
 // provider, so no-op the subscriptions here.
 vi.mock('@/layers/entities/command', async (importOriginal) => {
@@ -94,6 +94,14 @@ vi.mock('@/layers/entities/command', async (importOriginal) => {
   return {
     ...actual,
     useCommandsSync: () => {},
+  };
+});
+
+vi.mock('@/layers/widgets/pulse', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/widgets/pulse')>();
+  return {
+    ...actual,
+    usePulseFreshness: () => {},
   };
 });
 

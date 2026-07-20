@@ -132,6 +132,33 @@ describe('RightPanelHeader', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
+  it('names the single panel (icon + title) instead of a blank bar', () => {
+    // With one visible contribution the header shows a quiet title, not a tab
+    // strip — the single-tab panel is no longer an anonymous close-only bar (F6).
+    const NamedIcon = () => <svg data-testid="single-icon" />;
+    renderHeader([
+      makeContribution('pulse', {
+        title: 'Pulse',
+        icon: NamedIcon as unknown as RightPanelContribution['icon'],
+      }),
+    ]);
+
+    expect(screen.getByText('Pulse')).toBeInTheDocument();
+    expect(screen.getByTestId('single-icon')).toBeInTheDocument();
+    // Still no tablist — a title is not a tab.
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the puzzle icon for a single iconless contribution', () => {
+    renderHeader([makeContribution('ext', { title: 'My Extension', icon: undefined })]);
+
+    // Title still renders; the guard prevents an undefined/garbage icon from
+    // crashing the header (which lives outside PanelErrorBoundary).
+    expect(screen.getByText('My Extension')).toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+
   it('renders the active tab actions beside the close button', () => {
     renderHeader(
       [makeContribution('agent'), makeContribution('files')],
