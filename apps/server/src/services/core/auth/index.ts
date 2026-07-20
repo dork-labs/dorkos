@@ -69,12 +69,26 @@ export function createAuth(db: Db, dorkHome: string) {
     // letting Better Auth read the environment) is what makes login work on a
     // fresh install with no `BETTER_AUTH_SECRET` set — see `secret.ts`.
     secret: resolveBetterAuthSecret(dorkHome),
-    // `baseURL` is intentionally omitted: this server is reachable on both a
-    // loopback origin and a dynamic ngrok tunnel, so Better Auth must derive the
-    // origin per request rather than from one fixed URL. Better Auth logs a
-    // one-time "Base URL is not set" advisory at startup — expected and harmless
-    // here (email/password + API keys only; no OAuth redirects). Origin policy
-    // lives in `trustedOrigins` below.
+    // No fixed `baseURL`: this server answers on many origins — loopback, a LAN
+    // IP, a dynamic ngrok tunnel, or a reverse proxy — so the origin must be
+    // derived from each incoming request, never pinned to one URL (a wrong fixed
+    // baseURL would break callbacks/redirects). Better Auth's dynamic form does
+    // exactly that: `allowedHosts: ['*']` keeps the origin fully request-derived
+    // for every host (a browser sign-in always carries its Host header), while
+    // telling Better Auth this is a deliberate multi-host setup so it stops
+    // logging the one-time "Base URL is not set" advisory on every boot.
+    //
+    // `fallback` covers the server-side calls that have no incoming request to
+    // derive from — the boot-time legacy-key seed (`createApiKey`) and API-key
+    // verification (`verifyApiKey`) both call `auth.api.*` header-less, and the
+    // dynamic config throws without a fallback. The loopback origin is only ever
+    // used to build absolute URLs internally for these non-redirect,
+    // email/password + API-key flows, so it is correct and never reaches a
+    // browser. The real CSRF/origin allowlist lives in `trustedOrigins` below.
+    baseURL: {
+      allowedHosts: ['*'],
+      fallback: `http://${env.DORKOS_HOST}:${env.DORKOS_PORT}`,
+    },
     database: drizzleAdapter(db, {
       provider: 'sqlite',
       // Explicit table map so the adapter never has to guess model → table

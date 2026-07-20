@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -108,5 +108,20 @@ describe('Better Auth — local identity core (integration)', () => {
     expect(res.status).toBe(200);
     expect(res.body?.user?.email).toBe(OWNER_EMAIL);
     expect(res.body?.user?.role).toBe('owner');
+  });
+
+  it('does not log the "Base URL is not set" advisory on init (dynamic baseURL)', () => {
+    // Better Auth's default logger routes its warnings through console.warn. With
+    // the dynamic `baseURL: { allowedHosts: ['*'] }` config, origin stays fully
+    // request-derived AND Better Auth stops logging the base-URL advisory on
+    // every boot. Constructing a fresh instance must not emit it.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      createAuth(db, tmpDir);
+    } finally {
+      const emitted = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      warnSpy.mockRestore();
+      expect(emitted).not.toContain('Base URL is not set');
+    }
   });
 });
