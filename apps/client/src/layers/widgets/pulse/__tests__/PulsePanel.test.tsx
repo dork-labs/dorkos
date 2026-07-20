@@ -18,6 +18,7 @@ interface MockActivityItem {
 }
 
 let mockAttentionItems: MockAttentionItem[] = [];
+let mockAttentionLoading = false;
 let mockActivity: { groups: { label: string; items: MockActivityItem[] }[]; isLoading: boolean } = {
   groups: [],
   isLoading: false,
@@ -33,7 +34,7 @@ vi.mock('@tanstack/react-router', () => ({
 // dashboard-attention: stub the model + a faithful row that surfaces the item's
 // action (proving Pulse wires each item's deep-link through).
 vi.mock('@/layers/features/dashboard-attention', () => ({
-  useAttentionItems: () => mockAttentionItems,
+  useAttentionItems: () => ({ items: mockAttentionItems, isLoading: mockAttentionLoading }),
   AttentionItemRow: ({ item }: { item: MockAttentionItem }) => (
     <div data-testid="attention-row">
       <span>{item.description}</span>
@@ -87,6 +88,7 @@ afterEach(() => {
 
 beforeEach(() => {
   mockAttentionItems = [];
+  mockAttentionLoading = false;
   mockActivity = { groups: [], isLoading: false };
 });
 
@@ -159,6 +161,17 @@ describe('PulsePanel', () => {
     render(<PulsePanel />);
 
     expect(screen.queryByText('No recent activity.')).not.toBeInTheDocument();
+  });
+
+  it('does not flash the attention all-clear while its queries are still loading', () => {
+    // Cold load: no items yet but the backing queries are pending — the
+    // reassurance must not render before the data that would justify it.
+    mockAttentionItems = [];
+    mockAttentionLoading = true;
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet — nothing needs you.')).not.toBeInTheDocument();
   });
 
   it('deep-links each attention item through its action', async () => {

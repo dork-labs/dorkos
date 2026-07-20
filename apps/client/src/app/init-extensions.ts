@@ -89,6 +89,11 @@ export function initializeExtensions(): void {
   // so /session still opens to Agent Profile (honoring DOR-227) while
   // dashboard/activity/tasks/… open to Pulse. Its body promotes global content
   // (attention + activity teasers) into the panel so the shell is never dead.
+  //
+  // Strip order rests purely on this priority-5 convention — `isGlobal` gates the
+  // default-tab choice, never the sort. Keeping Pulse leftmost is deliberate: a
+  // future contextual tab registered with priority < 5 would sort ahead of it, so
+  // hold new contextual tabs at priority ≥ 10 (the current floor) to preserve it.
   register('right-panel', {
     id: 'pulse',
     title: 'Pulse',

@@ -28,13 +28,16 @@ const staggerContainer = {
  */
 export function PulseAttentionSection() {
   const navigate = useNavigate();
-  const items = useAttentionItems();
+  const { items, isLoading } = useAttentionItems();
   const shown = items.slice(0, PULSE_ATTENTION_CAP);
 
   return (
     <PulseSection
       label="Needs attention"
-      empty={items.length === 0}
+      // Only declare all-clear once the backing queries have loaded — never mid
+      // cold-load, which would flash "All quiet" before an attention item pops in
+      // (mirrors PulseActivitySection's loading gate).
+      empty={!isLoading && items.length === 0}
       allClear="All quiet — nothing needs you."
       action={
         <Button

@@ -19,7 +19,9 @@ const staggerContainer = {
  * Items are sourced from stalled sessions, failed Tasks runs, dead letters, and offline agents.
  */
 export function NeedsAttentionSection() {
-  const items = useAttentionItems();
+  // This section renders zero DOM when empty (below), so it shows no reassurance
+  // text and needs no loading gate — the array alone suffices.
+  const { items } = useAttentionItems();
 
   return (
     <AnimatePresence initial={false}>

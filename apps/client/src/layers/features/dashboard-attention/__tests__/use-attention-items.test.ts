@@ -12,28 +12,34 @@ import type { MeshStatus } from '@dorkos/shared/types';
 // Mocks — must be before imports
 // ---------------------------------------------------------------------------
 
-const mockSessions = vi.fn<() => { sessions: Session[] }>(() => ({ sessions: [] }));
+const mockSessions = vi.fn<() => { sessions: Session[]; isLoading?: boolean }>(() => ({
+  sessions: [],
+}));
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // Keep the real sessionDisplayTitle — only the data hook is stubbed.
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessions: () => mockSessions(),
 }));
 
-const mockUseRuns = vi.fn<() => { data: TaskRun[] | undefined }>(() => ({ data: undefined }));
+const mockUseRuns = vi.fn<() => { data: TaskRun[] | undefined; isLoading?: boolean }>(() => ({
+  data: undefined,
+}));
 vi.mock('@/layers/entities/tasks', () => ({
   useTaskRuns: () => mockUseRuns(),
 }));
 
-const mockUseAggregatedDeadLetters = vi.fn<() => { data: AggregatedDeadLetter[] | undefined }>(
-  () => ({ data: undefined })
-);
+const mockUseAggregatedDeadLetters = vi.fn<
+  () => { data: AggregatedDeadLetter[] | undefined; isLoading?: boolean }
+>(() => ({ data: undefined }));
 vi.mock('@/layers/entities/relay', () => ({
   useAggregatedDeadLetters: () => mockUseAggregatedDeadLetters(),
 }));
 
-const mockUseMeshStatus = vi.fn<() => { data: MeshStatus | undefined }>(() => ({
-  data: undefined,
-}));
+const mockUseMeshStatus = vi.fn<() => { data: MeshStatus | undefined; isLoading?: boolean }>(
+  () => ({
+    data: undefined,
+  })
+);
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshStatus: () => mockUseMeshStatus(),
 }));
@@ -116,7 +122,22 @@ describe('useAttentionItems', () => {
 
   it('returns empty array when no issues exist', () => {
     const { result } = renderHook(() => useAttentionItems());
-    expect(result.current).toHaveLength(0);
+    expect(result.current.items).toHaveLength(0);
+  });
+
+  it('reports isLoading while any backing query is still cold-loading', () => {
+    // A consumer showing an all-clear must withhold it until the data loads —
+    // here mesh is still on its first fetch, so isLoading is true even though no
+    // items have materialised yet.
+    mockUseMeshStatus.mockReturnValue({ data: undefined, isLoading: true });
+    const { result } = renderHook(() => useAttentionItems());
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.items).toHaveLength(0);
+  });
+
+  it('reports not-loading once every backing query has settled', () => {
+    const { result } = renderHook(() => useAttentionItems());
+    expect(result.current.isLoading).toBe(false);
   });
 
   it('returns failed Tasks runs from last 24h with severity error', () => {
@@ -128,9 +149,9 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(1);
-    expect(result.current[0].type).toBe('failed-run');
-    expect(result.current[0].severity).toBe('error');
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0].type).toBe('failed-run');
+    expect(result.current.items[0].severity).toBe('error');
   });
 
   it('excludes failed Tasks runs older than 24h', () => {
@@ -142,7 +163,7 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(0);
+    expect(result.current.items).toHaveLength(0);
   });
 
   it('returns dead letter groups with count > 0 with severity warning', () => {
@@ -152,9 +173,9 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(1);
-    expect(result.current[0].type).toBe('dead-letter');
-    expect(result.current[0].severity).toBe('warning');
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0].type).toBe('dead-letter');
+    expect(result.current.items[0].severity).toBe('warning');
   });
 
   it('excludes dead letter groups with count of 0', () => {
@@ -164,7 +185,7 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(0);
+    expect(result.current.items).toHaveLength(0);
   });
 
   it('returns offline mesh agents when unreachableCount > 0 with severity error', () => {
@@ -172,10 +193,10 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(1);
-    expect(result.current[0].type).toBe('offline-agent');
-    expect(result.current[0].severity).toBe('error');
-    expect(result.current[0].title).toContain('2 agents offline');
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0].type).toBe('offline-agent');
+    expect(result.current.items[0].severity).toBe('error');
+    expect(result.current.items[0].title).toContain('2 agents offline');
   });
 
   it('uses singular "agent" when exactly 1 agent is offline', () => {
@@ -183,7 +204,7 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current[0].title).toContain('1 agent offline');
+    expect(result.current.items[0].title).toContain('1 agent offline');
   });
 
   it('returns stalled sessions where updatedAt is >30min ago', () => {
@@ -194,9 +215,9 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(1);
-    expect(result.current[0].type).toBe('stalled-session');
-    expect(result.current[0].severity).toBe('warning');
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0].type).toBe('stalled-session');
+    expect(result.current.items[0].severity).toBe('warning');
   });
 
   it('excludes sessions updated less than 30 minutes ago', () => {
@@ -207,7 +228,7 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(0);
+    expect(result.current.items).toHaveLength(0);
   });
 
   it('excludes stalled sessions older than 24 hours', () => {
@@ -218,7 +239,7 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current).toHaveLength(0);
+    expect(result.current.items).toHaveLength(0);
   });
 
   it('sorts items by timestamp most recent first', () => {
@@ -234,8 +255,8 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current[0].id).toBe('failed-newer');
-    expect(result.current[1].id).toBe('failed-older');
+    expect(result.current.items[0].id).toBe('failed-newer');
+    expect(result.current.items[1].id).toBe('failed-older');
   });
 
   it('caps results at 8 items', () => {
@@ -255,7 +276,7 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    expect(result.current.length).toBeLessThanOrEqual(8);
+    expect(result.current.items.length).toBeLessThanOrEqual(8);
   });
 
   it('each item has a valid action.onClick function', () => {
@@ -269,7 +290,7 @@ describe('useAttentionItems', () => {
 
     const { result } = renderHook(() => useAttentionItems());
 
-    for (const item of result.current) {
+    for (const item of result.current.items) {
       expect(typeof item.action.onClick).toBe('function');
     }
   });
@@ -278,7 +299,7 @@ describe('useAttentionItems', () => {
     mockUseRuns.mockReturnValue({ data: [makeRun()] });
 
     const { result } = renderHook(() => useAttentionItems());
-    result.current[0].action.onClick();
+    result.current.items[0].action.onClick();
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/',
@@ -292,7 +313,7 @@ describe('useAttentionItems', () => {
     });
 
     const { result } = renderHook(() => useAttentionItems());
-    result.current[0].action.onClick();
+    result.current.items[0].action.onClick();
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/',
@@ -304,7 +325,7 @@ describe('useAttentionItems', () => {
     mockUseMeshStatus.mockReturnValue({ data: makeMeshStatus(1) });
 
     const { result } = renderHook(() => useAttentionItems());
-    result.current[0].action.onClick();
+    result.current.items[0].action.onClick();
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/',

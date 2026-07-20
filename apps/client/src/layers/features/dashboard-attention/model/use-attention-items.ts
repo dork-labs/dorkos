@@ -31,21 +31,43 @@ export interface AttentionItem {
   severity: 'warning' | 'error';
 }
 
+/** The attention items plus whether their backing queries are still cold-loading. */
+export interface AttentionState {
+  /** The derived attention items, sorted most-recent-first and capped. */
+  items: AttentionItem[];
+  /**
+   * True while any backing query is still on its first load (no data yet), so a
+   * consumer can withhold an "all clear" until the data that would justify it has
+   * actually arrived — otherwise the reassurance flashes before an item pops in.
+   * Uses each query's `isLoading` (first-load-in-progress), not raw `isPending`,
+   * so a feature-gated/disabled query never wedges this true.
+   */
+  isLoading: boolean;
+}
+
 /**
  * Derive attention items requiring user action from multiple entity hooks.
  * Sources: stalled sessions (>30min idle), failed Tasks runs (last 24h),
  * Relay dead letters, and offline Mesh agents.
  * Items are sorted by timestamp, most recent first.
+ *
+ * Returns the items alongside an aggregated {@link AttentionState.isLoading} so a
+ * consumer that shows an empty/all-clear state can gate it on the data having
+ * loaded (the dashboard section, which renders nothing when empty, ignores it).
  */
-export function useAttentionItems(): AttentionItem[] {
-  const { sessions } = useSessions();
-  const { data: failedRuns } = useTaskRuns({ status: 'failed' });
-  const { data: deadLetters } = useAggregatedDeadLetters();
-  const { data: meshStatus } = useMeshStatus();
+export function useAttentionItems(): AttentionState {
+  const { sessions, isLoading: sessionsLoading } = useSessions();
+  const { data: failedRuns, isLoading: failedRunsLoading } = useTaskRuns({ status: 'failed' });
+  const { data: deadLetters, isLoading: deadLettersLoading } = useAggregatedDeadLetters();
+  const { data: meshStatus, isLoading: meshLoading } = useMeshStatus();
   const navigate = useNavigate();
   const now = useNow();
 
-  return useMemo(() => {
+  const isLoading = Boolean(
+    sessionsLoading || failedRunsLoading || deadLettersLoading || meshLoading
+  );
+
+  const items = useMemo(() => {
     const items: AttentionItem[] = [];
     const twentyFourHoursAgo = now - TWENTY_FOUR_HOURS_MS;
     const thirtyMinutesAgo = now - THIRTY_MINUTES_MS;
@@ -156,4 +178,6 @@ export function useAttentionItems(): AttentionItem[] {
 
     return items.slice(0, MAX_ITEMS);
   }, [now, sessions, failedRuns, deadLetters, meshStatus, navigate]);
+
+  return { items, isLoading };
 }
