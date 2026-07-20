@@ -19,6 +19,7 @@ import { playNotificationSound } from '@/layers/shared/lib';
 import type { MessageListHandle } from './MessageList';
 import type { ChatInputHandle } from './input/ChatInput';
 import { ChatMessageArea } from './ChatMessageArea';
+import { BirthCertificate } from './BirthCertificate';
 import { ChatInputContainer } from './input/ChatInputContainer';
 import { TaskListPanel } from './tasks/TaskListPanel';
 import { CelebrationOverlay } from './CelebrationOverlay';
@@ -305,6 +306,8 @@ export function ChatPanel({
 
   return (
     <div data-testid="chat-panel" className="mx-auto flex h-full w-full max-w-7xl flex-col">
+      <BirthCertificate sessionId={sessionId} />
+
       <ChatMessageArea
         messages={messages}
         sessionId={sessionId!}

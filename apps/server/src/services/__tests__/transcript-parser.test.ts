@@ -9,6 +9,7 @@ import {
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
 import type { HistoryToolCall, ToolCallPart } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
+import { wrapKickoff } from '@dorkos/shared/kickoff';
 
 describe('stripRelayContext', () => {
   it('returns original text when no relay_context prefix', () => {
@@ -103,6 +104,21 @@ describe('parseTranscript relay context handling', () => {
     ];
     const result = parseTranscript(lines);
     expect(result).toHaveLength(0);
+  });
+});
+
+// NOTE: the auto-first-turn kickoff (M4) is deliberately NOT suppressed here.
+// The parser preserves it as an ordinary user record; the ONE runtime-agnostic
+// suppression seam is `filterKickoffHistory` (@dorkos/shared/kickoff), applied
+// at the server wire boundaries — see routes/__tests__/sessions-kickoff-filter.
+describe('parseTranscript preserves the kickoff record for the route-level seam', () => {
+  it('keeps a fenced kickoff user record intact (the route filters it, not the parser)', () => {
+    const kickoff = wrapKickoff('Read your SOUL.md and introduce yourself.');
+    const lines = [JSON.stringify({ type: 'user', message: { content: kickoff }, uuid: 'kick-1' })];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe('user');
+    expect(result[0].content).toContain('<dork-kickoff>');
   });
 });
 

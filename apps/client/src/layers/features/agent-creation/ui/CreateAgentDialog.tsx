@@ -11,7 +11,7 @@ import {
   ResponsiveDialogDescription,
   DirectoryPicker,
 } from '@/layers/shared/ui';
-import { useAppStore, useImportProjectsStore } from '@/layers/shared/model';
+import { useAppStore, useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
@@ -19,6 +19,7 @@ import type { WizardStep, SelectedTemplate } from '../lib/wizard-types';
 import { STEP_HEADERS } from '../lib/wizard-types';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 import { resolveSuggestionPool } from '../lib/name-suggestions';
+import { buildKickoffMessage, type KickoffOrigin } from '../lib/kickoff-prompts';
 import { AgentGallery } from './AgentGallery';
 import { NamingStep } from './NamingStep';
 import { ArrivalConfirm } from './ArrivalConfirm';
@@ -154,6 +155,34 @@ export function CreateAgentDialog() {
       },
       {
         onSuccess: (data) => {
+          // Record the birth FIRST — before celebration/close and before any
+          // host-specific early return a caller may add ahead of the navigate
+          // (e.g. onboarding advancing instead of opening a session). Every
+          // create records a birth; the kickoff itself fires on session
+          // ARRIVAL (useAutoKickoff), so a create that never navigates simply
+          // holds an unfired record until the agent's first session opens —
+          // claimed there by directory (see agent-birth-store.claimByPath).
+          //
+          // The birth drives the certificate line and the agent's
+          // auto-first-turn greeting (M4). A persona-bearing agent (a gallery
+          // pick or a Shape's offer) introduces itself and offers a first
+          // action; a blank "Design your own" agent says hello and asks what
+          // to take care of.
+          const newSessionId = crypto.randomUUID();
+          const displayName = data.displayName ?? data.name;
+          const origin: KickoffOrigin = template || seed ? 'template' : 'generic';
+          useAgentBirthStore.getState().register(newSessionId, {
+            name: data.name,
+            displayName,
+            bornAt: data.registeredAt,
+            path: data._path,
+            runtime: data.runtime,
+            kickoffMessage: buildKickoffMessage(origin, {
+              displayName,
+              capabilities: data.capabilities,
+            }),
+          });
+
           playCelebration();
           // A host flow (onboarding) may take over on create — it stays mounted
           // underneath and advances itself instead of navigating away.
@@ -166,7 +195,7 @@ export function CreateAgentDialog() {
           }
           navigate({
             to: '/session',
-            search: { dir: data._path, session: crypto.randomUUID() },
+            search: { dir: data._path, session: newSessionId },
           });
           setSidebarLevel('session');
         },

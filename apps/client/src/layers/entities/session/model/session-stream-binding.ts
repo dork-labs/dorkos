@@ -12,6 +12,7 @@
  */
 import { streamManager } from '@/layers/shared/lib/transport';
 import { clearUiStateSendCache } from '@/layers/shared/lib';
+import { useAgentBirthStore } from '@/layers/shared/model';
 
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
@@ -95,6 +96,11 @@ export function initSessionStreamBinding(): void {
           useSessionStreamStore
             .getState()
             .migrateSessionContinuity(event.retiredSessionId, event.sessionId);
+          // The newborn-agent birth ceremony (M4) is bucketed under the retired
+          // id too — move its certificate + fired latch to the canonical id so
+          // the birth line survives the rekey (the common claude-code path,
+          // where the canonical id resolves only after the trigger 202).
+          useAgentBirthStore.getState().migrate(event.retiredSessionId, event.sessionId);
         }
       }
       useSessionListStore.getState().applyListEvent(event);

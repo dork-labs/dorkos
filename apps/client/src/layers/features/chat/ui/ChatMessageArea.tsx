@@ -1,7 +1,7 @@
 import type { RefObject } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowDown } from 'lucide-react';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useAgentBirthRecord } from '@/layers/shared/model';
 import { MessageList } from './MessageList';
 import type { MessageListHandle, ScrollState } from './MessageList';
 import type { ChatMessage } from '../model/chat-types';
@@ -59,6 +59,11 @@ export function ChatMessageArea({
 }: ChatMessageAreaProps) {
   const dorkbotFirstMessage = useAppStore((s) => s.dorkbotFirstMessage);
   const setDorkbotFirstMessage = useAppStore((s) => s.setDorkbotFirstMessage);
+  // When a newborn agent's auto-first-turn greeting couldn't be delivered (M4),
+  // the empty session says so honestly and points the person at what to do,
+  // rather than a blank screen or a dead Retry button.
+  const birthRecord = useAgentBirthRecord(sessionId);
+  const greetingFailed = birthRecord?.greetingFailed === true;
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -93,7 +98,16 @@ export function ChatMessageArea({
         </div>
       ) : messages.length === 0 ? (
         <div className="flex h-full items-center justify-center">
-          {dorkbotFirstMessage ? (
+          {greetingFailed ? (
+            <div className="text-center" data-testid="greeting-failed-empty">
+              <p className="text-muted-foreground text-base">
+                {birthRecord?.displayName} couldn&rsquo;t say hello just now
+              </p>
+              <p className="text-muted-foreground/60 mt-2 text-sm">
+                Send a message to get started.
+              </p>
+            </div>
+          ) : dorkbotFirstMessage ? (
             <div className="flex flex-col items-center gap-4 text-center">
               <motion.div
                 layoutId="dorkbot-first-message"

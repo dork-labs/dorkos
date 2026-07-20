@@ -10,6 +10,7 @@
  *
  * @module features/chat/model/stream/derive-rendered-state
  */
+import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { SessionStreamState } from '@/layers/entities/session';
 import type { ChatMessage, ChatStatus } from '../chat-types';
 import { projectSessionMessages } from './project-session-turn';
@@ -32,6 +33,12 @@ export function hasStreamState(stream: SessionStreamState): boolean {
  * Pick the rendered message list: the projected stream-store messages once the
  * session has hydrated, else the legacy send-path messages.
  *
+ * The auto-first-turn kickoff (M4) is filtered here as the client-side BACKSTOP
+ * to the server's wire-boundary seam (`GET /:id/messages` + the `/events`
+ * snapshot) — it covers paths that bypass HTTP routes (the in-process Direct
+ * transport). Same shared filter, same narrow scope: user role only, first user
+ * record only, exact fence envelope only (`@dorkos/shared/kickoff`).
+ *
  * @param stream - The per-session durable-stream projection.
  * @param legacyMessages - The legacy send-path message list (transitional fallback).
  */
@@ -39,13 +46,15 @@ export function selectRenderedMessages(
   stream: SessionStreamState,
   legacyMessages: ChatMessage[]
 ): ChatMessage[] {
-  if (!hasStreamState(stream)) return legacyMessages;
-  return projectSessionMessages(
-    stream.messages,
-    stream.inProgressTurn,
-    stream.pendingInteractions,
-    stream.optimisticUserMessage
-  );
+  const projected = hasStreamState(stream)
+    ? projectSessionMessages(
+        stream.messages,
+        stream.inProgressTurn,
+        stream.pendingInteractions,
+        stream.optimisticUserMessage
+      )
+    : legacyMessages;
+  return filterKickoffHistory(projected);
 }
 
 /**
