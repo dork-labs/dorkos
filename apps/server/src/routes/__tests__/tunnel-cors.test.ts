@@ -116,4 +116,43 @@ describe('CORS with tunnel origin', () => {
 
     expect(res.status).not.toBe(403);
   });
+
+  // Regression for the Docker host-port-remap bug: with `-p 4300:4242` (or an
+  // `ssh -L` forward / reverse proxy) the browser loads the page on the remapped
+  // port and requests same-origin assets with that port's Origin, which the
+  // container's own `:4242` loopback allowlist does not contain. A request whose
+  // Origin equals its own `${protocol}://${host}` is definitionally same-origin
+  // and must be allowed without needing DORKOS_CORS_ORIGIN.
+  it('accepts a same-origin request when the host port is remapped', async () => {
+    const res = await request(app)
+      .get('/api/health')
+      .set('Host', 'localhost:9999')
+      .set('Origin', 'http://localhost:9999');
+
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:9999');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+  });
+
+  it('rejects a cross-origin request even when the Host matches the attacker target', async () => {
+    // An attacker page at evil.com sends its own Origin with the victim's Host.
+    // Same-origin only holds when Origin equals this request's own origin, so
+    // this is rejected — the fix adds zero cross-origin exposure.
+    const res = await request(app)
+      .get('/api/health')
+      .set('Host', 'localhost:9999')
+      .set('Origin', 'https://evil.com');
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('rejects a same-host request whose scheme differs (strict full-origin compare)', async () => {
+    // Host localhost:9999 over plain http, but Origin claims https — the origins
+    // differ by scheme, so this is not same-origin and must be rejected.
+    const res = await request(app)
+      .get('/api/health')
+      .set('Host', 'localhost:9999')
+      .set('Origin', 'https://localhost:9999');
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
 });
