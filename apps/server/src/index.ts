@@ -91,6 +91,7 @@ import {
   rebindShapeSchedulesForAgent,
   type RebindAgent,
 } from './services/shapes/rebind-schedules.js';
+import { setOnAgentCreated } from './services/core/agent-created-hook.js';
 import {
   clearActiveShape,
   createFsShapeManifestResolver,
@@ -1033,25 +1034,46 @@ async function start() {
           rebindSchedule: async () => undefined,
         };
 
-  // When a new agent is created/registered, re-target any Shape schedule that
-  // was created global/disabled because this agent was missing (spec item 3).
-  // The 15-minute Linear tick turns on the moment "Linear Keeper" is created —
-  // no re-apply. Best-effort; a failure never blocks agent creation.
-  const onAgentRegistered = async (agent: RebindAgent): Promise<void> => {
+  // The agent-created seam (module-level, registered once at bootstrap): every
+  // creation path — HTTP routes, MCP create_agent, marketplace agent install —
+  // notifies it via `createAgentWorkspace` / the register route. Reaction: when
+  // a new agent is created/registered, re-target any Shape schedule that was
+  // created global/disabled because this agent was missing (spec item 3). The
+  // 15-minute Linear tick turns on the moment "Linear Keeper" is created — no
+  // re-apply. The notify is awaited (so creation responses reflect the settled
+  // re-bind) but failures are swallowed at the seam; creation never fails
+  // because this reaction threw. A schedule silently starting to run is
+  // consequential, so a successful re-bind also lands in the activity feed.
+  setOnAgentCreated(async (agent: RebindAgent) => {
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,
     });
-    if (rebound.length > 0) {
-      logger.info(`[Shapes] Re-bound ${rebound.length} schedule(s) to new agent '${agent.name}'`, {
-        schedules: rebound,
-      });
-    }
-  };
+    if (rebound.length === 0) return;
+    logger.info(`[Shapes] Re-bound ${rebound.length} schedule(s) to new agent '${agent.name}'`, {
+      schedules: rebound,
+    });
+    const agentLabel = agent.displayName ?? agent.name;
+    await activityService.emit({
+      actorType: 'system',
+      actorLabel: 'DorkOS',
+      category: 'tasks',
+      eventType: 'tasks.schedules_rebound',
+      resourceType: 'agent',
+      resourceId: agent.id,
+      resourceLabel: agentLabel,
+      summary:
+        rebound.length === 1
+          ? `Turned on a scheduled task for ${agentLabel}`
+          : `Turned on ${rebound.length} scheduled tasks for ${agentLabel}`,
+      linkPath: '/tasks',
+      metadata: { schedules: rebound },
+    });
+  });
 
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
-  app.use('/api/agents', createAgentsRouter(meshCore, onAgentRegistered));
+  app.use('/api/agents', createAgentsRouter(meshCore));
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));

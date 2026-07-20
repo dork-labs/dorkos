@@ -31,6 +31,7 @@ import { readConventionFile, writeConventionFile } from '@dorkos/shared/conventi
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
+import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
@@ -40,53 +41,13 @@ interface MeshCoreLike {
 }
 
 /**
- * Fired after a new agent is registered on disk + in the Mesh DB — the create
- * seam for cross-cutting reactions to a fresh agent. Today it lets Shape
- * schedules that were created global/disabled because this agent was missing
- * re-target to it and enable (spec §"Contract changes" item 3), without the user
- * re-applying the Shape. Best-effort: the route never fails a successful
- * creation because a hook threw.
- *
- * @param agent - The just-registered agent's id, slug, and optional display name.
- */
-export type AgentRegisteredHook = (agent: {
-  id: string;
-  name: string;
-  displayName?: string;
-}) => Promise<void>;
-
-/**
  * Create the agents router for agent identity CRUD.
  *
  * @param meshCore - Optional MeshCore instance for DB sync after writes
- * @param onAgentRegistered - Optional hook fired after a new agent registers
  * @returns Express Router with agent identity endpoints
  */
-export function createAgentsRouter(
-  meshCore?: MeshCoreLike,
-  onAgentRegistered?: AgentRegisteredHook
-): Router {
+export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
   const router = Router();
-
-  /**
-   * Fire the post-registration hook, swallowing any failure — a created agent
-   * must never 500 because a downstream reaction (e.g. Shape-schedule re-bind)
-   * threw.
-   *
-   * @param agent - The just-registered agent.
-   */
-  const fireAgentRegistered = async (agent: {
-    id: string;
-    name: string;
-    displayName?: string;
-  }): Promise<void> => {
-    if (!onAgentRegistered) return;
-    try {
-      await onAgentRegistered(agent);
-    } catch (err) {
-      logger.warn('[agents] onAgentRegistered hook failed', { err });
-    }
-  };
 
   // GET /api/agents/current?path=/path/to/project
   // Returns the agent manifest for the given directory, or null
@@ -212,8 +173,11 @@ export function createAgentsRouter(
         });
       }
 
-      // Re-bind any Shape schedules that were waiting on this agent (best-effort).
-      await fireAgentRegistered({
+      // The agent-created seam: this register path writes the manifest itself
+      // (it does not go through `createAgentWorkspace`), so it must notify the
+      // seam directly. Awaited, but never throws — a failing reaction (e.g.
+      // Shape schedule re-bind) never turns a successful registration into a 500.
+      await notifyAgentCreated({
         id: manifest.id,
         name: manifest.name,
         displayName: manifest.displayName,
@@ -251,13 +215,8 @@ export function createAgentsRouter(
         });
       }
 
-      // Re-bind any Shape schedules that were waiting on this agent (best-effort).
-      await fireAgentRegistered({
-        id: result.manifest.id,
-        name: result.manifest.name,
-        displayName: result.manifest.displayName,
-      });
-
+      // (The agent-created seam already fired inside `createAgentWorkspace` —
+      // no extra notify here.)
       return res.status(201).json({
         ...result.manifest,
         _path: result.path,

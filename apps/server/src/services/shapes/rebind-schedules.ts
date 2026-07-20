@@ -40,16 +40,19 @@ export interface RebindShapeSchedulesDeps {
 
 /**
  * Re-bind every installed Shape schedule that is waiting on `agent`. A schedule
- * is waiting when both hold:
+ * is waiting when all three hold:
  *
  *  1. its `agentRef` resolves to a Shape agent entry whose `matchName` matches
- *     `agent` — the same rule apply-shape uses ({@link matchesAgentByName}); and
- *  2. a schedule with that name currently exists global (unbound) — the honest
- *     marker that it was created disabled because the agent was missing.
+ *     `agent` — the same rule apply-shape uses ({@link matchesAgentByName});
+ *  2. a schedule with that name currently exists global (unbound); and
+ *  3. that schedule's provenance marker names THIS Shape — a user can create
+ *     their own global schedule with a colliding name via the tasks API, so
+ *     name + unbound alone never proves ownership.
  *
  * A schedule that is already agent-bound is never touched, so a user who
- * disabled their own bound schedule keeps that choice. Nothing is created — this
- * only re-targets copies an earlier apply already stood up.
+ * disabled their own bound schedule keeps that choice; an unmarked or
+ * other-Shape schedule is never touched either. Nothing is created — this only
+ * re-targets copies an earlier apply already stood up.
  *
  * @param agent - The just-created / just-registered agent.
  * @param deps - Injected Shape lister + schedule service.
@@ -75,13 +78,20 @@ export async function rebindShapeSchedulesForAgent(
     for (const schedule of shape.schedules) {
       if (!satisfiedRefs.has(schedule.agentRef)) continue;
       const existing = existingByName.get(schedule.name);
-      // Only re-bind a schedule that exists and is still unbound (global). An
-      // absent one was never created; an already-bound one is left as-is.
-      if (!existing || existing.agentId !== null) continue;
+      // Only re-bind a schedule that exists, is still unbound (global), and
+      // carries THIS Shape's provenance marker. An absent one was never
+      // created; an already-bound one is left as-is; an unmarked or
+      // other-Shape one is not ours to move.
+      if (!existing || existing.agentId !== null || existing.shapeOrigin !== shape.name) continue;
 
       const enabled = !schedule.startDisabled;
       await deps.scheduleService.rebindSchedule(schedule.name, { agentId: agent.id, enabled });
-      existingByName.set(schedule.name, { name: schedule.name, agentId: agent.id, enabled });
+      existingByName.set(schedule.name, {
+        name: schedule.name,
+        agentId: agent.id,
+        enabled,
+        shapeOrigin: shape.name,
+      });
       rebound.push(schedule.name);
     }
   }

@@ -56,6 +56,7 @@ function applyResult(): ApplyShapeResult {
       },
       activatedExtensions: ['linear-issues'],
       schedulesCreated: ['inbox-tick'],
+      schedulesRebound: [],
     },
     warnings: ["Connection 'linear_api_key' for 'linear-issues' needs setup"],
     offeredAgents: [

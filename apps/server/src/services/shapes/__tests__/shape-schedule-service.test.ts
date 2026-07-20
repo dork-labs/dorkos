@@ -84,28 +84,39 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
   });
 
   it('moves a global/disabled schedule to the agent, enables it, and removes the old copy', async () => {
-    await service.createSchedule(globalDisabledTick());
+    await service.createSchedule(globalDisabledTick(), { shape: 'linear-ops' });
 
-    // Precondition: one global, disabled schedule, on disk at the global path.
-    expect(service.listSchedules()).toEqual([
-      { name: 'inbox-tick', agentId: null, enabled: false },
+    // Precondition: one global, disabled schedule, on disk at the global path,
+    // stamped with the Shape provenance marker.
+    expect(await service.listSchedules()).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
     const globalFile = path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md');
     expect(await exists(globalFile)).toBe(true);
+    const globalContent = await fs.readFile(globalFile, 'utf-8');
+    expect(globalContent).toContain('origin: shape');
+    expect(globalContent).toContain('shape: linear-ops');
     expect(registerTask).not.toHaveBeenCalled(); // disabled → never registered
 
     // The agent is created; re-bind the waiting schedule to it.
     await service.rebindSchedule('inbox-tick', { agentId: 'agent-tender', enabled: true });
 
-    // Exactly one schedule remains — now agent-bound and enabled.
-    const after = service.listSchedules();
-    expect(after).toEqual([{ name: 'inbox-tick', agentId: 'agent-tender', enabled: true }]);
+    // Exactly one schedule remains — now agent-bound and enabled. The
+    // provenance marker travels with it (agent-bound rows skip the file read,
+    // so listSchedules reports null — assert on the moved file instead).
+    const after = await service.listSchedules();
+    expect(after).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: null },
+    ]);
     expect(store.getTasks()).toHaveLength(1);
 
     // The file physically moved into the agent's workspace; the global copy is gone.
     const agentFile = path.join(agentDir, '.dork', 'tasks', 'inbox-tick', 'SKILL.md');
     expect(await exists(agentFile)).toBe(true);
     expect(await exists(globalFile)).toBe(false);
+    const movedContent = await fs.readFile(agentFile, 'utf-8');
+    expect(movedContent).toContain('origin: shape');
+    expect(movedContent).toContain('shape: linear-ops');
 
     // The newly-enabled schedule was registered; the old copy was unregistered.
     expect(registerTask).toHaveBeenCalledTimes(1);
@@ -119,29 +130,55 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
 
   it('is a no-op on a schedule that is already agent-bound (respects a user disable)', async () => {
     // Seed a schedule already living in the agent's workspace but disabled.
-    await service.createSchedule({ ...globalDisabledTick(), target: 'agent-tender' });
-    const seeded = service.listSchedules();
-    expect(seeded).toEqual([{ name: 'inbox-tick', agentId: 'agent-tender', enabled: false }]);
+    await service.createSchedule(
+      { ...globalDisabledTick(), target: 'agent-tender' },
+      { shape: 'linear-ops' }
+    );
+    const seeded = await service.listSchedules();
+    expect(seeded).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: null },
+    ]);
 
     await service.rebindSchedule('inbox-tick', { agentId: 'agent-tender', enabled: true });
 
     // Untouched — still bound, still disabled.
-    expect(service.listSchedules()).toEqual([
-      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false },
+    expect(await service.listSchedules()).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: null },
     ]);
     expect(store.getTasks()).toHaveLength(1);
     expect(registerTask).not.toHaveBeenCalled();
   });
 
+  it('refuses to move a global schedule that has no Shape provenance marker', async () => {
+    // THE ADVERSARIAL CASE, at the concrete layer: a user-created global
+    // schedule (written like the tasks router writes it — no provenance
+    // marker) shares its name with a Shape schedule. rebindSchedule must be a
+    // no-op even when a caller asks: not re-homed, not enabled.
+    await service.createSchedule(globalDisabledTick()); // no origin — user-created
+
+    await service.rebindSchedule('inbox-tick', { agentId: 'agent-tender', enabled: true });
+
+    // Unchanged: still global, still disabled, still at the global path.
+    expect(await service.listSchedules()).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: null },
+    ]);
+    expect(store.getTasks()).toHaveLength(1);
+    expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(agentDir, '.dork', 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(
+      false
+    );
+    expect(registerTask).not.toHaveBeenCalled();
+  });
+
   it('leaves the schedule global when the agent has no resolvable project path', async () => {
-    await service.createSchedule(globalDisabledTick());
+    await service.createSchedule(globalDisabledTick(), { shape: 'linear-ops' });
 
     // 'ghost' resolves to no project path → the fake meshCore returns undefined.
     await service.rebindSchedule('inbox-tick', { agentId: 'ghost', enabled: true });
 
     // Unchanged: still global, still disabled, no duplicate.
-    expect(service.listSchedules()).toEqual([
-      { name: 'inbox-tick', agentId: null, enabled: false },
+    expect(await service.listSchedules()).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
     expect(store.getTasks()).toHaveLength(1);
     expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);

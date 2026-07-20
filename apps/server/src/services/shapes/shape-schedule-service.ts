@@ -9,6 +9,11 @@
  * keeps this consistent with hand-created schedules without duplicating the
  * router's HTTP concerns.
  *
+ * Shape-created schedules are stamped with a provenance marker in their
+ * frontmatter (`origin: shape` + `shape: <name>`). The re-bind flow gates on
+ * that marker — never on name alone — so a user's own schedule that happens to
+ * share a Shape schedule's name is never touched.
+ *
  * @module services/shapes/shape-schedule-service
  */
 import path from 'node:path';
@@ -23,7 +28,12 @@ import { slugify } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import type { TaskStore } from '../tasks/task-store.js';
 import type { TaskSchedulerService } from '../tasks/task-scheduler-service.js';
-import type { ExistingSchedule, ScheduleRebind, ShapeScheduleServiceLike } from './apply-shape.js';
+import type {
+  ExistingSchedule,
+  ScheduleOrigin,
+  ScheduleRebind,
+  ShapeScheduleServiceLike,
+} from './apply-shape.js';
 
 /** Constructor dependencies for {@link ShapeScheduleService}. */
 export interface ShapeScheduleServiceDeps {
@@ -42,31 +52,37 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
   constructor(private readonly deps: ShapeScheduleServiceDeps) {}
 
   /**
-   * Every existing schedule (name + binding + enabled), across all scopes
-   * (global + agents). The apply flow checks existence by NAME only — a Shape
-   * schedule's target flips from `'global'` to a concrete agent id once the
-   * offered agent appears, so a per-target check would miss the earlier global
-   * copy and duplicate the schedule on re-apply. `agentId` lets the caller tell
-   * a still-waiting global copy (re-bindable) from one already agent-bound.
+   * Every existing schedule (name + binding + enabled + provenance), across all
+   * scopes (global + agents). The apply flow checks existence by NAME only — a
+   * Shape schedule's target flips from `'global'` to a concrete agent id once
+   * the offered agent appears, so a per-target check would miss the earlier
+   * global copy and duplicate the schedule on re-apply. `shapeOrigin` is read
+   * from each global schedule's file (the frontmatter provenance marker);
+   * agent-bound schedules skip the file read — re-bind never considers them.
    *
-   * @returns Every existing schedule's name, bound agent id, and enabled state.
+   * @returns Every existing schedule's name, binding, enabled state, and origin.
    */
-  listSchedules(): ExistingSchedule[] {
-    return this.deps.taskStore.getTasks().map((t) => ({
-      name: t.name,
-      agentId: t.agentId ?? null,
-      enabled: t.enabled,
-    }));
+  async listSchedules(): Promise<ExistingSchedule[]> {
+    return Promise.all(
+      this.deps.taskStore.getTasks().map(async (t) => ({
+        name: t.name,
+        agentId: t.agentId ?? null,
+        enabled: t.enabled,
+        shapeOrigin: t.agentId ? null : await this.readShapeOrigin(t.filePath),
+      }))
+    );
   }
 
   /**
-   * Create a schedule from a task-creation request. Writes the SKILL.md first,
-   * then syncs to the DB and registers it with the scheduler when enabled. Safe
-   * to call over an existing file — `upsertFromFile` is keyed by file path.
+   * Create a schedule from a task-creation request. Writes the SKILL.md first
+   * (stamped with the Shape provenance marker when `origin` is given), then
+   * syncs to the DB and registers it with the scheduler when enabled. Safe to
+   * call over an existing file — `upsertFromFile` is keyed by file path.
    *
    * @param req - The task-creation request built from a Shape schedule.
+   * @param origin - Shape provenance to stamp into the file's frontmatter.
    */
-  async createSchedule(req: CreateTaskRequest): Promise<void> {
+  async createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<void> {
     const slug = slugify(req.name);
     let tasksDir: string;
     let agentId: string | null = null;
@@ -95,7 +111,17 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     if (req.permissionMode && req.permissionMode !== 'acceptEdits') {
       frontmatter.permissions = req.permissionMode;
     }
+    if (origin) {
+      frontmatter.origin = 'shape';
+      frontmatter.shape = origin.shape;
+    }
 
+    // EDGE: `writeSkillFile` writes into `<tasksDir>/<slug>/` and will overwrite
+    // a same-slug task dir already present in the target scope (last write
+    // wins, same as the tasks router's file write). The apply flow's by-name
+    // existence check prevents this within DorkOS-managed schedules; a file
+    // dropped on disk out-of-band between check and write could still be
+    // replaced.
     const filePath = await writeSkillFile(tasksDir, slug, frontmatter, req.prompt);
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema);
@@ -131,7 +157,16 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * so this writes the agent-scoped copy first, then removes the old global one
    * to leave exactly one schedule. A no-op — leaving the global copy untouched —
    * when the named schedule is absent, is already agent-bound (respecting an
-   * explicit user disable), or the agent has no resolvable project path.
+   * explicit user disable), carries no Shape provenance marker (defense in
+   * depth: a user's colliding schedule is never hijacked, even if a caller
+   * skipped its own gate), or the agent has no resolvable project path.
+   *
+   * The write-then-delete move is NOT atomic. If the process dies between the
+   * two steps, both copies exist under one name — harmless, because the stale
+   * copy is global + disabled (never fires), the task reconciler re-syncs both
+   * files to the DB as-is, and the next apply/agent-create sees the agent-bound
+   * copy first and no-ops. Worst case is a leftover disabled global schedule
+   * the user can delete.
    *
    * @param name - The existing schedule's name (its cross-scope identity).
    * @param rebind - The agent id to bind to and the resulting enabled state.
@@ -140,6 +175,15 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     const existing = this.deps.taskStore.getTasks().find((t) => t.name === name);
     // Nothing to move, or the schedule already found its home — respect it.
     if (!existing || existing.agentId) return;
+
+    // Provenance guard: only a schedule a Shape created may be re-homed.
+    const shapeOrigin = await this.readShapeOrigin(existing.filePath);
+    if (!shapeOrigin) {
+      this.deps.logger.warn(
+        `[shape-schedule] Refusing to re-bind '${name}' — no Shape provenance marker (user-created?)`
+      );
+      return;
+    }
 
     // Resolve the target up front: if the agent has no project path, leave the
     // schedule global (createSchedule would otherwise fall back to the SAME
@@ -153,16 +197,21 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     }
 
     // Write the agent-scoped copy (new file path → new row) and register it.
-    await this.createSchedule({
-      name: existing.name,
-      description: existing.description ?? '',
-      prompt: existing.prompt,
-      cron: existing.cron,
-      timezone: existing.timezone,
-      target: rebind.agentId,
-      enabled: rebind.enabled,
-      permissionMode: existing.permissionMode,
-    });
+    // The provenance marker travels with the schedule — it stays a Shape
+    // schedule in its new home.
+    await this.createSchedule(
+      {
+        name: existing.name,
+        description: existing.description ?? '',
+        prompt: existing.prompt,
+        cron: existing.cron,
+        timezone: existing.timezone,
+        target: rebind.agentId,
+        enabled: rebind.enabled,
+        permissionMode: existing.permissionMode,
+      },
+      { shape: shapeOrigin }
+    );
 
     // Remove the old global copy (file + row + any scheduler registration) so
     // the schedule is not duplicated across scopes.
@@ -173,6 +222,29 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
       await deleteSkillDir(path.dirname(dirPath), path.basename(dirPath)).catch(() => {
         // File may already be gone — the DB row is what mattered.
       });
+    }
+  }
+
+  /**
+   * Read the Shape provenance marker from a schedule's SKILL.md. Fail-closed:
+   * any read/parse failure or missing marker returns `null`, which the re-bind
+   * flow treats as "not a Shape schedule — do not touch".
+   *
+   * @param filePath - The schedule's SKILL.md path.
+   * @returns The owning Shape's name, or `null` when unmarked/unreadable.
+   */
+  private async readShapeOrigin(filePath: string): Promise<string | null> {
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema, {
+        requireNameMatch: false,
+      });
+      if (!parsed.ok) return null;
+      return parsed.definition.meta.origin === 'shape'
+        ? (parsed.definition.meta.shape ?? null)
+        : null;
+    } catch {
+      return null;
     }
   }
 }

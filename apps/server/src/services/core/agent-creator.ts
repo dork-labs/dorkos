@@ -23,6 +23,7 @@ import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { scaffoldInstructions } from '@dorkos/harness';
 import { validateBoundary, expandTilde, BoundaryError } from '../../lib/boundary.js';
 import { configManager } from './config-manager.js';
+import { notifyAgentCreated } from './agent-created-hook.js';
 import { logger } from '../../lib/logger.js';
 
 /** Minimal MeshCore interface for sync-on-write. */
@@ -302,6 +303,17 @@ export async function createAgentWorkspace(
 
     // Auto-set as default agent when current default doesn't exist
     await maybeSetDefaultAgent(opts.name);
+
+    // The agent-created seam: every creation path (HTTP routes, MCP
+    // create_agent, marketplace agent install) funnels through this function,
+    // so downstream reactions — e.g. re-binding Shape schedules that were
+    // waiting on this agent — fire here. Awaited deliberately (the creation
+    // response reflects settled reactions) but never throws.
+    await notifyAgentCreated({
+      id: manifest.id,
+      name: manifest.name,
+      displayName: manifest.displayName,
+    });
 
     return { manifest, path: resolvedPath, meta };
   } catch (scaffoldErr) {

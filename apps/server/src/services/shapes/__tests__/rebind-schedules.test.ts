@@ -81,7 +81,7 @@ function makeScheduleService(initial: ExistingSchedule[]) {
 describe('rebindShapeSchedulesForAgent', () => {
   it('re-binds + enables a waiting global schedule when its matching agent is created', async () => {
     const { service, rebindSchedule, schedules } = makeScheduleService([
-      { name: 'inbox-tick', agentId: null, enabled: false },
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
 
     const rebound = await rebindShapeSchedulesForAgent(LINEAR_TENDER_AGENT, {
@@ -96,12 +96,14 @@ describe('rebindShapeSchedulesForAgent', () => {
       enabled: true,
     });
     // The tick is now agent-bound and enabled — no re-apply needed.
-    expect(schedules).toEqual([{ name: 'inbox-tick', agentId: 'agent-tender', enabled: true }]);
+    expect(schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
+    ]);
   });
 
   it('matches on the agent slug too, not only the display name', async () => {
     const { service, rebindSchedule } = makeScheduleService([
-      { name: 'inbox-tick', agentId: null, enabled: false },
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
 
     // A Shape whose entry is matched by slug, and an agent with only a slug.
@@ -133,7 +135,7 @@ describe('rebindShapeSchedulesForAgent', () => {
 
   it('does nothing when the new agent does not match any Shape entry', async () => {
     const { service, rebindSchedule, schedules } = makeScheduleService([
-      { name: 'inbox-tick', agentId: null, enabled: false },
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
 
     const rebound = await rebindShapeSchedulesForAgent(
@@ -143,12 +145,14 @@ describe('rebindShapeSchedulesForAgent', () => {
 
     expect(rebound).toEqual([]);
     expect(rebindSchedule).not.toHaveBeenCalled();
-    expect(schedules).toEqual([{ name: 'inbox-tick', agentId: null, enabled: false }]);
+    expect(schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
+    ]);
   });
 
   it('leaves an already agent-bound schedule alone (respects a user disable)', async () => {
     const { service, rebindSchedule, schedules } = makeScheduleService([
-      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false },
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: null },
     ]);
 
     const rebound = await rebindShapeSchedulesForAgent(LINEAR_TENDER_AGENT, {
@@ -158,12 +162,14 @@ describe('rebindShapeSchedulesForAgent', () => {
 
     expect(rebound).toEqual([]);
     expect(rebindSchedule).not.toHaveBeenCalled();
-    expect(schedules).toEqual([{ name: 'inbox-tick', agentId: 'agent-tender', enabled: false }]);
+    expect(schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: null },
+    ]);
   });
 
   it('re-binds a startDisabled schedule but keeps it disabled', async () => {
     const { service, rebindSchedule } = makeScheduleService([
-      { name: 'inbox-tick', agentId: null, enabled: false },
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
 
     const rebound = await rebindShapeSchedulesForAgent(LINEAR_TENDER_AGENT, {
@@ -192,7 +198,7 @@ describe('rebindShapeSchedulesForAgent', () => {
 
   it('does nothing when no Shapes are installed', async () => {
     const { service, rebindSchedule } = makeScheduleService([
-      { name: 'inbox-tick', agentId: null, enabled: false },
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
 
     const rebound = await rebindShapeSchedulesForAgent(LINEAR_TENDER_AGENT, {
@@ -202,5 +208,47 @@ describe('rebindShapeSchedulesForAgent', () => {
 
     expect(rebound).toEqual([]);
     expect(rebindSchedule).not.toHaveBeenCalled();
+  });
+
+  it("never touches a user's own global schedule that collides with a Shape schedule name", async () => {
+    // THE ADVERSARIAL CASE: the user created their own global schedule named
+    // 'inbox-tick' via the tasks API (no provenance marker), a Shape declaring
+    // the same schedule name is installed, and now a matching agent is created.
+    // Without a provenance gate this would hijack the user's schedule —
+    // re-homed into the agent's workspace and force-enabled. It must stay
+    // exactly as the user made it.
+    const { service, rebindSchedule, schedules } = makeScheduleService([
+      { name: 'inbox-tick', agentId: null, enabled: true, shapeOrigin: null },
+    ]);
+
+    const rebound = await rebindShapeSchedulesForAgent(LINEAR_TENDER_AGENT, {
+      listShapes: () => [linearOpsManifest()],
+      scheduleService: service,
+    });
+
+    expect(rebound).toEqual([]);
+    expect(rebindSchedule).not.toHaveBeenCalled();
+    expect(schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: true, shapeOrigin: null },
+    ]);
+  });
+
+  it('never re-binds a schedule that belongs to a DIFFERENT Shape', async () => {
+    // Provenance names another Shape — this Shape's manifest declaring the
+    // same schedule name must not steal it.
+    const { service, rebindSchedule, schedules } = makeScheduleService([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'other-shape' },
+    ]);
+
+    const rebound = await rebindShapeSchedulesForAgent(LINEAR_TENDER_AGENT, {
+      listShapes: () => [linearOpsManifest()],
+      scheduleService: service,
+    });
+
+    expect(rebound).toEqual([]);
+    expect(rebindSchedule).not.toHaveBeenCalled();
+    expect(schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'other-shape' },
+    ]);
   });
 });

@@ -32,6 +32,7 @@ function result(overrides: Partial<ApplyShapeResult> = {}): ApplyShapeResult {
       },
       activatedExtensions: ['linear-issues'],
       schedulesCreated: ['inbox-tick'],
+      schedulesRebound: [],
     },
     warnings: [],
     offeredAgents: [],

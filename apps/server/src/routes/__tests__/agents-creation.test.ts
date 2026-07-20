@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -111,6 +111,7 @@ vi.mock('../../services/core/template-downloader.js', () => ({
 import request from 'supertest';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
+import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const mockSyncFromDisk = vi.fn().mockResolvedValue(true);
@@ -306,6 +307,52 @@ describe('POST /api/agents/create', () => {
     const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(res.status).toBe(201);
+  });
+
+  // --- The agent-created seam (fired inside createAgentWorkspace) ---
+
+  describe('agent-created seam', () => {
+    afterEach(() => {
+      setOnAgentCreated(null);
+    });
+
+    it('notifies the seam after a successful creation (via createAgentWorkspace)', async () => {
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+
+      const res = await request(app)
+        .post('/api/agents/create')
+        .send({ name: 'my-agent', displayName: 'My Agent' });
+
+      expect(res.status).toBe(201);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({
+        id: 'MOCK_ULID_001',
+        name: 'my-agent',
+        displayName: 'My Agent',
+      });
+    });
+
+    it('still returns 201 when the seam listener throws (never-500 guarantee)', async () => {
+      setOnAgentCreated(vi.fn().mockRejectedValue(new Error('shape re-bind exploded')));
+
+      const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe('MOCK_ULID_001');
+    });
+
+    it('does not notify the seam when creation fails (collision 409)', async () => {
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+      // Directory exists AND contains a .dork project → 409 collision.
+      mockStat.mockResolvedValue({ isDirectory: () => true });
+
+      const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+
+      expect(res.status).toBe(409);
+      expect(listener).not.toHaveBeenCalled();
+    });
   });
 
   // --- Template download integration ---

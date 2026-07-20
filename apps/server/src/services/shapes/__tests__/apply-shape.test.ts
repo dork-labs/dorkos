@@ -75,6 +75,8 @@ interface FakeSchedule {
   /** `null` = global (unbound); a concrete id = agent-bound. */
   agentId: string | null;
   enabled: boolean;
+  /** The provenance marker: the creating Shape's name, or `null` = user-created. */
+  shapeOrigin: string | null;
 }
 
 /** Configurable fakes for {@link ApplyShapeDeps}. Every collaborator is observable. */
@@ -93,11 +95,12 @@ function makeDeps(opts: {
   // The fake store, keyed by name (the real service's cross-scope identity).
   const schedules: FakeSchedule[] = (opts.existingSchedules ?? []).map((s) => ({ ...s }));
 
-  const createSchedule = vi.fn(async (req: CreateTaskRequest) => {
+  const createSchedule = vi.fn(async (req: CreateTaskRequest, origin?: { shape: string }) => {
     schedules.push({
       name: req.name,
       agentId: req.target === 'global' ? null : req.target,
       enabled: req.enabled ?? true,
+      shapeOrigin: origin?.shape ?? null,
     });
   });
   const rebindSchedule = vi.fn(
@@ -344,8 +347,12 @@ describe('applyShape', () => {
       target: 'global',
       enabled: false,
     });
-    // It landed global + disabled (waiting on its agent).
-    expect(shared.schedules).toEqual([{ name: 'inbox-tick', agentId: null, enabled: false }]);
+    // Created carrying the Shape's provenance marker.
+    expect(shared.createSchedule.mock.calls[0][1]).toEqual({ shape: 'linear-ops' });
+    // It landed global + disabled (waiting on its agent), stamped as Shape-owned.
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
+    ]);
 
     // The offered agent is created between applies.
     registeredAgents.push(LINEAR_TENDER_AGENT);
@@ -362,7 +369,7 @@ describe('applyShape', () => {
     });
     // The single schedule is now agent-bound and enabled — the tick turns on.
     expect(shared.schedules).toEqual([
-      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true },
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
     ]);
     // And no repeat of the created-disabled warning for a schedule that was not created.
     expect(second.warnings).not.toContain(
@@ -380,7 +387,9 @@ describe('applyShape', () => {
       presentExtensions: ['linear-issues'],
       setSecrets: [['linear-issues', 'linear_api_key']],
       registeredAgents: [LINEAR_TENDER_AGENT],
-      existingSchedules: [{ name: 'inbox-tick', agentId: 'agent-tender', enabled: false }],
+      existingSchedules: [
+        { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: null },
+      ],
     });
 
     const result = await applyShape('linear-ops', shared.deps);
@@ -391,7 +400,55 @@ describe('applyShape', () => {
     expect(shared.createSchedule).not.toHaveBeenCalled();
     // Left exactly as the user set it — still bound, still disabled.
     expect(shared.schedules).toEqual([
-      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false },
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: null },
+    ]);
+  });
+
+  it('(d) never touches a user-created global schedule that collides with a Shape schedule name', async () => {
+    // THE ADVERSARIAL CASE: the user created their own global schedule named
+    // 'inbox-tick' via the tasks API — no Shape provenance marker. The Shape's
+    // agent then appears and the Shape is re-applied. Name + unbound alone
+    // must NOT be treated as ownership: the user's schedule stays exactly
+    // where and how they made it (not re-homed, not enabled, not disabled).
+    const shared = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      existingSchedules: [{ name: 'inbox-tick', agentId: null, enabled: true, shapeOrigin: null }],
+    });
+
+    const result = await applyShape('linear-ops', shared.deps);
+
+    expect(result.applied.schedulesCreated).toEqual([]);
+    expect(result.applied.schedulesRebound).toEqual([]);
+    expect(shared.rebindSchedule).not.toHaveBeenCalled();
+    expect(shared.createSchedule).not.toHaveBeenCalled();
+    // The user's schedule is untouched.
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: true, shapeOrigin: null },
+    ]);
+  });
+
+  it("(d) never re-binds another Shape's waiting schedule, even on a name collision", async () => {
+    // A different Shape created (and still owns) the waiting global schedule.
+    // Applying THIS Shape must not steal it.
+    const shared = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      existingSchedules: [
+        { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'other-shape' },
+      ],
+    });
+
+    const result = await applyShape('linear-ops', shared.deps);
+
+    expect(result.applied.schedulesRebound).toEqual([]);
+    expect(shared.rebindSchedule).not.toHaveBeenCalled();
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'other-shape' },
     ]);
   });
 
@@ -405,7 +462,9 @@ describe('applyShape', () => {
       registeredAgents: [
         { id: 'agent-other', name: 'other', displayName: 'Other', projectPath: '/p/other' },
       ],
-      existingSchedules: [{ name: 'inbox-tick', agentId: null, enabled: false }],
+      existingSchedules: [
+        { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
+      ],
     });
 
     const result = await applyShape('linear-ops', shared.deps);
@@ -413,7 +472,9 @@ describe('applyShape', () => {
     expect(result.applied.schedulesRebound).toEqual([]);
     expect(shared.rebindSchedule).not.toHaveBeenCalled();
     expect(shared.createSchedule).not.toHaveBeenCalled();
-    expect(shared.schedules).toEqual([{ name: 'inbox-tick', agentId: null, enabled: false }]);
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
+    ]);
   });
 
   it('(d) re-binds a startDisabled schedule to its agent but keeps it disabled', async () => {
@@ -444,7 +505,7 @@ describe('applyShape', () => {
     const shared = makeDeps({
       manifest,
       registeredAgents: [LINEAR_TENDER_AGENT],
-      existingSchedules: [{ name: 'inbox-tick', agentId: null, enabled: false }],
+      existingSchedules: [{ name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 's' }],
     });
 
     const result = await applyShape('s', shared.deps);
@@ -456,7 +517,7 @@ describe('applyShape', () => {
     });
     // Bound to the agent, still disabled (its manifest wants it to start off).
     expect(shared.schedules).toEqual([
-      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false },
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: 's' },
     ]);
   });
 });
