@@ -155,4 +155,18 @@ describe('CORS with tunnel origin', () => {
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
+
+  it('passes a CORS preflight for a remapped same-origin request', async () => {
+    // The browser preflights non-simple requests (e.g. POST) before sending
+    // them, so the same-origin allowance must hold on OPTIONS too, not just the
+    // simple GETs above.
+    const res = await request(app)
+      .options('/api/health')
+      .set('Host', 'localhost:9999')
+      .set('Origin', 'http://localhost:9999')
+      .set('Access-Control-Request-Method', 'POST');
+
+    expect(res.status).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:9999');
+  });
 });
