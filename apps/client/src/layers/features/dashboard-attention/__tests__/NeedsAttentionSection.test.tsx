@@ -10,9 +10,12 @@ import { Clock } from 'lucide-react';
 // Mocks
 // ---------------------------------------------------------------------------
 
+// The hook returns { items, isLoading }; this section ignores isLoading (it
+// renders zero DOM when empty), so the wrapper pins it false and the per-test
+// mock keeps supplying just the items array.
 const mockUseAttentionItems = vi.fn<() => AttentionItem[]>(() => []);
 vi.mock('../model/use-attention-items', () => ({
-  useAttentionItems: () => mockUseAttentionItems(),
+  useAttentionItems: () => ({ items: mockUseAttentionItems(), isLoading: false }),
 }));
 
 import { NeedsAttentionSection } from '../ui/NeedsAttentionSection';

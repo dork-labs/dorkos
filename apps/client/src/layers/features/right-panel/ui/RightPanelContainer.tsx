@@ -77,14 +77,22 @@ export function RightPanelContainer() {
     [allContributions, pathname, transport, agentId, cwd, explicitAgentPath]
   );
 
-  // Auto-select first visible tab if active tab is not visible. View-only: this
+  // Auto-select a default tab when the active tab is not visible. View-only: this
   // must not persist over the per-agent stored preference (DOR-227), so a tab
   // hidden by the current route/transport is restored once it returns.
+  //
+  // Contextual wins, global (Pulse) is the fallback — the Chrome sidePanel rule
+  // (research: 20260720_context-aware-right-inspector-panels). Prefer the first
+  // CONTEXTUAL (non-global) visible tab so the always-present Pulse never steals
+  // the default from a contextual surface: /session keeps opening to Agent
+  // Profile (or the persisted tab), while dashboard/activity/tasks/… — where no
+  // contextual tab is visible — fall back to Pulse.
   useEffect(() => {
     if (visibleContributions.length > 0) {
       const activeIsVisible = visibleContributions.some((c) => c.id === activeTab);
       if (!activeIsVisible) {
-        setActiveTabView(visibleContributions[0].id);
+        const firstContextual = visibleContributions.find((c) => !c.isGlobal);
+        setActiveTabView((firstContextual ?? visibleContributions[0]).id);
       }
     }
   }, [visibleContributions, activeTab, setActiveTabView]);
@@ -151,17 +159,13 @@ export function RightPanelContainer() {
       >
         <PanelErrorBoundary tabId={activeTab}>
           <Suspense fallback={null}>
-            {ActiveComponent ? (
-              <ActiveComponent />
-            ) : (
-              // Zero visible contributions on this route. The shell still opens
-              // (it is never route-hidden), showing an honest empty state rather
-              // than a blank panel. Wave 2's Pulse promotes global content into
-              // this slot, making this state permanently unreachable.
-              <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
-                Nothing to inspect here yet.
-              </div>
-            )}
+            {/* Pulse is the always-present global tab, so there is always a
+                visible contribution and the auto-select effect always resolves an
+                active one — `ActiveComponent` is only briefly undefined for the
+                single frame before that effect runs, where rendering nothing is
+                correct. The Wave-1 "nothing to inspect" empty state is therefore
+                unreachable and has been removed. */}
+            {ActiveComponent ? <ActiveComponent /> : null}
           </Suspense>
         </PanelErrorBoundary>
       </div>

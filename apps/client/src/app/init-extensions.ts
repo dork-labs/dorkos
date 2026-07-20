@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { FolderTree, PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
+import { Activity, FolderTree, PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import {
   PALETTE_FEATURES,
@@ -77,6 +77,32 @@ export function initializeExtensions(): void {
       import('@/layers/features/extensions').then((m) => ({ default: m.ExtensionsSettingsTab }))
     ),
     priority: 70,
+  });
+
+  // Pulse — the always-present GLOBAL spine tab of the right panel (lazy-loaded).
+  //
+  // It carries no `visibleWhen`, so it shows on every route, and priority 5 (below
+  // every contextual tab) sorts it first in the strip. It is the panel's
+  // no-selection fallback: `isGlobal` tells the container's auto-select to prefer
+  // a contextual tab when one is visible and only land on Pulse when none is — the
+  // Chrome sidePanel rule (contextual wins when present, global is the fallback),
+  // so /session still opens to Agent Profile (honoring DOR-227) while
+  // dashboard/activity/tasks/… open to Pulse. Its body promotes global content
+  // (attention + activity teasers) into the panel so the shell is never dead.
+  //
+  // Strip order rests purely on this priority-5 convention — `isGlobal` gates the
+  // default-tab choice, never the sort. Keeping Pulse leftmost is deliberate: a
+  // future contextual tab registered with priority < 5 would sort ahead of it, so
+  // hold new contextual tabs at priority ≥ 10 (the current floor) to preserve it.
+  register('right-panel', {
+    id: 'pulse',
+    title: 'Pulse',
+    icon: Activity,
+    isGlobal: true,
+    component: lazy(() =>
+      import('@/layers/widgets/pulse').then((m) => ({ default: m.PulsePanel }))
+    ),
+    priority: 5,
   });
 
   // Agent Hub as right-panel contribution (lazy-loaded).

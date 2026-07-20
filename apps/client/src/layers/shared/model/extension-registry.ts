@@ -124,6 +124,17 @@ export interface RightPanelContribution extends BaseContribution {
   /** Display title shown in tooltips and accessibility labels. */
   title: string;
   /**
+   * Marks the always-present *global* (spine) tab — the panel's no-selection
+   * fallback. The auto-select fallback in {@link RightPanelContainer} prefers the
+   * first *contextual* (non-global) visible tab and only lands on a global tab
+   * when no contextual tab is visible. So a global tab can sort first in the
+   * strip (leftmost) yet never steal the default from a contextual surface — the
+   * Chrome sidePanel rule: contextual wins when present, global is the fallback
+   * (research: `20260720_context-aware-right-inspector-panels`). Omit (falsy) for
+   * ordinary contextual tabs; exactly one built-in tab (Pulse) sets it.
+   */
+  isGlobal?: boolean;
+  /**
    * Tab-strip icon. Optional: extension-contributed tabs register through
    * `api.registerComponent('right-panel', …)`, which lets an author supply an
    * icon but does not require one, so the tab strip falls back to a default (a

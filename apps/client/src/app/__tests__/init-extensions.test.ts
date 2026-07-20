@@ -15,6 +15,25 @@ describe('initializeExtensions — right-panel contributions', () => {
     return contributions.find((c) => c.id === id);
   }
 
+  it('registers Pulse as an always-present global tab', () => {
+    const pulse = getRightPanelContribution('pulse');
+    expect(pulse).toBeDefined();
+    // No visibleWhen — Pulse shows on every route (the global spine).
+    expect(pulse?.visibleWhen).toBeUndefined();
+    // isGlobal marks it the no-selection fallback for the default-tab rule.
+    expect(pulse?.isGlobal).toBe(true);
+  });
+
+  it('sorts Pulse first — its priority is below every contextual tab', () => {
+    const contributions = useExtensionRegistry.getState().getContributions('right-panel');
+    const pulse = contributions.find((c) => c.id === 'pulse');
+    const contextual = contributions.filter((c) => c.id !== 'pulse');
+    expect(contextual.length).toBeGreaterThan(0);
+    for (const c of contextual) {
+      expect(pulse!.priority!).toBeLessThan(c.priority!);
+    }
+  });
+
   it('registers the Agent Profile (agent-hub) contribution', () => {
     expect(getRightPanelContribution('agent-hub')).toBeDefined();
   });
