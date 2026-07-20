@@ -69,6 +69,10 @@
       "types": "./src/kickoff.ts",
       "default": "./dist/kickoff.js"
     },
+    "./kickoff-prompts": {
+      "types": "./src/kickoff-prompts.ts",
+      "default": "./dist/kickoff-prompts.js"
+    },
     "./workspace": {
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"

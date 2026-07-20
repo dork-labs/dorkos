@@ -19,7 +19,7 @@ import type { WizardStep, SelectedTemplate } from '../lib/wizard-types';
 import { STEP_HEADERS } from '../lib/wizard-types';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 import { resolveSuggestionPool } from '../lib/name-suggestions';
-import { buildKickoffMessage, type KickoffOrigin } from '../lib/kickoff-prompts';
+import { buildKickoffMessage, type KickoffOrigin } from '@dorkos/shared/kickoff-prompts';
 import { AgentGallery } from './AgentGallery';
 import { NamingStep } from './NamingStep';
 import { ArrivalConfirm } from './ArrivalConfirm';
@@ -166,11 +166,12 @@ export function CreateAgentDialog() {
           // The birth drives the certificate line and the agent's
           // auto-first-turn greeting (M4). A persona-bearing agent (a gallery
           // pick or a Shape's offer) introduces itself and offers a first
-          // action; a blank "Design your own" agent says hello and asks what
-          // to take care of.
+          // action; a blank "Design your own" agent runs the interview — it
+          // greets, asks what to take care of, then writes its own SOUL.md live
+          // in the conversation before offering a first action.
           const newSessionId = crypto.randomUUID();
           const displayName = data.displayName ?? data.name;
-          const origin: KickoffOrigin = template || seed ? 'template' : 'generic';
+          const origin: KickoffOrigin = template || seed ? 'template' : 'design-your-own';
           useAgentBirthStore.getState().register(newSessionId, {
             name: data.name,
             displayName,

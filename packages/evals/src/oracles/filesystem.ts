@@ -105,6 +105,44 @@ export function fileMatches(
 }
 
 /**
+ * Oracle: the resolved directory's top-level entries are a SUBSET of `allowed`.
+ * Proves a turn did NOT create anything it was not supposed to — the
+ * offer-not-action guard for the design-your-own interview, where the newborn
+ * agent may write only its own `.dork/` convention files and must start no real
+ * work (no stray `CHANGELOG.md`, no cloned repo, no scratch output) in its
+ * project cwd. A missing directory trivially passes (nothing was created).
+ *
+ * @param dirOf - Resolves the directory to scan from the sandbox.
+ * @param allowed - The only top-level entry names permitted (e.g. `['.dork']`).
+ * @param label - Human-readable label; defaults to a scoped message.
+ * @returns An {@link Oracle}.
+ */
+export function dirContainsOnly(
+  dirOf: SandboxPath,
+  allowed: readonly string[],
+  label?: string
+): Oracle {
+  return async (ctx) => {
+    const dir = dirOf(ctx.sandbox);
+    const allowSet = new Set(allowed);
+    let unexpected: string[] = [];
+    try {
+      const entries = await readdir(dir);
+      unexpected = entries.filter((e) => !allowSet.has(e));
+    } catch {
+      // A missing directory created nothing — trivially within the allowlist.
+    }
+    const passed = unexpected.length === 0;
+    return {
+      label: label ?? `${path.basename(dir)} holds only [${allowed.join(', ')}]`,
+      passed,
+      evidence: { dir, allowed: [...allowed], unexpected },
+      detail: passed ? undefined : `unexpected entries: ${unexpected.join(', ')}`,
+    };
+  };
+}
+
+/**
  * Oracle: the resolved directory holds NO crash-left `*.dorkos-bak-*` sibling —
  * proof the marketplace install/uninstall transaction cleaned up atomically
  * (`transaction.ts`, ADR-0304).

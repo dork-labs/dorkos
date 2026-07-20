@@ -469,7 +469,8 @@ describe('CreateAgentDialog', () => {
     await user.click(screen.getByTestId('create-button'));
 
     // The navigated session id carries the birth; the record's kickoff is the
-    // fenced generic hello for a design-your-own agent.
+    // fenced design-your-own INTERVIEW (not a generic hello) — it routes to the
+    // interview origin, so the message carries the write-your-SOUL directive.
     let navigatedSessionId: string | undefined;
     await waitFor(() => {
       const call = mockNavigate.mock.calls.at(-1)?.[0];
@@ -481,6 +482,7 @@ describe('CreateAgentDialog', () => {
     expect(record.path).toBe('/home/test/.dork/agents/scout');
     expect(record.fired).toBe(false);
     expect(record.kickoffMessage).toContain('<dork-kickoff>');
+    expect(record.kickoffMessage).toContain('.dork/SOUL.md');
   });
 
   it('onboarding (onCreated set): parks a birth without navigating, then the first session claims + fires it once', async () => {

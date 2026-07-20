@@ -164,6 +164,15 @@ export type EvalCaseMeta = z.infer<typeof EvalCaseMetaSchema>;
  * eval to pass.
  */
 export interface EvalCase extends EvalCaseMeta {
+  /**
+   * Optional sandbox seeding, run AFTER the fresh sandbox is created and BEFORE
+   * the server boots or any turn is driven. A case that needs pre-existing state
+   * on disk — e.g. the design-your-own interview needs a newborn agent scaffold
+   * (`.dork/agent.json` + a default `SOUL.md` with intact trait markers) already
+   * present in `projectCwd` so the agent has a soul to rewrite — installs it
+   * here. The default (undefined) leaves the empty sandbox the runner creates.
+   */
+  seed?: (sandbox: EvalSandbox) => Promise<void>;
   /** The outcome oracle(s) — ALL must pass. Asserts API/FS/stream state, never prose. */
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */
