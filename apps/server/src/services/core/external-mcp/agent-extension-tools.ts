@@ -84,9 +84,11 @@ export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolD
         name: z.string().describe('Extension name (kebab-case, e.g. my-dashboard-widget)'),
         description: z.string().optional().describe('Short description shown in settings UI'),
         template: z
-          .enum(['dashboard-card', 'command', 'settings-panel'])
+          .enum(['dashboard-card', 'right-panel-tab', 'command', 'settings-panel', 'data-provider'])
           .optional()
-          .describe('Starter template (default: dashboard-card)'),
+          .describe(
+            'Starter template (default: dashboard-card). right-panel-tab adds a tab to the contextual inspector; data-provider adds server-side API integration.'
+          ),
         scope: z
           .enum(['global', 'local'])
           .optional()

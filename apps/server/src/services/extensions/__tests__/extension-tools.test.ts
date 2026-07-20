@@ -435,6 +435,17 @@ describe('create_extension handler', () => {
     );
   });
 
+  it('supports right-panel-tab template', async () => {
+    const manager = createMockManager();
+    const handler = createCreateExtensionHandler(createDeps(manager));
+
+    await handler({ name: 'inspector', template: 'right-panel-tab' });
+
+    expect(manager.createExtension).toHaveBeenCalledWith(
+      expect.objectContaining({ template: 'right-panel-tab' })
+    );
+  });
+
   it('returns error when createExtension throws', async () => {
     const manager = createMockManager({
       createExtension: vi.fn(async () => {

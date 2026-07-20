@@ -279,19 +279,19 @@ A companion `get_ui_state` MCP tool lets agents query the current UI state witho
 
 ### UiCommand Actions
 
-| Action                                        | Effect                                                       |
-| --------------------------------------------- | ------------------------------------------------------------ |
-| `open_canvas`                                 | Opens the canvas panel with URL, markdown, or JSON content   |
-| `update_canvas`                               | Updates canvas content without toggling visibility           |
-| `close_canvas`                                | Closes the canvas panel                                      |
-| `open_panel` / `close_panel` / `toggle_panel` | Controls named panels (settings, pulse, relay, mesh, picker) |
-| `open_sidebar` / `close_sidebar`              | Controls sidebar visibility                                  |
-| `switch_sidebar_tab`                          | Switches sidebar to a named tab                              |
-| `show_toast`                                  | Shows a toast notification (success, error, info, warning)   |
-| `set_theme`                                   | Switches between light and dark theme                        |
-| `scroll_to_message`                           | Scrolls chat to a specific message ID                        |
-| `switch_agent`                                | Switches to a different agent by working directory           |
-| `open_command_palette`                        | Opens the command palette                                    |
+| Action                                        | Effect                                                                                       |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `open_canvas`                                 | Opens the canvas panel with URL, markdown, or JSON content                                   |
+| `update_canvas`                               | Updates canvas content without toggling visibility                                           |
+| `close_canvas`                                | Closes the canvas panel                                                                      |
+| `open_panel` / `close_panel` / `toggle_panel` | Controls named panels (settings, pulse, relay, mesh, picker)                                 |
+| `open_sidebar` / `close_sidebar`              | Controls sidebar visibility                                                                  |
+| `switch_sidebar_tab`                          | Switches the sidebar to a named tab (embedded Obsidian app only; a no-op on the web cockpit) |
+| `show_toast`                                  | Shows a toast notification (success, error, info, warning)                                   |
+| `set_theme`                                   | Switches between light and dark theme                                                        |
+| `scroll_to_message`                           | Scrolls chat to a specific message ID                                                        |
+| `switch_agent`                                | Switches to a different agent by working directory                                           |
+| `open_command_palette`                        | Opens the command palette                                                                    |
 
 ### Key Types
 

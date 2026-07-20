@@ -15,7 +15,12 @@ function toTitleCase(str: string): string {
 }
 
 /** Template type union for extension scaffolding. */
-export type ExtensionTemplate = 'dashboard-card' | 'command' | 'settings-panel' | 'data-provider';
+export type ExtensionTemplate =
+  | 'dashboard-card'
+  | 'right-panel-tab'
+  | 'command'
+  | 'settings-panel'
+  | 'data-provider';
 
 /** Generate the `extension.json` manifest content for a new extension. */
 export function generateManifest(
@@ -27,6 +32,9 @@ export function generateManifest(
   switch (template) {
     case 'dashboard-card':
       contributions['dashboard.sections'] = true;
+      break;
+    case 'right-panel-tab':
+      contributions['right-panel'] = true;
       break;
     case 'command':
       contributions['command-palette.items'] = true;
@@ -95,6 +103,8 @@ export function generateTemplate(
   switch (template) {
     case 'dashboard-card':
       return generateDashboardCardTemplate(name, description);
+    case 'right-panel-tab':
+      return generateRightPanelTabTemplate(name, description);
     case 'command':
       return generateCommandTemplate(name, description);
     case 'settings-panel':
@@ -222,6 +232,91 @@ export function activate(api: ExtensionAPI): void {
   // Register a section on the dashboard
   api.registerComponent('dashboard.sections', '${name}-section', ${pascalName}Section, {
     priority: 50,
+  });
+}
+`;
+}
+
+/**
+ * Right-panel tab template — adds a tab to the shell's right panel (the
+ * contextual inspector). Registers into the `right-panel` slot with a label and
+ * an inline-SVG tab icon.
+ *
+ * The icon is a locally-defined component because extensions can only import
+ * `react`, `react-dom`, and `@dorkos/extension-api` at runtime — `lucide-react`
+ * is not available to them, so an author supplies any `{ className }` component
+ * (here, an inline SVG). Omitting `icon` falls back to the host's puzzle-piece.
+ */
+function generateRightPanelTabTemplate(name: string, description: string): string {
+  const pascalName = toPascalCase(name);
+  const titleName = toTitleCase(name);
+  const desc = description || 'A right-panel tab extension.';
+  const contentDesc =
+    description || 'Extension content goes here. Edit this file and call reload_extensions.';
+
+  return `// ${name} — DorkOS Extension
+// ${desc}
+//
+// ExtensionAPI Quick Reference:
+//   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
+//     right-panel options: { priority?, label?, icon? } — label names the tab, icon is its
+//     tab-strip glyph (a { className } component; omit it for the default puzzle-piece)
+//   api.registerCommand(id, label, callback, options?)   — Register a command palette item
+//   api.notify(message, options?)                        — Show a toast notification
+//   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
+//   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
+//   api.subscribe(selector, callback)                    — Subscribe to state changes
+//
+// Available slots: dashboard.sections, command-palette.items, settings.tabs,
+//   sidebar.footer, dialog, right-panel
+
+import type { ExtensionAPI } from '@dorkos/extension-api';
+
+/** Tab-strip icon. The host renders it with a \`className\` for sizing; \`currentColor\` inherits the theme. */
+function ${pascalName}TabIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+    </svg>
+  );
+}
+
+/** Panel body rendered when this tab is active. */
+function ${pascalName}Panel() {
+  return (
+    <div style={{ padding: '16px' }}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 600 }}>
+        ${titleName}
+      </h3>
+      <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted-foreground)' }}>
+        ${contentDesc}
+      </p>
+    </div>
+  );
+}
+
+export function activate(api: ExtensionAPI): void {
+  // Add a tab to the shell's right panel (the contextual inspector).
+  //   label    — the tab's name (tooltip + accessibility); defaults to the id when omitted.
+  //   icon     — the tab-strip glyph; omit it and the strip shows a default puzzle-piece.
+  //   priority — lower sorts earlier (leftward) in the tab strip.
+  // The panel container owns the shared header (tab strip + close button), so this
+  // component only renders the tab body. Extension tabs can't scope themselves to a
+  // route or agent yet, so the tab stays available wherever the right panel shows —
+  // render a friendly empty state when there's nothing to show.
+  api.registerComponent('right-panel', '${name}-panel', ${pascalName}Panel, {
+    priority: 50,
+    label: '${titleName}',
+    icon: ${pascalName}TabIcon,
   });
 }
 `;

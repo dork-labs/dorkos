@@ -707,27 +707,27 @@ Unlike interactive tools (which pause the SDK to wait for user input), agent UI 
 
 The `control_ui` tool is exposed on the external MCP server (`/mcp`) and available to any connected agent. It accepts a `UiCommand` -- a discriminated union on `action` with 19 variants:
 
-| Action                 | Parameters                                                       | Effect                                                                     |
-| ---------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `open_panel`           | `panel`: `settings` / `tasks` / `relay` / `picker`               | Open a named panel                                                         |
-| `close_panel`          | `panel`: (same as above)                                         | Close a named panel                                                        |
-| `toggle_panel`         | `panel`: (same as above)                                         | Toggle a named panel                                                       |
-| `open_sidebar`         | (none)                                                           | Open the sidebar                                                           |
-| `close_sidebar`        | (none)                                                           | Close the sidebar                                                          |
-| `switch_sidebar_tab`   | `tab`: `sessions` / `agents`                                     | Switch sidebar tab (also opens sidebar)                                    |
-| `open_canvas`          | `content?`: `UiCanvasContent`, `preferredWidth?`: 20--80         | Open canvas panel with content                                             |
-| `update_canvas`        | `content`: `UiCanvasContent`                                     | Update canvas content without reopening                                    |
-| `close_canvas`         | (none)                                                           | Close the canvas panel                                                     |
-| `open_file`            | `sourcePath`: cwd-confined file path                             | Open a file as a new canvas document (viewer picked by mime type)          |
-| `open_diff`            | `sourcePath`: cwd-confined file path                             | Open a `diff` canvas doc of the agent's edits, with per-hunk accept/reject |
-| `open_terminal`        | `cwd?`: advisory working-directory hint                          | Open or focus the session's Terminal tab                                   |
-| `browser_navigate`     | `url`: external, `localhost`, or cwd-confined file path          | Open the page as a new embedded-browser canvas document                    |
-| `show_toast`           | `message`, `level?`: success/error/info/warning, `description?`  | Show a toast notification                                                  |
-| `set_theme`            | `theme`: `light` / `dark`                                        | Switch the UI theme                                                        |
-| `scroll_to_message`    | `messageId?` (omit for bottom)                                   | Scroll to a specific message                                               |
-| `switch_agent`         | `cwd`: working directory path                                    | Switch to a different agent                                                |
-| `open_command_palette` | (none)                                                           | Open the command palette                                                   |
-| `celebrate`            | `kind?`: celebration style, `emoji?`: glyph for the `emoji` kind | Throw a confetti/celebration effect                                        |
+| Action                 | Parameters                                                       | Effect                                                                            |
+| ---------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `open_panel`           | `panel`: `settings` / `tasks` / `relay` / `picker`               | Open a named panel                                                                |
+| `close_panel`          | `panel`: (same as above)                                         | Close a named panel                                                               |
+| `toggle_panel`         | `panel`: (same as above)                                         | Toggle a named panel                                                              |
+| `open_sidebar`         | (none)                                                           | Open the sidebar                                                                  |
+| `close_sidebar`        | (none)                                                           | Close the sidebar                                                                 |
+| `switch_sidebar_tab`   | `tab`: `overview` / `sessions` / `schedules` / `connections`     | Switch the sidebar tab — embedded (Obsidian) app only; a no-op on the web cockpit |
+| `open_canvas`          | `content?`: `UiCanvasContent`, `preferredWidth?`: 20--80         | Open canvas panel with content                                                    |
+| `update_canvas`        | `content`: `UiCanvasContent`                                     | Update canvas content without reopening                                           |
+| `close_canvas`         | (none)                                                           | Close the canvas panel                                                            |
+| `open_file`            | `sourcePath`: cwd-confined file path                             | Open a file as a new canvas document (viewer picked by mime type)                 |
+| `open_diff`            | `sourcePath`: cwd-confined file path                             | Open a `diff` canvas doc of the agent's edits, with per-hunk accept/reject        |
+| `open_terminal`        | `cwd?`: advisory working-directory hint                          | Open or focus the session's Terminal tab                                          |
+| `browser_navigate`     | `url`: external, `localhost`, or cwd-confined file path          | Open the page as a new embedded-browser canvas document                           |
+| `show_toast`           | `message`, `level?`: success/error/info/warning, `description?`  | Show a toast notification                                                         |
+| `set_theme`            | `theme`: `light` / `dark`                                        | Switch the UI theme                                                               |
+| `scroll_to_message`    | `messageId?` (omit for bottom)                                   | Scroll to a specific message                                                      |
+| `switch_agent`         | `cwd`: working directory path                                    | Switch to a different agent                                                       |
+| `open_command_palette` | (none)                                                           | Open the command palette                                                          |
+| `celebrate`            | `kind?`: celebration style, `emoji?`: glyph for the `emoji` kind | Throw a confetti/celebration effect                                               |
 
 Canvas content (`UiCanvasContent`) is discriminated on `type`:
 
