@@ -7,7 +7,6 @@ export { SessionSidebar } from './ui/SessionSidebar';
 export { SessionsView } from './ui/SessionsView';
 export { TasksView } from './ui/TasksView';
 export { SidebarFooterBar } from './ui/SidebarFooterBar';
-export { SidebarTabRow } from './ui/SidebarTabRow';
 
 // --- Contribution data ---
-export { SIDEBAR_FOOTER_BUTTONS, SIDEBAR_TAB_CONTRIBUTIONS } from './model/sidebar-contributions';
+export { SIDEBAR_FOOTER_BUTTONS } from './model/sidebar-contributions';

@@ -67,9 +67,7 @@ interface ExtensionAPI {
 \`\`\`typescript
 type ExtensionPointId =
   | 'sidebar.footer'
-  | 'sidebar.tabs'
   | 'dashboard.sections'
-  | 'header.actions'
   | 'command-palette.items'
   | 'dialog'
   | 'settings.tabs'

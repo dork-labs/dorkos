@@ -127,7 +127,7 @@ describe('PermissionPreviewSection', () => {
         {
           level: 'warning',
           type: 'slot',
-          description: 'Slot sidebar.tabs already has an entry with this id.',
+          description: 'Slot dashboard.sections already has an entry with this id.',
         },
       ],
     });

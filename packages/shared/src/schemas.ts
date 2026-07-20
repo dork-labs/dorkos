@@ -2846,11 +2846,12 @@ export const UiPanelIdSchema = z
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
 
 /**
- * The shape of a sidebar tab id: starts alphanumeric, then the characters that
- * appear in real registry contribution ids — alphanumerics, `_`, `.`, `:`
- * (the `extId:tabId` namespace separator), and `-`. Bounds the widened string
- * so an agent-issued command or a Shape manifest can't carry arbitrary garbage
- * into localStorage or `.dork/manifest.json`.
+ * The shape of a sidebar tab id: starts alphanumeric, then alphanumerics, `_`,
+ * `.`, `:`, and `-`. Bounds the widened string so an agent-issued command or a
+ * Shape manifest can't carry arbitrary garbage into localStorage or
+ * `.dork/manifest.json`. The `:` (a legacy `extId:tabId` namespace separator)
+ * stays accepted so existing Shape manifests that pinned a contributed tab keep
+ * validating, even though no host renders contributed sidebar tabs anymore.
  *
  * Keep in sync with the mirrors in `@dorkos/marketplace` `manifest-schema.ts`
  * (`sidebarTab`) and the server's `openapi-registry.ts` `LocalShapeLayoutSchema`.
@@ -2860,12 +2861,12 @@ const SIDEBAR_TAB_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/;
 /**
  * Identifies a tab in the sidebar navigation.
  *
- * The four built-ins (`overview`, `sessions`, `schedules`, `connections`) are
- * always present, but the sidebar tab strip is an extension point: an extension
- * can contribute its own tab via `sidebar.tabs`, registered under a namespaced
- * id like `linear-issues:linear-loop-sidebar`. So the honest type is a bounded
- * string, not a closed enum — a `switch_sidebar_tab` command or a Shape's
- * pinned tab may target any registered tab id, built-in or contributed.
+ * The sidebar tab strip is a legacy surface that now exists ONLY in the embedded
+ * (Obsidian) shell, where it carries the four built-ins (`overview`, `sessions`,
+ * `schedules`, `connections`). The standalone web cockpit retired the strip for
+ * the roster-plus-inspector layout, so a `switch_sidebar_tab` command is a no-op
+ * there. The type stays a bounded string (not a closed enum) so existing Shape
+ * manifests that pinned a tab — including old namespaced ids — keep validating.
  */
 export const UiSidebarTabSchema = z
   .string()
@@ -2873,9 +2874,10 @@ export const UiSidebarTabSchema = z
   .max(200)
   .regex(SIDEBAR_TAB_ID_PATTERN, 'Not a valid sidebar tab id')
   .describe(
-    "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') " +
-      "or an extension-contributed tab's contribution id " +
-      "('extId:tabId', e.g. 'linear-issues:linear-loop-sidebar')."
+    "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
+      "'connections'). The sidebar tab strip exists only in the embedded " +
+      '(Obsidian) app; on the web cockpit there is no strip, so switching a ' +
+      'sidebar tab is a no-op there.'
   )
   .openapi('UiSidebarTab');
 

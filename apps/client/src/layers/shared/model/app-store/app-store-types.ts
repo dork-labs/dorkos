@@ -33,18 +33,15 @@ export interface CoreSlice {
   setSidebarOpen: (open: boolean) => void;
 
   /**
-   * Active sidebar tab id. A built-in (`overview` | `sessions` | `schedules` |
-   * `connections`) or an extension-contributed tab id (`${extId}:${id}`). Stored
-   * as-is; `useSidebarTabs` reconciles an id whose tab isn't currently rendered
-   * (extension disabled/uninstalled, or a switch that raced its extension's
-   * registration) back to `overview`.
+   * Active tab of the embedded shell's legacy sidebar strip (`SessionSidebar`,
+   * Obsidian only — the web cockpit has no sidebar tab strip). One of the four
+   * built-ins (`overview` | `sessions` | `schedules` | `connections`); stored
+   * as-is so an embedded `switch_sidebar_tab` command or a Shape's pinned
+   * `sidebarTab` can drive it, and `SessionSidebar` resolves any other id back
+   * to `overview` on read.
    */
   sidebarActiveTab: string;
   setSidebarActiveTab: (tab: string) => void;
-
-  /** Which sidebar level is visible: top-level dashboard nav or agent-scoped session view. */
-  sidebarLevel: 'dashboard' | 'session';
-  setSidebarLevel: (level: 'dashboard' | 'session') => void;
 
   sessionId: string | null;
   setSessionId: (id: string | null) => void;

@@ -11,24 +11,33 @@
  */
 import type { UiCommand } from '@dorkos/shared/types';
 import type { ShapeLayout } from '@dorkos/shared/marketplace-schemas';
+import { getPlatform } from '@/layers/shared/lib';
 
 /**
  * Build the ordered UI commands that restore a Shape's chrome.
  *
- * Sidebar: when the Shape pins a tab AND wants the sidebar open, one
- * `switch_sidebar_tab` both selects the tab and opens the sidebar; otherwise an
- * explicit open/close command sets visibility without forcing a tab. Panels each
- * get an `open_panel`. `focusDashboardSections` is an ordering hint with no
- * client store today (spec Q1), so it maps to no command — the dashboard section
- * simply appears once its extension is enabled + remounted.
+ * Sidebar: a pinned tab is honored only where a sidebar tab strip exists — the
+ * embedded (Obsidian) shell. When `sidebarTabsAvailable` and the Shape pins a
+ * tab AND wants the sidebar open, one `switch_sidebar_tab` both selects the tab
+ * and opens the sidebar. Otherwise (web cockpit — no strip — or no pinned tab) an
+ * explicit open/close command sets visibility without forcing a tab, so the web
+ * shell still honors `sidebarOpen` even though the tab pin has no target there.
+ * Panels each get an `open_panel`. `focusDashboardSections` is an ordering hint
+ * with no client store today (spec Q1), so it maps to no command — the dashboard
+ * section simply appears once its extension is enabled + remounted.
  *
  * @param layout - The resolved chrome from `applied.layout`.
+ * @param sidebarTabsAvailable - Whether the host renders a sidebar tab strip a
+ *   pinned `sidebarTab` could select (true only on the embedded shell).
  * @returns The commands to dispatch, in order.
  */
-export function buildShapeLayoutCommands(layout: ShapeLayout): UiCommand[] {
+export function buildShapeLayoutCommands(
+  layout: ShapeLayout,
+  sidebarTabsAvailable: boolean
+): UiCommand[] {
   const commands: UiCommand[] = [];
 
-  if (layout.sidebarTab && layout.sidebarOpen) {
+  if (sidebarTabsAvailable && layout.sidebarTab && layout.sidebarOpen) {
     commands.push({ action: 'switch_sidebar_tab', tab: layout.sidebarTab });
   } else {
     commands.push({ action: layout.sidebarOpen ? 'open_sidebar' : 'close_sidebar' });
@@ -52,5 +61,7 @@ export function applyShapeLayout(
   layout: ShapeLayout,
   dispatch: (command: UiCommand) => void
 ): void {
-  for (const command of buildShapeLayoutCommands(layout)) dispatch(command);
+  // Only the embedded shell has a sidebar tab strip a pinned tab can target.
+  const sidebarTabsAvailable = getPlatform().isEmbedded;
+  for (const command of buildShapeLayoutCommands(layout, sidebarTabsAvailable)) dispatch(command);
 }

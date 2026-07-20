@@ -185,7 +185,7 @@ Available tools:
 Actions:
   open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
   open_sidebar / close_sidebar
-  switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
+  switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" } (embedded app only; the web cockpit has no sidebar tab strip, so this is a no-op there)
   open_canvas: { content: { type: "url"|"markdown"|"json"|"image"|"pdf"|"widget", ... }, preferredWidth?: 20-80 }
     image/pdf take a "src" (https url, data: URI, or local file path); widget takes a "definition" (a dorkos-ui widget document, see <gen_ui>)
   update_canvas / close_canvas

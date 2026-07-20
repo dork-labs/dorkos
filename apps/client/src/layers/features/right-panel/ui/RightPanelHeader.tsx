@@ -66,8 +66,8 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
           {contributions.map((contribution) => {
             const isActive = contribution.id === activeTab;
             // Extension-contributed tabs register no icon (the registry API can
-            // supply one but doesn't require it), so fall back to a puzzle-piece
-            // — matching SidebarTabRow. This is the single render choke point and
+            // supply one but doesn't require it), so fall back to a puzzle-piece.
+            // This is the single render choke point and
             // it lives OUTSIDE PanelErrorBoundary, so it must survive not just a
             // missing icon but a garbage one: an untyped JS extension can pass
             // `icon: 'foo'`, which `?? Puzzle` (nullish-only) would wave through

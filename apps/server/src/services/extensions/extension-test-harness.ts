@@ -22,8 +22,6 @@ const ALL_EXTENSION_SLOTS: ExtensionPointId[] = [
   'command-palette.items',
   'settings.tabs',
   'sidebar.footer',
-  'sidebar.tabs',
-  'header.actions',
   'dialog',
   'right-panel',
 ];

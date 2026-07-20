@@ -221,17 +221,18 @@ api.id: string
 
 ## UI Slots
 
-| Slot ID                 | Where it renders                                      |
-| ----------------------- | ----------------------------------------------------- |
-| `sidebar.footer`        | Bottom of the sidebar                                 |
-| `sidebar.tabs`          | Sidebar tab bar                                       |
-| `dashboard.sections`    | Dashboard main content area                           |
-| `header.actions`        | Header action buttons                                 |
-| `command-palette.items` | Command palette entries                               |
-| `dialog`                | Modal dialog layer                                    |
-| `settings.tabs`         | Settings dialog tabs                                  |
-| `session.canvas`        | Session canvas panel (deprecated — use `right-panel`) |
-| `right-panel`           | Shell-level right panel tabs                          |
+| Slot ID                 | Where it renders                                    |
+| ----------------------- | --------------------------------------------------- |
+| `sidebar.footer`        | Bottom of the sidebar                               |
+| `dashboard.sections`    | Dashboard main content area                         |
+| `command-palette.items` | Command palette entries                             |
+| `dialog`                | Modal dialog layer                                  |
+| `settings.tabs`         | Settings dialog tabs                                |
+| `right-panel`           | Shell-level right panel (contextual inspector) tabs |
+
+> The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
+> retired the sidebar tab strip. Contribute a contextual inspector tab via
+> `right-panel`, or a dashboard card via `dashboard.sections`, instead.
 
 ## TypeScript vs JavaScript
 
@@ -820,15 +821,15 @@ export default register;
 
 ## Reference Extension: Linear Loop
 
-The `apps/server/src/core-extensions/linear-issues/` directory contains a production-quality extension demonstrating the full extension API surface: server-side data providers, manifest-driven settings, dashboard sections, sidebar tabs, and command palette integration. It shows Loop-categorized Linear issues on the DorkOS dashboard and sidebar. Linear Loop is a default-off [core extension](#core-extensions) — it incubates here until `@dorkos/extension-api` is published and it migrates to the marketplace.
+The `apps/server/src/core-extensions/linear-issues/` directory contains a production-quality extension demonstrating the extension API surface: server-side data providers, manifest-driven settings, a dashboard section, and command palette integration. It shows Loop-categorized Linear issues on the DorkOS dashboard. Linear Loop is a default-off [core extension](#core-extensions) — it incubates here until `@dorkos/extension-api` is published and it migrates to the marketplace.
 
 ### Files
 
 ```
 apps/server/src/core-extensions/linear-issues/
-├── extension.json   # Manifest with secrets, settings (grouped), and multi-slot contributions
+├── extension.json   # Manifest with secrets, settings (grouped), and slot contributions
 ├── server.ts        # Data provider: Loop-aware queries, categorization, dynamic polling
-└── index.ts         # Client: dashboard section, sidebar tab, command palette item
+└── index.ts         # Client: dashboard section, command palette item
 ```
 
 ### What It Demonstrates
@@ -836,9 +837,9 @@ apps/server/src/core-extensions/linear-issues/
 **Manifest** (`extension.json`):
 
 - `serverCapabilities.secrets` with `group` and `placeholder` fields — the host auto-generates a grouped settings tab
-- `serverCapabilities.settings` declaring 7 typed settings (text, number, boolean, select) across two groups (Connection, Display)
-- `contributions` for both `dashboard.sections` and `sidebar.tabs`
-- Settings for toggling dashboard/sidebar visibility (`show_dashboard`, `show_sidebar`)
+- `serverCapabilities.settings` declaring typed settings (text, number, boolean, select) across two groups (Connection, Display)
+- `contributions` for `dashboard.sections`
+- A setting for toggling dashboard visibility (`show_dashboard`)
 
 **Server** (`server.ts`):
 
@@ -854,10 +855,9 @@ apps/server/src/core-extensions/linear-issues/
 
 - Dashboard section with Loop health badges and categorized issue sections
 - Three view modes: Loop Status (default), By Project, All Active
-- Sidebar tab with compact health grid and top "Needs Attention" items
 - Command palette item ("Quick Idea to Linear")
-- Settings-driven visibility: `show_dashboard` and `show_sidebar` toggles
-- Shared `useLoopData` hook for both dashboard and sidebar data fetching
+- Settings-driven visibility: the `show_dashboard` toggle
+- A `useLoopData` hook feeding the dashboard section
 
 To use it: enable "Linear Loop" under **Core extensions** in Settings > Extensions, then configure your Linear API key and team key in the extension's settings tab.
 

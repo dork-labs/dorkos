@@ -5,7 +5,7 @@
  * (`apps/client/src/layers/features/marketplace/` and
  * `apps/client/src/layers/widgets/marketplace/`) and is wired into the
  * router at `/marketplace`. Its sidebar entry is a HARDCODED `NavButton`
- * in `DashboardSidebar`, NOT a `sidebar.tabs` slot contribution — nothing
+ * in `DashboardSidebar`, NOT a registry slot contribution — nothing
  * about this extension's enabled state affects the host UI. That is why
  * the manifest declares `canDisable: false`: until Marketplace is rebuilt
  * as a real extension (DOR-122), a toggle would be a no-op lie, so the

@@ -2,6 +2,7 @@ import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorko
 import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 import type { PipContent } from '@/layers/shared/model';
+import { getPlatform } from './platform';
 import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
 
 /**
@@ -169,8 +170,16 @@ export function executeUiCommand(
       store.setSidebarOpen(false);
       break;
     case 'switch_sidebar_tab':
-      store.setSidebarActiveTab(command.tab);
-      store.setSidebarOpen(true);
+      // The sidebar tab strip lives ONLY in the embedded (Obsidian) shell; the
+      // web cockpit retired it for the persistent roster plus the right-panel
+      // inspector. Off the embedded host there is no strip to drive, so this is a
+      // deliberate, documented no-op rather than a command that silently writes
+      // state no visible surface reads (the get_ui_state/control_ui tool docs and
+      // the web ui-state snapshot are honest about this).
+      if (getPlatform().isEmbedded) {
+        store.setSidebarActiveTab(command.tab);
+        store.setSidebarOpen(true);
+      }
       break;
 
     // --- Canvas (multi-document) ---

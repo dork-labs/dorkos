@@ -73,10 +73,12 @@ export const useAppStore = create<AppState>()(
           set({ sidebarOpen: open });
         },
 
-        // Persist whatever tab id was active — built-in or extension-contributed
-        // (`${extId}:${id}`). A stored id whose tab no longer exists is
-        // reconciled to 'overview' by useSidebarTabs, not here, so an extension
-        // tab survives a reload while its extension is still installed.
+        // The active tab of the embedded shell's legacy sidebar strip
+        // (`SessionSidebar`, Obsidian only). Persisted so the choice survives a
+        // reload and so an embedded `switch_sidebar_tab` command / a Shape's
+        // pinned `sidebarTab` can still drive it. The web cockpit has no sidebar
+        // tab strip, so it never reads this. `SessionSidebar` resolves any id
+        // that isn't one of its four built-ins back to 'overview' on read.
         sidebarActiveTab: (() => {
           try {
             return localStorage.getItem('dorkos-sidebar-active-tab') ?? 'overview';
@@ -89,10 +91,6 @@ export const useAppStore = create<AppState>()(
           } catch {}
           set({ sidebarActiveTab: tab });
         },
-
-        // Not persisted — always starts at dashboard level
-        sidebarLevel: 'dashboard' as const,
-        setSidebarLevel: (level) => set({ sidebarLevel: level }),
 
         // ── Session & navigation ───────────────────────────────────────────
         sessionId: null,

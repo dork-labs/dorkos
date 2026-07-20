@@ -6,7 +6,7 @@ import {
   PALETTE_QUICK_ACTIONS,
   PALETTE_DEV_ACTIONS,
 } from '@/layers/features/command-palette';
-import { SIDEBAR_FOOTER_BUTTONS, SIDEBAR_TAB_CONTRIBUTIONS } from '@/layers/features/session-list';
+import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
 import { DASHBOARD_SECTION_CONTRIBUTIONS } from '@/layers/widgets/dashboard';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
 
@@ -35,11 +35,6 @@ export function initializeExtensions(): void {
   // Sidebar footer buttons
   for (const button of SIDEBAR_FOOTER_BUTTONS) {
     register('sidebar.footer', button);
-  }
-
-  // Sidebar tabs
-  for (const tab of SIDEBAR_TAB_CONTRIBUTIONS) {
-    register('sidebar.tabs', tab);
   }
 
   // Dashboard sections

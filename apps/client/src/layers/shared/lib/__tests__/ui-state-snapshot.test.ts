@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { UiState } from '@dorkos/shared/types';
+import { setPlatformAdapter } from '../platform';
 import {
   buildUiStateSnapshot,
   prepareUiStateForSend,
@@ -21,8 +22,19 @@ const baseSource: UiStateSource = {
   sidebarActiveTab: 'overview',
 };
 
+/** Point `getPlatform()` at an embedded (Obsidian) or standalone-web host. */
+function setEmbedded(isEmbedded: boolean) {
+  setPlatformAdapter({ isEmbedded, openFile: async () => {} });
+}
+
 describe('buildUiStateSnapshot', () => {
-  it('maps app-store fields into a UiState, including picker', () => {
+  afterEach(() => {
+    // Restore the default standalone-web adapter (isEmbedded: false).
+    setEmbedded(false);
+  });
+
+  it('maps app-store fields into a UiState, reporting the sidebar tab on the embedded host', () => {
+    setEmbedded(true);
     const snapshot = buildUiStateSnapshot(
       {
         ...baseSource,
@@ -42,6 +54,15 @@ describe('buildUiStateSnapshot', () => {
       sidebar: { open: true, activeTab: 'connections' },
       agent: { id: null, cwd: '/projects/app' },
     });
+  });
+
+  it('reports sidebar.activeTab as null on the web cockpit (no sidebar tab strip)', () => {
+    setEmbedded(false);
+    const snapshot = buildUiStateSnapshot(
+      { ...baseSource, sidebarActiveTab: 'connections' },
+      '/projects/app'
+    );
+    expect(snapshot.sidebar).toEqual({ open: true, activeTab: null });
   });
 
   it('reports null contentType when the canvas has no content, and null cwd when unknown', () => {

@@ -5,9 +5,7 @@ import type { ExtensionEventsAPI } from './extension-events.js';
 /** Slot identifiers matching the Phase 2 registry. */
 export type ExtensionPointId =
   | 'sidebar.footer'
-  | 'sidebar.tabs'
   | 'dashboard.sections'
-  | 'header.actions'
   | 'command-palette.items'
   | 'dialog'
   | 'settings.tabs'
@@ -36,8 +34,8 @@ export interface ExtensionAPI {
    * @param component - The React component to render.
    * @param options - `priority` orders the contribution (lower = earlier).
    *   `label` is the human name shown where the slot has a label or tab (e.g.
-   *   the sidebar tab strip); it defaults to the namespaced id when omitted, so
-   *   set it for any tabbed or labelled slot. `icon` is the tab-strip icon for
+   *   the right-panel tab strip); it defaults to the namespaced id when omitted,
+   *   so set it for any tabbed or labelled slot. `icon` is the tab-strip icon for
    *   slots that render one (currently `right-panel`); it is any component the
    *   host renders with a `className` for sizing — a `lucide-react` icon
    *   satisfies this. Omit it and the host falls back to a default puzzle-piece.

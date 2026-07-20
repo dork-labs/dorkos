@@ -19,11 +19,13 @@ describe('CoreSlice — sidebarActiveTab', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe('connections');
   });
 
-  it('tolerates and persists an arbitrary extension-contributed tab id', () => {
-    const contributedId = 'linear-issues:linear-loop-sidebar';
-    useAppStore.getState().setSidebarActiveTab(contributedId);
-    expect(useAppStore.getState().sidebarActiveTab).toBe(contributedId);
-    expect(localStorage.getItem(STORAGE_KEY)).toBe(contributedId);
+  it('tolerates and persists an arbitrary (legacy namespaced) tab id', () => {
+    // The store keeps whatever it is given; SessionSidebar resolves a non-built-in
+    // id back to overview on read, so a leftover namespaced id survives storage.
+    const legacyId = 'linear-issues:linear-loop-sidebar';
+    useAppStore.getState().setSidebarActiveTab(legacyId);
+    expect(useAppStore.getState().sidebarActiveTab).toBe(legacyId);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(legacyId);
   });
 
   it('resetPreferences returns the active tab to overview and clears storage', () => {

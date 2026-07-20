@@ -9,7 +9,7 @@ interface SidebarNavigationResult {
   handleNewSession: () => void;
   /** Navigate to an existing session by ID. */
   handleSessionClick: (sessionId: string) => void;
-  /** Navigate back to the dashboard. */
+  /** Dismiss the sidebar (closes the mobile/overlay Sheet; a no-op on desktop). */
   handleDashboard: () => void;
 }
 
@@ -55,12 +55,13 @@ export function useSidebarNavigation(): SidebarNavigationResult {
     [setActiveSession, closeMobileSidebar]
   );
 
-  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
-
+  // The embedded shell's back-chevron only dismisses the overlay/mobile Sheet;
+  // there is no web "dashboard level" to return to anymore (the roster is always
+  // present in the web shell, and this hook only ever runs inside SessionSidebar,
+  // the Obsidian-only chrome).
   const handleDashboard = useCallback(() => {
-    setSidebarLevel('dashboard');
     closeMobileSidebar();
-  }, [setSidebarLevel, closeMobileSidebar]);
+  }, [closeMobileSidebar]);
 
   // Cmd/Ctrl+Shift+N → new session (global, works regardless of sidebar state)
   useEffect(() => {

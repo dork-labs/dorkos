@@ -32,8 +32,6 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
         'command-palette.items': 0,
         'settings.tabs': 0,
         'sidebar.footer': 0,
-        'sidebar.tabs': 0,
-        'header.actions': 0,
         dialog: 0,
         'right-panel': 0,
       },
@@ -83,9 +81,7 @@ describe('get_extension_api handler (Phase 2 constraints)', () => {
 
     const expectedSlots = [
       'sidebar.footer',
-      'sidebar.tabs',
       'dashboard.sections',
-      'header.actions',
       'command-palette.items',
       'dialog',
       'settings.tabs',
@@ -191,8 +187,6 @@ describe('test_extension handler (Phase 2 error phases)', () => {
           'command-palette.items': 0,
           'settings.tabs': 0,
           'sidebar.footer': 0,
-          'sidebar.tabs': 0,
-          'header.actions': 0,
           dialog: 0,
           'right-panel': 0,
         },

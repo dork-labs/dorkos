@@ -23,7 +23,7 @@ import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
 import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
 import { TelemetryConsentBanner } from '@/layers/features/telemetry-consent';
-import { SessionSidebar, SidebarFooterBar } from '@/layers/features/session-list';
+import { SidebarFooterBar } from '@/layers/features/session-list';
 import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
 import { useOnboarding, OnboardingFlow, ProgressCard } from '@/layers/features/onboarding';
 import {
@@ -89,26 +89,17 @@ interface HeaderSlot {
  * A registered `sidebar.body` contribution whose `visibleWhen(pathname)` matches
  * takes over the body wholesale (highest priority wins) — this is how the
  * marketplace facet panel replaces the roster on `/marketplace`. When nothing
- * matches, the built-in behavior applies: the Dashboard sidebar is the default
- * and persists across all routes; users drill into the Session sidebar via the
- * active agent's "Sessions" action and return via the back button. Navigating
- * away from `/session` auto-resets to the dashboard level. The surrounding
- * chrome (trigger, footer, rail) never swaps — only this body does.
+ * matches, the built-in behavior applies: the Dashboard sidebar (the agent
+ * roster) is the default and persists across every route, including `/session`.
+ * The right-panel inspector — not a sidebar drill-in — now carries per-session
+ * context, so the roster never gets swapped out from under the operator. The
+ * surrounding chrome (trigger, footer, rail) never swaps — only this body does.
  */
 function useSidebarSlot(): SidebarSlot {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const sidebarLevel = useAppStore((s) => s.sidebarLevel);
-  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
   // Contributed body takeovers, already sorted ascending by priority — so the
   // first route match is the highest-priority winner.
   const bodyContributions = useSlotContributions('sidebar.body');
-
-  // Auto-reset to dashboard when leaving the session route
-  useEffect(() => {
-    if (pathname !== '/session' && sidebarLevel === 'session') {
-      setSidebarLevel('dashboard');
-    }
-  }, [pathname, sidebarLevel, setSidebarLevel]);
 
   // A contributed body whose route predicate matches wins the sidebar. It drills
   // in from the right like the session level; backing out to the roster slides
@@ -138,9 +129,6 @@ function useSidebarSlot(): SidebarSlot {
     };
   }
 
-  if (pathname === '/session' && sidebarLevel === 'session') {
-    return { key: 'session', body: <SessionSidebar />, direction: 1 };
-  }
   return { key: 'dashboard', body: <DashboardSidebar />, direction: -1 };
 }
 
@@ -160,7 +148,7 @@ function useHeaderSlot({ agentName }: { agentName: string | undefined }): Header
     case '/agents': {
       const viewParam = new URLSearchParams(searchStr).get('view');
       const validViews = ['list', 'topology', 'denied', 'access'] as const;
-      const viewMode = validViews.includes(viewParam as any)
+      const viewMode = validViews.includes(viewParam as (typeof validViews)[number])
         ? (viewParam as (typeof validViews)[number])
         : 'list';
       return {

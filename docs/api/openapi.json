@@ -2484,7 +2484,7 @@
         "minLength": 1,
         "maxLength": 200,
         "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
-        "description": "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') or an extension-contributed tab's contribution id ('extId:tabId', e.g. 'linear-issues:linear-loop-sidebar')."
+        "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; on the web cockpit there is no strip, so switching a sidebar tab is a no-op there."
       },
       "UiCanvasContent": {
         "oneOf": [
@@ -4432,7 +4432,7 @@
                     "minLength": 1,
                     "maxLength": 200,
                     "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
-                    "description": "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') or an extension-contributed tab's contribution id ('extId:tabId')."
+                    "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; on the web cockpit switching a sidebar tab is a no-op."
                   },
                   "openPanels": {
                     "type": "array",

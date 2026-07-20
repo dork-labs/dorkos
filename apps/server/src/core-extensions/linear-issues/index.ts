@@ -38,7 +38,6 @@ interface LoopData {
 
 interface Settings {
   showDashboard: boolean;
-  showSidebar: boolean;
   showCompleted: boolean;
   viewMode: 'loop' | 'project' | 'all';
 }
@@ -79,7 +78,6 @@ function resolveApiBaseUrl(): string {
 
 const DEFAULT_SETTINGS: Settings = {
   showDashboard: true,
-  showSidebar: true,
   showCompleted: false,
   viewMode: 'loop',
 };
@@ -109,7 +107,6 @@ function parseSettings(items: Array<{ key: string; value: unknown }>): Settings 
   const m = new Map(items.map((i) => [i.key, i.value]));
   return {
     showDashboard: (m.get('show_dashboard') as boolean) ?? true,
-    showSidebar: (m.get('show_sidebar') as boolean) ?? true,
     showCompleted: (m.get('show_completed') as boolean) ?? false,
     viewMode: (m.get('view_mode') as Settings['viewMode']) ?? 'loop',
   };
@@ -164,7 +161,12 @@ function useLoopData(): { data: LoopData | null; settings: Settings; loading: bo
 
 /**
  * Linear Loop extension — shows Loop-categorized issue status on the DorkOS
- * dashboard and sidebar. Settings tab is auto-generated from the manifest.
+ * dashboard. Settings tab is auto-generated from the manifest.
+ *
+ * The dashboard section is the live surface. The registry-backed `sidebar.tabs`
+ * slot this once also contributed to was retired when the web cockpit dropped
+ * the sidebar tab strip; the modern place for a contextual companion panel is a
+ * `right-panel` contribution (a contextual inspector tab), not the sidebar.
  */
 export function activate(api: ExtensionAPI): () => void {
   const cleanups: Array<() => void> = [];
@@ -172,13 +174,6 @@ export function activate(api: ExtensionAPI): () => void {
   cleanups.push(
     api.registerComponent('dashboard.sections', 'linear-loop-dashboard', LoopDashboard, {
       priority: 6,
-    })
-  );
-
-  cleanups.push(
-    api.registerComponent('sidebar.tabs', 'linear-loop-sidebar', LoopSidebar, {
-      priority: 5,
-      label: 'Linear',
     })
   );
 
@@ -216,33 +211,6 @@ function LoopDashboard() {
           ? h(ProjectView, { data })
           : h(AllView, { data })
     )
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar Tab
-// ---------------------------------------------------------------------------
-
-function LoopSidebar() {
-  const { data, settings, loading } = useLoopData();
-
-  if (!settings.showSidebar) return null;
-  if (loading) return h('div', { style: s.sidebar }, 'Loading...');
-  if (!data) return h('div', { style: s.sidebar }, 'API key not configured');
-
-  const attention = [...data.categories.needsInput, ...data.categories.triage].slice(0, 8);
-
-  return h(
-    'div',
-    { style: s.sidebar },
-    h(HealthGrid, { health: data.health }),
-    attention.length > 0 &&
-      h(
-        'div',
-        { style: { marginTop: 10 } },
-        h('div', { style: s.sectionLabel }, 'Needs Attention'),
-        attention.map((issue) => h(IssueRow, { key: issue.id, issue, compact: true }))
-      )
   );
 }
 
@@ -327,26 +295,6 @@ function HealthBadges({ health }: { health: LoopHealth }) {
   );
 }
 
-function HealthGrid({ health }: { health: LoopHealth }) {
-  return h(
-    'div',
-    { style: s.grid },
-    ...HEALTH_BADGES.map(({ key, label, color }) => {
-      const count = health[key];
-      return h(
-        'div',
-        { key, style: s.gridItem },
-        h(
-          'span',
-          { style: { ...s.gridCount, color: count > 0 ? color : 'var(--muted-foreground)' } },
-          String(count)
-        ),
-        h('span', { style: s.gridLabel }, label)
-      );
-    })
-  );
-}
-
 function CategorySection({
   label,
   issues,
@@ -377,14 +325,14 @@ function CategorySection({
   );
 }
 
-function IssueRow({ issue, compact }: { issue: LinearIssue; compact?: boolean }) {
+function IssueRow({ issue }: { issue: LinearIssue }) {
   return h(
     'div',
-    { style: compact ? s.issueRowCompact : s.issueRow },
+    { style: s.issueRow },
     h('span', { style: { ...s.statusDot, backgroundColor: issue.state?.color ?? '#888' } }),
     h('span', { style: s.identifier }, issue.identifier),
     h('span', { style: s.title }, issue.title),
-    !compact && h('span', { style: s.team }, issue.team?.key)
+    h('span', { style: s.team }, issue.team?.key)
   );
 }
 
@@ -399,7 +347,6 @@ const s: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border)',
     marginBottom: 12,
   },
-  sidebar: { padding: 12, fontSize: 13 },
   heading: {
     margin: '0 0 12px',
     fontSize: 12,
@@ -418,19 +365,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 11,
     border: '1px solid var(--border)',
   },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 8,
-  },
-  gridItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 2,
-  },
-  gridCount: { fontSize: 18, fontWeight: 600, lineHeight: 1 },
-  gridLabel: { fontSize: 10, color: 'var(--muted-foreground)' },
   sectionLabel: {
     fontSize: 11,
     fontWeight: 600,
@@ -442,7 +376,6 @@ const s: Record<string, React.CSSProperties> = {
   },
   list: { display: 'flex', flexDirection: 'column', gap: 4 },
   issueRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 },
-  issueRowCompact: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 },
   statusDot: { width: 8, height: 8, borderRadius: '50%', flexShrink: 0 },
   identifier: {
     fontFamily: 'var(--font-mono)',

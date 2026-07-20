@@ -305,9 +305,7 @@ const extensionDeps: ExtensionAPIDeps = {
   appStore: useAppStore as unknown as ExtensionAPIDeps['appStore'],
   availableSlots: new Set([
     'sidebar.footer',
-    'sidebar.tabs',
     'dashboard.sections',
-    'header.actions',
     'command-palette.items',
     'dialog',
     'settings.tabs',

@@ -241,7 +241,8 @@ describe('get_ui_state handler', () => {
     expect(parsed).toEqual({
       canvas: { open: false, contentType: null },
       panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'overview' },
+      // Default sidebar tab is null — the tab strip is an embedded-only surface.
+      sidebar: { open: true, activeTab: null },
       agent: { id: null, cwd: null },
     });
   });
@@ -269,7 +270,10 @@ describe('get_ui_state handler', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.canvas.open).toBe(false);
     expect(parsed.sidebar.open).toBe(true);
-    expect(parsed.sidebar.activeTab).toBe('overview');
+    // The default sidebar tab is null: the sidebar tab strip exists only in the
+    // embedded (Obsidian) shell, so before any client reports there is no
+    // addressable tab to fabricate.
+    expect(parsed.sidebar.activeTab).toBeNull();
   });
 });
 

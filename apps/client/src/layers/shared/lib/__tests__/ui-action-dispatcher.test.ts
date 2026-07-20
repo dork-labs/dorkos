@@ -1,13 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   executeUiCommand,
   type DispatcherContext,
   type DispatcherStore,
 } from '../ui-action-dispatcher';
+import { setPlatformAdapter } from '../platform';
 
 vi.mock('../celebrations/celebration-effects', () => ({
   fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
 }));
+
+/** Point `getPlatform()` at an embedded (Obsidian) or standalone-web host. */
+function setEmbedded(isEmbedded: boolean) {
+  setPlatformAdapter({ isEmbedded, openFile: async () => {} });
+}
 
 // --- Mock store factory ---
 
@@ -90,6 +96,11 @@ describe('executeUiCommand — panel commands', () => {
 // --- Sidebar commands ---
 
 describe('executeUiCommand — sidebar commands', () => {
+  afterEach(() => {
+    // Restore the default standalone-web adapter (isEmbedded: false).
+    setEmbedded(false);
+  });
+
   it('open_sidebar calls setSidebarOpen(true)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_sidebar' }, 'agent');
@@ -102,29 +113,28 @@ describe('executeUiCommand — sidebar commands', () => {
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(false);
   });
 
-  it('switch_sidebar_tab sets the tab and opens the sidebar', () => {
+  it('switch_sidebar_tab sets the tab and opens the sidebar on the embedded host', () => {
+    setEmbedded(true);
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'sessions' }, 'agent');
     expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('sessions');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
-  it('switch_sidebar_tab works with connections tab', () => {
+  it('switch_sidebar_tab works with the connections tab on the embedded host', () => {
+    setEmbedded(true);
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' }, 'agent');
     expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('connections');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
-  it('switch_sidebar_tab activates an extension-contributed tab id', () => {
+  it('switch_sidebar_tab is a no-op on the web cockpit (no sidebar tab strip)', () => {
+    setEmbedded(false);
     const ctx = makeMockCtx();
-    executeUiCommand(
-      ctx,
-      { action: 'switch_sidebar_tab', tab: 'linear-issues:linear-loop-sidebar' },
-      'agent'
-    );
-    expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('linear-issues:linear-loop-sidebar');
-    expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
+    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' }, 'agent');
+    expect(ctx.store.setSidebarActiveTab).not.toHaveBeenCalled();
+    expect(ctx.store.setSidebarOpen).not.toHaveBeenCalled();
   });
 });
 

@@ -41,9 +41,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
     },
     availableSlots: new Set([
       'dashboard.sections',
-      'sidebar.tabs',
       'sidebar.footer',
-      'header.actions',
       'command-palette.items',
       'dialog',
       'settings.tabs',
@@ -125,11 +123,11 @@ describe('createExtensionAPI', () => {
       expect(contribution.priority).toBe(10);
     });
 
-    it('uses the label option for a sidebar tab, defaulting to the namespaced id', () => {
-      const { api } = createExtensionAPI('linear-issues', deps);
+    it('uses the label option for a labelled slot, defaulting to the namespaced id', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
 
-      api.registerComponent('sidebar.tabs', 'loop', () => null, { label: 'Linear' });
-      api.registerComponent('sidebar.tabs', 'unlabelled', () => null);
+      api.registerComponent('sidebar.footer', 'labelled', () => null, { label: 'Labelled' });
+      api.registerComponent('sidebar.footer', 'unlabelled', () => null);
 
       const [, labelled] = vi.mocked(deps.registry.register).mock.calls[0] as [
         string,
@@ -139,10 +137,10 @@ describe('createExtensionAPI', () => {
         string,
         Record<string, unknown>,
       ];
-      expect(labelled.label).toBe('Linear');
-      // No icon is carried for extension tabs — the strip supplies a default.
+      expect(labelled.label).toBe('Labelled');
+      // No icon is carried for extension-registered footer buttons.
       expect(labelled.icon).toBeUndefined();
-      expect(unlabelled.label).toBe('linear-issues:unlabelled');
+      expect(unlabelled.label).toBe('my-ext:unlabelled');
     });
 
     it('threads an icon option into a right-panel contribution', () => {
@@ -587,7 +585,7 @@ describe('createExtensionAPI', () => {
     it('returns false for slots not in the available set', () => {
       deps = makeDeps({ availableSlots: new Set(['dashboard.sections'] as const) });
       const { api } = createExtensionAPI('my-ext', deps);
-      expect(api.isSlotAvailable('sidebar.tabs')).toBe(false);
+      expect(api.isSlotAvailable('right-panel')).toBe(false);
     });
   });
 

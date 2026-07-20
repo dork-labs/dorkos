@@ -21,7 +21,7 @@ interface SidebarBodyErrorBoundaryState {
  * consumer inherits it: a failing takeover degrades to a small inline message
  * inside an otherwise fully working shell. It resets when the winning
  * contribution changes, so navigating away and back re-attempts the render.
- * Mirrors `SidebarTabErrorBoundary` / `PanelErrorBoundary` on the sibling slots.
+ * Mirrors `PanelErrorBoundary` on the sibling slots.
  */
 export class SidebarBodyErrorBoundary extends Component<
   SidebarBodyErrorBoundaryProps,
