@@ -19,7 +19,6 @@ import { Kbd } from '@/layers/shared/ui/kbd';
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
 import { PipHost } from '@/layers/features/pip-panel';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
-import { useRightPanelShortcut, useAgentProfileShortcut } from '@/layers/features/right-panel';
 
 interface AppProps {
   /** Optional transform applied to message content before sending to server */
@@ -64,9 +63,11 @@ export function App({ transformContent }: AppProps) {
     tasksBadgeCount,
   });
 
+  // The embed never renders the right panel, so its shortcut hooks
+  // (useRightPanelShortcut / useAgentProfileShortcut) stay in AppShell only —
+  // mounting them here would preventDefault Cmd+. / Cmd+Shift+A at the document
+  // level and steal those chords from the Obsidian host for no effect.
   useShortcutsPanel();
-  useRightPanelShortcut();
-  useAgentProfileShortcut();
 
   // Escape key closes overlay sidebar (scoped to container)
   useEffect(() => {

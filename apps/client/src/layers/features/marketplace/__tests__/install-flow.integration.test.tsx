@@ -36,6 +36,7 @@ import type {
   MarketplacePackageDetail,
   PermissionPreview,
 } from '@dorkos/shared/marketplace-schemas';
+import { humanizePackageName } from '@/layers/shared/lib';
 import {
   useMarketplacePackages,
   useMarketplacePackage,
@@ -223,6 +224,7 @@ beforeAll(() => {
 // for plugins/skill-packs/adapters/shapes. Agent packages leave for the
 // creation flow (covered by its own test below), so this flow uses a plugin.
 const PKG: AggregatedPackage = {
+  // No `displayName`, so every surface renders the humanized slug (below).
   name: '@dorkos/pr-linter',
   source: 'https://github.com/dorkos/pr-linter.git',
   description: 'Automated PR linting plugin',
@@ -308,13 +310,15 @@ describe('Marketplace install flow integration', () => {
     const cards = await screen.findAllByTestId(`package-card-${PKG.name}`);
     const card = cards[0];
     expect(card).toBeInTheDocument();
-    expect(within(card).getByText(PKG.name)).toBeInTheDocument();
+    expect(within(card).getByText(humanizePackageName(PKG.name))).toBeInTheDocument();
 
     // 2. Click the card body → detail sheet opens via the URL (?pkg=<name>).
     await user.click(card);
 
     // Detail sheet portal mounts the package title inside a Radix dialog.
-    const sheetTitle = await screen.findByRole('heading', { name: PKG.name });
+    const sheetTitle = await screen.findByRole('heading', {
+      name: humanizePackageName(PKG.name),
+    });
     expect(sheetTitle).toBeInTheDocument();
 
     // 3. Click "Install" inside the detail sheet → install confirmation
@@ -326,7 +330,7 @@ describe('Marketplace install flow integration', () => {
 
     // 4. Confirmation dialog renders with the "Install <name>?" title.
     const confirmHeading = await screen.findByRole('heading', {
-      name: new RegExp(`install ${PKG.name}\\?`, 'i'),
+      name: new RegExp(`install ${humanizePackageName(PKG.name)}\\?`, 'i'),
     });
     expect(confirmHeading).toBeInTheDocument();
 
@@ -354,7 +358,9 @@ describe('Marketplace install flow integration', () => {
 
     expect(useMarketplaceStore.getState().installConfirmPackage?.name).toBe(PKG.name);
     // The detail drawer must NOT have opened — its title heading is absent.
-    expect(screen.queryByRole('heading', { name: PKG.name })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: humanizePackageName(PKG.name) })
+    ).not.toBeInTheDocument();
 
     // Confirm the install mutation still wires through from the dialog.
     const dialog = await screen.findByRole('dialog');

@@ -1,21 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { humanizeAgentName, isSingleEmoji } from '../humanize-name';
+import { humanizePackageName, packageDisplayLabel, isSingleEmoji } from '../humanize-name';
 
-describe('humanizeAgentName', () => {
+describe('humanizePackageName', () => {
   it('strips a leading @scope/ and title-cases', () => {
-    expect(humanizeAgentName('@dorkos/code-reviewer')).toBe('Code Reviewer');
+    expect(humanizePackageName('@dorkos/code-reviewer')).toBe('Code Reviewer');
   });
 
   it('humanizes a bare kebab slug', () => {
-    expect(humanizeAgentName('eslint-plugin')).toBe('Eslint Plugin');
+    expect(humanizePackageName('eslint-plugin')).toBe('Eslint Plugin');
   });
 
   it('treats underscores as word breaks', () => {
-    expect(humanizeAgentName('linear_keeper')).toBe('Linear Keeper');
+    expect(humanizePackageName('linear_keeper')).toBe('Linear Keeper');
   });
 
   it('drops any remaining path segment', () => {
-    expect(humanizeAgentName('org/repo/my-agent')).toBe('My Agent');
+    expect(humanizePackageName('org/repo/my-agent')).toBe('My Agent');
+  });
+});
+
+describe('packageDisplayLabel', () => {
+  it('prefers the author-supplied displayName', () => {
+    expect(packageDisplayLabel({ name: 'security-scanner', displayName: 'PR Guardian' })).toBe(
+      'PR Guardian'
+    );
+  });
+
+  it('humanizes the slug when no displayName is present', () => {
+    expect(packageDisplayLabel({ name: '@dorkos/code-reviewer' })).toBe('Code Reviewer');
   });
 });
 

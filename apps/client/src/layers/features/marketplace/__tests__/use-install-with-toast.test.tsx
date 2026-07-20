@@ -90,7 +90,7 @@ describe('useInstallWithToast', () => {
       });
 
       expect(mockLoading).toHaveBeenCalledTimes(1);
-      expect(mockLoading).toHaveBeenCalledWith('Installing @dorkos/code-reviewer…');
+      expect(mockLoading).toHaveBeenCalledWith('Installing Code Reviewer…');
       expect(fakes.mutate).toHaveBeenCalledTimes(1);
       expect(fakes.mutate.mock.calls[0][0]).toEqual({ name: '@dorkos/code-reviewer' });
     });
@@ -114,7 +114,7 @@ describe('useInstallWithToast', () => {
       });
 
       expect(mockSuccess).toHaveBeenCalledTimes(1);
-      expect(mockSuccess).toHaveBeenCalledWith('Installed @dorkos/code-reviewer', {
+      expect(mockSuccess).toHaveBeenCalledWith('Installed Code Reviewer', {
         id: 'toast-id-abc',
       });
       // Error toast never fires.
@@ -175,8 +175,8 @@ describe('useInstallWithToast', () => {
         returned = await result.current.mutateAsync({ name: '@dorkos/code-reviewer' });
       });
 
-      expect(mockLoading).toHaveBeenCalledWith('Installing @dorkos/code-reviewer…');
-      expect(mockSuccess).toHaveBeenCalledWith('Installed @dorkos/code-reviewer', {
+      expect(mockLoading).toHaveBeenCalledWith('Installing Code Reviewer…');
+      expect(mockSuccess).toHaveBeenCalledWith('Installed Code Reviewer', {
         id: 'toast-id-abc',
       });
       expect(returned).toEqual({ success: true, packagePath: '/tmp/x' });

@@ -3,6 +3,7 @@ import { Trash2, RefreshCw, FolderOpen, Bot } from 'lucide-react';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { Badge, Button } from '@/layers/shared/ui';
+import { humanizePackageName } from '@/layers/shared/lib';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useUpdateWithToast } from '../model/use-update-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
@@ -38,6 +39,9 @@ function PackageRow({
   onUninstallClick,
 }: PackageRowProps) {
   const { name, version, type, scope, installedFrom, installedAt } = installation;
+  // The installed record ships only a slug (no `displayName`), so humanize it
+  // for the row title and every action label that names the package.
+  const displayName = humanizePackageName(name);
   const formattedDate = installedAt
     ? new Date(installedAt).toLocaleDateString(undefined, {
         year: 'numeric',
@@ -52,7 +56,7 @@ function PackageRow({
       {/* Left: metadata */}
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold">{name}</span>
+          <span className="text-sm font-semibold">{displayName}</span>
           <PackageTypeBadge type={type} />
           <Badge variant="outline" className="font-mono text-xs">
             v{version}
@@ -92,7 +96,7 @@ function PackageRow({
           variant="outline"
           onClick={onUpdateClick}
           disabled={isUpdating}
-          aria-label={`Check for updates to ${name}${agent ? ` on ${agent}` : ''}`}
+          aria-label={`Check for updates to ${displayName}${agent ? ` on ${agent}` : ''}`}
         >
           <RefreshCw className={`mr-1 size-3 ${isUpdating ? 'animate-spin' : ''}`} aria-hidden />
           {isUpdating ? 'Updating…' : 'Update'}
@@ -105,8 +109,8 @@ function PackageRow({
           disabled={isUninstalling}
           aria-label={
             isConfirmingUninstall
-              ? `Confirm uninstall of ${name}${agent ? ` from ${agent}` : ''}`
-              : `Uninstall ${name}${agent ? ` from ${agent}` : ''}`
+              ? `Confirm uninstall of ${displayName}${agent ? ` from ${agent}` : ''}`
+              : `Uninstall ${displayName}${agent ? ` from ${agent}` : ''}`
           }
           className={isConfirmingUninstall ? '' : 'text-destructive hover:text-destructive'}
         >

@@ -1,6 +1,7 @@
 import { lazy } from 'react';
 import { Activity, FolderTree, PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
+import { getPlatform } from '@/layers/shared/lib';
 import {
   PALETTE_FEATURES,
   PALETTE_QUICK_ACTIONS,
@@ -17,11 +18,35 @@ import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
 export function initializeExtensions(): void {
   const { register } = useExtensionRegistry.getState();
 
-  // Command palette items (priority 1-10 for built-ins)
+  // Command palette items (priority 1-10 for built-ins). Some built-ins depend
+  // on AppShell chrome the Obsidian embed never renders, so acting on them there
+  // is a dead-end: Create Agent / "Bring in existing projects" open dialogs
+  // (CreateAgentDialog / ImportProjectsDialog) that mount only in AppShell;
+  // Agent Profile and Canvas open the right panel the embed never renders; and
+  // Dashboard / Agents call navigate(), which throws with no RouterProvider (the
+  // pattern documented in chat/model/status/use-runtime-chip.ts). Skip them under
+  // the embed.
+  //
+  // NOTE: this is a DEFENSIVE gate, not a live fix — the embed does not currently
+  // call initializeExtensions at all (only the web entry, apps/client/src/main.tsx,
+  // does), so no built-in palette action is registered there today. The gate keeps
+  // these dead-ends out of the embed's palette if/when it ever registers built-ins.
+  const embedded = getPlatform().isEmbedded;
+  const embeddedDeadEndActions = new Set([
+    'createAgent',
+    'discoverAgents',
+    'openAgentProfile',
+    'toggleCanvas',
+    'navigateDashboard',
+    'openMesh',
+  ]);
+  const skipUnderEmbed = (action: string) => embedded && embeddedDeadEndActions.has(action);
   for (const feature of PALETTE_FEATURES) {
+    if (skipUnderEmbed(feature.action)) continue;
     register('command-palette.items', feature);
   }
   for (const action of PALETTE_QUICK_ACTIONS) {
+    if (skipUnderEmbed(action.action)) continue;
     register('command-palette.items', action);
   }
 

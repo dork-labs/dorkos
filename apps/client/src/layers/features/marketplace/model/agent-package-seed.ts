@@ -5,7 +5,7 @@
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import type { CreationSeed } from '@/layers/shared/model';
-import { humanizeAgentName } from '@/layers/shared/lib';
+import { packageDisplayLabel } from '@/layers/shared/lib';
 
 /**
  * Turn a `type: 'agent'` marketplace package into an M1 arrival seed. The
@@ -25,7 +25,7 @@ export function agentPackageToCreationSeed(pkg: AggregatedPackage): CreationSeed
     ...(pkg.marketplace ? { sourceLabel: pkg.marketplace } : {}),
     template: {
       source: pkg.source,
-      displayName: pkg.displayName ?? humanizeAgentName(pkg.name),
+      displayName: packageDisplayLabel(pkg),
       ...(pkg.description ? { persona: pkg.description } : {}),
       ...(pkg.icon ? { icon: pkg.icon } : {}),
     },

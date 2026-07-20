@@ -4,6 +4,7 @@
  * @module features/marketplace/lib/package-sort
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
+import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { MarketplaceSort } from '../model/marketplace-search';
 
 // ---------------------------------------------------------------------------
@@ -11,13 +12,16 @@ import type { MarketplaceSort } from '../model/marketplace-search';
 // ---------------------------------------------------------------------------
 
 /**
- * Alphabetical comparator by `name`.
+ * Alphabetical comparator by the package's *rendered* label, so "A–Z" matches
+ * what the cards actually show. Sorting on the raw `name` would read wrong the
+ * moment a `displayName` (or a humanized slug) diverges from the slug — see
+ * {@link packageDisplayLabel}, the single label both the cards and this sort use.
  *
  * @param a - Left-hand package.
  * @param b - Right-hand package.
  */
 function byName(a: AggregatedPackage, b: AggregatedPackage): number {
-  return a.name.localeCompare(b.name);
+  return packageDisplayLabel(a).localeCompare(packageDisplayLabel(b));
 }
 
 /**

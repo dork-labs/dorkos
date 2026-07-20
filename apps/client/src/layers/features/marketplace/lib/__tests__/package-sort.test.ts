@@ -85,6 +85,29 @@ describe('sortPackages — name', () => {
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('alpha');
   });
+
+  it('orders by the displayed label, not the raw slug, when a displayName diverges', () => {
+    // Slug order would be apple-tool < zzz-tool; label order is Apple < Zebra,
+    // which flips them. The sort must match what the card shows.
+    const appleLabel = pkg({ name: 'zzz-tool', displayName: 'Apple' });
+    const zebraLabel = pkg({ name: 'apple-tool', displayName: 'Zebra' });
+
+    const result = sortPackages([zebraLabel, appleLabel], 'name');
+
+    expect(result.map((p) => p.name)).toEqual(['zzz-tool', 'apple-tool']);
+    expect(result.map((p) => p.displayName)).toEqual(['Apple', 'Zebra']);
+  });
+
+  it('sorts a scoped package by its humanized label, not the leading "@"', () => {
+    // Raw-slug order puts '@dorkos/zebra' first (the '@' sorts before 'a'); the
+    // humanized labels are Zebra vs Apple, so "Apple" must lead.
+    const scopedZebra = pkg({ name: '@dorkos/zebra' }); // humanizes to "Zebra"
+    const bareApple = pkg({ name: 'apple' }); // humanizes to "Apple"
+
+    const result = sortPackages([scopedZebra, bareApple], 'name');
+
+    expect(result.map((p) => p.name)).toEqual(['apple', '@dorkos/zebra']);
+  });
 });
 
 // ---------------------------------------------------------------------------

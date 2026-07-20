@@ -1,6 +1,6 @@
 import { Star, Check, User } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, packageDisplayLabel } from '@/layers/shared/lib';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { PackageTypeBadge } from './PackageTypeBadge';
 
@@ -57,9 +57,10 @@ interface PackageCardProps {
  * Enter/Space. The Install action uses `stopPropagation` to avoid also
  * triggering the card-level `onClick` (which opens the detail sheet).
  *
+ * The title prefers the author's `displayName` and falls back to a humanized
+ * `name`, so a package that ships only a kebab-case slug never reads as code.
+ *
  * Field notes vs. spec:
- * - Uses `pkg.name` as the title — `displayName` does not exist on
- *   `AggregatedPackage`.
  * - The install-count line is omitted — `installCount` is not part of the
  *   `AggregatedPackage` shape.
  * - `pkg.type` defaults to `'plugin'` when absent (matches server default).
@@ -119,7 +120,7 @@ export function PackageCard({
       </div>
 
       {/* Name */}
-      <h3 className="mb-1 text-sm leading-tight font-semibold">{pkg.name}</h3>
+      <h3 className="mb-1 text-sm leading-tight font-semibold">{packageDisplayLabel(pkg)}</h3>
 
       {/* Type badge */}
       <PackageTypeBadge type={packageType} className="mb-3 self-start" />

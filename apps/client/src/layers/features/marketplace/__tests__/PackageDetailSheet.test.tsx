@@ -281,7 +281,7 @@ describe('PackageDetailSheet', () => {
     render(<PackageDetailSheet />);
 
     // Sheet is closed → its title should not appear in the document.
-    expect(screen.queryByText('@dorkos/code-reviewer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Code Reviewer')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^install$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument();
   });
@@ -293,7 +293,7 @@ describe('PackageDetailSheet', () => {
 
     render(<PackageDetailSheet />);
 
-    expect(screen.getByText('@dorkos/code-reviewer')).toBeInTheDocument();
+    expect(screen.getByText('Code Reviewer')).toBeInTheDocument();
     expect(screen.getByText('Reviews pull requests every weekday.')).toBeInTheDocument();
     // Version meta badge from detail.manifest.version.
     expect(screen.getByText('v1.0.0')).toBeInTheDocument();
@@ -310,7 +310,7 @@ describe('PackageDetailSheet', () => {
     render(<PackageDetailSheet />);
 
     expect(mockParams.closeDetail).toHaveBeenCalled();
-    expect(screen.queryByText('@dorkos/removed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Removed')).not.toBeInTheDocument();
   });
 
   it('renders the PermissionPreviewSection when the preview resolves', () => {

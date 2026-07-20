@@ -1,5 +1,6 @@
 import { CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
 import { Button, ResponsiveDialogTitle, ResponsiveDialogDescription } from '@/layers/shared/ui';
+import { isSingleEmoji } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { CreationSeed } from '@/layers/shared/model';
 
@@ -47,9 +48,12 @@ export function ArrivalConfirm({
   onCustomize,
   onNotNow,
 }: ArrivalConfirmProps) {
-  const { displayName, persona, runtime, capabilities, skills, schedule } = seed.template;
+  const { displayName, persona, runtime, capabilities, skills, schedule, icon } = seed.template;
   const runtimeLabel = getRuntimeDescriptor(runtime ?? 'claude-code').label;
   const initial = displayName.trim().charAt(0).toUpperCase() || '?';
+  // Show the seeded emoji face (the same one M3's picker and AgentPreviewCard
+  // use) when the offer carries a real emoji; fall back to the name's initial.
+  const face = icon && isSingleEmoji(icon) ? icon : initial;
   const sourceLine = seed.sourceLabel
     ? `Offered by ${seed.sourceLabel}.`
     : 'A ready-made agent, ready when you are.';
@@ -62,7 +66,7 @@ export function ArrivalConfirm({
           className="bg-primary/10 text-primary flex size-20 items-center justify-center rounded-full text-4xl font-semibold"
           aria-hidden="true"
         >
-          {initial}
+          {face}
         </span>
         <div className="space-y-1">
           <ResponsiveDialogTitle className="text-xl">Meet {displayName}</ResponsiveDialogTitle>

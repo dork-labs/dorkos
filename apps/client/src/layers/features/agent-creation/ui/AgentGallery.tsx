@@ -8,7 +8,7 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/layers/shared/ui';
-import { cn, humanizeAgentName } from '@/layers/shared/lib';
+import { cn, humanizePackageName, packageDisplayLabel } from '@/layers/shared/lib';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
@@ -31,7 +31,7 @@ function toSelectedTemplate(pkg: AggregatedPackage): SelectedTemplate {
   return {
     source: pkg.source,
     name: pkg.name,
-    displayName: pkg.displayName ?? humanizeAgentName(pkg.name),
+    displayName: packageDisplayLabel(pkg),
     description: pkg.description,
     icon: pkg.icon,
     tags: pkg.tags,
@@ -103,7 +103,7 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
               ref={roving.setRef(index)}
               variant="template"
               face={pkg.icon ?? DEFAULT_AGENT_FACE}
-              title={pkg.displayName ?? humanizeAgentName(pkg.name)}
+              title={packageDisplayLabel(pkg)}
               subtitle={pkg.description ?? 'A ready-made agent.'}
               chips={deriveChips(pkg)}
               tabIndex={roving.tabIndexFor(index)}
@@ -165,7 +165,7 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
                 onSelectTemplate({
                   source: customUrl,
                   name: slug,
-                  displayName: humanizeAgentName(slug),
+                  displayName: humanizePackageName(slug),
                 });
                 setCustomUrl('');
               }}

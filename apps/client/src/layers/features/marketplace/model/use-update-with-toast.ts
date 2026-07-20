@@ -19,6 +19,7 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { humanizePackageName } from '@/layers/shared/lib';
 import { useUpdatePackage, type UpdatePackageArgs } from '@/layers/entities/marketplace';
 import type { UpdateResult } from '@dorkos/shared/marketplace-schemas';
 
@@ -28,13 +29,15 @@ import type { UpdateResult } from '@dorkos/shared/marketplace-schemas';
  * When a reinstall was applied, report the new version (e.g. "Updated X to
  * v1.2.0"). When the package was already current, say so explicitly so the
  * user knows the click did something even though nothing changed on disk.
+ *
+ * @param label - The humanized package name for display.
  */
-function formatUpdateSuccess(name: string, result: UpdateResult): string {
+function formatUpdateSuccess(label: string, result: UpdateResult): string {
   const applied = result.applied[0];
   if (applied) {
-    return `Updated ${name} to v${applied.version}`;
+    return `Updated ${label} to v${applied.version}`;
   }
-  return `${name} is already up to date`;
+  return `${label} is already up to date`;
 }
 
 /**
@@ -63,10 +66,11 @@ export function useUpdateWithToast() {
 
   const mutate = useCallback(
     (args: UpdatePackageArgs) => {
-      const toastId = toast.loading(`Updating ${args.name}…`);
+      const label = humanizePackageName(args.name);
+      const toastId = toast.loading(`Updating ${label}…`);
       baseMutate(args, {
         onSuccess: (result) => {
-          toast.success(formatUpdateSuccess(args.name, result), { id: toastId });
+          toast.success(formatUpdateSuccess(label, result), { id: toastId });
         },
         onError: (err) => {
           toast.error(formatUpdateError(err), { id: toastId });
@@ -78,10 +82,11 @@ export function useUpdateWithToast() {
 
   const mutateAsync = useCallback(
     async (args: UpdatePackageArgs): Promise<UpdateResult> => {
-      const toastId = toast.loading(`Updating ${args.name}…`);
+      const label = humanizePackageName(args.name);
+      const toastId = toast.loading(`Updating ${label}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(formatUpdateSuccess(args.name, result), { id: toastId });
+        toast.success(formatUpdateSuccess(label, result), { id: toastId });
         return result;
       } catch (err) {
         toast.error(formatUpdateError(err), { id: toastId });

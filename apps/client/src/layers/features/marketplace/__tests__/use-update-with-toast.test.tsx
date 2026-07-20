@@ -102,7 +102,7 @@ describe('useUpdateWithToast', () => {
         result.current.mutate({ name: '@dorkos/code-reviewer', options: { apply: true } });
       });
 
-      expect(mockLoading).toHaveBeenCalledWith('Updating @dorkos/code-reviewer…');
+      expect(mockLoading).toHaveBeenCalledWith('Updating Code Reviewer…');
       expect(fakes.mutate).toHaveBeenCalledTimes(1);
     });
 
@@ -121,7 +121,7 @@ describe('useUpdateWithToast', () => {
         perCall.onSuccess(appliedResult('2.1.0'));
       });
 
-      expect(mockSuccess).toHaveBeenCalledWith('Updated @dorkos/code-reviewer to v2.1.0', {
+      expect(mockSuccess).toHaveBeenCalledWith('Updated Code Reviewer to v2.1.0', {
         id: 'toast-id-abc',
       });
     });
@@ -141,7 +141,7 @@ describe('useUpdateWithToast', () => {
         perCall.onSuccess(NO_UPDATE_RESULT);
       });
 
-      expect(mockSuccess).toHaveBeenCalledWith('@dorkos/code-reviewer is already up to date', {
+      expect(mockSuccess).toHaveBeenCalledWith('Code Reviewer is already up to date', {
         id: 'toast-id-abc',
       });
     });
@@ -201,7 +201,7 @@ describe('useUpdateWithToast', () => {
         });
       });
 
-      expect(mockSuccess).toHaveBeenCalledWith('Updated @dorkos/code-reviewer to v3.0.0', {
+      expect(mockSuccess).toHaveBeenCalledWith('Updated Code Reviewer to v3.0.0', {
         id: 'toast-id-abc',
       });
       expect(returned?.applied[0]?.version).toBe('3.0.0');

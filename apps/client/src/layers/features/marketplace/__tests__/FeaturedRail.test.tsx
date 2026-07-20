@@ -168,6 +168,23 @@ describe('FeaturedRail', () => {
     expect(screen.queryByTestId('package-card-@dorkos/not-featured')).not.toBeInTheDocument();
   });
 
+  it('renders a human package name, preferring displayName and humanizing a bare slug', () => {
+    setPackagesState({
+      data: [
+        { ...makePkg('security-scanner', { featured: true }), displayName: 'Security Scanner' },
+        makePkg('log-analyzer', { featured: true }),
+      ],
+    });
+
+    render(<FeaturedRail />);
+
+    // displayName wins when the author supplies one…
+    expect(screen.getByText('Security Scanner')).toBeInTheDocument();
+    // …and a slug-only package is humanized, never shown as raw kebab-case.
+    expect(screen.getByText('Log Analyzer')).toBeInTheDocument();
+    expect(screen.queryByText('log-analyzer')).not.toBeInTheDocument();
+  });
+
   it('features packages of any type, not only agents', () => {
     setPackagesState({
       data: [
