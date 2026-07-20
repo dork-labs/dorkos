@@ -109,6 +109,23 @@ describe('RightPanelHeader', () => {
     expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
   });
 
+  it('falls back to the puzzle icon for a truthy non-component icon (untyped JS extension)', () => {
+    // The header renders outside PanelErrorBoundary, so a garbage `icon` value
+    // from an untyped JS extension (e.g. `icon: 'foo'`) must not reach React as a
+    // component. `?? Puzzle` (nullish-only) would let a truthy string through and
+    // crash the panel; the typeof-function guard rejects it.
+    renderHeader([
+      makeContribution('agent', { title: 'Agent Profile' }),
+      makeContribution('ext', {
+        title: 'My Extension',
+        icon: 'not-a-component' as unknown as RightPanelContribution['icon'],
+      }),
+    ]);
+
+    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
+  });
+
   it('renders no tab strip with a single contribution', () => {
     renderHeader([makeContribution('agent', { title: 'Agent Profile' })]);
 

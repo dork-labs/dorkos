@@ -67,10 +67,13 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
             const isActive = contribution.id === activeTab;
             // Extension-contributed tabs register no icon (the registry API can
             // supply one but doesn't require it), so fall back to a puzzle-piece
-            // — matching SidebarTabRow. Rendering a bare `undefined` here would
-            // crash the whole panel the moment an iconless tab joined 2+ visible
-            // contributions.
-            const Icon = contribution.icon ?? Puzzle;
+            // — matching SidebarTabRow. This is the single render choke point and
+            // it lives OUTSIDE PanelErrorBoundary, so it must survive not just a
+            // missing icon but a garbage one: an untyped JS extension can pass
+            // `icon: 'foo'`, which `?? Puzzle` (nullish-only) would wave through
+            // to render `<'foo' />` and kill the whole panel. Require a component.
+            const raw = contribution.icon;
+            const Icon = typeof raw === 'function' ? raw : Puzzle;
             return (
               <Tooltip key={contribution.id}>
                 <TooltipTrigger asChild>

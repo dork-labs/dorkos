@@ -76,6 +76,14 @@ export interface CoreSlice {
    * from the agent-hub feature store) so cross-feature, synchronous readers can
    * see it without importing that feature — the same role {@link currentAgentId}
    * plays for the extension host. Transient: never persisted.
+   *
+   * Deliberately NOT self-healing: unlike {@link currentAgentId} — which
+   * `useSyncCurrentAgentId` reconciles continuously against the resolved cwd —
+   * this field is only ever set forward by the explicit-selection writers and
+   * has no clearing/reconcile path. An opened-then-deleted agent therefore keeps
+   * the tab visible, rendering AgentNotFound (a non-crashing degradation, locked
+   * by test). A clearing + reconcile lifecycle is intentionally deferred to
+   * Inspector Wave 2 (Pulse), which reworks this surface.
    */
   explicitAgentPath: string | null;
   /** Set the explicitly-opened agent path (null clears it). No-op when unchanged. */

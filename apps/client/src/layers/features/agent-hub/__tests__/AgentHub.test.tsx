@@ -142,6 +142,21 @@ describe('AgentHub', () => {
     expect(screen.getByRole('tablist', { name: 'Agent hub tabs' })).toBeInTheDocument();
   });
 
+  it('degrades to AgentNotFound (no throw) when an explicitly-opened agent is later deleted', () => {
+    // Interim behaviour: explicitAgentPath has no clearing/reconcile path (that
+    // lifecycle lands in Inspector Wave 2 / Pulse), so an opened-then-deleted
+    // agent leaves the tab visible. Lock it as non-crashing — it must render
+    // AgentNotFound, never throw.
+    mockPathname = '/'; // off-session, kept visible only by the explicit selection
+    useAgentHubStore.setState({ agentPath: '/opened/then-deleted' });
+    vi.mocked(useCurrentAgent).mockReturnValue({
+      data: null, // agent manifest gone
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCurrentAgent>);
+    expect(() => render(<AgentHub />, { wrapper: TestWrapper })).not.toThrow();
+    expect(screen.getByText('Agent not found')).toBeInTheDocument();
+  });
+
   it('does not resolve the ambient cwd off /session without an explicit selection', () => {
     // Selection honesty (fix 2): off /session, selectedCwd is the server's
     // ambient startup directory, not a user pick. With no explicit hub selection
