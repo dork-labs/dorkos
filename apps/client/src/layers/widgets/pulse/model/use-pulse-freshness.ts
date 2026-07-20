@@ -52,11 +52,14 @@ import { DASHBOARD_ACTIVITY_QUERY_KEY } from '@/layers/features/dashboard-activi
 import { ACTIVITY_QUERY_KEY } from '@/layers/features/activity-feed-page';
 
 /**
- * The `/api/events` broadcasts that reliably correspond to a new `activity_events`
- * row AND are actually emitted by the server. Derived from the real emit ↔
- * broadcast correlation, not guessed:
+ * The `/api/events` broadcasts that correspond to a new `activity_events` row AND
+ * are actually emitted by the server. Derived from the real emit ↔ broadcast
+ * correlation, not guessed:
  *
- *  - `relay_message` — a relay message was sent/delivered (relay routes emit activity)
+ *  - `relay_message` — a relay message crossed the human-console channel. Slightly
+ *    over-inclusive: it fires for every such message, while the activity row is
+ *    only written when an adapter was involved — so some fire a refetch with no
+ *    new row. Harmless: the flush is coalesced and a same-data refetch is cheap.
  *  - `relay_flow` — a message crossed a binding edge (adapter-manager emits activity)
  *  - `relay_adapters_changed` — an adapter was created/updated/removed (relay-adapters routes emit activity)
  *  - `relay_bindings_changed` — a binding changed (emits activity)
@@ -65,6 +68,8 @@ import { ACTIVITY_QUERY_KEY } from '@/layers/features/activity-feed-page';
  * NOT included, deliberately: session-list events (activity is not session-derived),
  * `tunnel_status`/`commands_changed` (own dedicated sync hooks, no activity row),
  * and anything for task-run/mesh/dead-letter (no broadcast exists).
+ *
+ * @internal Exported only so the unit test can assert the subscribed set matches.
  */
 const ACTIVITY_GENERATING_EVENTS = [
   'relay_message',
