@@ -4527,6 +4527,9 @@
                 "template": {
                   "type": "object",
                   "additionalProperties": {}
+                },
+                "scheduleSummary": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -8758,6 +8761,9 @@
                         "type": "object",
                         "properties": {
                           "name": {
+                            "type": "string"
+                          },
+                          "displayName": {
                             "type": "string"
                           },
                           "source": {

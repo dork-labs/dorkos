@@ -41,14 +41,53 @@ vi.mock('@/layers/features/mesh', () => ({
   DiscoveryView: () => <div data-testid="discovery-view">DiscoveryView</div>,
 }));
 
-vi.mock('../ui/TemplatePicker', () => ({
-  TemplatePicker: ({ onSelect }: { onSelect: (source: string | null, name?: string) => void }) => (
-    <div data-testid="template-picker">
+// The gallery is exercised in AgentGallery.test.tsx; here it stands in for the
+// M2 step and lets each test drive a specific selection.
+vi.mock('../ui/AgentGallery', () => ({
+  AgentGallery: ({
+    onDesignYourOwn,
+    onSelectTemplate,
+    onImport,
+  }: {
+    onDesignYourOwn: () => void;
+    onSelectTemplate: (t: unknown) => void;
+    onImport: () => void;
+  }) => (
+    <div data-testid="agent-gallery-mock">
+      <button data-testid="mock-design-your-own" onClick={onDesignYourOwn}>
+        Design your own
+      </button>
       <button
-        data-testid="select-template"
-        onClick={() => onSelect('github.com/dorkos/code-reviewer', '@dorkos/code-reviewer')}
+        data-testid="mock-select-template"
+        onClick={() =>
+          onSelectTemplate({
+            source: 'github.com/dorkos/code-reviewer',
+            name: '@dorkos/code-reviewer',
+            displayName: 'Code Reviewer',
+            description: 'Reviews pull requests',
+            icon: '🔍',
+            tags: ['github'],
+          })
+        }
       >
         Pick Template
+      </button>
+      <button
+        data-testid="mock-select-other-template"
+        onClick={() =>
+          onSelectTemplate({
+            source: 'github.com/dorkos/release-scribe',
+            name: '@dorkos/release-scribe',
+            displayName: 'Release Scribe',
+            description: 'Writes release notes',
+            icon: '📝',
+          })
+        }
+      >
+        Pick Other Template
+      </button>
+      <button data-testid="mock-import" onClick={onImport}>
+        Import
       </button>
     </div>
   ),
@@ -101,8 +140,6 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   });
-
-  // Radix Collapsible uses ResizeObserver internally
   globalThis.ResizeObserver = class ResizeObserver {
     observe() {}
     unobserve() {}
@@ -126,7 +163,6 @@ function createTestQueryClient() {
 function renderDialog(transport = createMockTransport()) {
   const queryClient = createTestQueryClient();
 
-  // Provide default config response
   if (!vi.isMockFunction(transport.getConfig)) {
     transport.getConfig = vi.fn();
   }
@@ -135,7 +171,6 @@ function renderDialog(transport = createMockTransport()) {
     agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
   } as never);
 
-  // Default browseDirectory mock — path does not exist (ENOENT)
   if (!vi.isMockFunction(transport.browseDirectory)) {
     transport.browseDirectory = vi.fn();
   }
@@ -152,6 +187,13 @@ function renderDialog(transport = createMockTransport()) {
   return { ...result, queryClient, transport };
 }
 
+/** Open the dialog generically and reach the naming step via design-your-own. */
+async function reachNamingViaDesign(user: ReturnType<typeof userEvent.setup>) {
+  useAgentCreationStore.getState().open();
+  await user.click(await screen.findByTestId('mock-design-your-own'));
+  return screen.findByLabelText('Name');
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -164,619 +206,382 @@ describe('CreateAgentDialog', () => {
 
   afterEach(cleanup);
 
-  // ---- Open / Close ----
+  // ---- Entry routing ----
 
-  it('opens via store.open() and shows method selection cards', async () => {
+  it('generic open() lands on the gallery (M2), not a method fork', async () => {
     renderDialog();
-
-    // Dialog should not be visible initially
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    // Open via store
     useAgentCreationStore.getState().open();
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-
-    // Verify three method cards are present
-    expect(screen.getByTestId('method-new')).toBeInTheDocument();
-    expect(screen.getByTestId('method-template')).toBeInTheDocument();
-    expect(screen.getByTestId('method-import')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-gallery-mock')).toBeInTheDocument();
+    // Appears in both the visible header and the sr-only live region.
+    expect(screen.getAllByText('What will your agent do?').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByTestId('arrival-confirm')).not.toBeInTheDocument();
   });
 
-  it('shows "How do you want to start?" description on choose step', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    // The text appears in both DialogDescription and the sr-only aria-live region.
-    // Query specifically for the visible paragraph element.
-    const matches = await screen.findAllByText('How do you want to start?');
-    expect(matches.length).toBeGreaterThanOrEqual(1);
-  });
-
-  // ---- Entry-point routing ----
-
-  it('defaults to choose step when opened without argument', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await screen.findByRole('dialog');
-    expect(screen.getByTestId('method-new')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
-  });
-
-  it('opens on import step when store.open("import") is called', async () => {
+  it('open("import") jumps straight to the import scan', async () => {
     renderDialog();
     useAgentCreationStore.getState().open('import');
 
     await screen.findByRole('dialog');
     expect(await screen.findByTestId('discovery-view')).toBeInTheDocument();
-    expect(screen.queryByTestId('method-new')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-gallery-mock')).not.toBeInTheDocument();
   });
 
-  it('opens on pick-template step when store.open("template") is called', async () => {
+  it('a seed lands on the arrival confirm (M1), never the gallery', async () => {
     renderDialog();
-    useAgentCreationStore.getState().open('template');
+    useAgentCreationStore.getState().openWithSeed(seedFor());
 
-    await screen.findByRole('dialog');
-    expect(await screen.findByTestId('template-picker')).toBeInTheDocument();
-    expect(screen.queryByTestId('method-new')).not.toBeInTheDocument();
+    expect(await screen.findByText('Meet Linear Keeper')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-gallery-mock')).not.toBeInTheDocument();
   });
 
-  // ---- Method card navigation ----
+  // ---- Gallery → naming ----
 
-  it('clicking Start Blank card transitions to configure step', async () => {
+  it('design-your-own opens the naming step with an empty name and honest job line', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await reachNamingViaDesign(user);
+
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    expect(
+      screen.getByText("You'll define the job together in your first conversation.")
+    ).toBeInTheDocument();
+  });
+
+  it('picking a template opens naming pre-filled with the human name', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
-    await user.click(await screen.findByTestId('method-new'));
-    expect(await screen.findByLabelText('Name')).toBeInTheDocument();
-    expect(screen.queryByTestId('method-new')).not.toBeInTheDocument();
+    await user.click(await screen.findByTestId('mock-select-template'));
+    const nameInput = await screen.findByLabelText('Name');
+    expect(nameInput).toHaveValue('Code Reviewer');
   });
 
-  it('clicking From Template card transitions to pick-template step', async () => {
+  it('the gallery import link routes to the import scan', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
-    await user.click(await screen.findByTestId('method-template'));
-    expect(await screen.findByTestId('template-picker')).toBeInTheDocument();
-  });
-
-  it('clicking Import Project card transitions to import step', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-import'));
+    await user.click(await screen.findByTestId('mock-import'));
     expect(await screen.findByTestId('discovery-view')).toBeInTheDocument();
   });
 
-  // ---- Back navigation ----
-
-  it('Back button on configure (blank) returns to choose step', async () => {
+  it('Back from naming returns to the gallery', async () => {
     const user = userEvent.setup();
     renderDialog();
-    useAgentCreationStore.getState().open();
+    await reachNamingViaDesign(user);
 
-    await user.click(await screen.findByTestId('method-new'));
-    await screen.findByLabelText('Name');
-
-    await user.click(screen.getByTestId('back-button'));
-    expect(await screen.findByTestId('method-new')).toBeInTheDocument();
+    await user.click(screen.getByTestId('naming-back'));
+    expect(await screen.findByTestId('agent-gallery-mock')).toBeInTheDocument();
   });
 
-  it('Back button on pick-template returns to choose step', async () => {
+  // ---- Naming behaviors ----
+
+  it('the live preview updates as the name is typed', async () => {
     const user = userEvent.setup();
     renderDialog();
-    useAgentCreationStore.getState().open();
+    const nameInput = await reachNamingViaDesign(user);
 
-    await user.click(await screen.findByTestId('method-template'));
-    await screen.findByTestId('template-picker');
-
-    await user.click(screen.getByTestId('back-button'));
-    expect(await screen.findByTestId('method-new')).toBeInTheDocument();
+    await user.type(nameInput, 'Scout');
+    expect(screen.getByTestId('preview-name')).toHaveTextContent('Scout');
   });
 
-  it('Back button on import step returns to choose step', async () => {
+  it('applies a name suggestion and rerolls to a fresh set', async () => {
     const user = userEvent.setup();
     renderDialog();
-    useAgentCreationStore.getState().open();
+    const nameInput = await reachNamingViaDesign(user);
 
-    await user.click(await screen.findByTestId('method-import'));
-    await screen.findByTestId('discovery-view');
+    // Default pool window: Scout, Sage, Pilot, Beacon.
+    await user.click(screen.getByTestId('suggestion-Scout'));
+    expect(nameInput).toHaveValue('Scout');
 
-    await user.click(screen.getByTestId('back-button'));
-    expect(await screen.findByTestId('method-new')).toBeInTheDocument();
+    // The picked name leaves the pool immediately (a chip that does nothing
+    // reads as broken) — the window refills from the remaining names.
+    expect(screen.queryByTestId('suggestion-Scout')).not.toBeInTheDocument();
+    expect(screen.getByTestId('suggestion-Atlas')).toBeInTheDocument();
+
+    // Reroll advances to a fresh window over the deduped pool.
+    await user.click(screen.getByTestId('suggestion-reroll'));
+    expect(screen.queryByTestId('suggestion-Sage')).not.toBeInTheDocument();
+    expect(screen.getByTestId('suggestion-Nova')).toBeInTheDocument();
   });
 
-  it('selecting a template in pick-template transitions to configure and shows Change button', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-template'));
-    await user.click(await screen.findByTestId('select-template'));
-
-    // Should advance to configure step
-    expect(await screen.findByLabelText('Name')).toBeInTheDocument();
-    // Template indicator with Change link
-    expect(screen.getByTestId('change-template')).toBeInTheDocument();
-  });
-
-  it('Change link on configure navigates back to pick-template', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-template'));
-    await user.click(await screen.findByTestId('select-template'));
-    await screen.findByTestId('change-template');
-
-    await user.click(screen.getByTestId('change-template'));
-    expect(await screen.findByTestId('template-picker')).toBeInTheDocument();
-  });
-
-  // ---- Footer visibility ----
-
-  it('no footer (no Back or Create Agent) on choose step', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await screen.findByTestId('method-new');
-    expect(screen.queryByTestId('back-button')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create Agent' })).not.toBeInTheDocument();
-  });
-
-  it('shows only Back button on import step (no Create Agent)', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-import'));
-    await screen.findByTestId('discovery-view');
-
-    expect(screen.getByTestId('back-button')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create Agent' })).not.toBeInTheDocument();
-  });
-
-  it('shows Back and Create Agent buttons on configure step', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    await screen.findByLabelText('Name');
-
-    expect(screen.getByTestId('back-button')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create Agent' })).toBeInTheDocument();
-  });
-
-  // ---- Name validation ----
-
-  it('accepts freeform display names and shows derived slug', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, 'My Cool Agent');
-
-    // Slug preview should appear
-    expect(screen.getByText('my-cool-agent')).toBeInTheDocument();
-    // No validation error
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-  });
-
-  it('does not show error for valid kebab-case name', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, 'my-agent');
-
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-  });
-
-  // ---- Create button state ----
-
-  it('disables Create Agent button when name is empty', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const createBtn = await screen.findByRole('button', { name: 'Create Agent' });
-    expect(createBtn).toBeDisabled();
-  });
-
-  it('disables Create Agent button when name is whitespace-only', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    // Don't type anything — name stays empty
-    const createBtn = screen.getByRole('button', { name: 'Create Agent' });
-    expect(createBtn).toBeDisabled();
-  });
-
-  it('enables Create Agent button when name is valid', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, 'my-agent');
-
-    const createBtn = screen.getByRole('button', { name: 'Create Agent' });
-    expect(createBtn).toBeEnabled();
-  });
-
-  // ---- Creation flow ----
-
-  it('successful creation closes dialog, invalidates queries, plays celebration, and navigates to new session', async () => {
+  it('a picked face persists to the created agent', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.createAgent).mockResolvedValue({
-      id: 'test-id',
-      name: 'my-agent',
-      _path: '/home/test/.dork/agents/my-agent',
+      id: 'id',
+      name: 'scout',
+      _path: '/p',
     } as never);
+    renderDialog(transport);
+    const nameInput = await reachNamingViaDesign(user);
 
-    const { queryClient } = renderDialog(transport);
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, 'my-agent');
-    await user.click(screen.getByRole('button', { name: 'Create Agent' }));
+    await user.type(nameInput, 'Scout');
+    await user.click(screen.getByTestId('face-🦊'));
+    await user.click(screen.getByTestId('create-button'));
 
     await waitFor(() => {
       expect(transport.createAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'my-agent', displayName: 'my-agent' })
+        expect.objectContaining({ name: 'scout', icon: '🦊' })
       );
     });
+  });
+
+  it('the folded Details carry the chosen runtime and directory into create', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'id',
+      name: 'scout',
+      _path: '/p',
+    } as never);
+    renderDialog(transport);
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'Scout');
+
+    await user.click(screen.getByTestId('details-toggle'));
+    await user.click(screen.getByTestId('runtime-codex'));
+    await user.click(screen.getByTestId('browse-directory-button'));
+    await user.click(await screen.findByTestId('picker-select'));
+
+    await user.click(screen.getByTestId('create-button'));
+    await waitFor(() => {
+      expect(transport.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ runtime: 'codex', directory: '/custom/path' })
+      );
+    });
+  });
+
+  it('labels the primary action "Bring {name} to life"', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'Scout');
+    expect(screen.getByTestId('create-button')).toHaveTextContent('Bring Scout to life');
+  });
+
+  it('disables create until a name is entered', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await reachNamingViaDesign(user);
+    expect(screen.getByTestId('create-button')).toBeDisabled();
+  });
+
+  // ---- Create flow ----
+
+  it('creates a design-your-own agent: celebrates, closes, navigates to a session', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'id',
+      name: 'scout',
+      _path: '/home/test/.dork/agents/scout',
+    } as never);
+    const { queryClient } = renderDialog(transport);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'Scout');
+    await user.click(screen.getByTestId('create-button'));
 
     await waitFor(() => {
-      expect(mockPlayCelebration).toHaveBeenCalled();
+      expect(transport.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'scout', displayName: 'Scout', runtime: 'claude-code' })
+      );
     });
-
-    await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['agents'] }));
-    });
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
-
-    // Should navigate to a new session for the created agent
+    await waitFor(() => expect(mockPlayCelebration).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['agents'] }))
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
         to: '/session',
-        search: expect.objectContaining({ dir: '/home/test/.dork/agents/my-agent' }),
+        search: expect.objectContaining({ dir: '/home/test/.dork/agents/scout' }),
       })
     );
   });
 
-  it('shows error toast on failed creation', async () => {
+  it('passes the template source through on create', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'id',
+      name: 'code-reviewer',
+      _path: '/p',
+    } as never);
+    renderDialog(transport);
+    useAgentCreationStore.getState().open();
+
+    await user.click(await screen.findByTestId('mock-select-template'));
+    await screen.findByLabelText('Name');
+    await user.click(screen.getByTestId('create-button'));
+
+    await waitFor(() => {
+      expect(transport.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          template: 'github.com/dorkos/code-reviewer',
+          icon: '🔍',
+        })
+      );
+    });
+  });
+
+  it('shows an error toast on failed creation', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.createAgent).mockRejectedValue(new Error('Agent already exists'));
-
     renderDialog(transport);
-    useAgentCreationStore.getState().open();
 
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, 'my-agent');
-    await user.click(screen.getByRole('button', { name: 'Create Agent' }));
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'Scout');
+    await user.click(screen.getByTestId('create-button'));
 
     const { toast } = await import('sonner');
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Agent already exists');
-    });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Agent already exists'));
   });
 
-  // ---- Directory preview ----
+  // ---- Validation (migrated from ConfigureStep) ----
 
-  it('displays auto-generated directory path based on name', async () => {
+  it('shows the derived folder name in Details', async () => {
     const user = userEvent.setup();
     renderDialog();
-    useAgentCreationStore.getState().open();
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'My Cool Agent');
+    await user.click(screen.getByTestId('details-toggle'));
+    expect(screen.getByText('my-cool-agent')).toBeInTheDocument();
+  });
 
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, 'scout');
+  it('offers "Import instead?" when the target folder already holds a project', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderDialog();
+    vi.mocked(transport.browseDirectory).mockResolvedValue({
+      path: '/test',
+      entries: [{ name: '.dork', isDirectory: true }],
+      parent: null,
+    } as never);
 
-    // Open the directory section to see the PathInput
-    await user.click(screen.getByTestId('directory-advanced-toggle'));
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'taken-agent');
 
-    expect(screen.getByTestId('directory-preview')).toHaveAttribute(
-      'placeholder',
-      '~/.dork/agents/scout'
+    await waitFor(() =>
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Existing project detected')
+    );
+    await user.click(screen.getByTestId('import-instead-link'));
+    expect(await screen.findByTestId('discovery-view')).toBeInTheDocument();
+  });
+
+  it('reports "Will create new directory" for a fresh path', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'fresh-agent');
+    await user.click(screen.getByTestId('details-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Will create new directory')
     );
   });
 
-  // ---- Back on configure (template path) ----
+  // ---- Template reselection (auto-fill provenance) ----
 
-  it('Back on configure (template path) returns to pick-template', async () => {
+  it('switching templates updates an auto-filled name', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
-    // Navigate: choose → pick-template → select template → configure
-    await user.click(await screen.findByTestId('method-template'));
-    await waitFor(() => expect(screen.getByTestId('template-picker')).toBeInTheDocument());
-    await user.click(screen.getByTestId('select-template'));
-    await waitFor(() => expect(screen.getByPlaceholderText('My Cool Agent')).toBeInTheDocument());
+    await user.click(await screen.findByTestId('mock-select-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Code Reviewer');
 
-    // Back should go to pick-template, not choose
-    await user.click(screen.getByTestId('back-button'));
-    await waitFor(() => {
-      expect(screen.getByTestId('template-picker')).toBeInTheDocument();
-    });
+    await user.click(screen.getByTestId('naming-back'));
+    await user.click(await screen.findByTestId('mock-select-other-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Release Scribe');
   });
 
-  // ---- Template auto-fill ----
-
-  it('pre-fills name from selected template', async () => {
+  it('switching to design-your-own clears an auto-filled template name', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
-    await user.click(await screen.findByTestId('method-template'));
-    await waitFor(() => expect(screen.getByTestId('template-picker')).toBeInTheDocument());
-    await user.click(screen.getByTestId('select-template'));
+    await user.click(await screen.findByTestId('mock-select-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Code Reviewer');
 
-    // Name should be auto-filled — the handler extracts last segment from the source URL
-    await waitFor(() => {
-      const nameInput = screen.getByPlaceholderText('My Cool Agent');
-      expect(nameInput).toHaveValue('code-reviewer');
-    });
+    await user.click(screen.getByTestId('naming-back'));
+    await user.click(await screen.findByTestId('mock-design-your-own'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('');
   });
 
-  it('shows auto-fill hint text when name was pre-filled from template', async () => {
+  it('never clobbers a user-typed name on template switch', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
-    await user.click(await screen.findByTestId('method-template'));
-    await waitFor(() => expect(screen.getByTestId('template-picker')).toBeInTheDocument());
-    await user.click(screen.getByTestId('select-template'));
+    await user.click(await screen.findByTestId('mock-select-template'));
+    const nameInput = await screen.findByLabelText('Name');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Ada');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('auto-fill-hint')).toBeInTheDocument();
-      expect(screen.getByText('Pre-filled from template — edit freely')).toBeInTheDocument();
-    });
+    await user.click(screen.getByTestId('naming-back'));
+    await user.click(await screen.findByTestId('mock-select-other-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Ada');
   });
 
-  it('clears auto-fill hint when user edits the pre-filled name', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
+  // ---- Remaining conflict states ----
 
-    await user.click(await screen.findByTestId('method-template'));
-    await waitFor(() => expect(screen.getByTestId('template-picker')).toBeInTheDocument());
-    await user.click(screen.getByTestId('select-template'));
-
-    await waitFor(() => expect(screen.getByTestId('auto-fill-hint')).toBeInTheDocument());
-
-    // Edit the name — hint should disappear
-    const nameInput = screen.getByPlaceholderText('My Cool Agent');
-    await user.type(nameInput, '-custom');
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('auto-fill-hint')).not.toBeInTheDocument();
-    });
-  });
-
-  // ---- Directory browser button ----
-
-  it('shows directory picker when browse button is clicked', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    await screen.findByLabelText('Name');
-
-    // Open the Advanced directory section
-    await user.click(screen.getByTestId('directory-advanced-toggle'));
-
-    // Click the browse button
-    await user.click(await screen.findByTestId('browse-directory-button'));
-
-    // Directory picker should appear
-    expect(screen.getByTestId('directory-picker')).toBeInTheDocument();
-  });
-
-  it('sets directory override when a path is selected from the picker', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    await screen.findByLabelText('Name');
-
-    // Open the Advanced directory section
-    await user.click(screen.getByTestId('directory-advanced-toggle'));
-    await user.click(await screen.findByTestId('browse-directory-button'));
-
-    // Select a directory from the mock picker
-    await user.click(screen.getByTestId('picker-select'));
-
-    // The directory input should reflect the selected path
-    await waitFor(() => {
-      expect(screen.queryByTestId('directory-picker')).not.toBeInTheDocument();
-    });
-  });
-
-  // ---- Conflict detection ----
-
-  it('shows "Will create new directory" when path does not exist', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.browseDirectory).mockRejectedValue(new Error('ENOENT'));
-
-    renderDialog(transport);
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
-    await user.type(nameInput, 'new-agent');
-
-    // Open directory section to see conflict status
-    await user.click(screen.getByTestId('directory-advanced-toggle'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Will create new directory');
-    });
-  });
-
-  it('shows "Directory exists" when path exists without .dork', async () => {
+  it('reports "Directory exists" when the path exists without a project', async () => {
     const user = userEvent.setup();
     const { transport } = renderDialog();
-
-    // Override the default ENOENT mock after renderDialog sets it
     vi.mocked(transport.browseDirectory).mockResolvedValue({
       path: '/test',
       entries: [{ name: 'README.md', isDirectory: false }],
       parent: null,
     } as never);
 
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
+    const nameInput = await reachNamingViaDesign(user);
     await user.type(nameInput, 'existing-dir');
+    await user.click(screen.getByTestId('details-toggle'));
 
-    // Open directory section to see conflict status
-    await user.click(screen.getByTestId('directory-advanced-toggle'));
-
-    await waitFor(() => {
+    await waitFor(() =>
       expect(screen.getByTestId('conflict-status')).toHaveTextContent(
         'Directory exists — will create project inside'
-      );
-    });
+      )
+    );
   });
 
-  it('shows "Existing project detected" when path has .dork directory', async () => {
+  it('reports "Cannot access this path" on a permission error and blocks create', async () => {
     const user = userEvent.setup();
     const { transport } = renderDialog();
-
-    vi.mocked(transport.browseDirectory).mockResolvedValue({
-      path: '/test',
-      entries: [{ name: '.dork', isDirectory: true }],
-      parent: null,
-    } as never);
-
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
-    await user.type(nameInput, 'taken-agent');
-
-    await waitFor(() => {
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Existing project detected');
-    });
-  });
-
-  it('shows "Cannot access this path" on permission error', async () => {
-    const user = userEvent.setup();
-    const { transport } = renderDialog();
-
     vi.mocked(transport.browseDirectory).mockRejectedValue(new Error('EACCES: permission denied'));
 
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
+    const nameInput = await reachNamingViaDesign(user);
     await user.type(nameInput, 'restricted-agent');
+    await user.click(screen.getByTestId('details-toggle'));
 
-    // Open directory section to see conflict status
-    await user.click(screen.getByTestId('directory-advanced-toggle'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Cannot access this path');
-    });
+    await waitFor(() =>
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Cannot access this path')
+    );
+    expect(screen.getByTestId('create-button')).toBeDisabled();
   });
 
-  it('shows "Import instead?" link when .dork conflict detected', async () => {
+  // ---- Reset ----
+
+  it('resets to the gallery when closed and reopened', async () => {
     const user = userEvent.setup();
-    const { transport } = renderDialog();
-
-    vi.mocked(transport.browseDirectory).mockResolvedValue({
-      path: '/test',
-      entries: [{ name: '.dork', isDirectory: true }],
-      parent: null,
-    } as never);
-
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
-    await user.type(nameInput, 'taken-agent');
-
-    await waitFor(() => {
-      expect(screen.getByTestId('import-instead-link')).toBeInTheDocument();
-    });
-
-    // Clicking "Import instead?" should switch to import step
-    await user.click(screen.getByTestId('import-instead-link'));
-    await waitFor(() => {
-      expect(screen.getByTestId('discovery-view')).toBeInTheDocument();
-    });
-  });
-
-  // ---- Reset on close/reopen ----
-
-  it('resets to choose step when dialog is closed and reopened', async () => {
     renderDialog();
+    await reachNamingViaDesign(user);
 
-    // Open on import step
-    useAgentCreationStore.getState().open('import');
-    await screen.findByTestId('discovery-view');
-
-    // Close via store
     useAgentCreationStore.getState().close();
-    await waitFor(() => {
-      expect(screen.queryByTestId('discovery-view')).not.toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.queryByLabelText('Name')).not.toBeInTheDocument());
 
-    // Reopen without argument — should show choose step
     useAgentCreationStore.getState().open();
-    expect(await screen.findByTestId('method-new')).toBeInTheDocument();
+    expect(await screen.findByTestId('agent-gallery-mock')).toBeInTheDocument();
   });
 
-  it('resets form fields when dialog is closed via close button and reopened', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-
-    // Open, navigate to configure, type a name
-    useAgentCreationStore.getState().open();
-    await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
-    await user.type(nameInput, 'some-agent');
-
-    // Close via the dialog close button (triggers handleOpenChange → resetForm)
-    const closeButton = screen.getByRole('button', { name: /close/i });
-    await user.click(closeButton);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-
-    // Reopen and go back to configure — name should be empty
-    useAgentCreationStore.getState().open();
-    await user.click(await screen.findByTestId('method-new'));
-    const freshInput = await screen.findByPlaceholderText('My Cool Agent');
-    expect(freshInput).toHaveValue('');
-  });
-
-  // ---- Seeded arrival (M1) — the founder's "Set up X" path ----
+  // ---- Arrival (M1) — the founder's "Set up X" path ----
 
   function seedFor(overrides: Record<string, unknown> = {}) {
     return {
@@ -793,73 +598,55 @@ describe('CreateAgentDialog', () => {
     };
   }
 
-  it('renders the arrival confirm — not the method fork — when opened with a seed', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor());
-
-    expect(await screen.findByText('Meet Linear Keeper')).toBeInTheDocument();
-    expect(screen.getByText('I keep your Linear board tidy.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create Linear Keeper' })).toBeInTheDocument();
-
-    // The three-way fork must never appear from a seed.
-    expect(screen.queryByTestId('method-new')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('method-template')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('method-import')).not.toBeInTheDocument();
-  });
-
-  it('renders the method fork (no arrival) when opened without a seed', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await screen.findByTestId('method-new');
-    expect(screen.queryByTestId('arrival-confirm')).not.toBeInTheDocument();
-  });
-
-  it('shows an honest ledger: runtime, computed directory, and skills without a "ready" claim', async () => {
+  it('renders the arrival confirm with an honest ledger (runtime, dir, can, skills)', async () => {
     renderDialog();
     useAgentCreationStore.getState().openWithSeed(seedFor());
     await screen.findByText('Meet Linear Keeper');
 
+    expect(screen.getByText('I keep your Linear board tidy.')).toBeInTheDocument();
     expect(screen.getByText('Codex')).toBeInTheDocument();
     expect(screen.getByText('~/.dork/agents/linear-keeper')).toBeInTheDocument();
-    // Skills are listed, never claimed as installed/ready.
+    expect(screen.getByText('Can')).toBeInTheDocument();
+    expect(screen.getByText('linear')).toBeInTheDocument();
+    // Skills are listed, never claimed installed.
     expect(screen.getByText('Uses skills')).toBeInTheDocument();
     expect(screen.getByText(/linear-adapter/)).toBeInTheDocument();
+  });
+
+  it('shows a schedule line only when the offer declares a cadence', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+    expect(screen.queryByTestId('arrival-schedule')).not.toBeInTheDocument();
+
+    cleanup();
+    useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor({ schedule: 'Every weekday at 9am' }));
+    await screen.findByText('Meet Linear Keeper');
+    expect(screen.getByTestId('arrival-schedule')).toHaveTextContent('Every weekday at 9am');
   });
 
   it('disables Create and explains when the seed arrives without a usable name', async () => {
     renderDialog();
     useAgentCreationStore.getState().openWithSeed(seedFor({ displayName: '' }));
 
-    // Blank display name → nothing to slugify → the primary action must not
-    // look active while handleCreate would silently bail.
     const createBtn = await screen.findByTestId('arrival-create');
     expect(createBtn).toBeDisabled();
     expect(screen.getByTestId('arrival-needs-name')).toBeInTheDocument();
   });
 
-  it('keeps Create enabled for a normal seed (no needs-name hint)', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor());
-    await screen.findByText('Meet Linear Keeper');
-
-    expect(screen.getByTestId('arrival-create')).toBeEnabled();
-    expect(screen.queryByTestId('arrival-needs-name')).not.toBeInTheDocument();
-  });
-
-  it('Customize first opens the naming step pre-filled from the seed', async () => {
+  it('Customize first opens naming pre-filled from the seed', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().openWithSeed(seedFor());
     await screen.findByText('Meet Linear Keeper');
 
     await user.click(screen.getByTestId('arrival-customize'));
-
-    const nameInput = await screen.findByLabelText('Name');
-    expect(nameInput).toHaveValue('Linear Keeper');
+    expect(await screen.findByLabelText('Name')).toHaveValue('Linear Keeper');
   });
 
-  it('Create from M1 sends the seed persona, runtime, and capabilities', async () => {
+  it('one-click Create from M1 sends the seed persona, runtime, and capabilities', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.createAgent).mockResolvedValue({
@@ -867,13 +654,11 @@ describe('CreateAgentDialog', () => {
       name: 'linear-keeper',
       _path: '/home/test/.dork/agents/linear-keeper',
     } as never);
-
     renderDialog(transport);
     useAgentCreationStore.getState().openWithSeed(seedFor());
     await screen.findByText('Meet Linear Keeper');
 
     await user.click(screen.getByRole('button', { name: 'Create Linear Keeper' }));
-
     await waitFor(() => {
       expect(transport.createAgent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -894,7 +679,6 @@ describe('CreateAgentDialog', () => {
     await screen.findByText('Meet Linear Keeper');
 
     await user.click(screen.getByTestId('arrival-not-now'));
-
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(useAgentCreationStore.getState().seed).toBeNull();
   });

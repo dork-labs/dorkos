@@ -1,31 +1,42 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { validateAgentName, slugifyAgentName } from '@dorkos/shared/validation';
+import type { AgentRuntime } from '@dorkos/shared/mesh-schemas';
+import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
-import type { WizardStep, CreationMode, ConflictStatus } from '../lib/wizard-types';
+import type { WizardStep, ConflictStatus } from '../lib/wizard-types';
+import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 
 interface UseConfigureFormOptions {
   step: WizardStep;
-  creationMode: CreationMode;
+  /** Selected template's package name, for one-time name pre-fill. */
   templateName: string | null;
   /**
    * Display name to pre-fill when the dialog was opened from an offer (M1). The
    * name is filled once, the moment the seed appears, so the arrival confirm's
-   * slug + directory are ready before the user ever reaches the configure step.
+   * slug + directory are ready before the user ever reaches the naming step.
    */
   seedDisplayName?: string | null;
+  /**
+   * Emoji to seed the face picker with on entering the naming step (a
+   * template's icon, or the default). Only seeds while the user has not yet
+   * chosen a face of their own.
+   */
+  faceSeed?: string;
+  /** Runtime to seed the picker with (a seed's runtime, or `claude-code`). */
+  runtimeSeed?: AgentRuntime;
 }
 
 /**
- * Encapsulates all form state for the configure step: freeform display name,
- * auto-derived slug, directory override, validation, auto-fill from template
- * or seed, and .dork conflict detection.
+ * Encapsulates all naming-step form state: freeform display name, auto-derived
+ * slug, directory override, runtime, emoji face, validation, one-time seeding
+ * from a template or offer, and `.dork` conflict detection.
  */
 export function useConfigureForm({
   step,
-  creationMode,
   templateName,
   seedDisplayName = null,
+  faceSeed = DEFAULT_AGENT_FACE,
+  runtimeSeed = 'claude-code',
 }: UseConfigureFormOptions) {
   const transport = useTransport();
 
@@ -44,6 +55,9 @@ export function useConfigureForm({
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [conflictStatus, setConflictStatus] = useState<ConflictStatus>('idle');
+  const [icon, setIconState] = useState('');
+  const [iconUserSet, setIconUserSet] = useState(false);
+  const [runtime, setRuntime] = useState<AgentRuntime>(runtimeSeed);
 
   // Pre-fill the name from an offer seed the moment it appears (render-phase
   // "adjust state on prop change"). Fills once per seed — later user edits stick
@@ -56,6 +70,13 @@ export function useConfigureForm({
       setDisplayName(seedDisplayName);
       setNameAutoFilled(false);
     }
+  }
+
+  // Adopt the seed's runtime the moment it appears (same one-time pattern).
+  const [prevRuntimeSeed, setPrevRuntimeSeed] = useState<AgentRuntime>(runtimeSeed);
+  if (runtimeSeed !== prevRuntimeSeed) {
+    setPrevRuntimeSeed(runtimeSeed);
+    setRuntime(runtimeSeed);
   }
 
   // Derive kebab-case slug from freeform display name
@@ -71,20 +92,39 @@ export function useConfigureForm({
   const resolvedDirectory = directoryOverride || `${defaultDirectory}/${slug}`;
   const canSubmit = displayName.length > 0 && slugValidation.valid && conflictStatus !== 'error';
 
-  // Auto-fill name from template when entering configure step.
-  // Deps intentionally exclude `displayName` to avoid re-triggering on user edits.
+  // Auto-fill name from the selected template on entering the naming step.
+  // An auto-filled name follows the selection: switching templates overwrites
+  // it, and switching to design-your-own clears it — but a USER-typed name is
+  // never clobbered (`nameAutoFilled` is the provenance bit; typing clears it).
+  // Deps intentionally exclude `displayName`/`nameAutoFilled` so the effect
+  // fires only when the selection changes, never on user edits.
   useEffect(() => {
-    if (step === 'configure' && creationMode === 'template' && templateName && !displayName) {
-      const cleanName = templateName.replace(/^@[^/]+\//, '');
-      setDisplayName(cleanName);
-      setNameAutoFilled(true);
+    if (step !== 'naming') return;
+    if (templateName) {
+      if (!displayName || nameAutoFilled) {
+        setDisplayName(templateName.replace(/^@[^/]+\//, ''));
+        setNameAutoFilled(true);
+      }
+    } else if (nameAutoFilled) {
+      // Design-your-own after a template: the inherited name was never the
+      // user's — start blank.
+      setDisplayName('');
+      setNameAutoFilled(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, creationMode, templateName]);
+  }, [step, templateName]);
+
+  // Seed the face on entering the naming step, unless the user has picked one.
+  useEffect(() => {
+    if (step === 'naming' && !iconUserSet) {
+      setIconState(faceSeed);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, faceSeed]);
 
   // Debounced .dork conflict detection
   useEffect(() => {
-    if (step !== 'configure') return;
+    if (step !== 'naming') return;
 
     const resolvedPath = directoryOverride || (slug ? `${defaultDirectory}/${slug}` : '');
     if (!resolvedPath) {
@@ -117,6 +157,12 @@ export function useConfigureForm({
     if (nameAutoFilled) setNameAutoFilled(false);
   }
 
+  /** Set the emoji face and remember that the user chose it (stops re-seeding). */
+  function setIcon(next: string) {
+    setIconState(next);
+    setIconUserSet(true);
+  }
+
   function reset() {
     setDisplayName('');
     setNameAutoFilled(false);
@@ -124,6 +170,9 @@ export function useConfigureForm({
     setDirectoryOpen(false);
     setDirectoryPickerOpen(false);
     setConflictStatus('idle');
+    setIconState('');
+    setIconUserSet(false);
+    setRuntime(runtimeSeed);
   }
 
   return {
@@ -143,6 +192,10 @@ export function useConfigureForm({
     setDirectoryPickerOpen,
     conflictStatus,
     canSubmit,
+    icon,
+    setIcon,
+    runtime,
+    setRuntime,
     reset,
   };
 }

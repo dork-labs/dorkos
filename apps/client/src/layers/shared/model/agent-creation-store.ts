@@ -20,6 +20,13 @@ export interface CreationSeedTemplate {
   persona?: string;
   capabilities?: string[];
   skills?: string[];
+  /**
+   * Human cadence label for the M1 ledger's schedule line (e.g. "Every
+   * weekday at 9am"). Present only when the offer's shape declares a schedule;
+   * the ledger renders the line solely when this is set, so the arrival card
+   * never claims a cadence the agent does not have.
+   */
+  schedule?: string;
 }
 
 /**

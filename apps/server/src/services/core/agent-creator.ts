@@ -269,6 +269,9 @@ export async function createAgentWorkspace(
       description: opts.description ?? '',
       runtime: opts.runtime ?? 'claude-code',
       capabilities: opts.capabilities ?? [],
+      // The emoji face chosen in the naming step (M3), or seeded from a
+      // template — persisted so the agent's visual identity survives creation.
+      ...(opts.icon ? { icon: opts.icon } : {}),
       behavior: { responseMode: 'always' },
       traits,
       conventions,

@@ -100,6 +100,7 @@ const LocalMarketplaceJsonSchema = z
 const LocalAggregatedPackageSchema = z
   .object({
     name: z.string(),
+    displayName: z.string().optional(),
     source: z.string(),
     description: z.string().optional(),
     version: z.string().optional(),
@@ -2067,6 +2068,7 @@ const LocalOfferedAgentSchema = z.object({
   projectPath: z.string().optional(),
   displayName: z.string(),
   template: z.record(z.string(), z.unknown()).optional(),
+  scheduleSummary: z.string().optional(),
 });
 
 /** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').ApplyShapeResult}. */

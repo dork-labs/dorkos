@@ -729,6 +729,7 @@ function flattenMergedEntry(
 ): AggregatedPackage {
   return {
     name: entry.name,
+    displayName: entry.dorkos?.displayName,
     source: resolvePackageSource(entry.source, marketplaceUrl),
     description: entry.description,
     version: entry.version,

@@ -45,8 +45,14 @@ export type MarketplacePackageType = 'agent' | 'plugin' | 'skill-pack' | 'adapte
  * DorkOS extension fields, plus the origin marketplace source name.
  */
 export interface AggregatedPackage {
-  /** Package name (primary identifier). */
+  /** Package name (primary identifier — kebab-case slug). */
   name: string;
+  /**
+   * Human-readable display name from the DorkOS sidecar (`dorkos.json`), when
+   * the author supplies one. Absent for packages that ship only a slug — the
+   * UI humanizes `name` in that case, so template cards never show raw slugs.
+   */
+  displayName?: string;
   /** Git URL or other source identifier for the package. */
   source: string;
   /** Human-readable description. */
@@ -446,6 +452,12 @@ export interface ShapeOfferedAgent {
   displayName: string;
   /** Scaffold seed for an unsatisfied offer. */
   template?: ShapeAgentTemplate;
+  /**
+   * Human cadence line ("Every weekday at 9:00 AM") derived server-side from
+   * the Shape's schedule bound to this agent. Absent when the Shape declares
+   * no describable schedule for it — consumers show no schedule line then.
+   */
+  scheduleSummary?: string;
 }
 
 /**

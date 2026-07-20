@@ -278,6 +278,18 @@ describe('createAgentWorkspace', () => {
     expect(result.manifest.runtime).toBe('codex');
   });
 
+  it('persists a chosen emoji face on the manifest', async () => {
+    const result = await createAgentWorkspace({ name: 'faced-agent', icon: '🦊' }, mockMeshCore);
+
+    expect(result.manifest.icon).toBe('🦊');
+  });
+
+  it('omits the icon when no face is chosen', async () => {
+    const result = await createAgentWorkspace({ name: 'faceless-agent' }, mockMeshCore);
+
+    expect(result.manifest.icon).toBeUndefined();
+  });
+
   it('rejects a persona over the 4000-char bound', async () => {
     await expect(
       createAgentWorkspace({ name: 'too-much', persona: 'x'.repeat(4001) })
