@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { X, Puzzle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
@@ -65,7 +65,15 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
         >
           {contributions.map((contribution) => {
             const isActive = contribution.id === activeTab;
-            const Icon = contribution.icon;
+            // Extension-contributed tabs register no icon (the registry API can
+            // supply one but doesn't require it), so fall back to a puzzle-piece
+            // — matching SidebarTabRow. This is the single render choke point and
+            // it lives OUTSIDE PanelErrorBoundary, so it must survive not just a
+            // missing icon but a garbage one: an untyped JS extension can pass
+            // `icon: 'foo'`, which `?? Puzzle` (nullish-only) would wave through
+            // to render `<'foo' />` and kill the whole panel. Require a component.
+            const raw = contribution.icon;
+            const Icon = typeof raw === 'function' ? raw : Puzzle;
             return (
               <Tooltip key={contribution.id}>
                 <TooltipTrigger asChild>

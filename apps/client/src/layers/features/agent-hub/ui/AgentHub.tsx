@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
+import { useRouterState } from '@tanstack/react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import { useAppStore } from '@/layers/shared/model';
@@ -61,10 +62,16 @@ export function AgentHub() {
   const [heroPanel, setHeroPanel] = useState<HeroPanel>(null);
   const [previewColor, setPreviewColor] = useState<string | null>(null);
 
-  // Hub store path takes precedence; fall back to selected cwd.
+  // An explicit Agent Hub selection (openHub) always wins. The `selectedCwd`
+  // fallback is only honest ON /session — there it IS the session's own agent.
+  // Off /session `selectedCwd` is the server's ambient startup directory, not a
+  // user pick, so we must NOT resolve it: the panel would otherwise profile an
+  // agent nobody chose. This keeps the component in agreement with the
+  // contribution's selection-honest `visibleWhen` gate (see init-extensions.ts).
   const hubAgentPath = useAgentHubStore((s) => s.agentPath);
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const agentPath = hubAgentPath ?? selectedCwd;
+  const isSessionRoute = useRouterState({ select: (s) => s.location.pathname === '/session' });
+  const agentPath = hubAgentPath ?? (isSessionRoute ? selectedCwd : null);
 
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
 
