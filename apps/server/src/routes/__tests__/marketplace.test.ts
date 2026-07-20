@@ -309,6 +309,30 @@ describe('Marketplace Routes', () => {
       expect(res.body.packages).toEqual([]);
     });
 
+    // Purpose: Shapes install to `<dorkHome>/shapes/<name>` — a root the scan
+    // originally skipped, hiding installed Shapes from ?view=installed even
+    // though the install succeeded (DOR-355 regression).
+    it('surfaces installed Shapes from the shapes/ root', async () => {
+      const shapeDir = join(dorkHome, 'shapes', 'linear-ops');
+      writePackageManifest(shapeDir, {
+        manifest: 1,
+        type: 'shape',
+        name: 'linear-ops',
+        version: '2.0.0',
+      });
+
+      const res = await request(app).get('/api/marketplace/installed');
+      expect(res.status).toBe(200);
+      expect(res.body.packages).toHaveLength(1);
+      expect(res.body.packages[0]).toMatchObject({
+        name: 'linear-ops',
+        type: 'shape',
+        version: '2.0.0',
+        installPath: shapeDir,
+        scope: 'global',
+      });
+    });
+
     // Purpose: the cross-scope listing must surface agent-scoped installs the
     // global walk cannot see, tagged with the owning agent's identity.
     it('includes agent-scoped installations tagged with agent identity', async () => {

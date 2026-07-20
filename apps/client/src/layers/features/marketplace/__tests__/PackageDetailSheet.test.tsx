@@ -399,6 +399,31 @@ describe('PackageDetailSheet', () => {
     });
   });
 
+  it('renders a Shape-appropriate Provides line instead of an empty capability count', () => {
+    // Shapes provide layout/agents/schedules, so their command/skill/hook counts
+    // read as zero and formatProvides returns null. The panel must still say
+    // something honest about a Shape rather than dropping the line.
+    const shapePackage = makePackage({ name: 'linear-ops', type: 'shape' });
+    const shapeInstallation: InstalledPackage = {
+      name: 'linear-ops',
+      version: '2.0.0',
+      type: 'shape',
+      installPath: '/tmp/.dork/shapes/linear-ops',
+      scope: 'global',
+      provides: { commands: 0, skills: 0, hooks: false },
+    };
+    openPackage(shapePackage);
+    setDetailState({ data: makeDetail() });
+    setInstalledState([shapeInstallation]);
+    setInstallationsState([shapeInstallation]);
+
+    render(<PackageDetailSheet />);
+
+    expect(
+      screen.getByText('Provides a workspace layout, agents, and schedules')
+    ).toBeInTheDocument();
+  });
+
   it('renders one row per installation with agent identity and override badge', () => {
     openPackage(makePackage());
     setDetailState({ data: makeDetail() });

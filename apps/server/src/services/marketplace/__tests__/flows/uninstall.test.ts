@@ -18,8 +18,13 @@ import type {
   AdapterPackageManifest,
   MarketplacePackageManifest,
   PluginPackageManifest,
+  ShapePackageManifest,
 } from '@dorkos/marketplace';
-import { PackageNotInstalledError, UninstallFlow } from '../../flows/uninstall.js';
+import {
+  PackageNotInstalledError,
+  UninstallFlow,
+  type UninstallShapeDeactivator,
+} from '../../flows/uninstall.js';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -65,6 +70,27 @@ function buildAdapterManifest(
     adapterType: 'fixture',
     ...overrides,
   };
+}
+
+/** Build a minimal valid {@link ShapePackageManifest}. */
+function buildShapeManifest(overrides: Partial<ShapePackageManifest> = {}): ShapePackageManifest {
+  return {
+    schemaVersion: 1,
+    name: 'fixture-shape',
+    version: '0.1.0',
+    type: 'shape',
+    description: 'Fixture shape used by uninstall tests.',
+    tags: [],
+    layers: [],
+    requires: [],
+    activates: [],
+    extensions: [],
+    layout: {},
+    agents: [],
+    schedules: [],
+    connections: [],
+    ...overrides,
+  } as ShapePackageManifest;
 }
 
 /** Returns true if `target` exists on disk. */
@@ -202,6 +228,72 @@ describe('UninstallFlow', () => {
     expect(deps.adapterManager.removeAdapter).toHaveBeenCalledTimes(1);
     expect(deps.adapterManager.removeAdapter).toHaveBeenCalledWith('adapter-a');
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+  });
+
+  it('removes a Shape installed under shapes/ (DOR-355 regression)', async () => {
+    // A Shape lives under `<dorkHome>/shapes/<name>`, a root the uninstall
+    // probe originally never looked in — so uninstalling a Shape failed with
+    // PackageNotInstalledError even though the install landed on disk.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'linear-ops');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildShapeManifest({ name: 'linear-ops' }),
+    });
+
+    const flow = new UninstallFlow(deps);
+    const result = await flow.uninstall({ name: 'linear-ops' });
+
+    expect(result.ok).toBe(true);
+    expect(result.packageName).toBe('linear-ops');
+    expect(await pathExists(installRoot)).toBe(false);
+    expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+    expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
+  });
+
+  it('clears the active Shape when the uninstalled Shape is the active one', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'linear-ops');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildShapeManifest({ name: 'linear-ops' }),
+    });
+
+    const clearActiveShape = vi.fn();
+    const shapeDeactivator: UninstallShapeDeactivator = {
+      getActiveShapeName: () => 'linear-ops',
+      clearActiveShape,
+    };
+
+    const flow = new UninstallFlow({ ...deps, shapeDeactivator });
+    await flow.uninstall({ name: 'linear-ops' });
+
+    expect(clearActiveShape).toHaveBeenCalledTimes(1);
+    expect(await pathExists(installRoot)).toBe(false);
+  });
+
+  it('leaves the active Shape untouched when a different Shape is uninstalled', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'linear-ops');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildShapeManifest({ name: 'linear-ops' }),
+    });
+
+    const clearActiveShape = vi.fn();
+    const shapeDeactivator: UninstallShapeDeactivator = {
+      getActiveShapeName: () => 'some-other-shape',
+      clearActiveShape,
+    };
+
+    const flow = new UninstallFlow({ ...deps, shapeDeactivator });
+    await flow.uninstall({ name: 'linear-ops' });
+
+    expect(clearActiveShape).not.toHaveBeenCalled();
+    expect(await pathExists(installRoot)).toBe(false);
   });
 
   it('preserves .dork/data/ and .dork/secrets.json when purge is false', async () => {

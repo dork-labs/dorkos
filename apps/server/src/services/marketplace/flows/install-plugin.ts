@@ -17,6 +17,7 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { PluginPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
+import { installRootDirForType } from '../lib/install-roots.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import {
   compileStagedExtensions,
@@ -224,5 +225,5 @@ function computeInstallRoot(
   if (projectPath) {
     return path.join(projectPath, '.dork', 'plugins', manifest.name);
   }
-  return path.join(dorkHome, 'plugins', manifest.name);
+  return path.join(dorkHome, installRootDirForType(manifest.type), manifest.name);
 }

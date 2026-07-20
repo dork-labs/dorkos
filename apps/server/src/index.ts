@@ -84,6 +84,7 @@ import { createShapesRouter } from './routes/shapes.js';
 import type { ApplyShapeDeps } from './services/shapes/apply-shape.js';
 import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
 import {
+  clearActiveShape,
   createFsShapeManifestResolver,
   createShapeConfigStore,
   createShapeSecretChecker,
@@ -1168,6 +1169,8 @@ async function start() {
       dorkHome,
       extensionManager,
       adapterManager,
+      // Keep `ui.shapes.active` honest when the active Shape is uninstalled.
+      shapeDeactivator: { getActiveShapeName, clearActiveShape },
       logger,
     });
 

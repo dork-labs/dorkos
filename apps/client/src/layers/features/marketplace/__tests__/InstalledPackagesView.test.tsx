@@ -172,6 +172,29 @@ describe('InstalledPackagesView', () => {
       expect(screen.getByText('v1.2.0')).toBeInTheDocument();
       expect(screen.getByText('v2.0.1')).toBeInTheDocument();
     });
+
+    it('renders an installed Shape with its SHAPE type badge (DOR-355 regression)', () => {
+      // Shapes install to <dorkHome>/shapes/<name> and were invisible here until
+      // the scanner learned to walk that root; once listed, the row must render
+      // with the SHAPE badge like any other type.
+      setInstalledState({
+        data: [
+          makeInstalled({
+            name: 'linear-ops',
+            type: 'shape',
+            version: '2.0.0',
+            scope: 'global',
+            installPath: '/tmp/.dork/shapes/linear-ops',
+          }),
+        ],
+      });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByText('linear-ops')).toBeInTheDocument();
+      expect(screen.getByText('SHAPE')).toBeInTheDocument();
+      expect(screen.getByText('v2.0.0')).toBeInTheDocument();
+    });
   });
 
   describe('update action', () => {

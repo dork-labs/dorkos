@@ -17,6 +17,7 @@ import type { AdapterPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { atomicMove } from '../lib/atomic-move.js';
+import { installRootDirForType } from '../lib/install-roots.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
@@ -55,7 +56,7 @@ export class AdapterInstallFlow {
     _opts: InstallRequest
   ): Promise<InstallResult> {
     const { dorkHome, adapterManager, logger } = this.deps;
-    const installPath = path.join(dorkHome, 'plugins', manifest.name);
+    const installPath = path.join(dorkHome, installRootDirForType(manifest.type), manifest.name);
 
     logger.info('[marketplace/install-adapter] starting', {
       name: manifest.name,

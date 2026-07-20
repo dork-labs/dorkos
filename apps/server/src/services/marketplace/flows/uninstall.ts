@@ -3,13 +3,15 @@
  *
  * Removes a previously installed package by name. Plugin/skill-pack/adapter
  * packages live under `${dorkHome}/plugins/<name>/`, agent packages under
- * `${dorkHome}/agents/<name>/`, and project-local plugins under
- * `${projectPath}/.dork/plugins/<name>/`. The flow is rollback-safe: the
- * package is moved to a temporary staging directory first, side-effects
- * (extension disable, adapter removal) run against the live (now-empty)
- * location, and only after every step succeeds is the staging directory
- * permanently removed. Any thrown error during the side-effect phase
- * restores the package from staging back to its original install path.
+ * `${dorkHome}/agents/<name>/`, Shapes under `${dorkHome}/shapes/<name>/`, and
+ * project-local plugins under `${projectPath}/.dork/plugins/<name>/` — the same
+ * per-type roots the install flows write to ({@link INSTALL_ROOTS_WITH_TYPE}).
+ * The flow is rollback-safe: the package is moved to a temporary staging
+ * directory first, side-effects (extension disable, adapter removal, active-
+ * Shape deactivation) run against the live (now-empty) location, and only after
+ * every step succeeds is the staging directory permanently removed. Any thrown
+ * error during the side-effect phase restores the package from staging back to
+ * its original install path.
  *
  * Data preservation: when `purge` is false (the default), the contents of
  * `<installRoot>/.dork/data/` and `<installRoot>/.dork/secrets.json` are
@@ -26,6 +28,7 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
+import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
 
 /** Staging directory prefix used by the uninstall flow. */
 const STAGING_DIR_PREFIX = 'dorkos-uninstall-';
@@ -71,11 +74,26 @@ export interface UninstallAdapterManager {
   removeAdapter(id: string): Promise<void>;
 }
 
+/**
+ * Person-scoped active-Shape surface the uninstall flow uses to keep
+ * `ui.shapes.active` honest when the active Shape is removed. Optional on the
+ * deps so non-Shape-aware callers (and most tests) need not supply it; when
+ * absent, uninstalling a Shape simply skips the deactivation step.
+ */
+export interface UninstallShapeDeactivator {
+  /** The currently-active Shape name (`ui.shapes.active`), or `null`. */
+  getActiveShapeName(): string | null;
+  /** Clear `ui.shapes.active` (set it to `null`). */
+  clearActiveShape(): void;
+}
+
 /** Dependencies for {@link UninstallFlow}. */
 export interface UninstallFlowDeps {
   dorkHome: string;
   extensionManager: UninstallExtensionManager;
   adapterManager: UninstallAdapterManager;
+  /** Active-Shape state hooks; omit when the caller does not manage Shapes. */
+  shapeDeactivator?: UninstallShapeDeactivator;
   logger: Logger;
 }
 
@@ -175,21 +193,24 @@ export class UninstallFlow {
         inferredType: 'plugin',
       });
     }
-    candidates.push({
-      installRoot: path.join(this.deps.dorkHome, 'plugins', req.name),
-      inferredType: 'plugin',
-    });
-    candidates.push({
-      installRoot: path.join(this.deps.dorkHome, 'agents', req.name),
-      inferredType: 'agent',
-    });
+    // Global roots, in install-root order (`plugins`, `agents`, `shapes`) —
+    // derived from the shared mapping so a package type can never install
+    // somewhere the uninstall probe does not look (the drift that hid Shapes).
+    for (const { dir, representativeType } of INSTALL_ROOTS_WITH_TYPE) {
+      candidates.push({
+        installRoot: path.join(this.deps.dorkHome, dir, req.name),
+        inferredType: representativeType,
+      });
+    }
     return candidates;
   }
 
   /**
    * Run the type-specific cleanup hooks against the staged copy. Plugin
    * extensions are disabled by walking the staged `.dork/extensions/`
-   * directory; adapter entries are removed via `removeAdapter`.
+   * directory; adapter entries are removed via `removeAdapter`; removing the
+   * currently-active Shape clears `ui.shapes.active` so the pointer never
+   * dangles at a deleted install.
    *
    * @internal
    */
@@ -206,6 +227,30 @@ export class UninstallFlow {
         located.manifest?.name ?? path.basename(located.installRoot)
       );
     }
+    if (type === 'shape') {
+      this.deactivateShapeIfActive(located);
+    }
+  }
+
+  /**
+   * Clear `ui.shapes.active` when the Shape being uninstalled is the one
+   * currently applied. Leaving the pointer in place would leave the cockpit
+   * referencing a Shape that no longer exists on disk (a dangling active
+   * Shape); clearing it falls the cockpit back to no active Shape, which is
+   * the honest state after its layout is removed. A no-op when the deactivator
+   * dependency is absent (Shape-unaware caller) or a different Shape is active.
+   *
+   * @internal
+   */
+  private deactivateShapeIfActive(located: LocatedPackage): void {
+    const deactivator = this.deps.shapeDeactivator;
+    if (!deactivator) return;
+    const shapeName = located.manifest?.name ?? path.basename(located.installRoot);
+    if (deactivator.getActiveShapeName() !== shapeName) return;
+    deactivator.clearActiveShape();
+    this.deps.logger.info(
+      `[marketplace/uninstall] Cleared active Shape "${shapeName}" — it was uninstalled`
+    );
   }
 
   /**

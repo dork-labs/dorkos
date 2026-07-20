@@ -240,7 +240,14 @@ function InstallationsPanel({
     }
   }
 
-  const providesLine = formatProvides(installations.find((i) => i.provides)?.provides);
+  // Shapes provide a workspace layout, agents, and schedules rather than
+  // commands/skills/hooks, so their capability counts read as empty. Fall back
+  // to a Shape-appropriate descriptor so the panel says something honest
+  // instead of dropping the "Provides" line entirely.
+  const isShape = installations.some((i) => i.type === 'shape');
+  const providesLine =
+    formatProvides(installations.find((i) => i.provides)?.provides) ??
+    (isShape ? 'a workspace layout, agents, and schedules' : null);
   const installedFrom = installations.find((i) => i.installedFrom)?.installedFrom;
 
   return (
