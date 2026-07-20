@@ -304,16 +304,18 @@ Workflow: Scaffold in personal marketplace → iterate → validate → move to 
 
 Plugins can register UI extensions. Available slots:
 
-| Slot                    | Purpose                      |
-| ----------------------- | ---------------------------- |
-| `sidebar.footer`        | Footer area of left sidebar  |
-| `sidebar.tabs`          | Tab list in left sidebar     |
-| `dashboard.sections`    | Dashboard widget grid        |
-| `header.actions`        | Top-right action buttons     |
-| `command-palette.items` | Command palette entries      |
-| `dialog`                | Modal dialog slots           |
-| `settings.tabs`         | Settings dialog tabs         |
-| `right-panel`           | Shell-level right panel tabs |
+| Slot                    | Purpose                                  |
+| ----------------------- | ---------------------------------------- |
+| `sidebar.footer`        | Footer area of left sidebar              |
+| `dashboard.sections`    | Dashboard widget grid                    |
+| `command-palette.items` | Command palette entries                  |
+| `dialog`                | Modal dialog slots                       |
+| `settings.tabs`         | Settings dialog tabs                     |
+| `right-panel`           | Shell-level right panel (inspector) tabs |
+
+> The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
+> retired the sidebar tab strip. For a contextual side panel use `right-panel`;
+> for a dashboard card use `dashboard.sections`.
 
 Extensions receive an `ExtensionAPI` object with methods for:
 

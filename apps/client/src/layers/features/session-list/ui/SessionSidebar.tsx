@@ -62,6 +62,11 @@ interface LegacyTabStripProps {
  * the retired registry-backed `SidebarTabRow`: fixed to the four built-ins,
  * with ARIA tablist semantics, arrow-key roving focus, and a motion-animated
  * sliding indicator under the active tab.
+ *
+ * The old Cmd/Ctrl+1-4 tab shortcuts were dropped DELIBERATELY with the retired
+ * tab-strip machinery (not an incidental regression) — this is the simplest
+ * honest form for a deprecated embed, and the Obsidian north-star rework deletes
+ * this component wholesale. Tabs are reachable by click and arrow keys.
  */
 function LegacyTabStrip({
   activeTab,
