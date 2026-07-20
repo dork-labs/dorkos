@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { useAppStore } from '@/layers/shared/model';
 
 export type AgentHubTab = 'sessions' | 'config' | 'toolkit';
 
@@ -17,12 +18,19 @@ export const useAgentHubStore = create<AgentHubState>()(
       activeTab: 'sessions',
       setActiveTab: (tab) => set({ activeTab: tab }),
       agentPath: null,
-      setAgentPath: (path) => set({ agentPath: path }),
-      openHub: (agentPath, tab) =>
-        set({
-          agentPath,
-          activeTab: tab ?? 'sessions',
-        }),
+      // Both writers below are explicit, click/deep-link-driven selections, so
+      // they publish the picked path to the app store's `explicitAgentPath` — the
+      // honest signal the right-panel visibility predicates read across the
+      // feature boundary (they can't import this feature store). See that field's
+      // docs for why the ambient `selectedCwd` is not a truthful stand-in.
+      setAgentPath: (path) => {
+        set({ agentPath: path });
+        useAppStore.getState().setExplicitAgentPath(path);
+      },
+      openHub: (agentPath, tab) => {
+        set({ agentPath, activeTab: tab ?? 'sessions' });
+        useAppStore.getState().setExplicitAgentPath(agentPath);
+      },
     }),
     { name: 'agent-hub' }
   )

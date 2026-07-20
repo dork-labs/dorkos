@@ -49,7 +49,7 @@ export function createExtensionAPI(
       slot: ExtensionPointId,
       id: string,
       component: ComponentType,
-      options?: { priority?: number; label?: string }
+      options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }
     ): () => void {
       const contribution = adaptToContribution(slot, `${extId}:${id}`, component, options);
       const unsub = deps.registry.register(slot, contribution);
@@ -253,7 +253,7 @@ function adaptToContribution(
   slot: ExtensionPointId,
   id: string,
   component: ComponentType,
-  options?: { priority?: number; label?: string }
+  options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }
 ): Record<string, unknown> {
   const base = { id, priority: options?.priority ?? DEFAULT_PRIORITY };
   // Human label for labelled/tabbed slots; namespaced id is the honest fallback.
@@ -281,15 +281,17 @@ function adaptToContribution(
         icon: undefined as unknown as import('lucide-react').LucideIcon,
       };
     case 'right-panel':
-      // Third-party right-panel tabs register only their content component. The
-      // container owns the shared header (tab strip + close), so an extension
-      // tab can never trap the user — no per-tab header wiring is required.
-      // `headerActions` is reserved for built-ins that need header controls.
+      // Third-party right-panel tabs register their content component and, if
+      // they choose, a tab icon; the strip falls back to a puzzle-piece when
+      // `icon` is omitted. The container owns the shared header (tab strip +
+      // close), so an extension tab can never trap the user — no per-tab header
+      // wiring is required. `headerActions` is reserved for built-ins that need
+      // header controls.
       return {
         ...base,
         component,
         title: label,
-        icon: undefined as unknown as import('lucide-react').LucideIcon,
+        icon: options?.icon,
         headerActions: undefined,
         visibleWhen: undefined,
       };

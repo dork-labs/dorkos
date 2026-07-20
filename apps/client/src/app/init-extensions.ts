@@ -80,10 +80,18 @@ export function initializeExtensions(): void {
   });
 
   // Agent Hub as right-panel contribution (lazy-loaded).
-  // Hidden on the marketplace routes: the Agent Profile follows the operator's
-  // selected working directory, which on /marketplace is usually a plain repo
-  // root with no agent manifest, so the panel would default to a misleading
-  // "Agent not found" error. The marketplace has no agent context to profile.
+  //
+  // Visibility is selection-honest, so the Agent Profile never shows an agent the
+  // operator did not choose:
+  //   • /marketplace* → hidden. There is no agent context to profile there.
+  //   • /session       → shown. The panel profiles the session's own agent.
+  //   • anywhere else  → shown ONLY once the operator has explicitly opened an
+  //                      agent this session (openHub sets `explicitAgentPath`).
+  // Without the last rule the tab would surface the ambient startup agent — the
+  // server's default cwd, which nobody picked — and often render a misleading
+  // "Agent not found" (see AGENTS.md, the "describe what happens for the user"
+  // filter). `explicitAgentPath` is the click-driven signal; `cwd`/`agentId` are
+  // ambient and deliberately not used to gate this tab.
   register('right-panel', {
     id: 'agent-hub',
     title: 'Agent Profile',
@@ -91,7 +99,11 @@ export function initializeExtensions(): void {
     component: lazy(() =>
       import('@/layers/features/agent-hub').then((m) => ({ default: m.AgentHub }))
     ),
-    visibleWhen: ({ pathname }) => !pathname.startsWith('/marketplace'),
+    visibleWhen: ({ pathname, explicitAgentPath }) => {
+      if (pathname.startsWith('/marketplace')) return false;
+      if (pathname === '/session') return true;
+      return explicitAgentPath != null;
+    },
     priority: 10,
   });
 

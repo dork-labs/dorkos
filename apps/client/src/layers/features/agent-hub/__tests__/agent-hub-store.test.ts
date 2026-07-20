@@ -3,11 +3,13 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { useAppStore } from '@/layers/shared/model';
 import { useAgentHubStore } from '../model/agent-hub-store';
 
 // Reset store state between tests to prevent cross-test contamination.
 beforeEach(() => {
   useAgentHubStore.setState({ activeTab: 'sessions', agentPath: null });
+  useAppStore.setState({ explicitAgentPath: null });
 });
 
 describe('useAgentHubStore', () => {
@@ -59,6 +61,28 @@ describe('useAgentHubStore', () => {
 
     expect(result.current.agentPath).toBe('/agents/some-agent');
     expect(result.current.activeTab).toBe('sessions');
+  });
+
+  it('openHub publishes the explicit selection to the app store', () => {
+    const { result } = renderHook(() => useAgentHubStore());
+
+    act(() => {
+      result.current.openHub('/agents/picked', 'config');
+    });
+
+    // The app store's explicitAgentPath is the honest, cross-feature selection
+    // signal the right-panel visibility predicates read.
+    expect(useAppStore.getState().explicitAgentPath).toBe('/agents/picked');
+  });
+
+  it('setAgentPath publishes the explicit selection to the app store', () => {
+    const { result } = renderHook(() => useAgentHubStore());
+
+    act(() => {
+      result.current.setAgentPath('/agents/typed');
+    });
+
+    expect(useAppStore.getState().explicitAgentPath).toBe('/agents/typed');
   });
 
   it('openHub defaults to sessions tab when no tab specified', () => {

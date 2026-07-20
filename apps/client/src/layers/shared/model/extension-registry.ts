@@ -123,8 +123,13 @@ export interface SettingsTabContribution extends BaseContribution {
 export interface RightPanelContribution extends BaseContribution {
   /** Display title shown in tooltips and accessibility labels. */
   title: string;
-  /** Icon rendered in the tab bar button. */
-  icon: LucideIcon;
+  /**
+   * Tab-strip icon. Optional: extension-contributed tabs register through
+   * `api.registerComponent('right-panel', …)`, which lets an author supply an
+   * icon but does not require one, so the tab strip falls back to a default (a
+   * puzzle-piece) when this is absent. Built-in tabs always set it.
+   */
+  icon?: LucideIcon;
   /** The panel content component rendered when this tab is active. */
   component: ComponentType;
   /**
@@ -145,17 +150,25 @@ export interface RightPanelContribution extends BaseContribution {
    * hides under the in-process transport), or an agent/folder the tab does not
    * apply to. When omitted, the contribution is always visible.
    *
-   * `transport`, `agentId`, and `cwd` are optional so unit callers can pass a
-   * bare `{ pathname }`; the shell (RightPanelContainer / RightPanelToggle)
-   * always supplies all four. `agentId` and `cwd` are `string | null` — null is
-   * the honest value while no agent is registered at the selected folder, no
-   * folder is selected, or the lookup hasn't resolved yet.
+   * `transport`, `agentId`, `cwd`, and `explicitAgentPath` are optional so unit
+   * callers can pass a bare `{ pathname }`; the shell (RightPanelContainer)
+   * always supplies them. `agentId` and `cwd` are `string | null` — null is the
+   * honest value while no agent is registered at the selected folder, no folder
+   * is selected, or the lookup hasn't resolved yet.
+   *
+   * `explicitAgentPath` is the path of an agent the operator *explicitly* opened
+   * to inspect this session (via the Agent Hub), or null when none has been
+   * picked. Unlike `agentId`/`cwd` — which track the ambient working directory
+   * the server chose at startup — this is click-driven, so a tab can stay hidden
+   * until the user actually selects an agent instead of surfacing an agent they
+   * never chose.
    */
   visibleWhen?: (ctx: {
     pathname: string;
     transport?: Transport;
     agentId?: string | null;
     cwd?: string | null;
+    explicitAgentPath?: string | null;
   }) => boolean;
 }
 

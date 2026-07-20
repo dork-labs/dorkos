@@ -145,6 +145,37 @@ describe('createExtensionAPI', () => {
       expect(unlabelled.label).toBe('linear-issues:unlabelled');
     });
 
+    it('threads an icon option into a right-panel contribution', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+      const MyIcon = () => null;
+
+      api.registerComponent('right-panel', 'inspector', () => null, {
+        label: 'Inspector',
+        icon: MyIcon,
+      });
+
+      const [slot, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(slot).toBe('right-panel');
+      expect(contribution.title).toBe('Inspector');
+      expect(contribution.icon).toBe(MyIcon);
+    });
+
+    it('leaves a right-panel contribution iconless when no icon option is given', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      api.registerComponent('right-panel', 'inspector', () => null, { label: 'Inspector' });
+
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      // Undefined is the honest value — the header supplies a default puzzle-piece.
+      expect(contribution.icon).toBeUndefined();
+    });
+
     it('returns the unsubscribe function from registry.register', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);

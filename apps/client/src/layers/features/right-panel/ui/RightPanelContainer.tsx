@@ -56,6 +56,11 @@ export function RightPanelContainer() {
   // both are null when no agent/folder is resolved (the honest degraded value).
   const agentId = useAppStore((s) => s.currentAgentId);
   const cwd = useAppStore((s) => s.selectedCwd);
+  // The agent the operator explicitly opened this session (Agent Hub). Unlike
+  // `cwd`/`agentId` (ambient — the server's startup directory) this is
+  // click-driven, so a tab can gate on a real selection instead of a default
+  // nobody chose. Null until the first explicit open.
+  const explicitAgentPath = useAppStore((s) => s.explicitAgentPath);
 
   // Get all right-panel contributions, sorted by priority
   const allContributions = useSlotContributions('right-panel');
@@ -66,9 +71,10 @@ export function RightPanelContainer() {
   const visibleContributions = useMemo(
     () =>
       allContributions.filter(
-        (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport, agentId, cwd })
+        (c) =>
+          !c.visibleWhen || c.visibleWhen({ pathname, transport, agentId, cwd, explicitAgentPath })
       ),
-    [allContributions, pathname, transport, agentId, cwd]
+    [allContributions, pathname, transport, agentId, cwd, explicitAgentPath]
   );
 
   // Auto-select first visible tab if active tab is not visible. View-only: this
@@ -83,7 +89,12 @@ export function RightPanelContainer() {
     }
   }, [visibleContributions, activeTab, setActiveTabView]);
 
-  const shouldShow = rightPanelOpen && visibleContributions.length > 0;
+  // The shell is never route-hidden — only its body varies (research:
+  // 20260720_context-aware-right-inspector-panels). So "show" tracks the user's
+  // open/close intent alone: even with zero visible contributions the panel
+  // opens to an honest empty state rather than vanishing (which would strand the
+  // always-present toggle pointing at nothing).
+  const shouldShow = rightPanelOpen;
 
   // Live constraints: the pixel floor as a % of the measured group (DOR-388).
   const { minPct, defaultPct } = useRightPanelSizing();
@@ -103,9 +114,6 @@ export function RightPanelContainer() {
       panel.collapse();
     }
   }, [shouldShow, defaultPct]);
-
-  // No contributions at all — remove panel from the DOM entirely
-  if (visibleContributions.length === 0) return null;
 
   const activeContribution = visibleContributions.find((c) => c.id === activeTab);
   const ActiveComponent = activeContribution?.component;
@@ -142,7 +150,19 @@ export function RightPanelContainer() {
           : {})}
       >
         <PanelErrorBoundary tabId={activeTab}>
-          <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>
+          <Suspense fallback={null}>
+            {ActiveComponent ? (
+              <ActiveComponent />
+            ) : (
+              // Zero visible contributions on this route. The shell still opens
+              // (it is never route-hidden), showing an honest empty state rather
+              // than a blank panel. Wave 2's Pulse promotes global content into
+              // this slot, making this state permanently unreachable.
+              <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
+                Nothing to inspect here yet.
+              </div>
+            )}
+          </Suspense>
         </PanelErrorBoundary>
       </div>
     </>

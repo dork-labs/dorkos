@@ -32,11 +32,34 @@ describe('initializeExtensions — right-panel contributions', () => {
     expect(agentHub?.visibleWhen?.({ pathname: '/marketplace/sources' })).toBe(false);
   });
 
-  it('shows the Agent Profile on agent-context routes', () => {
+  it('always shows the Agent Profile on the session route', () => {
     const agentHub = getRightPanelContribution('agent-hub');
-    for (const pathname of ['/', '/session', '/agents', '/tasks', '/activity', '/workspaces']) {
-      expect(agentHub?.visibleWhen?.({ pathname })).toBe(true);
+    // /session profiles the session's own agent — no explicit pick required.
+    expect(agentHub?.visibleWhen?.({ pathname: '/session' })).toBe(true);
+    expect(agentHub?.visibleWhen?.({ pathname: '/session', explicitAgentPath: null })).toBe(true);
+  });
+
+  it('hides the Agent Profile off /session until an agent is explicitly opened', () => {
+    const agentHub = getRightPanelContribution('agent-hub');
+    // Selection-honest: with no explicit selection, the ambient startup agent
+    // must NOT surface on the dashboard/activity/tasks/workspaces routes.
+    for (const pathname of ['/', '/agents', '/tasks', '/activity', '/workspaces']) {
+      expect(agentHub?.visibleWhen?.({ pathname, explicitAgentPath: null })).toBe(false);
     }
+  });
+
+  it('shows the Agent Profile off /session once an agent is explicitly opened', () => {
+    const agentHub = getRightPanelContribution('agent-hub');
+    for (const pathname of ['/', '/agents', '/tasks', '/activity', '/workspaces']) {
+      expect(agentHub?.visibleWhen?.({ pathname, explicitAgentPath: '/repo/a' })).toBe(true);
+    }
+  });
+
+  it('keeps the Agent Profile hidden on marketplace even with an explicit selection', () => {
+    const agentHub = getRightPanelContribution('agent-hub');
+    expect(
+      agentHub?.visibleWhen?.({ pathname: '/marketplace', explicitAgentPath: '/repo/a' })
+    ).toBe(false);
   });
 
   it('registers the Files contribution', () => {

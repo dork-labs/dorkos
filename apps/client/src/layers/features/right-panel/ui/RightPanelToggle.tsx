@@ -1,7 +1,6 @@
 import { PanelRight, PanelRightClose } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useRouterState } from '@tanstack/react-router';
-import { useAppStore, useSlotContributions, useTransport } from '@/layers/shared/model';
+import { useAppStore } from '@/layers/shared/model';
 import { isMac } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { Kbd } from '@/layers/shared/ui/kbd';
@@ -9,27 +8,16 @@ import { Kbd } from '@/layers/shared/ui/kbd';
 /**
  * Toggle button for the shell-level right panel.
  *
- * Hides itself when no contributions are visible on the current route.
- * Uses the same spring animation and tooltip pattern as CanvasToggle.
+ * Always mounted, on every route — the panel shell is load-bearing
+ * infrastructure that is never route-hidden (research:
+ * 20260720_context-aware-right-inspector-panels). It stays put even where no
+ * contribution is currently visible; opening it then reveals an honest empty
+ * state (owned by {@link RightPanelContainer}) rather than nothing. Uses the
+ * same spring animation and tooltip pattern as CanvasToggle.
  */
 export function RightPanelToggle() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
-
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
-  const transport = useTransport();
-  // The active agent + working directory let tabs scope visibility to a specific
-  // agent or folder; both are null when unresolved.
-  const agentId = useAppStore((s) => s.currentAgentId);
-  const cwd = useAppStore((s) => s.selectedCwd);
-  const allContributions = useSlotContributions('right-panel');
-  const visibleContributions = allContributions.filter(
-    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport, agentId, cwd })
-  );
-
-  // Hide when there is nothing to show on this route
-  if (visibleContributions.length === 0) return null;
 
   const Icon = rightPanelOpen ? PanelRightClose : PanelRight;
   const ariaLabel = rightPanelOpen ? 'Close right panel' : 'Open right panel';

@@ -94,6 +94,38 @@ describe('RightPanelHeader', () => {
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
   });
 
+  it('renders the fallback icon for an iconless contribution among 2+ visible tabs', () => {
+    // Extension-contributed tabs register no icon. Before the ?? Puzzle fallback
+    // this rendered a bare `undefined` component and crashed the whole panel the
+    // moment such a tab joined a second visible contribution.
+    renderHeader([
+      makeContribution('agent', { title: 'Agent Profile' }),
+      makeContribution('ext', { title: 'My Extension', icon: undefined }),
+    ]);
+
+    // Both tabs render — the iconless one falls back to the puzzle-piece instead
+    // of throwing.
+    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
+  });
+
+  it('falls back to the puzzle icon for a truthy non-component icon (untyped JS extension)', () => {
+    // The header renders outside PanelErrorBoundary, so a garbage `icon` value
+    // from an untyped JS extension (e.g. `icon: 'foo'`) must not reach React as a
+    // component. `?? Puzzle` (nullish-only) would let a truthy string through and
+    // crash the panel; the typeof-function guard rejects it.
+    renderHeader([
+      makeContribution('agent', { title: 'Agent Profile' }),
+      makeContribution('ext', {
+        title: 'My Extension',
+        icon: 'not-a-component' as unknown as RightPanelContribution['icon'],
+      }),
+    ]);
+
+    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
+  });
+
   it('renders no tab strip with a single contribution', () => {
     renderHeader([makeContribution('agent', { title: 'Agent Profile' })]);
 
