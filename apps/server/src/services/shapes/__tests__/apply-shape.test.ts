@@ -544,6 +544,30 @@ describe('applyShape', () => {
     expect(result.offeredAgents[0].scheduleSummary).toBe('Every weekday at 9:00 AM');
   });
 
+  it('appends a declared timezone so the time never reads as the local hour', async () => {
+    const manifest = buildManifest({
+      agents: [{ ref: 'keeper', affinity: 'default', template: { displayName: 'Keeper' } }],
+      schedules: [
+        {
+          name: 'morning-triage',
+          description: 'triage the board',
+          prompt: 'triage',
+          cron: '0 9 * * 1-5',
+          timezone: 'America/New_York',
+          agentRef: 'keeper',
+          permissionMode: 'acceptEdits',
+        },
+      ],
+    });
+    const { deps } = makeDeps({ manifest });
+
+    const result = await applyShape('s', deps);
+
+    expect(result.offeredAgents[0].scheduleSummary).toBe(
+      'Every weekday at 9:00 AM (America/New_York)'
+    );
+  });
+
   it('omits scheduleSummary when the cron is not describable — never leaks raw cron', async () => {
     const manifest = buildManifest({
       agents: [{ ref: 'keeper', affinity: 'default', template: { displayName: 'Keeper' } }],

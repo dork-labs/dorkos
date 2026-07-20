@@ -106,7 +106,7 @@ export function ArrivalConfirm({
         {skills && skills.length > 0 && (
           <div className="flex items-start gap-2">
             <Puzzle className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-            <dt className="text-muted-foreground shrink-0">Brings its skills</dt>
+            <dt className="text-muted-foreground shrink-0">Uses skills</dt>
             <dd>{skills.join(', ')}</dd>
           </div>
         )}

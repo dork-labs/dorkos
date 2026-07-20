@@ -609,7 +609,7 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByText('Can')).toBeInTheDocument();
     expect(screen.getByText('linear')).toBeInTheDocument();
     // Skills are listed, never claimed installed.
-    expect(screen.getByText('Brings its skills')).toBeInTheDocument();
+    expect(screen.getByText('Uses skills')).toBeInTheDocument();
     expect(screen.getByText(/linear-adapter/)).toBeInTheDocument();
   });
 

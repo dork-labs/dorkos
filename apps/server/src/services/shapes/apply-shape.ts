@@ -503,7 +503,9 @@ function resolveAgentMatch(
  * schedules: the first schedule bound to the agent (`agentRef`) whose cron
  * the shared describer recognizes. Returns `null` when the Shape declares no
  * schedule for this agent or none is describable — the offer card then shows
- * no schedule line at all rather than a raw cron string.
+ * no schedule line at all rather than a raw cron string. A declared timezone
+ * is appended ("… (America/New_York)") so the time never silently reads as
+ * the viewer's local hour.
  *
  * @param manifest - The Shape manifest being applied.
  * @param agentRef - The Shape-local agent slug to look up schedules for.
@@ -514,7 +516,10 @@ function summarizeAgentSchedule(manifest: ShapePackageManifest, agentRef: string
     // A null cron is a manual-only schedule — no cadence to describe.
     if (schedule.agentRef !== agentRef || schedule.cron === null) continue;
     const summary = describeCronSchedule(schedule.cron);
-    if (summary) return summary;
+    if (!summary) continue;
+    // A declared timezone qualifies the time — an unqualified "9:00 AM" would
+    // read as the user's local time, which may be a different hour entirely.
+    return schedule.timezone ? `${summary} (${schedule.timezone})` : summary;
   }
   return null;
 }
