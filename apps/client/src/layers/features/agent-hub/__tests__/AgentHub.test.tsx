@@ -143,11 +143,14 @@ describe('AgentHub', () => {
   });
 
   it('degrades to AgentNotFound (no throw) when an explicitly-opened agent is later deleted', () => {
-    // Interim behaviour: explicitAgentPath has no clearing/reconcile path (that
-    // lifecycle lands in Inspector Wave 2 / Pulse), so an opened-then-deleted
-    // agent leaves the tab visible. Lock it as non-crashing — it must render
-    // AgentNotFound, never throw.
-    mockPathname = '/'; // off-session, kept visible only by the explicit selection
+    // The tab-level lifecycle now heals: useReconcileExplicitAgentPath clears
+    // explicitAgentPath when the opened agent no longer resolves, so off /session
+    // the Agent Profile tab is removed rather than lingering. The AgentHub
+    // COMPONENT itself must still degrade gracefully if rendered on a dead path
+    // (before the reconcile fires, or on /session where the tab is always
+    // visible) — this test renders it directly to lock that non-crashing
+    // AgentNotFound fallback.
+    mockPathname = '/'; // rendered directly here, bypassing the tab visibility gate
     useAgentHubStore.setState({ agentPath: '/opened/then-deleted' });
     vi.mocked(useCurrentAgent).mockReturnValue({
       data: null, // agent manifest gone

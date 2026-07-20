@@ -77,13 +77,15 @@ export interface CoreSlice {
    * see it without importing that feature — the same role {@link currentAgentId}
    * plays for the extension host. Transient: never persisted.
    *
-   * Deliberately NOT self-healing: unlike {@link currentAgentId} — which
-   * `useSyncCurrentAgentId` reconciles continuously against the resolved cwd —
-   * this field is only ever set forward by the explicit-selection writers and
-   * has no clearing/reconcile path. An opened-then-deleted agent therefore keeps
-   * the tab visible, rendering AgentNotFound (a non-crashing degradation, locked
-   * by test). A clearing + reconcile lifecycle is intentionally deferred to
-   * Inspector Wave 2 (Pulse), which reworks this surface.
+   * Sticky for the session, but reconciled against agent existence:
+   * {@link useReconcileExplicitAgentPath} (mounted beside `useSyncCurrentAgentId`)
+   * clears this field when the opened agent no longer resolves — so an
+   * opened-then-deleted agent's Profile tab disappears off /session rather than
+   * lingering on a stale selection. It is otherwise only set forward by the
+   * explicit-selection writers (`openHub`/`setAgentPath`); no route change or
+   * ambient cwd shift clears it. The AgentHub component still degrades to
+   * AgentNotFound (non-crashing) if rendered on a dead path before the reconcile
+   * fires or on /session, where the tab is always visible.
    */
   explicitAgentPath: string | null;
   /** Set the explicitly-opened agent path (null clears it). No-op when unchanged. */

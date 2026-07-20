@@ -165,16 +165,19 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
   });
 
-  it('renders the shell with an empty state when open with zero visible contributions', () => {
-    // The shell is never route-hidden — opening it with nothing to show yields an
-    // honest empty state, not a vanished panel (which would strand the toggle).
+  it('renders the sole global tab body — never the removed empty state', () => {
+    // Off contextual routes only Pulse (a global tab) is visible. The shell shows
+    // its body, not the Wave-1 "nothing to inspect" empty state, which the
+    // always-present Pulse makes permanently unreachable (so it was removed).
     mockRightPanelOpen = true;
-    mockContributions = [];
+    mockActiveRightPanelTab = 'pulse';
+    mockContributions = [makeContribution('pulse', { isGlobal: true })];
 
     render(<RightPanelContainer />);
 
     expect(screen.getByTestId('right-panel')).toBeInTheDocument();
-    expect(screen.getByText('Nothing to inspect here yet.')).toBeInTheDocument();
+    expect(screen.getByTestId('tab-content-pulse')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing to inspect here yet.')).not.toBeInTheDocument();
     // The close button is still structurally present.
     expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
   });
@@ -476,6 +479,56 @@ describe('RightPanelContainer', () => {
     expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
   });
 
+  // Default-tab rule (the Chrome sidePanel rule): contextual wins when present,
+  // the global Pulse tab is only the fallback — so Pulse sorts first in the strip
+  // yet never steals the default from a contextual surface.
+  describe('default-tab fallback (contextual over global)', () => {
+    it('prefers the first contextual tab over the global tab when auto-selecting', () => {
+      // /session with no persisted tab: Pulse is present and sorts first, but the
+      // first CONTEXTUAL tab (Agent Profile) must be the default.
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = null;
+      mockContributions = [
+        makeContribution('pulse', { isGlobal: true }),
+        makeContribution('agent-hub'),
+        makeContribution('canvas'),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('agent-hub');
+    });
+
+    it('falls back to the global tab when no contextual tab is visible', () => {
+      // Dashboard/activity/tasks/…: only the global Pulse tab is visible, so it
+      // becomes the default.
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = null;
+      mockContributions = [makeContribution('pulse', { isGlobal: true })];
+
+      render(<RightPanelContainer />);
+
+      expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('pulse');
+    });
+
+    it('leaves a persisted, still-visible contextual tab untouched (DOR-227)', () => {
+      // The per-agent persisted tab keeps winning on /session — the global tab
+      // must not override it.
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'canvas';
+      mockContributions = [
+        makeContribution('pulse', { isGlobal: true }),
+        makeContribution('agent-hub'),
+        makeContribution('canvas'),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
+      expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
+    });
+  });
+
   it('an explicit tab click persists via setActiveRightPanelTab (not the view-only setter)', async () => {
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
@@ -507,13 +560,15 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
   });
 
-  it('renders the empty state when every contribution is filtered by visibleWhen', () => {
+  it('renders no empty-state copy when every contribution is filtered out', () => {
+    // The Wave-1 empty state is gone (Pulse makes it unreachable): a route that
+    // filters out its only contribution renders an empty body, never stale copy.
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
     mockContributions = [makeContribution('a', { visibleWhen: () => false })];
 
     render(<RightPanelContainer />);
-    expect(screen.getByText('Nothing to inspect here yet.')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing to inspect here yet.')).not.toBeInTheDocument();
   });
 
   it('renders Sheet instead of Panel on mobile', () => {

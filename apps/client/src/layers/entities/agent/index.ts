@@ -8,6 +8,7 @@
 // Model — hooks and stores
 export { useCurrentAgent } from './model/use-current-agent';
 export { useSyncCurrentAgentId } from './model/use-sync-current-agent-id';
+export { useReconcileExplicitAgentPath } from './model/use-reconcile-explicit-agent-path';
 export { useUpdateAgent } from './model/use-update-agent';
 export { useResolvedAgents } from './model/use-resolved-agents';
 export { useAgentVisual, resolveAgentVisual } from './model/use-agent-visual';
