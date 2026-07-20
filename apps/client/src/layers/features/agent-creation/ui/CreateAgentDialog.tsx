@@ -213,7 +213,6 @@ export function CreateAgentDialog() {
   }
 
   const header = STEP_HEADERS[step];
-  const isArrival = step === 'arrival';
   // Per-step canvas width: the gallery spreads across the fullscreen frame,
   // naming holds a tighter two-column composition, arrival stays narrow.
   const stepMaxWidth =
@@ -222,8 +221,9 @@ export function CreateAgentDialog() {
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={handleOpenChange} defaultFullscreen>
       <ResponsiveDialogContent className="flex flex-col gap-0 p-0">
-        {/* The arrival confirm (M1) owns its own title/face — no generic header. */}
-        {!isArrival && (
+        {/* The arrival confirm (M1) owns its own title/face — it ships no
+            header title, so the generic header renders only for the other steps. */}
+        {'title' in header && (
           <ResponsiveDialogHeader className="shrink-0 border-b px-5 py-4">
             <ResponsiveDialogTitle>{header.title}</ResponsiveDialogTitle>
             <ResponsiveDialogDescription>{header.description}</ResponsiveDialogDescription>

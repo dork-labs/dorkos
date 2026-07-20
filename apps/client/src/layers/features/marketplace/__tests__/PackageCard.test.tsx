@@ -39,10 +39,27 @@ describe('PackageCard', () => {
     const pkg = makePackage();
     render(<PackageCard pkg={pkg} onClick={() => {}} />);
 
-    expect(screen.getByText('@dorkos/code-reviewer')).toBeInTheDocument();
+    expect(screen.getByText('Code Reviewer')).toBeInTheDocument();
     expect(screen.getByText('AGENT')).toBeInTheDocument();
     expect(screen.getByText('Reviews pull requests every weekday.')).toBeInTheDocument();
     expect(screen.getByTestId('package-card-@dorkos/code-reviewer')).toBeInTheDocument();
+  });
+
+  it('prefers the author-supplied displayName over the slug', () => {
+    const pkg = makePackage({ name: 'security-scanner', displayName: 'Security Scanner' });
+    render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+    expect(screen.getByText('Security Scanner')).toBeInTheDocument();
+    expect(screen.queryByText('security-scanner')).not.toBeInTheDocument();
+  });
+
+  it('humanizes a bare slug when no displayName is supplied', () => {
+    const pkg = makePackage({ name: 'security-scanner', displayName: undefined });
+    render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+    // The raw kebab slug never reaches the card title — it reads as a human name.
+    expect(screen.getByText('Security Scanner')).toBeInTheDocument();
+    expect(screen.queryByText('security-scanner')).not.toBeInTheDocument();
   });
 
   it('falls back to PLUGIN badge when type is missing', () => {
@@ -164,7 +181,7 @@ describe('PackageCard', () => {
       const pkg = makePackage({ icon: '🤖' });
       render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
 
-      expect(screen.getByText('@dorkos/code-reviewer')).toBeInTheDocument();
+      expect(screen.getByText('Code Reviewer')).toBeInTheDocument();
       expect(screen.getByText('AGENT')).toBeInTheDocument();
       expect(screen.getByText('Reviews pull requests every weekday.')).toBeInTheDocument();
       expect(screen.getByText('🤖')).toBeInTheDocument();

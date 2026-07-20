@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
+import { setPlatformAdapter } from '@/layers/shared/lib';
 import { initializeExtensions } from '../init-extensions';
 
 describe('initializeExtensions — right-panel contributions', () => {
@@ -137,5 +138,60 @@ describe('initializeExtensions — right-panel contributions', () => {
     for (const pathname of ['/', '/agents', '/tasks', '/marketplace']) {
       expect(terminal?.visibleWhen?.({ pathname, transport: httpTransport })).toBe(false);
     }
+  });
+});
+
+describe('initializeExtensions — command palette gating (Obsidian embed)', () => {
+  // Built-ins that need AppShell chrome the embed never renders: a mounted
+  // dialog (Create Agent / Import), the right panel (Agent Profile, Canvas), or
+  // the router (Dashboard, Agents — navigate() throws with no RouterProvider).
+  const EMBED_DEAD_ENDS = [
+    'createAgent',
+    'discoverAgents',
+    'openAgentProfile',
+    'toggleCanvas',
+    'navigateDashboard',
+    'openMesh',
+  ];
+
+  function paletteActions(): string[] {
+    return useExtensionRegistry
+      .getState()
+      .getContributions('command-palette.items')
+      .map((c) => (c as { action?: string }).action ?? '');
+  }
+
+  function initWith(isEmbedded: boolean): void {
+    setPlatformAdapter({ isEmbedded, openFile: async () => {} });
+    useExtensionRegistry.setState({ slots: createInitialSlots() });
+    initializeExtensions();
+  }
+
+  afterEach(() => {
+    // Restore the standalone-web adapter so other suites see the default.
+    setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
+  });
+
+  it('registers the full router/panel-dependent set on the web shell', () => {
+    initWith(false);
+
+    const actions = paletteActions();
+    for (const action of EMBED_DEAD_ENDS) {
+      expect(actions).toContain(action);
+    }
+  });
+
+  it('omits every dead-end from the Obsidian embed, keeping the rest', () => {
+    // Defensive gate: the embed does not currently call initializeExtensions, but
+    // if it ever does, none of these dialog/panel/router actions may register —
+    // acting on them there renders nothing or throws.
+    initWith(true);
+
+    const actions = paletteActions();
+    for (const action of EMBED_DEAD_ENDS) {
+      expect(actions).not.toContain(action);
+    }
+    // The gate is selective — a self-contained action (theme toggle) still registers.
+    expect(actions).toContain('toggleTheme');
   });
 });

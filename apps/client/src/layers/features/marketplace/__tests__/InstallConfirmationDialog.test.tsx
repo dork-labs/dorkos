@@ -222,7 +222,7 @@ describe('InstallConfirmationDialog', () => {
   it('renders nothing visible when installConfirmPackage is null', () => {
     render(<InstallConfirmationDialog />);
 
-    expect(screen.queryByText(/install @dorkos\/code-reviewer/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/install code reviewer/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^install$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^cancel$/i })).not.toBeInTheDocument();
   });
@@ -233,9 +233,19 @@ describe('InstallConfirmationDialog', () => {
 
     render(<InstallConfirmationDialog />);
 
-    expect(screen.getByText('Install @dorkos/code-reviewer?')).toBeInTheDocument();
+    // makePackage ships no displayName, so the title humanizes the slug.
+    expect(screen.getByText('Install Code Reviewer?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^install$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument();
+  });
+
+  it('prefers the package displayName over the slug in the title', () => {
+    useMarketplaceStore.getState().openInstallConfirm(makePackage({ displayName: 'PR Guardian' }));
+    setPreviewState({ data: makeDetail() });
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByText('Install PR Guardian?')).toBeInTheDocument();
   });
 
   it('shows the loading message while the preview query is pending', () => {
@@ -379,7 +389,7 @@ describe('InstallConfirmationDialog', () => {
 
     render(<InstallConfirmationDialog />);
 
-    expect(screen.getByText('Reinstall @dorkos/code-reviewer?')).toBeInTheDocument();
+    expect(screen.getByText('Reinstall Code Reviewer?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
   });
 
@@ -403,7 +413,7 @@ describe('InstallConfirmationDialog', () => {
 
     render(<InstallConfirmationDialog />);
 
-    expect(screen.getByText('Install @dorkos/code-reviewer?')).toBeInTheDocument();
+    expect(screen.getByText('Install Code Reviewer?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^install$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^reinstall$/i })).not.toBeInTheDocument();
   });
@@ -516,7 +526,7 @@ describe('InstallConfirmationDialog', () => {
     expect(screen.queryByText(/Reinstalling — the existing/)).not.toBeInTheDocument();
     // Undetermined target: framed as a plain install, and the button is
     // disabled until an agent is picked.
-    expect(screen.getByText('Install @dorkos/code-reviewer?')).toBeInTheDocument();
+    expect(screen.getByText('Install Code Reviewer?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^install$/i })).toBeDisabled();
   });
 });

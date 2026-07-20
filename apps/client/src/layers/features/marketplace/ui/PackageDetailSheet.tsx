@@ -40,6 +40,7 @@ import {
   Skeleton,
   MarkdownContent,
 } from '@/layers/shared/ui';
+import { packageDisplayLabel } from '@/layers/shared/lib';
 import {
   useMarketplacePackage,
   useMarketplacePackages,
@@ -410,7 +411,7 @@ export function PackageDetailSheet() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
-                    <SheetTitle className="text-lg">{pkg.name}</SheetTitle>
+                    <SheetTitle className="text-lg">{packageDisplayLabel(pkg)}</SheetTitle>
                     <PackageTypeBadge type={pkg.type ?? 'plugin'} className="shrink-0" />
                   </div>
                   {pkg.description && (

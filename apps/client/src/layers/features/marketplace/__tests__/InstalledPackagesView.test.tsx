@@ -167,8 +167,8 @@ describe('InstalledPackagesView', () => {
 
       const list = screen.getByRole('list', { name: /installed packages/i });
       expect(list).toBeInTheDocument();
-      expect(screen.getByText('@dorkos/reviewer')).toBeInTheDocument();
-      expect(screen.getByText('@dorkos/formatter')).toBeInTheDocument();
+      expect(screen.getByText('Reviewer')).toBeInTheDocument();
+      expect(screen.getByText('Formatter')).toBeInTheDocument();
       expect(screen.getByText('v1.2.0')).toBeInTheDocument();
       expect(screen.getByText('v2.0.1')).toBeInTheDocument();
     });
@@ -191,7 +191,7 @@ describe('InstalledPackagesView', () => {
 
       render(<InstalledPackagesView />);
 
-      expect(screen.getByText('linear-ops')).toBeInTheDocument();
+      expect(screen.getByText('Linear Ops')).toBeInTheDocument();
       expect(screen.getByText('SHAPE')).toBeInTheDocument();
       expect(screen.getByText('v2.0.0')).toBeInTheDocument();
     });
@@ -204,9 +204,7 @@ describe('InstalledPackagesView', () => {
 
       render(<InstalledPackagesView />);
 
-      await user.click(
-        screen.getByRole('button', { name: /check for updates to @dorkos\/reviewer/i })
-      );
+      await user.click(screen.getByRole('button', { name: /check for updates to Reviewer/i }));
 
       expect(updateMutate).toHaveBeenCalledTimes(1);
       expect(updateMutate).toHaveBeenCalledWith({
@@ -227,10 +225,10 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       const reviewerBtn = screen.getByRole('button', {
-        name: /check for updates to @dorkos\/reviewer/i,
+        name: /check for updates to Reviewer/i,
       });
       const formatterBtn = screen.getByRole('button', {
-        name: /check for updates to @dorkos\/formatter/i,
+        name: /check for updates to Formatter/i,
       });
 
       expect(reviewerBtn).toBeDisabled();
@@ -247,12 +245,12 @@ describe('InstalledPackagesView', () => {
 
       render(<InstalledPackagesView />);
 
-      await user.click(screen.getByRole('button', { name: /^uninstall @dorkos\/reviewer$/i }));
+      await user.click(screen.getByRole('button', { name: /^uninstall Reviewer$/i }));
 
       expect(uninstallMutate).not.toHaveBeenCalled();
       // Button now reads "Confirm" and has the destructive variant aria-label.
       expect(
-        screen.getByRole('button', { name: /confirm uninstall of @dorkos\/reviewer/i })
+        screen.getByRole('button', { name: /confirm uninstall of Reviewer/i })
       ).toBeInTheDocument();
     });
 
@@ -262,10 +260,8 @@ describe('InstalledPackagesView', () => {
 
       render(<InstalledPackagesView />);
 
-      await user.click(screen.getByRole('button', { name: /^uninstall @dorkos\/reviewer$/i }));
-      await user.click(
-        screen.getByRole('button', { name: /confirm uninstall of @dorkos\/reviewer/i })
-      );
+      await user.click(screen.getByRole('button', { name: /^uninstall Reviewer$/i }));
+      await user.click(screen.getByRole('button', { name: /confirm uninstall of Reviewer/i }));
 
       expect(uninstallMutate).toHaveBeenCalledTimes(1);
       expect(uninstallMutate).toHaveBeenCalledWith({
@@ -284,10 +280,10 @@ describe('InstalledPackagesView', () => {
 
         // Use fireEvent (synchronous) to avoid userEvent's internal timers
         // fighting with vi.useFakeTimers.
-        fireEvent.click(screen.getByRole('button', { name: /^uninstall @dorkos\/reviewer$/i }));
+        fireEvent.click(screen.getByRole('button', { name: /^uninstall Reviewer$/i }));
 
         expect(
-          screen.getByRole('button', { name: /confirm uninstall of @dorkos\/reviewer/i })
+          screen.getByRole('button', { name: /confirm uninstall of Reviewer/i })
         ).toBeInTheDocument();
 
         // Advance past the 3-second confirm window.
@@ -296,9 +292,7 @@ describe('InstalledPackagesView', () => {
         });
 
         // Back to the normal uninstall button.
-        expect(
-          screen.getByRole('button', { name: /^uninstall @dorkos\/reviewer$/i })
-        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^uninstall Reviewer$/i })).toBeInTheDocument();
         expect(uninstallMutate).not.toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
@@ -316,8 +310,8 @@ describe('InstalledPackagesView', () => {
 
       render(<InstalledPackagesView />);
 
-      const reviewerBtn = screen.getByRole('button', { name: /uninstall @dorkos\/reviewer/i });
-      const formatterBtn = screen.getByRole('button', { name: /^uninstall @dorkos\/formatter$/i });
+      const reviewerBtn = screen.getByRole('button', { name: /uninstall Reviewer/i });
+      const formatterBtn = screen.getByRole('button', { name: /^uninstall Formatter$/i });
 
       expect(reviewerBtn).toBeDisabled();
       expect(reviewerBtn.textContent).toMatch(/removing/i);

@@ -80,7 +80,7 @@ describe('useUninstallWithToast', () => {
         result.current.mutate({ name: '@dorkos/code-reviewer' });
       });
 
-      expect(mockLoading).toHaveBeenCalledWith('Uninstalling @dorkos/code-reviewer…');
+      expect(mockLoading).toHaveBeenCalledWith('Uninstalling Code Reviewer…');
       expect(fakes.mutate).toHaveBeenCalledTimes(1);
       expect(fakes.mutate.mock.calls[0][0]).toEqual({ name: '@dorkos/code-reviewer' });
     });
@@ -101,7 +101,7 @@ describe('useUninstallWithToast', () => {
         perCall.onSuccess({ ok: true });
       });
 
-      expect(mockSuccess).toHaveBeenCalledWith('Uninstalled @dorkos/code-reviewer', {
+      expect(mockSuccess).toHaveBeenCalledWith('Uninstalled Code Reviewer', {
         id: 'toast-id-abc',
       });
       expect(mockError).not.toHaveBeenCalled();

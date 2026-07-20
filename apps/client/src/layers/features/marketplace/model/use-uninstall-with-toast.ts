@@ -19,6 +19,7 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { humanizePackageName } from '@/layers/shared/lib';
 import { useUninstallPackage, type UninstallPackageArgs } from '@/layers/entities/marketplace';
 import type { UninstallResult } from '@dorkos/shared/marketplace-schemas';
 
@@ -39,9 +40,10 @@ function formatUninstallError(err: unknown): string {
   return 'Uninstall failed: unknown error';
 }
 
-/** Toast subject: the package name, suffixed with the scope label when given. */
+/** Toast subject: the humanized package name, suffixed with the scope label when given. */
 function toastSubject(args: UninstallWithToastArgs): string {
-  return args.where ? `${args.name} from ${args.where}` : args.name;
+  const label = humanizePackageName(args.name);
+  return args.where ? `${label} from ${args.where}` : label;
 }
 
 /**

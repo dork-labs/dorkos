@@ -40,9 +40,17 @@ export type ConflictStatus =
   | 'exists-has-dork'
   | 'error';
 
-/** Title + description shown in the dialog header for each step (arrival owns its own). */
-export const STEP_HEADERS: Record<WizardStep, { title: string; description: string }> = {
+/**
+ * Title + description shown in the dialog header for each step. The arrival step
+ * (M1) owns its own title/face and suppresses the generic header, so it carries
+ * only the description — surfaced through the dialog's sr-only live region.
+ */
+export const STEP_HEADERS: {
+  gallery: { title: string; description: string };
+  naming: { title: string; description: string };
+  arrival: { description: string };
+} = {
   gallery: { title: 'New agent', description: 'What will your agent do?' },
   naming: { title: 'Name your agent', description: 'Give it a name and a face.' },
-  arrival: { title: 'Meet your new agent', description: 'Bring a ready-made agent to life.' },
+  arrival: { description: 'Bring a ready-made agent to life.' },
 };

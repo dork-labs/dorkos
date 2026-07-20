@@ -27,6 +27,7 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { humanizePackageName } from '@/layers/shared/lib';
 import { useInstallPackage, type InstallPackageArgs } from '@/layers/entities/marketplace';
 import type { InstallResult } from '@dorkos/shared/marketplace-schemas';
 
@@ -82,10 +83,11 @@ export function useInstallWithToast() {
 
   const mutate = useCallback(
     (args: InstallPackageArgs) => {
-      const toastId = toast.loading(`Installing ${args.name}…`);
+      const label = humanizePackageName(args.name);
+      const toastId = toast.loading(`Installing ${label}…`);
       baseMutate(args, {
         onSuccess: () => {
-          toast.success(`Installed ${args.name}`, { id: toastId });
+          toast.success(`Installed ${label}`, { id: toastId });
         },
         onError: (err) => {
           toast.error(formatInstallError(err), { id: toastId });
@@ -97,10 +99,11 @@ export function useInstallWithToast() {
 
   const mutateAsync = useCallback(
     async (args: InstallPackageArgs): Promise<InstallResult> => {
-      const toastId = toast.loading(`Installing ${args.name}…`);
+      const label = humanizePackageName(args.name);
+      const toastId = toast.loading(`Installing ${label}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(`Installed ${args.name}`, { id: toastId });
+        toast.success(`Installed ${label}`, { id: toastId });
         return result;
       } catch (err) {
         toast.error(formatInstallError(err), { id: toastId });

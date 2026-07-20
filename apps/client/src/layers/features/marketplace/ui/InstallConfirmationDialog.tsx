@@ -20,6 +20,7 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from '@/layers/shared/ui';
+import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
 import { usePermissionPreview, useInstalledPackages } from '@/layers/entities/marketplace';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
@@ -190,7 +191,7 @@ export function InstallConfirmationDialog() {
           <>
             <ResponsiveDialogHeader className="shrink-0">
               <ResponsiveDialogTitle>
-                {isReinstall ? 'Reinstall' : 'Install'} {pkg.name}?
+                {isReinstall ? 'Reinstall' : 'Install'} {packageDisplayLabel(pkg)}?
               </ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
                 {isReinstall
