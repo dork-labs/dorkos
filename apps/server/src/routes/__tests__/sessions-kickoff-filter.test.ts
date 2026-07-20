@@ -3,10 +3,17 @@
  * contract item 6): `GET /api/sessions/:id/messages` must never serve the
  * auto-first-turn kickoff as a user message, for ANY runtime — the filter
  * lives at the route, not in per-runtime parsers. Exercised through two
- * differently-typed fake runtimes (standing in for codex/opencode, whose
- * stores keep the kickoff verbatim) plus the adversarial preservation cases:
- * genuine content that merely touches the marker must pass through the route
- * untouched.
+ * differently-typed fake runtimes (standing in for codex/opencode) plus the
+ * adversarial preservation cases: genuine content that merely touches the
+ * marker must pass through the route untouched.
+ *
+ * The fake runtimes return the bare envelope because that is what codex and
+ * opencode ACTUALLY reconstruct for the first user record — verified with
+ * realistic fixtures against each real adapter (codex records the pristine
+ * trigger content on `turn_start.userMessage`; opencode's mapper drops the
+ * synthetic context part), see the "kickoff-suppression evidence" tests in
+ * `runtimes/codex/__tests__/codex-runtime.test.ts` and
+ * `runtimes/opencode/__tests__/opencode-runtime.test.ts`.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';

@@ -29,10 +29,12 @@ export interface AgentBirthRecord {
   /** Set once the first turn has been triggered — the fire-once latch. */
   fired: boolean;
   /**
-   * Set when the kickoff trigger failed and its one silent retry was also spent
-   * — the agent never got to say hello. Drives an honest empty-session line
-   * ("{name} couldn't say hello just now — send a message to get started.")
-   * instead of leaving the person staring at a blank session.
+   * Set when the agent never got to say hello — either the kickoff trigger
+   * failed and its one silent retry was also spent, OR the trigger was accepted
+   * but the turn died mid-stream (started, then ended or errored before any
+   * assistant text). Drives an honest empty-session line ("{name} couldn't say
+   * hello just now — send a message to get started.") instead of leaving the
+   * person staring at a blank session.
    */
   greetingFailed?: boolean;
 }

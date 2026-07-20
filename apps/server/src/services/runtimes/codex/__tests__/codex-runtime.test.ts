@@ -12,6 +12,7 @@ import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
 import { scanSkillCommands } from '../scan-skill-commands.js';
 import { getOrCreateProjector } from '../../../session/session-state-projector.js';
 import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import {
   THREAD_ID,
   codexSimpleTurn,
@@ -887,6 +888,59 @@ describe('CodexRuntime', () => {
       await expect(
         runtime.getMessageHistory('/projects/demo', crypto.randomUUID())
       ).resolves.toEqual([]);
+    });
+
+    // Cross-runtime kickoff-suppression evidence (agent-creation-redesign M4).
+    // The client fires the auto-first-turn kickoff runtime-blind, so a codex
+    // session gets one too. FINDING (verified by these tests): codex delivers
+    // the additional-context bag OUT OF BAND — `buildCodexPrompt` prepends the
+    // context blocks to the model prompt, but the EventLog records the PRISTINE
+    // trigger content via `turn_start.userMessage`. So the first user record codex
+    // reconstructs is the bare `<dork-kickoff>…</dork-kickoff>` envelope with NO
+    // wrapper — the exact shape `filterKickoffHistory` suppresses. No leak, and
+    // no per-runtime stripping is needed; these tests are the regression armor.
+    it('reconstructs the kickoff as a bare envelope that filterKickoffHistory suppresses', async () => {
+      const { runtime } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      const projector = getOrCreateProjector(sessionId, '/projects/demo');
+      const envelope = wrapKickoff(
+        'Read your SOUL.md and introduce yourself. Offer a first action.'
+      );
+
+      // Drive the trigger path with the pristine envelope on turn_start. The
+      // REAL production guarantee lives at `trigger-turn.ts:263`, which feeds the
+      // projector `{ userMessage: content }` (raw trigger content; context goes
+      // out of band) — so this is a faithful stand-in, not an end-to-end proof.
+      await feedProjector(projector, runtime.sendMessage(sessionId, envelope), {
+        userMessage: envelope,
+      });
+
+      const history = await runtime.getMessageHistory('/projects/demo', sessionId);
+      // The first user record is the bare envelope — codex never wraps it.
+      const firstUser = history.find((m) => m.role === 'user');
+      expect(firstUser?.content).toBe(envelope);
+
+      // The shared seam drops exactly that record; the greeting survives.
+      const filtered = filterKickoffHistory(history);
+      expect(filtered.some((m) => m.role === 'user')).toBe(false);
+      expect(filtered.some((m) => m.role === 'assistant')).toBe(true);
+      expect(JSON.stringify(filtered)).not.toContain('dork-kickoff');
+    });
+
+    it('keeps a genuine first message that merely mentions the kickoff tag (no over-suppression)', async () => {
+      const { runtime } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      const projector = getOrCreateProjector(sessionId, '/projects/demo');
+      const genuine = 'what does <dork-kickoff> mean?';
+
+      await feedProjector(projector, runtime.sendMessage(sessionId, genuine), {
+        userMessage: genuine,
+      });
+
+      const history = await runtime.getMessageHistory('/projects/demo', sessionId);
+      // A partial-tag mention is genuine content and passes through untouched.
+      expect(filterKickoffHistory(history)).toEqual(history);
+      expect(history.some((m) => m.role === 'user' && m.content === genuine)).toBe(true);
     });
 
     it('getSessionSnapshot serves the projector snapshot (cold session: empty, cursor 0)', async () => {

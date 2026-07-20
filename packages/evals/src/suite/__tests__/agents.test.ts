@@ -4,8 +4,10 @@
  * (the interview is model behavior); this test proves the plumbing around it:
  * the seed lays down a valid newborn scaffold, and each oracle has a genuine
  * pass AND fail (so a broken always-pass oracle is caught, per the harness's
- * own oracle-test discipline). It simulates the interview's OUTCOME by writing
- * the soul the agent would author — never asserting on model prose.
+ * own oracle-test discipline). The filesystem oracles are exercised by writing
+ * the soul the agent would author; the two DETERMINISTIC transcript oracles are
+ * exercised with fabricated turn frames — a structural check on `?` counts and a
+ * fixed offer phrase, never a prose judgment.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
@@ -13,20 +15,53 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { buildSoulContent } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
+import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type { EvalSandbox, OracleContext, OracleResult } from '../../types.js';
 import { designYourOwnInterviewCase } from '../agents.js';
 
 let sandbox: EvalSandbox;
 let root: string;
 
-/** An OracleContext over the seeded sandbox (the interview asserts on files only). */
-function ctx(): OracleContext {
-  return { sandbox, baseUrl: 'http://unused', sessionId: 's', frames: [] };
+/** Frames for one assistant turn: `turn_start` → one `text_delta` → `turn_end`. */
+function assistantTurn(text: string): SseFrame[] {
+  return [
+    { event: 'turn_start', data: { type: 'turn_start' } },
+    { event: 'text_delta', data: { type: 'text_delta', text } },
+    { event: 'turn_end', data: { type: 'turn_end' } },
+  ];
 }
 
-/** Run every oracle on the case and return their results, in order. */
-function runOracles(): Promise<OracleResult[]> {
-  return Promise.all(designYourOwnInterviewCase.oracles.map((o) => o(ctx())));
+/**
+ * A well-behaved interview transcript: two interview turns (one question each)
+ * then a closing turn that offers a first action. Question count across the
+ * interview turns = 2 (≤ budget); the final turn carries an offer signal.
+ */
+function goodInterviewFrames(): SseFrame[] {
+  return [
+    ...assistantTurn('Hi — what would you like me to take care of?'),
+    ...assistantTurn('Got it. Should I only ever touch the changelog folder?'),
+    ...assistantTurn(
+      "I've written my soul. Want me to start by grouping the unreleased fragments?"
+    ),
+  ];
+}
+
+/** An OracleContext over the seeded sandbox with an optional transcript. */
+function ctx(frames: SseFrame[] = []): OracleContext {
+  return { sandbox, baseUrl: 'http://unused', sessionId: 's', frames };
+}
+
+/** Run every oracle on the case with the given transcript and return their results. */
+function runOracles(frames: SseFrame[] = goodInterviewFrames()): Promise<OracleResult[]> {
+  return Promise.all(designYourOwnInterviewCase.oracles.map((o) => o(ctx(frames))));
+}
+
+/** Run the case oracles over `frames` and return the one whose label contains `needle`. */
+async function resultByLabel(needle: string, frames: SseFrame[]): Promise<OracleResult> {
+  const results = await runOracles(frames);
+  const match = results.find((r) => r.label.includes(needle));
+  if (!match) throw new Error(`no oracle labelled with "${needle}"`);
+  return match;
 }
 
 /** The seeded agent's SOUL.md path. */
@@ -119,5 +154,52 @@ describe('interview outcome oracles', () => {
     const offer = results.find((r) => r.label.includes('offer-not-action'));
     expect(offer?.passed).toBe(false);
     expect(offer?.detail).toContain('CHANGELOG.md');
+  });
+});
+
+describe('transcript oracles (deterministic — question budget + first-action offer)', () => {
+  it('question-budget PASSES within budget and FAILS when the interview over-asks', async () => {
+    const within = await resultByLabel('question budget', goodInterviewFrames());
+    expect(within.passed).toBe(true);
+
+    // Four questions in the single interview turn (the closing turn is excluded).
+    const overAsking = [
+      ...assistantTurn('What scope? Which folders? How often? Anything off-limits?'),
+      ...assistantTurn('Done — shall I begin?'),
+    ];
+    const exceeded = await resultByLabel('question budget', overAsking);
+    expect(exceeded.passed).toBe(false);
+    expect(exceeded.detail).toContain('budget');
+  });
+
+  it('first-action PASSES when the closing turn offers and FAILS when it does not', async () => {
+    const offered = await resultByLabel('first action', goodInterviewFrames());
+    expect(offered.passed).toBe(true);
+
+    const noOffer = [
+      ...assistantTurn('Hi — what would you like me to handle?'),
+      ...assistantTurn('My soul is written. It is complete.'),
+    ];
+    const missing = await resultByLabel('first action', noOffer);
+    expect(missing.passed).toBe(false);
+  });
+
+  it('an empty transcript: budget passes trivially, but the missing offer FAILS honestly', async () => {
+    const budget = await resultByLabel('question budget', []);
+    expect(budget.passed).toBe(true); // no interview turns → nothing asked
+    const offer = await resultByLabel('first action', []);
+    expect(offer.passed).toBe(false); // no closing turn → no offer to find
+  });
+
+  it('the closing turn is excluded from the question count (offer-question does not over-count)', async () => {
+    // Two interview questions + a closing turn that is ALSO phrased as a question.
+    // Only the two interview questions count, so a budget of 3 still passes.
+    const frames = [
+      ...assistantTurn('What should I take care of?'),
+      ...assistantTurn('Only the changelog folder?'),
+      ...assistantTurn('Soul written. Want me to start with the unreleased fragments?'),
+    ];
+    const budget = await resultByLabel('question budget', frames);
+    expect(budget.passed).toBe(true);
   });
 });
