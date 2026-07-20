@@ -2657,6 +2657,13 @@
       "created": "2026-07-17",
       "extractedFrom": "capture-cloud-link-stub",
       "specSlug": "capture-cloud-link-stub"
+    },
+    {
+      "id": "260720-151913",
+      "slug": "app-banner-single-slot-priority-queue",
+      "title": "Global app banners live in one below-header slot with a priority queue, never stacked",
+      "status": "accepted",
+      "created": "2026-07-20"
     }
   ]
 }

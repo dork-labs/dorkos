@@ -324,6 +324,28 @@ Theme-aware toast via `sonner` from `shared/ui/sonner.tsx`. `<Toaster />` mounte
 
 Usage: `import { toast } from 'sonner'` then `toast('message')` or `toast.error('message')`.
 
+### Banners
+
+Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing condition** that stays until it resolves — telemetry consent, all-permissions-bypassed, connection lost. A banner is not a toast: a toast fires once for a transient event and fades; a banner persists while the condition is true.
+
+**Banner vs toast:**
+
+- **Banner** — a condition that is _still true_ right now (permissions bypassed, an update is waiting, consent not yet given). Persistent, dismiss only when it makes sense.
+- **Toast** — a moment that just _happened_ (run triggered, save failed). Transient, auto-dismisses.
+
+**One slot, one banner.** App-wide banners render through a single `AppBannerSlot` mounted just below the shell header (`widgets/app-banner`). It ranks eligible banners by priority and shows only the highest — never a stack. Add one by writing a `BannerDescriptor` hook (`id`, `priority`, `variant`, `render`) and appending it in `useAppBanners`; use `BANNER_PRIORITY` for the standard ladder. See ADR 260720-151913.
+
+**Variants** (severity ladder, `critical > warning > info > neutral`):
+
+| Variant    | Use                                           | Announce        |
+| ---------- | --------------------------------------------- | --------------- |
+| `critical` | An error blocking the user right now          | `role="alert"`  |
+| `warning`  | A risky standing state (e.g. permissions off) | `role="status"` |
+| `info`     | A neutral heads-up                            | `role="status"` |
+| `neutral`  | Announcements and consent (the default)       | `role="status"` |
+
+There is **no `success` banner** — a success is a toast. Colors come from the `--status-*` tokens, so light/dark and the Obsidian bridge stay correct. Pass `onDismiss` only for a dismissible banner; pass `details` + `detailsOpen` for a collapsible progressive-disclosure region (as the telemetry banner does with its payload).
+
 ### Command (cmdk)
 
 Searchable combobox from `shared/ui/command.tsx`. Used with Popover for dropdown positioning. Primary use case: timezone selection in Pulse CreateScheduleDialog.
