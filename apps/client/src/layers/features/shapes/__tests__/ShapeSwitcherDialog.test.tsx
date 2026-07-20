@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ApplyShapeResult, InstalledShapeSummary } from '@dorkos/shared/marketplace-schemas';
-import { TransportProvider, useAgentCreationStore } from '@/layers/shared/model';
+import { TransportProvider, useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { ShapeSwitcherDialog } from '../ui/ShapeSwitcherDialog';
 
@@ -123,6 +123,7 @@ describe('ShapeSwitcherDialog', () => {
   beforeEach(() => {
     mockNavigate.mockClear();
     useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
+    useAppStore.setState({ shapeSwitcherFocus: null });
   });
   afterEach(cleanup);
 
@@ -211,6 +212,34 @@ describe('ShapeSwitcherDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("shows the offered agent's schedule in plain words when the Shape declares one", async () => {
+    const transport = createMockTransport({
+      listShapes: vi.fn().mockResolvedValue(SHAPES),
+      applyShape: vi.fn().mockResolvedValue(unsatisfiedResult()),
+    });
+    renderDialog(transport);
+
+    fireEvent.click(await screen.findByText('Linear Ops'));
+
+    // The server-derived cadence line renders in the offer card (no raw cron).
+    expect(await screen.findByText('Every weekday at 9:00 AM')).toBeInTheDocument();
+  });
+
+  it('omits the schedule line when the offer carries no cadence', async () => {
+    // applyResult()'s arrival agent has no scheduleSummary — the line is absent.
+    const transport = createMockTransport({
+      listShapes: vi.fn().mockResolvedValue(SHAPES),
+      applyShape: vi.fn().mockResolvedValue(applyResult()),
+    });
+    renderDialog(transport);
+
+    fireEvent.click(await screen.findByText('Linear Ops'));
+
+    // The offer card is shown, but no schedule line.
+    expect(await screen.findByText(/suggests the/i)).toBeInTheDocument();
+    expect(screen.queryByText(/every weekday/i)).not.toBeInTheDocument();
+  });
+
   it('re-applies the active Shape via "Reset to defaults"', async () => {
     const applyShape = vi.fn().mockResolvedValue(applyResult());
     const transport = createMockTransport({
@@ -221,6 +250,29 @@ describe('ShapeSwitcherDialog', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /reset flow board to defaults/i }));
     await waitFor(() => expect(applyShape).toHaveBeenCalledWith('flow-board'));
+  });
+
+  it('highlights and scrolls to the Shape an Apply affordance asked it to focus', async () => {
+    // The install toast / installed-list "Apply…" set shapeSwitcherFocus so the
+    // user lands on the exact Shape — highlighted and scrolled into view, never
+    // auto-applied.
+    useAppStore.setState({ shapeSwitcherFocus: 'linear-ops' });
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const applyShape = vi.fn();
+    const transport = createMockTransport({
+      listShapes: vi.fn().mockResolvedValue(SHAPES),
+      applyShape,
+    });
+    renderDialog(transport);
+
+    const focused = (await screen.findByText('Linear Ops')).closest('button')!;
+    expect(focused).toHaveAttribute('data-highlighted', 'true');
+    // A different Shape is not highlighted.
+    const other = screen.getByText('Flow Board').closest('button')!;
+    expect(other).not.toHaveAttribute('data-highlighted');
+    // The focused card was scrolled into view on mount (never auto-applied).
+    expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(applyShape).not.toHaveBeenCalled();
   });
 
   it('shows a marketplace-pointing empty state when nothing is installed', async () => {

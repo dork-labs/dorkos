@@ -429,6 +429,73 @@ describe('applyShape', () => {
     );
   });
 
+  it('(c) re-binds a NON-KEBAB schedule name across the global→agent flip (slug-lookup regression)', async () => {
+    // GAP-5 regression: the manifest declares "Inbox Tick" but schedules are
+    // STORED under their slug "inbox-tick". The existence check keyed the map by
+    // the stored slug yet looked it up by the raw manifest name, so a non-kebab
+    // name always missed its earlier copy: the documented global→agent flip
+    // silently never fired, and a disabled global copy lingered (reconciliation
+    // spares it — its slug is in the kept set). Both the lookup and the re-bind
+    // call must key off the slug.
+    const manifest = buildManifest({
+      name: 'linear-ops',
+      agents: [
+        {
+          ref: 'tender',
+          affinity: 'default',
+          matchName: 'Tender',
+          template: { displayName: 'Tender' },
+        },
+      ],
+      schedules: [
+        {
+          name: 'Inbox Tick',
+          description: 'poll',
+          prompt: 'go',
+          cron: '*/15 * * * *',
+          agentRef: 'tender',
+          permissionMode: 'acceptEdits',
+        },
+      ],
+    });
+    const agent: RegisteredAgentView = {
+      id: 'agent-tender',
+      name: 'tender',
+      displayName: 'Tender',
+      projectPath: '/p/tender',
+    };
+    // The agent is absent on the first apply, then created before the reapply.
+    const registeredAgents: RegisteredAgentView[] = [];
+    const shared = makeDeps({ manifest, registeredAgents });
+
+    // First apply: no agent yet → the schedule lands global + disabled, stored
+    // under its slug, stamped as Shape-owned.
+    const first = await applyShape('linear-ops', shared.deps);
+    expect(first.applied.schedulesCreated).toEqual(['Inbox Tick']);
+    expect(first.applied.schedulesRebound).toEqual([]);
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
+    ]);
+
+    // The offered agent appears, then the Shape is re-applied.
+    registeredAgents.push(agent);
+    const second = await applyShape('linear-ops', shared.deps);
+
+    // The flip fires: re-bound (not re-created), keyed by the STORED slug.
+    expect(second.applied.schedulesCreated).toEqual([]);
+    expect(second.applied.schedulesRebound).toEqual(['Inbox Tick']);
+    expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    expect(shared.rebindSchedule).toHaveBeenCalledTimes(1);
+    expect(shared.rebindSchedule).toHaveBeenCalledWith('inbox-tick', {
+      agentId: 'agent-tender',
+      enabled: true,
+    });
+    // Exactly one schedule — agent-bound + enabled. No lingering disabled global copy.
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
+    ]);
+  });
+
   // === (d) Re-bind guards ===
 
   it('(d) never force-enables a schedule the user disabled after it was agent-bound', async () => {

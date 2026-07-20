@@ -28,6 +28,7 @@ import { useCallback } from 'react';
 import { toast } from 'sonner';
 
 import { humanizePackageName } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import { useInstallPackage, type InstallPackageArgs } from '@/layers/entities/marketplace';
 import type { InstallResult } from '@dorkos/shared/marketplace-schemas';
 
@@ -37,6 +38,26 @@ import type { InstallResult } from '@dorkos/shared/marketplace-schemas';
 function formatInstallError(err: unknown): string {
   if (err instanceof Error) return `Install failed: ${err.message}`;
   return 'Install failed: unknown error';
+}
+
+/**
+ * The success-toast options for one install. A Shape install is staged, not
+ * activated — so its toast carries an "Apply…" action that opens the Shape
+ * switcher landed on the just-installed Shape (highlighted, never auto-applied).
+ * Every other package type installs to a plain confirmation.
+ *
+ * @param result - The install outcome (its `type` decides the action).
+ * @param toastId - The loading toast id to replace in place.
+ */
+function successToastOptions(result: InstallResult, toastId: string | number) {
+  if (result.type !== 'shape') return { id: toastId };
+  return {
+    id: toastId,
+    action: {
+      label: 'Apply…',
+      onClick: () => useAppStore.getState().openShapeSwitcherToShape(result.packageName),
+    },
+  };
 }
 
 /**
@@ -86,8 +107,8 @@ export function useInstallWithToast() {
       const label = humanizePackageName(args.name);
       const toastId = toast.loading(`Installing ${label}…`);
       baseMutate(args, {
-        onSuccess: () => {
-          toast.success(`Installed ${label}`, { id: toastId });
+        onSuccess: (result) => {
+          toast.success(`Installed ${label}`, successToastOptions(result, toastId));
         },
         onError: (err) => {
           toast.error(formatInstallError(err), { id: toastId });
@@ -103,7 +124,7 @@ export function useInstallWithToast() {
       const toastId = toast.loading(`Installing ${label}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(`Installed ${label}`, { id: toastId });
+        toast.success(`Installed ${label}`, successToastOptions(result, toastId));
         return result;
       } catch (err) {
         toast.error(formatInstallError(err), { id: toastId });

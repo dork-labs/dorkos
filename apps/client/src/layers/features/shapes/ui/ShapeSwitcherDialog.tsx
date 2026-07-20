@@ -8,7 +8,15 @@
  */
 import { useCallback, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Shapes, ArrowRight, Sparkles, Loader2, TriangleAlert, Store } from 'lucide-react';
+import {
+  Shapes,
+  ArrowRight,
+  Sparkles,
+  Loader2,
+  TriangleAlert,
+  Store,
+  CalendarClock,
+} from 'lucide-react';
 import type { ApplyShapeResult, InstalledShapeSummary } from '@dorkos/shared/marketplace-schemas';
 import {
   Badge,
@@ -21,7 +29,7 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { useShapes } from '@/layers/entities/shapes';
 import { useApplyShape } from '../model/use-apply-shape';
 import { useSwitchAgentCwd } from '../model/use-switch-agent-cwd';
@@ -48,6 +56,10 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const applyShape = useApplyShape();
   const switchAgent = useSwitchAgentCwd();
   const openWithSeed = useAgentCreationStore((s) => s.openWithSeed);
+  // The Shape an "Apply…" affordance asked us to land on (install toast /
+  // installed list). Its card is highlighted and scrolled into view — the user
+  // still confirms by clicking; we never auto-apply.
+  const focusShape = useAppStore((s) => s.shapeSwitcherFocus);
 
   // The last apply's result — kept while the dialog stays open so the arrival
   // offer + notes persist (toasts vanish). Cleared when the dialog closes.
@@ -81,6 +93,13 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
     },
     [applyShape]
   );
+
+  // Callback ref for the highlighted card — React invokes it with the element
+  // the moment the focused card renders, so we scroll it into view without an
+  // effect that would fight the dialog's open animation.
+  const scrollFocusedIntoView = useCallback((el: HTMLButtonElement | null) => {
+    el?.scrollIntoView({ block: 'nearest' });
+  }, []);
 
   const pendingName = applyShape.isPending ? applyShape.variables?.name : undefined;
   const activeShape = shapes?.find((s) => s.active);
@@ -137,16 +156,20 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
             <ul className="space-y-0.5">
               {shapes.map((shape) => {
                 const isPending = pendingName === shape.name;
+                const isHighlighted = focusShape === shape.name;
                 return (
                   <li key={shape.name}>
                     <button
                       type="button"
+                      ref={isHighlighted ? scrollFocusedIntoView : undefined}
+                      data-highlighted={isHighlighted || undefined}
                       disabled={applyShape.isPending}
                       onClick={() => handleApply(shape)}
                       className={cn(
                         'group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
                         'focus-ring hover:bg-accent disabled:pointer-events-none',
-                        shape.active && 'bg-accent/60'
+                        shape.active && 'bg-accent/60',
+                        isHighlighted && 'ring-primary ring-2'
                       )}
                     >
                       <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md">
@@ -188,6 +211,15 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                     This Shape suggests the{' '}
                     <span className="font-medium">{arrival.displayName}</span> agent.
                   </p>
+                  {/* The server-derived cadence, in plain words — shown only
+                      when the Shape declares a describable schedule for this
+                      agent. Quiet secondary line, matching the arrival ledger. */}
+                  {arrival.scheduleSummary && (
+                    <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                      <CalendarClock className="size-[--size-icon-xs] shrink-0" />
+                      {arrival.scheduleSummary}
+                    </p>
+                  )}
                   {arrival.satisfied && arrival.projectPath ? (
                     <Button
                       size="sm"
