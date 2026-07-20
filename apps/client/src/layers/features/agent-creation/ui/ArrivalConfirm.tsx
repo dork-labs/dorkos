@@ -9,6 +9,13 @@ export interface ArrivalConfirmProps {
   seed: CreationSeed;
   /** Where the agent will live once created (`defaultDirectory/slug`). */
   resolvedDirectory: string;
+  /**
+   * True when the derived name is ready to create with. On this step it can
+   * only be false when the offer arrived without a usable name (conflict checks
+   * don't run here, and slugify always yields a valid slug from a non-blank
+   * name) — the create button disables and a hint points at "Customize first".
+   */
+  canSubmit: boolean;
   /** True while the create request is in flight — disables the primary action. */
   isCreating: boolean;
   /** Create the agent as offered, in one click. */
@@ -31,6 +38,7 @@ export interface ArrivalConfirmProps {
 export function ArrivalConfirm({
   seed,
   resolvedDirectory,
+  canSubmit,
   isCreating,
   onCreate,
   onCustomize,
@@ -68,32 +76,33 @@ export function ArrivalConfirm({
       <dl className="bg-muted/30 space-y-2 rounded-lg border p-3 text-sm">
         <div className="flex items-center gap-2">
           <RuntimeGlyph runtime={runtime} />
-          <span>
-            <span className="text-muted-foreground">Runs on </span>
-            {runtimeLabel}
-          </span>
+          <dt className="text-muted-foreground">Runs on</dt>
+          <dd>{runtimeLabel}</dd>
         </div>
         <div className="flex items-center gap-2">
           <FolderOpen className="text-muted-foreground size-4 shrink-0" />
-          <span className="min-w-0">
-            <span className="text-muted-foreground">Lives in </span>
+          <dt className="text-muted-foreground shrink-0">Lives in</dt>
+          <dd className="min-w-0">
             <code className="text-xs break-all">{resolvedDirectory}</code>
-          </span>
+          </dd>
         </div>
         {skills && skills.length > 0 && (
           <div className="flex items-start gap-2">
             <Puzzle className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-            <span>
-              <span className="text-muted-foreground">Uses skills: </span>
-              {skills.join(', ')}
-            </span>
+            <dt className="text-muted-foreground shrink-0">Uses skills</dt>
+            <dd>{skills.join(', ')}</dd>
           </div>
         )}
       </dl>
 
       {/* Actions */}
       <div className="flex flex-col gap-2">
-        <Button onClick={onCreate} disabled={isCreating} data-testid="arrival-create">
+        {!canSubmit && (
+          <p className="text-warning text-center text-xs" data-testid="arrival-needs-name">
+            This agent still needs a name — choose &ldquo;Customize first&rdquo; to give it one.
+          </p>
+        )}
+        <Button onClick={onCreate} disabled={isCreating || !canSubmit} data-testid="arrival-create">
           {isCreating ? 'Creating…' : `Create ${displayName}`}
         </Button>
         <div className="flex items-center justify-center gap-4">

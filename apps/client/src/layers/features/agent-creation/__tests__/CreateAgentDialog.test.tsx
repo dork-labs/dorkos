@@ -823,8 +823,28 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByText('Codex')).toBeInTheDocument();
     expect(screen.getByText('~/.dork/agents/linear-keeper')).toBeInTheDocument();
     // Skills are listed, never claimed as installed/ready.
-    expect(screen.getByText(/Uses skills:/)).toBeInTheDocument();
+    expect(screen.getByText('Uses skills')).toBeInTheDocument();
     expect(screen.getByText(/linear-adapter/)).toBeInTheDocument();
+  });
+
+  it('disables Create and explains when the seed arrives without a usable name', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor({ displayName: '' }));
+
+    // Blank display name → nothing to slugify → the primary action must not
+    // look active while handleCreate would silently bail.
+    const createBtn = await screen.findByTestId('arrival-create');
+    expect(createBtn).toBeDisabled();
+    expect(screen.getByTestId('arrival-needs-name')).toBeInTheDocument();
+  });
+
+  it('keeps Create enabled for a normal seed (no needs-name hint)', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+
+    expect(screen.getByTestId('arrival-create')).toBeEnabled();
+    expect(screen.queryByTestId('arrival-needs-name')).not.toBeInTheDocument();
   });
 
   it('Customize first opens the naming step pre-filled from the seed', async () => {

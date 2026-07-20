@@ -173,6 +173,7 @@ export function CreateAgentDialog() {
                 <ArrivalConfirm
                   seed={seed}
                   resolvedDirectory={form.resolvedDirectory}
+                  canSubmit={form.canSubmit}
                   isCreating={createAgent.isPending}
                   onCreate={handleCreate}
                   onCustomize={() => setStep('configure')}
