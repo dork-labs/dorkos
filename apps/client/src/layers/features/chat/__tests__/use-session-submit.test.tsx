@@ -583,6 +583,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     useAgentBirthStore.getState().register('s1', {
       name: 'aurora',
       displayName: 'Aurora',
+      agentId: 'agent_aurora',
       bornAt: '2026-07-20T00:00:00.000Z',
       path: '/test/cwd',
       runtime: 'claude-code',

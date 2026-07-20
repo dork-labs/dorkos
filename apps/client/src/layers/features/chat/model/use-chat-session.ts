@@ -231,6 +231,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       tryNativeCommand: native.tryRun,
     });
 
+  // Whether the durable stream snapshot has landed for this session. Gates the
+  // kickoff mid-stream failure flip AND the first-light waking state (both must
+  // wait until an empty session is confirmed real, not merely un-rehydrated).
+  const hydrated = streamState.streamReadyCursor !== null;
+
   // The agent speaks first (M4): a freshly created agent's session opens with an
   // auto-triggered greeting. No-op for every session without a pending birth.
   // `cwd` lets a fresh session claim a birth recorded by a create that never
@@ -240,7 +245,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     cwd: selectedCwd,
     status,
     messages,
-    hydrated: streamState.streamReadyCursor !== null,
+    hydrated,
     submitKickoff,
   });
 
@@ -287,6 +292,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     stop,
     retryMessage,
     isLoadingHistory,
+    hydrated,
     sessionStatus,
     streamStartTime,
     estimatedTokens,

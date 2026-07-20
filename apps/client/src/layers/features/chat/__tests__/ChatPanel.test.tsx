@@ -24,6 +24,7 @@ vi.mock('../model/use-chat-session', () => ({
     stop: vi.fn(),
     retryMessage: vi.fn(),
     isLoadingHistory: false,
+    hydrated: true,
     sessionStatus: null,
     streamStartTime: null,
     estimatedTokens: null,

@@ -174,6 +174,9 @@ export function CreateAgentDialog() {
           useAgentBirthStore.getState().register(newSessionId, {
             name: data.name,
             displayName,
+            agentId: data.id,
+            icon: data.icon,
+            color: data.color,
             bornAt: data.registeredAt,
             path: data._path,
             runtime: data.runtime,
