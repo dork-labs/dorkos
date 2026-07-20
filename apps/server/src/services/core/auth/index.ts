@@ -42,6 +42,7 @@ import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import { apiKey } from '@better-auth/api-key';
 import { user, session, account, verification, apikey, type Db } from '@dorkos/db';
 import { env } from '../../../env.js';
+import { logger } from '../../../lib/logger.js';
 import { resolveTrustedOrigins } from '../../../lib/trusted-origins.js';
 import { resolveBetterAuthSecret } from './secret.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
@@ -50,6 +51,23 @@ import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 export type Auth = ReturnType<typeof createAuth>;
 
 const isProduction = env.NODE_ENV === 'production';
+
+/**
+ * Whether a Better Auth log call is the benign one-time "Base URL is not set"
+ * advisory. Better Auth (1.6.23) emits it at init whenever no fixed `baseURL` is
+ * set — which DorkOS does on purpose so the origin is derived per request and
+ * the CSRF/redirect trust stays the narrow `trustedOrigins` allowlist. The auth
+ * logger drops exactly this message. Matched narrowly by text: if a future
+ * Better Auth version reworks the wording the advisory simply reappears in the
+ * logs — never a behavior or security change.
+ *
+ * @param level - The Better Auth log level.
+ * @param message - The Better Auth log message.
+ * @returns `true` only for the base-URL advisory, which should be suppressed.
+ */
+export function isBetterAuthBaseUrlAdvisory(level: string, message: string): boolean {
+  return level === 'warn' && message.includes('Base URL is not set');
+}
 
 /**
  * Build a Better Auth instance bound to the given Drizzle SQLite database.
@@ -69,25 +87,30 @@ export function createAuth(db: Db, dorkHome: string) {
     // letting Better Auth read the environment) is what makes login work on a
     // fresh install with no `BETTER_AUTH_SECRET` set — see `secret.ts`.
     secret: resolveBetterAuthSecret(dorkHome),
-    // No fixed `baseURL`: this server answers on many origins — loopback, a LAN
-    // IP, a dynamic ngrok tunnel, or a reverse proxy — so the origin must be
-    // derived from each incoming request, never pinned to one URL (a wrong fixed
-    // baseURL would break callbacks/redirects). Better Auth's dynamic form does
-    // exactly that: `allowedHosts: ['*']` keeps the origin fully request-derived
-    // for every host (a browser sign-in always carries its Host header), while
-    // telling Better Auth this is a deliberate multi-host setup so it stops
-    // logging the one-time "Base URL is not set" advisory on every boot.
+    // No `baseURL`: this server answers on many origins — loopback, a LAN IP, a
+    // dynamic ngrok tunnel, or a reverse proxy — so the origin is derived from
+    // each incoming request rather than pinned to one URL. The narrow
+    // CSRF/redirect allowlist is `trustedOrigins` below, and it must stay the
+    // ONLY origin authority. Better Auth's dynamic-baseURL form
+    // (`baseURL: { allowedHosts }`) is deliberately NOT used here: it merges each
+    // allowed host into the same trusted-origins list `isTrustedOrigin` consumes
+    // for `callbackURL`/`redirectTo`, so a wildcard `['*']` injects the pattern
+    // `https://*` and trusts every https origin (an open-redirect / CSRF
+    // regression). Omitting `baseURL` keeps that list narrow.
     //
-    // `fallback` covers the server-side calls that have no incoming request to
-    // derive from — the boot-time legacy-key seed (`createApiKey`) and API-key
-    // verification (`verifyApiKey`) both call `auth.api.*` header-less, and the
-    // dynamic config throws without a fallback. The loopback origin is only ever
-    // used to build absolute URLs internally for these non-redirect,
-    // email/password + API-key flows, so it is correct and never reaches a
-    // browser. The real CSRF/origin allowlist lives in `trustedOrigins` below.
-    baseURL: {
-      allowedHosts: ['*'],
-      fallback: `http://${env.DORKOS_HOST}:${env.DORKOS_PORT}`,
+    // The cost of omitting `baseURL` is one benign log line: Better Auth
+    // (1.6.23) prints a one-time "Base URL is not set" advisory at init. For the
+    // only flows DorkOS runs — email/password + API keys, no OAuth redirects —
+    // that advisory is noise on every boot, so the `logger` below drops exactly
+    // that message (see {@link isBetterAuthBaseUrlAdvisory}) and forwards
+    // everything else to the DorkOS logger.
+    logger: {
+      log: (level, message, ...args) => {
+        if (isBetterAuthBaseUrlAdvisory(level, message)) return;
+        if (level === 'error') logger.error(message, ...args);
+        else if (level === 'warn') logger.warn(message, ...args);
+        else logger.info(message, ...args);
+      },
     },
     database: drizzleAdapter(db, {
       provider: 'sqlite',
