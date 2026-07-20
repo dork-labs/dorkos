@@ -440,6 +440,13 @@ describe('SessionSidebar', () => {
     it('keeps the Schedules tab present even when Tasks is disabled-by-server', () => {
       // The quarantined strip is a fixed four-tab union; only the panel content
       // reacts to tool status, not the strip itself.
+      //
+      // SIGN-OFF (reviewer-accepted): keeping Schedules-when-server-disabled on
+      // this deprecated embedded surface is deliberate — a benign empty state.
+      // The registry-driven `visibleWhen` that used to hide it died with the
+      // tab-strip machinery, and the Obsidian north-star rework deletes this whole
+      // component; wiring conditional visibility back into a legacy shell is not
+      // worth it.
       mockToolStatus = {
         tasks: 'disabled-by-server',
         relay: 'enabled',
