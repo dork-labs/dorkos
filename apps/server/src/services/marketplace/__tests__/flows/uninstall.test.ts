@@ -24,6 +24,7 @@ import {
   PackageNotInstalledError,
   UninstallFlow,
   type UninstallShapeDeactivator,
+  type UninstallShapeScheduleTeardown,
 } from '../../flows/uninstall.js';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
@@ -319,6 +320,100 @@ describe('UninstallFlow', () => {
     const flow = new UninstallFlow({ ...deps, shapeDeactivator });
     await flow.uninstall({ name: 'linear-ops' });
 
+    expect(clearActiveShape).not.toHaveBeenCalled();
+    expect(await pathExists(installRoot)).toBe(false);
+  });
+
+  it("deletes the Shape's schedules AND disables its extensions when it is the active Shape", async () => {
+    // Uninstalling the active Shape is full teardown: its schedules must stop
+    // firing (the orphaned-schedule bug) and the extensions it turned on must
+    // turn back off (the never-deactivated bug), then the active pointer clears.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'linear-ops');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildShapeManifest({ name: 'linear-ops', activates: ['linear-issues', 'ext-2'] }),
+    });
+
+    const clearActiveShape = vi.fn();
+    const shapeDeactivator: UninstallShapeDeactivator = {
+      getActiveShapeName: () => 'linear-ops',
+      clearActiveShape,
+    };
+    const deleteSchedulesForShape = vi.fn().mockResolvedValue(['inbox-tick']);
+    const shapeScheduleTeardown: UninstallShapeScheduleTeardown = { deleteSchedulesForShape };
+
+    const flow = new UninstallFlow({ ...deps, shapeDeactivator, shapeScheduleTeardown });
+    await flow.uninstall({ name: 'linear-ops' });
+
+    // Schedules torn down for this exact Shape.
+    expect(deleteSchedulesForShape).toHaveBeenCalledWith('linear-ops');
+    // Every extension the Shape declared `activates` is disabled.
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('linear-issues');
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-2');
+    expect(deps.extensionManager.disable).toHaveBeenCalledTimes(2);
+    // Active pointer cleared.
+    expect(clearActiveShape).toHaveBeenCalledTimes(1);
+    expect(await pathExists(installRoot)).toBe(false);
+  });
+
+  it("deletes the Shape's schedules but leaves extensions + pointer when it is NOT active", async () => {
+    // A different Shape is active. Its extensions may depend on the shared set,
+    // so uninstalling a non-active Shape must not disable any extension or touch
+    // the active pointer — but its own schedules are still torn down.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'linear-ops');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildShapeManifest({ name: 'linear-ops', activates: ['linear-issues'] }),
+    });
+
+    const clearActiveShape = vi.fn();
+    const shapeDeactivator: UninstallShapeDeactivator = {
+      getActiveShapeName: () => 'some-other-shape',
+      clearActiveShape,
+    };
+    const deleteSchedulesForShape = vi.fn().mockResolvedValue(['inbox-tick']);
+    const shapeScheduleTeardown: UninstallShapeScheduleTeardown = { deleteSchedulesForShape };
+
+    const flow = new UninstallFlow({ ...deps, shapeDeactivator, shapeScheduleTeardown });
+    await flow.uninstall({ name: 'linear-ops' });
+
+    // Schedules torn down regardless of active status.
+    expect(deleteSchedulesForShape).toHaveBeenCalledWith('linear-ops');
+    // Extensions + active pointer untouched.
+    expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+    expect(clearActiveShape).not.toHaveBeenCalled();
+    expect(await pathExists(installRoot)).toBe(false);
+  });
+
+  it('skips all Shape teardown on an update replace (deactivateShape: false)', async () => {
+    // The installer update runs uninstall as the first half of a replace — the
+    // Shape comes right back — so it must NOT delete schedules, disable
+    // extensions, or clear the pointer.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'linear-ops');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildShapeManifest({ name: 'linear-ops', activates: ['linear-issues'] }),
+    });
+
+    const clearActiveShape = vi.fn();
+    const shapeDeactivator: UninstallShapeDeactivator = {
+      getActiveShapeName: () => 'linear-ops',
+      clearActiveShape,
+    };
+    const deleteSchedulesForShape = vi.fn().mockResolvedValue([]);
+    const shapeScheduleTeardown: UninstallShapeScheduleTeardown = { deleteSchedulesForShape };
+
+    const flow = new UninstallFlow({ ...deps, shapeDeactivator, shapeScheduleTeardown });
+    await flow.uninstall({ name: 'linear-ops', deactivateShape: false });
+
+    expect(deleteSchedulesForShape).not.toHaveBeenCalled();
+    expect(deps.extensionManager.disable).not.toHaveBeenCalled();
     expect(clearActiveShape).not.toHaveBeenCalled();
     expect(await pathExists(installRoot)).toBe(false);
   });

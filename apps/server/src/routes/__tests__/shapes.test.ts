@@ -98,6 +98,7 @@ describe('shapes router', () => {
       extensionManager: {
         get: () => ({ manifest: { serverCapabilities: {} } }),
         enable: async () => ({ reloadRequired: true }),
+        disable: async () => undefined,
       },
       secretChecker: { isSet: async () => false }, // secret unset → a warning
       agentRegistry: { listWithPaths: () => [] }, // agent absent → offered
@@ -105,6 +106,7 @@ describe('shapes router', () => {
         listSchedules: () => [],
         createSchedule: async () => undefined,
         rebindSchedule: async () => undefined,
+        deleteSchedulesForShape: async () => [],
       },
       configStore: {
         getShapePrefs: () => ({ active: activeShape, agentDefaults: {}, autoFollowAgent: false }),

@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
+import { slugify } from '@dorkos/skills/slug';
 import {
   applyShape,
   ShapeNotInstalledError,
@@ -88,6 +89,13 @@ function makeDeps(opts: {
   registeredAgents?: RegisteredAgentView[];
   existingSchedules?: FakeSchedule[];
   autoFollowAgent?: boolean;
+  /** The currently-active Shape name — the swap turns off its extensions. */
+  activeShape?: string;
+  /**
+   * Manifests resolvable by name besides the applied one (e.g. the outgoing
+   * Shape). An explicit `null` models a no-longer-installed Shape.
+   */
+  otherManifests?: Record<string, ShapePackageManifest | null>;
 }) {
   const present = new Set(opts.presentExtensions ?? []);
   const enablable = new Set(opts.enablableExtensions ?? opts.presentExtensions ?? []);
@@ -96,12 +104,21 @@ function makeDeps(opts: {
   const schedules: FakeSchedule[] = (opts.existingSchedules ?? []).map((s) => ({ ...s }));
 
   const createSchedule = vi.fn(async (req: CreateTaskRequest, origin?: { shape: string }) => {
-    schedules.push({
-      name: req.name,
-      agentId: req.target === 'global' ? null : req.target,
+    // Mirror production: the real service stores each schedule under
+    // `slugify(req.name)` and upserts by file path (slug + scope), so a manifest
+    // that declares "Inbox Tick" lands as "inbox-tick" and re-creating it is
+    // idempotent rather than a duplicate.
+    const name = slugify(req.name);
+    const agentId = req.target === 'global' ? null : req.target;
+    const entry: FakeSchedule = {
+      name,
+      agentId,
       enabled: req.enabled ?? true,
       shapeOrigin: origin?.shape ?? null,
-    });
+    };
+    const existing = schedules.find((s) => s.name === name && s.agentId === agentId);
+    if (existing) Object.assign(existing, entry);
+    else schedules.push(entry);
   });
   const rebindSchedule = vi.fn(
     async (name: string, rebind: { agentId: string; enabled: boolean }) => {
@@ -112,14 +129,39 @@ function makeDeps(opts: {
       }
     }
   );
+  // Provenance-gated deletion, mirroring the real service: remove every schedule
+  // stamped with `shapeName` whose name is not spared by `keepNames`.
+  const deleteSchedulesForShape = vi.fn(
+    async (shapeName: string, keepNames?: ReadonlySet<string>) => {
+      const removed: string[] = [];
+      for (let i = schedules.length - 1; i >= 0; i--) {
+        const s = schedules[i];
+        if (keepNames?.has(s.name)) continue;
+        if (s.shapeOrigin !== shapeName) continue;
+        schedules.splice(i, 1);
+        removed.push(s.name);
+      }
+      return removed;
+    }
+  );
   const enable = vi.fn(async (id: string) => (enablable.has(id) ? { reloadRequired: true } : null));
+  const disable = vi.fn(async () => undefined);
   const setActiveShape = vi.fn();
 
   const deps: ApplyShapeDeps = {
-    manifestResolver: { resolve: vi.fn(async () => opts.manifest) },
+    // Name-aware: the applied Shape resolves to `opts.manifest`; the outgoing
+    // Shape (and any other) resolves from `opts.otherManifests`.
+    manifestResolver: {
+      resolve: vi.fn(async (queryName: string) =>
+        opts.otherManifests && queryName in opts.otherManifests
+          ? opts.otherManifests[queryName]
+          : opts.manifest
+      ),
+    },
     extensionManager: {
       get: (id) => (present.has(id) ? { manifest: { serverCapabilities: {} } } : undefined),
       enable,
+      disable,
     },
     secretChecker: { isSet: async (ext, key) => setSecrets.has(`${ext}:${key}`) },
     agentRegistry: { listWithPaths: () => opts.registeredAgents ?? [] },
@@ -129,17 +171,27 @@ function makeDeps(opts: {
       listSchedules: () => schedules.map((s) => ({ ...s })),
       createSchedule,
       rebindSchedule,
+      deleteSchedulesForShape,
     },
     configStore: {
       getShapePrefs: () => ({
-        active: null,
+        active: opts.activeShape ?? null,
         agentDefaults: {},
         autoFollowAgent: opts.autoFollowAgent ?? false,
       }),
       setActiveShape,
     },
   };
-  return { deps, createSchedule, rebindSchedule, enable, setActiveShape, schedules };
+  return {
+    deps,
+    createSchedule,
+    rebindSchedule,
+    deleteSchedulesForShape,
+    enable,
+    disable,
+    setActiveShape,
+    schedules,
+  };
 }
 
 describe('applyShape', () => {
@@ -598,5 +650,194 @@ describe('applyShape', () => {
     const result = await applyShape('s', deps);
 
     expect(result.offeredAgents[0].scheduleSummary).toBeUndefined();
+  });
+
+  // === (e) Extension swap on Shape switch ===
+
+  it('(e) switching A→B disables A-only extensions, keeps the overlap, enables B', async () => {
+    // Shape A is active; applying Shape B must turn OFF A's extensions that B
+    // does not also declare, leave the shared one enabled (no disable/enable
+    // flap), and turn ON B's own. This is the swap that stops Shapes from piling
+    // their extensions on.
+    const shapeA = buildManifest({ name: 'shape-a', activates: ['ext-shared', 'ext-a-only'] });
+    const shapeB = buildManifest({ name: 'shape-b', activates: ['ext-shared', 'ext-b-only'] });
+    const { deps, disable, enable } = makeDeps({
+      manifest: shapeB,
+      presentExtensions: ['ext-shared', 'ext-b-only'],
+      activeShape: 'shape-a',
+      otherManifests: { 'shape-a': shapeA },
+    });
+
+    const result = await applyShape('shape-b', deps);
+
+    // The overlap stays enabled — never disabled.
+    expect(disable).not.toHaveBeenCalledWith('ext-shared');
+    // A's exclusive extension is turned off, and reported.
+    expect(disable).toHaveBeenCalledWith('ext-a-only');
+    expect(disable).toHaveBeenCalledTimes(1);
+    expect(result.applied.deactivatedExtensions).toEqual(['ext-a-only']);
+    // B's full set is enabled (the overlap is enabled once, not flapped).
+    expect(enable).toHaveBeenCalledWith('ext-shared');
+    expect(enable).toHaveBeenCalledWith('ext-b-only');
+    expect(result.applied.activatedExtensions).toEqual(['ext-shared', 'ext-b-only']);
+  });
+
+  it('(e) re-applying the SAME active Shape disables nothing', async () => {
+    const shape = buildManifest({ name: 'shape-a', activates: ['ext-a'] });
+    const { deps, disable } = makeDeps({
+      manifest: shape,
+      presentExtensions: ['ext-a'],
+      activeShape: 'shape-a',
+      otherManifests: { 'shape-a': shape },
+    });
+
+    const result = await applyShape('shape-a', deps);
+
+    expect(disable).not.toHaveBeenCalled();
+    expect(result.applied.deactivatedExtensions).toEqual([]);
+  });
+
+  it('(e) leaves extensions alone when the outgoing Shape is no longer installed', async () => {
+    // The active pointer names a Shape whose manifest no longer resolves; its
+    // declared set is unknown, so nothing is disabled (never guess).
+    const shapeB = buildManifest({ name: 'shape-b', activates: ['ext-b'] });
+    const { deps, disable } = makeDeps({
+      manifest: shapeB,
+      presentExtensions: ['ext-b'],
+      activeShape: 'ghost-shape',
+      otherManifests: { 'ghost-shape': null },
+    });
+
+    const result = await applyShape('shape-b', deps);
+
+    expect(disable).not.toHaveBeenCalled();
+    expect(result.applied.deactivatedExtensions).toEqual([]);
+  });
+
+  // === (f) Reconciliation: drop schedules the current version no longer declares ===
+
+  it('(f) deletes a schedule an earlier version created but the current manifest dropped', async () => {
+    // v1 stood up `old-tick` (still on disk, this Shape's provenance). v2's
+    // manifest declares only `new-tick`. Applying v2 creates `new-tick` and
+    // reconciles `old-tick` away — no stale schedule lingers.
+    const v2 = buildManifest({
+      name: 'linear-ops',
+      agents: [
+        {
+          ref: 'linear-tender',
+          affinity: 'default',
+          matchName: 'Linear Tender',
+          template: { displayName: 'Linear Tender' },
+        },
+      ],
+      schedules: [
+        {
+          name: 'new-tick',
+          description: 'poll',
+          prompt: 'go',
+          cron: '*/15 * * * *',
+          agentRef: 'linear-tender',
+          permissionMode: 'acceptEdits',
+        },
+      ],
+    });
+    const { deps, deleteSchedulesForShape, schedules } = makeDeps({
+      manifest: v2,
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      // The dropped v1 schedule, agent-bound, still carrying this Shape's marker.
+      existingSchedules: [
+        { name: 'old-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
+      ],
+    });
+
+    const result = await applyShape('linear-ops', deps);
+
+    // The current schedule was created; the dropped one was reconciled away.
+    expect(result.applied.schedulesCreated).toEqual(['new-tick']);
+    expect(result.applied.schedulesRemoved).toEqual(['old-tick']);
+    // Reconciliation spared the just-declared name.
+    expect(deleteSchedulesForShape).toHaveBeenCalledWith('linear-ops', new Set(['new-tick']));
+    // Exactly the new schedule remains; the stale one is gone.
+    expect(schedules).toEqual([
+      { name: 'new-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
+    ]);
+  });
+
+  it("(f) reconciliation never deletes a user's or another Shape's colliding schedule", async () => {
+    // Two schedules share nothing with this Shape's provenance: one user-created
+    // (no marker), one owned by another Shape. Applying this Shape must not sweep
+    // either, even though it drops all of its OWN schedules (declares none).
+    const shape = buildManifest({ name: 'linear-ops', schedules: [] });
+    const { deps, schedules } = makeDeps({
+      manifest: shape,
+      existingSchedules: [
+        { name: 'user-tick', agentId: null, enabled: true, shapeOrigin: null },
+        { name: 'other-tick', agentId: null, enabled: true, shapeOrigin: 'other-shape' },
+        { name: 'mine-tick', agentId: null, enabled: true, shapeOrigin: 'linear-ops' },
+      ],
+    });
+
+    const result = await applyShape('linear-ops', deps);
+
+    // Only this Shape's own orphan is removed.
+    expect(result.applied.schedulesRemoved).toEqual(['mine-tick']);
+    expect(schedules).toEqual([
+      { name: 'user-tick', agentId: null, enabled: true, shapeOrigin: null },
+      { name: 'other-tick', agentId: null, enabled: true, shapeOrigin: 'other-shape' },
+    ]);
+  });
+
+  it('(f) reconciliation keeps a schedule whose manifest name is not already kebab-case', async () => {
+    // C1 regression: the manifest declares "Inbox Tick" but the schedule is
+    // stored under its slug "inbox-tick". The reconciliation set must be built
+    // from slugs, or the sweep deletes the very schedule this apply just created
+    // — on every apply. Assert it is created once and survives, and that a
+    // reapply keeps exactly one (never deleted, never duplicated).
+    const manifest = buildManifest({
+      name: 'linear-ops',
+      agents: [
+        {
+          ref: 'tender',
+          affinity: 'default',
+          matchName: 'Tender',
+          template: { displayName: 'Tender' },
+        },
+      ],
+      schedules: [
+        {
+          name: 'Inbox Tick',
+          description: 'poll',
+          prompt: 'go',
+          cron: '*/15 * * * *',
+          agentRef: 'tender',
+          permissionMode: 'acceptEdits',
+        },
+      ],
+    });
+    const agent: RegisteredAgentView = {
+      id: 'agent-tender',
+      name: 'tender',
+      displayName: 'Tender',
+      projectPath: '/p/tender',
+    };
+    const shared = makeDeps({ manifest, registeredAgents: [agent] });
+
+    const first = await applyShape('linear-ops', shared.deps);
+
+    // Created (reported under its manifest name) and NOT swept away.
+    expect(first.applied.schedulesCreated).toEqual(['Inbox Tick']);
+    expect(first.applied.schedulesRemoved).toEqual([]);
+    // Stored under its slug, bound + enabled.
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
+    ]);
+
+    // Reapply keeps exactly one — reconciliation never deletes it, and the
+    // idempotent create never duplicates it.
+    const second = await applyShape('linear-ops', shared.deps);
+    expect(second.applied.schedulesRemoved).toEqual([]);
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
+    ]);
   });
 });

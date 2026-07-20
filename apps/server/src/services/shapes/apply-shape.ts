@@ -23,6 +23,7 @@ import type { ShapePackageManifest } from '@dorkos/marketplace';
 import type { ShapeUserPrefs } from '@dorkos/shared/config-schema';
 import { describeCronSchedule } from '@dorkos/shared/cron';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
+import { slugify } from '@dorkos/skills/slug';
 
 /** A single agents[] entry as declared on a Shape manifest. */
 type ShapeAgentEntry = ShapePackageManifest['agents'][number];
@@ -92,6 +93,19 @@ export interface AppliedShape {
   layout: ShapeLayout;
   /** Extension ids actually enabled this apply (post-degradation). */
   activatedExtensions: string[];
+  /**
+   * Extension ids turned OFF this apply because they belonged to the outgoing
+   * Shape's `activates` set and this Shape does not declare them — the swap that
+   * keeps switching Shapes from piling every Shape's extensions on. Empty when
+   * no Shape was active, the same Shape is re-applied, or the two sets fully
+   * overlap.
+   *
+   * Caveat: a Shape owns its declared extension set for this swap. An extension
+   * the user enabled by hand that happens to sit in the outgoing Shape's
+   * `activates` is indistinguishable from one that Shape turned on, so the swap
+   * may disable it. Accepted rather than tracking per-extension provenance.
+   */
+  deactivatedExtensions: string[];
   /** Schedule names created this apply (idempotent skips are excluded). */
   schedulesCreated: string[];
   /**
@@ -102,6 +116,15 @@ export interface AppliedShape {
    * disabled their own bound schedule keeps that choice.
    */
   schedulesRebound: string[];
+  /**
+   * Schedule names deleted this apply because an earlier version of THIS Shape
+   * created them but the current manifest no longer declares them (a rename or
+   * drop between versions). Provenance-gated to this Shape and swept across both
+   * global and agent-bound scopes; a user's own schedule and another Shape's are
+   * never touched. This is what stops a v1 schedule from lingering after a v2
+   * update.
+   */
+  schedulesRemoved: string[];
 }
 
 /** The full result of {@link applyShape} — also the `POST /api/shapes/:name/apply` body. */
@@ -143,6 +166,14 @@ export interface ShapeExtensionManagerLike {
    *   discoverable / not compilable.
    */
   enable(id: string): Promise<{ reloadRequired: boolean } | null>;
+  /**
+   * Turn an extension off — the reverse of {@link enable}, used when a Shape
+   * swap turns off the outgoing Shape's extensions.
+   *
+   * @param id - Extension id to disable.
+   * @returns Any result; the apply flow ignores it (best-effort teardown).
+   */
+  disable(id: string): Promise<unknown>;
 }
 
 /** Checks whether an extension's declared secret already has a value. */
@@ -244,6 +275,25 @@ export interface ShapeScheduleServiceLike {
    * @param rebind - The agent id to bind to and the resulting enabled state.
    */
   rebindSchedule(name: string, rebind: ScheduleRebind): Promise<void>;
+  /**
+   * Delete every schedule stamped with this Shape's provenance marker
+   * (`origin: shape` + `shape: <shapeName>`), across both global and
+   * agent-bound scopes. Full teardown per schedule — file, task-store row, and
+   * scheduler registration — so nothing keeps firing after its Shape is gone.
+   * Fail-closed: a schedule whose marker is missing, unreadable, or names a
+   * different Shape is left untouched, so a user's own schedule that collides on
+   * name is never deleted.
+   *
+   * @param shapeName - The owning Shape whose schedules to delete.
+   * @param keepNames - When given, schedules whose name is in this set are
+   *   spared — the apply reconciliation passes the Shape's currently-declared
+   *   names so only renamed/dropped schedules are removed. These must be STORED
+   *   names (i.e. `slugify`'d), the same form schedules are created under, so a
+   *   manifest that declares "Inbox Tick" (stored "inbox-tick") is matched.
+   *   Omit to delete every one of this Shape's schedules (the uninstall teardown).
+   * @returns The names of the schedules deleted.
+   */
+  deleteSchedulesForShape(shapeName: string, keepNames?: ReadonlySet<string>): Promise<string[]>;
 }
 
 /**
@@ -292,7 +342,36 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
 
   const warnings: string[] = [];
 
-  // Step 2 — Activate extensions. A non-discoverable id skips + warns; a present
+  // Step 2a — Swap out the outgoing Shape's extensions. Applying a Shape is a
+  // *swap*, not an accumulation: first turn OFF the extensions the currently
+  // active Shape turned ON that this Shape does not also declare, so switching
+  // between Shapes never leaves every Shape's extensions piled on (the design
+  // intent stated in flows/install-shape.ts). The active pointer still names the
+  // outgoing Shape here — Step 8 overwrites it — so read it now. An extension in
+  // BOTH sets stays enabled untouched (no disable/enable flap).
+  //
+  // CAVEAT: a Shape "owns" its declared extension set for the purpose of this
+  // swap. We cannot distinguish an extension the user enabled by hand that
+  // happens to sit in the outgoing Shape's `activates` from one the Shape turned
+  // on, so a swap may disable such an overlap. We accept that rather than track
+  // per-extension provenance.
+  const deactivatedExtensions: string[] = [];
+  const previousActive = deps.configStore.getShapePrefs().active;
+  if (previousActive && previousActive !== name) {
+    const outgoing = await deps.manifestResolver.resolve(previousActive);
+    // A no-longer-installed outgoing Shape yields a null manifest — its declared
+    // set is unknown, so leave every extension alone rather than guess.
+    if (outgoing) {
+      const incoming = new Set(manifest.activates);
+      for (const id of outgoing.activates) {
+        if (incoming.has(id)) continue; // in both sets → stays on, no flap
+        await deps.extensionManager.disable(id);
+        deactivatedExtensions.push(id);
+      }
+    }
+  }
+
+  // Step 2b — Activate extensions. A non-discoverable id skips + warns; a present
   // id that will not enable (invalid / failed to compile) skips + warns too.
   const activatedExtensions: string[] = [];
   for (const id of manifest.activates) {
@@ -403,6 +482,26 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     schedulesCreated.push(schedule.name);
   }
 
+  // Step 4b — Reconcile away schedules this Shape no longer declares. An earlier
+  // version of this Shape may have created a schedule the current manifest
+  // renamed or dropped; the create/rebind loop above never removes anything, so
+  // without this sweep a v1 schedule would keep firing alongside v2's. Delete
+  // every schedule carrying THIS Shape's provenance marker whose name is not in
+  // the currently-declared set — provenance-gated (a user's own and other
+  // Shapes' schedules are safe) and swept across global + agent-bound scopes.
+  // The names just created/rebound are the declared set, so they are kept.
+  //
+  // Match by the SLUG, not the raw manifest name: `createSchedule` stores a
+  // schedule under `slugify(name)`, so a manifest that declares "Inbox Tick"
+  // lands as "inbox-tick". Comparing raw names would miss it, and the sweep
+  // would delete the very schedule this apply just created (`schedulesCreated`)
+  // on every apply. `slugify` is idempotent on already-kebab names.
+  const declaredScheduleNames = new Set(manifest.schedules.map((s) => slugify(s.name)));
+  const schedulesRemoved = await deps.scheduleService.deleteSchedulesForShape(
+    name,
+    declaredScheduleNames
+  );
+
   // Steps 5 + 7 — Agents (offer, never force) and the arrival agent.
   const autoFollowOptIn = deps.configStore.getShapePrefs().autoFollowAgent;
   const offeredAgents: OfferedAgent[] = [];
@@ -453,8 +552,10 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     applied: {
       layout: manifest.layout,
       activatedExtensions,
+      deactivatedExtensions,
       schedulesCreated,
       schedulesRebound,
+      schedulesRemoved,
     },
     warnings,
     offeredAgents,
