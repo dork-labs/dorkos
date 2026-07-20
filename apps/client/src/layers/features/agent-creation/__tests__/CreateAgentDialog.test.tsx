@@ -159,7 +159,7 @@ function renderDialog(transport = createMockTransport()) {
 describe('CreateAgentDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAgentCreationStore.setState({ isOpen: false, initialMode: 'new' });
+    useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
   });
 
   afterEach(cleanup);
@@ -774,5 +774,128 @@ describe('CreateAgentDialog', () => {
     await user.click(await screen.findByTestId('method-new'));
     const freshInput = await screen.findByPlaceholderText('My Cool Agent');
     expect(freshInput).toHaveValue('');
+  });
+
+  // ---- Seeded arrival (M1) — the founder's "Set up X" path ----
+
+  function seedFor(overrides: Record<string, unknown> = {}) {
+    return {
+      template: {
+        displayName: 'Linear Keeper',
+        runtime: 'codex' as const,
+        persona: 'I keep your Linear board tidy.',
+        capabilities: ['linear'],
+        skills: ['linear-adapter'],
+        ...overrides,
+      },
+      origin: 'shape-offer' as const,
+      sourceLabel: 'Linear Ops',
+    };
+  }
+
+  it('renders the arrival confirm — not the method fork — when opened with a seed', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+
+    expect(await screen.findByText('Meet Linear Keeper')).toBeInTheDocument();
+    expect(screen.getByText('I keep your Linear board tidy.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Linear Keeper' })).toBeInTheDocument();
+
+    // The three-way fork must never appear from a seed.
+    expect(screen.queryByTestId('method-new')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('method-template')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('method-import')).not.toBeInTheDocument();
+  });
+
+  it('renders the method fork (no arrival) when opened without a seed', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().open();
+
+    await screen.findByTestId('method-new');
+    expect(screen.queryByTestId('arrival-confirm')).not.toBeInTheDocument();
+  });
+
+  it('shows an honest ledger: runtime, computed directory, and skills without a "ready" claim', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+
+    expect(screen.getByText('Codex')).toBeInTheDocument();
+    expect(screen.getByText('~/.dork/agents/linear-keeper')).toBeInTheDocument();
+    // Skills are listed, never claimed as installed/ready.
+    expect(screen.getByText('Uses skills')).toBeInTheDocument();
+    expect(screen.getByText(/linear-adapter/)).toBeInTheDocument();
+  });
+
+  it('disables Create and explains when the seed arrives without a usable name', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor({ displayName: '' }));
+
+    // Blank display name → nothing to slugify → the primary action must not
+    // look active while handleCreate would silently bail.
+    const createBtn = await screen.findByTestId('arrival-create');
+    expect(createBtn).toBeDisabled();
+    expect(screen.getByTestId('arrival-needs-name')).toBeInTheDocument();
+  });
+
+  it('keeps Create enabled for a normal seed (no needs-name hint)', async () => {
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+
+    expect(screen.getByTestId('arrival-create')).toBeEnabled();
+    expect(screen.queryByTestId('arrival-needs-name')).not.toBeInTheDocument();
+  });
+
+  it('Customize first opens the naming step pre-filled from the seed', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+
+    await user.click(screen.getByTestId('arrival-customize'));
+
+    const nameInput = await screen.findByLabelText('Name');
+    expect(nameInput).toHaveValue('Linear Keeper');
+  });
+
+  it('Create from M1 sends the seed persona, runtime, and capabilities', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'seed-id',
+      name: 'linear-keeper',
+      _path: '/home/test/.dork/agents/linear-keeper',
+    } as never);
+
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+
+    await user.click(screen.getByRole('button', { name: 'Create Linear Keeper' }));
+
+    await waitFor(() => {
+      expect(transport.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'linear-keeper',
+          displayName: 'Linear Keeper',
+          runtime: 'codex',
+          persona: 'I keep your Linear board tidy.',
+          capabilities: ['linear'],
+        })
+      );
+    });
+  });
+
+  it('Not now closes the dialog and clears the seed', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+
+    await user.click(screen.getByTestId('arrival-not-now'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(useAgentCreationStore.getState().seed).toBeNull();
   });
 });

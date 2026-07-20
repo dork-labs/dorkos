@@ -10,10 +10,14 @@ vi.mock('@dorkos/shared/manifest', () => ({
 vi.mock('@dorkos/shared/convention-files', () => ({
   defaultSoulTemplate: vi.fn(() => '# SOUL'),
   defaultNopeTemplate: vi.fn(() => '# NOPE'),
+  // Mirror the real signature: traits block + custom prose. Echo the prose so
+  // tests can assert a seeded persona actually lands in SOUL.md.
+  buildSoulContent: vi.fn((_traitBlock: string, prose: string) => `# SOUL\n${prose}`),
 }));
 
+const mockWriteConventionFile = vi.fn();
 vi.mock('@dorkos/shared/convention-files-io', () => ({
-  writeConventionFile: vi.fn(),
+  writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
 }));
 
 vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
@@ -227,5 +231,62 @@ describe('createAgentWorkspace', () => {
 
     expect(result.manifest.name).toBe('marketplace-agent');
     // stat should NOT be called for collision check (only for maybeSetDefaultAgent)
+  });
+
+  // ── Seeded persona / capabilities / runtime (agent-creation redesign) ────
+
+  it('writes a seeded persona into SOUL.md as custom prose', async () => {
+    await createAgentWorkspace(
+      { name: 'linear-keeper', persona: 'I keep your Linear board tidy.' },
+      mockMeshCore
+    );
+
+    const soulCall = mockWriteConventionFile.mock.calls.find((c) => c[1] === 'SOUL.md');
+    expect(soulCall).toBeDefined();
+    expect(soulCall?.[2]).toContain('I keep your Linear board tidy.');
+  });
+
+  it('falls back to the default SOUL template when no persona is seeded', async () => {
+    await createAgentWorkspace({ name: 'plain-soul' }, mockMeshCore);
+
+    const soulCall = mockWriteConventionFile.mock.calls.find((c) => c[1] === 'SOUL.md');
+    // The default-template mock returns a bare '# SOUL' (no echoed prose).
+    expect(soulCall?.[2]).toBe('# SOUL');
+  });
+
+  it('passes seeded capabilities through to the manifest', async () => {
+    const result = await createAgentWorkspace(
+      { name: 'cap-agent', capabilities: ['linear', 'triage'] },
+      mockMeshCore
+    );
+
+    expect(result.manifest.capabilities).toEqual(['linear', 'triage']);
+  });
+
+  it('defaults capabilities to an empty list when unset', async () => {
+    const result = await createAgentWorkspace({ name: 'plain-agent' }, mockMeshCore);
+
+    expect(result.manifest.capabilities).toEqual([]);
+  });
+
+  it('respects a seeded runtime on the manifest', async () => {
+    const result = await createAgentWorkspace(
+      { name: 'codex-agent', runtime: 'codex' },
+      mockMeshCore
+    );
+
+    expect(result.manifest.runtime).toBe('codex');
+  });
+
+  it('rejects a persona over the 4000-char bound', async () => {
+    await expect(
+      createAgentWorkspace({ name: 'too-much', persona: 'x'.repeat(4001) })
+    ).rejects.toThrow(AgentCreationError);
+
+    try {
+      await createAgentWorkspace({ name: 'too-much', persona: 'x'.repeat(4001) });
+    } catch (err) {
+      expect((err as AgentCreationError).code).toBe('VALIDATION');
+    }
   });
 });

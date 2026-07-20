@@ -1,7 +1,7 @@
 import type { CreationMode as StoreCreationMode } from '@/layers/shared/model';
 
 export type CreationMode = 'new' | 'template' | 'import';
-export type WizardStep = 'choose' | 'pick-template' | 'configure' | 'import';
+export type WizardStep = 'choose' | 'arrival' | 'pick-template' | 'configure' | 'import';
 export type ConflictStatus =
   | 'idle'
   | 'checking'
@@ -12,6 +12,7 @@ export type ConflictStatus =
 
 export const STEP_DESCRIPTIONS: Record<WizardStep, string> = {
   choose: 'How do you want to start?',
+  arrival: 'Meet your new agent',
   'pick-template': 'Pick a template',
   configure: 'Name your agent',
   import: 'Scan for existing projects',
