@@ -1,3 +1,0 @@
-### Added
-
-- **The right-side panel now opens to Pulse — a quick read on what needs you.** On the dashboard, agents, tasks, and every page away from a chat, the inspector panel used to sit empty; now it shows Pulse: a short list of anything that needs attention (a stalled chat, a failed run, an undelivered message, an agent that dropped offline) and a peek at recent activity, each linking through to the full view. When there's nothing to report, it says so calmly instead of going blank. In a chat, your last-used tab still opens first, exactly as before — Pulse just waits as the first tab in the strip. Open a panel where an agent you were inspecting has since been deleted and its profile tab now quietly steps aside rather than lingering on a "not found" message.

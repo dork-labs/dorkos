@@ -1,9 +1,29 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.43.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.43.1), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.43.1] - 2026-06-13
+
+> A maintenance release: the Claude Agent SDK moves to 0.3.177 — restoring background-agent and MCP task state on session resume — the Obsidian model and subagent catalog now derives from the SDK like every other surface, plus fixes for worktree dev ports, slash-command dispatch, session titles, and canvas scrolling.
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.177 (restores background-agent and MCP task
+  state on session resume)
+- Derive Obsidian model/subagent catalog from the SDK
+- Codify "one checkout, one writer" worktree strategy
+
+### Fixed
+
+- Give the marketing site a worktree-unique dev port
+- Dispatch slash commands as bare prompts so the CLI parses them (DOR-107)
+- Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
+- Establish flex column root so tall canvas documents scroll (DOR-96)
+
+---
 
 ## [0.43.0] - 2026-06-11
 
