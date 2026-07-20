@@ -10,6 +10,7 @@ import type { MessageListHandle } from '../ui/MessageList';
 const RECORD = {
   name: 'aurora',
   displayName: 'Aurora',
+  agentId: 'agent_aurora',
   bornAt: '2026-07-20T00:00:00.000Z',
   path: '/agents/aurora',
   runtime: 'claude-code',
@@ -22,6 +23,7 @@ function props(sessionId: string) {
     messages: [],
     sessionId,
     isLoadingHistory: false,
+    hydrated: true,
     isTextStreaming: false,
     isAtBottom: true,
     hasNewMessages: false,
@@ -64,10 +66,14 @@ describe('ChatMessageArea — greeting-failed empty state (M4)', () => {
     expect(screen.queryByTestId('greeting-failed-empty')).toBeNull();
   });
 
-  it('shows the generic empty copy while a newborn greeting is still pending (not failed)', () => {
-    useAgentBirthStore.getState().register('s1', RECORD); // fired but greetingFailed unset
+  it('shows the generic empty copy before the kickoff fires (birth recorded, not yet fired)', () => {
+    // A birth record exists but its opening turn has not fired — first light and
+    // the failure line both wait for the birth-store latches, so the neutral
+    // empty copy holds in this pre-fire window.
+    useAgentBirthStore.getState().register('s1', RECORD);
     render(<ChatMessageArea {...props('s1')} />);
     expect(screen.getByText('Start a conversation')).toBeInTheDocument();
     expect(screen.queryByTestId('greeting-failed-empty')).toBeNull();
+    expect(screen.queryByTestId('first-light')).toBeNull();
   });
 });

@@ -173,6 +173,7 @@ export function ChatPanel({
     sessionBusy,
     stop,
     isLoadingHistory,
+    hydrated,
     sessionStatus,
     streamStartTime,
     estimatedTokens,
@@ -312,6 +313,7 @@ export function ChatPanel({
         messages={messages}
         sessionId={sessionId!}
         isLoadingHistory={isLoadingHistory}
+        hydrated={hydrated}
         isTextStreaming={isTextStreaming}
         isAtBottom={isAtBottom}
         hasNewMessages={hasNewMessages}

@@ -8,6 +8,7 @@ import { BirthCertificate } from '../ui/BirthCertificate';
 const RECORD = {
   name: 'linear-keeper',
   displayName: 'Keeper',
+  agentId: 'agent_linear_keeper',
   bornAt: '2026-07-20T00:00:00.000Z',
   path: '/agents/linear-keeper',
   runtime: 'claude-code',

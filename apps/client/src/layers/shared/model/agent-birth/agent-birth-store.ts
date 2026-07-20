@@ -18,6 +18,16 @@ export interface AgentBirthRecord {
   name: string;
   /** Human display name for the certificate. */
   displayName: string;
+  /**
+   * The agent's ULID — the seed for its deterministic visual identity, the same
+   * id the rest of the app hashes for an agent's color and face. Carried so the
+   * first-light avatar matches the agent everywhere else it appears on screen.
+   */
+  agentId: string;
+  /** Emoji face override, when the agent has one (the create-flow face pick). */
+  icon?: string;
+  /** Color override, when the agent has one. */
+  color?: string;
   /** ISO creation timestamp (the agent manifest's `registeredAt`). */
   bornAt: string;
   /** Absolute directory the agent lives in. */

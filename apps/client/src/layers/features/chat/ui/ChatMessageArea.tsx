@@ -4,6 +4,8 @@ import { ArrowDown } from 'lucide-react';
 import { useAppStore, useAgentBirthRecord } from '@/layers/shared/model';
 import { MessageList } from './MessageList';
 import type { MessageListHandle, ScrollState } from './MessageList';
+import { ChatEmptyState } from './ChatEmptyState';
+import { TypingDots } from './primitives';
 import type { ChatMessage } from '../model/chat-types';
 import type { InteractiveToolHandle } from './message';
 
@@ -11,6 +13,13 @@ interface ChatMessageAreaProps {
   messages: ChatMessage[];
   sessionId: string;
   isLoadingHistory: boolean;
+  /**
+   * Whether the durable stream snapshot has landed for this session
+   * (`streamReadyCursor !== null`). Gates the first-light waking state so a
+   * newborn session revisited before it rehydrates — momentarily empty though
+   * its greeting already landed — never falsely claims the agent is waking up.
+   */
+  hydrated: boolean;
   isTextStreaming: boolean;
   /** Whether the scroll position is at the bottom of the list. */
   isAtBottom: boolean;
@@ -44,6 +53,7 @@ export function ChatMessageArea({
   messages,
   sessionId,
   isLoadingHistory,
+  hydrated,
   isTextStreaming,
   isAtBottom,
   hasNewMessages,
@@ -59,74 +69,36 @@ export function ChatMessageArea({
 }: ChatMessageAreaProps) {
   const dorkbotFirstMessage = useAppStore((s) => s.dorkbotFirstMessage);
   const setDorkbotFirstMessage = useAppStore((s) => s.setDorkbotFirstMessage);
-  // When a newborn agent's auto-first-turn greeting couldn't be delivered (M4),
-  // the empty session says so honestly and points the person at what to do,
-  // rather than a blank screen or a dead Retry button.
   const birthRecord = useAgentBirthRecord(sessionId);
-  const greetingFailed = birthRecord?.greetingFailed === true;
+  // First light (M4): between the opening turn firing and the first greetable
+  // content landing, a newborn session shows the agent waking up — its face,
+  // its name, and the quiet dots — instead of the generic empty state. Built
+  // only on the birth-store latches (`fired`/`greetingFailed`): the turn is
+  // genuinely in flight, so this is honest. Gated on `hydrated` so a session
+  // revisited before its snapshot lands never falsely claims "waking up" — it
+  // falls back to the neutral loading/empty treatment until emptiness is real.
+  const firstLightRecord =
+    birthRecord && birthRecord.fired && !birthRecord.greetingFailed && hydrated
+      ? birthRecord
+      : null;
 
   return (
     <div className="relative min-h-0 flex-1">
       {isLoadingHistory ? (
         <div className="flex h-full items-center justify-center">
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <div className="flex gap-1">
-              <span
-                className="bg-muted-foreground h-2 w-2 rounded-full"
-                style={{
-                  animation: 'typing-dot 1.4s ease-in-out infinite',
-                  animationDelay: '0s',
-                }}
-              />
-              <span
-                className="bg-muted-foreground h-2 w-2 rounded-full"
-                style={{
-                  animation: 'typing-dot 1.4s ease-in-out infinite',
-                  animationDelay: '0.2s',
-                }}
-              />
-              <span
-                className="bg-muted-foreground h-2 w-2 rounded-full"
-                style={{
-                  animation: 'typing-dot 1.4s ease-in-out infinite',
-                  animationDelay: '0.4s',
-                }}
-              />
-            </div>
+            <TypingDots />
             Loading conversation...
           </div>
         </div>
       ) : messages.length === 0 ? (
         <div className="flex h-full items-center justify-center">
-          {greetingFailed ? (
-            <div className="text-center" data-testid="greeting-failed-empty">
-              <p className="text-muted-foreground text-base">
-                {birthRecord?.displayName} couldn&rsquo;t say hello just now
-              </p>
-              <p className="text-muted-foreground/60 mt-2 text-sm">
-                Send a message to get started.
-              </p>
-            </div>
-          ) : dorkbotFirstMessage ? (
-            <div className="flex flex-col items-center gap-4 text-center">
-              <motion.div
-                layoutId="dorkbot-first-message"
-                className="bg-muted/50 w-full max-w-md rounded-lg border p-4"
-                data-testid="dorkbot-welcome-message"
-                onLayoutAnimationComplete={() => {
-                  setDorkbotFirstMessage(null);
-                }}
-              >
-                <p className="text-muted-foreground text-sm">{dorkbotFirstMessage}</p>
-              </motion.div>
-              <p className="text-muted-foreground/60 text-sm">Type a message below to begin</p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <p className="text-muted-foreground text-base">Start a conversation</p>
-              <p className="text-muted-foreground/60 mt-2 text-sm">Type a message below to begin</p>
-            </div>
-          )}
+          <ChatEmptyState
+            birthRecord={birthRecord}
+            firstLightRecord={firstLightRecord}
+            dorkbotFirstMessage={dorkbotFirstMessage}
+            onDorkbotWelcomeShown={() => setDorkbotFirstMessage(null)}
+          />
         </div>
       ) : (
         <MessageList

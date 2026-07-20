@@ -9,3 +9,4 @@ export { CompactResultRow } from './CompactResultRow';
 export { CompactPendingRow } from './CompactPendingRow';
 export { CollapsibleCard } from './CollapsibleCard';
 export { InteractiveCard } from './InteractiveCard';
+export { TypingDots } from './TypingDots';
