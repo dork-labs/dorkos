@@ -381,6 +381,19 @@ export const CreateAgentOptionsSchema = z
     template: z.string().optional(),
     description: z.string().optional(),
     runtime: AgentRuntimeSchema.optional(),
+    /**
+     * Seed prose written into the agent's `SOUL.md` at creation (its custom
+     * section, below the auto-generated traits — same convention the legacy
+     * persona→SOUL.md migration uses). Bounded to match the manifest's persona
+     * limit (`SOUL_MAX_CHARS`, 4000). Omitted → the default SOUL template.
+     */
+    persona: z.string().max(4000).optional(),
+    /**
+     * Capability namespaces recorded on the agent manifest. Passed straight
+     * through to `agent.json`; omitted → an empty list. Bounded to keep the
+     * creation payload sane.
+     */
+    capabilities: z.array(z.string().min(1).max(200)).max(64).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
     /**

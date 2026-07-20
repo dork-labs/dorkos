@@ -47,15 +47,20 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const { data: shapes, isLoading, isError } = useShapes();
   const applyShape = useApplyShape();
   const switchAgent = useSwitchAgentCwd();
-  const openAgentCreation = useAgentCreationStore((s) => s.open);
+  const openWithSeed = useAgentCreationStore((s) => s.openWithSeed);
 
   // The last apply's result — kept while the dialog stays open so the arrival
   // offer + notes persist (toasts vanish). Cleared when the dialog closes.
   const [result, setResult] = useState<ApplyShapeResult | null>(null);
+  // The Shape that produced `result` — labels the offer as "offered by …".
+  const [appliedLabel, setAppliedLabel] = useState<string | null>(null);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      if (!next) setResult(null);
+      if (!next) {
+        setResult(null);
+        setAppliedLabel(null);
+      }
       onOpenChange(next);
     },
     [onOpenChange]
@@ -63,7 +68,16 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
 
   const handleApply = useCallback(
     (shape: InstalledShapeSummary) => {
-      applyShape.mutate({ name: shape.name, label: shapeLabel(shape) }, { onSuccess: setResult });
+      const label = shapeLabel(shape);
+      applyShape.mutate(
+        { name: shape.name, label },
+        {
+          onSuccess: (r) => {
+            setResult(r);
+            setAppliedLabel(label);
+          },
+        }
+      );
     },
     [applyShape]
   );
@@ -190,7 +204,17 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        openAgentCreation();
+                        openWithSeed({
+                          template: {
+                            displayName: arrival.displayName,
+                            runtime: arrival.template?.runtime,
+                            persona: arrival.template?.persona,
+                            capabilities: arrival.template?.capabilities,
+                            skills: arrival.template?.skills,
+                          },
+                          origin: 'shape-offer',
+                          sourceLabel: appliedLabel ?? undefined,
+                        });
                         handleOpenChange(false);
                       }}
                     >

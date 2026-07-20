@@ -24,13 +24,18 @@ import { STEP_DESCRIPTIONS, initialStepFromMode } from '../lib/wizard-types';
 import { MethodSelection } from './MethodSelection';
 import { ConfigureStep } from './ConfigureStep';
 import { TemplatePicker } from './TemplatePicker';
+import { ArrivalConfirm } from './ArrivalConfirm';
 
 /**
  * Global dialog for creating a new agent. Controlled by useAgentCreationStore.
- * Renders a multi-step wizard: choose method → pick template or configure → create.
+ *
+ * Two entry shapes: opened plainly it renders the method fork (choose → pick
+ * template or configure → create); opened from an offer (a seed) it skips the
+ * fork and renders the arrival confirm (M1) for that one agent, carrying the
+ * seed's persona, runtime, and capabilities through to create.
  */
 export function CreateAgentDialog() {
-  const { isOpen, initialMode, close } = useAgentCreationStore();
+  const { isOpen, initialMode, seed, close } = useAgentCreationStore();
   const createAgent = useCreateAgent();
   const navigate = useNavigate();
   const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
@@ -41,19 +46,30 @@ export function CreateAgentDialog() {
   const [template, setTemplate] = useState<string | null>(null);
   const [templateName, setTemplateName] = useState<string | null>(null);
 
-  // Sync step from store when dialog opens (React "adjusting state on prop change" pattern)
+  // Sync step from store when dialog opens (React "adjusting state on prop change" pattern).
+  // A seed skips the fork and lands on the arrival confirm (M1).
   const [prevIsOpen, setPrevIsOpen] = useState(false);
   if (isOpen !== prevIsOpen) {
     setPrevIsOpen(isOpen);
     if (isOpen) {
-      setStep(initialStepFromMode(initialMode));
-      setCreationMode(
-        initialMode === 'import' ? 'import' : initialMode === 'template' ? 'template' : 'new'
-      );
+      if (seed) {
+        setStep('arrival');
+        setCreationMode('new');
+      } else {
+        setStep(initialStepFromMode(initialMode));
+        setCreationMode(
+          initialMode === 'import' ? 'import' : initialMode === 'template' ? 'template' : 'new'
+        );
+      }
     }
   }
 
-  const form = useConfigureForm({ step, creationMode, templateName });
+  const form = useConfigureForm({
+    step,
+    creationMode,
+    templateName,
+    seedDisplayName: seed?.template.displayName ?? null,
+  });
 
   function resetAll() {
     form.reset();
@@ -79,8 +95,11 @@ export function CreateAgentDialog() {
   }, []);
 
   function handleBack() {
-    if (step === 'configure') setStep(creationMode === 'template' ? 'pick-template' : 'choose');
-    else setStep('choose');
+    if (step === 'configure') {
+      // A seeded configure came from the arrival confirm — go back there.
+      if (seed) setStep('arrival');
+      else setStep(creationMode === 'template' ? 'pick-template' : 'choose');
+    } else setStep('choose');
   }
 
   function handleCreate() {
@@ -91,6 +110,13 @@ export function CreateAgentDialog() {
         displayName: form.displayName.trim() || undefined,
         ...(form.directoryOverride ? { directory: form.directoryOverride } : {}),
         ...(creationMode === 'template' && template ? { template } : {}),
+        // Carry the offer's shape through so the created agent arrives seeded,
+        // not blank: its voice (persona), where it runs, and what it can do.
+        ...(seed?.template.runtime ? { runtime: seed.template.runtime } : {}),
+        ...(seed?.template.persona ? { persona: seed.template.persona } : {}),
+        ...(seed?.template.capabilities?.length
+          ? { capabilities: seed.template.capabilities }
+          : {}),
       },
       {
         onSuccess: (data) => {
@@ -121,10 +147,13 @@ export function CreateAgentDialog() {
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={handleOpenChange}>
       <ResponsiveDialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 p-0">
-        <ResponsiveDialogHeader className="shrink-0 border-b px-4 py-3">
-          <ResponsiveDialogTitle>Create Agent</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>{STEP_DESCRIPTIONS[step]}</ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
+        {/* The arrival confirm (M1) owns its own title/face — no generic header. */}
+        {step !== 'arrival' && (
+          <ResponsiveDialogHeader className="shrink-0 border-b px-4 py-3">
+            <ResponsiveDialogTitle>Create Agent</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>{STEP_DESCRIPTIONS[step]}</ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+        )}
 
         <span className="sr-only" aria-live="polite" aria-atomic="true">
           {STEP_DESCRIPTIONS[step]}
@@ -140,6 +169,16 @@ export function CreateAgentDialog() {
               transition={{ duration: 0.15 }}
             >
               {step === 'choose' && <MethodSelection onSelect={handleMethodSelect} />}
+              {step === 'arrival' && seed && (
+                <ArrivalConfirm
+                  seed={seed}
+                  resolvedDirectory={form.resolvedDirectory}
+                  isCreating={createAgent.isPending}
+                  onCreate={handleCreate}
+                  onCustomize={() => setStep('configure')}
+                  onNotNow={() => handleOpenChange(false)}
+                />
+              )}
               {step === 'pick-template' && <TemplatePicker onSelect={handleTemplateSelect} />}
               {step === 'configure' && (
                 <ConfigureStep
@@ -168,7 +207,7 @@ export function CreateAgentDialog() {
           }}
         />
 
-        {step !== 'choose' && (
+        {step !== 'choose' && step !== 'arrival' && (
           <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">
             <div className="flex w-full items-center justify-between">
               <Button variant="ghost" onClick={handleBack} data-testid="back-button">

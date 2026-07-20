@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ApplyShapeResult, InstalledShapeSummary } from '@dorkos/shared/marketplace-schemas';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAgentCreationStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { ShapeSwitcherDialog } from '../ui/ShapeSwitcherDialog';
 
@@ -42,6 +42,36 @@ const SHAPES: InstalledShapeSummary[] = [
   { name: 'linear-ops', displayName: 'Linear Ops', active: false },
   { name: 'flow-board', displayName: 'Flow Board', active: true },
 ];
+
+/** An apply result whose arrival agent is unsatisfied — carries a scaffold template. */
+function unsatisfiedResult(): ApplyShapeResult {
+  return {
+    ok: true,
+    applied: {
+      layout: { sidebarOpen: true, openPanels: [], focusDashboardSections: [] },
+      activatedExtensions: [],
+      schedulesCreated: [],
+    },
+    warnings: [],
+    offeredAgents: [
+      {
+        ref: 'linear-keeper',
+        affinity: 'default',
+        satisfied: false,
+        arrival: true,
+        autoFollow: false,
+        displayName: 'Linear Keeper',
+        template: {
+          displayName: 'Linear Keeper',
+          runtime: 'claude-code',
+          persona: 'I keep your Linear board tidy.',
+          capabilities: ['linear'],
+          skills: ['linear-adapter'],
+        },
+      },
+    ],
+  };
+}
 
 /** An apply result with a satisfied arrival agent + one degradation note. */
 function applyResult(): ApplyShapeResult {
@@ -87,7 +117,10 @@ function renderDialog(transport = createMockTransport()) {
 }
 
 describe('ShapeSwitcherDialog', () => {
-  beforeEach(() => mockNavigate.mockClear());
+  beforeEach(() => {
+    mockNavigate.mockClear();
+    useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
+  });
   afterEach(cleanup);
 
   it('lists installed Shapes and marks the active one', async () => {
@@ -136,6 +169,40 @@ describe('ShapeSwitcherDialog', () => {
         })
       )
     );
+  });
+
+  it('seeds M1 agent creation when an unsatisfied arrival offer is set up', async () => {
+    const { onOpenChange } = renderDialog(
+      createMockTransport({
+        listShapes: vi.fn().mockResolvedValue(SHAPES),
+        applyShape: vi.fn().mockResolvedValue(unsatisfiedResult()),
+      })
+    );
+
+    fireEvent.click(await screen.findByText('Linear Ops'));
+
+    // Unsatisfied → "Set up", not "Open" (there is no agent to open yet).
+    const setUpBtn = await screen.findByRole('button', { name: /set up linear keeper/i });
+    fireEvent.click(setUpBtn);
+
+    // The offer's full template rides into the creation store as an M1 seed.
+    const state = useAgentCreationStore.getState();
+    expect(state.isOpen).toBe(true);
+    expect(state.seed).toEqual(
+      expect.objectContaining({
+        origin: 'shape-offer',
+        sourceLabel: 'Linear Ops',
+        template: expect.objectContaining({
+          displayName: 'Linear Keeper',
+          runtime: 'claude-code',
+          persona: 'I keep your Linear board tidy.',
+          capabilities: ['linear'],
+          skills: ['linear-adapter'],
+        }),
+      })
+    );
+    // The switcher steps aside so the creation dialog can take over.
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('re-applies the active Shape via "Reset to defaults"', async () => {

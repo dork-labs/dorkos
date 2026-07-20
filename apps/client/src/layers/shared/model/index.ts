@@ -25,7 +25,14 @@ export { useInteractiveShortcuts } from './use-interactive-shortcuts';
 export { useLongPress } from './use-long-press';
 export { useFeatureEnabled } from './use-feature-enabled';
 export { useNow } from './use-now';
-export { useAgentCreationStore, type CreationMode, type CreationTab } from './agent-creation-store';
+export {
+  useAgentCreationStore,
+  type CreationMode,
+  type CreationTab,
+  type CreationOrigin,
+  type CreationSeed,
+  type CreationSeedTemplate,
+} from './agent-creation-store';
 export { useTabVisibility } from './use-tab-visibility';
 export {
   useSSEConnection,

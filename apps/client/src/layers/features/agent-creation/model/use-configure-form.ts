@@ -8,14 +8,25 @@ interface UseConfigureFormOptions {
   step: WizardStep;
   creationMode: CreationMode;
   templateName: string | null;
+  /**
+   * Display name to pre-fill when the dialog was opened from an offer (M1). The
+   * name is filled once, the moment the seed appears, so the arrival confirm's
+   * slug + directory are ready before the user ever reaches the configure step.
+   */
+  seedDisplayName?: string | null;
 }
 
 /**
  * Encapsulates all form state for the configure step: freeform display name,
- * auto-derived slug, directory override, validation, auto-fill from template,
- * and .dork conflict detection.
+ * auto-derived slug, directory override, validation, auto-fill from template
+ * or seed, and .dork conflict detection.
  */
-export function useConfigureForm({ step, creationMode, templateName }: UseConfigureFormOptions) {
+export function useConfigureForm({
+  step,
+  creationMode,
+  templateName,
+  seedDisplayName = null,
+}: UseConfigureFormOptions) {
   const transport = useTransport();
 
   const { data: config } = useQuery({
@@ -33,6 +44,19 @@ export function useConfigureForm({ step, creationMode, templateName }: UseConfig
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [conflictStatus, setConflictStatus] = useState<ConflictStatus>('idle');
+
+  // Pre-fill the name from an offer seed the moment it appears (render-phase
+  // "adjust state on prop change"). Fills once per seed — later user edits stick
+  // because the seed name itself doesn't change. Clearing the seed (dialog close)
+  // doesn't re-fill; `reset()` owns clearing the field.
+  const [prevSeedName, setPrevSeedName] = useState<string | null>(seedDisplayName);
+  if (seedDisplayName !== prevSeedName) {
+    setPrevSeedName(seedDisplayName);
+    if (seedDisplayName) {
+      setDisplayName(seedDisplayName);
+      setNameAutoFilled(false);
+    }
+  }
 
   // Derive kebab-case slug from freeform display name
   const slug = useMemo(() => (displayName ? slugifyAgentName(displayName) : ''), [displayName]);

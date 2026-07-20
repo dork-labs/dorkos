@@ -16,7 +16,11 @@ import { writeManifest } from '@dorkos/shared/manifest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest, CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
-import { defaultSoulTemplate, defaultNopeTemplate } from '@dorkos/shared/convention-files';
+import {
+  defaultSoulTemplate,
+  defaultNopeTemplate,
+  buildSoulContent,
+} from '@dorkos/shared/convention-files';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
@@ -130,6 +134,10 @@ async function maybeSetDefaultAgent(agentName: string): Promise<void> {
  * downloads a template, scaffolds agent.json/SOUL.md/NOPE.md, syncs to Mesh DB,
  * and auto-sets as default agent when appropriate. Rolls back the created
  * directory on any failure.
+ *
+ * A seeded `persona` is written as SOUL.md's custom prose (below the trait
+ * block); `capabilities` and `runtime` are recorded on the manifest as-is —
+ * this is how a Shape's offered agent arrives fully shaped rather than blank.
  *
  * When `opts.skipTemplateDownload` is true, the function assumes `directory`
  * already exists on disk and is pre-populated with the agent's template
@@ -259,7 +267,7 @@ export async function createAgentWorkspace(
       displayName: opts.displayName,
       description: opts.description ?? '',
       runtime: opts.runtime ?? 'claude-code',
-      capabilities: [],
+      capabilities: opts.capabilities ?? [],
       behavior: { responseMode: 'always' },
       traits,
       conventions,
@@ -272,9 +280,14 @@ export async function createAgentWorkspace(
 
     await writeManifest(resolvedPath, manifest);
 
-    // Scaffold SOUL.md
+    // Scaffold SOUL.md. When a persona is seeded (e.g. a Shape's offered agent),
+    // write it as the custom prose below the auto-generated trait block — the
+    // same shape the persona→SOUL.md migration produces (`buildSoulContent`), so
+    // there is one SOUL convention, not two. No persona → the default template.
     const traitBlock = renderTraits(traits);
-    const soulContent = defaultSoulTemplate(manifest.displayName ?? manifest.name, traitBlock);
+    const soulContent = opts.persona
+      ? buildSoulContent(traitBlock, opts.persona)
+      : defaultSoulTemplate(manifest.displayName ?? manifest.name, traitBlock);
     await writeConventionFile(resolvedPath, 'SOUL.md', soulContent);
 
     // Scaffold NOPE.md
