@@ -1,6 +1,7 @@
 # DorkOS — Multi-stage Dockerfile
 #
-# One file, four build targets. The default (bare `docker build .`) is the
+# One file, three user-facing build targets (smoke, integration, runtime),
+# selected among two install modes. The default (bare `docker build .`) is the
 # published `runtime` image; the other targets are for CI and local testing.
 #
 # Install modes (build-arg INSTALL_MODE, default "tarball"):
@@ -54,7 +55,11 @@ RUN apt-get update && \
 # tarball mode: install from a locally packed dorkos-*.tgz.
 FROM builder AS install-tarball
 COPY dorkos-*.tgz /tmp/
-RUN npm install -g /tmp/dorkos-*.tgz && \
+# Fail loudly if more than one tarball matched the glob — silently installing
+# an ambiguous set (e.g. a stale tarball left over from a previous pack)
+# would ship an unpredictable version instead of erroring.
+RUN [ "$(ls /tmp/dorkos-*.tgz | wc -l)" -eq 1 ] || { echo "ERROR: expected exactly one dorkos-*.tgz in build context, found:"; ls /tmp/dorkos-*.tgz; exit 1; } && \
+    npm install -g /tmp/dorkos-*.tgz && \
     rm -f /tmp/dorkos-*.tgz && \
     npm cache clean --force
 

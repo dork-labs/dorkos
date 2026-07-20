@@ -105,7 +105,7 @@ jobs:
   #   2. Add secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (a Docker Hub access
   #      token with write scope on the destination repo)
   #   3. Optionally set repository variable DOCKERHUB_IMAGE to override the
-  #      destination image (default: dorklabs/dorkos)
+  #      destination image (default: dorkai/dorkos)
   #
   # No rebuild: `docker buildx imagetools create` copies the existing GHCR
   # manifest list (both linux/amd64 and linux/arm64) to the Docker Hub tags,
@@ -148,7 +148,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ vars.DOCKERHUB_IMAGE || 'dorklabs/dorkos' }}
+          images: ${{ vars.DOCKERHUB_IMAGE || 'dorkai/dorkos' }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
