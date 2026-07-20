@@ -23,6 +23,7 @@
  * @module evals/runner/drive
  */
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { parseFrames, type SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type { UiActionRequest } from '@dorkos/shared/schemas';
 
@@ -99,6 +100,15 @@ export interface DriveTurnOptions extends OpenStreamOptions {
   content: string;
   /** Project cwd the turn runs in (the sandbox project dir). */
   cwd: string;
+  /**
+   * Stable client identity for the session lock, sent as `X-Client-Id`. A
+   * multi-turn conversation is ONE client, so every turn must present the same
+   * id — the session lock is re-entrant per client (`session-lock.ts`), so a
+   * later turn re-acquires its own lock instead of colliding with the previous
+   * turn's (a `409 SESSION_LOCKED`). Omitted ⇒ the server mints a fresh id per
+   * turn, which is only safe for a single-turn drive.
+   */
+  clientId?: string;
 }
 
 /** The result of one driven turn. */
@@ -360,7 +370,10 @@ export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult
   return triggerAndCollect(stream, opts.sessionId, () =>
     fetch(`${opts.baseUrl}/api/sessions/${opts.sessionId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(opts.clientId ? { 'X-Client-Id': opts.clientId } : {}),
+      },
       body: JSON.stringify({ content: opts.content, cwd: opts.cwd }),
     })
   );
@@ -375,6 +388,12 @@ export interface DriveWidgetActionOptions extends OpenStreamOptions {
   action: UiActionRequest;
   /** Project cwd the turn runs in (the sandbox project dir). */
   cwd: string;
+  /**
+   * Stable client identity for the session lock, sent as `X-Client-Id`. Pass the
+   * SAME id the preceding prompt turn(s) used so this widget turn re-acquires
+   * their lock rather than colliding with it. See {@link DriveTurnOptions.clientId}.
+   */
+  clientId?: string;
 }
 
 /**
@@ -396,7 +415,10 @@ export async function driveWidgetAction(opts: DriveWidgetActionOptions): Promise
   return triggerAndCollect(stream, opts.sessionId, () =>
     fetch(`${opts.baseUrl}/api/sessions/${opts.sessionId}/ui-action`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(opts.clientId ? { 'X-Client-Id': opts.clientId } : {}),
+      },
       body: JSON.stringify({ ...opts.action, cwd: opts.cwd }),
     })
   );
@@ -432,6 +454,11 @@ export async function driveConversation(
   let sessionId = opts.sessionId;
   const allFrames: SseFrame[] = [];
   let outcome: TurnOutcome = 'done';
+  // ONE client for the whole conversation: every turn re-acquires the same
+  // re-entrant session lock, so a later turn never 409s against its own earlier
+  // turn (which happens on a real runtime where a turn holds its lock while it
+  // runs). Callers may pin an id to share the lock with a following widget turn.
+  const clientId = opts.clientId ?? randomUUID();
 
   for (const prompt of opts.prompts) {
     const turn = await driveTurn({
@@ -439,6 +466,7 @@ export async function driveConversation(
       sessionId,
       content: prompt,
       cwd: opts.cwd,
+      clientId,
       timeoutMs: opts.timeoutMs,
       readyTimeoutMs: opts.readyTimeoutMs,
       abortWhen: opts.abortWhen,

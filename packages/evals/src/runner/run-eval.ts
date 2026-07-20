@@ -154,9 +154,18 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   let server: HarnessServer | undefined;
   let frames: SseFrame[] = [];
   let sessionId: string = randomUUID();
+  // One client identity for the whole eval — the multi-turn conversation AND a
+  // trailing widget turn share it, so each re-acquires the same re-entrant
+  // session lock instead of colliding (a `409 SESSION_LOCKED`) on a real runtime.
+  const clientId = randomUUID();
   let failed = false;
 
   try {
+    // Seed the sandbox BEFORE the server boots or any turn runs — a case that
+    // needs pre-existing on-disk state (e.g. the newborn agent the interview
+    // eval rewrites the soul of) installs it here into the fresh sandbox.
+    await evalCase.seed?.(sandbox);
+
     server = await bootServerForTier(opts.tier, sandbox.dorkHome, { model: opts.model, apiKey });
     const ceiling = evalCase.perEvalCeilingUsd;
     const abortWhen =
@@ -168,6 +177,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         sessionId,
         cwd: sandbox.projectCwd,
         prompts: turns,
+        clientId,
         timeoutMs: opts.timeoutMs,
         abortWhen,
       });
@@ -184,6 +194,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         sessionId,
         action: evalCase.widgetAction,
         cwd: sandbox.projectCwd,
+        clientId,
         timeoutMs: opts.timeoutMs,
         abortWhen,
       });

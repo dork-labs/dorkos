@@ -8,7 +8,13 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { EvalSandbox, OracleContext } from '../../types.js';
-import { fileExists, dirAbsent, fileMatches, noBackupSiblings } from '../filesystem.js';
+import {
+  fileExists,
+  dirAbsent,
+  fileMatches,
+  noBackupSiblings,
+  dirContainsOnly,
+} from '../filesystem.js';
 
 let sandbox: EvalSandbox;
 let root: string;
@@ -74,6 +80,27 @@ describe('fileMatches', () => {
       /modified/
     )(ctx());
     expect(result.passed).toBe(false);
+  });
+});
+
+describe('dirContainsOnly', () => {
+  it('passes when every top-level entry is in the allowlist (only .dork present)', async () => {
+    await mkdir(path.join(sandbox.projectCwd, '.dork'), { recursive: true });
+    const result = await dirContainsOnly((s) => s.projectCwd, ['.dork'])(ctx());
+    expect(result.passed).toBe(true);
+  });
+
+  it('passes for a missing directory (nothing was created)', async () => {
+    const result = await dirContainsOnly((s) => path.join(s.projectCwd, 'nope'), ['.dork'])(ctx());
+    expect(result.passed).toBe(true);
+  });
+
+  it('fails when the turn created an unexpected entry (started real work)', async () => {
+    await mkdir(path.join(sandbox.projectCwd, '.dork'), { recursive: true });
+    await writeFile(path.join(sandbox.projectCwd, 'CHANGELOG.md'), '# stray work');
+    const result = await dirContainsOnly((s) => s.projectCwd, ['.dork'])(ctx());
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('CHANGELOG.md');
   });
 });
 

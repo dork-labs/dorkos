@@ -10,17 +10,22 @@
 import type { EvalCase, EvalTag } from '../types.js';
 import { selfTestCase } from './selftest.js';
 import { widgetRoundTripCase } from './ui.js';
+import { designYourOwnInterviewCase } from './agents.js';
 
 /** Every registered eval case, across all suites. */
-export const ALL_CASES: EvalCase[] = [selfTestCase, widgetRoundTripCase];
+export const ALL_CASES: EvalCase[] = [
+  selfTestCase,
+  widgetRoundTripCase,
+  designYourOwnInterviewCase,
+];
 
 /** The tag values a `--suite` name may select. */
-const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector'];
+const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector', 'experimental'];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`) selects every case carrying it; `all` selects
- * every case; otherwise the name is matched against a case id.
+ * (`smoke`/`core`/`connector`/`experimental`) selects every case carrying it;
+ * `all` selects every case; otherwise the name is matched against a case id.
  *
  * @param name - The suite selector.
  * @returns The matching cases (possibly empty).
@@ -35,3 +40,4 @@ export function selectSuite(name: string): EvalCase[] {
 
 export { selfTestCase } from './selftest.js';
 export { widgetRoundTripCase } from './ui.js';
+export { designYourOwnInterviewCase } from './agents.js';

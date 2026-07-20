@@ -1,0 +1,3 @@
+### Changed
+
+- **A "Design your own" agent now writes its own personality, live in your first chat.** Instead of a plain hello, the new agent runs a short interview. It asks what you'd like it to take care of, asks at most a couple of sharp follow-ups, then writes its own personality file right in front of you, so you watch it take shape. When it's done, it sums up what it understood and offers one first thing it could do. It waits for your go-ahead and never starts the real work on its own. Give a one-word answer, or say "just figure it out," and it won't grill you: it proposes something sensible and moves on. (DOR-355)
