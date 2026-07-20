@@ -224,6 +224,7 @@ export { ConnectionStatusBanner } from './ConnectionStatusBanner';
 export { FeatureDisabledState } from './FeatureDisabledState';
 export { LinkSafetyModal } from './link-safety-modal';
 export { MarkdownContent } from './markdown-content';
+export { MarkdownErrorBoundary } from './markdown-error-boundary';
 export {
   Sheet,
   SheetTrigger,
