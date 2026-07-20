@@ -13,6 +13,7 @@ import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
 import { env } from './env.js';
 import { checkNodeVersion, diagnoseStartupError, formatDiagnostic } from './startup-diagnostics.js';
+import { classifyBoundary } from './boundary-warning.js';
 import {
   initCliErrorReporting,
   installCliErrorHandlers,
@@ -610,14 +611,16 @@ if (cliBoundary) {
   // If still not set, server will default to os.homedir() in initBoundary()
 }
 
-// Warn if boundary is above home directory
+// Notice when the boundary is not simply home-or-below. `classifyBoundary`
+// distinguishes a boundary that sits *above* home (grants system dirs — a real
+// warning) from one that is merely outside home, like the documented
+// `/workspace` Docker mount (scoped access — informational, not alarming).
 const boundaryVal = process.env.DORKOS_BOUNDARY;
 const home = os.homedir();
-if (boundaryVal && !boundaryVal.startsWith(home + path.sep) && boundaryVal !== home) {
-  console.warn(
-    `[Warning] Directory boundary "${boundaryVal}" is above home directory "${home}". ` +
-      `This grants access to system directories.`
-  );
+if (boundaryVal) {
+  const notice = classifyBoundary(boundaryVal, home);
+  if (notice?.level === 'warn') console.warn(notice.message);
+  else if (notice?.level === 'info') console.info(notice.message);
 }
 
 // Validate default CWD is within boundary
