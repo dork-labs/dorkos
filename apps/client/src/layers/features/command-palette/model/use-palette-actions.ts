@@ -4,6 +4,7 @@ import {
   useAppStore,
   useTheme,
   useAgentCreationStore,
+  useImportProjectsStore,
   useSettingsDeepLink,
   useTasksDeepLink,
   useRelayDeepLink,
@@ -92,7 +93,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openSettings();
           return;
         case 'discoverAgents':
-          navigate({ to: '/agents' });
+          useImportProjectsStore.getState().open();
           return;
         case 'browseFilesystem':
           setPickerOpen(true);
@@ -155,8 +156,10 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openRelay();
           return;
         case 'openMesh':
-        case 'discoverAgents':
           navigate({ to: '/agents' });
+          return;
+        case 'discoverAgents':
+          useImportProjectsStore.getState().open();
           return;
         case 'openSettings':
           openSettings();

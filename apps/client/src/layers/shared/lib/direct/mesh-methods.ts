@@ -29,33 +29,6 @@ export function createDirectMeshMethods() {
       return result;
     },
 
-    async initAgent(
-      agentPath: string,
-      name?: string,
-      description?: string,
-      runtime?: string
-    ): Promise<AgentManifest> {
-      const { readManifest, writeManifest } = await import('@dorkos/shared/manifest');
-      const pathMod = await import('path');
-      const existing = await readManifest(agentPath);
-      if (existing) return existing;
-
-      const manifest: AgentManifest = {
-        id: crypto.randomUUID(),
-        name: name ?? pathMod.default.basename(agentPath),
-        description: description ?? '',
-        runtime: (runtime as AgentManifest['runtime']) ?? 'claude-code',
-        capabilities: [],
-        behavior: { responseMode: 'always' },
-        registeredAt: new Date().toISOString(),
-        registeredBy: 'dorkos-obsidian',
-        personaEnabled: true,
-        enabledToolGroups: {},
-      };
-      await writeManifest(agentPath, manifest);
-      return manifest;
-    },
-
     async updateAgentByPath(
       agentPath: string,
       updates: Partial<AgentManifest>

@@ -1,14 +1,7 @@
-import { useState } from 'react';
 import { motion } from 'motion/react';
 import { ScanSearch } from 'lucide-react';
 import { Button } from '@/layers/shared/ui/button';
-import {
-  ResponsiveDialog,
-  ResponsiveDialogContent,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-} from '@/layers/shared/ui/responsive-dialog';
-import { DiscoveryView } from '@/layers/features/mesh';
+import { useImportProjectsStore } from '@/layers/shared/model';
 
 const ghostContainerVariants = {
   animate: {
@@ -43,41 +36,30 @@ function GhostRow() {
 
 /** Mode A empty state — three dashed ghost rows with a centered CTA overlay. */
 export function AgentGhostRows() {
-  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const openImport = useImportProjectsStore((s) => s.open);
 
   return (
-    <>
-      <div className="relative w-full max-w-2xl px-4">
-        {/* Ghost rows */}
-        <motion.div
-          variants={ghostContainerVariants}
-          initial="initial"
-          animate="animate"
-          className="space-y-3"
-        >
-          <GhostRow />
-          <GhostRow />
-          <GhostRow />
-        </motion.div>
+    <div className="relative w-full max-w-2xl px-4">
+      {/* Ghost rows */}
+      <motion.div
+        variants={ghostContainerVariants}
+        initial="initial"
+        animate="animate"
+        className="space-y-3"
+      >
+        <GhostRow />
+        <GhostRow />
+        <GhostRow />
+      </motion.div>
 
-        {/* Centered overlay CTA */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-          <p className="text-lg font-semibold">Import Your Projects</p>
-          <Button size="sm" className="gap-1.5" onClick={() => setDiscoveryOpen(true)}>
-            <ScanSearch className="size-3.5" />
-            Search for Projects
-          </Button>
-        </div>
+      {/* Centered overlay CTA */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+        <p className="text-lg font-semibold">Bring in existing projects</p>
+        <Button size="sm" className="gap-1.5" onClick={openImport}>
+          <ScanSearch className="size-3.5" />
+          Search for Projects
+        </Button>
       </div>
-
-      <ResponsiveDialog open={discoveryOpen} onOpenChange={setDiscoveryOpen}>
-        <ResponsiveDialogContent className="max-w-2xl">
-          <ResponsiveDialogHeader>
-            <ResponsiveDialogTitle>Import Projects</ResponsiveDialogTitle>
-          </ResponsiveDialogHeader>
-          <DiscoveryView />
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    </>
+    </div>
   );
 }

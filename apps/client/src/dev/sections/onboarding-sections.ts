@@ -99,11 +99,4 @@ export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
     category: 'Supporting',
     keywords: ['progress', 'card', 'sidebar', 'checklist', 'getting started'],
   },
-  {
-    id: 'noagentsfound',
-    title: 'NoAgentsFound',
-    page: 'onboarding',
-    category: 'Supporting',
-    keywords: ['no', 'agents', 'found', 'empty', 'create', 'form', 'fallback'],
-  },
 ];

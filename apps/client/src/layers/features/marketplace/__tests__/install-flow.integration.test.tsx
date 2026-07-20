@@ -45,6 +45,7 @@ import {
   useUninstallPackage,
 } from '@/layers/entities/marketplace';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { useInstallWithToast } from '../model/use-install-with-toast';
 import { useMarketplaceStore } from '../model/marketplace-store';
 import { marketplaceSearchSchema } from '../model/marketplace-search';
@@ -218,16 +219,19 @@ beforeAll(() => {
 // Fixtures
 // ---------------------------------------------------------------------------
 
+// A non-agent package: the permission-preview confirm dialog is now the path
+// for plugins/skill-packs/adapters/shapes. Agent packages leave for the
+// creation flow (covered by its own test below), so this flow uses a plugin.
 const PKG: AggregatedPackage = {
-  name: '@dorkos/code-reviewer',
-  source: 'https://github.com/dorkos/code-reviewer.git',
-  description: 'Automated PR code review agent',
-  type: 'agent',
+  name: '@dorkos/pr-linter',
+  source: 'https://github.com/dorkos/pr-linter.git',
+  description: 'Automated PR linting plugin',
+  type: 'plugin',
   marketplace: 'dorkos-official',
 };
 
 const EMPTY_PREVIEW: PermissionPreview = {
-  fileChanges: [{ path: 'agents/code-reviewer/agent.json', action: 'create' }],
+  fileChanges: [{ path: 'plugins/pr-linter/plugin.json', action: 'create' }],
   extensions: [],
   tasks: [],
   secrets: [],
@@ -238,15 +242,27 @@ const EMPTY_PREVIEW: PermissionPreview = {
 
 const PKG_DETAIL: MarketplacePackageDetail = {
   manifest: {
-    name: '@dorkos/code-reviewer',
+    name: '@dorkos/pr-linter',
     version: '1.0.0',
-    type: 'agent',
-    description: 'Automated PR code review agent',
+    type: 'plugin',
+    description: 'Automated PR linting plugin',
     author: 'DorkOS',
     license: 'MIT',
   },
-  packagePath: '/tmp/.dork/staging/code-reviewer',
+  packagePath: '/tmp/.dork/staging/pr-linter',
   preview: EMPTY_PREVIEW,
+};
+
+// An agent package — its "Install" routes into the creation flow, not the
+// confirm dialog.
+const AGENT_PKG: AggregatedPackage = {
+  name: '@dorkos/code-reviewer',
+  displayName: 'Code Reviewer',
+  source: 'github:dorkos/marketplace/plugins/code-reviewer',
+  description: 'Automated PR code review agent',
+  icon: '🔍',
+  type: 'agent',
+  marketplace: 'dorkos-official',
 };
 
 // ---------------------------------------------------------------------------
@@ -255,6 +271,7 @@ const PKG_DETAIL: MarketplacePackageDetail = {
 
 function resetMarketplaceStore() {
   useMarketplaceStore.setState({ installConfirmPackage: null, installContext: null }, false);
+  useAgentCreationStore.setState({ isOpen: false, seed: null, onCreated: null }, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -345,5 +362,23 @@ describe('Marketplace install flow integration', () => {
     await user.click(dialogInstallButton);
 
     expect(installHandle.mutateAsync).toHaveBeenCalledWith({ name: PKG.name });
+  });
+
+  it('routes an agent package Install into the creation flow, not the confirm dialog', async () => {
+    const user = userEvent.setup();
+    setMarketplacePackagesState([AGENT_PKG]);
+    renderMarketplace();
+
+    const installButtons = await screen.findAllByText('Install');
+    await user.click(installButtons[0]);
+
+    // No formless confirm dialog — the agent opens the creation flow seeded from
+    // the package (M1 arrival), with the package source as its template.
+    expect(useMarketplaceStore.getState().installConfirmPackage).toBeNull();
+    const seed = useAgentCreationStore.getState().seed;
+    expect(useAgentCreationStore.getState().isOpen).toBe(true);
+    expect(seed?.origin).toBe('marketplace-agent');
+    expect(seed?.template.source).toBe(AGENT_PKG.source);
+    expect(seed?.template.displayName).toBe('Code Reviewer');
   });
 });

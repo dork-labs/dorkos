@@ -12,7 +12,6 @@ export { SystemRequirementsStep } from './ui/SystemRequirementsStep';
 export { WelcomeStep } from './ui/WelcomeStep';
 export { MeetDorkBotStep } from './ui/MeetDorkBotStep';
 export { AgentDiscoveryStep } from './ui/AgentDiscoveryStep';
-export { NoAgentsFound } from './ui/NoAgentsFound';
 export { TaskTemplatesStep } from './ui/TaskTemplatesStep';
 export { AdapterSetupStep } from './ui/AdapterSetupStep';
 export { OnboardingComplete } from './ui/OnboardingComplete';

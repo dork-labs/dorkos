@@ -12,6 +12,7 @@ import {
 } from '@/layers/shared/ui';
 
 const mockOpen = vi.fn();
+const mockImportOpen = vi.fn();
 const mockNavigate = vi.fn();
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -20,6 +21,9 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     ...actual,
     useAgentCreationStore: Object.assign(() => ({}), {
       getState: () => ({ open: mockOpen }),
+    }),
+    useImportProjectsStore: Object.assign(() => ({}), {
+      getState: () => ({ open: mockImportOpen }),
     }),
   };
 });
@@ -69,6 +73,7 @@ describe('AddAgentMenu', () => {
 
   beforeEach(() => {
     mockOpen.mockReset();
+    mockImportOpen.mockReset();
     mockNavigate.mockReset();
   });
 
@@ -81,7 +86,7 @@ describe('AddAgentMenu', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
     expect(screen.getByText('Create agent')).toBeInTheDocument();
-    expect(screen.getByText('Import project')).toBeInTheDocument();
+    expect(screen.getByText('Bring in a project')).toBeInTheDocument();
     expect(screen.getByText('Browse Marketplace')).toBeInTheDocument();
   });
 
@@ -92,11 +97,12 @@ describe('AddAgentMenu', () => {
     expect(mockOpen).toHaveBeenCalledWith();
   });
 
-  it('Import project opens creation dialog on import tab', () => {
+  it('Bring in a project opens the standalone import dialog', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
-    fireEvent.click(screen.getByText('Import project'));
-    expect(mockOpen).toHaveBeenCalledWith('import');
+    fireEvent.click(screen.getByText('Bring in a project'));
+    expect(mockImportOpen).toHaveBeenCalledTimes(1);
+    expect(mockOpen).not.toHaveBeenCalled();
   });
 
   it('Browse Marketplace navigates to /marketplace', () => {

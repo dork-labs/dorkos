@@ -53,6 +53,7 @@ const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
 const mockSetRelayOpen = vi.fn();
 const mockSetPickerOpen = vi.fn();
+const mockImportOpen = vi.fn();
 const mockSetTheme = vi.fn();
 
 let mockGlobalPaletteOpen = true;
@@ -112,6 +113,9 @@ vi.mock('@/layers/shared/model', () => ({
   }),
   useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
     getState: () => ({ open: vi.fn() }),
+  }),
+  useImportProjectsStore: Object.assign(() => ({ open: mockImportOpen }), {
+    getState: () => ({ open: mockImportOpen }),
   }),
 }));
 
@@ -413,12 +417,12 @@ describe('Command Palette Integration', () => {
 
   // --- Quick actions ---
 
-  it('Import Projects navigates to /agents', () => {
+  it('Import Projects opens the import dialog', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getByText('Import Projects').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    expect(mockImportOpen).toHaveBeenCalledTimes(1);
   });
 
   it('Browse Filesystem opens directory picker', () => {

@@ -236,7 +236,9 @@ describe('FeaturedRail', () => {
 
   it('opens the install confirmation dialog when the inner Install button is clicked', async () => {
     const user = userEvent.setup();
-    setPackagesState({ data: [makePkg('@dorkos/reviewer', { featured: true })] });
+    // A non-agent package uses the permission-preview confirm dialog. Agent
+    // packages leave for the creation flow (covered in use-request-install).
+    setPackagesState({ data: [makePkg('@dorkos/reviewer', { featured: true, type: 'plugin' })] });
 
     render(<FeaturedRail />);
 

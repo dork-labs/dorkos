@@ -1,7 +1,7 @@
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { Skeleton } from '@/layers/shared/ui';
-import { useMarketplaceStore } from '../model/marketplace-store';
+import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { PackageCard } from './PackageCard';
 
@@ -43,7 +43,7 @@ function RailGrid({
   packages: import('@dorkos/shared/marketplace-schemas').AggregatedPackage[];
 }) {
   const { openDetail } = useMarketplaceParams();
-  const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
+  const requestInstall = useRequestInstall();
 
   return (
     <section aria-label={RAIL_LABEL} className="space-y-3">
@@ -54,7 +54,7 @@ function RailGrid({
             <PackageCard
               pkg={pkg}
               onClick={() => openDetail(pkg.name)}
-              onInstallClick={() => openInstallConfirm(pkg)}
+              onInstallClick={() => requestInstall(pkg)}
             />
           </div>
         ))}

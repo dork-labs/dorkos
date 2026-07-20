@@ -72,7 +72,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'discover',
-    label: 'Import Projects',
+    label: 'Bring in existing projects',
     icon: 'Search',
     action: 'discoverAgents',
     category: 'quick-action',

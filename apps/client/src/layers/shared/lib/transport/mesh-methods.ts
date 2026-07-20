@@ -157,23 +157,6 @@ export function createMeshMethods(baseUrl: string) {
       return data.agents;
     },
 
-    initAgent(
-      path: string,
-      name?: string,
-      description?: string,
-      runtime?: string
-    ): Promise<AgentManifest> {
-      return fetchJSON<AgentManifest>(baseUrl, '/agents', {
-        method: 'POST',
-        body: JSON.stringify({
-          path,
-          ...(name && { name }),
-          ...(description && { description }),
-          ...(runtime && { runtime }),
-        }),
-      });
-    },
-
     updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest> {
       return fetchJSON<AgentManifest>(baseUrl, `/agents/current?path=${encodeURIComponent(path)}`, {
         method: 'PATCH',

@@ -8,6 +8,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
+import { useImportProjectsStore } from '@/layers/shared/model';
 import { CreateAgentDialog } from '../ui/CreateAgentDialog';
 import { useAgentCreationStore } from '../model/store';
 
@@ -36,10 +37,6 @@ vi.mock('sonner', () => {
     toast: Object.assign(vi.fn(), { error: errorFn }),
   };
 });
-
-vi.mock('@/layers/features/mesh', () => ({
-  DiscoveryView: () => <div data-testid="discovery-view">DiscoveryView</div>,
-}));
 
 // The gallery is exercised in AgentGallery.test.tsx; here it stands in for the
 // M2 step and lets each test drive a specific selection.
@@ -201,7 +198,13 @@ async function reachNamingViaDesign(user: ReturnType<typeof userEvent.setup>) {
 describe('CreateAgentDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
+    useAgentCreationStore.setState({
+      isOpen: false,
+      initialMode: 'new',
+      seed: null,
+      onCreated: null,
+    });
+    useImportProjectsStore.setState({ isOpen: false });
   });
 
   afterEach(cleanup);
@@ -218,15 +221,6 @@ describe('CreateAgentDialog', () => {
     // Appears in both the visible header and the sr-only live region.
     expect(screen.getAllByText('What will your agent do?').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByTestId('arrival-confirm')).not.toBeInTheDocument();
-  });
-
-  it('open("import") jumps straight to the import scan', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().open('import');
-
-    await screen.findByRole('dialog');
-    expect(await screen.findByTestId('discovery-view')).toBeInTheDocument();
-    expect(screen.queryByTestId('agent-gallery-mock')).not.toBeInTheDocument();
   });
 
   it('a seed lands on the arrival confirm (M1), never the gallery', async () => {
@@ -260,13 +254,16 @@ describe('CreateAgentDialog', () => {
     expect(nameInput).toHaveValue('Code Reviewer');
   });
 
-  it('the gallery import link routes to the import scan', async () => {
+  it('the gallery import link leaves for the standalone import dialog', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('mock-import'));
-    expect(await screen.findByTestId('discovery-view')).toBeInTheDocument();
+
+    // Creation dialog closes; the import flow opens in its own dialog.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(useImportProjectsStore.getState().isOpen).toBe(true);
   });
 
   it('Back from naming returns to the gallery', async () => {
@@ -472,7 +469,9 @@ describe('CreateAgentDialog', () => {
       expect(screen.getByTestId('conflict-status')).toHaveTextContent('Existing project detected')
     );
     await user.click(screen.getByTestId('import-instead-link'));
-    expect(await screen.findByTestId('discovery-view')).toBeInTheDocument();
+    // "Import instead?" leaves creation for the standalone import dialog.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(useImportProjectsStore.getState().isOpen).toBe(true);
   });
 
   it('reports "Will create new directory" for a fresh path', async () => {
@@ -670,6 +669,61 @@ describe('CreateAgentDialog', () => {
         })
       );
     });
+  });
+
+  it('a marketplace agent seed creates via the standard engine with the package template source', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'mkt-id',
+      name: 'code-reviewer',
+      _path: '/home/test/.dork/agents/code-reviewer',
+    } as never);
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed({
+      origin: 'marketplace-agent',
+      sourceLabel: 'dork-labs',
+      template: {
+        displayName: 'Code Reviewer',
+        source: 'github:dork-labs/marketplace/plugins/code-reviewer',
+        persona: 'Reviews pull requests every weekday.',
+        icon: '🔍',
+      },
+    });
+    await screen.findByText('Meet Code Reviewer');
+
+    await user.click(screen.getByRole('button', { name: 'Create Code Reviewer' }));
+    await waitFor(() => {
+      expect(transport.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'code-reviewer',
+          displayName: 'Code Reviewer',
+          template: 'github:dork-labs/marketplace/plugins/code-reviewer',
+          persona: 'Reviews pull requests every weekday.',
+        })
+      );
+    });
+  });
+
+  it('a host onCreated hook runs on create instead of navigating away', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'id',
+      name: 'scout',
+      _path: '/home/test/.dork/agents/scout',
+    } as never);
+    const onCreated = vi.fn();
+    renderDialog(transport);
+    useAgentCreationStore.getState().open('new', { onCreated });
+
+    await user.click(await screen.findByTestId('mock-design-your-own'));
+    await user.type(await screen.findByLabelText('Name'), 'Scout');
+    await user.click(screen.getByTestId('create-button'));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    // The host takes over — no navigation to a session.
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('Not now closes the dialog and clears the seed', async () => {

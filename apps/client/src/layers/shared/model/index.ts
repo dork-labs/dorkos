@@ -28,11 +28,12 @@ export { useNow } from './use-now';
 export {
   useAgentCreationStore,
   type CreationMode,
-  type CreationTab,
   type CreationOrigin,
   type CreationSeed,
   type CreationSeedTemplate,
+  type CreationOpenOptions,
 } from './agent-creation-store';
+export { useImportProjectsStore } from './import-projects-store';
 export { useTabVisibility } from './use-tab-visibility';
 export {
   useSSEConnection,

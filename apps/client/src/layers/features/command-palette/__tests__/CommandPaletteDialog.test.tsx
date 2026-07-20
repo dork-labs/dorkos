@@ -52,6 +52,7 @@ const mockSetGlobalPaletteOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
 const mockSetRelayOpen = vi.fn();
+const mockImportOpen = vi.fn();
 const mockSetPickerOpen = vi.fn();
 const mockSetRightPanelOpen = vi.fn();
 const mockSetActiveRightPanelTab = vi.fn();
@@ -112,6 +113,9 @@ vi.mock('@/layers/shared/model', () => ({
   }),
   useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
     getState: () => ({ open: vi.fn() }),
+  }),
+  useImportProjectsStore: Object.assign(() => ({ open: mockImportOpen }), {
+    getState: () => ({ open: mockImportOpen }),
   }),
 }));
 
@@ -404,11 +408,11 @@ describe('CommandPaletteDialog', () => {
 
   // --- Quick action dispatching ---
 
-  it('navigates to /agents when Import Projects quick action is selected', () => {
+  it('opens the import dialog when Import Projects quick action is selected', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getByText('Import Projects').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    expect(mockImportOpen).toHaveBeenCalledTimes(1);
   });
 
   it('opens directory picker when Browse Filesystem quick action is selected', () => {

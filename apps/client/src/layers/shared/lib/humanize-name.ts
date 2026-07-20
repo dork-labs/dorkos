@@ -1,14 +1,18 @@
 /**
  * Turn a package slug into a human-readable name and detect emoji faces.
  *
- * @module features/agent-creation/lib/humanize-name
+ * Lives in `shared/lib` because both the agent-creation gallery (M2 cards) and
+ * the marketplace agent-package install seed (M1 arrival) need to render a human
+ * name for a package that may ship only a slug.
+ *
+ * @module shared/lib/humanize-name
  */
 
 /**
  * Humanize a marketplace package name into a display label: strip a leading
  * `@scope/`, drop any remaining path segment, swap `-`/`_` for spaces, and
  * title-case each word. Used as the fallback when a package ships no
- * `displayName`, so gallery cards never show a raw slug.
+ * `displayName`, so gallery cards and arrival confirms never show a raw slug.
  *
  * @param name - The package name (e.g. `@dorkos/code-reviewer`).
  * @returns A humanized label (e.g. `Code Reviewer`).

@@ -435,7 +435,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Agent Identity
     getAgentByPath: vi.fn().mockResolvedValue(null),
     resolveAgents: vi.fn().mockResolvedValue({}),
-    initAgent: vi.fn().mockResolvedValue(mockAgent),
     updateAgentByPath: vi.fn().mockResolvedValue(mockAgent),
     createAgent: vi.fn().mockResolvedValue({ ...mockAgent, _path: '/mock/agents/mock-agent' }),
     // Default Agent
