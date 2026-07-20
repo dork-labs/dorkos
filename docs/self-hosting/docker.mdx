@@ -28,17 +28,25 @@ Every release publishes the image with multiple tags:
 | Tag           | Example                                | Description                                    |
 | ------------- | -------------------------------------- | ---------------------------------------------- |
 | `latest`      | `ghcr.io/dork-labs/dorkos:latest`      | Most recent non-prerelease version             |
-| Exact version | `ghcr.io/dork-labs/dorkos:0.12.0`      | Pinned to a specific release                   |
-| Minor track   | `ghcr.io/dork-labs/dorkos:0.12`        | Tracks the latest patch within a minor version |
+| Exact version | `ghcr.io/dork-labs/dorkos:0.52.0`      | Pinned to a specific release                   |
+| Minor track   | `ghcr.io/dork-labs/dorkos:0.52`        | Tracks the latest patch within a minor version |
 | Commit SHA    | `ghcr.io/dork-labs/dorkos:sha-abc1234` | Pinned to a specific build commit              |
 
 For production deployments, pin to an exact version:
 
 ```bash
-docker pull ghcr.io/dork-labs/dorkos:0.12.0
+docker pull ghcr.io/dork-labs/dorkos:0.52.0
 ```
 
-The `latest` tag always points to the most recent non-prerelease version. Pre-release tags (e.g., `0.13.0-beta.1`) are available by exact version but do not update `latest`.
+The `latest` tag always points to the most recent non-prerelease version. Pre-release tags (e.g., `0.53.0-beta.1`) are available by exact version but do not update `latest`.
+
+### Docker Hub mirror
+
+The same image is mirrored to Docker Hub as `dorkai/dorkos`, with the same tags. GitHub Container Registry (the `ghcr.io` address above) stays the main home for the image. Docker Hub is a convenience copy, useful if your setup already pulls from there:
+
+```bash
+docker pull dorkai/dorkos:latest
+```
 
 ## Multi-Platform Support
 
@@ -52,10 +60,10 @@ You don't need to configure anything: `docker pull` selects the right platform a
 
 ## Supply Chain Verification
 
-Every published image includes a [SLSA](https://slsa.dev/) attestation (a signed record of exactly which source commit built it) proving it came from the `dork-labs/dorkos` repository, not a fork. Verify any image with the GitHub CLI:
+Every published image includes a [build provenance attestation](https://slsa.dev/) (a signed record of exactly which source commit built it) proving it came from the `dork-labs/dorkos` repository, not a fork. Verify any image with the GitHub CLI:
 
 ```bash
-gh attestation verify oci://ghcr.io/dork-labs/dorkos:0.12.0 --owner dork-labs
+gh attestation verify oci://ghcr.io/dork-labs/dorkos:0.52.0 --owner dork-labs
 ```
 
 A passing check confirms GitHub Actions built the image, not someone's laptop.
@@ -79,18 +87,20 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
     },
     DORKOS_DEFAULT_CWD: {
       type: 'string',
-      description: 'Default working directory for agent sessions',
-      default: "'/workspace'",
+      description:
+        'Default working directory for new agent sessions. The image bakes no value, so sessions start in the container home.',
+      default: "'/home/node'",
     },
     DORKOS_BOUNDARY: {
       type: 'string',
       description: 'Directory boundary for file access',
       default: 'Home directory',
     },
-    NODE_ENV: {
-      type: 'string',
-      description: "Set to 'production' for production mode",
-      default: "'production'",
+    DORKOS_ALLOW_INSECURE_BIND: {
+      type: 'boolean',
+      description:
+        'Set to true by the image so it can bind 0.0.0.0. Turn on login before exposing the container (see Securing Your Instance).',
+      default: "'true'",
     },
   }}
 />
@@ -120,7 +130,6 @@ Keep secrets out of your shell history:
 
 ```bash title=".env.dorkos"
 ANTHROPIC_API_KEY=your-key-here
-NODE_ENV=production
 ```
 
 ```bash
@@ -207,6 +216,24 @@ docker run -d --name dorkos \
 
 Since the container runs as an unprivileged user, files agents create in your mounted project are owned by uid 1000 instead of root, so they're usually already owned by your own user account on Linux hosts.
 
+### Backing up your data
+
+Copy everything in the data volume into a single archive file you can store somewhere safe. Stop the container first so the SQLite database isn't being written to mid-copy:
+
+```bash
+docker stop dorkos
+docker run --rm -v dorkos-data:/data -v "$(pwd)":/backup alpine \
+  tar czf /backup/dorkos-backup.tgz -C /data .
+docker start dorkos
+```
+
+This drops `dorkos-backup.tgz` in your current folder. To restore, extract that archive into a fresh volume the same way:
+
+```bash
+docker run --rm -v dorkos-data:/data -v "$(pwd)":/backup alpine \
+  tar xzf /backup/dorkos-backup.tgz -C /data
+```
+
 ## Docker Compose
 
 The `docker run` commands above work fine for trying DorkOS out, but they're unwieldy to maintain. You end up with long shell commands that are easy to mistype and hard to version control. Docker Compose captures the full configuration in one file, so it's reproducible, easy to update, and simple to tear down with `docker compose down`.
@@ -235,7 +262,6 @@ services:
       - '4242:4242'
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - NODE_ENV=production
     volumes:
       - dorkos-data:/home/node/.dork
 
@@ -251,13 +277,29 @@ volumes:
 
 ### With a reverse proxy
 
+<Callout type="error">
+  **Turn on login before you point a domain at DorkOS.** The Docker image ships with login off, and it
+  binds to every network address so port forwarding works. With login off, anyone who reaches the port
+  gets full control: your sessions, your files, and your agents, spending your Claude quota. Create the
+  owner account and require login first:
+
+```bash
+docker exec -it dorkos dorkos auth enable
+```
+
+This walks you through an email and password, then requires login from then on. You can also pass
+`--email` and `--password` to skip the prompts. Full details are in [Securing Your
+Instance](/docs/self-hosting/securing-your-instance).
+
+</Callout>
+
 The standalone Compose setup above serves DorkOS over plain HTTP on port 4242. That's fine for local use. But if you're exposing DorkOS over the internet (a VPS, a home server with a domain, or any machine other people will connect to), you need HTTPS. Without TLS, browsers block mixed content, credentials travel in the clear, and SSE streams (the live updates DorkOS uses to stream agent output) can be intercepted.
 
 A reverse proxy sits in front of DorkOS, handles HTTPS, and forwards requests to the container. Caddy is the simplest option: it obtains and renews Let's Encrypt certificates automatically, so there's no manual cert management. It also handles the buffering settings SSE needs.
 
 Add Caddy to the Compose file for automatic HTTPS:
 
-```yaml title="docker-compose.yml"
+```yaml title="compose.yml"
 services:
   dorkos:
     image: ghcr.io/dork-labs/dorkos:latest
@@ -267,7 +309,6 @@ services:
       - '4242'
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - NODE_ENV=production
     volumes:
       - dorkos-data:/home/node/.dork
 
@@ -309,10 +350,22 @@ You can also check it yourself at any time:
 
 ```bash
 curl http://localhost:4242/api/health
-# { "status": "ok", "version": "0.8.0", "uptime": 12345 }
+# { "status": "ok", "version": "0.52.0", "uptime": 12345 }
 ```
 
 The health endpoint is unauthenticated and suitable for load balancer or container orchestrator use.
+
+## Using MCP tools
+
+DorkOS exposes its tools to other AI clients at `/mcp`. Read-only tools work without any setup. Anything that changes state (running an agent, editing files) needs the instance's MCP token, or the call comes back with a `401` error that names where to find it.
+
+Fetch the token from inside the container:
+
+```bash
+docker exec dorkos cat /home/node/.dork/mcp-local-token
+```
+
+Send it as a Bearer token (a key you attach to each request) on your calls to `/mcp`. Once you turn on login, per-user API keys replace this token. See the [MCP server guide](/docs/integrations/mcp-server) for the full setup.
 
 ## Building from Source
 
@@ -406,6 +459,26 @@ Data in the `dorkos-data` volume persists across updates.
 **Cause**: The server is binding to `localhost` inside the container.
 
 **Fix**: The official image sets `DORKOS_HOST=0.0.0.0` automatically. If you're using a custom image, ensure this variable is set.
+
+</Step>
+
+<Step>
+### Pull fails with "unauthorized" or "denied"
+
+**Cause**: A registry hiccup, a rate limit, or a stale login on your machine.
+
+**Fix**: Try the Docker Hub mirror, which carries the same image:
+
+```bash
+docker pull dorkai/dorkos:latest
+```
+
+If you were signed into the GitHub registry with an old token, sign out and pull again:
+
+```bash
+docker logout ghcr.io
+docker pull ghcr.io/dork-labs/dorkos:latest
+```
 
 </Step>
 
