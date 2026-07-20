@@ -5,7 +5,7 @@ import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entitie
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
-import { PermissionBanner } from '@/layers/widgets/app-layout';
+import { PermissionBanner } from '@/layers/widgets/app-banner';
 import { SessionSidebar } from '@/layers/features/session-list';
 import { ChatPanel } from '@/layers/features/chat';
 import {

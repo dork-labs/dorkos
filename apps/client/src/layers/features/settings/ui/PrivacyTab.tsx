@@ -1,5 +1,5 @@
 import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig, HEARTBEAT_PAYLOAD_EXAMPLE } from '@/layers/entities/config';
+import { useConfig, useUpdateConfig, TelemetryPayloadDisclosure } from '@/layers/entities/config';
 
 /**
  * Privacy & Data settings tab. Live per-channel control over the first-party
@@ -88,14 +88,7 @@ export function PrivacyTab() {
         </FieldCardContent>
       </FieldCard>
 
-      <div className="space-y-2">
-        <p className="text-muted-foreground text-xs">
-          The exact daily heartbeat, word for word. This is the whole payload.
-        </p>
-        <pre className="text-muted-foreground bg-muted/40 max-w-full overflow-x-auto rounded-md border p-3 text-xs">
-          <code>{HEARTBEAT_PAYLOAD_EXAMPLE}</code>
-        </pre>
-      </div>
+      <TelemetryPayloadDisclosure />
     </div>
   );
 }

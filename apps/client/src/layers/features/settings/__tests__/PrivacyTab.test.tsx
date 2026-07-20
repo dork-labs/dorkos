@@ -1,11 +1,28 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { PrivacyTab } from '../ui/PrivacyTab';
+
+// The payload disclosure animates open with motion, which reads matchMedia.
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
 // PrivacyTab reads via `useConfig` and writes via `useUpdateConfig`; both are
 // mocked so no TransportProvider or QueryClient is needed (see testing.md).
@@ -69,7 +86,8 @@ describe('PrivacyTab', () => {
 
   afterEach(() => cleanup());
 
-  it('renders the four channel toggles, the payload, and the contract link', () => {
+  it('renders the four channel toggles, the collapsed payload disclosure, and the contract link', async () => {
+    const user = userEvent.setup();
     setConfig({});
     render(<PrivacyTab />);
 
@@ -84,11 +102,14 @@ describe('PrivacyTab', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: /share crash reports/i })).toBeInTheDocument();
 
-    expect(screen.getByText(/runtimesConfigured/)).toBeInTheDocument();
-
     const link = screen.getByRole('link', { name: /full contract/i });
     expect(link).toHaveAttribute('href', 'https://dorkos.ai/telemetry');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+
+    // Payload is behind the shared disclosure — collapsed until asked for.
+    expect(screen.queryByText(/runtimesConfigured/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /see what.s sent/i }));
+    expect(await screen.findByText(/runtimesConfigured/)).toBeInTheDocument();
   });
 
   it('reflects the current channel states', () => {

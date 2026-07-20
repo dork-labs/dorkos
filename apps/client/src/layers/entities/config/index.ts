@@ -10,7 +10,9 @@
 export { configKeys } from './api/query-keys';
 export { useConfig } from './model/use-config';
 export { useUpdateConfig } from './model/use-update-config';
-export { HEARTBEAT_PAYLOAD_EXAMPLE } from './lib/telemetry-payload';
+export { TelemetryPayloadBlock } from './ui/TelemetryPayloadBlock';
+export { TelemetryPayloadDisclosure } from './ui/TelemetryPayloadDisclosure';
+export { TelemetryPayloadToggle } from './ui/TelemetryPayloadToggle';
 export {
   useSidebarPrefs,
   useUpdateSidebarPrefs,

@@ -1,6 +1,7 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { COMPONENTS_SECTIONS } from '../playground-registry';
 import { ButtonShowcases } from '../showcases/ButtonShowcases';
+import { BannerShowcases } from '../showcases/BannerShowcases';
 import { FeedbackShowcases } from '../showcases/FeedbackShowcases';
 import { NavigationShowcases } from '../showcases/NavigationShowcases';
 import { SidebarShowcases } from '../showcases/SidebarShowcases';
@@ -18,6 +19,7 @@ export function ComponentsPage() {
       sections={COMPONENTS_SECTIONS}
     >
       <ButtonShowcases />
+      <BannerShowcases />
       <FeedbackShowcases />
       <NavigationShowcases />
       <SidebarShowcases />

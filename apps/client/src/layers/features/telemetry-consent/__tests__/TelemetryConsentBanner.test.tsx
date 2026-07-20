@@ -1,15 +1,34 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom/vitest';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { TelemetryConsentBanner } from '../ui/TelemetryConsentBanner';
 
+// motion (used by the Banner details region) reads matchMedia for reduced-motion,
+// which jsdom does not implement.
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
+
 // The banner reads from `useConfig` and writes via `useUpdateConfig`; both are
 // mocked so no TransportProvider or QueryClient is needed. Other exports
-// (HEARTBEAT_PAYLOAD_EXAMPLE) are preserved via importOriginal.
+// (the TelemetryPayload* components) are preserved via importOriginal.
 vi.mock('@/layers/entities/config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/config')>();
   return { ...actual, useConfig: vi.fn(), useUpdateConfig: vi.fn() };
@@ -65,15 +84,27 @@ describe('TelemetryConsentBanner', () => {
     cleanup();
   });
 
-  it('renders and shows the heartbeat payload verbatim when undecided', () => {
+  it('renders the disclosure and consent buttons, with the payload collapsed by default', () => {
     setConfigState({ userHasDecided: false });
 
     render(<TelemetryConsentBanner />);
 
     expect(screen.getByText(/shares a little anonymous data/i)).toBeInTheDocument();
-    expect(screen.getByText(/runtimesConfigured/)).toBeInTheDocument();
+    // Progressive disclosure: the payload stays hidden until asked for.
+    expect(screen.queryByText(/runtimesConfigured/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /see what.s sent/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /turn off/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /keep sharing/i })).toBeInTheDocument();
+  });
+
+  it('reveals the heartbeat payload verbatim after clicking "See what\'s sent"', async () => {
+    const user = userEvent.setup();
+    setConfigState({ userHasDecided: false });
+
+    render(<TelemetryConsentBanner />);
+    await user.click(screen.getByRole('button', { name: /see what.s sent/i }));
+
+    expect(await screen.findByText(/runtimesConfigured/)).toBeInTheDocument();
   });
 
   it('renders defensively when config has not loaded yet', () => {

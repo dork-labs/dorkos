@@ -40,8 +40,12 @@ vi.mock('@/layers/features/top-nav', () => ({
 }));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
-  PermissionBanner: () => null,
   DialogHost: () => null,
+}));
+
+vi.mock('@/layers/widgets/app-banner', () => ({
+  AppBannerSlot: () => null,
+  useAppBanners: () => [],
 }));
 
 vi.mock('@/layers/features/command-palette', () => ({
