@@ -59,10 +59,19 @@ Want to reach DorkOS from your phone or another computer? Turn on login first. I
 
 Remote visitors reaching an exposed instance get the **sign-in screen**: static assets load so the login page renders, but every API call requires a valid session.
 
+<Callout type="warn">
+  **Docker operators, this is you.** The official Docker image bakes in
+  `DORKOS_ALLOW_INSECURE_BIND=true`. That is what lets the container accept connections through
+  Docker's port forwarding, and it skips the bind gate that would otherwise stop a login-off server
+  from listening beyond localhost. It does **not** turn on login. So if you expose the container to
+  anyone else, you are exactly who must [enable login
+  first](/docs/self-hosting/docker#with-a-reverse-proxy).
+</Callout>
+
 <Callout type="info">
-  **Reference, for container setups:** containers that own their own network boundary (e.g. the
-  official Docker images binding `0.0.0.0`) can set `DORKOS_ALLOW_INSECURE_BIND=true` to override
-  the bind gate. Most people never need this. Real machines should enable login instead.
+  DorkOS already slows password guessing: it allows 10 sign-in attempts from one IP address every 15
+  minutes, then briefly blocks that address. Set `DORKOS_AUTH_SIGNIN_RATE_LIMIT` to a different
+  number if that default gets in your way.
 </Callout>
 
 ## API keys for MCP, scripts, and agents

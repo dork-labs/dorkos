@@ -49,8 +49,7 @@ npm install -g dorkos
 
 <Tab value="Environment Variables">
   ```bash export ANTHROPIC_API_KEY=your-key-here export DORKOS_PORT=4242 export
-  DORKOS_DEFAULT_CWD=/path/to/projects export DORKOS_BOUNDARY=/path/to/boundary export
-  NODE_ENV=production ```
+  DORKOS_DEFAULT_CWD=/path/to/projects export DORKOS_BOUNDARY=/path/to/boundary ```
 </Tab>
 
 <Tab value="Interactive Setup">
@@ -103,10 +102,22 @@ Here's the full list, in case you're scripting a deployment or writing a systemd
       description: 'The folder DorkOS is allowed to touch (see Directory Boundary below)',
       default: 'Home directory',
     },
+    DORKOS_AUTH_SIGNIN_RATE_LIMIT: {
+      type: 'number',
+      description:
+        'Max sign-in attempts allowed from one IP address in a 15-minute window before it is briefly blocked. Raise it if a shared network locks you out.',
+      default: "'10'",
+    },
+    DORKOS_ACTIVITY_RETENTION_DAYS: {
+      type: 'number',
+      description: 'How many days of activity history to keep before old events are pruned.',
+      default: "'30'",
+    },
     NODE_ENV: {
       type: 'string',
-      description: "Set to 'production' for production mode",
-      default: "'development'",
+      description:
+        "You do not set this. The dorkos CLI pins it to 'production' on every start. The 'development' default only applies when you run the server from source with pnpm dev.",
+      default: "'production'",
     },
   }}
 />
@@ -137,7 +148,6 @@ Environment=DORKOS_PORT=4242
 Environment=DORKOS_HOST=0.0.0.0
 Environment=DORKOS_DEFAULT_CWD=/home/dorkos/projects
 Environment=DORKOS_BOUNDARY=/home/dorkos/projects
-Environment=NODE_ENV=production
 ExecStart=/usr/local/bin/dorkos
 Restart=on-failure
 RestartSec=5
