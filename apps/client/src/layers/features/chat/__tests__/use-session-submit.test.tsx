@@ -13,8 +13,8 @@
  * optimistic message.
  */
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
@@ -59,7 +59,9 @@ import {
 import { resetSessionStreamBinding } from '@/layers/entities/session';
 import { TIMING } from '@/layers/shared/lib';
 import { streamManager } from '@/layers/shared/lib/transport';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAgentBirthStore } from '@/layers/shared/model';
+import { __resetFiredKickoffsForTest } from '../model/kickoff/use-auto-kickoff';
+import { wrapKickoff } from '@dorkos/shared/kickoff';
 import { resetUuidCounter } from './chat-session-test-helpers';
 
 const attachSession = vi.mocked(streamManager.attachSession);
@@ -117,8 +119,14 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       unseen: {},
       rekeys: {},
     });
+    useAgentBirthStore.setState({ records: {} });
+    __resetFiredKickoffsForTest();
     resetSessionStreamBinding();
   });
+
+  // Unmount each test's hook so a leaked useChatSession instance can't react to
+  // the next test's store writes (e.g. steal an auto-kickoff fire).
+  afterEach(cleanup);
 
   it('DOR-74 dual-id elimination + restore send: calls postMessage and renders the optimistic user message immediately', async () => {
     const postMessage = vi
@@ -564,6 +572,43 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     // Failed trigger: latch released so the user can retry immediately.
     await waitFor(() => expect(result.current.status).toBe('idle'));
     expect(result.current.error?.retryable).toBe(true);
+  });
+
+  it('a failed KICKOFF raises no error banner (no dead Retry) and marks the greeting failed', async () => {
+    // The birth session's auto-first-turn: the person typed nothing, so a
+    // "Could not send message" banner with a Retry (which would find no user
+    // message to resend) would be dishonest AND dead. The failure instead
+    // surfaces via the empty session's honest greeting-failed line.
+    const kickoff = wrapKickoff('introduce yourself from SOUL.md');
+    useAgentBirthStore.getState().register('s1', {
+      name: 'aurora',
+      displayName: 'Aurora',
+      bornAt: '2026-07-20T00:00:00.000Z',
+      path: '/test/cwd',
+      runtime: 'claude-code',
+      kickoffMessage: kickoff,
+    });
+    const postMessage = vi.fn().mockRejectedValue(new Error('network down'));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+
+    // useAutoKickoff fires the kickoff, it fails, retries once, fails again.
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(2));
+    expect(postMessage).toHaveBeenCalledWith('s1', kickoff, '/test/cwd', expect.any(Object));
+
+    // No banner, no dead Retry — the composer stays a normal empty session.
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    expect(result.current.error).toBeNull();
+    // The honest greeting-failed line's data source is set.
+    await waitFor(() =>
+      expect(useAgentBirthStore.getState().records['s1'].greetingFailed).toBe(true)
+    );
+
+    // The kickoff was never rendered as a user bubble either.
+    expect(result.current.messages.some((m) => m.role === 'user')).toBe(false);
   });
 
   it('the trigger watchdog follows a post-202 rekey and clears the MIGRATED latch', async () => {

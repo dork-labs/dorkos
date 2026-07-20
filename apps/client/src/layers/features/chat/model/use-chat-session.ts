@@ -11,6 +11,7 @@ import {
 import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
 import { useSessionSubmit } from './use-session-submit';
+import { useAutoKickoff } from './kickoff/use-auto-kickoff';
 import { useNativeCommands } from './native-commands';
 import { useSessionStream, useSessionRekeyRedirect } from './use-session-stream';
 import { useStreamTiming } from './use-stream-timing';
@@ -213,7 +214,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     compact: options.compactIntent,
   });
 
-  const { handleSubmit, submitContent, stop, retryMessage, markToolCallResponded } =
+  const { handleSubmit, submitContent, stop, retryMessage, submitKickoff, markToolCallResponded } =
     useSessionSubmit({
       sessionId,
       input,
@@ -229,6 +230,18 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       setSessionBusy,
       tryNativeCommand: native.tryRun,
     });
+
+  // The agent speaks first (M4): a freshly created agent's session opens with an
+  // auto-triggered greeting. No-op for every session without a pending birth.
+  // `cwd` lets a fresh session claim a birth recorded by a create that never
+  // navigated (onboarding) — the hello lands on the agent's real first session.
+  useAutoKickoff({
+    sessionId,
+    cwd: selectedCwd,
+    status,
+    messageCount: messages.length,
+    submitKickoff,
+  });
 
   // Turn-end reconciliation: when the active session settles, reload canonical
   // history into the stream store and clear the optimistic user message so the

@@ -22,6 +22,7 @@ interface SessionEventsParams {
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { initSSEStream, endSSEStream } from '../services/core/stream-adapter.js';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
@@ -216,6 +217,10 @@ export const sessionEventsHandler = async (
       // (closes the cold-connect race; single-threaded node makes the gap-free).
       const snap = await runtime.getSessionSnapshot(ctx, sessionId);
       if (closed) return;
+      // Same wire-boundary suppression as GET /:id/messages: the auto-first-turn
+      // kickoff (M4) never leaves the server as a user message, whichever
+      // runtime stored it. See @dorkos/shared/kickoff for the seam's scope.
+      snap.messages = filterKickoffHistory(snap.messages);
       // Snapshot is the hydration frame (no seq — it carries `cursor`), so it
       // gets no `id:` line; the first live event after it carries the next id.
       res.write(`event: snapshot\ndata: ${JSON.stringify(snap)}\n\n`);

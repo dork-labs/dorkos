@@ -15,6 +15,7 @@ import {
 } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
+import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { readManifest } from '@dorkos/shared/manifest';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -201,7 +202,11 @@ router.get('/:id/messages', async (req, res) => {
   }
 
   const messages = await runtime.getMessageHistory(cwd, internalSessionId);
-  res.json({ messages });
+  // The ONE runtime-agnostic suppression seam for the auto-first-turn kickoff
+  // (M4): whatever the runtime stored, the synthetic "introduce yourself"
+  // record never leaves the server as a user message. Role-scoped (user only),
+  // first-user-record-scoped, exact-envelope-shaped — see @dorkos/shared/kickoff.
+  res.json({ messages: filterKickoffHistory(messages) });
 });
 
 // PATCH /api/sessions/:id - Update session settings

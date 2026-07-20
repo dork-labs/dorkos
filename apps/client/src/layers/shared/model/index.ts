@@ -34,6 +34,11 @@ export {
   type CreationOpenOptions,
 } from './agent-creation-store';
 export { useImportProjectsStore } from './import-projects-store';
+export {
+  useAgentBirthStore,
+  useAgentBirthRecord,
+  type AgentBirthRecord,
+} from './agent-birth/agent-birth-store';
 export { useTabVisibility } from './use-tab-visibility';
 export {
   useSSEConnection,

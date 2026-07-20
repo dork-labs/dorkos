@@ -27,7 +27,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ClientContext } from '@dorkos/shared/additional-context';
-import { useTransport, useAppStore } from '@/layers/shared/model';
+import { useTransport, useAppStore, useAgentBirthStore } from '@/layers/shared/model';
 import { TIMING, buildUiStateSnapshot, prepareUiStateForSend } from '@/layers/shared/lib';
 import { streamManager } from '@/layers/shared/lib/transport';
 import {
@@ -137,16 +137,29 @@ export function useSessionSubmit({
   // ---------------------------------------------------------------------------
 
   /**
-   * Core submission logic shared by `handleSubmit` and `submitContent`.
+   * Core submission logic shared by `handleSubmit`, `submitContent`, and the
+   * auto-first-turn kickoff.
    *
    * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
    * @param restoreContentOnLock - Content to restore if the session is locked.
    * @param queued - True when this send originated from a queue auto-flush; sent
    *   as `context: { queued: true }` so the server renders a `<queue_note>`.
+   * @param opts - `{ kickoff: true }` for the M4 auto-first-turn: the content is
+   *   a DorkOS-injected "introduce yourself" instruction, not a person's typing,
+   *   so it skips the native-command funnel, the file/content transform, and —
+   *   the honesty seam — the optimistic user bubble. It still rides the full
+   *   trigger machinery (subscribe-first, rekey, watchdog) so the greeting
+   *   streams in normally.
    */
   const executeSubmission = useCallback(
-    async (content: string, clearInput: boolean, restoreContentOnLock: string, queued = false) => {
+    async (
+      content: string,
+      clearInput: boolean,
+      restoreContentOnLock: string,
+      queued = false,
+      opts: { kickoff?: boolean } = {}
+    ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
       // runtime/model. This is the funnel safety net for the non-streaming paths
       // — handleSubmit (Enter) and retryMessage. A native command typed WHILE a
@@ -154,11 +167,14 @@ export function useSessionSubmit({
       // so it never enters the queue (a queued native command would flush without
       // starting a turn and stall everything queued behind it). Only clear the
       // input when the command actually ran — a rejected command (e.g. a no-arg
-      // `/rename`) keeps the composer text so the operator can correct it.
-      const native = tryNativeCommand(content);
-      if (native.handled) {
-        if (clearInput && native.ran) setInput('');
-        return;
+      // `/rename`) keeps the composer text so the operator can correct it. The
+      // kickoff is a fenced synthetic instruction, never a command — skip the funnel.
+      if (!opts.kickoff) {
+        const native = tryNativeCommand(content);
+        if (native.handled) {
+          if (clearInput && native.ran) setInput('');
+          return;
+        }
       }
 
       const targetSessionId = sessionId!;
@@ -191,9 +207,13 @@ export function useSessionSubmit({
       }
 
       // Show the user's message immediately — it is NOT in the (pre-send)
-      // snapshot and the /events stream carries no user-message event.
+      // snapshot and the /events stream carries no user-message event. The
+      // kickoff has no such bubble: the person typed nothing, so the birth
+      // session opens with only the certificate line and the agent's greeting.
       const optimisticId = crypto.randomUUID();
-      streamStore.setOptimisticUserMessage(targetSessionId, { id: optimisticId, content });
+      if (!opts.kickoff) {
+        streamStore.setOptimisticUserMessage(targetSessionId, { id: optimisticId, content });
+      }
       // Latch the trigger window (CLI-B7): the rendered status reads `streaming`
       // from this moment, so a second Enter during the POST round-trip queues
       // instead of double-submitting. turn_start clears it.
@@ -208,9 +228,14 @@ export function useSessionSubmit({
       streamManager.attachSession(targetSessionId, cwd);
 
       try {
-        const finalContent = transformContentRef.current
-          ? await transformContentRef.current(content)
-          : content;
+        // The kickoff content is already the exact message to deliver — never
+        // run it through the file/content transform (there are no pending files
+        // on a brand-new session, and it must reach the model verbatim so the
+        // fence stays intact for suppression).
+        const finalContent =
+          !opts.kickoff && transformContentRef.current
+            ? await transformContentRef.current(content)
+            : content;
 
         // Client UI-state snapshot for agent situational awareness (ADR-0273),
         // omitted when unchanged since the last successful send for this session
@@ -260,6 +285,10 @@ export function useSessionSubmit({
           // stream fires the same migration when the canonical id resolves only
           // AFTER this 202 (the common Claude path — see session-stream-binding).
           useSessionStreamStore.getState().migrateSessionContinuity(targetSessionId, canonicalId);
+          // Move the newborn-agent birth ceremony (M4) to the canonical id too,
+          // for the case the rekey resolves synchronously here (no-op without a
+          // birth record; idempotent with the retire-announce migration).
+          useAgentBirthStore.getState().migrate(targetSessionId, canonicalId);
 
           const cachedSessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
           const optimisticEntry = cachedSessions.find((s) => s.id === targetSessionId);
@@ -298,6 +327,9 @@ export function useSessionSubmit({
         useSessionStreamStore.getState().setTriggerPending(targetSessionId, false);
 
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
+          // A locked birth session means a turn is already running — the
+          // greeting rode another trigger. Nothing to restore or retry.
+          if (opts.kickoff) return;
           if (clearInput) setInput(restoreContentOnLock);
           setSessionBusy(true);
           if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
@@ -308,6 +340,14 @@ export function useSessionSubmit({
           }, TIMING.SESSION_BUSY_CLEAR_MS);
           return;
         }
+
+        // A failed kickoff propagates to useAutoKickoff, which retries once and
+        // — if that is also spent — surfaces an honest greeting-failed line on
+        // the empty session. Deliberately NO "Could not send message" banner:
+        // the person typed nothing, so that copy (and its Retry, which would
+        // find no user message to resend) would be dishonest and dead. The
+        // composer stays fully usable — a rejected trigger started no turn.
+        if (opts.kickoff) throw err;
 
         setError({
           heading: 'Could not send message',
@@ -373,6 +413,21 @@ export function useSessionSubmit({
   );
 
   /**
+   * Trigger the agent's auto-first-turn (M4). `content` is a fenced kickoff
+   * instruction built at creation. Rides the full trigger machinery but shows
+   * no user bubble — the birth session opens with the agent's greeting alone.
+   * The caller (useAutoKickoff) owns the fire-once guard.
+   *
+   * @param content - The fenced kickoff message.
+   */
+  const submitKickoff = useCallback(
+    async (content: string) => {
+      await executeSubmission(content, false, '', false, { kickoff: true });
+    },
+    [executeSubmission]
+  );
+
+  /**
    * Acknowledge a tool-interaction decision (approve/deny/answer).
    *
    * Under the durable `/events` contract the canonical status transition is
@@ -391,5 +446,5 @@ export function useSessionSubmit({
     []
   );
 
-  return { handleSubmit, submitContent, stop, retryMessage, markToolCallResponded };
+  return { handleSubmit, submitContent, stop, retryMessage, submitKickoff, markToolCallResponded };
 }
