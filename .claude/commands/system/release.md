@@ -230,27 +230,30 @@ Include the current version (from VERSION) and last tag in the prompt. Parse the
 
 ---
 
-## Phase 4: Present and Confirm
+## Phase 4: Present, and Confirm Only on a Major
 
-Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
+Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; **npm publish, push to origin, and the draft GitHub Release** — a patch/minor run carries all the way through these without another stop).
 
 Also note: pushing the `vX.Y.Z` tag triggers the "Desktop Release" workflow (`.github/workflows/desktop-release.yml`), which asynchronously builds the macOS (signed + notarized) and Windows apps, attaches their installers + `latest*.yml` to the **draft** release created in Phase 6.11, and then publishes that draft. That runs in a separate workflow, so a desktop build failure can never unwind the product release created here (npm + changelog are already published). Publishing the GitHub Release is gated on macOS only: `publish-release` flips the draft to published when the macOS build and its install-verification pass, so a macOS failure deliberately holds the release as a draft. The Windows alpha is non-gating (`continue-on-error`) and can never block it.
 
-If `--dry-run`, **STOP** here.
+If `--dry-run`, **STOP** here — `--dry-run` is the way to preview this plan without releasing.
 
-Otherwise, use AskUserQuestion:
+**Otherwise, branch on the resolved bump type:**
 
-```
-header: "Confirm Release"
-question: "Create release vX.Y.Z?"
-options:
-  - label: "Yes, [BUMP] is correct (Recommended)"
-  - label: "No, make it PATCH"
-  - label: "No, make it MAJOR"
-  - label: "Cancel"
-```
+- **PATCH or MINOR** — proceed automatically; do **not** prompt. Starting `/system:release` is the go-ahead for a routine release, so the plan above is shown for visibility, not approval, and the run continues through tag → npm publish → push → draft GitHub Release without stopping. (To override a bump you disagree with, cancel and re-run with an explicit `patch` / `minor` / `major` argument, or use `--dry-run` first to preview.)
+- **MAJOR** — a major release is breaking, so confirm before proceeding. Use AskUserQuestion:
 
-If the user overrides the bump type, recalculate the version (and re-run Check 6 Steps 3-4 if the target version changed).
+  ```
+  header: "Confirm Major"
+  question: "This is heading out as a MAJOR release (vX.Y.Z). Ship it as major?"
+  options:
+    - label: "Yes, MAJOR is correct (Recommended)"
+    - label: "No, make it MINOR"
+    - label: "No, make it PATCH"
+    - label: "Cancel"
+  ```
+
+  If the user downgrades the bump type, recalculate the version (and re-run Check 6 Steps 3-4 if the target version changed), then proceed.
 
 ---
 
@@ -442,13 +445,13 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z"
 
 ### 6.9: Publish to npm
 
-Ask via AskUserQuestion (publish to npm now, or skip). If yes:
+Publish now — **no prompt**. Starting `/system:release` is the intent to publish, and any failure earlier in the process would have already stopped the run before reaching here, so if execution got this far, publish:
 
 ```bash
 pnpm run publish:cli
 ```
 
-The `prepublishOnly` hook in `packages/cli/package.json` builds before publishing.
+The `prepublishOnly` hook in `packages/cli/package.json` builds before publishing. (If the publish itself fails — e.g. an expired token — that is a genuine failure: report it and retry per the auth guidance below; do not silently skip it.)
 
 #### Authentication: use a granular access token, not `npm login`
 
