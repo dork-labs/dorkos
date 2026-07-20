@@ -109,6 +109,85 @@ describe('scanInstalledPackages', () => {
     });
   });
 
+  it('walks the shapes directory so installed Shapes are visible (DOR-355 regression)', async () => {
+    // A Shape installs to `<dorkHome>/shapes/<name>`, a root the scanner
+    // originally never walked — so installed Shapes never appeared at
+    // /marketplace?view=installed even though the install succeeded.
+    const shapeDir = join(dorkHome, 'shapes', 'linear-ops');
+    await writeManifest(shapeDir, {
+      schemaVersion: 1,
+      type: 'shape',
+      name: 'linear-ops',
+      version: '2.0.0',
+    });
+    await writeMetadata(shapeDir, {
+      name: 'linear-ops',
+      version: '2.0.0',
+      type: 'shape',
+      installedFrom: 'dorkos-community',
+      installedAt: '2026-07-17T12:00:00.000Z',
+    });
+
+    const result = await scanInstalledPackages(dorkHome);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      name: 'linear-ops',
+      version: '2.0.0',
+      type: 'shape',
+      installPath: shapeDir,
+      installedFrom: 'dorkos-community',
+      installedAt: '2026-07-17T12:00:00.000Z',
+      scope: 'global',
+    });
+  });
+
+  it('surfaces all five package types together across every install root', async () => {
+    // One install per type, each at its real install root (skill-packs and
+    // adapters share plugins/ with plugins; agents and shapes have their own
+    // roots) — the load-bearing "no type is invisible to the scan" contract.
+    await writeManifest(join(dorkHome, 'plugins', 'p'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'p',
+      version: '1.0.0',
+    });
+    await writeManifest(join(dorkHome, 'plugins', 'sp'), {
+      schemaVersion: 1,
+      type: 'skill-pack',
+      name: 'sp',
+      version: '1.0.0',
+    });
+    await writeManifest(join(dorkHome, 'plugins', 'ad'), {
+      schemaVersion: 1,
+      type: 'adapter',
+      name: 'ad',
+      version: '1.0.0',
+    });
+    await writeManifest(join(dorkHome, 'agents', 'a'), {
+      schemaVersion: 1,
+      type: 'agent',
+      name: 'a',
+      version: '1.0.0',
+    });
+    await writeManifest(join(dorkHome, 'shapes', 's'), {
+      schemaVersion: 1,
+      type: 'shape',
+      name: 's',
+      version: '1.0.0',
+    });
+
+    const result = await scanInstalledPackages(dorkHome);
+    const byType = Object.fromEntries(result.map((p) => [p.type, p.name]));
+    expect(byType).toEqual({
+      plugin: 'p',
+      'skill-pack': 'sp',
+      adapter: 'ad',
+      agent: 'a',
+      shape: 's',
+    });
+  });
+
   it('omits provenance fields when the install-metadata sidecar is missing', async () => {
     const pluginDir = join(dorkHome, 'plugins', 'orphan-plugin');
     await writeManifest(pluginDir, {

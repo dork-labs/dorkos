@@ -115,6 +115,17 @@ export function getActiveShapeName(): string | null {
 }
 
 /**
+ * Clear the active Shape (`ui.shapes.active` → `null`). Called when the active
+ * Shape is uninstalled so the pointer never dangles at a deleted install. The
+ * whole-section write preserves the sibling `agentDefaults` / `autoFollowAgent`
+ * prefs (deepMerge replaces arrays), mirroring {@link createShapeConfigStore}.
+ */
+export function clearActiveShape(): void {
+  const ui = configManager.get('ui');
+  configManager.set('ui', { ...ui, shapes: { ...ui.shapes, active: null } });
+}
+
+/**
  * List every installed Shape under `{dorkHome}/shapes/`, tagging the active one.
  * Unreadable / non-Shape directories are skipped silently, mirroring the
  * best-effort discovery elsewhere in the marketplace.

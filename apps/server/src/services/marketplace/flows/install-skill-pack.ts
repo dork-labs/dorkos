@@ -17,6 +17,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { SkillFrontmatterSchema } from '@dorkos/skills';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { atomicMove } from '../lib/atomic-move.js';
+import { installRootDirForType } from '../lib/install-roots.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
@@ -82,7 +83,7 @@ function computeInstallRoot(
   if (projectPath) {
     return path.join(projectPath, '.dork', 'plugins', packageName);
   }
-  return path.join(dorkHome, 'plugins', packageName);
+  return path.join(dorkHome, installRootDirForType('skill-pack'), packageName);
 }
 
 /**

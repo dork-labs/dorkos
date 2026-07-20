@@ -17,6 +17,7 @@ import type {
   AgentPackageManifest,
   MarketplacePackageManifest,
   PluginPackageManifest,
+  ShapePackageManifest,
   SkillPackPackageManifest,
 } from '@dorkos/marketplace';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../types.js';
@@ -123,6 +124,26 @@ function buildAdapterManifest(): AdapterPackageManifest {
   };
 }
 
+function buildShapeManifest(overrides: Partial<ShapePackageManifest> = {}): ShapePackageManifest {
+  return {
+    schemaVersion: 1,
+    name: 'fixture-shape',
+    version: '1.0.0',
+    type: 'shape',
+    description: 'Shape fixture',
+    tags: [],
+    layers: [],
+    requires: [],
+    activates: [],
+    extensions: [],
+    layout: {},
+    agents: [],
+    schedules: [],
+    connections: [],
+    ...overrides,
+  } as ShapePackageManifest;
+}
+
 /** Build a clean preview with no conflicts and no warnings. */
 function buildEmptyPreview(overrides: Partial<PermissionPreview> = {}): PermissionPreview {
   return {
@@ -160,6 +181,7 @@ function buildDeps(): {
   agentFlow: { install: ReturnType<typeof vi.fn> };
   skillPackFlow: { install: ReturnType<typeof vi.fn> };
   adapterFlow: { install: ReturnType<typeof vi.fn> };
+  shapeFlow: { install: ReturnType<typeof vi.fn> };
   uninstallFlow: { uninstall: ReturnType<typeof vi.fn> };
   logger: Logger;
 } {
@@ -197,6 +219,7 @@ function buildDeps(): {
     agentFlow,
     skillPackFlow,
     adapterFlow,
+    shapeFlow,
     uninstallFlow,
     logger,
   };
@@ -850,12 +873,15 @@ describe('MarketplaceInstaller', () => {
       const installer = new MarketplaceInstaller(deps);
       const result = await installer.update({ name: 'updateable-plugin' });
 
-      // Uninstall first, with purge: false (the data preservation contract).
+      // Uninstall first, with purge: false (the data preservation contract)
+      // and deactivateShape: false (an update is a replace, not a removal —
+      // the active-Shape pointer must survive the round trip).
       expect(uninstallFlow.uninstall).toHaveBeenCalledTimes(1);
       expect(uninstallFlow.uninstall).toHaveBeenCalledWith({
         name: 'updateable-plugin',
         purge: false,
         projectPath: undefined,
+        deactivateShape: false,
       });
 
       // Then install fresh with force: true (so any residual collision
@@ -910,6 +936,115 @@ describe('MarketplaceInstaller', () => {
         'uninstall blew up'
       );
       expect(pluginFlow.install).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('update() of the active Shape', () => {
+    /** Wire deps for a Shape update round trip; returns the hook mocks. */
+    function wireShapeUpdate(
+      activeShapeName: string | null,
+      shapeName = 'linear-ops'
+    ): {
+      deps: InstallerDeps;
+      shapeFlow: { install: ReturnType<typeof vi.fn> };
+      uninstallFlow: { uninstall: ReturnType<typeof vi.fn> };
+      reapplyShape: ReturnType<typeof vi.fn>;
+      logger: Logger;
+    } {
+      const built = buildDeps();
+      const manifest = buildShapeManifest({ name: shapeName });
+
+      wireLocalResolution(built.resolver, shapeName, `/tmp/${shapeName}`);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      built.previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      built.shapeFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      built.uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: shapeName,
+        removedFiles: 3,
+        preservedData: [],
+      });
+
+      const reapplyShape = vi.fn().mockResolvedValue({ ok: true });
+      const deps: InstallerDeps = {
+        ...built.deps,
+        shapeUpdateHooks: {
+          getActiveShapeName: () => activeShapeName,
+          reapplyShape,
+        },
+      };
+      return {
+        deps,
+        shapeFlow: built.shapeFlow,
+        uninstallFlow: built.uninstallFlow,
+        reapplyShape,
+        logger: built.logger,
+      };
+    }
+
+    it('suppresses deactivation during the internal uninstall and re-applies the active Shape', async () => {
+      // The full active-Shape update contract: the uninstall half must not
+      // clear ui.shapes.active (deactivateShape: false), and after the fresh
+      // version lands the Shape is re-applied so the cockpit picks it up.
+      const { deps, shapeFlow, uninstallFlow, reapplyShape } = wireShapeUpdate('linear-ops');
+
+      const installer = new MarketplaceInstaller(deps);
+      const result = await installer.update({ name: 'linear-ops' });
+
+      expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'linear-ops', deactivateShape: false })
+      );
+      expect(shapeFlow.install).toHaveBeenCalledTimes(1);
+      expect(reapplyShape).toHaveBeenCalledTimes(1);
+      expect(reapplyShape).toHaveBeenCalledWith('linear-ops');
+      expect(result.type).toBe('shape');
+    });
+
+    it('does not re-apply when the updated Shape is not the active one', async () => {
+      const { deps, reapplyShape } = wireShapeUpdate('some-other-shape');
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.update({ name: 'linear-ops' });
+
+      expect(reapplyShape).not.toHaveBeenCalled();
+    });
+
+    it('does not re-apply for a non-Shape package that shares the active Shape name', async () => {
+      // Cross-type same-name edge: a PLUGIN named after the active Shape must
+      // not trigger a Shape re-apply — the type guard on the install result
+      // keys the decision, not the name alone.
+      const built = buildDeps();
+      const manifest = buildPluginManifest({ name: 'linear-ops' });
+      wireLocalResolution(built.resolver, 'linear-ops');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      built.previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      built.pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      built.uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'linear-ops',
+        removedFiles: 1,
+        preservedData: [],
+      });
+      const reapplyShape = vi.fn();
+      const installer = new MarketplaceInstaller({
+        ...built.deps,
+        shapeUpdateHooks: { getActiveShapeName: () => 'linear-ops', reapplyShape },
+      });
+
+      await installer.update({ name: 'linear-ops' });
+
+      expect(reapplyShape).not.toHaveBeenCalled();
+    });
+
+    it('reports update success even when the post-update re-apply fails (best-effort)', async () => {
+      const { deps, reapplyShape, logger } = wireShapeUpdate('linear-ops');
+      reapplyShape.mockRejectedValue(new Error('apply exploded'));
+
+      const installer = new MarketplaceInstaller(deps);
+      const result = await installer.update({ name: 'linear-ops' });
+
+      expect(result.ok).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('apply exploded'));
     });
   });
 

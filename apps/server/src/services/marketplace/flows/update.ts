@@ -24,6 +24,7 @@ import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplaceJson, MarketplaceJsonEntry, PackageType } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
 import type { InstallRequest, InstallResult, MarketplaceSource } from '../types.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 
@@ -186,20 +187,21 @@ export class UpdateFlow {
   }
 
   /**
-   * Walk the install roots under `<dorkHome>/plugins/` and
-   * `<dorkHome>/agents/`, reading each `.dork/manifest.json` for the
-   * canonical package fields and `.dork/install-metadata.json` for the
-   * provenance fields. Unreadable manifests are silently skipped so a
-   * single malformed install never blocks the update check.
+   * Walk every global install root under `dorkHome`
+   * ({@link INSTALL_ROOTS_WITH_TYPE}: `plugins/`, `agents/`, `shapes/`),
+   * reading each `.dork/manifest.json` for the canonical package fields and
+   * `.dork/install-metadata.json` for the provenance fields. Unreadable
+   * manifests are silently skipped so a single malformed install never blocks
+   * the update check.
    *
    * @internal
    */
   private async listInstalled(): Promise<InstalledPackage[]> {
     const results: InstalledPackage[] = [];
-    const roots: Array<{ dir: string; inferredType: PackageType }> = [
-      { dir: path.join(this.deps.dorkHome, 'plugins'), inferredType: 'plugin' },
-      { dir: path.join(this.deps.dorkHome, 'agents'), inferredType: 'agent' },
-    ];
+    const roots = INSTALL_ROOTS_WITH_TYPE.map(({ dir, representativeType }) => ({
+      dir: path.join(this.deps.dorkHome, dir),
+      inferredType: representativeType,
+    }));
 
     for (const root of roots) {
       const entries = await readDirSafe(root.dir);

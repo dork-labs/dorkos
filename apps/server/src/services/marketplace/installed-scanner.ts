@@ -1,8 +1,8 @@
 /**
- * Installed-package scanner — walks `${dorkHome}/plugins/` and
- * `${dorkHome}/agents/`, reads each package's `.dork/manifest.json`, and
- * merges in the `.dork/install-metadata.json` provenance sidecar where
- * available.
+ * Installed-package scanner — walks every global install root under `dorkHome`
+ * ({@link INSTALL_ROOT_DIRS}: `plugins/`, `agents/`, `shapes/`), reads each
+ * package's `.dork/manifest.json`, and merges in the
+ * `.dork/install-metadata.json` provenance sidecar where available.
  *
  * Used by both the HTTP route (`GET /api/marketplace/installed`) and the
  * `marketplace_list_installed` MCP tool so the scan logic lives in one place.
@@ -16,6 +16,7 @@ import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { INSTALL_ROOT_DIRS } from './lib/install-roots.js';
 import { readInstallMetadata } from './installed-metadata.js';
 
 /**
@@ -63,9 +64,6 @@ export interface AgentScopeRef {
   name?: string;
 }
 
-/** Subdirectories of `dorkHome` that hold installed packages. */
-const INSTALL_ROOTS = ['plugins', 'agents'] as const;
-
 /**
  * Scan all installed packages and return only those whose `type` makes
  * them candidates for Claude Agent SDK runtime activation (`plugin`,
@@ -92,11 +90,12 @@ export async function listEnabledPluginNames(dorkHome: string): Promise<string[]
 }
 
 /**
- * Walk `${dorkHome}/plugins/*` and `${dorkHome}/agents/*`, read each
- * `.dork/manifest.json`, merge in any `.dork/install-metadata.json` sidecar,
- * and return the resulting {@link InstalledPackage} list. Directories without
- * a readable manifest are skipped silently — partial installs and unrelated
- * sibling files never poison the result.
+ * Walk every global install root under `dorkHome` ({@link INSTALL_ROOT_DIRS}:
+ * `plugins/`, `agents/`, `shapes/`), read each `.dork/manifest.json`, merge in
+ * any `.dork/install-metadata.json` sidecar, and return the resulting
+ * {@link InstalledPackage} list. Directories without a readable manifest are
+ * skipped silently — partial installs and unrelated sibling files never poison
+ * the result.
  *
  * @param dorkHome - Resolved DorkOS data directory
  *   (see `.claude/rules/dork-home.md`)
@@ -108,7 +107,7 @@ export async function scanInstalledPackages(
 ): Promise<InstalledPackage[]> {
   const globalResults: InstalledPackage[] = [];
 
-  for (const rootName of INSTALL_ROOTS) {
+  for (const rootName of INSTALL_ROOT_DIRS) {
     const root = join(dorkHome, rootName);
     const entries = await listPackageDirEntries(root);
     for (const entry of entries) {
@@ -395,7 +394,8 @@ async function safeReaddir(dir: string): Promise<string[]> {
  * a walker would list it as a phantom duplicate package (and the merged-by-name
  * views could non-deterministically resolve `installPath` to the backup).
  *
- * Only for package-root walks (`plugins/`, `agents/`, `.dork/plugins/`) —
+ * Only for package-root walks (`plugins/`, `agents/`, `shapes/`,
+ * `.dork/plugins/`) —
  * backups are always siblings of an install target, never package-internal,
  * so the `computeProvides` helpers keep plain {@link safeReaddir}.
  */

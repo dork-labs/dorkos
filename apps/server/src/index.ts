@@ -81,9 +81,10 @@ import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill
 import { AdapterInstallFlow } from './services/marketplace/flows/install-adapter.js';
 import { ShapeInstallFlow } from './services/marketplace/flows/install-shape.js';
 import { createShapesRouter } from './routes/shapes.js';
-import type { ApplyShapeDeps } from './services/shapes/apply-shape.js';
+import { applyShape, type ApplyShapeDeps } from './services/shapes/apply-shape.js';
 import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
 import {
+  clearActiveShape,
   createFsShapeManifestResolver,
   createShapeConfigStore,
   createShapeSecretChecker,
@@ -1168,8 +1169,33 @@ async function start() {
       dorkHome,
       extensionManager,
       adapterManager,
+      // Keep `ui.shapes.active` honest when the active Shape is uninstalled.
+      shapeDeactivator: { getActiveShapeName, clearActiveShape },
       logger,
     });
+
+    // Shape apply wiring (DOR-355) — constructed here, before the installer,
+    // because the installer's update() path re-applies the active Shape after
+    // an uninstall → reinstall replace. The `/api/shapes` routes mounted below
+    // share these exact deps.
+    const shapeScheduleService =
+      taskStore && schedulerService
+        ? new ShapeScheduleService({
+            taskStore,
+            scheduler: schedulerService,
+            meshCore,
+            dorkHome,
+            logger,
+          })
+        : { existingScheduleNames: () => [], createSchedule: async () => undefined };
+    const shapeApplyDeps: ApplyShapeDeps = {
+      manifestResolver: createFsShapeManifestResolver(dorkHome),
+      extensionManager,
+      secretChecker: createShapeSecretChecker(dorkHome),
+      agentRegistry: { listWithPaths: () => meshCore?.listWithPaths() ?? [] },
+      scheduleService: shapeScheduleService,
+      configStore: createShapeConfigStore(),
+    };
 
     const marketplaceInstaller = new MarketplaceInstaller({
       dorkHome,
@@ -1182,6 +1208,12 @@ async function start() {
       adapterFlow: marketplaceAdapterFlow,
       shapeFlow: marketplaceShapeFlow,
       uninstallFlow: marketplaceUninstallFlow,
+      // Updating the active Shape keeps its pointer through the replace and
+      // re-applies the new version so the cockpit reflects the update.
+      shapeUpdateHooks: {
+        getActiveShapeName,
+        reapplyShape: (name) => applyShape(name, shapeApplyDeps),
+      },
       logger,
     });
 
@@ -1242,25 +1274,8 @@ async function start() {
     // Mount Shape routes (DOR-355). Apply/fork ride the marketplace block
     // because apply enables extensions (needs `extensionManager`). Schedules
     // degrade to a no-op when the scheduler is off; extensions, chrome, and
-    // agent offers still apply.
-    const shapeScheduleService =
-      taskStore && schedulerService
-        ? new ShapeScheduleService({
-            taskStore,
-            scheduler: schedulerService,
-            meshCore,
-            dorkHome,
-            logger,
-          })
-        : { existingScheduleNames: () => [], createSchedule: async () => undefined };
-    const shapeApplyDeps: ApplyShapeDeps = {
-      manifestResolver: createFsShapeManifestResolver(dorkHome),
-      extensionManager,
-      secretChecker: createShapeSecretChecker(dorkHome),
-      agentRegistry: { listWithPaths: () => meshCore?.listWithPaths() ?? [] },
-      scheduleService: shapeScheduleService,
-      configStore: createShapeConfigStore(),
-    };
+    // agent offers still apply. (`shapeApplyDeps` is constructed above the
+    // installer so the update path can re-apply the active Shape.)
     app.use(
       '/api/shapes',
       createShapesRouter({

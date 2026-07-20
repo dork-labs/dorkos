@@ -14,26 +14,8 @@ import matter from 'gray-matter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../relay/adapter-manager.js';
+import { INSTALL_ROOT_DIRS, installRootDirForType } from './lib/install-roots.js';
 import type { ConflictReport } from './types.js';
-
-/** The install-root directory names, one per package-type family. */
-const INSTALL_ROOTS = ['agents', 'plugins', 'shapes'] as const;
-
-/**
- * The install-root directory for a package type. Agents live under `agents/`,
- * Shapes under `shapes/`, and everything else (plugin / skill-pack / adapter)
- * under `plugins/`.
- *
- * @param type - The package type.
- * @returns The directory name the package installs into.
- */
-function installRootForType(
-  type: MarketplacePackageManifest['type']
-): (typeof INSTALL_ROOTS)[number] {
-  if (type === 'agent') return 'agents';
-  if (type === 'shape') return 'shapes';
-  return 'plugins';
-}
 
 /**
  * Input to {@link ConflictDetector.detect}. Captures everything the
@@ -191,7 +173,7 @@ export class ConflictDetector {
     ctx: ConflictDetectionContext,
     scopeRoot: string
   ): Promise<ConflictReport[]> {
-    const installRoot = installRootForType(ctx.manifest.type);
+    const installRoot = installRootDirForType(ctx.manifest.type);
     const targetPath = join(scopeRoot, installRoot, ctx.manifest.name);
     if (await pathExists(targetPath)) {
       return [
@@ -210,7 +192,7 @@ export class ConflictDetector {
     // the scanner then emits duplicates and an uninstall can never reach the
     // shadowed slot. Surface it as a non-blocking warning so the collision isn't
     // invisible.
-    for (const otherRoot of INSTALL_ROOTS) {
+    for (const otherRoot of INSTALL_ROOT_DIRS) {
       if (otherRoot === installRoot) continue;
       const otherTypePath = join(scopeRoot, otherRoot, ctx.manifest.name);
       if (await pathExists(otherTypePath)) {
@@ -227,7 +209,7 @@ export class ConflictDetector {
 
     // Cross-scope warning: agent-local install shadowing a global package
     if (ctx.projectPath) {
-      const globalCandidates = INSTALL_ROOTS.map((root) =>
+      const globalCandidates = INSTALL_ROOT_DIRS.map((root) =>
         join(this.#dorkHome, root, ctx.manifest.name)
       );
       for (const candidate of globalCandidates) {

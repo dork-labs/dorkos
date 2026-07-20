@@ -19,6 +19,7 @@ import type { AgentPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { createAgentWorkspace } from '../../core/agent-creator.js';
 import { atomicMove } from '../lib/atomic-move.js';
+import { installRootDirForType } from '../lib/install-roots.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
@@ -142,7 +143,7 @@ function computeTargetDir(
   projectPath: string | undefined
 ): string {
   if (projectPath) return projectPath;
-  return path.join(dorkHome, 'agents', manifest.name);
+  return path.join(dorkHome, installRootDirForType(manifest.type), manifest.name);
 }
 
 /**

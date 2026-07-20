@@ -23,6 +23,7 @@ import path from 'node:path';
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
+import { installRootDirForType } from '../lib/install-roots.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { compileStagedExtensions, type StagedExtensionCompiler } from '../lib/staged-extensions.js';
 import { runTransaction } from '../transaction.js';
@@ -71,7 +72,11 @@ export class ShapeInstallFlow {
     manifest: ShapePackageManifest,
     _opts: Pick<InstallRequest, 'projectPath'>
   ): Promise<InstallResult> {
-    const installRoot = path.join(this.deps.dorkHome, 'shapes', manifest.name);
+    const installRoot = path.join(
+      this.deps.dorkHome,
+      installRootDirForType(manifest.type),
+      manifest.name
+    );
 
     return runTransaction<InstallResult>({
       name: `install-shape-${manifest.name}`,
