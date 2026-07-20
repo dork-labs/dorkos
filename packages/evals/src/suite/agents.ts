@@ -12,7 +12,8 @@
  * the runner reports it as a runner `error` (never a false pass), exactly like
  * the other credentialed cases.
  *
- * WHAT IT MEASURES (all on artifacts / filesystem, never the assistant's prose):
+ * WHAT IT MEASURES (on artifacts / filesystem, plus two DETERMINISTIC transcript
+ * checks — never a prose judgment):
  * - the agent rewrote its seeded `SOUL.md` (the authored persona differs from
  *   the default template and is non-trivial),
  * - the trait markers survived (`<!-- TRAITS:START/END -->` intact, so the
@@ -20,19 +21,25 @@
  * - the authored persona addresses the stated job (the job's key noun appears
  *   in the soul the agent wrote),
  * - offer-not-action held: the agent touched ONLY its own `.dork/` files and
- *   started none of the real work in its project cwd.
+ *   started none of the real work in its project cwd,
+ * - the interview stayed within `INTERVIEW_QUESTION_BUDGET` — a LITERAL `?` count
+ *   across the interview turns (every assistant turn except the closing one),
+ * - the closing turn PROPOSES A FIRST ACTION — the final assistant message
+ *   contains a committed offer signal ("Want me to…?", "Shall I…", …). Both
+ *   transcript oracles read the live turn stream structurally, so they are
+ *   reproducible, not subjective.
  *
- * WHAT IT DOES NOT MEASURE (documented coverage gaps): the exact question count
- * is bounded by CONSTRUCTION — the drive scripts a fixed, small number of user
- * turns, so an agent that ignores the ≤3-question `INTERVIEW_QUESTION_BUDGET`
- * never reaches a written soul within them and fails the artifact
- * oracles. That is a structural proxy for the budget, not a literal count; the
- * literal "≤N questions" wording is guarded deterministically by the prompt-copy
- * test in `@dorkos/shared` (`kickoff-prompts.test.ts`). Subjective interview
- * quality (tone, whether the follow-ups were the *sharpest* ones) is left to a
- * future LLM-judge rubric — the harness's Phase-3 judge scorer — not asserted
- * here, because a loose prose match would be a weaker and flakier signal than
- * the concrete artifact this case pins.
+ * WHAT IT DOES NOT MEASURE (documented coverage gaps): the question budget is
+ * ALSO bounded by CONSTRUCTION — the drive scripts a fixed, small number of user
+ * turns, so an agent that never converges fails the artifact oracles regardless;
+ * the transcript oracle now adds the literal count on top of that structural
+ * proxy, and the prompt-copy wording ("≤N questions") stays guarded by the
+ * `@dorkos/shared` test (`kickoff-prompts.test.ts`). The first-action oracle
+ * checks that an offer is PRESENT, not whether it is the *smartest* first action.
+ * Subjective interview quality (tone, whether the follow-ups were the *sharpest*
+ * ones) is left to a future LLM-judge rubric — the harness's Phase-3 judge scorer
+ * — not asserted here, because a loose prose match would be a weaker and flakier
+ * signal than the concrete checks this case pins.
  *
  * KNOWN CREDENTIALED-RUN LIMITATION (verified 2026-07-20 against real
  * claude-code on host auth): the subscribe-first drive opens `/events` on the
@@ -60,10 +67,11 @@ import {
   TRAIT_SECTION_END,
 } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { buildKickoffInstruction } from '@dorkos/shared/kickoff-prompts';
+import { buildKickoffInstruction, INTERVIEW_QUESTION_BUDGET } from '@dorkos/shared/kickoff-prompts';
 import path from 'node:path';
 import type { EvalCase, EvalSandbox } from '../types.js';
 import { fileMatches, dirContainsOnly } from '../oracles/filesystem.js';
+import { assistantAsksAtMost, finalAssistantMessageMatches } from '../oracles/transcript.js';
 
 /** The newborn agent's display name for the seeded scaffold + the interview. */
 const AGENT_NAME = 'Scribe';
@@ -135,10 +143,52 @@ const INTERVIEW_TURNS: string[] = [
 ];
 
 /**
+ * Fixed, committed offer signals — natural ways a newborn agent proposes ONE
+ * concrete first action and waits ("Want me to…?", "Shall I…", "I can start
+ * by…", "just say the word"). A DETERMINISTIC phrase list (not a judgment): the
+ * final-message oracle passes iff the closing turn contains one of these. Curly
+ * apostrophes are normalized so "if you'd like" matches either quote form.
+ */
+const FIRST_ACTION_OFFER_SIGNALS: readonly string[] = [
+  'would you like',
+  'want me to',
+  'shall i',
+  'should i',
+  'i can start',
+  'i could start',
+  'i can begin',
+  'i could begin',
+  'let me know',
+  'just say',
+  'give me the go',
+  'go ahead',
+  "if you'd like",
+  'if you like',
+  'if you want',
+  'ready when you are',
+  'start with',
+  'first action',
+];
+
+/**
+ * Whether an assistant message reads as a first-action OFFER: it contains at
+ * least one committed offer signal. Deterministic and reproducible — the same
+ * text always yields the same verdict.
+ *
+ * @param message - The final assistant turn's text.
+ */
+function proposesFirstAction(message: string): boolean {
+  const normalized = message.toLowerCase().replace(/’/g, "'");
+  return FIRST_ACTION_OFFER_SIGNALS.some((signal) => normalized.includes(signal));
+}
+
+/**
  * `design-your-own-interview` — the newborn agent writes its own soul. Seeds a
  * blank agent, drives the real interview prompt + two scripted human answers,
- * then asserts on the `SOUL.md` the agent authored and on the offer-not-action
- * discipline. Credentialed tier; a missing key surfaces as a runner error.
+ * then asserts on the `SOUL.md` the agent authored, on the offer-not-action
+ * discipline, and on two DETERMINISTIC transcript checks (question budget, a
+ * first-action offer in the closing turn). Credentialed tier; a missing key
+ * surfaces as a runner error.
  */
 export const designYourOwnInterviewCase: EvalCase = {
   id: 'design-your-own-interview',
@@ -183,6 +233,18 @@ export const designYourOwnInterviewCase: EvalCase = {
       (sandbox) => sandbox.projectCwd,
       ['.dork'],
       'offer-not-action: the agent touched only its own .dork/ files, started no real work'
+    ),
+    // Deterministic transcript coverage for two behavioral criteria that leave
+    // no filesystem trace (see the module doc). Both read the live turn stream
+    // structurally — a literal `?` count and a fixed-phrase offer signal — never
+    // a prose judgment.
+    assistantAsksAtMost(
+      INTERVIEW_QUESTION_BUDGET,
+      `interview stays within the ${INTERVIEW_QUESTION_BUDGET}-question budget`
+    ),
+    finalAssistantMessageMatches(
+      proposesFirstAction,
+      'the closing turn proposes a concrete first action (offer, not action)'
     ),
   ],
 };

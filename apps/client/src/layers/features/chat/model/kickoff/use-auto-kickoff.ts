@@ -15,12 +15,27 @@
  * 3. The "only into an empty, idle session" gate — after the trigger the session
  *    is streaming, so the rekeyed remount is refused by state alone.
  *
- * Failure: a REJECTED trigger started no turn, so the guards un-latch for
- * exactly ONE retry (the module-level `failedKickoffs` set bounds it). When the
- * retry is also spent, the record is marked `greetingFailed`, which the empty
- * session renders as an honest, actionable line ("{name} couldn't say hello
- * just now — send a message to get started.") — never a dead Retry button (the
- * trigger path raises no error banner for a kickoff: the person typed nothing).
+ * Failure comes two ways, both surfacing the SAME honest line ("{name} couldn't
+ * say hello just now — send a message to get started.") on the empty session —
+ * never a dead Retry button (the trigger path raises no error banner for a
+ * kickoff: the person typed nothing):
+ * 1. The TRIGGER is rejected — the POST failed, so no turn started. The guards
+ *    un-latch for exactly ONE retry (the module-level `failedKickoffs` set bounds
+ *    it); when that retry is also spent, the record is marked `greetingFailed`.
+ * 2. The turn DIES MID-STREAM — the POST 202'd and the turn started (streaming)
+ *    but ended or errored before any assistant text. The `fired` latch stays set,
+ *    so path 1's retry never runs; a second effect watches the kickoff turn's
+ *    lifecycle and, when a kickoff that was observed streaming settles back to an
+ *    EMPTY session, marks `greetingFailed`. "Empty" is CONTENT-AWARE (text/tool
+ *    output, not error parts): a typed error renders an inline error part that
+ *    briefly makes the list non-empty, but claude-code never persists it, so the
+ *    turn_end reload drops it — treating that blip as landed content would clear
+ *    the marker and swallow the honest line. The flip also waits for hydration
+ *    (`streamReadyCursor`) so a session revisited before its snapshot lands is
+ *    never falsely flipped. Scoped to the kickoff turn alone: the moment real
+ *    content lands the session stays non-empty, so a LATER failed turn can't flip
+ *    it.
+ *
  * A trigger that was accepted never un-latches; the empty+idle gate
  * independently prevents a double-greet even if it did.
  *
@@ -32,13 +47,40 @@
  */
 import { useEffect } from 'react';
 import { useAgentBirthRecord, useAgentBirthStore } from '@/layers/shared/model';
-import type { ChatStatus } from '../chat-types';
+import type { ChatMessage, ChatStatus } from '../chat-types';
 
 /** Session ids whose kickoff has already been triggered this page session. */
 const firedKickoffs = new Set<string>();
 
 /** Session ids whose kickoff trigger already failed once — no further retries. */
 const failedKickoffs = new Set<string>();
+
+/**
+ * Session ids whose kickoff turn was observed actually streaming. The
+ * mid-stream failure detector only treats a settle-to-empty as a dead greeting
+ * once the turn was seen live — so the brief window between firing and the first
+ * turn frame is never mistaken for a failure.
+ */
+const kickoffStreamStarted = new Set<string>();
+
+/**
+ * Whether a rendered message carries GENUINE assistant output the person would
+ * read as a greeting — text or tool output. An error-only bubble does NOT count:
+ * a typed mid-stream error folds into a rendered error part (so the message list
+ * transiently has one entry), but for claude-code that error is never persisted
+ * to JSONL, so the turn_end history reload drops it and the list returns to
+ * empty. Counting it as "content landed" would clear the mid-stream marker and
+ * suppress the honest line the reload should surface — so the "landed" signal is
+ * content-aware, not a raw message count.
+ *
+ * @param message - A rendered chat message.
+ */
+function hasGreetableContent(message: ChatMessage): boolean {
+  if (message.role === 'user') return true;
+  if (message.content.trim().length > 0) return true;
+  if ((message.toolCalls?.length ?? 0) > 0) return true;
+  return message.parts.some((part) => part.type === 'tool_call');
+}
 
 /** Inputs for {@link useAutoKickoff}. */
 export interface UseAutoKickoffParams {
@@ -54,8 +96,21 @@ export interface UseAutoKickoffParams {
   cwd: string | null;
   /** The coarse rendered status — the kickoff only fires into an `idle` session. */
   status: ChatStatus;
-  /** How many messages are rendered — the kickoff only fires into an empty session. */
-  messageCount: number;
+  /**
+   * The rendered message list. The kickoff only fires into an EMPTY session, and
+   * the mid-stream failure detector reads it content-aware ({@link
+   * hasGreetableContent}) so a transient error-only render is not mistaken for a
+   * landed greeting.
+   */
+  messages: ChatMessage[];
+  /**
+   * Whether the durable stream snapshot has landed for this session
+   * (`streamReadyCursor !== null`). Gates the mid-stream flip so a session
+   * revisited BEFORE it rehydrates — momentarily empty though its greeting
+   * succeeded server-side — is never marked failed; the flip waits until the
+   * emptiness is confirmed real.
+   */
+  hydrated: boolean;
   /** Trigger the agent's first turn (from `useSessionSubmit`). Rejects when the trigger POST fails. */
   submitKickoff: (content: string) => Promise<void>;
 }
@@ -70,10 +125,13 @@ export function useAutoKickoff({
   sessionId,
   cwd,
   status,
-  messageCount,
+  messages,
+  hydrated,
   submitKickoff,
 }: UseAutoKickoffParams): void {
   const record = useAgentBirthRecord(sessionId);
+  const messageCount = messages.length;
+  const hasLandedContent = messages.some(hasGreetableContent);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -114,6 +172,47 @@ export function useAutoKickoff({
       }
     });
   }, [sessionId, cwd, record, status, messageCount, submitKickoff]);
+
+  // Honest mid-stream failure: a kickoff whose trigger was ACCEPTED (202) can
+  // still die — the turn starts, then ends or errors before any assistant text.
+  // The `fired` latch stays set, so the rejection retry above never runs. Watch
+  // the kickoff turn's lifecycle and, when a turn that was observed streaming
+  // settles back to an EMPTY idle/error session, surface the same honest line so
+  // the birth moment never falls back to the generic "Start a conversation" copy.
+  useEffect(() => {
+    if (!sessionId || !record) return;
+    // Only a session whose kickoff was actually triggered — never an ordinary
+    // one, and never before the fire effect above has run.
+    if (!record.fired && !firedKickoffs.has(sessionId)) return;
+    if (record.greetingFailed) return;
+    // GENUINE content (text or tool output) means the greeting landed — the turn
+    // produced output, so the kickoff succeeded. Content-aware on purpose: a
+    // transient error-only render does NOT clear the marker, so the honest flip
+    // still fires after the turn_end reload drops that unpersisted error. This is
+    // also what scopes the detector to the kickoff turn alone — once real content
+    // lands it stays, so a LATER failed turn can never re-enter.
+    if (hasLandedContent) {
+      kickoffStreamStarted.delete(sessionId);
+      return;
+    }
+    if (status === 'streaming') {
+      // The kickoff turn is live. Remember it actually started so a subsequent
+      // settle to an empty idle/error is a genuine mid-stream death — not the
+      // brief window between firing and the first turn frame arriving.
+      kickoffStreamStarted.add(sessionId);
+      return;
+    }
+    // `idle` or `error` with no genuine content. If the kickoff turn had started
+    // streaming, it ended or errored before emitting any assistant text — the
+    // agent never got to say hello. Wait for hydration first: a session revisited
+    // before its snapshot lands is momentarily empty though its greeting may have
+    // succeeded, so the flip only fires once the emptiness is confirmed real.
+    if (hydrated && kickoffStreamStarted.has(sessionId)) {
+      // Drop the marker so a settled failed birth leaves no lingering entry.
+      kickoffStreamStarted.delete(sessionId);
+      useAgentBirthStore.getState().markGreetingFailed(sessionId);
+    }
+  }, [sessionId, record, status, hasLandedContent, hydrated]);
 }
 
 /**
@@ -125,4 +224,5 @@ export function useAutoKickoff({
 export function __resetFiredKickoffsForTest(): void {
   firedKickoffs.clear();
   failedKickoffs.clear();
+  kickoffStreamStarted.clear();
 }

@@ -4,7 +4,7 @@ import { renderHook, cleanup, waitFor } from '@testing-library/react';
 
 import { useAgentBirthStore } from '@/layers/shared/model';
 import { useAutoKickoff, __resetFiredKickoffsForTest } from '../model/kickoff/use-auto-kickoff';
-import type { ChatStatus } from '../model/chat-types';
+import type { ChatMessage, ChatStatus } from '../model/chat-types';
 
 const RECORD = {
   name: 'linear-keeper',
@@ -17,6 +17,35 @@ const RECORD = {
 
 function seedBirth(sessionId: string) {
   useAgentBirthStore.getState().register(sessionId, RECORD);
+}
+
+/** `n` assistant messages carrying genuine text — real landed content. */
+function textMsgs(n: number): ChatMessage[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `m${i}`,
+    role: 'assistant' as const,
+    content: 'Hello there',
+    parts: [{ type: 'text' as const, text: 'Hello there' }],
+    timestamp: '',
+  }));
+}
+
+/**
+ * A single assistant message whose ONLY part is an error — the transient render
+ * a typed mid-stream error produces before the turn_end reload drops it (for a
+ * runtime that does not persist the injected error, e.g. claude-code). It is NOT
+ * genuine landed content.
+ */
+function errorOnlyMsgs(): ChatMessage[] {
+  return [
+    {
+      id: 'err',
+      role: 'assistant',
+      content: '',
+      parts: [{ type: 'error', message: 'the turn exploded' }],
+      timestamp: '',
+    },
+  ];
 }
 
 describe('useAutoKickoff', () => {
@@ -37,7 +66,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -54,7 +84,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -66,7 +97,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -77,9 +109,9 @@ describe('useAutoKickoff', () => {
     seedBirth('client-id');
     const submitKickoff = vi.fn().mockResolvedValue(undefined);
     const { rerender } = renderHook(
-      (props: { sessionId: string; status: ChatStatus; messageCount: number }) =>
-        useAutoKickoff({ ...props, cwd: null, submitKickoff }),
-      { initialProps: { sessionId: 'client-id', status: 'idle' as ChatStatus, messageCount: 0 } }
+      (props: { sessionId: string; status: ChatStatus; messages: ChatMessage[] }) =>
+        useAutoKickoff({ ...props, cwd: null, hydrated: true, submitKickoff }),
+      { initialProps: { sessionId: 'client-id', status: 'idle' as ChatStatus, messages: [] } }
     );
     expect(submitKickoff).toHaveBeenCalledTimes(1);
 
@@ -87,7 +119,7 @@ describe('useAutoKickoff', () => {
     // now streaming (the kickoff turn started). The canonical remount must not
     // re-fire.
     useAgentBirthStore.getState().migrate('client-id', 'canonical-id');
-    rerender({ sessionId: 'canonical-id', status: 'streaming', messageCount: 0 });
+    rerender({ sessionId: 'canonical-id', status: 'streaming', messages: [] });
     expect(submitKickoff).toHaveBeenCalledTimes(1);
   });
 
@@ -99,7 +131,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'idle',
-        messageCount: 3,
+        messages: textMsgs(3),
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -114,7 +147,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'streaming',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -128,7 +162,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'ordinary',
         cwd: null,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -147,7 +182,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -168,7 +204,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -199,7 +236,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'sess-1',
         cwd: null,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -221,7 +259,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'first-real-session',
         cwd: RECORD.path,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -240,7 +279,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'first-real-session',
         cwd: RECORD.path,
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -255,7 +295,8 @@ describe('useAutoKickoff', () => {
         sessionId: 'unrelated-session',
         cwd: '/agents/some-other-agent',
         status: 'idle',
-        messageCount: 0,
+        messages: [],
+        hydrated: true,
         submitKickoff,
       })
     );
@@ -271,12 +312,156 @@ describe('useAutoKickoff', () => {
         sessionId: 'old-session-same-dir',
         cwd: RECORD.path,
         status: 'idle',
-        messageCount: 5,
+        messages: textMsgs(5),
+        hydrated: true,
         submitKickoff,
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
     // The record stays parked under its original key for a truly fresh session.
     expect(useAgentBirthStore.getState().records['never-visited-id']).toBeDefined();
+  });
+
+  // Mid-stream failure: the trigger 202'd (so the rejection retry path never
+  // runs and `fired` stays latched), but the turn started then died before any
+  // assistant text. The session must not fall back to the generic empty copy.
+  describe('mid-greeting failure (a 202-accepted turn that dies before any text)', () => {
+    /** Drive the kickoff lifecycle via rerenders; `submitKickoff` always resolves. */
+    function driveKickoff() {
+      const submitKickoff = vi.fn().mockResolvedValue(undefined);
+      const view = renderHook<
+        void,
+        { status: ChatStatus; messages: ChatMessage[]; hydrated?: boolean }
+      >(
+        (props) =>
+          useAutoKickoff({
+            sessionId: 'sess-1',
+            cwd: null,
+            submitKickoff,
+            hydrated: props.hydrated ?? true,
+            status: props.status,
+            messages: props.messages,
+          }),
+        { initialProps: { status: 'idle', messages: [] } }
+      );
+      return { ...view, submitKickoff };
+    }
+
+    function greetingFailed(): boolean | undefined {
+      return useAgentBirthStore.getState().records['sess-1'].greetingFailed;
+    }
+
+    it('marks the greeting failed when the kickoff turn ERRORS with no output', () => {
+      seedBirth('sess-1');
+      const { rerender, submitKickoff } = driveKickoff();
+      expect(submitKickoff).toHaveBeenCalledTimes(1);
+
+      // The trigger 202'd and the turn started streaming — nothing failed yet.
+      rerender({ status: 'streaming', messages: [] });
+      expect(greetingFailed()).toBeUndefined();
+
+      // …then it errors with no rendered content at all.
+      rerender({ status: 'error', messages: [] });
+      expect(greetingFailed()).toBe(true);
+    });
+
+    // The REAL claude-code pipeline: a typed error folds into a rendered error
+    // part (the message list transiently has ONE entry), the turn settles, then
+    // useTurnEndReconcile reloads canonical history and — because claude-code does
+    // not persist the injected error — the error part vanishes and the list
+    // returns to empty. The marker must SURVIVE the error-only blip so the honest
+    // flip fires after the reconcile.
+    it('marks failed after an error-only render blips then reconciles back to empty', () => {
+      seedBirth('sess-1');
+      const { rerender } = driveKickoff();
+
+      // Turn starts → marker set.
+      rerender({ status: 'streaming', messages: [] });
+      // The typed error renders as an error-only bubble WHILE the turn is still
+      // open. messageCount is now 1, but it is not genuine content — the marker
+      // must NOT be cleared here (the pre-fix bug deleted it on any count > 0).
+      rerender({ status: 'streaming', messages: errorOnlyMsgs() });
+      expect(greetingFailed()).toBeUndefined();
+
+      // turn_end + reconcile drop the unpersisted error → the list is empty again.
+      rerender({ status: 'idle', messages: [] });
+      expect(greetingFailed()).toBe(true);
+    });
+
+    it('marks the greeting failed when the kickoff turn ENDS empty (settles idle, no text)', () => {
+      seedBirth('sess-1');
+      const { rerender } = driveKickoff();
+
+      rerender({ status: 'streaming', messages: [] });
+      rerender({ status: 'idle', messages: [] });
+      expect(greetingFailed()).toBe(true);
+    });
+
+    it('does NOT flip when the kickoff turn streams a greeting successfully', () => {
+      seedBirth('sess-1');
+      const { rerender } = driveKickoff();
+
+      rerender({ status: 'streaming', messages: [] }); // turn live
+      rerender({ status: 'streaming', messages: textMsgs(1) }); // greeting text lands
+      rerender({ status: 'idle', messages: textMsgs(1) }); // turn settles
+      expect(greetingFailed()).toBeUndefined();
+    });
+
+    it('does NOT flip a session whose greeting landed, even when a LATER turn fails', () => {
+      seedBirth('sess-1');
+      const { rerender } = driveKickoff();
+
+      // The greeting lands and the kickoff turn settles.
+      rerender({ status: 'streaming', messages: [] });
+      rerender({ status: 'idle', messages: textMsgs(1) });
+      // A later user turn runs and then errors — but the greeting is still there,
+      // so the session is never empty and must stay untouched.
+      rerender({ status: 'streaming', messages: textMsgs(2) });
+      rerender({ status: 'error', messages: textMsgs(2) });
+      expect(greetingFailed()).toBeUndefined();
+    });
+
+    it('does NOT flip before the turn is ever observed streaming (no false positive)', () => {
+      // A record that fired but whose turn was never seen live (e.g. the status
+      // prop stays idle) must not be marked — only a turn observed streaming and
+      // then settling empty counts as a mid-stream death.
+      seedBirth('sess-1');
+      const { rerender } = driveKickoff();
+
+      rerender({ status: 'idle', messages: [] });
+      expect(greetingFailed()).toBeUndefined();
+    });
+
+    it('does NOT flip a successful newborn revisited BEFORE it rehydrates (hydration gate)', () => {
+      seedBirth('sess-1');
+      const { rerender } = driveKickoff();
+
+      // The turn was seen streaming (marker set) before the person switched away.
+      rerender({ status: 'streaming', messages: [] });
+      // Revisit before the snapshot lands: momentarily empty + idle, but the
+      // greeting actually succeeded server-side — the hydration gate holds off.
+      rerender({ status: 'idle', messages: [], hydrated: false });
+      expect(greetingFailed()).toBeUndefined();
+      // Once hydrated, the greeting loads → genuine content → still no flip.
+      rerender({ status: 'idle', messages: textMsgs(1), hydrated: true });
+      expect(greetingFailed()).toBeUndefined();
+    });
+
+    it('never marks an ordinary session with no birth record', () => {
+      const submitKickoff = vi.fn().mockResolvedValue(undefined);
+      const { rerender } = renderHook(
+        (props: { status: ChatStatus; messages: ChatMessage[] }) =>
+          useAutoKickoff({
+            sessionId: 'ordinary',
+            cwd: null,
+            submitKickoff,
+            hydrated: true,
+            ...props,
+          }),
+        { initialProps: { status: 'streaming' as ChatStatus, messages: [] as ChatMessage[] } }
+      );
+      rerender({ status: 'error', messages: [] });
+      expect(useAgentBirthStore.getState().records['ordinary']).toBeUndefined();
+    });
   });
 });

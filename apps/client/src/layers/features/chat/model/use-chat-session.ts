@@ -239,7 +239,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     sessionId,
     cwd: selectedCwd,
     status,
-    messageCount: messages.length,
+    messages,
+    hydrated: streamState.streamReadyCursor !== null,
     submitKickoff,
   });
 

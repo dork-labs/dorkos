@@ -528,7 +528,8 @@ describe('CreateAgentDialog', () => {
           sessionId: props.sessionId,
           cwd: '/home/test/.dork/agents/scout',
           status: 'idle',
-          messageCount: 0,
+          messages: [],
+          hydrated: true,
           submitKickoff,
         }),
       { initialProps: { sessionId: 'first-real-session' } }

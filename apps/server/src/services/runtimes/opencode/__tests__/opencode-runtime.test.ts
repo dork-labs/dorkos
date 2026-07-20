@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
 import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { SESSIONS } from '../../../../config/constants.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
@@ -747,6 +748,112 @@ describe('OpenCodeRuntime', () => {
       // Sidecar unreachable → EventLog fallback ([] for a never-streamed id).
       client.session.messages.mockRejectedValue(new Error('down'));
       await expect(runtime.getMessageHistory(DIRECTORY, sessionId)).resolves.toEqual([]);
+    });
+
+    // Cross-runtime kickoff-suppression evidence (agent-creation-redesign M4).
+    // The client fires the auto-first-turn kickoff runtime-blind, so an OpenCode
+    // session gets one too. FINDING (verified here): OpenCode delivers the
+    // additional-context bag as a SEPARATE `synthetic: true` text part, and the
+    // mapper drops synthetic user parts from projected history (`mapHistoryMessage`).
+    // So the first user record OpenCode returns is the PRISTINE
+    // `<dork-kickoff>…</dork-kickoff>` envelope with no wrapper — exactly the shape
+    // `filterKickoffHistory` suppresses. No leak, no per-runtime stripping needed;
+    // this test is the regression armor for that mapping.
+    it('maps the kickoff to a bare envelope (synthetic context dropped) that the filter suppresses', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const sessionId = nextSessionId();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
+      await vi.waitFor(() => expect(client.session.create).toHaveBeenCalled());
+
+      const envelope = wrapKickoff(
+        'Read your SOUL.md and introduce yourself. Offer a first action.'
+      );
+      client.session.messages.mockResolvedValue({
+        data: [
+          {
+            info: { id: 'msg_u1', sessionID: OC_SESSION_A, role: 'user', time: { created: 1 } },
+            parts: [
+              // The injected additional-context bag rides a synthetic part…
+              {
+                id: 'prt_ctx',
+                sessionID: OC_SESSION_A,
+                messageID: 'msg_u1',
+                type: 'text',
+                text: '<gen_ui>\n…teaching block…\n</gen_ui>\n\n<git_status>\n{}\n</git_status>',
+                synthetic: true,
+              },
+              // …and the user content (the pristine envelope) is its own part.
+              {
+                id: 'prt_kick',
+                sessionID: OC_SESSION_A,
+                messageID: 'msg_u1',
+                type: 'text',
+                text: envelope,
+              },
+            ],
+          },
+          {
+            info: {
+              id: 'msg_a1',
+              sessionID: OC_SESSION_A,
+              role: 'assistant',
+              time: { created: 2 },
+            },
+            parts: [
+              {
+                id: 'prt_a',
+                sessionID: OC_SESSION_A,
+                messageID: 'msg_a1',
+                type: 'text',
+                text: "Hi — I'm Keeper.",
+              },
+            ],
+          },
+        ],
+      });
+
+      const history = await runtime.getMessageHistory(DIRECTORY, sessionId);
+      // The synthetic context part is gone; the first user record is the bare envelope.
+      const firstUser = history.find((m) => m.role === 'user');
+      expect(firstUser?.content).toBe(envelope);
+      expect(firstUser?.content).not.toContain('git_status');
+
+      // The shared seam drops exactly that record; the greeting survives.
+      const filtered = filterKickoffHistory(history);
+      expect(filtered.some((m) => m.role === 'user')).toBe(false);
+      expect(filtered.some((m) => m.role === 'assistant')).toBe(true);
+      expect(JSON.stringify(filtered)).not.toContain('dork-kickoff');
+    });
+
+    it('keeps a genuine first message that merely mentions the kickoff tag (no over-suppression)', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const sessionId = nextSessionId();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
+      await vi.waitFor(() => expect(client.session.create).toHaveBeenCalled());
+
+      client.session.messages.mockResolvedValue({
+        data: [
+          {
+            info: { id: 'msg_u1', sessionID: OC_SESSION_A, role: 'user', time: { created: 1 } },
+            parts: [
+              {
+                id: 'prt_1',
+                sessionID: OC_SESSION_A,
+                messageID: 'msg_u1',
+                type: 'text',
+                text: 'what does <dork-kickoff> mean?',
+              },
+            ],
+          },
+        ],
+      });
+
+      const history = await runtime.getMessageHistory(DIRECTORY, sessionId);
+      // A partial-tag mention is genuine content and passes through untouched.
+      expect(filterKickoffHistory(history)).toEqual(history);
+      expect(history[0]).toMatchObject({ role: 'user', content: 'what does <dork-kickoff> mean?' });
     });
 
     it('renameSession persists the title to the sidecar store', async () => {
