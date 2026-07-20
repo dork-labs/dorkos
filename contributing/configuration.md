@@ -820,7 +820,7 @@ dorkos install <package-name> --yes                     # Skip confirmation prom
 dorkos install <package-name> --force                   # Overwrite conflicting files
 ```
 
-Install dispatches the appropriate per-kind flow (plugin, agent, skill-pack, or adapter) based on the package manifest's `type` field. On failure, the atomic transaction engine restores the previous state. See `contributing/marketplace-installs.md` for the full pipeline.
+Install dispatches the appropriate per-kind flow (plugin, agent, skill-pack, adapter, or shape) based on the package manifest's `type` field. On failure, the atomic transaction engine restores the previous state. See `contributing/marketplace-installs.md` for the full pipeline.
 
 ### `dorkos uninstall`
 
@@ -866,7 +866,7 @@ dorkos cache clear                # Wipe the entire cache
 Scaffold and validate DorkOS marketplace packages.
 
 ```bash
-dorkos package init <name> --type <plugin|agent|skill-pack|adapter>
+dorkos package init <name> --type <plugin|agent|skill-pack|adapter|shape>
                                   # Scaffold a new package in ./<name>/
 dorkos package validate <path>    # Validate a package directory against the manifest schema
 ```

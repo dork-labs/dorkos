@@ -18,7 +18,7 @@ Pair this guide with:
 
 A marketplace install turns a short identifier (`code-review-suite@dorkos-community`) into a working installation on disk. The pipeline is deterministic, atomic, and observable: the same seven steps run for every package type, and any failure along the way leaves zero residue.
 
-The four supported package types are `plugin`, `agent`, `skill-pack`, and `adapter`. Each has its own destination rules and activation hook, but they all share the same orchestrator, the same transaction engine, the same permission preview, the same conflict detector, and the same cache layer. If you want to add a fifth type, you write one flow file and plug it into the dispatch switch — everything else is already wired (see section 9).
+The five supported package types are `plugin`, `agent`, `skill-pack`, `adapter`, and `shape`. Each has its own destination rules and activation hook, but they all share the same orchestrator, the same transaction engine, the same permission preview, the same conflict detector, and the same cache layer. If you want to add a sixth type, you write one flow file and plug it into the dispatch switch — everything else is already wired (see section 9).
 
 The install half of the marketplace ships complete via CLI and HTTP. The browse UI is a separate spec; this guide covers only the operational core.
 
@@ -158,7 +158,7 @@ Passes `target: installPath`. The engine restores the previous package contents 
 
 ### Uninstall flow (`flows/uninstall.ts`)
 
-Removes a previously installed package by name. Plugin/skill-pack/adapter packages live under `${dorkHome}/plugins/<name>/`; agent packages under `${dorkHome}/agents/<name>/`; project-local plugins under `${projectPath}/.dork/plugins/<name>/`.
+Removes a previously installed package by name. Plugin/skill-pack/adapter packages live under `${dorkHome}/plugins/<name>/`; agent packages under `${dorkHome}/agents/<name>/`; shape packages under `${dorkHome}/shapes/<name>/`; project-local plugins under `${projectPath}/.dork/plugins/<name>/`.
 
 The flow is rollback-safe without git: the package is moved to a temporary staging directory first, side-effects (extension disable, adapter removal) run against the now-empty location, and only after every step succeeds is the staging directory permanently removed. Any thrown error during the side-effect phase restores the package from staging back to its original install path via `atomicMove`.
 
@@ -559,7 +559,7 @@ Every install flow must be tested with simulated mid-install failures to assert 
 
 ### Fixtures
 
-`services/marketplace/fixtures/` holds one known-good sample per package type (`valid-plugin/`, `valid-agent/`, `valid-skill-pack/`, `valid-adapter/`) plus `broken/*` directories for validation-failure tests. `fixtures.test.ts` sanity-checks the fixtures themselves. When adding a new package type, add a matching fixture and extend `fixtures.test.ts`.
+`services/marketplace/fixtures/` holds one known-good sample per package type (`valid-plugin/`, `valid-agent/`, `valid-skill-pack/`, `valid-adapter/`, `valid-shape/`) plus `broken/*` directories for validation-failure tests. `fixtures.test.ts` sanity-checks the fixtures themselves. When adding a new package type, add a matching fixture and extend `fixtures.test.ts`.
 
 ### Running the suites
 

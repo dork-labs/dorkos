@@ -1,13 +1,14 @@
 # Marketplace Packages
 
-A marketplace package is a directory containing a `.dork/manifest.json` that declares its type, version, and dependencies. DorkOS supports four package types:
+A marketplace package is a directory containing a `.dork/manifest.json` that declares its type, version, and dependencies. DorkOS supports five package types:
 
-| Type         | Purpose                                                                |
-| ------------ | ---------------------------------------------------------------------- |
-| `plugin`     | General-purpose: extensions, skills, commands, hooks, MCP servers      |
-| `agent`      | A complete agent template — scaffolds a new agent workspace on install |
-| `skill-pack` | Lightweight: only SKILL.md files (skills, tasks, commands)             |
-| `adapter`    | A relay channel adapter (e.g., Discord, Slack)                         |
+| Type         | Purpose                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `plugin`     | General-purpose: extensions, skills, commands, hooks, MCP servers                                   |
+| `agent`      | A complete agent template — scaffolds a new agent workspace on install                              |
+| `skill-pack` | Lightweight: only SKILL.md files (skills, tasks, commands)                                          |
+| `adapter`    | A relay channel adapter (e.g., Discord, Slack)                                                      |
+| `shape`      | A complete cockpit setup — extensions, layout, a suggested agent, and schedules; install/apply/fork |
 
 ## Creating a Package
 
@@ -52,7 +53,7 @@ See `packages/marketplace/src/manifest-schema.ts` for the canonical Zod schema. 
 
 - `name` — kebab-case, must match directory name
 - `version` — semver
-- `type` — `plugin | agent | skill-pack | adapter`
+- `type` — `plugin | agent | skill-pack | adapter | shape`
 - `description` — 1-1024 chars
 - `requires` — dependency declarations like `adapter:slack@^1.0.0`
 - `layers` — content categories (`skills`, `tasks`, `hooks`, etc.)
