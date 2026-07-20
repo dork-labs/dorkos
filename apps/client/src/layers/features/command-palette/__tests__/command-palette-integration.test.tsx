@@ -151,7 +151,12 @@ vi.mock('../model/use-palette-items', () => ({
     const commands = [{ name: '/deploy', description: 'Deploy service' }];
     const quickActions = [
       { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
-      { id: 'discover', label: 'Import Projects', icon: 'Search', action: 'discoverAgents' },
+      {
+        id: 'discover',
+        label: 'Bring in existing projects',
+        icon: 'Search',
+        action: 'discoverAgents',
+      },
       { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
     ];
@@ -417,9 +422,11 @@ describe('Command Palette Integration', () => {
 
   // --- Quick actions ---
 
-  it('Import Projects opens the import dialog', () => {
+  it('Bring in existing projects opens the import dialog', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Import Projects').closest('[data-slot="command-item"]');
+    const item = screen
+      .getByText('Bring in existing projects')
+      .closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
     expect(mockImportOpen).toHaveBeenCalledTimes(1);

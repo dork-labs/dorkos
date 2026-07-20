@@ -115,7 +115,16 @@ export function CreateAgentDialog() {
     setStep(seed ? 'arrival' : 'gallery');
   }
 
-  /** Leave the creation dialog for the standalone import flow (contract item 8). */
+  /**
+   * Leave the creation dialog for the standalone import flow (contract item 8).
+   *
+   * Known wrinkle: `close()` clears a host's one-shot `onCreated` hook, so a
+   * mid-onboarding detour into import does NOT advance onboarding — after Done
+   * the user lands back on the discovery step, which is a coherent (if
+   * unceremonious) place to continue. Re-arming would mean threading the hook
+   * through the import store and defining Done-with-zero-joins semantics;
+   * deferred until onboarding needs it.
+   */
   function handleImport() {
     close();
     resetAll();

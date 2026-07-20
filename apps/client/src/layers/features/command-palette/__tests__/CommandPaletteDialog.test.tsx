@@ -189,7 +189,12 @@ vi.mock('../model/use-palette-items', () => ({
     ],
     quickActions: [
       { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
-      { id: 'discover', label: 'Import Projects', icon: 'Search', action: 'discoverAgents' },
+      {
+        id: 'discover',
+        label: 'Bring in existing projects',
+        icon: 'Search',
+        action: 'discoverAgents',
+      },
       { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
     ],
@@ -208,7 +213,7 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'cmd-/hello', name: '/hello', type: 'command', data: {} },
       { id: 'cmd-/world', name: '/world', type: 'command', data: {} },
       { id: 'new-session', name: 'New Session', type: 'quick-action', data: {} },
-      { id: 'discover', name: 'Import Projects', type: 'quick-action', data: {} },
+      { id: 'discover', name: 'Bring in existing projects', type: 'quick-action', data: {} },
       { id: 'browse', name: 'Browse Filesystem', type: 'quick-action', data: {} },
       { id: 'theme', name: 'Toggle Theme', type: 'quick-action', data: {} },
     ],
@@ -287,7 +292,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     expect(screen.getByText('Quick Actions')).toBeInTheDocument();
     expect(screen.getByText('New Session')).toBeInTheDocument();
-    expect(screen.getByText('Import Projects')).toBeInTheDocument();
+    expect(screen.getByText('Bring in existing projects')).toBeInTheDocument();
     expect(screen.getByText('Browse Filesystem')).toBeInTheDocument();
     expect(screen.getByText('Toggle Theme')).toBeInTheDocument();
   });
@@ -408,9 +413,11 @@ describe('CommandPaletteDialog', () => {
 
   // --- Quick action dispatching ---
 
-  it('opens the import dialog when Import Projects quick action is selected', () => {
+  it('opens the import dialog when Bring in existing projects quick action is selected', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Import Projects').closest('[data-slot="command-item"]');
+    const item = screen
+      .getByText('Bring in existing projects')
+      .closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockImportOpen).toHaveBeenCalledTimes(1);
   });
