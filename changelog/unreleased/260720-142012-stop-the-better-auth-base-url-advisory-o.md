@@ -1,3 +1,3 @@
 ### Fixed
 
-- Stop the Better Auth base-URL advisory on every boot
+- Stopped a confusing sign-in warning from printing on every server start
