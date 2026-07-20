@@ -40,7 +40,22 @@ const THEME_KEYWORDS: [SuggestionTheme, readonly string[]][] = [
     'keeper',
     ['board', 'organize', 'tidy', 'manage', 'linear', 'jira', 'project', 'backlog', 'task'],
   ],
-  ['scout', ['research', 'search', 'monitor', 'watch', 'discover', 'scan', 'find', 'intel']],
+  [
+    'scout',
+    [
+      'research',
+      'search',
+      'monitor',
+      'watch',
+      'discover',
+      'scan',
+      'find',
+      'intel',
+      'inbox',
+      'email',
+      'mail',
+    ],
+  ],
   [
     'guardian',
     ['review', 'security', 'audit', 'qa', 'test', 'lint', 'guard', 'protect', 'compliance'],

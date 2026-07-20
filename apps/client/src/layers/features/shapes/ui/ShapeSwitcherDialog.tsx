@@ -211,6 +211,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                             persona: arrival.template?.persona,
                             capabilities: arrival.template?.capabilities,
                             skills: arrival.template?.skills,
+                            schedule: arrival.scheduleSummary,
                           },
                           origin: 'shape-offer',
                           sourceLabel: appliedLabel ?? undefined,

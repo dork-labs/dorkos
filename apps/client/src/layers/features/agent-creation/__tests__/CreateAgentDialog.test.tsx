@@ -72,6 +72,20 @@ vi.mock('../ui/AgentGallery', () => ({
       >
         Pick Template
       </button>
+      <button
+        data-testid="mock-select-other-template"
+        onClick={() =>
+          onSelectTemplate({
+            source: 'github.com/dorkos/release-scribe',
+            name: '@dorkos/release-scribe',
+            displayName: 'Release Scribe',
+            description: 'Writes release notes',
+            icon: '📝',
+          })
+        }
+      >
+        Pick Other Template
+      </button>
       <button data-testid="mock-import" onClick={onImport}>
         Import
       </button>
@@ -284,10 +298,15 @@ describe('CreateAgentDialog', () => {
     await user.click(screen.getByTestId('suggestion-Scout'));
     expect(nameInput).toHaveValue('Scout');
 
-    // Reroll advances the window; Scout drops out, Atlas comes in.
-    await user.click(screen.getByTestId('suggestion-reroll'));
+    // The picked name leaves the pool immediately (a chip that does nothing
+    // reads as broken) — the window refills from the remaining names.
     expect(screen.queryByTestId('suggestion-Scout')).not.toBeInTheDocument();
     expect(screen.getByTestId('suggestion-Atlas')).toBeInTheDocument();
+
+    // Reroll advances to a fresh window over the deduped pool.
+    await user.click(screen.getByTestId('suggestion-reroll'));
+    expect(screen.queryByTestId('suggestion-Sage')).not.toBeInTheDocument();
+    expect(screen.getByTestId('suggestion-Nova')).toBeInTheDocument();
   });
 
   it('a picked face persists to the created agent', async () => {
@@ -466,6 +485,86 @@ describe('CreateAgentDialog', () => {
     await waitFor(() =>
       expect(screen.getByTestId('conflict-status')).toHaveTextContent('Will create new directory')
     );
+  });
+
+  // ---- Template reselection (auto-fill provenance) ----
+
+  it('switching templates updates an auto-filled name', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    useAgentCreationStore.getState().open();
+
+    await user.click(await screen.findByTestId('mock-select-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Code Reviewer');
+
+    await user.click(screen.getByTestId('naming-back'));
+    await user.click(await screen.findByTestId('mock-select-other-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Release Scribe');
+  });
+
+  it('switching to design-your-own clears an auto-filled template name', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    useAgentCreationStore.getState().open();
+
+    await user.click(await screen.findByTestId('mock-select-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Code Reviewer');
+
+    await user.click(screen.getByTestId('naming-back'));
+    await user.click(await screen.findByTestId('mock-design-your-own'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('');
+  });
+
+  it('never clobbers a user-typed name on template switch', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    useAgentCreationStore.getState().open();
+
+    await user.click(await screen.findByTestId('mock-select-template'));
+    const nameInput = await screen.findByLabelText('Name');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Ada');
+
+    await user.click(screen.getByTestId('naming-back'));
+    await user.click(await screen.findByTestId('mock-select-other-template'));
+    expect(await screen.findByLabelText('Name')).toHaveValue('Ada');
+  });
+
+  // ---- Remaining conflict states ----
+
+  it('reports "Directory exists" when the path exists without a project', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderDialog();
+    vi.mocked(transport.browseDirectory).mockResolvedValue({
+      path: '/test',
+      entries: [{ name: 'README.md', isDirectory: false }],
+      parent: null,
+    } as never);
+
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'existing-dir');
+    await user.click(screen.getByTestId('details-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent(
+        'Directory exists — will create project inside'
+      )
+    );
+  });
+
+  it('reports "Cannot access this path" on a permission error and blocks create', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderDialog();
+    vi.mocked(transport.browseDirectory).mockRejectedValue(new Error('EACCES: permission denied'));
+
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'restricted-agent');
+    await user.click(screen.getByTestId('details-toggle'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Cannot access this path')
+    );
+    expect(screen.getByTestId('create-button')).toBeDisabled();
   });
 
   // ---- Reset ----

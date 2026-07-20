@@ -62,7 +62,11 @@ export function NamingStep({
 }: NamingStepProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [rerollOffset, setRerollOffset] = useState(0);
-  const suggestions = suggestionWindow(suggestionPool, rerollOffset, SUGGESTION_WINDOW);
+  // Never suggest the name already in the field — a chip that does nothing
+  // reads as broken. Windowing over the filtered pool keeps the count full.
+  const currentName = form.displayName.trim().toLowerCase();
+  const availablePool = suggestionPool.filter((n) => n.toLowerCase() !== currentName);
+  const suggestions = suggestionWindow(availablePool, rerollOffset, SUGGESTION_WINDOW);
 
   // Auto-focus the name after the step transition settles.
   useEffect(() => {

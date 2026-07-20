@@ -195,6 +195,24 @@ describe('AgentGallery', () => {
     expect(screen.getByTestId('gallery-design-your-own')).toBeInTheDocument();
   });
 
+  it('shows the error note when the catalog cannot load — design-your-own still leads', () => {
+    setMarketplaceState({ data: undefined, error: new Error('network down') });
+    renderGallery();
+
+    expect(screen.getByTestId('gallery-templates-note')).toHaveTextContent(
+      /could not load ready-made agents/i
+    );
+    expect(screen.getByTestId('gallery-design-your-own')).toBeInTheDocument();
+  });
+
+  it('disables Continue while the custom template URL is empty', async () => {
+    const user = userEvent.setup();
+    renderGallery();
+
+    await user.click(screen.getByTestId('advanced-toggle'));
+    expect(screen.getByTestId('custom-url-go')).toBeDisabled();
+  });
+
   it('moves focus across cards with arrow keys (roving tabindex)', () => {
     setMarketplaceState({ data: [boardKeeper] });
     renderGallery();

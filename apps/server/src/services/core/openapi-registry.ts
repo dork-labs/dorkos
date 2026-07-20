@@ -2068,6 +2068,7 @@ const LocalOfferedAgentSchema = z.object({
   projectPath: z.string().optional(),
   displayName: z.string(),
   template: z.record(z.string(), z.unknown()).optional(),
+  scheduleSummary: z.string().optional(),
 });
 
 /** Local Zod 4 mirror of {@link import('../shapes/apply-shape.js').ApplyShapeResult}. */

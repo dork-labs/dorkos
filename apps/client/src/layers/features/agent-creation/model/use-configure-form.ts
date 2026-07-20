@@ -93,12 +93,23 @@ export function useConfigureForm({
   const canSubmit = displayName.length > 0 && slugValidation.valid && conflictStatus !== 'error';
 
   // Auto-fill name from the selected template on entering the naming step.
-  // Deps intentionally exclude `displayName` to avoid re-triggering on user edits.
+  // An auto-filled name follows the selection: switching templates overwrites
+  // it, and switching to design-your-own clears it — but a USER-typed name is
+  // never clobbered (`nameAutoFilled` is the provenance bit; typing clears it).
+  // Deps intentionally exclude `displayName`/`nameAutoFilled` so the effect
+  // fires only when the selection changes, never on user edits.
   useEffect(() => {
-    if (step === 'naming' && templateName && !displayName) {
-      const cleanName = templateName.replace(/^@[^/]+\//, '');
-      setDisplayName(cleanName);
-      setNameAutoFilled(true);
+    if (step !== 'naming') return;
+    if (templateName) {
+      if (!displayName || nameAutoFilled) {
+        setDisplayName(templateName.replace(/^@[^/]+\//, ''));
+        setNameAutoFilled(true);
+      }
+    } else if (nameAutoFilled) {
+      // Design-your-own after a template: the inherited name was never the
+      // user's — start blank.
+      setDisplayName('');
+      setNameAutoFilled(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, templateName]);

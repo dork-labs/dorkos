@@ -156,6 +156,10 @@ export function CreateAgentDialog() {
 
   const header = STEP_HEADERS[step];
   const isArrival = step === 'arrival';
+  // Per-step canvas width: the gallery spreads across the fullscreen frame,
+  // naming holds a tighter two-column composition, arrival/import stay narrow.
+  const stepMaxWidth =
+    step === 'gallery' ? 'max-w-6xl' : step === 'naming' ? 'max-w-5xl' : 'max-w-2xl';
 
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={handleOpenChange} defaultFullscreen>
@@ -172,14 +176,11 @@ export function CreateAgentDialog() {
           {header.description}
         </span>
 
-        <div
-          className={
-            isArrival
-              ? 'flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-6'
-              : 'min-h-0 flex-1 overflow-y-auto px-5 py-6'
-          }
-        >
-          <div className="mx-auto w-full max-w-5xl">
+        {/* Composed fullscreen canvas: the inner wrapper's `my-auto` centers
+            every step vertically while it underflows, and collapses to normal
+            top-anchored scrolling the moment content exceeds the viewport. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-6 sm:px-8">
+          <div className={`mx-auto my-auto w-full ${stepMaxWidth}`}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={step}

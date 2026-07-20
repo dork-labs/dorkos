@@ -4527,6 +4527,9 @@
                 "template": {
                   "type": "object",
                   "additionalProperties": {}
+                },
+                "scheduleSummary": {
+                  "type": "string"
                 }
               },
               "required": [

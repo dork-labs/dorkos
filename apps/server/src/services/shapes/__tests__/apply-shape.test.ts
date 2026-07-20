@@ -520,4 +520,59 @@ describe('applyShape', () => {
       { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: 's' },
     ]);
   });
+
+  // ── Offer schedule summary (M1 arrival ledger) ─────────────────────────────
+
+  it('derives a human scheduleSummary for an offered agent from its bound schedule', async () => {
+    const manifest = buildManifest({
+      agents: [{ ref: 'keeper', affinity: 'default', template: { displayName: 'Keeper' } }],
+      schedules: [
+        {
+          name: 'morning-triage',
+          description: 'triage the board',
+          prompt: 'triage',
+          cron: '0 9 * * 1-5',
+          agentRef: 'keeper',
+          permissionMode: 'acceptEdits',
+        },
+      ],
+    });
+    const { deps } = makeDeps({ manifest });
+
+    const result = await applyShape('s', deps);
+
+    expect(result.offeredAgents[0].scheduleSummary).toBe('Every weekday at 9:00 AM');
+  });
+
+  it('omits scheduleSummary when the cron is not describable — never leaks raw cron', async () => {
+    const manifest = buildManifest({
+      agents: [{ ref: 'keeper', affinity: 'default', template: { displayName: 'Keeper' } }],
+      schedules: [
+        {
+          name: 'tick',
+          description: 'poll',
+          prompt: 'tick',
+          cron: '*/15 * * * *',
+          agentRef: 'keeper',
+          permissionMode: 'acceptEdits',
+        },
+      ],
+    });
+    const { deps } = makeDeps({ manifest });
+
+    const result = await applyShape('s', deps);
+
+    expect(result.offeredAgents[0].scheduleSummary).toBeUndefined();
+  });
+
+  it('omits scheduleSummary when the Shape declares no schedule for the agent', async () => {
+    const manifest = buildManifest({
+      agents: [{ ref: 'keeper', affinity: 'default', template: { displayName: 'Keeper' } }],
+    });
+    const { deps } = makeDeps({ manifest });
+
+    const result = await applyShape('s', deps);
+
+    expect(result.offeredAgents[0].scheduleSummary).toBeUndefined();
+  });
 });

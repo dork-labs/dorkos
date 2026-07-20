@@ -452,6 +452,12 @@ export interface ShapeOfferedAgent {
   displayName: string;
   /** Scaffold seed for an unsatisfied offer. */
   template?: ShapeAgentTemplate;
+  /**
+   * Human cadence line ("Every weekday at 9:00 AM") derived server-side from
+   * the Shape's schedule bound to this agent. Absent when the Shape declares
+   * no describable schedule for it — consumers show no schedule line then.
+   */
+  scheduleSummary?: string;
 }
 
 /**

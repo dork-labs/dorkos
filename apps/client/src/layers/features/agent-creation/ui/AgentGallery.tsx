@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, FolderInput, Sparkles } from 'lucide-react';
 import {
   Input,
@@ -13,6 +13,7 @@ import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { humanizeAgentName } from '../lib/humanize-name';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
+import { useRovingFocus } from '../lib/use-roving-focus';
 import type { SelectedTemplate } from '../lib/wizard-types';
 import { GalleryCard } from './GalleryCard';
 
@@ -64,8 +65,6 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
   const { data: allPackages, error, isLoading } = useMarketplacePackages();
   const [customUrl, setCustomUrl] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [focusIndex, setFocusIndex] = useState(0);
-  const cardRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const templates = useMemo(
     () => (allPackages ?? []).filter((pkg) => pkg.type === 'agent'),
@@ -73,73 +72,26 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
   );
 
   // The focusable cards, in order: design-your-own first, then each template.
-  const cardCount = templates.length + 1;
-
-  /** Count cards sharing the first card's top offset — the live column count. */
-  function columnCount(): number {
-    const cards = cardRefs.current.filter(Boolean) as HTMLButtonElement[];
-    if (cards.length === 0) return 1;
-    const firstTop = cards[0].offsetTop;
-    const cols = cards.filter((c) => c.offsetTop === firstTop).length;
-    return Math.max(1, cols);
-  }
-
-  function moveFocus(next: number) {
-    const clamped = Math.max(0, Math.min(cardCount - 1, next));
-    setFocusIndex(clamped);
-    cardRefs.current[clamped]?.focus();
-  }
-
-  function handleCardKeyDown(e: React.KeyboardEvent<HTMLButtonElement>, index: number) {
-    const cols = columnCount();
-    switch (e.key) {
-      case 'ArrowRight':
-        e.preventDefault();
-        moveFocus(index + 1);
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        moveFocus(index - 1);
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        moveFocus(index + cols);
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        moveFocus(index - cols);
-        break;
-      case 'Home':
-        e.preventDefault();
-        moveFocus(0);
-        break;
-      case 'End':
-        e.preventDefault();
-        moveFocus(cardCount - 1);
-        break;
-    }
-  }
+  const roving = useRovingFocus(templates.length + 1);
 
   return (
     <div className="space-y-5">
       <div
         role="group"
         aria-label="Choose what your agent will do"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
         data-testid="agent-gallery"
       >
         {/* Design your own — always first, always available. */}
         <GalleryCard
-          ref={(el) => {
-            cardRefs.current[0] = el;
-          }}
+          ref={roving.setRef(0)}
           variant="design"
           face={<Sparkles className="text-primary size-7" />}
           title="Design your own"
           subtitle="Describe the job in your own words — your agent takes shape as you talk to it."
-          tabIndex={focusIndex === 0 ? 0 : -1}
+          tabIndex={roving.tabIndexFor(0)}
           onSelect={onDesignYourOwn}
-          onKeyDown={(e) => handleCardKeyDown(e, 0)}
+          onKeyDown={(e) => roving.handleKeyDown(e, 0)}
           data-testid="gallery-design-your-own"
         />
 
@@ -149,17 +101,15 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
           return (
             <GalleryCard
               key={pkg.name}
-              ref={(el) => {
-                cardRefs.current[index] = el;
-              }}
+              ref={roving.setRef(index)}
               variant="template"
               face={pkg.icon ?? DEFAULT_AGENT_FACE}
               title={pkg.displayName ?? humanizeAgentName(pkg.name)}
               subtitle={pkg.description ?? 'A ready-made agent.'}
               chips={deriveChips(pkg)}
-              tabIndex={focusIndex === index ? 0 : -1}
+              tabIndex={roving.tabIndexFor(index)}
               onSelect={() => onSelectTemplate(toSelectedTemplate(pkg))}
-              onKeyDown={(e) => handleCardKeyDown(e, index)}
+              onKeyDown={(e) => roving.handleKeyDown(e, index)}
               data-testid={`gallery-template-${pkg.name}`}
             />
           );

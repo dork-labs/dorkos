@@ -51,6 +51,7 @@ function unsatisfiedResult(): ApplyShapeResult {
       layout: { sidebarOpen: true, openPanels: [], focusDashboardSections: [] },
       activatedExtensions: [],
       schedulesCreated: [],
+      schedulesRebound: [],
     },
     warnings: [],
     offeredAgents: [
@@ -68,6 +69,7 @@ function unsatisfiedResult(): ApplyShapeResult {
           capabilities: ['linear'],
           skills: ['linear-adapter'],
         },
+        scheduleSummary: 'Every weekday at 9:00 AM',
       },
     ],
   };
@@ -199,6 +201,9 @@ describe('ShapeSwitcherDialog', () => {
           persona: 'I keep your Linear board tidy.',
           capabilities: ['linear'],
           skills: ['linear-adapter'],
+          // The server-derived cadence line rides into the seed so the M1
+          // ledger can show a schedule that is actually real.
+          schedule: 'Every weekday at 9:00 AM',
         }),
       })
     );

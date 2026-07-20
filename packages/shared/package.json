@@ -81,6 +81,10 @@
       "types": "./src/convention-files-io.ts",
       "default": "./dist/convention-files-io.js"
     },
+    "./cron": {
+      "types": "./src/cron.ts",
+      "default": "./dist/cron.js"
+    },
     "./trait-renderer": {
       "types": "./src/trait-renderer.ts",
       "default": "./dist/trait-renderer.js"

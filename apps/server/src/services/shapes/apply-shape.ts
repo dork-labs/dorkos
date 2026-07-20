@@ -21,6 +21,7 @@
  */
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import type { ShapeUserPrefs } from '@dorkos/shared/config-schema';
+import { describeCronSchedule } from '@dorkos/shared/cron';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
 
 /** A single agents[] entry as declared on a Shape manifest. */
@@ -72,6 +73,14 @@ export interface OfferedAgent {
   displayName: string;
   /** Scaffold seed for an unsatisfied offer (the manifest's `template`). */
   template?: ShapeAgentEntry['template'];
+  /**
+   * Human cadence line for the offer card ("Every weekday at 9:00 AM"),
+   * derived from the first of this Shape's schedules bound to the agent
+   * (`agentRef`) whose cron the shared describer recognizes. Absent when the
+   * Shape declares no schedule for the agent or none is describable — the
+   * offer card only claims a cadence that is real.
+   */
+  scheduleSummary?: string;
 }
 
 /**
@@ -400,6 +409,7 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
   for (const { entry, match } of agents) {
     const isDefault = entry.affinity === 'default';
     const displayName = entry.template?.displayName ?? entry.matchName ?? entry.ref;
+    const scheduleSummary = summarizeAgentSchedule(manifest, entry.ref);
 
     if (!match) {
       // Absent — offered, never created. Affinity is soft, so nothing breaks.
@@ -412,6 +422,7 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
         autoFollow: false,
         displayName,
         template: entry.template,
+        ...(scheduleSummary ? { scheduleSummary } : {}),
       });
       continue;
     }
@@ -429,6 +440,7 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       projectPath: match.projectPath,
       displayName,
       template: entry.template,
+      ...(scheduleSummary ? { scheduleSummary } : {}),
     });
   }
 
@@ -484,4 +496,25 @@ function resolveAgentMatch(
 ): RegisteredAgentView | null {
   if (!agent.matchName) return null;
   return registered.find((a) => matchesAgentByName(agent.matchName, a)) ?? null;
+}
+
+/**
+ * Derive the human cadence line for an offered agent from the Shape's
+ * schedules: the first schedule bound to the agent (`agentRef`) whose cron
+ * the shared describer recognizes. Returns `null` when the Shape declares no
+ * schedule for this agent or none is describable — the offer card then shows
+ * no schedule line at all rather than a raw cron string.
+ *
+ * @param manifest - The Shape manifest being applied.
+ * @param agentRef - The Shape-local agent slug to look up schedules for.
+ * @returns The plain-language cadence, or `null`.
+ */
+function summarizeAgentSchedule(manifest: ShapePackageManifest, agentRef: string): string | null {
+  for (const schedule of manifest.schedules) {
+    // A null cron is a manual-only schedule — no cadence to describe.
+    if (schedule.agentRef !== agentRef || schedule.cron === null) continue;
+    const summary = describeCronSchedule(schedule.cron);
+    if (summary) return summary;
+  }
+  return null;
 }
