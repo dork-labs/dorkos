@@ -3,14 +3,9 @@ import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import {
-  SessionsView,
-  SidebarTabRow,
-  SidebarFooterBar,
-  SIDEBAR_TAB_CONTRIBUTIONS,
-} from '@/layers/features/session-list';
+import { SessionsView, SidebarFooterBar } from '@/layers/features/session-list';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
-import { SidebarGroup, SidebarMenu, SidebarMenuItem, TooltipProvider } from '@/layers/shared/ui';
+import { SidebarGroup, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -119,13 +114,12 @@ const GROUPED_SESSIONS = [
 // Showcases
 // ---------------------------------------------------------------------------
 
-/** Sidebar component showcases: SessionItem, SessionsView, SidebarTabRow, SidebarFooterBar. */
+/** Sidebar component showcases: SessionItem, SessionsView, SidebarFooterBar. */
 export function SidebarShowcases() {
   return (
     <>
       <SessionItemShowcase />
       <SessionsViewShowcase />
-      <SidebarTabRowShowcase />
       <SidebarFooterBarShowcase />
     </>
   );
@@ -306,67 +300,6 @@ function SessionsViewShowcase() {
           <SessionsView activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
         </div>
       </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SidebarTabRow
-// ---------------------------------------------------------------------------
-
-// The three non-overview built-in tabs, exercising badges + status dots.
-const SHOWCASE_TABS = SIDEBAR_TAB_CONTRIBUTIONS.filter((t) => t.id !== 'overview');
-
-function SidebarTabRowShowcase() {
-  const [tab1, setTab1] = useState('sessions');
-  const [tab2, setTab2] = useState('sessions');
-  const [tab3, setTab3] = useState('sessions');
-
-  return (
-    <PlaygroundSection
-      title="SidebarTabRow"
-      description="Horizontal icon tab row with sliding indicator, badges, and connection status dots."
-    >
-      <TooltipProvider>
-        <ShowcaseLabel>All tabs visible</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="w-64">
-            <SidebarTabRow
-              tabs={SHOWCASE_TABS}
-              activeTab={tab1}
-              onTabChange={setTab1}
-              schedulesBadge={0}
-              connectionsStatus="none"
-            />
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>With badges</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="w-64">
-            <SidebarTabRow
-              tabs={SHOWCASE_TABS}
-              activeTab={tab2}
-              onTabChange={setTab2}
-              schedulesBadge={3}
-              connectionsStatus="partial"
-            />
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Error status</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="w-64">
-            <SidebarTabRow
-              tabs={SHOWCASE_TABS}
-              activeTab={tab3}
-              onTabChange={setTab3}
-              schedulesBadge={0}
-              connectionsStatus="error"
-            />
-          </div>
-        </ShowcaseDemo>
-      </TooltipProvider>
     </PlaygroundSection>
   );
 }

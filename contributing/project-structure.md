@@ -82,7 +82,7 @@ src/
 │   │   │   └── index.ts
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
-│   │   ├── session-list/ # SessionSidebar, SidebarTabRow, tabbed views
+│   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
 │   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
 │   │   ├── dashboard-status/ # SystemStatusRow — Tasks/Relay/Mesh health cards + activity sparkline

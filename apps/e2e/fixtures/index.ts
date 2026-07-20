@@ -1,6 +1,6 @@
 import { test as base } from '@playwright/test';
 import { ChatPage } from '../pages/ChatPage';
-import { SessionSidebarPage } from '../pages/SessionSidebarPage';
+import { DashboardSidebarPage } from '../pages/DashboardSidebarPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { BasePage } from '../pages/BasePage';
 import { TasksPage } from '../pages/TasksPage';
@@ -11,7 +11,7 @@ import { AuthPage } from '../pages/AuthPage';
 type DorkOSFixtures = {
   basePage: BasePage;
   chatPage: ChatPage;
-  sessionSidebar: SessionSidebarPage;
+  dashboardSidebar: DashboardSidebarPage;
   settingsPage: SettingsPage;
   tasksPage: TasksPage;
   meshPage: MeshPage;
@@ -28,8 +28,8 @@ export const test = base.extend<DorkOSFixtures>({
     await chatPage.goto();
     await use(chatPage);
   },
-  sessionSidebar: async ({ page }, use) => {
-    await use(new SessionSidebarPage(page));
+  dashboardSidebar: async ({ page }, use) => {
+    await use(new DashboardSidebarPage(page));
   },
   settingsPage: async ({ page }, use) => {
     await use(new SettingsPage(page));

@@ -137,7 +137,7 @@ HttpTransport({ baseUrl: '/api' })
 | `/`        | `DashboardPage`             | —                                    |
 | `/session` | `SessionPage` → `ChatPanel` | `?session=`, `?dir=` (Zod-validated) |
 
-Each route provides its own sidebar and header content via private slot hooks in `AppShell` (`useSidebarSlot` / `useHeaderSlot`). The sidebar body and header cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` renders `SessionSidebar` + `SessionHeader`.
+Each route provides its own sidebar and header content via private slot hooks in `AppShell` (`useSidebarSlot` / `useHeaderSlot`). The sidebar body and header cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` keeps the same `DashboardSidebar` roster (the old session drill-in was retired — per-session context now lives in the right-panel inspector) with the `SessionHeader`. A registered `sidebar.body` contribution can take over the body wholesale for its route (the marketplace facet panel does this on `/marketplace`). `SessionSidebar` still exists but only as the Obsidian plugin's chrome (`apps/client/src/App.tsx`), not the web shell.
 
 Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessionId()` and `useDirectoryState()` read/write via `useSearch`/`useNavigate` internally, preserving their public API.
 

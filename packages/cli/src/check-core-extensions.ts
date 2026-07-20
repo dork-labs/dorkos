@@ -24,7 +24,7 @@ const CORE_EXTENSIONS_DIR = path.resolve(__dirname, '../../core-extensions');
  *
  * A missing or empty `core-extensions/` directory means the published
  * package was built or packed incorrectly (DOR-245) — every core extension,
- * including the `defaultEnabled: true` Marketplace sidebar tab, would
+ * including the `defaultEnabled: true` Marketplace nav entry, would
  * silently never install for this user. Unlike {@link checkClaude} this is
  * a packaging invariant, not an optional runtime dependency, so callers
  * should treat a `false` result as fatal.

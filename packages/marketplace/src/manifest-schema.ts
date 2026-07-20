@@ -309,13 +309,15 @@ const ShapeLayoutSchema = z.object({
   /** Sidebar open on arrival. */
   sidebarOpen: z.boolean().default(true),
   /**
-   * Sidebar tab to select on arrival (mirrors `UiSidebarTabSchema`). Any
-   * registered tab id — a built-in (`overview` | `sessions` | `schedules` |
-   * `connections`) or an extension-contributed tab (`${extId}:${id}`, e.g.
-   * `linear-issues:linear-loop-sidebar`). A pinned id whose tab never
-   * registers falls back to the overview tab at apply time. Bounds keep
-   * manifest garbage out of the client (keep in sync with `UiSidebarTabSchema`
-   * in `@dorkos/shared` and the server's `LocalShapeLayoutSchema`).
+   * Sidebar tab to select on arrival (mirrors `UiSidebarTabSchema`). The sidebar
+   * tab strip now exists ONLY in the embedded (Obsidian) shell, where it carries
+   * the four built-ins (`overview` | `sessions` | `schedules` | `connections`);
+   * the web cockpit retired the strip, so a pinned tab is a no-op there. A pinned
+   * id that isn't one of the built-ins falls back to the overview tab at apply
+   * time. The `:` stays accepted so old manifests that pinned a namespaced
+   * (extension) tab keep validating. Bounds keep manifest garbage out of the
+   * client (keep in sync with `UiSidebarTabSchema` in `@dorkos/shared` and the
+   * server's `LocalShapeLayoutSchema`).
    */
   sidebarTab: z
     .string()

@@ -57,8 +57,6 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
         'command-palette.items': 0,
         'settings.tabs': 0,
         'sidebar.footer': 0,
-        'sidebar.tabs': 0,
-        'header.actions': 0,
         dialog: 0,
         'right-panel': 0,
       },

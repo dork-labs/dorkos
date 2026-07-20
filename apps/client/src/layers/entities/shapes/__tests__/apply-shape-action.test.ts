@@ -66,8 +66,11 @@ describe('applyShapeAction', () => {
     const out = await applyShapeAction('linear-ops', deps);
 
     expect(applyShape).toHaveBeenCalledWith('linear-ops');
-    // The returned layout (sidebarOpen + overview tab) drives one switch_sidebar_tab.
-    expect(dispatched).toContainEqual({ action: 'switch_sidebar_tab', tab: 'overview' });
+    // On the web cockpit (the default host here) there is no sidebar tab strip, so
+    // the returned layout's pinned tab degrades to a plain open — the sidebar still
+    // honors `sidebarOpen`, and no `switch_sidebar_tab` is dispatched.
+    expect(dispatched).toContainEqual({ action: 'open_sidebar' });
+    expect(dispatched).not.toContainEqual({ action: 'switch_sidebar_tab', tab: 'overview' });
     expect(out.applied.activatedExtensions).toEqual(['linear-issues']);
   });
 

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { UiCommand } from '@dorkos/shared/types';
 import type { ShapeLayout } from '@dorkos/shared/marketplace-schemas';
+import { setPlatformAdapter } from '@/layers/shared/lib';
 import { buildShapeLayoutCommands, applyShapeLayout } from '../lib/apply-shape-layout';
 
 /** A minimal ShapeLayout with the fields under test. */
@@ -13,22 +14,44 @@ function layout(overrides: Partial<ShapeLayout> = {}): ShapeLayout {
   };
 }
 
+/** Point `getPlatform()` at an embedded (or not) host for the `applyShapeLayout` tests. */
+function setEmbedded(isEmbedded: boolean) {
+  setPlatformAdapter({ isEmbedded, openFile: async () => {} });
+}
+
+afterEach(() => {
+  // Restore the default standalone-web adapter (isEmbedded: false).
+  setEmbedded(false);
+});
+
 describe('buildShapeLayoutCommands', () => {
-  it('emits switch_sidebar_tab when a tab is pinned AND the sidebar is open (one command opens + selects)', () => {
-    // Purpose: the Linear Ops case — arrive on the overview tab with the sidebar open.
+  it('emits switch_sidebar_tab when a tab strip exists, a tab is pinned, AND the sidebar is open', () => {
+    // Purpose: the embedded (Obsidian) case — arrive on the overview tab with the
+    // sidebar open. One command both opens and selects.
     const commands = buildShapeLayoutCommands(
-      layout({ sidebarOpen: true, sidebarTab: 'overview' })
+      layout({ sidebarOpen: true, sidebarTab: 'overview' }),
+      true
     );
     expect(commands).toContainEqual({ action: 'switch_sidebar_tab', tab: 'overview' });
     // It must not ALSO emit a bare open — the tab switch already opens the sidebar.
     expect(commands).not.toContainEqual({ action: 'open_sidebar' });
   });
 
-  it('emits switch_sidebar_tab for an extension-contributed tab id', () => {
-    // A Shape may pin an extension tab (`${extId}:${id}`); the command carries
-    // it verbatim to the dispatcher, which the store + sidebar resolve.
+  it('drops the pinned tab and just opens the sidebar where no tab strip exists (web cockpit)', () => {
+    // The web cockpit has no sidebar tab strip, so a pinned tab has no target;
+    // the sidebar must still honor `sidebarOpen` via a plain open command.
     const commands = buildShapeLayoutCommands(
-      layout({ sidebarOpen: true, sidebarTab: 'linear-issues:linear-loop-sidebar' })
+      layout({ sidebarOpen: true, sidebarTab: 'overview' }),
+      false
+    );
+    expect(commands).toEqual([{ action: 'open_sidebar' }]);
+    expect(commands).not.toContainEqual({ action: 'switch_sidebar_tab', tab: 'overview' });
+  });
+
+  it('carries an extension-namespaced pinned tab id verbatim when a strip exists', () => {
+    const commands = buildShapeLayoutCommands(
+      layout({ sidebarOpen: true, sidebarTab: 'linear-issues:linear-loop-sidebar' }),
+      true
     );
     expect(commands).toContainEqual({
       action: 'switch_sidebar_tab',
@@ -37,7 +60,7 @@ describe('buildShapeLayoutCommands', () => {
   });
 
   it('emits open_sidebar when open with no pinned tab', () => {
-    expect(buildShapeLayoutCommands(layout({ sidebarOpen: true }))).toEqual([
+    expect(buildShapeLayoutCommands(layout({ sidebarOpen: true }), true)).toEqual([
       { action: 'open_sidebar' },
     ]);
   });
@@ -45,14 +68,16 @@ describe('buildShapeLayoutCommands', () => {
   it('emits close_sidebar when closed, and never force-opens via a tab switch', () => {
     // Purpose: a closed-sidebar Shape must stay closed even if it names a tab.
     const commands = buildShapeLayoutCommands(
-      layout({ sidebarOpen: false, sidebarTab: 'sessions' })
+      layout({ sidebarOpen: false, sidebarTab: 'sessions' }),
+      true
     );
     expect(commands).toEqual([{ action: 'close_sidebar' }]);
   });
 
   it('opens each requested panel in order after the sidebar command', () => {
     const commands = buildShapeLayoutCommands(
-      layout({ sidebarOpen: true, openPanels: ['tasks', 'settings'] })
+      layout({ sidebarOpen: true, openPanels: ['tasks', 'settings'] }),
+      true
     );
     expect(commands).toEqual([
       { action: 'open_sidebar' },
@@ -67,14 +92,16 @@ describe('buildShapeLayoutCommands', () => {
       layout({
         sidebarOpen: false,
         focusDashboardSections: ['linear-issues:linear-loop-dashboard'],
-      })
+      }),
+      true
     );
     expect(commands).toEqual([{ action: 'close_sidebar' }]);
   });
 });
 
 describe('applyShapeLayout', () => {
-  it('dispatches every built command, in order', () => {
+  it('dispatches a tab switch on the embedded host', () => {
+    setEmbedded(true);
     const dispatched: UiCommand[] = [];
     applyShapeLayout(
       layout({ sidebarOpen: true, sidebarTab: 'overview', openPanels: ['tasks'] }),
@@ -82,6 +109,19 @@ describe('applyShapeLayout', () => {
     );
     expect(dispatched).toEqual([
       { action: 'switch_sidebar_tab', tab: 'overview' },
+      { action: 'open_panel', panel: 'tasks' },
+    ]);
+  });
+
+  it('opens the sidebar without a tab switch on the web cockpit', () => {
+    setEmbedded(false);
+    const dispatched: UiCommand[] = [];
+    applyShapeLayout(
+      layout({ sidebarOpen: true, sidebarTab: 'overview', openPanels: ['tasks'] }),
+      (c) => dispatched.push(c)
+    );
+    expect(dispatched).toEqual([
+      { action: 'open_sidebar' },
       { action: 'open_panel', panel: 'tasks' },
     ]);
   });

@@ -258,9 +258,9 @@ Tailwind's first-party `scrollbar-*` utilities (v4.3+) are the sanctioned surfac
 - Send button: circular, `accent` color, icon-only
 - Stop button: circular, muted red, square icon
 
-### Sidebar (SessionSidebar)
+### Sidebar
 
-Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. The sidebar body swaps per route: `SessionSidebar` (in `features/session-list/`) at `/session`, `DashboardSidebar` (in `features/dashboard-sidebar/`) at `/`.
+Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`). `SessionSidebar` (in `features/session-list/`) is retained only as the Obsidian plugin's chrome; the tabbed-strip specs below describe that legacy embedded shell.
 
 - **Width**: 320px (20rem) via `--sidebar-width` CSS custom property on `SidebarProvider`
 - **CSS variables**: `--sidebar-*` in `index.css` (subtly distinct from main background — 96% vs 98% light, 6% vs 4% dark)
@@ -269,7 +269,7 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Toggle**: `Cmd+B` / `Ctrl+B` (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)
 - **SidebarRail**: Invisible hover-target strip at sidebar edge for mouse-over toggle
 - **SidebarTrigger**: Toggle button in `SidebarInset` header (outside the sidebar itself)
-- **Tabbed views**: `SidebarTabRow` switches between Sessions, Schedules, and Connections views (see [Sidebar Tabs](#sidebar-tabs) below)
+- **Tabbed views** (embedded shell only): `SessionSidebar` renders a local four-tab strip switching Overview / Sessions / Schedules / Connections (see [Sidebar Tabs](#sidebar-tabs) below)
 - **Temporal grouping**: Sessions grouped by Today / Yesterday / Previous 7 Days / Previous 30 Days / Older using `SidebarGroup` / `SidebarGroupLabel`
 - **Session items**: `SidebarMenuButton` with relative time + truncated title
 - **Active session**: `isActive` prop on `SidebarMenuButton`
@@ -280,7 +280,7 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 
 ### Sidebar Tabs
 
-The sidebar uses a custom tab bar (`SidebarTabRow`, not Radix Tabs) for switching between Sessions, Schedules, and Connections views. Keyboard shortcuts `Cmd+1`/`Cmd+2`/`Cmd+3` switch tabs directly.
+Legacy embedded shell (Obsidian) only. `SessionSidebar` renders a custom tab bar (a local strip internal to the component, not Radix Tabs) switching between Overview, Sessions, Schedules, and Connections views. The web cockpit has no sidebar tab strip — this describes the retained Obsidian chrome.
 
 | Element             | Specification                                     |
 | ------------------- | ------------------------------------------------- |
@@ -576,7 +576,7 @@ Status indicators that depend on both per-entity configuration and global featur
 | `disabled-by-agent`  | Muted/dimmed appearance (`opacity-50`) | Agent manifest has explicitly opted out |
 | `disabled-by-server` | Hidden (not rendered)                  | Feature is disabled server-wide         |
 
-In the sidebar, this pattern surfaces as badge indicators on the tab bar (schedule count badge, connections status dot). The `SidebarTabRow` shows badges only when the corresponding feature is enabled.
+In the embedded shell's sidebar, this pattern surfaces as badge indicators on the tab bar (schedule count badge, connections status dot) — the `SessionSidebar` strip shows a badge only when the corresponding feature is active.
 
 ### 3-State Toggle Pattern (CapabilitiesTab)
 

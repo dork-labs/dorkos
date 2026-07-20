@@ -262,18 +262,7 @@ function adaptToContribution(
   switch (slot) {
     case 'dashboard.sections':
       return { ...base, component };
-    case 'sidebar.tabs':
-      // `icon` is optional on SidebarTabContribution — the tab strip renders a
-      // default puzzle-piece icon for extension tabs that supply none.
-      return { ...base, component, label };
     case 'sidebar.footer':
-      return {
-        ...base,
-        onClick: () => {},
-        label,
-        icon: undefined as unknown as import('lucide-react').LucideIcon,
-      };
-    case 'header.actions':
       return {
         ...base,
         onClick: () => {},

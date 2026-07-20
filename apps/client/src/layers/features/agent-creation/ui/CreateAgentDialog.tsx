@@ -11,7 +11,7 @@ import {
   ResponsiveDialogDescription,
   DirectoryPicker,
 } from '@/layers/shared/ui';
-import { useAppStore, useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
+import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
@@ -38,7 +38,6 @@ export function CreateAgentDialog() {
   const openImport = useImportProjectsStore((s) => s.open);
   const createAgent = useCreateAgent();
   const navigate = useNavigate();
-  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
 
   // Wizard navigation state.
   const [step, setStep] = useState<WizardStep>('gallery');
@@ -198,7 +197,6 @@ export function CreateAgentDialog() {
             to: '/session',
             search: { dir: data._path, session: newSessionId },
           });
-          setSidebarLevel('session');
         },
         onError: (error) => {
           toast.error(error instanceof Error ? error.message : 'Failed to create agent');

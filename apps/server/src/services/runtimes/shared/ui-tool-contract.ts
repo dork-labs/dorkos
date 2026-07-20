@@ -28,7 +28,7 @@ import { z } from 'zod';
 export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
 - open_sidebar / close_sidebar
-- switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
+- switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" } — select a sidebar tab. The sidebar tab strip exists ONLY in the embedded DorkOS app (the Obsidian plugin); the web cockpit shows a persistent agent roster with no tab strip, so this is a no-op there (like open_terminal off the web).
 - open_canvas: { content: <canvas>, preferredWidth?: 20-80 } — reveal the canvas pane with content
 - update_canvas: { content: <canvas> } — replace the current canvas content
   <canvas> is EXACTLY ONE of these shapes (note each type's payload key differs):
@@ -67,7 +67,10 @@ Notes:
 export const CONTROL_UI_INPUT = {
   action: z.string().describe('The UI action to perform'),
   panel: z.string().optional().describe('Panel ID for panel commands'),
-  tab: z.string().optional().describe('Tab name for switch_sidebar_tab'),
+  tab: z
+    .string()
+    .optional()
+    .describe('Tab name for switch_sidebar_tab (embedded app only; no-op on the web cockpit)'),
   content: z
     .record(z.string(), z.unknown())
     .optional()

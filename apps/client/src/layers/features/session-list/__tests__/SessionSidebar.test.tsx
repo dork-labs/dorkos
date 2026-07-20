@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, MessageSquare, Clock, Radio } from 'lucide-react';
 import { SessionSidebar } from '../ui/SessionSidebar';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
-import { TransportProvider, useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
-import type { SidebarTabContribution } from '@/layers/shared/model';
+import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider, SidebarProvider } from '@/layers/shared/ui';
+
+// SessionSidebar is now the quarantined embedded-shell (Obsidian) chrome: a
+// self-contained four-tab strip over its own panels, with no extension-registry
+// dependency. These tests exercise that standalone form.
 
 // Mock useSessionId (TanStack Router search params)
 const mockSetSessionId = vi.fn();
@@ -210,45 +212,6 @@ vi.mock('@/layers/shared/lib/session-utils', () => ({
   formatRelativeTime: (iso: string) => (iso >= '2026-02-07' ? '1h ago' : 'Jan 1, 3pm'),
 }));
 
-/** Register the built-in sidebar tab contributions into the extension registry. */
-function registerMockTabContributions() {
-  const { register } = useExtensionRegistry.getState();
-  const tabs: SidebarTabContribution[] = [
-    {
-      id: 'overview',
-      icon: LayoutDashboard,
-      label: 'Overview',
-      component: () => null,
-      priority: 1,
-    },
-    {
-      id: 'sessions',
-      icon: MessageSquare,
-      label: 'Sessions',
-      component: () => null,
-      priority: 2,
-    },
-    {
-      id: 'schedules',
-      icon: Clock,
-      label: 'Schedules',
-      component: () => null,
-      visibleWhen: () => mockToolStatus.tasks !== 'disabled-by-server',
-      priority: 3,
-    },
-    {
-      id: 'connections',
-      icon: Radio,
-      label: 'Connections',
-      component: () => null,
-      priority: 4,
-    },
-  ];
-  for (const tab of tabs) {
-    register('sidebar.tabs', tab);
-  }
-}
-
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: overrides.id ?? 'session-1',
@@ -304,10 +267,6 @@ describe('SessionSidebar', () => {
     mockSetSidebarOpen.mockClear();
     mockSidebarActiveTab = 'overview';
     mockPathname = '/session';
-
-    // Reset the extension registry and populate with mock tab contributions
-    useExtensionRegistry.setState({ slots: createInitialSlots() });
-    registerMockTabContributions();
   });
   afterEach(() => {
     cleanup();
@@ -396,18 +355,23 @@ describe('SessionSidebar', () => {
     expect(screen.queryByLabelText('Mesh discovery')).toBeNull();
   });
 
-  it('does not render footer (footer moved to AppShell)', () => {
+  it('does not render footer (footer moved to the embedding shell)', () => {
     renderWithQuery(<SessionSidebar />);
-    // Footer with branding and settings now lives in AppShell, not the sidebar
+    // Footer with branding and settings lives in the embedding shell, not here.
     expect(screen.queryByLabelText('App Settings')).toBeNull();
   });
 
-  describe('tab switching', () => {
-    it('renders SidebarTabRow with tab buttons', () => {
+  describe('local tab strip', () => {
+    it('renders the four built-in tab buttons', () => {
       renderWithQuery(<SessionSidebar />);
       expect(screen.getByRole('tablist')).toBeInTheDocument();
-      // At minimum: sessions + connections (schedules depends on Tasks feature flag)
-      expect(screen.getAllByRole('tab').length).toBeGreaterThanOrEqual(2);
+      const tabIds = screen.getAllByRole('tab').map((t) => t.id);
+      expect(tabIds).toEqual([
+        'sidebar-tab-overview',
+        'sidebar-tab-sessions',
+        'sidebar-tab-schedules',
+        'sidebar-tab-connections',
+      ]);
     });
 
     it('shows overview tabpanel by default and hides others', () => {
@@ -422,7 +386,7 @@ describe('SessionSidebar', () => {
       expect(connectionsPanel?.classList.contains('hidden')).toBe(true);
     });
 
-    it('switching tab calls setSidebarActiveTab', () => {
+    it('switching a tab calls setSidebarActiveTab', () => {
       renderWithQuery(<SessionSidebar />);
 
       const schedulesTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-schedules');
@@ -431,6 +395,36 @@ describe('SessionSidebar', () => {
         fireEvent.click(schedulesTab);
         expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('schedules');
       }
+    });
+
+    it('reflects the store active tab by revealing its panel', () => {
+      mockSidebarActiveTab = 'connections';
+      renderWithQuery(<SessionSidebar />);
+      const connectionsPanel = document.getElementById('sidebar-tabpanel-connections');
+      const overviewPanel = document.getElementById('sidebar-tabpanel-overview');
+      expect(connectionsPanel?.classList.contains('hidden')).toBe(false);
+      expect(overviewPanel?.classList.contains('hidden')).toBe(true);
+      const connectionsTab = screen
+        .getAllByRole('tab')
+        .find((t) => t.id === 'sidebar-tab-connections');
+      expect(connectionsTab).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('resolves a stale/extension tab id back to overview', () => {
+      // A leftover namespaced id from the old registry-backed strip (or an
+      // uninstalled extension) is not one of the four built-ins, so the panel
+      // area falls back to overview rather than going blank.
+      mockSidebarActiveTab = 'linear-issues:linear-loop-sidebar';
+      renderWithQuery(<SessionSidebar />);
+
+      const overviewPanel = document.getElementById('sidebar-tabpanel-overview');
+      expect(overviewPanel?.classList.contains('hidden')).toBe(false);
+      // No phantom panel is mounted for the orphaned id.
+      expect(
+        document.getElementById('sidebar-tabpanel-linear-issues:linear-loop-sidebar')
+      ).toBeNull();
+      const overviewTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-overview');
+      expect(overviewTab).toHaveAttribute('aria-selected', 'true');
     });
 
     it('each tabpanel has correct aria-labelledby linking to its tab', () => {
@@ -442,153 +436,27 @@ describe('SessionSidebar', () => {
       expect(schedulesPanel?.getAttribute('aria-labelledby')).toBe('sidebar-tab-schedules');
       expect(connectionsPanel?.getAttribute('aria-labelledby')).toBe('sidebar-tab-connections');
     });
-  });
 
-  describe('keyboard shortcuts', () => {
-    it('Cmd+1 switches to overview tab when sidebar is open', () => {
-      renderWithQuery(<SessionSidebar />);
-      fireEvent.keyDown(document, { key: '1', metaKey: true });
-      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('overview');
-    });
-
-    it('Cmd+2 switches to sessions tab when sidebar is open', () => {
-      renderWithQuery(<SessionSidebar />);
-      fireEvent.keyDown(document, { key: '2', metaKey: true });
-      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('sessions');
-    });
-
-    it('Cmd+3 switches to schedules tab when visible and sidebar open', () => {
-      renderWithQuery(<SessionSidebar />);
-      fireEvent.keyDown(document, { key: '3', metaKey: true });
-      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('schedules');
-    });
-
-    it('Cmd+4 switches to connections tab when visible and sidebar open', () => {
-      renderWithQuery(<SessionSidebar />);
-      fireEvent.keyDown(document, { key: '4', metaKey: true });
-      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('connections');
-    });
-
-    it('Ctrl+number also works (cross-platform)', () => {
-      renderWithQuery(<SessionSidebar />);
-      fireEvent.keyDown(document, { key: '2', ctrlKey: true });
-      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('sessions');
-    });
-
-    it('plain number keys without modifier do not switch tabs', () => {
-      renderWithQuery(<SessionSidebar />);
-      fireEvent.keyDown(document, { key: '2' });
-      expect(mockSetSidebarActiveTab).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('feature flags', () => {
-    afterEach(() => {
-      // Restore default tool status after each feature flag test
-      mockToolStatus = {
-        tasks: 'enabled',
-        relay: 'enabled',
-        mesh: 'enabled',
-        adapter: 'enabled',
-      };
-    });
-
-    it('hides schedules tab when Tasks is disabled-by-server', () => {
+    it('keeps the Schedules tab present even when Tasks is disabled-by-server', () => {
+      // The quarantined strip is a fixed four-tab union; only the panel content
+      // reacts to tool status, not the strip itself.
+      //
+      // SIGN-OFF (reviewer-accepted): keeping Schedules-when-server-disabled on
+      // this deprecated embedded surface is deliberate — a benign empty state.
+      // The registry-driven `visibleWhen` that used to hide it died with the
+      // tab-strip machinery, and the Obsidian north-star rework deletes this whole
+      // component; wiring conditional visibility back into a legacy shell is not
+      // worth it.
       mockToolStatus = {
         tasks: 'disabled-by-server',
         relay: 'enabled',
         mesh: 'enabled',
         adapter: 'enabled',
       };
-
       renderWithQuery(<SessionSidebar />);
-
       const schedulesTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-schedules');
-      expect(schedulesTab).toBeUndefined();
-    });
-
-    it('falls back to sessions when active tab becomes hidden', () => {
-      mockSidebarActiveTab = 'schedules';
-
-      mockToolStatus = {
-        tasks: 'disabled-by-server',
-        relay: 'enabled',
-        mesh: 'enabled',
-        adapter: 'enabled',
-      };
-
-      renderWithQuery(<SessionSidebar />);
-
-      // The fallback effect should call setSidebarActiveTab('overview')
-      expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('overview');
-    });
-  });
-
-  describe('extension-contributed tabs', () => {
-    /** Register an extra `sidebar.tabs` contribution (as an extension would). */
-    function registerContributedTab(component: SidebarTabContribution['component']) {
-      useExtensionRegistry.getState().register('sidebar.tabs', {
-        id: 'linear-issues:linear-loop-sidebar',
-        label: 'Linear',
-        component,
-        priority: 5,
-      });
-    }
-
-    it('renders the contributed tab in the strip after the built-ins', () => {
-      registerContributedTab(() => <div>Linear panel content</div>);
-      renderWithQuery(<SessionSidebar />);
-
-      const tabIds = screen.getAllByRole('tab').map((t) => t.id);
-      // The contributed tab (priority 5) sorts after the four built-ins.
-      expect(tabIds).toContain('sidebar-tab-linear-issues:linear-loop-sidebar');
-      expect(tabIds.indexOf('sidebar-tab-linear-issues:linear-loop-sidebar')).toBe(
-        tabIds.length - 1
-      );
-    });
-
-    it('renders the contributed panel component when its tab is active', () => {
-      mockSidebarActiveTab = 'linear-issues:linear-loop-sidebar';
-      registerContributedTab(() => <div>Linear panel content</div>);
-
-      renderWithQuery(<SessionSidebar />);
-
-      expect(screen.getByText('Linear panel content')).toBeInTheDocument();
-      // It should not have fallen back to overview — the tab is registered.
-      expect(mockSetSidebarActiveTab).not.toHaveBeenCalledWith('overview');
-    });
-
-    it('error boundary catches a throwing contributed tab without killing the sidebar', () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-      mockSidebarActiveTab = 'linear-issues:linear-loop-sidebar';
-      registerContributedTab(() => {
-        throw new Error('boom');
-      });
-
-      renderWithQuery(<SessionSidebar />);
-
-      // Fallback message shows, and the rest of the sidebar (tab strip) survives.
-      expect(screen.getByText('Something went wrong in this tab.')).toBeInTheDocument();
-      expect(screen.getByRole('tablist')).toBeInTheDocument();
-
-      consoleError.mockRestore();
-    });
-
-    it('shows the overview panel as placeholder while a contributed id has no registered tab', () => {
-      // Persisted active id references an uninstalled extension: no contributed
-      // tab registers. During the reconciliation grace window the panel area
-      // must show the overview panel, not go blank.
-      mockSidebarActiveTab = 'gone-ext:gone-tab';
-
-      renderWithQuery(<SessionSidebar />);
-
-      const overviewPanel = document.getElementById('sidebar-tabpanel-overview');
-      expect(overviewPanel?.classList.contains('hidden')).toBe(false);
-      // No contributed panel is mounted for the orphaned id.
-      expect(document.getElementById('sidebar-tabpanel-gone-ext:gone-tab')).toBeNull();
-      // The strip highlights overview (the displayed tab), not a phantom tab.
-      const overviewTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-overview');
-      expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+      expect(schedulesTab).toBeDefined();
+      mockToolStatus = { tasks: 'enabled', relay: 'enabled', mesh: 'enabled', adapter: 'enabled' };
     });
   });
 });

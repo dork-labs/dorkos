@@ -74,7 +74,7 @@ describe('MockExtensionAPI', () => {
     const contributions = api.getContributions();
     expect(contributions['dashboard.sections']).toBe(2);
     expect(contributions['sidebar.footer']).toBe(1);
-    expect(contributions['header.actions']).toBe(0);
+    expect(contributions['right-panel']).toBe(0);
   });
 
   it('tracks registerCommand calls under command-palette.items', () => {
@@ -107,12 +107,12 @@ describe('MockExtensionAPI', () => {
     expect(contributions['settings.tabs']).toBe(1);
   });
 
-  it('returns zero counts for all 8 slots when nothing is registered', () => {
+  it('returns zero counts for all 6 slots when nothing is registered', () => {
     const api = new MockExtensionAPI('test-ext');
 
     const contributions = api.getContributions();
 
-    expect(Object.keys(contributions)).toHaveLength(8);
+    expect(Object.keys(contributions)).toHaveLength(6);
     for (const count of Object.values(contributions)) {
       expect(count).toBe(0);
     }
@@ -127,8 +127,6 @@ describe('MockExtensionAPI', () => {
     expect(contributions).toHaveProperty('command-palette.items');
     expect(contributions).toHaveProperty('settings.tabs');
     expect(contributions).toHaveProperty('sidebar.footer');
-    expect(contributions).toHaveProperty('sidebar.tabs');
-    expect(contributions).toHaveProperty('header.actions');
     expect(contributions).toHaveProperty('dialog');
     expect(contributions).toHaveProperty('right-panel');
   });
@@ -171,7 +169,7 @@ describe('MockExtensionAPI', () => {
 
   it('registerComponent returns a cleanup function', () => {
     const api = new MockExtensionAPI('test-ext');
-    const unsub = api.registerComponent('header.actions', 'btn', () => null);
+    const unsub = api.registerComponent('dashboard.sections', 'card', () => null);
     expect(typeof unsub).toBe('function');
   });
 });

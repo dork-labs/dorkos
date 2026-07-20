@@ -2040,8 +2040,10 @@ registry.registerPath({
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
-  // Any registered tab id — a built-in or an extension-contributed tab
-  // (`${extId}:${id}`). Mirrors the bounded `sidebarTab` in manifest-schema.ts
+  // A sidebar tab id, bounded. The sidebar tab strip exists only in the embedded
+  // (Obsidian) shell; the web cockpit has no strip, so a pinned tab is a no-op
+  // there. The `:` is still accepted so old manifests that pinned a namespaced
+  // tab keep validating. Mirrors the bounded `sidebarTab` in manifest-schema.ts
   // and `UiSidebarTabSchema` in @dorkos/shared.
   sidebarTab: z
     .string()
@@ -2049,8 +2051,9 @@ const LocalShapeLayoutSchema = z.object({
     .max(200)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/)
     .describe(
-      "Sidebar tab id: a built-in ('overview', 'sessions', 'schedules', 'connections') " +
-        "or an extension-contributed tab's contribution id ('extId:tabId')."
+      "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
+        "'connections'). The sidebar tab strip exists only in the embedded " +
+        '(Obsidian) app; on the web cockpit switching a sidebar tab is a no-op.'
     )
     .optional(),
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),

@@ -6,8 +6,7 @@
   "author": "DorkOS",
   "minHostVersion": "0.1.0",
   "contributions": {
-    "dashboard.sections": true,
-    "sidebar.tabs": true
+    "dashboard.sections": true
   },
   "defaultEnabled": false,
   "canDisable": true,
@@ -80,14 +79,6 @@
         "key": "show_dashboard",
         "label": "Show Dashboard Section",
         "description": "Display Loop status on the main dashboard",
-        "default": true,
-        "group": "Display"
-      },
-      {
-        "type": "boolean",
-        "key": "show_sidebar",
-        "label": "Show Sidebar Tab",
-        "description": "Display Loop status in the sidebar",
         "default": true,
         "group": "Display"
       }

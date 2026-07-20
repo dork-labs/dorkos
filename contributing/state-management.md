@@ -28,23 +28,23 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 
 ## When to Use What
 
-| State Type                 | Tool                                              | Example                                                             | Why                                                                                    |
-| -------------------------- | ------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Server state               | TanStack Query                                    | Sessions, messages, commands                                        | Handles caching, revalidation, background refetching                                   |
-| Complex client state       | Zustand                                           | Sidebar open/closed, active panel                                   | Global access, no prop drilling, middleware support                                    |
-| Simple UI state            | React useState                                    | Modal open/close, toggle visibility                                 | Scoped to component, no persistence needed                                             |
-| URL state (standalone)     | TanStack Router search params                     | `?session=` ID, `?dir=` working directory                           | Shareable links, browser history, bookmarkable                                         |
-| URL state (Obsidian)       | Zustand                                           | Session ID, working directory                                       | No URL bar in Obsidian; Zustand replaces router search params                          |
-| Persistent client state    | localStorage + useSyncExternalStore               | Agent frecency scores (Slack bucket system)                         | Survives page reloads, reactive updates via subscribe/getSnapshot                      |
-| Dialog-scoped state        | React useState                                    | Pages stack in CommandPaletteDialog                                 | Resets when dialog closes, no persistence needed                                       |
-| Debounced derived state    | useDeferredValue                                  | Preview panel data during rapid navigation                          | Defers expensive fetches without state management overhead                             |
-| Multi-source derived state | TanStack Query + `useMemo`                        | Feature flags + entity data combined                                | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
-| Cross-feature signal       | Zustand (entity layer)                            | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature | Entity-layer store avoids FSD model cross-import violation                             |
-| Slot-based UI contribution | Extension registry (Zustand)                      | Command palette items, sidebar tabs, dialogs                        | Decouples rendering surface from contributing features via typed slots                 |
-| URL-synced filter state    | useFilterState + TanStack Router                  | Agent list filters, sort, search — serialized to URL search params  | Shareable, bookmarkable, composable; debounced text inputs via per-key config          |
-| URL-driven dialog state    | `dialogSearchSchema` + deep-link hooks            | `?settings=tools`, `?tasks=open` — open dialogs from any page       | Deep-linkable, works cross-page, merged into every route via `mergeDialogSearch`       |
-| Multi-surface dialog state | Standalone Zustand store                          | `useAgentCreationStore` — open dialog with initial mode             | Triggered from 3+ unrelated surfaces; avoids prop-threading open state                 |
-| Real-time SSE events       | `useEventSubscription` from `EventStreamProvider` | Tunnel status, relay messages, extension reload signals             | Single shared connection, ref-stabilized handlers, module-level singleton              |
+| State Type                 | Tool                                              | Example                                                              | Why                                                                                    |
+| -------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Server state               | TanStack Query                                    | Sessions, messages, commands                                         | Handles caching, revalidation, background refetching                                   |
+| Complex client state       | Zustand                                           | Sidebar open/closed, active panel                                    | Global access, no prop drilling, middleware support                                    |
+| Simple UI state            | React useState                                    | Modal open/close, toggle visibility                                  | Scoped to component, no persistence needed                                             |
+| URL state (standalone)     | TanStack Router search params                     | `?session=` ID, `?dir=` working directory                            | Shareable links, browser history, bookmarkable                                         |
+| URL state (Obsidian)       | Zustand                                           | Session ID, working directory                                        | No URL bar in Obsidian; Zustand replaces router search params                          |
+| Persistent client state    | localStorage + useSyncExternalStore               | Agent frecency scores (Slack bucket system)                          | Survives page reloads, reactive updates via subscribe/getSnapshot                      |
+| Dialog-scoped state        | React useState                                    | Pages stack in CommandPaletteDialog                                  | Resets when dialog closes, no persistence needed                                       |
+| Debounced derived state    | useDeferredValue                                  | Preview panel data during rapid navigation                           | Defers expensive fetches without state management overhead                             |
+| Multi-source derived state | TanStack Query + `useMemo`                        | Feature flags + entity data combined                                 | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
+| Cross-feature signal       | Zustand (entity layer)                            | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature  | Entity-layer store avoids FSD model cross-import violation                             |
+| Slot-based UI contribution | Extension registry (Zustand)                      | Command palette items, dashboard sections, right-panel tabs, dialogs | Decouples rendering surface from contributing features via typed slots                 |
+| URL-synced filter state    | useFilterState + TanStack Router                  | Agent list filters, sort, search — serialized to URL search params   | Shareable, bookmarkable, composable; debounced text inputs via per-key config          |
+| URL-driven dialog state    | `dialogSearchSchema` + deep-link hooks            | `?settings=tools`, `?tasks=open` — open dialogs from any page        | Deep-linkable, works cross-page, merged into every route via `mergeDialogSearch`       |
+| Multi-surface dialog state | Standalone Zustand store                          | `useAgentCreationStore` — open dialog with initial mode              | Triggered from 3+ unrelated surfaces; avoids prop-threading open state                 |
+| Real-time SSE events       | `useEventSubscription` from `EventStreamProvider` | Tunnel status, relay messages, extension reload signals              | Single shared connection, ref-stabilized handlers, module-level singleton              |
 
 ## Core Patterns
 
@@ -64,7 +64,7 @@ The combined `AppState` type is the intersection of all four slices, defined in 
 Key state owned by the app store:
 
 - `sidebarOpen` — persisted to localStorage; defaults to open on desktop (`BOOL_DEFAULTS.sidebarOpen`), always `false` on mobile and the embedded overlay on first load
-- `sidebarLevel` — transient (`'dashboard' | 'session'`); controls whether the sidebar shows the top-level agent list or the agent-scoped session view
+- `sidebarActiveTab` — persisted; the active tab of the embedded shell's legacy sidebar strip (Obsidian only — the web cockpit has no sidebar tab strip)
 - `previousCwd` — transient; used by command palette for "switch back" suggestions
 - Dialog open states (`settingsOpen`, `tasksOpen`, `relayOpen`, etc.) — transient, not persisted
 - Canvas panel state (`canvasOpen`, `canvasContent`, `canvasPreferredWidth`) — transient; controls the agent-driven canvas side panel visibility, content, and width
@@ -97,8 +97,6 @@ export const useAppStore = create<AppState>()(
             writeBool(BOOL_KEYS.sidebarOpen, next);
             return { sidebarOpen: next };
           }),
-        sidebarLevel: 'dashboard' as const,
-        setSidebarLevel: (level) => set({ sidebarLevel: level }),
         // ...core slice fields
         ...createPanelsSlice(...a),
         ...createPreferencesSlice(...a),
@@ -373,7 +371,7 @@ const dialogContributions = useSlotContributions('dialog');
 
 Slots are type-safe — `SlotContributionMap` maps each slot ID to its contribution interface. Contributions are sorted by `priority` (lower = first, default 50). The `register` call returns an unsubscribe function for dynamic contributions.
 
-Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header.actions`, `command-palette.items`, `dialog`, `settings.tabs`, `session.canvas` (deprecated), `right-panel`.
+Available slots: `sidebar.footer`, `sidebar.body` (first-party only), `dashboard.sections`, `command-palette.items`, `dialog`, `settings.tabs`, `right-panel`.
 
 **Key files:**
 
@@ -382,7 +380,7 @@ Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header
 | `layers/shared/model/extension-registry.ts` | Store, slot types, `useSlotContributions` hook     |
 | `app/init-extensions.ts`                    | Startup registration of all built-in contributions |
 
-**When to use**: Any UI surface that accepts contributions from multiple features (command palette items, dialogs, sidebar tabs). Prefer over hardcoded imports when the rendering component should not know about every contributor.
+**When to use**: Any UI surface that accepts contributions from multiple features (command palette items, dialogs, dashboard sections, right-panel tabs). Prefer over hardcoded imports when the rendering component should not know about every contributor.
 
 ### Feature-Level Zustand Stores (Marketplace)
 

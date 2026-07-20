@@ -19,11 +19,16 @@ import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../../shared/ui-tool-c
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
-/** Default UI state returned when no client-reported state exists on the session. */
+/**
+ * Default UI state returned when no client-reported state exists on the session.
+ * `sidebar.activeTab` defaults to null: the sidebar tab strip exists only in the
+ * embedded (Obsidian) shell, so the honest default — before any client reports —
+ * is "no addressable tab", not a fabricated `overview`.
+ */
 const DEFAULT_UI_STATE: UiState = {
   canvas: { open: false, contentType: null },
   panels: { settings: false, tasks: false, relay: false, picker: false },
-  sidebar: { open: true, activeTab: 'overview' },
+  sidebar: { open: true, activeTab: null },
   agent: { id: null, cwd: null },
 };
 
@@ -75,7 +80,11 @@ function applyUiCommandToState(state: UiState, command: UiCommand): UiState {
     case 'close_sidebar':
       return { ...state, sidebar: { ...state.sidebar, open: false } };
     case 'switch_sidebar_tab':
-      // The dispatcher also opens the sidebar when switching tabs.
+      // Best-effort intent projection: the client dispatcher opens the sidebar
+      // and selects the tab — but ONLY on the embedded (Obsidian) shell, which is
+      // the sole host with a sidebar tab strip. On the web cockpit this command
+      // is a no-op, and that client reports `activeTab: null`, which corrects this
+      // projection on its next snapshot (get_ui_state is intent, not a live read).
       return { ...state, sidebar: { open: true, activeTab: command.tab } };
     case 'open_canvas':
       return {
@@ -213,7 +222,7 @@ export function getUiTools(_deps: McpToolDeps, session?: UiToolSession) {
     ),
     tool(
       'get_ui_state',
-      'Get the current DorkOS UI state — which panels are open, sidebar tab, canvas state, and active agent. Reflects the last state the client reported (at the start of this turn) merged with the control_ui commands issued this turn; it is not a live read of the client. Use it after control_ui to confirm intent, or to make UI decisions.',
+      'Get the current DorkOS UI state — which panels are open, canvas state, active agent, and (embedded app only) the sidebar tab. Reflects the last state the client reported (at the start of this turn) merged with the control_ui commands issued this turn; it is not a live read of the client. Note: sidebar.activeTab is null on the web cockpit, which has no sidebar tab strip — it is reported only by the embedded (Obsidian) app. Use it after control_ui to confirm intent, or to make UI decisions.',
       {},
       async () => getUiStateHandler()
     ),

@@ -96,7 +96,7 @@ describe('extension-registry', () => {
     register('sidebar.footer', makeSidebarFooter({ id: 'btn-isolated' }));
 
     expect(getContributions('dialog')).toHaveLength(0);
-    expect(getContributions('sidebar.tabs')).toHaveLength(0);
+    expect(getContributions('right-panel')).toHaveLength(0);
   });
 
   it('returns empty array for a slot with no registrations', () => {

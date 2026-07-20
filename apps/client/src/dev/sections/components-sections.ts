@@ -123,22 +123,6 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['session', 'list', 'group', 'today', 'yesterday', 'empty', 'scroll'],
   },
   {
-    id: 'sidebartabrow',
-    title: 'SidebarTabRow',
-    page: 'components',
-    category: 'Sidebar',
-    keywords: [
-      'tab',
-      'sidebar',
-      'sessions',
-      'schedules',
-      'connections',
-      'badge',
-      'status',
-      'indicator',
-    ],
-  },
-  {
     id: 'sidebarfooterbar',
     title: 'SidebarFooterBar',
     page: 'components',

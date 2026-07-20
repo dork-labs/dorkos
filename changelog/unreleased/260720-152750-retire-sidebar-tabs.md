@@ -1,0 +1,3 @@
+### Changed
+
+- **The sidebar in the web cockpit is now just your list of agents — the old per-chat "session" view and its row of sidebar tabs have been retired.** Opening a chat keeps your agent list in place; everything about that chat lives in the inspector panel on the right, so the sidebar never swaps out from under you. Agents that drive the interface get an honest answer now, too: the web cockpit has no sidebar tabs, so asking to switch one does nothing there — and the agent is told that, instead of it quietly pretending to work. (The tab strip still lives in the Obsidian plugin, where those requests keep working.)

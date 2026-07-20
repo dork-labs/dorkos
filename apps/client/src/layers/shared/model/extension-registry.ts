@@ -9,10 +9,8 @@ import type { Transport } from '@dorkos/shared/transport';
 
 export const SLOT_IDS = {
   SIDEBAR_FOOTER: 'sidebar.footer',
-  SIDEBAR_TABS: 'sidebar.tabs',
   SIDEBAR_BODY: 'sidebar.body',
   DASHBOARD_SECTIONS: 'dashboard.sections',
-  HEADER_ACTIONS: 'header.actions',
   COMMAND_PALETTE_ITEMS: 'command-palette.items',
   DIALOG: 'dialog',
   SETTINGS_TABS: 'settings.tabs',
@@ -41,21 +39,6 @@ export interface SidebarFooterContribution extends BaseContribution {
   showInDevOnly?: boolean;
 }
 
-export interface SidebarTabContribution extends BaseContribution {
-  /**
-   * Tab-strip icon. Optional: extension-contributed tabs register through
-   * `api.registerComponent('sidebar.tabs', …)`, which carries no icon, so the
-   * tab strip falls back to a default (a puzzle-piece) when this is absent.
-   * Built-in tabs always set it.
-   */
-  icon?: LucideIcon;
-  /** Human label shown in the tab tooltip. */
-  label: string;
-  component: ComponentType;
-  /** Return false to hide this tab. Evaluated reactively. */
-  visibleWhen?: () => boolean;
-}
-
 export interface SidebarBodyContribution extends BaseContribution {
   /**
    * The sidebar body component rendered when this contribution wins the slot.
@@ -82,13 +65,6 @@ export interface DashboardSectionContribution extends BaseContribution {
   title?: string;
   /** Return false to hide this section. Evaluated reactively. */
   visibleWhen?: () => boolean;
-}
-
-export interface HeaderActionContribution extends BaseContribution {
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant?: 'default' | 'ghost' | 'outline';
 }
 
 export interface CommandPaletteContribution extends BaseContribution {
@@ -191,7 +167,6 @@ export interface RightPanelContribution extends BaseContribution {
  */
 export interface SlotContributionMap {
   'sidebar.footer': SidebarFooterContribution;
-  'sidebar.tabs': SidebarTabContribution;
   // First-party only (v1): `sidebar.body` is registered from client init code
   // (`app/init-extensions.ts`), never through the extension-api factory — it is
   // deliberately absent from `ExtensionPointId` in `@dorkos/extension-api`, so
@@ -200,7 +175,6 @@ export interface SlotContributionMap {
   // product decision, not an oversight.
   'sidebar.body': SidebarBodyContribution;
   'dashboard.sections': DashboardSectionContribution;
-  'header.actions': HeaderActionContribution;
   'command-palette.items': CommandPaletteContribution;
   dialog: DialogContribution;
   'settings.tabs': SettingsTabContribution;
