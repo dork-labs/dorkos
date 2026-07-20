@@ -2077,6 +2077,7 @@ const LocalApplyShapeResultSchema = z
       layout: LocalShapeLayoutSchema,
       activatedExtensions: z.array(z.string()),
       schedulesCreated: z.array(z.string()),
+      schedulesRebound: z.array(z.string()),
     }),
     warnings: z.array(z.string()),
     offeredAgents: z.array(LocalOfferedAgentSchema),

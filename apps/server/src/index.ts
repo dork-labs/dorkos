@@ -81,8 +81,17 @@ import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill
 import { AdapterInstallFlow } from './services/marketplace/flows/install-adapter.js';
 import { ShapeInstallFlow } from './services/marketplace/flows/install-shape.js';
 import { createShapesRouter } from './routes/shapes.js';
-import { applyShape, type ApplyShapeDeps } from './services/shapes/apply-shape.js';
+import {
+  applyShape,
+  type ApplyShapeDeps,
+  type ShapeScheduleServiceLike,
+} from './services/shapes/apply-shape.js';
 import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
+import {
+  rebindShapeSchedulesForAgent,
+  type RebindAgent,
+} from './services/shapes/rebind-schedules.js';
+import { setOnAgentCreated } from './services/core/agent-created-hook.js';
 import {
   clearActiveShape,
   createFsShapeManifestResolver,
@@ -90,6 +99,7 @@ import {
   createShapeSecretChecker,
   getActiveShapeName,
   getEnabledExtensionIds,
+  listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
@@ -1005,6 +1015,62 @@ async function start() {
     logger.info('[Mesh] Routes mounted');
   }
 
+  // Shape schedule service — file-first schedule creator + re-binder the Shape
+  // apply flow and the agent-create seam share. Built here (not just inside the
+  // marketplace block below) so the agent-create re-bind works even when the
+  // extension manager is off. Degrades to a no-op stub when Tasks is disabled.
+  const shapeScheduleService: ShapeScheduleServiceLike =
+    taskStore && schedulerService
+      ? new ShapeScheduleService({
+          taskStore,
+          scheduler: schedulerService,
+          meshCore,
+          dorkHome,
+          logger,
+        })
+      : {
+          listSchedules: () => [],
+          createSchedule: async () => undefined,
+          rebindSchedule: async () => undefined,
+        };
+
+  // The agent-created seam (module-level, registered once at bootstrap): every
+  // creation path — HTTP routes, MCP create_agent, marketplace agent install —
+  // notifies it via `createAgentWorkspace` / the register route. Reaction: when
+  // a new agent is created/registered, re-target any Shape schedule that was
+  // created global/disabled because this agent was missing (spec item 3). The
+  // 15-minute Linear tick turns on the moment "Linear Keeper" is created — no
+  // re-apply. The notify is awaited (so creation responses reflect the settled
+  // re-bind) but failures are swallowed at the seam; creation never fails
+  // because this reaction threw. A schedule silently starting to run is
+  // consequential, so a successful re-bind also lands in the activity feed.
+  setOnAgentCreated(async (agent: RebindAgent) => {
+    const rebound = await rebindShapeSchedulesForAgent(agent, {
+      listShapes: () => listInstalledShapeManifests(dorkHome),
+      scheduleService: shapeScheduleService,
+    });
+    if (rebound.length === 0) return;
+    logger.info(`[Shapes] Re-bound ${rebound.length} schedule(s) to new agent '${agent.name}'`, {
+      schedules: rebound,
+    });
+    const agentLabel = agent.displayName ?? agent.name;
+    await activityService.emit({
+      actorType: 'system',
+      actorLabel: 'DorkOS',
+      category: 'tasks',
+      eventType: 'tasks.schedules_rebound',
+      resourceType: 'agent',
+      resourceId: agent.id,
+      resourceLabel: agentLabel,
+      summary:
+        rebound.length === 1
+          ? `Turned on a scheduled task for ${agentLabel}`
+          : `Turned on ${rebound.length} scheduled tasks for ${agentLabel}`,
+      linkPath: '/tasks',
+      metadata: { schedules: rebound },
+    });
+  });
+
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
   app.use('/api/agents', createAgentsRouter(meshCore));
@@ -1177,17 +1243,8 @@ async function start() {
     // Shape apply wiring (DOR-355) — constructed here, before the installer,
     // because the installer's update() path re-applies the active Shape after
     // an uninstall → reinstall replace. The `/api/shapes` routes mounted below
-    // share these exact deps.
-    const shapeScheduleService =
-      taskStore && schedulerService
-        ? new ShapeScheduleService({
-            taskStore,
-            scheduler: schedulerService,
-            meshCore,
-            dorkHome,
-            logger,
-          })
-        : { existingScheduleNames: () => [], createSchedule: async () => undefined };
+    // share these exact deps; `shapeScheduleService` is the hoisted instance
+    // the agent-create re-bind seam also uses (built above the agents router).
     const shapeApplyDeps: ApplyShapeDeps = {
       manifestResolver: createFsShapeManifestResolver(dorkHome),
       extensionManager,

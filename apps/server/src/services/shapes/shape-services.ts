@@ -126,6 +126,35 @@ export function clearActiveShape(): void {
 }
 
 /**
+ * Read + parse every installed Shape manifest under `{dorkHome}/shapes/`.
+ * Unreadable / non-Shape directories are skipped silently. Used by the
+ * agent-create re-bind seam (`rebindShapeSchedulesForAgent`) to find Shape
+ * schedules still waiting on a newly created agent.
+ *
+ * @param dorkHome - Resolved data directory.
+ * @returns Every installed Shape's parsed manifest.
+ */
+export async function listInstalledShapeManifests(
+  dorkHome: string
+): Promise<ShapePackageManifest[]> {
+  const shapesRoot = path.join(dorkHome, 'shapes');
+  let entries: string[];
+  try {
+    const dirents = await readdir(shapesRoot, { withFileTypes: true });
+    entries = dirents.filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return []; // No shapes/ dir yet — nothing installed.
+  }
+
+  const manifests: ShapePackageManifest[] = [];
+  for (const name of entries) {
+    const manifest = await readInstalledShape(dorkHome, name);
+    if (manifest) manifests.push(manifest);
+  }
+  return manifests;
+}
+
+/**
  * List every installed Shape under `{dorkHome}/shapes/`, tagging the active one.
  * Unreadable / non-Shape directories are skipped silently, mirroring the
  * best-effort discovery elsewhere in the marketplace.

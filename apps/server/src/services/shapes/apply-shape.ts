@@ -85,6 +85,14 @@ export interface AppliedShape {
   activatedExtensions: string[];
   /** Schedule names created this apply (idempotent skips are excluded). */
   schedulesCreated: string[];
+  /**
+   * Schedule names re-bound to a now-present agent this apply. A schedule an
+   * earlier apply created global/disabled (its agent was missing, §7) is
+   * re-targeted to the agent and enabled once that agent exists. Idempotent: a
+   * schedule that is already agent-bound is never re-bound again, so a user who
+   * disabled their own bound schedule keeps that choice.
+   */
+  schedulesRebound: string[];
 }
 
 /** The full result of {@link applyShape} — also the `POST /api/shapes/:name/apply` body. */
@@ -153,22 +161,80 @@ export interface ShapeAgentRegistryLike {
 }
 
 /**
- * Creates schedules idempotently. Existence is checked by schedule NAME across
- * every scope (global + all agents) — never by name + target — because a Shape
- * schedule's target can legitimately flip between applies: the first apply may
- * create it globally-disabled (agent missing, §7), and once the offered agent
- * exists a re-apply resolves the same schedule to the agent's id. A per-target
- * check would miss the earlier copy and create a duplicate.
+ * A minimal view of an existing schedule, keyed by its cross-scope identity
+ * (its name). Two facts gate the re-bind flow:
+ *
+ * - `agentId === null` — the schedule is global (unbound). A *Shape* schedule
+ *   is only ever global when its target agent was absent at apply time (§7).
+ * - `shapeOrigin` — the provenance marker stamped into the schedule file at
+ *   creation (`origin: shape` + `shape: <name>` frontmatter). A user can
+ *   create their own global schedule with a colliding name via the tasks API,
+ *   so name + unbound alone is NOT proof a schedule belongs to a Shape —
+ *   re-bind requires the marker too, and never touches user-created schedules.
+ */
+export interface ExistingSchedule {
+  /** The schedule name — its identity across every scope. */
+  name: string;
+  /** The bound agent id, or `null` when the schedule is global (unbound). */
+  agentId: string | null;
+  /** Whether the schedule is currently enabled. */
+  enabled: boolean;
+  /**
+   * The name of the Shape that created this schedule, read from the schedule
+   * file's provenance marker — or `null` when the schedule carries no marker
+   * (user-created) or is agent-bound (re-bind never considers those, so the
+   * service may skip reading their files).
+   */
+  shapeOrigin: string | null;
+}
+
+/** Provenance stamped into a schedule created by a Shape apply. */
+export interface ScheduleOrigin {
+  /** The Shape (package name) standing this schedule up. */
+  shape: string;
+}
+
+/** How a global (unbound) schedule is re-bound to a now-present agent. */
+export interface ScheduleRebind {
+  /** The agent id to re-target the schedule to. */
+  agentId: string;
+  /** Whether the schedule is enabled once bound (mirrors `!startDisabled`). */
+  enabled: boolean;
+}
+
+/**
+ * Creates and re-binds schedules idempotently. Existence is checked by schedule
+ * NAME across every scope (global + all agents) — never by name + target —
+ * because a Shape schedule's target legitimately flips between applies: the
+ * first apply may create it globally-disabled (agent missing, §7), and once the
+ * offered agent exists a re-apply (or the agent's creation) re-targets the same
+ * schedule to the agent's id and enables it. A per-target check would miss the
+ * earlier copy and create a duplicate.
  */
 export interface ShapeScheduleServiceLike {
   /**
-   * @returns Every existing schedule name, across all scopes (global + agents).
+   * @returns Every existing schedule (name + binding + enabled + provenance),
+   *   across all scopes (global + agents).
    */
-  existingScheduleNames(): Promise<string[]> | string[];
+  listSchedules(): Promise<ExistingSchedule[]> | ExistingSchedule[];
   /**
    * @param req - The task-creation request built from a Shape schedule.
+   * @param origin - Provenance to stamp into the schedule file (`origin: shape`
+   *   + `shape: <name>`) — the marker the re-bind flow later gates on.
    */
-  createSchedule(req: CreateTaskRequest): Promise<void>;
+  createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<void>;
+  /**
+   * Re-target a global (unbound) schedule to a now-present agent and set its
+   * enabled state — the second half of the global → agent flip. A no-op when
+   * the named schedule is absent, already agent-bound (so an explicitly
+   * user-disabled bound schedule is never force-enabled), or missing the Shape
+   * provenance marker (so a user's own global schedule with a colliding name
+   * is never hijacked).
+   *
+   * @param name - The existing schedule's name.
+   * @param rebind - The agent id to bind to and the resulting enabled state.
+   */
+  rebindSchedule(name: string, rebind: ScheduleRebind): Promise<void>;
 }
 
 /**
@@ -260,23 +326,49 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
   // yields a disabled schedule + warning. Idempotent by NAME across all scopes:
   // the target flips 'global' → agentId once an offered agent appears, so a
   // per-target existence check would miss the earlier global copy and create a
-  // duplicate on re-apply (plus an orphaned disabled global schedule).
-  const existingNames = new Set(await deps.scheduleService.existingScheduleNames());
+  // duplicate on re-apply (plus an orphaned disabled global schedule). When the
+  // earlier global copy IS found and its agent now exists, re-bind it (§7's
+  // promised flip) instead of skipping.
+  const existingByName = new Map(
+    (await deps.scheduleService.listSchedules()).map((s) => [s.name, s] as const)
+  );
   const schedulesCreated: string[] = [];
+  const schedulesRebound: string[] = [];
   for (const schedule of manifest.schedules) {
     const resolved = agentByRef.get(schedule.agentRef);
     const match = resolved?.match ?? null;
     const target = match ? match.id : GLOBAL_TARGET;
-    const agentPresent = match !== null;
-    const enabled = agentPresent && !schedule.startDisabled;
+    const enabled = match !== null && !schedule.startDisabled;
 
-    if (existingNames.has(schedule.name)) {
-      // Idempotent no-op: a schedule with this name already exists somewhere
-      // (possibly created globally-disabled by an earlier apply).
+    const existing = existingByName.get(schedule.name);
+    if (existing) {
+      // A schedule with this name already exists (possibly created
+      // globally-disabled by an earlier apply of THIS Shape, when its agent was
+      // missing). If the agent is now present, the schedule is still unbound
+      // (global), and its provenance marker names this Shape, re-target it to
+      // the agent and enable it (unless the manifest starts it disabled). An
+      // already-bound schedule is left untouched — a user who disabled their
+      // own bound schedule keeps that choice — and a global schedule WITHOUT
+      // this Shape's provenance (a user's own, or another Shape's) is never
+      // touched: a name collision must not hijack it.
+      if (match && existing.agentId === null && existing.shapeOrigin === name) {
+        const rebindEnabled = !schedule.startDisabled;
+        await deps.scheduleService.rebindSchedule(schedule.name, {
+          agentId: match.id,
+          enabled: rebindEnabled,
+        });
+        existingByName.set(schedule.name, {
+          name: schedule.name,
+          agentId: match.id,
+          enabled: rebindEnabled,
+          shapeOrigin: name,
+        });
+        schedulesRebound.push(schedule.name);
+      }
       continue;
     }
 
-    if (!agentPresent) {
+    if (!match) {
       warnings.push(
         `Schedule '${schedule.name}' created disabled — agent '${schedule.agentRef}' missing`
       );
@@ -292,8 +384,13 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       enabled,
       permissionMode: schedule.permissionMode,
     };
-    await deps.scheduleService.createSchedule(request);
-    existingNames.add(schedule.name);
+    await deps.scheduleService.createSchedule(request, { shape: name });
+    existingByName.set(schedule.name, {
+      name: schedule.name,
+      agentId: match ? match.id : null,
+      enabled,
+      shapeOrigin: name,
+    });
     schedulesCreated.push(schedule.name);
   }
 
@@ -345,10 +442,31 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       layout: manifest.layout,
       activatedExtensions,
       schedulesCreated,
+      schedulesRebound,
     },
     warnings,
     offeredAgents,
   };
+}
+
+/**
+ * Whether a Shape agent entry's `matchName` is satisfied by an agent's name or
+ * display name (case-insensitive). The single match rule shared by the apply
+ * flow ({@link resolveAgentMatch}) and the agent-create re-bind seam
+ * (`rebindShapeSchedulesForAgent`), so both decide "does this agent satisfy this
+ * Shape entry?" identically. Returns `false` when no `matchName` is declared.
+ *
+ * @param matchName - The Shape agent entry's `matchName`, if any.
+ * @param agent - The candidate agent's name + optional display name.
+ * @returns Whether the agent satisfies `matchName`.
+ */
+export function matchesAgentByName(
+  matchName: string | undefined,
+  agent: { name: string; displayName?: string }
+): boolean {
+  if (!matchName) return false;
+  const needle = matchName.toLowerCase();
+  return agent.name.toLowerCase() === needle || agent.displayName?.toLowerCase() === needle;
 }
 
 /**
@@ -365,10 +483,5 @@ function resolveAgentMatch(
   registered: RegisteredAgentView[]
 ): RegisteredAgentView | null {
   if (!agent.matchName) return null;
-  const needle = agent.matchName.toLowerCase();
-  return (
-    registered.find(
-      (a) => a.name.toLowerCase() === needle || a.displayName?.toLowerCase() === needle
-    ) ?? null
-  );
+  return registered.find((a) => matchesAgentByName(agent.matchName, a)) ?? null;
 }

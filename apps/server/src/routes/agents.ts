@@ -31,6 +31,7 @@ import { readConventionFile, writeConventionFile } from '@dorkos/shared/conventi
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
+import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
@@ -172,6 +173,16 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         });
       }
 
+      // The agent-created seam: this register path writes the manifest itself
+      // (it does not go through `createAgentWorkspace`), so it must notify the
+      // seam directly. Awaited, but never throws — a failing reaction (e.g.
+      // Shape schedule re-bind) never turns a successful registration into a 500.
+      await notifyAgentCreated({
+        id: manifest.id,
+        name: manifest.name,
+        displayName: manifest.displayName,
+      });
+
       return res.status(201).json(manifest);
     } catch (err) {
       if (err instanceof BoundaryError) {
@@ -204,6 +215,8 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         });
       }
 
+      // (The agent-created seam already fired inside `createAgentWorkspace` —
+      // no extra notify here.)
       return res.status(201).json({
         ...result.manifest,
         _path: result.path,

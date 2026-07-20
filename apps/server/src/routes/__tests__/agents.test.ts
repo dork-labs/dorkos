@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -72,6 +72,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from 'supertest';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
+import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
@@ -248,6 +249,49 @@ describe('Agents Routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+  });
+
+  describe('agent-created seam (POST /api/agents)', () => {
+    afterEach(() => {
+      setOnAgentCreated(null);
+    });
+
+    it('notifies the seam after a successful registration', async () => {
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
+
+      expect(res.status).toBe(201);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({
+        id: 'MOCK_ULID_001',
+        name: 'my-project',
+        displayName: undefined,
+      });
+    });
+
+    it('still returns 201 when the seam listener throws (never-500 guarantee)', async () => {
+      setOnAgentCreated(vi.fn().mockRejectedValue(new Error('shape re-bind exploded')));
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe('MOCK_ULID_001');
+    });
+
+    it('does not notify the seam when registration fails (409 conflict)', async () => {
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+      mockReadManifest.mockResolvedValue(mockManifest); // already exists
+
+      const res = await request(app).post('/api/agents').send({ path: '/home/user/project' });
+
+      expect(res.status).toBe(409);
+      expect(listener).not.toHaveBeenCalled();
     });
   });
 

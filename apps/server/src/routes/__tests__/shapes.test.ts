@@ -101,7 +101,11 @@ describe('shapes router', () => {
       },
       secretChecker: { isSet: async () => false }, // secret unset → a warning
       agentRegistry: { listWithPaths: () => [] }, // agent absent → offered
-      scheduleService: { existingScheduleNames: () => [], createSchedule: async () => undefined },
+      scheduleService: {
+        listSchedules: () => [],
+        createSchedule: async () => undefined,
+        rebindSchedule: async () => undefined,
+      },
       configStore: {
         getShapePrefs: () => ({ active: activeShape, agentDefaults: {}, autoFollowAgent: false }),
         setActiveShape,

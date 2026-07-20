@@ -459,6 +459,12 @@ export interface AppliedShape {
   activatedExtensions: string[];
   /** Schedule names created this apply (idempotent skips excluded). */
   schedulesCreated: string[];
+  /**
+   * Schedule names re-bound this apply: created global/disabled by an earlier
+   * apply (their agent was missing), now re-targeted to the agent and enabled
+   * because the agent exists.
+   */
+  schedulesRebound: string[];
 }
 
 /** Response body for `POST /api/shapes/:name/apply`. */
