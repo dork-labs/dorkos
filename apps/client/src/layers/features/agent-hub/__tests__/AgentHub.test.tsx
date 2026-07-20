@@ -63,9 +63,13 @@ vi.mock('../model/use-agent-hub-deep-link', () => ({
   useAgentDialogRedirect: vi.fn(),
 }));
 
-// Hero uses useRouterState for the segmented control's visibleWhen predicate.
+// AgentHub reads the pathname to decide whether the selectedCwd fallback is
+// honest (only on /session). Mutable so tests can exercise off-session routes.
+// Named `mock*` so vitest's mock hoisting permits the reference.
+let mockPathname = '/session';
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: () => '/session',
+  useRouterState: (opts?: { select?: (s: { location: { pathname: string } }) => unknown }) =>
+    opts?.select ? opts.select({ location: { pathname: mockPathname } }) : mockPathname,
 }));
 
 import { useCurrentAgent } from '@/layers/entities/agent';
@@ -95,6 +99,7 @@ afterEach(cleanup);
 describe('AgentHub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPathname = '/session';
     useAgentHubStore.setState({ agentPath: null, activeTab: 'sessions' });
     useAppStore.setState({ selectedCwd: null });
   });
@@ -135,6 +140,41 @@ describe('AgentHub', () => {
     render(<AgentHub />, { wrapper: TestWrapper });
     expect(screen.getByTestId('agent-name')).toHaveTextContent('Test Agent');
     expect(screen.getByRole('tablist', { name: 'Agent hub tabs' })).toBeInTheDocument();
+  });
+
+  it('does not resolve the ambient cwd off /session without an explicit selection', () => {
+    // Selection honesty (fix 2): off /session, selectedCwd is the server's
+    // ambient startup directory, not a user pick. With no explicit hub selection
+    // the hub must NOT profile it — it shows "No agent selected" instead.
+    mockPathname = '/';
+    useAppStore.setState({ selectedCwd: '/ambient/agent' });
+    useAgentHubStore.setState({ agentPath: null });
+    vi.mocked(useCurrentAgent).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCurrentAgent>);
+    render(<AgentHub />, { wrapper: TestWrapper });
+    expect(screen.getByText('No agent selected')).toBeInTheDocument();
+    // The ambient cwd was never used to resolve an agent.
+    expect(useCurrentAgent).toHaveBeenCalledWith(null);
+  });
+
+  it('resolves an explicitly-opened agent off /session', () => {
+    // With an explicit hub selection the hub profiles it regardless of route.
+    mockPathname = '/';
+    useAppStore.setState({ selectedCwd: '/ambient/agent' });
+    useAgentHubStore.setState({ agentPath: '/explicit/agent' });
+    vi.mocked(useCurrentAgent).mockReturnValue({
+      data: {
+        id: 'explicit-id',
+        name: 'Explicit',
+        displayName: 'Explicit',
+        traits: DEFAULT_TRAITS,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCurrentAgent>);
+    render(<AgentHub />, { wrapper: TestWrapper });
+    expect(useCurrentAgent).toHaveBeenCalledWith('/explicit/agent');
   });
 
   it('uses hubStore agentPath over selectedCwd when set', () => {

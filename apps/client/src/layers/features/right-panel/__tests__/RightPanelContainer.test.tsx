@@ -90,6 +90,9 @@ let mockPathname = '/session';
 // visibility predicates; mutate per-test to exercise those paths.
 let mockCurrentAgentId: string | null = null;
 let mockSelectedCwd: string | null = null;
+// The explicitly-opened agent path (Agent Hub) — the click-driven selection
+// signal the container threads into every visibleWhen predicate.
+let mockExplicitAgentPath: string | null = null;
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -101,6 +104,7 @@ vi.mock('@/layers/shared/model', () => ({
       setActiveRightPanelTabView: mockSetActiveRightPanelTabView,
       currentAgentId: mockCurrentAgentId,
       selectedCwd: mockSelectedCwd,
+      explicitAgentPath: mockExplicitAgentPath,
     }),
   useIsMobile: () => mockIsMobile,
   useSlotContributions: () => mockContributions,
@@ -147,6 +151,7 @@ describe('RightPanelContainer', () => {
     mockPathname = '/session';
     mockCurrentAgentId = null;
     mockSelectedCwd = null;
+    mockExplicitAgentPath = null;
   });
 
   it('renders collapsed panel in DOM when rightPanelOpen is false but contributions exist', () => {
@@ -160,12 +165,18 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
   });
 
-  it('returns null when no visible contributions exist', () => {
+  it('renders the shell with an empty state when open with zero visible contributions', () => {
+    // The shell is never route-hidden — opening it with nothing to show yields an
+    // honest empty state, not a vanished panel (which would strand the toggle).
     mockRightPanelOpen = true;
     mockContributions = [];
 
-    const { container } = render(<RightPanelContainer />);
-    expect(container.innerHTML).toBe('');
+    render(<RightPanelContainer />);
+
+    expect(screen.getByTestId('right-panel')).toBeInTheDocument();
+    expect(screen.getByText('Nothing to inspect here yet.')).toBeInTheDocument();
+    // The close button is still structurally present.
+    expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
   });
 
   it('renders desktop Panel and resize handle when open with visible contributions', () => {
@@ -362,6 +373,7 @@ describe('RightPanelContainer', () => {
       mockPathname = '/session';
       mockCurrentAgentId = 'agent-x';
       mockSelectedCwd = '/repo/a';
+      mockExplicitAgentPath = '/repo/explicit';
       const predicate = vi.fn(() => true);
       mockContributions = [makeContribution('a', { visibleWhen: predicate })];
 
@@ -373,6 +385,7 @@ describe('RightPanelContainer', () => {
           transport: mockTransport,
           agentId: 'agent-x',
           cwd: '/repo/a',
+          explicitAgentPath: '/repo/explicit',
         })
       );
     });
@@ -395,6 +408,46 @@ describe('RightPanelContainer', () => {
       render(<RightPanelContainer />);
 
       expect(screen.getByRole('tab', { name: 'Session Only' })).toBeInTheDocument();
+    });
+
+    // Selection honesty (fix 2): a tab gated on an explicit agent pick — the
+    // real Agent Profile rule off /session — stays hidden until the operator
+    // opens one, then appears. Proves the container threads `explicitAgentPath`.
+    it('hides a selection-gated tab off /session when no agent is explicitly opened', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'other';
+      mockPathname = '/';
+      mockSelectedCwd = '/repo/ambient';
+      mockExplicitAgentPath = null;
+      mockContributions = [
+        makeContribution('other', { title: 'Other' }),
+        makeContribution('selection', {
+          title: 'Selection',
+          visibleWhen: ({ explicitAgentPath }) => explicitAgentPath != null,
+        }),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.queryByRole('tab', { name: 'Selection' })).not.toBeInTheDocument();
+    });
+
+    it('shows a selection-gated tab once an agent is explicitly opened', () => {
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'other';
+      mockPathname = '/';
+      mockExplicitAgentPath = '/repo/picked';
+      mockContributions = [
+        makeContribution('other', { title: 'Other' }),
+        makeContribution('selection', {
+          title: 'Selection',
+          visibleWhen: ({ explicitAgentPath }) => explicitAgentPath != null,
+        }),
+      ];
+
+      render(<RightPanelContainer />);
+
+      expect(screen.getByRole('tab', { name: 'Selection' })).toBeInTheDocument();
     });
   });
 
@@ -454,13 +507,13 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
   });
 
-  it('renders null when all contributions are filtered by visibleWhen', () => {
+  it('renders the empty state when every contribution is filtered by visibleWhen', () => {
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
     mockContributions = [makeContribution('a', { visibleWhen: () => false })];
 
-    const { container } = render(<RightPanelContainer />);
-    expect(container.innerHTML).toBe('');
+    render(<RightPanelContainer />);
+    expect(screen.getByText('Nothing to inspect here yet.')).toBeInTheDocument();
   });
 
   it('renders Sheet instead of Panel on mobile', () => {

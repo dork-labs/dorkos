@@ -133,6 +133,12 @@ export const useAppStore = create<AppState>()(
         setCurrentAgentId: (id) =>
           set((s) => (s.currentAgentId === id ? s : { currentAgentId: id })),
 
+        // Mirrored from the agent-hub store's explicit selection (openHub);
+        // transient. Guard no-op writes so subscribers only fire on real changes.
+        explicitAgentPath: null,
+        setExplicitAgentPath: (path) =>
+          set((s) => (s.explicitAgentPath === path ? s : { explicitAgentPath: path })),
+
         // Shared pending pre-launch runtime selection — see CoreSlice docs.
         // Transient: seeded from ?runtime= per session by useRuntimeChip and
         // written by the chip's onChangeRuntime; the URL is the durable channel.

@@ -65,6 +65,23 @@ export interface CoreSlice {
   setCurrentAgentId: (id: string | null) => void;
 
   /**
+   * Path of the agent the operator *explicitly* opened to inspect this session
+   * (through the Agent Hub — `openHub`), or null when none has been picked.
+   *
+   * This is the honest, click-driven counterpart to {@link selectedCwd}, which
+   * is auto-set to the server's default working directory at startup. The
+   * right-panel visibility predicates read it to keep the Agent Profile tab
+   * hidden off `/session` until the user actually selects an agent, rather than
+   * surfacing the ambient startup agent nobody chose. Published here (mirrored
+   * from the agent-hub feature store) so cross-feature, synchronous readers can
+   * see it without importing that feature — the same role {@link currentAgentId}
+   * plays for the extension host. Transient: never persisted.
+   */
+  explicitAgentPath: string | null;
+  /** Set the explicitly-opened agent path (null clears it). No-op when unchanged. */
+  setExplicitAgentPath: (path: string | null) => void;
+
+  /**
    * Pending pre-launch runtime selection made from the status-bar chip (the
    * `?runtime=` choice), lifted here so every `useRuntimeChip` consumer — the
    * status bar and ChatPanel's command-palette query among them — reads one

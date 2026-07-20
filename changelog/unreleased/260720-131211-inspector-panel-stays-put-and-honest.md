@@ -1,0 +1,3 @@
+### Fixed
+
+- **The inspector panel on the right no longer disappears, and no longer shows an agent you never picked.** Its toggle now stays in the top bar on every page — including the Marketplace, where it used to vanish. Open it where there's nothing to show and you get a short "Nothing to inspect here yet." note instead of a blank gap. Away from a chat, the Agent Profile tab only appears once you actually open an agent, so the panel never fills itself with the ambient project it happened to start in. And a panel tab added by an extension that ships no icon now falls back to a default icon instead of breaking the whole panel.

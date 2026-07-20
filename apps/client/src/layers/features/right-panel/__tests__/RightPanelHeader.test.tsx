@@ -94,6 +94,21 @@ describe('RightPanelHeader', () => {
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
   });
 
+  it('renders the fallback icon for an iconless contribution among 2+ visible tabs', () => {
+    // Extension-contributed tabs register no icon. Before the ?? Puzzle fallback
+    // this rendered a bare `undefined` component and crashed the whole panel the
+    // moment such a tab joined a second visible contribution.
+    renderHeader([
+      makeContribution('agent', { title: 'Agent Profile' }),
+      makeContribution('ext', { title: 'My Extension', icon: undefined }),
+    ]);
+
+    // Both tabs render — the iconless one falls back to the puzzle-piece instead
+    // of throwing.
+    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
+  });
+
   it('renders no tab strip with a single contribution', () => {
     renderHeader([makeContribution('agent', { title: 'Agent Profile' })]);
 

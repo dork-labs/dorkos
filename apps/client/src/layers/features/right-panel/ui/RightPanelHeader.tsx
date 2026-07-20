@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { X, Puzzle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
@@ -65,7 +65,12 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
         >
           {contributions.map((contribution) => {
             const isActive = contribution.id === activeTab;
-            const Icon = contribution.icon;
+            // Extension-contributed tabs register no icon (the registry API can
+            // supply one but doesn't require it), so fall back to a puzzle-piece
+            // — matching SidebarTabRow. Rendering a bare `undefined` here would
+            // crash the whole panel the moment an iconless tab joined 2+ visible
+            // contributions.
+            const Icon = contribution.icon ?? Puzzle;
             return (
               <Tooltip key={contribution.id}>
                 <TooltipTrigger asChild>

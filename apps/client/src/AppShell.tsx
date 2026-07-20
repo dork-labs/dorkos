@@ -405,7 +405,7 @@ export function AppShell() {
                             {headerSlot.content}
                           </motion.div>
                         </AnimatePresence>
-                        {/* ── Right panel toggle — far right, hides when no contributions ── */}
+                        {/* ── Right panel toggle — far right, always present on every route ── */}
                         <RightPanelToggle />
                       </header>
                       {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
