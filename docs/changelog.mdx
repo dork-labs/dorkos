@@ -5,6 +5,72 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.0] - 2026-07-20
+
+> Shapes install a whole working setup in one step, creating an agent is a real moment that ends with the agent saying hello, and DorkOS docs now speak the markdown that AI tools read.
+
+### Added
+
+- **Shapes: install a whole setup, not just a tool.** Shapes are a new kind of marketplace package (DOR-355). A plugin adds one capability; a Shape describes a complete working setup: which extensions to turn on, how the dashboard and sidebar are arranged, a suggested agent, and the schedules that keep it running.
+  - Install a Shape from the marketplace like any other package, with the same safety net as plugins: a failed install cleans up after itself completely. (DOR-355)
+  - Apply an installed Shape through the API (`POST /api/shapes/:name/apply`). Applying is idempotent, and anything missing (an extension, an agent, an API key) never blocks the rest — it shows up as an honest warning instead. (DOR-355)
+  - Fork a Shape to make your own version, with a "forked from" lineage trail, using the new `dorkos shape fork` command. (DOR-355)
+  - Shape-aware conflict detection, validator coverage for Shape manifests, and a scaffold command that generates a valid starter skeleton to build your own Shape from. (DOR-355)
+- **Switch Shapes from inside the cockpit.** Open the command palette and pick "Switch Shape" to see every Shape you've installed and apply one in a click (DOR-355). Applying a Shape rearranges your workspace, turns on its extensions live with no reload, and offers its suggested agent for you to bring in or skip. If a piece is missing, you get an honest note about it instead of a silent gap.
+- **A brand-new agent says hello first.** The moment you bring an agent to life, its first session opens with a quiet birth line — its name, the day it was born, where it lives, and the runtime it runs on — and then the agent speaks, without you typing a thing. A ready-made agent introduces itself in its own voice and offers a first action (it waits for your go-ahead). A blank "Design your own" agent says a warm hello and asks what you'd like it to take care of. The greeting is genuinely the agent's — the prompt that sparks it never shows up as if you had typed it. (DOR-355)
+- **Browse the marketplace by category.** The Marketplace page now shows a row of category chips — click one (like Security or Code Review) to narrow the grid, and share the filtered view as a link. New category pages on dorkos.ai, one per category, list the packages in each and link back to the full marketplace. (DOR-356)
+- **See what a package does before you install it** — the marketplace detail panel now shows each package's README right below its permissions.
+- **Extensions can now add their own tabs to the sidebar.** An extension that contributes a `sidebar.tabs` view shows up as a real tab alongside the built-in Overview, Sessions, Schedules, and Connections — so the Linear Ops shape's Linear tab actually appears once you enable it. A contributed tab opens its own panel, keeps its place across reloads, and quietly steps aside back to Overview if you later remove the extension.
+- Extensions can now tell which agent they're running beside: the app resolves the agent registered in the current project folder and hands its id to the extension, updating live when you switch folders. (DOR-362)
+- Extension panels can now show or hide based on the agent and project folder you're working in — a right-panel tab can be scoped to appear only for a specific agent, or only in a certain folder. (DOR-364)
+- AI tools can now ask any docs page for a markdown version: send `Accept: text/markdown` to a normal docs URL, or add `.md` to the end (like `/docs/getting-started/quickstart.md`), and you get clean markdown instead of the full web page. (DOR-345)
+- A markdown sitemap at `/sitemap.md` gives agents one plain-text list of every docs, feature, blog, and marketplace page. (DOR-345)
+- New "Open in Perplexity" and "Open in Claude Desktop" shortcuts on docs pages, alongside the existing Claude, ChatGPT, Cursor, and Scira links. (DOR-345)
+- A `context7.json` file so DorkOS docs get indexed by Context7, a common docs source for coding agents. (DOR-345)
+- Every docs page now has its own link-preview image and describes itself to search engines and AI answer tools, so a shared docs link shows a real card and the page is easier to surface as a source. (DOR-346)
+- Search engines and AI tools now see DorkOS as one connected entity: the site tells them who makes DorkOS (with a logo), that it is open source, and where the code lives, all linked to the app itself. (DOR-347)
+- The DorkOS blog feed is now advertised on every page across the site, so a feed reader can find it from anywhere. (DOR-347)
+- Added a web app manifest and app icons, so saving DorkOS to a phone home screen shows the DorkOS mark and name instead of a generic thumbnail. (DOR-347)
+- The install page now has its own share image with platform badges (macOS, npm/CLI, and the Windows alpha), so links to it preview the ways to get DorkOS. (DOR-347)
+- Added a script to notify Bing and Yandex when pages change, so their search and AI answers pick up updates faster. (DOR-347)
+
+### Changed
+
+- **Creating an agent is a real moment now.** "New agent" opens a fullscreen gallery that asks one thing — what will your agent do? Start from a ready-made agent, shown like a job listing with a face, what it does, and how it connects, or choose **Design your own** and describe the job in your own words. The naming screen shows a live preview of your agent taking shape: type a name (or pick a suggestion and reroll for more), give it a face, and tuck the details behind a single "Details" toggle. When it's ready, **Bring it to life**. (DOR-355)
+- **A "Design your own" agent now writes its own personality, live in your first chat.** Instead of a plain hello, the new agent runs a short interview: it asks what you'd like it to take care of, asks at most a couple of sharp follow-ups, then writes its own personality file right in front of you. When it's done, it sums up what it understood and offers one first thing it could do. It waits for your go-ahead and never starts the real work on its own. Give a one-word answer, or say "just figure it out," and it won't grill you. (DOR-355)
+- **One entry to create agents.** Every path now leads to the same welcome: when your first-run scan finds no projects, DorkOS offers "Create your first agent" and opens the real agent gallery — no more bare fill-in-the-blanks form. Installing a ready-made agent from the Marketplace introduces it first — meet it, name it, give it a face — and brings it to life through the standard creation flow, so it always lands in its own place and can never overwrite an agent you already have. (DOR-355)
+- **Import becomes its own flow, with a real finish.** Bring in existing projects from the gallery, the sidebar's add menu, or the command palette: scan your machine, add the projects you want, and see a clear "N projects joined" summary with a Done button instead of a dead end. (DOR-355)
+- **"Set up" a Shape's suggested agent, and it arrives ready — not blank.** When a Shape offers an agent you don't have yet, the switcher's "Set up" opens a single confirm card: meet the agent, read what it does in its own words, and see plainly what turns on, where it will live, and which skills it uses. One click creates it, already carrying its personality and its runtime. "Customize first" still lets you rename it before it's born. (DOR-355)
+- **Marketplace filters moved into the sidebar.** Opening the Marketplace now hands the sidebar over to a filter panel: pick a package type or check off one or more categories — each row shows how many packages match — and the grid updates as you go. Category filters combine, so you can browse Security and Code Review at once. Your filters still live in the URL, so a filtered view is shareable and survives a refresh. (DOR-379)
+- Switching agents now live-remounts the extension slots for the new folder instead of reloading the whole page — your open session, scroll position, and unsent message survive the switch. (DOR-363)
+- Social preview images now use the real DorkOS brand font and share one set of building blocks, so previews look consistent across the blog, marketplace, and feature pages. (DOR-344)
+- Blog post previews now show a reading-time estimate and when the post was last updated, not just when it was first published. (DOR-344)
+- The security, privacy, terms, cookies, and telemetry pages now carry the same link-preview and canonical-URL details as the rest of the site. (DOR-344)
+- Named every welcome AI crawler in `robots.txt` (OpenAI, Anthropic including Claude Code, Perplexity, and Meta) with a clear, explicit invitation instead of relying on the catch-all rule. (DOR-345)
+
+### Fixed
+
+- Shapes you install now show up in the marketplace's Installed view, where you can uninstall or update them just like plugins and agents.
+- Updating the Shape you're currently in keeps you in it: the new version is re-applied automatically, instead of the update silently dropping your cockpit back to no Shape.
+- Uninstalling the Shape you're currently in now clears it cleanly, instead of leaving your cockpit pointed at a Shape that's no longer there.
+- The install preview for a Shape now shows the real folder its files will land in (`shapes/`), not a `plugins/` path.
+- Installing a Shape no longer offers the agent scope choice that was silently ignored — Shapes set up your whole cockpit, so they install once for you.
+- A schedule that comes with a Shape — like a tick that checks your Linear inbox every 15 minutes — now switches on by itself the moment its agent exists. Before, a schedule set up ahead of its agent was left switched off for good. Schedules you made yourself are never touched, and one you turned off yourself stays off.
+- Agents can now switch which agent you're viewing: when an agent runs the "switch agent" command, the cockpit jumps to that agent's folder and chat, instead of quietly doing nothing. (DOR-354)
+- A Marketplace package whose README has a fenced code-block no longer risks crashing the whole page. If the code-block viewer fails to load, the README is replaced by a short note and the package stays open — and a chat message with code survives a broken chunk instead of taking down the transcript.
+- The README preview reads package files safely — a symlinked or oversized README can't leak your local files or eat memory (the read is capped at 200 KB and symlinks are rejected).
+- The dorkos.ai marketplace page adds back its missing "Shape" filter tab, so you can browse Shapes the way you can Agents, Plugins, Skill Packs, and Adapters.
+- The Featured rail on the marketplace page was always empty because it read the featured flag from the wrong place. It now shows featured packages of every type and steps out of the way the moment you search or pick a filter.
+- The 16 marketplace category pages are now listed in the sitemap so search engines can find them.
+- Marketplace browse now labels its two filter rows — "Type" and "Category" — so they no longer read as two identical rows, and the category filter drops its redundant "All" chip for a small ✕ you click to clear it.
+- The Marketplace browse sort menu drops "Popular" and "Recent" — both quietly did nothing — leaving an honest choice between Featured and A–Z.
+- The right panel (terminal, files, agent profile) now opens at a comfortable width instead of a squished sliver, and always keeps a readable minimum width. (DOR-388)
+- The sidebar no longer spills past its edge while you switch views. The panel that slides in or out now stays neatly clipped inside the sidebar, and slide-out panels, dialogs, and menus animate open and closed instead of popping into place — including the marketplace package details sheet.
+- Docs pages now point search engines at a single canonical address and set their own preview title and description instead of falling back to the sitewide default. (DOR-346)
+- Link previews on X now match the rest of the page: every page sets its own title and description instead of a generic fallback, and the sitemap reports honest "last updated" dates. (DOR-344)
+- Link previews and structured data now show a page's edit date only when it actually has one, instead of inventing a change date. (DOR-344)
+- Docs pages now advertise their plain-markdown version, so tools know they can fetch the `.md` alternate. (DOR-345)
+
 ## [0.51.0] - 2026-07-17
 
 > Watch messages reach your agents in real time on the topology map, and find every way to install DorkOS on one page at dorkos.ai/install.
@@ -425,77 +491,6 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
 - Establish flex column root so tall canvas documents scroll (DOR-96)
 
-## [0.43.0] - 2026-06-11
-
-> Runtime-agnostic session streaming with durable reconnection, permission prompts that survive session switches, and a model-gated auto permission mode — plus the SDK 0.3.168 native-binary upgrade.
-
-### Added
-
-- Docs/ADRs + consolidated dead-code retirement (task #18 — spec complete)
-- Stateless EventLog-backed test-mode runtime — runtime-agnosticism proof (task #15)
-- Live-turn fidelity events + task/status-strip wiring (#19)
-- Restore chat send via trigger-only POST + durable /events (Phase 5)
-- Live sidebar + session list via global stream, drop poll (Phase 4)
-- Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
-- Runtime-agnostic session streaming — server foundation (Phases 1-2)
-- Integrate worktrees into spec execution and Linear loop
-- Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
-- Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
-- Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)
-- Batch 5 — Path A fetch-on-mount, single-resolve verification, docs (DOR-73)
-- Batch 4b — Path B re-emit pending interactions on /stream connect (DOR-73)
-- Batch 4a — Path A GET /pending-interactions endpoint + transport (DOR-73)
-- Batch 3 — getPendingInteractions on the runtime abstraction (DOR-73)
-- Batch 2 — pending-interactions selector + idempotent client renderers (DOR-73)
-- Batch 1 — pending-interaction snapshots + shared remainingMs/DTO (DOR-73)
-- SDK-native breakdown via held-open prompt (A1)
-- Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
-- Adopt auto as a model-gated permission mode (#253 Phase 2)
-- Persist per-session settings; allow instant live bypass
-- Stream subagent text into the background-task block
-- Adopt SDK 0.3.168 native binary, refusal & error surfacing
-
-### Changed
-
-- Triage-type states are never dispatchable
-- Evidence-on-close convention — proof, not claims
-- Adopt Linear Method conventions + dispatch policy
-- Regenerate API docs for GET /pending-interactions (DOR-73)
-- Batch 8 — client cross-cutting tests (DOR-73)
-- Document Composio CLI as a fallback Linear access path
-- Drop orphaned makeUserPrompt
-- Guard the generated OpenAPI spec against schema drift
-- Correct Claude Code install guidance for the SDK 0.3.168 native binary
-- Reconcile developer guides with the past week's changes
-- Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)
-- Relocate the sdk-event-mapper streaming tests, drop dead mock
-- Group claude-code/ into domain subdirs
-- Split sdk-event-mapper into focused per-category mappers
-- Document granular npm token for 2FA-bypass publish
-
-### Fixed
-
-- Follow-the-rekey continuity (NF-2) + rail row resolution (NF-3) + cross-client pins (task #17)
-- F2 identity-seed rekey + test-mode e2e rescue — acceptance re-run fixes (task #16)
-- Client quality pass — one /events connection, trigger latch, honest liveness (task #6 batch B)
-- Fleet-wide session discovery + server quality pass (task #6 batch A)
-- Transport seam — embedded send, real stream methods, baseUrl-aware StreamManager (CLI-C2)
-- Sidebar liveness via session_status fanout + hide SDK resume-bootstrap messages
-- First-turn id split-brain + interaction-cancel ghosts (acceptance F1/F2/F4/F5)
-- Repair command drift, harden checks, probe port collisions
-- Harden resume protocol + live approvals (review blockers)
-- Report the last request's window, not the turn's cumulative usage
-- Report accurate context-window usage in the status bar
-- Prune orphan API-reference MDX and repair the docs CI guard
-- Don't mutate session mode in the auto-mode guard (self-review)
-- Restore streamed thinking on Opus 4.8/4.7
-- Harden answer formatting and extract the answer summary
-- Stack multi-question answers and remove answered-row flicker
-- Deliver structured-question answers to the agent and persist them in the UI
-- Address review — reconcile validation docs, echo all settings in PATCH
-- Match agent display name in fleet-page search
-- Sort agent lists by resolved display name
-
 ---
 
-Older releases (v0.1.0 – v0.42.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.43.0) live in the [Changelog archive](/changelog-archive).

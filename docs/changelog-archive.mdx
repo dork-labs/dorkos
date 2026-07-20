@@ -1,9 +1,80 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.42.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.43.0), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.43.0] - 2026-06-11
+
+> Runtime-agnostic session streaming with durable reconnection, permission prompts that survive session switches, and a model-gated auto permission mode — plus the SDK 0.3.168 native-binary upgrade.
+
+### Added
+
+- Docs/ADRs + consolidated dead-code retirement (task #18 — spec complete)
+- Stateless EventLog-backed test-mode runtime — runtime-agnosticism proof (task #15)
+- Live-turn fidelity events + task/status-strip wiring (#19)
+- Restore chat send via trigger-only POST + durable /events (Phase 5)
+- Live sidebar + session list via global stream, drop poll (Phase 4)
+- Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
+- Runtime-agnostic session streaming — server foundation (Phases 1-2)
+- Integrate worktrees into spec execution and Linear loop
+- Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
+- Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
+- Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)
+- Batch 5 — Path A fetch-on-mount, single-resolve verification, docs (DOR-73)
+- Batch 4b — Path B re-emit pending interactions on /stream connect (DOR-73)
+- Batch 4a — Path A GET /pending-interactions endpoint + transport (DOR-73)
+- Batch 3 — getPendingInteractions on the runtime abstraction (DOR-73)
+- Batch 2 — pending-interactions selector + idempotent client renderers (DOR-73)
+- Batch 1 — pending-interaction snapshots + shared remainingMs/DTO (DOR-73)
+- SDK-native breakdown via held-open prompt (A1)
+- Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
+- Adopt auto as a model-gated permission mode (#253 Phase 2)
+- Persist per-session settings; allow instant live bypass
+- Stream subagent text into the background-task block
+- Adopt SDK 0.3.168 native binary, refusal & error surfacing
+
+### Changed
+
+- Triage-type states are never dispatchable
+- Evidence-on-close convention — proof, not claims
+- Adopt Linear Method conventions + dispatch policy
+- Regenerate API docs for GET /pending-interactions (DOR-73)
+- Batch 8 — client cross-cutting tests (DOR-73)
+- Document Composio CLI as a fallback Linear access path
+- Drop orphaned makeUserPrompt
+- Guard the generated OpenAPI spec against schema drift
+- Correct Claude Code install guidance for the SDK 0.3.168 native binary
+- Reconcile developer guides with the past week's changes
+- Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)
+- Relocate the sdk-event-mapper streaming tests, drop dead mock
+- Group claude-code/ into domain subdirs
+- Split sdk-event-mapper into focused per-category mappers
+- Document granular npm token for 2FA-bypass publish
+
+### Fixed
+
+- Follow-the-rekey continuity (NF-2) + rail row resolution (NF-3) + cross-client pins (task #17)
+- F2 identity-seed rekey + test-mode e2e rescue — acceptance re-run fixes (task #16)
+- Client quality pass — one /events connection, trigger latch, honest liveness (task #6 batch B)
+- Fleet-wide session discovery + server quality pass (task #6 batch A)
+- Transport seam — embedded send, real stream methods, baseUrl-aware StreamManager (CLI-C2)
+- Sidebar liveness via session_status fanout + hide SDK resume-bootstrap messages
+- First-turn id split-brain + interaction-cancel ghosts (acceptance F1/F2/F4/F5)
+- Repair command drift, harden checks, probe port collisions
+- Harden resume protocol + live approvals (review blockers)
+- Report the last request's window, not the turn's cumulative usage
+- Report accurate context-window usage in the status bar
+- Prune orphan API-reference MDX and repair the docs CI guard
+- Don't mutate session mode in the auto-mode guard (self-review)
+- Restore streamed thinking on Opus 4.8/4.7
+- Harden answer formatting and extract the answer summary
+- Stack multi-question answers and remove answered-row flicker
+- Deliver structured-question answers to the agent and persist them in the UI
+- Address review — reconcile validation docs, echo all settings in PATCH
+- Match agent display name in fleet-page search
+- Sort agent lists by resolved display name
 
 ## [0.42.0] - 2026-06-05
 
