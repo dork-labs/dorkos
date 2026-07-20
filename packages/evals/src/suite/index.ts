@@ -20,12 +20,12 @@ export const ALL_CASES: EvalCase[] = [
 ];
 
 /** The tag values a `--suite` name may select. */
-const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector'];
+const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector', 'experimental'];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`) selects every case carrying it; `all` selects
- * every case; otherwise the name is matched against a case id.
+ * (`smoke`/`core`/`connector`/`experimental`) selects every case carrying it;
+ * `all` selects every case; otherwise the name is matched against a case id.
  *
  * @param name - The suite selector.
  * @returns The matching cases (possibly empty).

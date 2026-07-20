@@ -37,9 +37,12 @@ export type CostClass = z.infer<typeof CostClassSchema>;
 /**
  * Suite membership. `smoke` is the cheap, label-gated PR subset; `core` is the
  * nightly-full product suite; `connector` is the (quarantined until W5)
- * connector-routing subset.
+ * connector-routing subset; `experimental` is the not-yet-gating tier — a case
+ * that runs and reports but is deliberately kept OUT of `core` because a known
+ * harness gap blocks it from being a reliable live gate (e.g. the multi-turn
+ * credentialed drive's claude-code session-remap timeout).
  */
-export const EvalTagSchema = z.enum(['smoke', 'core', 'connector']);
+export const EvalTagSchema = z.enum(['smoke', 'core', 'connector', 'experimental']);
 
 /** Inferred type for {@link EvalTagSchema}. */
 export type EvalTag = z.infer<typeof EvalTagSchema>;

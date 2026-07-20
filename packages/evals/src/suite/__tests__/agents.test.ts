@@ -46,10 +46,15 @@ afterEach(async () => {
 });
 
 describe('design-your-own-interview case metadata', () => {
-  it('is a credentialed judgment case in the core suite', () => {
+  it('is a credentialed, experimental, non-gating case (kept out of core)', () => {
     expect(designYourOwnInterviewCase.id).toBe('design-your-own-interview');
     expect(designYourOwnInterviewCase.runtimeTier).toBe('claude-code-cheap');
-    expect(designYourOwnInterviewCase.tags).toContain('core');
+    // Experimental + quarantined, NOT core: the multi-turn credentialed drive
+    // hits a claude-code session-remap timeout, so it cannot yet be a live gate
+    // (the deterministic oracle tests below still gate). See agents.ts.
+    expect(designYourOwnInterviewCase.tags).toContain('experimental');
+    expect(designYourOwnInterviewCase.tags).not.toContain('core');
+    expect(designYourOwnInterviewCase.quarantined).toBe(true);
     // Turn 1 is the real interview kickoff instruction, followed by human answers.
     expect(Array.isArray(designYourOwnInterviewCase.prompt)).toBe(true);
     expect(designYourOwnInterviewCase.prompt[0]).toContain('.dork/SOUL.md');

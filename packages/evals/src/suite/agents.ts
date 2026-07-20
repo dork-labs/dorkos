@@ -146,7 +146,14 @@ export const designYourOwnInterviewCase: EvalCase = {
   prompt: INTERVIEW_TURNS,
   runtimeTier: 'claude-code-cheap',
   costClass: 'cheap',
-  tags: ['core'],
+  // `experimental`, NOT `core`, and quarantined: on the credentialed tier the
+  // multi-turn drive can hit a claude-code session-remap timeout (see the module
+  // doc's KNOWN CREDENTIALED-RUN LIMITATION), so it cannot yet be a reliable live
+  // gate. Keeping it out of `core` + non-gating means a credentialed core run
+  // stays green; the deterministic oracle unit tests still gate on every PR.
+  // Promote to `core` (drop `quarantined`) once the remap-robust drive lands.
+  tags: ['experimental'],
+  quarantined: true,
   // A real multi-turn interview + a file write is more than a trivial turn; give
   // it headroom before the per-eval ceiling trips.
   perEvalCeilingUsd: 0.5,
