@@ -35,6 +35,20 @@ function globalDisabledTick(): CreateTaskRequest {
   };
 }
 
+/** A named, enabled schedule request bound to `target` ('global' or an agent id). */
+function tick(name: string, target: string): CreateTaskRequest {
+  return {
+    name,
+    description: `poll for ${name}`,
+    prompt: 'run one tick',
+    cron: '*/15 * * * *',
+    timezone: null,
+    target,
+    enabled: true,
+    permissionMode: 'acceptEdits',
+  };
+}
+
 async function exists(p: string): Promise<boolean> {
   try {
     await fs.stat(p);
@@ -181,6 +195,111 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
     expect(store.getTasks()).toHaveLength(1);
+    expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);
+  });
+});
+
+describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
+  let db: Db;
+  let store: TaskStore;
+  let dorkHome: string;
+  let agentDir: string;
+  let registerTask: ReturnType<typeof vi.fn>;
+  let unregisterTask: ReturnType<typeof vi.fn>;
+  let scheduler: TaskSchedulerService;
+  let service: ShapeScheduleService;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-del-'));
+    agentDir = path.join(dorkHome, 'agents', 'linear-tender');
+    await fs.mkdir(agentDir, { recursive: true });
+
+    registerTask = vi.fn();
+    unregisterTask = vi.fn();
+    scheduler = { registerTask, unregisterTask } as unknown as TaskSchedulerService;
+
+    const meshCore = {
+      getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
+    } as unknown as MeshCore;
+
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger;
+
+    service = new ShapeScheduleService({ taskStore: store, scheduler, meshCore, dorkHome, logger });
+  });
+
+  afterEach(async () => {
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it("deletes this Shape's schedules across global + agent-bound scopes, fail-closed on collisions", async () => {
+    // A — global, marked linear-ops → DELETED.
+    await service.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
+    // B — agent-bound, NO marker, SAME name as A (a user's colliding schedule)
+    //     → SURVIVES: provenance gates deletion, not the name.
+    await service.createSchedule(tick('inbox-tick', 'agent-tender'));
+    // C — agent-bound, marked linear-ops → DELETED (agent-bound scope is swept too).
+    await service.createSchedule(tick('bound-tick', 'agent-tender'), { shape: 'linear-ops' });
+    // D — global, marked a DIFFERENT Shape → SURVIVES.
+    await service.createSchedule(tick('other-tick', 'global'), { shape: 'other-shape' });
+
+    expect(store.getTasks()).toHaveLength(4);
+
+    const removed = await service.deleteSchedulesForShape('linear-ops');
+
+    // Exactly this Shape's two schedules were removed (order is discovery order).
+    expect([...removed].sort()).toEqual(['bound-tick', 'inbox-tick']);
+    // Their scheduler registrations were torn down (never left firing).
+    expect(unregisterTask).toHaveBeenCalledTimes(2);
+
+    // Only the unmarked collision + the other Shape's schedule remain.
+    const survivors = store.getTasks();
+    expect(survivors).toHaveLength(2);
+    const inboxSurvivor = survivors.find((t) => t.name === 'inbox-tick');
+    expect(inboxSurvivor?.agentId).toBe('agent-tender'); // the user's agent-bound copy
+    expect(survivors.find((t) => t.name === 'other-tick')?.agentId).toBeNull();
+
+    // Files: the two marked ones are gone; the two survivors stay on disk.
+    expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(false);
+    expect(await exists(path.join(agentDir, '.dork', 'tasks', 'bound-tick', 'SKILL.md'))).toBe(
+      false
+    );
+    expect(await exists(path.join(agentDir, '.dork', 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(
+      true
+    );
+    expect(await exists(path.join(dorkHome, 'tasks', 'other-tick', 'SKILL.md'))).toBe(true);
+  });
+
+  it('spares names in keepNames — the apply reconciliation drops only renamed/removed schedules', async () => {
+    await service.createSchedule(tick('keep-tick', 'global'), { shape: 'linear-ops' });
+    await service.createSchedule(tick('drop-tick', 'global'), { shape: 'linear-ops' });
+
+    const removed = await service.deleteSchedulesForShape('linear-ops', new Set(['keep-tick']));
+
+    expect(removed).toEqual(['drop-tick']);
+    expect(store.getTasks().map((t) => t.name)).toEqual(['keep-tick']);
+    expect(await exists(path.join(dorkHome, 'tasks', 'keep-tick', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(dorkHome, 'tasks', 'drop-tick', 'SKILL.md'))).toBe(false);
+  });
+
+  it('matches keepNames against the stored slug, not the raw manifest name', async () => {
+    // A manifest may declare "Inbox Tick"; the schedule is stored under its slug
+    // "inbox-tick". The reconciliation spares it only when keepNames carries the
+    // slug — which is exactly what apply-shape now passes, so the schedule it
+    // just created is never swept away.
+    await service.createSchedule(tick('Inbox Tick', 'global'), { shape: 'linear-ops' });
+    expect(store.getTasks().map((t) => t.name)).toEqual(['inbox-tick']);
+
+    const removed = await service.deleteSchedulesForShape('linear-ops', new Set(['inbox-tick']));
+
+    expect(removed).toEqual([]);
+    expect(store.getTasks().map((t) => t.name)).toEqual(['inbox-tick']);
     expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);
   });
 });

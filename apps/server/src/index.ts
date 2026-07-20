@@ -1032,6 +1032,7 @@ async function start() {
           listSchedules: () => [],
           createSchedule: async () => undefined,
           rebindSchedule: async () => undefined,
+          deleteSchedulesForShape: async () => [],
         };
 
   // The agent-created seam (module-level, registered once at bootstrap): every
@@ -1237,6 +1238,8 @@ async function start() {
       adapterManager,
       // Keep `ui.shapes.active` honest when the active Shape is uninstalled.
       shapeDeactivator: { getActiveShapeName, clearActiveShape },
+      // Delete the schedules a removed Shape created so its tick stops firing.
+      shapeScheduleTeardown: shapeScheduleService,
       logger,
     });
 

@@ -20,6 +20,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import type { MeshCore } from '@dorkos/mesh';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
+import type { Task } from '@dorkos/shared/types';
 import type { Logger } from '@dorkos/shared/logger';
 import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -215,12 +216,57 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
 
     // Remove the old global copy (file + row + any scheduler registration) so
     // the schedule is not duplicated across scopes.
-    this.deps.scheduler.unregisterTask(existing.id);
-    this.deps.taskStore.deleteTask(existing.id);
-    if (existing.filePath) {
-      const dirPath = path.dirname(existing.filePath);
+    await this.teardownSchedule(existing);
+  }
+
+  /**
+   * Delete every schedule created by a given Shape (its provenance marker names
+   * it), across both global and agent-bound scopes — the teardown that keeps a
+   * Shape's schedules from outliving the Shape. Reads each schedule file's
+   * marker directly (agent-bound schedules were moved into their agent's dir by
+   * {@link rebindSchedule}, so a scope-blind scan is required) and fails closed:
+   * a missing, unreadable, or mismatched marker leaves the schedule alone, so a
+   * user's own schedule that collides on name is never deleted.
+   *
+   * @param shapeName - The owning Shape whose schedules to delete.
+   * @param keepNames - Stored schedule names (`slugify`'d, matching `task.name`)
+   *   to spare. The apply reconciliation passes the Shape's currently-declared
+   *   names in slug form so only renamed/dropped schedules go; omit to delete
+   *   all of the Shape's schedules (the uninstall teardown).
+   * @returns The names of the schedules deleted.
+   */
+  async deleteSchedulesForShape(
+    shapeName: string,
+    keepNames?: ReadonlySet<string>
+  ): Promise<string[]> {
+    const deleted: string[] = [];
+    for (const task of this.deps.taskStore.getTasks()) {
+      if (keepNames?.has(task.name)) continue;
+      // Provenance guard: only a schedule this exact Shape created is removed.
+      const origin = await this.readShapeOrigin(task.filePath);
+      if (origin !== shapeName) continue;
+      await this.teardownSchedule(task);
+      deleted.push(task.name);
+    }
+    return deleted;
+  }
+
+  /**
+   * Full teardown of one schedule: unregister its cron job, delete its
+   * task-store row, and remove its SKILL.md directory. Going through the
+   * scheduler + store (not a bare file delete) is what guarantees a torn-down
+   * schedule stops firing; a missing file is ignored because the registration +
+   * row are what a stale schedule actually runs from.
+   *
+   * @param task - The schedule to tear down.
+   */
+  private async teardownSchedule(task: Task): Promise<void> {
+    this.deps.scheduler.unregisterTask(task.id);
+    this.deps.taskStore.deleteTask(task.id);
+    if (task.filePath) {
+      const dirPath = path.dirname(task.filePath);
       await deleteSkillDir(path.dirname(dirPath), path.basename(dirPath)).catch(() => {
-        // File may already be gone — the DB row is what mattered.
+        // File may already be gone — the row + registration are what mattered.
       });
     }
   }

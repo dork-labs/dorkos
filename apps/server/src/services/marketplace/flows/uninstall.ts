@@ -96,6 +96,23 @@ export interface UninstallShapeDeactivator {
   clearActiveShape(): void;
 }
 
+/**
+ * Schedule-teardown surface the uninstall flow uses to delete the schedules a
+ * Shape created (stamped with its provenance marker) when that Shape is removed
+ * — so a Shape's 15-minute tick never keeps firing after the Shape is gone.
+ * Optional on the deps: a Shape-unaware caller (and most tests) omit it, in
+ * which case a Shape uninstall simply skips schedule cleanup.
+ */
+export interface UninstallShapeScheduleTeardown {
+  /**
+   * Delete every schedule stamped with this Shape's provenance marker.
+   *
+   * @param shapeName - The Shape whose schedules to delete.
+   * @returns The names of the schedules deleted.
+   */
+  deleteSchedulesForShape(shapeName: string): Promise<string[]>;
+}
+
 /** Dependencies for {@link UninstallFlow}. */
 export interface UninstallFlowDeps {
   dorkHome: string;
@@ -103,6 +120,8 @@ export interface UninstallFlowDeps {
   adapterManager: UninstallAdapterManager;
   /** Active-Shape state hooks; omit when the caller does not manage Shapes. */
   shapeDeactivator?: UninstallShapeDeactivator;
+  /** Deletes a removed Shape's schedules; omit when the caller does not manage Shapes. */
+  shapeScheduleTeardown?: UninstallShapeScheduleTeardown;
   logger: Logger;
 }
 
@@ -226,11 +245,10 @@ export class UninstallFlow {
   /**
    * Run the type-specific cleanup hooks against the staged copy. Plugin
    * extensions are disabled by walking the staged `.dork/extensions/`
-   * directory; adapter entries are removed via `removeAdapter`; removing the
-   * currently-active Shape clears `ui.shapes.active` so the pointer never
-   * dangles at a deleted install (suppressed when `req.deactivateShape` is
-   * `false` — the installer's update replace, where the Shape comes right
-   * back).
+   * directory; adapter entries are removed via `removeAdapter`; a removed Shape
+   * gets its full lifecycle teardown ({@link teardownShape}), suppressed when
+   * `req.deactivateShape` is `false` — the installer's update replace, where the
+   * Shape comes right back.
    *
    * @internal
    */
@@ -252,29 +270,66 @@ export class UninstallFlow {
       );
     }
     if (type === 'shape' && req.deactivateShape !== false) {
-      this.deactivateShapeIfActive(located);
+      await this.teardownShape(located);
     }
   }
 
   /**
-   * Clear `ui.shapes.active` when the Shape being uninstalled is the one
-   * currently applied. Leaving the pointer in place would leave the cockpit
-   * referencing a Shape that no longer exists on disk (a dangling active
-   * Shape); clearing it falls the cockpit back to no active Shape, which is
-   * the honest state after its layout is removed. A no-op when the deactivator
-   * dependency is absent (Shape-unaware caller) or a different Shape is active.
+   * Tear down everything a removed Shape stood up, so nothing it created
+   * outlives it:
+   *
+   *  1. Delete the schedules it created (provenance-gated), across global and
+   *     agent-bound scopes — always, because a Shape's tick must not keep firing
+   *     once the Shape is gone. A no-op when the schedule-teardown dependency is
+   *     absent (Shape-unaware caller).
+   *  2. When this Shape is the currently-active one: turn OFF the extensions it
+   *     turned ON (its declared `activates`) and clear `ui.shapes.active` so the
+   *     cockpit falls back to no active Shape — the honest state once its layout
+   *     is removed. A NON-active Shape's extensions are left alone: they were
+   *     never turned on by this Shape's apply, and the active Shape may depend on
+   *     them.
    *
    * @internal
    */
-  private deactivateShapeIfActive(located: LocatedPackage): void {
-    const deactivator = this.deps.shapeDeactivator;
-    if (!deactivator) return;
+  private async teardownShape(located: LocatedPackage): Promise<void> {
     const shapeName = located.manifest?.name ?? path.basename(located.installRoot);
-    if (deactivator.getActiveShapeName() !== shapeName) return;
-    deactivator.clearActiveShape();
-    this.deps.logger.info(
-      `[marketplace/uninstall] Cleared active Shape "${shapeName}" — it was uninstalled`
-    );
+    const deactivator = this.deps.shapeDeactivator;
+    const isActive = deactivator?.getActiveShapeName() === shapeName;
+
+    // 1. Delete the Shape's schedules — always, active or not.
+    if (this.deps.shapeScheduleTeardown) {
+      const removed = await this.deps.shapeScheduleTeardown.deleteSchedulesForShape(shapeName);
+      if (removed.length > 0) {
+        this.deps.logger.info(
+          `[marketplace/uninstall] Removed ${removed.length} schedule(s) created by Shape "${shapeName}"`,
+          { schedules: removed }
+        );
+      }
+    }
+
+    // 2. Extensions + active pointer — only when this was the active Shape.
+    if (deactivator && isActive) {
+      await this.disableShapeExtensions(located);
+      deactivator.clearActiveShape();
+      this.deps.logger.info(
+        `[marketplace/uninstall] Cleared active Shape "${shapeName}" — it was uninstalled`
+      );
+    }
+  }
+
+  /**
+   * Disable the extensions an active Shape turned on (its manifest's
+   * `activates`), the reverse of `applyShape`'s enable step. A no-op when the
+   * located manifest is missing or not a Shape.
+   *
+   * @internal
+   */
+  private async disableShapeExtensions(located: LocatedPackage): Promise<void> {
+    const manifest = located.manifest;
+    if (!manifest || manifest.type !== 'shape') return;
+    for (const id of manifest.activates) {
+      await this.deps.extensionManager.disable(id);
+    }
   }
 
   /**

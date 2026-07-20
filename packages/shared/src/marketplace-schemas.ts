@@ -469,6 +469,12 @@ export interface AppliedShape {
   layout: ShapeLayout;
   /** Extension ids actually enabled this apply (post-degradation). */
   activatedExtensions: string[];
+  /**
+   * Extension ids turned OFF this apply because they belonged to the outgoing
+   * Shape and this Shape does not declare them — the swap that stops Shapes from
+   * piling their extensions on. Empty/absent when nothing was swapped out.
+   */
+  deactivatedExtensions?: string[];
   /** Schedule names created this apply (idempotent skips excluded). */
   schedulesCreated: string[];
   /**
@@ -477,6 +483,12 @@ export interface AppliedShape {
    * because the agent exists.
    */
   schedulesRebound: string[];
+  /**
+   * Schedule names deleted this apply because an earlier version of this Shape
+   * created them but the current manifest no longer declares them (a rename or
+   * drop). Provenance-gated to this Shape. Empty/absent when nothing was dropped.
+   */
+  schedulesRemoved?: string[];
 }
 
 /** Response body for `POST /api/shapes/:name/apply`. */
