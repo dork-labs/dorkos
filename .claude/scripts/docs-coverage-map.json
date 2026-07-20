@@ -140,6 +140,17 @@
       "patterns": ["packages/marketplace/"]
     },
     {
+      "guide": "shapes.md",
+      "description": "Shape lifecycle: install-vs-apply split, apply engine, schedule provenance fail-closed, global→agent re-bind, update reconcile, uninstall teardown, extension swap, single apply surface",
+      "patterns": [
+        "apps/server/src/services/shapes/",
+        "services/marketplace/flows/install-shape",
+        "apps/client/src/layers/features/shapes/",
+        "apps/client/src/layers/entities/shapes/",
+        "routes/shapes"
+      ]
+    },
+    {
       "guide": "marketplace-telemetry.md",
       "description": "Opt-in install telemetry: Neon + Drizzle schema, privacy contract, aggregation",
       "patterns": ["apps/site/src/db/", "services/marketplace/telemetry-reporter"]
@@ -459,6 +470,11 @@
       "doc": "docs/marketplace/index.mdx",
       "description": "Marketplace browse + install guide",
       "patterns": ["services/marketplace/", "packages/cli/src/commands/marketplace"]
+    },
+    {
+      "doc": "docs/marketplace/shapes.mdx",
+      "description": "Shapes concept + lifecycle: what a Shape is, install-vs-apply, switching, updating, uninstalling",
+      "patterns": ["apps/server/src/services/shapes/", "services/marketplace/flows/install-shape"]
     },
     {
       "doc": "docs/marketplace/publishing.mdx",

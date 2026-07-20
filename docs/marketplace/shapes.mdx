@@ -1,0 +1,134 @@
+---
+title: Shapes
+description: A Shape is a ready-made setup for your workspace. Install it, apply it, and your panels, extensions, agents, and schedules are all set up at once.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+# Shapes
+
+A Shape is a ready-made setup for your whole workspace. Think of it as a "place" you can step into: a project inbox, a release desk, a research bench. Applying one arranges your panels, turns on the extensions it needs, offers an agent to do the work, and sets up the recurring tasks that keep it running. One pick, and DorkOS is set up for that job.
+
+You install a Shape from the marketplace, the same way you install an agent or a plugin. A Shape is just the fifth kind of package.
+
+A Shape can bundle four things:
+
+- **A layout**: how your workspace is arranged, like which panels open and what sits front and center.
+- **Extensions**: the add-ons the setup needs, turned on for you.
+- **Agents it offers**: a suggested agent to run the work. A Shape offers an agent; it never creates one behind your back.
+- **Schedules**: recurring tasks, like a check-in every weekday morning.
+
+<Callout type="info">
+  A Shape changes your whole cockpit, so it belongs to you, everywhere. It is not tied to one agent
+  or one project. You can install several Shapes and switch between them whenever your work changes.
+</Callout>
+
+## Install is not the same as apply
+
+Installing and applying are two separate steps, and the difference matters.
+
+- **Installing** puts a Shape on your machine. It copies the files and gets any bundled extensions ready, but it does not turn anything on. Nothing about your workspace changes yet.
+- **Applying** is the step that actually switches your setup. It turns on the extensions, arranges your layout, sets up the schedules, and offers the agent.
+
+This split is on purpose. You can install five Shapes and try them one at a time, without all their extensions piling on at once. Your current setup only ever reflects the one Shape you have applied.
+
+## How to apply a Shape
+
+There are three ways to apply a Shape. All three open the **Shape switcher**, the one place where applying happens. You always confirm by picking the Shape yourself. DorkOS never applies one for you.
+
+<Steps>
+
+<Step>
+
+### Right after you install it
+
+When a Shape finishes installing, the success message includes an **Apply…** button. Click it and the Shape switcher opens with your new Shape highlighted, ready to apply.
+
+</Step>
+
+<Step>
+
+### From your installed list
+
+Open the **Installed** panel for the Shape. Each installed Shape has an **Apply…** button. The one you already have applied shows an **Active** badge instead, so you can always see what is set up right now.
+
+</Step>
+
+<Step>
+
+### From the command palette
+
+Open the command palette and choose **Switch Shape**. The Shape switcher lists every Shape you have installed. Pick one to apply it.
+
+</Step>
+
+</Steps>
+
+## What happens when you apply
+
+Applying a Shape changes what DorkOS is set up for right now. Here is what it does:
+
+**It arranges your workspace.** Your panels and layout snap to the Shape's setup, so the tools for this job are the ones in front of you.
+
+**It turns on the Shape's extensions.** If an extension the Shape needs is not installed, or cannot load, DorkOS skips it and leaves you a short note in the switcher. The rest of the Shape still applies. You are never left guessing why something is missing.
+
+**It offers the Shape's agent.** A Shape suggests an agent, it does not force one. The switcher shows a card for the suggested agent:
+
+- If you already have that agent, the card offers to **open** it.
+- If you do not, the card offers to **set it up**, and you confirm before anything is created.
+
+When the Shape runs that agent on a timer, the card also shows when, in plain words, like "Every weekday at 9:00 AM."
+
+**It sets up the Shape's schedules.** These are the recurring tasks the setup runs for you. If a schedule is meant for an agent you have not created yet, DorkOS sets it up turned off, then turns it on by itself the moment you create that agent. You do not have to come back and re-apply the Shape. DorkOS remembers which Shape created each schedule, so it can clean them up later.
+
+**It flags anything that still needs setup.** If the Shape needs a secret or a connection you have not filled in, you get a note telling you what to set up. Notes never block the rest of the Shape from applying.
+
+<Callout type="info">
+  Want to start the current Shape over? The switcher has a **Reset to defaults** button that
+  re-applies the Shape you already have active. It is safe to click as many times as you like: it
+  never makes duplicates.
+</Callout>
+
+## Switching Shapes
+
+Applying a different Shape swaps your setup rather than stacking on top of it. DorkOS turns off the previous Shape's extensions that the new Shape does not use, and leaves the ones they share turned on. That way you never end up with every Shape's extensions running at once.
+
+<Callout type="warn">
+  One thing to know: if you turned on an extension by hand and the Shape you are leaving also used
+  it, switching may turn it off along with the rest. DorkOS cannot tell the two apart. If an
+  extension you wanted disappears after a switch, just turn it back on.
+</Callout>
+
+## Updating a Shape
+
+Update a Shape like any other package, from the **Installed** panel or with `dorkos update`. Updating reinstalls the newer version and keeps your active Shape and its schedules in place.
+
+If the new version drops or renames a schedule the old one created, that leftover is cleaned up the next time you apply the Shape. Applying is always what brings your setup in line with the Shape's latest version.
+
+## Uninstalling a Shape
+
+Uninstalling removes a Shape and cleans up after it, so nothing it started keeps running:
+
+- The schedules it created are deleted, so their timers stop firing.
+- If it was the Shape you had applied, DorkOS also turns off the extensions it turned on and clears it as your active Shape, since its layout is gone.
+
+Your other Shapes are left alone. So are any schedules you made yourself, even if one happens to share a name with the Shape's. DorkOS only removes what the Shape itself created.
+
+## Next steps
+
+<Cards>
+  <Card title="Marketplace" href="/docs/marketplace">
+    Browse and install packages, including Shapes.
+  </Card>
+  <Card title="Task Scheduler" href="/docs/guides/task-scheduler">
+    How the recurring tasks a Shape sets up run on a timer.
+  </Card>
+  <Card title="Agent Identity" href="/docs/guides/agents">
+    Set up and name the agents a Shape offers.
+  </Card>
+  <Card title="Extensions" href="/docs/integrations/extensions">
+    What the add-ons a Shape turns on can do.
+  </Card>
+</Cards>
