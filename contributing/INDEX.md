@@ -43,6 +43,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `harness-sync.md`                      | @dorkos/harness projects .agents/ skills/hooks/tasks + marketplace plugins to every harness                                                                        | `packages/harness/\|harness-sync-command`                                                                                      |
 | `adding-a-runtime.md`                  | Runtime adapter authoring: AgentRuntime contract, conformance suite, SDK confinement                                                                               | `agent-runtime\|apps/server/src/services/runtimes/\|runtime-conformance\|runtime-descriptors\|adapter-logos`                   |
 | `authentication.md`                    | Local Better Auth: session-gate, exposure-guard, per-user API keys + MCP, config + migrations                                                                      | `apps/server/src/services/core/auth/\|middleware/mcp-auth\|apps/client/src/layers/features/auth/\|packages/db/src/schema/auth` |
+| `docker-testing.md`                    | Docker-based CLI/server testing: 3 build targets × 2 install modes, smoke/integration scripts, CI's 3-leg workflow                                                 | `Dockerfile\|scripts/smoke-test.sh\|docker:build\|docker:run\|smoke:docker\|smoke:integration\|smoke:npm`                      |
 
 ## Pattern Syntax
 
@@ -85,6 +86,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `flow-engine.md`                       | 2026-06-28    | Claude   | Rewritten for the flow plugin extraction: repointed at the external `dork-labs/marketplace` plugin; in-repo `@dorkos/flow` engine and `.agents/flow` layout removed                       |
 | `adding-a-runtime.md`                  | 2026-07-02    | Claude   | New — runtime-author guide (spec additional-agent-runtimes, task 4.4): contract walk-through, conformance suite, ESLint confinement, config+registration, descriptor UX                   |
 | `authentication.md`                    | 2026-07-03    | Claude   | New — local login (Better Auth): session-gate, exposure-guard, per-user API keys + MCP 4-tier, config migrations 0.48–0.50, P2 cloud device-link + two-identity model (accounts-and-auth) |
+| `docker-testing.md`                    | 2026-07-20    | Scribe   | New — Docker-based testing guide: target × install-mode model, clean-install and published-version testing, mock-claude shim, CI's 3-leg workflow, throwaway-container recipe             |
 
 ## External Docs Coverage
 

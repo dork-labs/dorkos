@@ -188,6 +188,19 @@
         "apps/client/src/layers/features/auth/",
         "packages/db/src/schema/auth"
       ]
+    },
+    {
+      "guide": "docker-testing.md",
+      "description": "Docker-based CLI/server testing: 3 build targets × 2 install modes, smoke/integration scripts, CI's 3-leg workflow",
+      "patterns": [
+        "Dockerfile",
+        "scripts/smoke-test.sh",
+        "docker:build",
+        "docker:run",
+        "smoke:docker",
+        "smoke:integration",
+        "smoke:npm"
+      ]
     }
   ],
   "externalDocs": [

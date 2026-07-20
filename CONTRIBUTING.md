@@ -173,6 +173,8 @@ pnpm smoke:npm           # Integration test against published npm package
 
 The CI workflow (`.github/workflows/cli-smoke-test.yml`) runs on every push to main with bare Ubuntu runners (Node 22/24 matrix), an isolated Docker smoke test, and a full integration test that starts the server and validates API endpoints and client SPA serving.
 
+For the full target/install-mode model and troubleshooting, see [contributing/docker-testing.md](contributing/docker-testing.md).
+
 ### Running DorkOS in Docker
 
 ```bash
