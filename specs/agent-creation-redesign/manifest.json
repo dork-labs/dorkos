@@ -1,0 +1,8 @@
+{
+  "id": "260720-025421",
+  "slug": "agent-creation-redesign",
+  "title": "Agent creation, reborn — four moments from fork to first hello",
+  "created": "2026-07-20",
+  "status": "specified",
+  "linearIssues": ["schedule-rebind (Shapes project)", "offer-context (Shapes project)"]
+}
