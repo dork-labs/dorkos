@@ -60,6 +60,14 @@ export interface PanelsSlice {
   /** The Shape switcher dialog — pick/apply an installed Shape (DOR-355). */
   shapeSwitcherOpen: boolean;
   setShapeSwitcherOpen: (open: boolean) => void;
+  /**
+   * The Shape to highlight when the switcher opens, or `null` for a plain open.
+   * Set by the install toast / installed-list "Apply…" affordances so the user
+   * lands on the exact Shape they meant, not a generic list. Cleared on close.
+   */
+  shapeSwitcherFocus: string | null;
+  /** Open the switcher with a specific Shape's card highlighted (an Apply affordance). */
+  openShapeSwitcherToShape: (name: string) => void;
 
   onboardingStep: number | null;
   setOnboardingStep: (step: number | null) => void;
@@ -119,7 +127,12 @@ export const createPanelsSlice: StateCreator<
   pickerOpen: false,
   setPickerOpen: (open) => set({ pickerOpen: open }),
   shapeSwitcherOpen: false,
-  setShapeSwitcherOpen: (open) => set({ shapeSwitcherOpen: open }),
+  setShapeSwitcherOpen: (open) =>
+    set(
+      open ? { shapeSwitcherOpen: true } : { shapeSwitcherOpen: false, shapeSwitcherFocus: null }
+    ),
+  shapeSwitcherFocus: null,
+  openShapeSwitcherToShape: (name) => set({ shapeSwitcherOpen: true, shapeSwitcherFocus: name }),
 
   onboardingStep: null,
   setOnboardingStep: (step) => set({ onboardingStep: step }),

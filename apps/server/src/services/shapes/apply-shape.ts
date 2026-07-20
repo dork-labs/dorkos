@@ -428,7 +428,16 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     const target = match ? match.id : GLOBAL_TARGET;
     const enabled = match !== null && !schedule.startDisabled;
 
-    const existing = existingByName.get(schedule.name);
+    // Schedules are stored under `slugify(name)` — `createSchedule` and the
+    // tasks router both do this — so `listSchedules` returns slugs and the
+    // re-bind service finds a schedule by its stored slug. Match on the slug,
+    // not the raw manifest name, or a non-kebab name ("Inbox Tick") never lines
+    // up with its stored form ("inbox-tick"): the existence check misses, the
+    // global→agent flip silently never fires, and the reconciliation below
+    // spares the lingering disabled global copy (its slug is in the kept set).
+    // `slugify` is idempotent on already-kebab names, so this is a no-op there.
+    const storedName = slugify(schedule.name);
+    const existing = existingByName.get(storedName);
     if (existing) {
       // A schedule with this name already exists (possibly created
       // globally-disabled by an earlier apply of THIS Shape, when its agent was
@@ -441,12 +450,12 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       // touched: a name collision must not hijack it.
       if (match && existing.agentId === null && existing.shapeOrigin === name) {
         const rebindEnabled = !schedule.startDisabled;
-        await deps.scheduleService.rebindSchedule(schedule.name, {
+        await deps.scheduleService.rebindSchedule(storedName, {
           agentId: match.id,
           enabled: rebindEnabled,
         });
-        existingByName.set(schedule.name, {
-          name: schedule.name,
+        existingByName.set(storedName, {
+          name: storedName,
           agentId: match.id,
           enabled: rebindEnabled,
           shapeOrigin: name,
@@ -473,8 +482,8 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       permissionMode: schedule.permissionMode,
     };
     await deps.scheduleService.createSchedule(request, { shape: name });
-    existingByName.set(schedule.name, {
-      name: schedule.name,
+    existingByName.set(storedName, {
+      name: storedName,
       agentId: match ? match.id : null,
       enabled,
       shapeOrigin: name,

@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Trash2, RefreshCw, FolderOpen, Bot } from 'lucide-react';
+import { Trash2, RefreshCw, FolderOpen, Bot, Shapes } from 'lucide-react';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
+import { useShapes } from '@/layers/entities/shapes';
 import { Badge, Button } from '@/layers/shared/ui';
 import { humanizePackageName } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useUpdateWithToast } from '../model/use-update-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
@@ -23,22 +25,29 @@ function agentLabel(pkg: InstalledPackage): string | null {
 
 interface PackageRowProps {
   installation: InstalledPackage;
+  /** True when this row is the Shape currently applied — shows an "Active" badge. */
+  isActiveShape: boolean;
   isConfirmingUninstall: boolean;
   isUninstalling: boolean;
   isUpdating: boolean;
+  /** Open the Shape switcher to apply this Shape (Shapes only). */
+  onApplyClick: () => void;
   onUpdateClick: () => void;
   onUninstallClick: () => void;
 }
 
 function PackageRow({
   installation,
+  isActiveShape,
   isConfirmingUninstall,
   isUninstalling,
   isUpdating,
+  onApplyClick,
   onUpdateClick,
   onUninstallClick,
 }: PackageRowProps) {
   const { name, version, type, scope, installedFrom, installedAt } = installation;
+  const isShape = type === 'shape';
   // The installed record ships only a slug (no `displayName`), so humanize it
   // for the row title and every action label that names the package.
   const displayName = humanizePackageName(name);
@@ -58,6 +67,7 @@ function PackageRow({
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold">{displayName}</span>
           <PackageTypeBadge type={type} />
+          {isActiveShape && <Badge variant="secondary">Active</Badge>}
           <Badge variant="outline" className="font-mono text-xs">
             v{version}
           </Badge>
@@ -91,6 +101,21 @@ function PackageRow({
 
       {/* Right: actions */}
       <div className="flex shrink-0 items-center gap-2">
+        {/* Apply lands the user on this Shape in the switcher. The active Shape
+            already reads "Active"; re-apply/reset lives in the switcher, so its
+            row shows no Apply — the badge is the state, no redundant button. */}
+        {isShape && !isActiveShape && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onApplyClick}
+            aria-label={`Apply ${displayName}`}
+          >
+            <Shapes className="mr-1 size-3" aria-hidden />
+            Apply…
+          </Button>
+        )}
+
         <Button
           size="sm"
           variant="outline"
@@ -149,6 +174,12 @@ const CONFIRM_WINDOW_MS = 3_000;
  */
 export function InstalledPackagesView() {
   const { data: installed, isLoading, error, refetch } = useInstalledPackages();
+  // Shapes carry an "active" flag; the installed list marks which one is applied
+  // and offers Apply on the rest. Reuses the switcher's data (listShapes), no new
+  // endpoint. A missing/erroring query just means no Active badge — Apply still shows.
+  const { data: shapes } = useShapes();
+  const activeShapeName = shapes?.find((s) => s.active)?.name;
+  const openShapeSwitcherToShape = useAppStore((s) => s.openShapeSwitcherToShape);
   const uninstall = useUninstallWithToast();
   const update = useUpdateWithToast();
 
@@ -228,9 +259,11 @@ export function InstalledPackagesView() {
         <div key={pkg.installPath} role="listitem">
           <PackageRow
             installation={pkg}
+            isActiveShape={pkg.type === 'shape' && pkg.name === activeShapeName}
             isConfirmingUninstall={confirmingPath === pkg.installPath}
             isUninstalling={uninstall.isPending && targetsInstallation(uninstall.variables, pkg)}
             isUpdating={update.isPending && targetsInstallation(update.variables, pkg)}
+            onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
             onUpdateClick={() => handleUpdate(pkg)}
             onUninstallClick={() => handleUninstallClick(pkg)}
           />

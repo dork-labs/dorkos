@@ -2,10 +2,12 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
+import type { InstalledPackage, InstalledShapeSummary } from '@dorkos/shared/marketplace-schemas';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
+import { useShapes } from '@/layers/entities/shapes';
+import { useAppStore } from '@/layers/shared/model';
 
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useUpdateWithToast } from '../model/use-update-with-toast';
@@ -20,6 +22,10 @@ import { InstalledPackagesView } from '../ui/InstalledPackagesView';
 
 vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
+}));
+
+vi.mock('@/layers/entities/shapes', () => ({
+  useShapes: vi.fn(),
 }));
 
 vi.mock('../model/use-uninstall-with-toast', () => ({
@@ -49,6 +55,14 @@ function setInstalledState(state: {
     error: state.error ?? null,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof useInstalledPackages>);
+}
+
+function setShapesState(data: InstalledShapeSummary[] = []) {
+  vi.mocked(useShapes).mockReturnValue({
+    data,
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useShapes>);
 }
 
 function setUninstallState(state: MutationMockState = {}) {
@@ -122,6 +136,8 @@ describe('InstalledPackagesView', () => {
     vi.clearAllMocks();
     setUninstallState();
     setUpdateState();
+    setShapesState();
+    useAppStore.setState({ shapeSwitcherOpen: false, shapeSwitcherFocus: null });
   });
 
   afterEach(cleanup);
@@ -194,6 +210,75 @@ describe('InstalledPackagesView', () => {
       expect(screen.getByText('Linear Ops')).toBeInTheDocument();
       expect(screen.getByText('SHAPE')).toBeInTheDocument();
       expect(screen.getByText('v2.0.0')).toBeInTheDocument();
+    });
+  });
+
+  describe('shape rows: apply + active', () => {
+    const SHAPE_ROW: Partial<InstalledPackage> = {
+      name: 'linear-ops',
+      type: 'shape',
+      version: '2.0.0',
+      scope: 'global',
+      installPath: '/tmp/.dork/shapes/linear-ops',
+    };
+
+    it('offers Apply on a shape row and opens the switcher landed on THAT shape', async () => {
+      const user = userEvent.setup();
+      setInstalledState({ data: [makeInstalled(SHAPE_ROW)] });
+
+      render(<InstalledPackagesView />);
+
+      const applyBtn = screen.getByRole('button', { name: /apply Linear Ops/i });
+      expect(useAppStore.getState().shapeSwitcherOpen).toBe(false);
+      await user.click(applyBtn);
+      expect(useAppStore.getState().shapeSwitcherOpen).toBe(true);
+      // The affordance is honest AND direct — it passes the row's raw name so the
+      // switcher highlights the exact Shape, not a generic list.
+      expect(useAppStore.getState().shapeSwitcherFocus).toBe('linear-ops');
+    });
+
+    it('marks the applied shape with an Active badge and hides its Apply action', () => {
+      setInstalledState({
+        data: [
+          makeInstalled(SHAPE_ROW),
+          makeInstalled({
+            ...SHAPE_ROW,
+            name: 'flow-board',
+            installPath: '/tmp/.dork/shapes/flow-board',
+          }),
+        ],
+      });
+      setShapesState([
+        { name: 'linear-ops', displayName: 'Linear Ops', active: true },
+        { name: 'flow-board', displayName: 'Flow Board', active: false },
+      ]);
+
+      render(<InstalledPackagesView />);
+
+      // The active shape's row carries the badge and NO Apply — the badge is the
+      // state, and re-apply lives in the switcher (no redundant button).
+      const activeRow = screen.getByText('Linear Ops').closest<HTMLElement>('[role="listitem"]')!;
+      expect(within(activeRow).getByText('Active')).toBeInTheDocument();
+      expect(
+        within(activeRow).queryByRole('button', { name: /apply Linear Ops/i })
+      ).not.toBeInTheDocument();
+      // The non-active shape offers Apply and shows no badge.
+      const otherRow = screen.getByText('Flow Board').closest<HTMLElement>('[role="listitem"]')!;
+      expect(within(otherRow).queryByText('Active')).not.toBeInTheDocument();
+      expect(
+        within(otherRow).getByRole('button', { name: /apply Flow Board/i })
+      ).toBeInTheDocument();
+    });
+
+    it('leaves non-shape rows unchanged — no Apply, no Active badge', () => {
+      setInstalledState({ data: [makeInstalled({ name: '@dorkos/reviewer', type: 'agent' })] });
+      // Even if a shape is active elsewhere, an agent row never shows Active/Apply.
+      setShapesState([{ name: '@dorkos/reviewer', active: true }]);
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.queryByRole('button', { name: /^apply/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Active')).not.toBeInTheDocument();
     });
   });
 

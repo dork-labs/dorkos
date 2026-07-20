@@ -11,6 +11,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useInstallPackage } from '@/layers/entities/marketplace';
+import { useAppStore } from '@/layers/shared/model';
 
 import { useInstallWithToast } from '../model/use-install-with-toast';
 
@@ -162,6 +163,78 @@ describe('useInstallWithToast', () => {
       expect(mockError).toHaveBeenCalledWith('Install failed: unknown error', {
         id: 'toast-id-abc',
       });
+    });
+  });
+
+  describe('shape install → Apply action', () => {
+    beforeEach(() => {
+      useAppStore.setState({ shapeSwitcherOpen: false, shapeSwitcherFocus: null });
+    });
+
+    it('adds an "Apply…" action to a shape install success toast that opens the switcher on THIS shape', () => {
+      const { result } = renderHook(() => useInstallWithToast());
+
+      act(() => {
+        result.current.mutate({ name: 'linear-ops' });
+      });
+
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
+      act(() => {
+        perCall.onSuccess({ type: 'shape', packageName: 'linear-ops' });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as {
+        id: string;
+        action?: { label: string; onClick: () => void };
+      };
+      expect(opts.id).toBe('toast-id-abc');
+      expect(opts.action?.label).toBe('Apply…');
+
+      // Clicking opens the switcher landed on the just-installed Shape.
+      expect(useAppStore.getState().shapeSwitcherOpen).toBe(false);
+      act(() => {
+        opts.action?.onClick();
+      });
+      expect(useAppStore.getState().shapeSwitcherOpen).toBe(true);
+      expect(useAppStore.getState().shapeSwitcherFocus).toBe('linear-ops');
+    });
+
+    it('carries the same Apply action on the mutateAsync shape path', async () => {
+      fakes.mutateAsync.mockResolvedValue({ type: 'shape', packageName: 'flow-board' });
+      const { result } = renderHook(() => useInstallWithToast());
+
+      await act(async () => {
+        await result.current.mutateAsync({ name: 'flow-board' });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as {
+        id: string;
+        action?: { label: string; onClick: () => void };
+      };
+      expect(opts.action?.label).toBe('Apply…');
+
+      act(() => {
+        opts.action?.onClick();
+      });
+      expect(useAppStore.getState().shapeSwitcherOpen).toBe(true);
+      expect(useAppStore.getState().shapeSwitcherFocus).toBe('flow-board');
+    });
+
+    it('adds no action for a non-shape install', () => {
+      const { result } = renderHook(() => useInstallWithToast());
+
+      act(() => {
+        result.current.mutate({ name: '@dorkos/code-reviewer' });
+      });
+
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
+      act(() => {
+        perCall.onSuccess({ type: 'agent', packageName: '@dorkos/code-reviewer' });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as { id: string; action?: unknown };
+      expect(opts).toEqual({ id: 'toast-id-abc' });
+      expect(opts.action).toBeUndefined();
     });
   });
 
