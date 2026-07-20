@@ -394,6 +394,13 @@ export const CreateAgentOptionsSchema = z
      * creation payload sane.
      */
     capabilities: z.array(z.string().min(1).max(200)).max(64).optional(),
+    /**
+     * Emoji face for the agent's visual identity, recorded on the manifest
+     * `icon` field. A single emoji chosen in the naming step (M3), or seeded
+     * from a template's icon. Omitted → no icon (UIs fall back to a
+     * letter/color avatar).
+     */
+    icon: z.string().max(64).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
     /**

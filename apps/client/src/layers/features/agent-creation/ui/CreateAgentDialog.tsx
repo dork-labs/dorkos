@@ -19,20 +19,23 @@ import { DiscoveryView } from '@/layers/features/mesh';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
-import type { CreationMode, WizardStep } from '../lib/wizard-types';
-import { STEP_DESCRIPTIONS, initialStepFromMode } from '../lib/wizard-types';
-import { MethodSelection } from './MethodSelection';
-import { ConfigureStep } from './ConfigureStep';
-import { TemplatePicker } from './TemplatePicker';
+import type { WizardStep, SelectedTemplate } from '../lib/wizard-types';
+import { STEP_HEADERS, initialStepFromMode } from '../lib/wizard-types';
+import { isSingleEmoji } from '../lib/humanize-name';
+import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
+import { resolveSuggestionPool } from '../lib/name-suggestions';
+import { AgentGallery } from './AgentGallery';
+import { NamingStep } from './NamingStep';
 import { ArrivalConfirm } from './ArrivalConfirm';
 
 /**
- * Global dialog for creating a new agent. Controlled by useAgentCreationStore.
+ * The global agent-creation dialog. Controlled by `useAgentCreationStore`.
  *
- * Two entry shapes: opened plainly it renders the method fork (choose → pick
- * template or configure → create); opened from an offer (a seed) it skips the
- * fork and renders the arrival confirm (M1) for that one agent, carrying the
- * seed's persona, runtime, and capabilities through to create.
+ * Fullscreen on desktop, a drawer on mobile. Two entry shapes:
+ * - Generic (⌘K, sidebar +, /agents, session tab +) → the gallery (M2) →
+ *   naming (M3): pick "Design your own" or a ready-made agent, then name it.
+ * - Seeded from an offer (a Shape's agent) → the arrival confirm (M1) → create
+ *   in one click, or "Customize first" to reach the naming step pre-filled.
  */
 export function CreateAgentDialog() {
   const { isOpen, initialMode, seed, close } = useAgentCreationStore();
@@ -40,66 +43,74 @@ export function CreateAgentDialog() {
   const navigate = useNavigate();
   const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
 
-  // Wizard navigation state
-  const [step, setStep] = useState<WizardStep>('choose');
-  const [creationMode, setCreationMode] = useState<CreationMode>('new');
-  const [template, setTemplate] = useState<string | null>(null);
-  const [templateName, setTemplateName] = useState<string | null>(null);
+  // Wizard navigation state.
+  const [step, setStep] = useState<WizardStep>('gallery');
+  const [template, setTemplate] = useState<SelectedTemplate | null>(null);
 
-  // Sync step from store when dialog opens (React "adjusting state on prop change" pattern).
-  // A seed skips the fork and lands on the arrival confirm (M1).
+  // Sync step from store when the dialog opens (React "adjust state on prop
+  // change"). A seed lands on the arrival confirm (M1); otherwise the gallery.
   const [prevIsOpen, setPrevIsOpen] = useState(false);
   if (isOpen !== prevIsOpen) {
     setPrevIsOpen(isOpen);
     if (isOpen) {
-      if (seed) {
-        setStep('arrival');
-        setCreationMode('new');
-      } else {
-        setStep(initialStepFromMode(initialMode));
-        setCreationMode(
-          initialMode === 'import' ? 'import' : initialMode === 'template' ? 'template' : 'new'
-        );
-      }
+      setTemplate(null);
+      setStep(seed ? 'arrival' : initialStepFromMode(initialMode));
     }
   }
 
+  // Seeds for the naming step, derived from the chosen template or the offer.
+  const faceSeed =
+    template?.icon && isSingleEmoji(template.icon) ? template.icon : DEFAULT_AGENT_FACE;
+  const runtimeSeed = seed?.template.runtime ?? 'claude-code';
+
   const form = useConfigureForm({
     step,
-    creationMode,
-    templateName,
+    templateName: template?.displayName ?? null,
     seedDisplayName: seed?.template.displayName ?? null,
+    faceSeed,
+    runtimeSeed,
   });
+
+  // Preview + suggestion inputs for the naming step.
+  const suggestionPool = resolveSuggestionPool(
+    template
+      ? {
+          name: template.name,
+          description: template.description,
+          category: template.category,
+          tags: template.tags,
+        }
+      : seed
+        ? { name: seed.template.displayName, description: seed.template.persona }
+        : undefined
+  );
+  const jobLine = template
+    ? (template.description ?? 'A ready-made agent.')
+    : seed?.template.persona
+      ? seed.template.persona
+      : "You'll define the job together in your first conversation.";
+  const previewCapabilities = template
+    ? (template.tags ?? [])
+    : (seed?.template.capabilities ?? []);
 
   function resetAll() {
     form.reset();
     setTemplate(null);
-    setTemplateName(null);
-    setStep('choose');
-    setCreationMode('new');
+    setStep('gallery');
   }
 
-  const handleMethodSelect = useCallback((mode: CreationMode) => {
-    setCreationMode(mode);
-    if (mode === 'template') setStep('pick-template');
-    else if (mode === 'import') setStep('import');
-    else setStep('configure');
+  const handleSelectTemplate = useCallback((next: SelectedTemplate) => {
+    setTemplate(next);
+    setStep('naming');
   }, []);
 
-  const handleTemplateSelect = useCallback((source: string | null, name?: string) => {
-    if (source) {
-      setTemplate(source);
-      setTemplateName(name ?? source.split('/').pop() ?? null);
-      setStep('configure');
-    }
+  const handleDesignYourOwn = useCallback(() => {
+    setTemplate(null);
+    setStep('naming');
   }, []);
 
-  function handleBack() {
-    if (step === 'configure') {
-      // A seeded configure came from the arrival confirm — go back there.
-      if (seed) setStep('arrival');
-      else setStep(creationMode === 'template' ? 'pick-template' : 'choose');
-    } else setStep('choose');
+  function handleBackFromNaming() {
+    setStep(seed ? 'arrival' : 'gallery');
   }
 
   function handleCreate() {
@@ -108,11 +119,11 @@ export function CreateAgentDialog() {
       {
         name: form.slug,
         displayName: form.displayName.trim() || undefined,
+        runtime: form.runtime,
         ...(form.directoryOverride ? { directory: form.directoryOverride } : {}),
-        ...(creationMode === 'template' && template ? { template } : {}),
-        // Carry the offer's shape through so the created agent arrives seeded,
-        // not blank: its voice (persona), where it runs, and what it can do.
-        ...(seed?.template.runtime ? { runtime: seed.template.runtime } : {}),
+        ...(form.icon ? { icon: form.icon } : {}),
+        ...(template ? { template: template.source } : {}),
+        // A seeded offer carries its own voice + abilities through to create.
         ...(seed?.template.persona ? { persona: seed.template.persona } : {}),
         ...(seed?.template.capabilities?.length
           ? { capabilities: seed.template.capabilities }
@@ -123,7 +134,6 @@ export function CreateAgentDialog() {
           playCelebration();
           close();
           resetAll();
-          // Navigate to a new session for the freshly created agent
           navigate({
             to: '/session',
             search: { dir: data._path, session: crypto.randomUUID() },
@@ -144,58 +154,74 @@ export function CreateAgentDialog() {
     }
   }
 
+  const header = STEP_HEADERS[step];
+  const isArrival = step === 'arrival';
+
   return (
-    <ResponsiveDialog open={isOpen} onOpenChange={handleOpenChange}>
-      <ResponsiveDialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 p-0">
+    <ResponsiveDialog open={isOpen} onOpenChange={handleOpenChange} defaultFullscreen>
+      <ResponsiveDialogContent className="flex flex-col gap-0 p-0">
         {/* The arrival confirm (M1) owns its own title/face — no generic header. */}
-        {step !== 'arrival' && (
-          <ResponsiveDialogHeader className="shrink-0 border-b px-4 py-3">
-            <ResponsiveDialogTitle>Create Agent</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription>{STEP_DESCRIPTIONS[step]}</ResponsiveDialogDescription>
+        {!isArrival && (
+          <ResponsiveDialogHeader className="shrink-0 border-b px-5 py-4">
+            <ResponsiveDialogTitle>{header.title}</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>{header.description}</ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
         )}
 
         <span className="sr-only" aria-live="polite" aria-atomic="true">
-          {STEP_DESCRIPTIONS[step]}
+          {header.description}
         </span>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              {step === 'choose' && <MethodSelection onSelect={handleMethodSelect} />}
-              {step === 'arrival' && seed && (
-                <ArrivalConfirm
-                  seed={seed}
-                  resolvedDirectory={form.resolvedDirectory}
-                  canSubmit={form.canSubmit}
-                  isCreating={createAgent.isPending}
-                  onCreate={handleCreate}
-                  onCustomize={() => setStep('configure')}
-                  onNotNow={() => handleOpenChange(false)}
-                />
-              )}
-              {step === 'pick-template' && <TemplatePicker onSelect={handleTemplateSelect} />}
-              {step === 'configure' && (
-                <ConfigureStep
-                  form={form}
-                  creationMode={creationMode}
-                  template={{ source: template, name: templateName }}
-                  onChangeTemplate={() => setStep('pick-template')}
-                  onImportInstead={() => {
-                    setCreationMode('import');
-                    setStep('import');
-                  }}
-                />
-              )}
-              {step === 'import' && <DiscoveryView />}
-            </motion.div>
-          </AnimatePresence>
+        <div
+          className={
+            isArrival
+              ? 'flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-6'
+              : 'min-h-0 flex-1 overflow-y-auto px-5 py-6'
+          }
+        >
+          <div className="mx-auto w-full max-w-5xl">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                {step === 'gallery' && (
+                  <AgentGallery
+                    onDesignYourOwn={handleDesignYourOwn}
+                    onSelectTemplate={handleSelectTemplate}
+                    onImport={() => setStep('import')}
+                  />
+                )}
+                {step === 'arrival' && seed && (
+                  <ArrivalConfirm
+                    seed={seed}
+                    resolvedDirectory={form.resolvedDirectory}
+                    canSubmit={form.canSubmit}
+                    isCreating={createAgent.isPending}
+                    onCreate={handleCreate}
+                    onCustomize={() => setStep('naming')}
+                    onNotNow={() => handleOpenChange(false)}
+                  />
+                )}
+                {step === 'naming' && (
+                  <NamingStep
+                    form={form}
+                    suggestionPool={suggestionPool}
+                    jobLine={jobLine}
+                    previewCapabilities={previewCapabilities}
+                    onBack={handleBackFromNaming}
+                    onImportInstead={() => setStep('import')}
+                    onCreate={handleCreate}
+                    isCreating={createAgent.isPending}
+                  />
+                )}
+                {step === 'import' && <DiscoveryView />}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
 
         <DirectoryPicker
@@ -208,22 +234,13 @@ export function CreateAgentDialog() {
           }}
         />
 
-        {step !== 'choose' && step !== 'arrival' && (
-          <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">
-            <div className="flex w-full items-center justify-between">
-              <Button variant="ghost" onClick={handleBack} data-testid="back-button">
+        {step === 'import' && (
+          <ResponsiveDialogFooter className="shrink-0 border-t px-5 py-3">
+            <div className="flex w-full items-center">
+              <Button variant="ghost" onClick={() => setStep('gallery')} data-testid="back-button">
                 <ArrowLeft className="mr-1 size-4" />
                 Back
               </Button>
-              {step === 'configure' && (
-                <Button
-                  onClick={handleCreate}
-                  disabled={!form.canSubmit || createAgent.isPending}
-                  data-testid="create-button"
-                >
-                  {createAgent.isPending ? 'Creating...' : 'Create Agent'}
-                </Button>
-              )}
             </div>
           </ResponsiveDialogFooter>
         )}

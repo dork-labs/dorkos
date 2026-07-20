@@ -607,6 +607,7 @@ describe('Marketplace Routes', () => {
         plugins: {
           'sample-plugin': {
             type: 'agent' as const,
+            displayName: 'Sample Agent',
             icon: '🤖',
             featured: true,
             layers: ['skills', 'tasks'],
@@ -619,6 +620,7 @@ describe('Marketplace Routes', () => {
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
       expect(pkg).toBeDefined();
       expect(pkg.type).toBe('agent');
+      expect(pkg.displayName).toBe('Sample Agent');
       expect(pkg.icon).toBe('🤖');
       expect(pkg.featured).toBe(true);
     });
@@ -632,6 +634,7 @@ describe('Marketplace Routes', () => {
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
       expect(pkg).toBeDefined();
       expect(pkg.type).toBeUndefined();
+      expect(pkg.displayName).toBeUndefined();
       expect(pkg.icon).toBeUndefined();
       expect(pkg.featured).toBeUndefined();
     });

@@ -41,6 +41,12 @@ export const PricingSchema = z.object({
 export const DorkosEntrySchema = z.object({
   /** DorkOS package type discriminator. Defaults to `plugin` when absent. */
   type: z.enum(['agent', 'plugin', 'skill-pack', 'adapter', 'shape']).optional(),
+  /**
+   * Human-readable display name shown in browse and creation UIs. Absent → the
+   * UI humanizes the kebab-case `name`, so an agent package never presents its
+   * raw slug on a card.
+   */
+  displayName: z.string().max(128).optional(),
   /** Layer/content categories the plugin contributes to. */
   layers: z
     .array(

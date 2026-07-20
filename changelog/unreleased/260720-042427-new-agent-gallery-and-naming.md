@@ -1,0 +1,3 @@
+### Changed
+
+- **Creating an agent is a real moment now.** "New agent" opens a full-screen space that asks one thing — what will your agent do? Start from a ready-made agent, shown like a job listing with a face, what it does, and how it connects, or choose **Design your own** and describe the job in your own words. Then you name it on one screen with a live preview of your agent taking shape: type a name (or pick a suggestion and reroll for more), give it a face, and tuck the details — where it lives and which runtime it runs on — behind a single "Details" toggle. When it's ready, **Bring it to life**. Agents a Shape offers still arrive as a one-click "meet your agent" card, now with a fuller, honest rundown of what turns on. (DOR-355)

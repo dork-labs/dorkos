@@ -8760,6 +8760,9 @@
                           "name": {
                             "type": "string"
                           },
+                          "displayName": {
+                            "type": "string"
+                          },
                           "source": {
                             "type": "string"
                           },

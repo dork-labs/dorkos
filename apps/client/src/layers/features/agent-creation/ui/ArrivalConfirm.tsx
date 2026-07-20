@@ -1,4 +1,4 @@
-import { FolderOpen, Puzzle } from 'lucide-react';
+import { CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
 import { Button, ResponsiveDialogTitle, ResponsiveDialogDescription } from '@/layers/shared/ui';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { CreationSeed } from '@/layers/shared/model';
@@ -27,11 +27,14 @@ export interface ArrivalConfirmProps {
 }
 
 /**
- * The arrival confirm (M1): a single card that introduces one ready-made agent
- * and lets the person bring it to life in a click — no gallery, no method fork.
- * Shown when the creation dialog is opened from a specific offer (a Shape's
- * agent today). The ledger is honest: it names what turns on and where the
- * agent lives, and lists skills without claiming they are installed.
+ * The arrival confirm (M1): a single centered card that introduces one
+ * ready-made agent and lets the person bring it to life in a click — no
+ * gallery, no method fork. Shown when the creation dialog is opened from a
+ * specific offer (a Shape's agent today).
+ *
+ * The ledger is honest: it names what turns on and where the agent lives,
+ * lists its capabilities, lists skills without claiming they are installed, and
+ * shows a schedule line only when the offer actually declares a cadence.
  *
  * @param props - The seed to introduce plus the arrival actions.
  */
@@ -44,7 +47,7 @@ export function ArrivalConfirm({
   onCustomize,
   onNotNow,
 }: ArrivalConfirmProps) {
-  const { displayName, persona, runtime, skills } = seed.template;
+  const { displayName, persona, runtime, capabilities, skills, schedule } = seed.template;
   const runtimeLabel = getRuntimeDescriptor(runtime ?? 'claude-code').label;
   const initial = displayName.trim().charAt(0).toUpperCase() || '?';
   const sourceLine = seed.sourceLabel
@@ -52,17 +55,17 @@ export function ArrivalConfirm({
     : 'A ready-made agent, ready when you are.';
 
   return (
-    <div className="space-y-5" data-testid="arrival-confirm">
+    <div className="mx-auto max-w-md space-y-6" data-testid="arrival-confirm">
       {/* Face + name */}
       <div className="flex flex-col items-center gap-3 text-center">
         <span
-          className="bg-primary/10 text-primary flex size-14 items-center justify-center rounded-full text-xl font-semibold"
+          className="bg-primary/10 text-primary flex size-20 items-center justify-center rounded-full text-4xl font-semibold"
           aria-hidden="true"
         >
           {initial}
         </span>
         <div className="space-y-1">
-          <ResponsiveDialogTitle className="text-lg">Meet {displayName}</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle className="text-xl">Meet {displayName}</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>{sourceLine}</ResponsiveDialogDescription>
         </div>
       </div>
@@ -72,24 +75,38 @@ export function ArrivalConfirm({
         <p className="text-foreground text-sm leading-relaxed whitespace-pre-line">{persona}</p>
       )}
 
-      {/* Honest ledger — what turns on, where it lives */}
-      <dl className="bg-muted/30 space-y-2 rounded-lg border p-3 text-sm">
+      {/* Honest ledger — what turns on, where it lives, only what's true */}
+      <dl className="bg-muted/30 space-y-2.5 rounded-lg border p-3.5 text-sm">
         <div className="flex items-center gap-2">
           <RuntimeGlyph runtime={runtime} />
-          <dt className="text-muted-foreground">Runs on</dt>
+          <dt className="text-muted-foreground shrink-0">Runs on</dt>
           <dd>{runtimeLabel}</dd>
         </div>
-        <div className="flex items-center gap-2">
-          <FolderOpen className="text-muted-foreground size-4 shrink-0" />
+        <div className="flex items-start gap-2">
+          <FolderOpen className="text-muted-foreground mt-0.5 size-4 shrink-0" />
           <dt className="text-muted-foreground shrink-0">Lives in</dt>
           <dd className="min-w-0">
             <code className="text-xs break-all">{resolvedDirectory}</code>
           </dd>
         </div>
+        {schedule && (
+          <div className="flex items-start gap-2" data-testid="arrival-schedule">
+            <CalendarClock className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+            <dt className="text-muted-foreground shrink-0">Runs on a schedule</dt>
+            <dd>{schedule}</dd>
+          </div>
+        )}
+        {capabilities && capabilities.length > 0 && (
+          <div className="flex items-start gap-2">
+            <Wrench className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+            <dt className="text-muted-foreground shrink-0">Can</dt>
+            <dd>{capabilities.join(', ')}</dd>
+          </div>
+        )}
         {skills && skills.length > 0 && (
           <div className="flex items-start gap-2">
             <Puzzle className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-            <dt className="text-muted-foreground shrink-0">Uses skills</dt>
+            <dt className="text-muted-foreground shrink-0">Brings its skills</dt>
             <dd>{skills.join(', ')}</dd>
           </div>
         )}
@@ -102,7 +119,12 @@ export function ArrivalConfirm({
             This agent still needs a name — choose &ldquo;Customize first&rdquo; to give it one.
           </p>
         )}
-        <Button onClick={onCreate} disabled={isCreating || !canSubmit} data-testid="arrival-create">
+        <Button
+          size="lg"
+          onClick={onCreate}
+          disabled={isCreating || !canSubmit}
+          data-testid="arrival-create"
+        >
           {isCreating ? 'Creating…' : `Create ${displayName}`}
         </Button>
         <div className="flex items-center justify-center gap-4">

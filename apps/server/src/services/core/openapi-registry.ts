@@ -100,6 +100,7 @@ const LocalMarketplaceJsonSchema = z
 const LocalAggregatedPackageSchema = z
   .object({
     name: z.string(),
+    displayName: z.string().optional(),
     source: z.string(),
     description: z.string().optional(),
     version: z.string().optional(),

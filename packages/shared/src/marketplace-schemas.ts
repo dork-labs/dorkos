@@ -45,8 +45,14 @@ export type MarketplacePackageType = 'agent' | 'plugin' | 'skill-pack' | 'adapte
  * DorkOS extension fields, plus the origin marketplace source name.
  */
 export interface AggregatedPackage {
-  /** Package name (primary identifier). */
+  /** Package name (primary identifier — kebab-case slug). */
   name: string;
+  /**
+   * Human-readable display name from the DorkOS sidecar (`dorkos.json`), when
+   * the author supplies one. Absent for packages that ship only a slug — the
+   * UI humanizes `name` in that case, so template cards never show raw slugs.
+   */
+  displayName?: string;
   /** Git URL or other source identifier for the package. */
   source: string;
   /** Human-readable description. */
