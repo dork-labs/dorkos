@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
 import { useAttentionItems, AttentionItemRow } from '@/layers/features/dashboard-attention';
@@ -28,6 +28,9 @@ const staggerContainer = {
  */
 export function PulseAttentionSection() {
   const navigate = useNavigate();
+  // The dashboard IS the "View all" destination — omit the link there rather than
+  // offer a self-navigation no-op (honest omission, no scroll hack).
+  const onDashboard = useRouterState({ select: (s) => s.location.pathname === '/' });
   const { items, isLoading } = useAttentionItems();
   const shown = items.slice(0, PULSE_ATTENTION_CAP);
 
@@ -40,14 +43,16 @@ export function PulseAttentionSection() {
       empty={!isLoading && items.length === 0}
       allClear="All quiet — nothing needs you."
       action={
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 text-xs"
-          onClick={() => navigate({ to: '/' })}
-        >
-          View all →
-        </Button>
+        onDashboard ? undefined : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs"
+            onClick={() => navigate({ to: '/' })}
+          >
+            View all →
+          </Button>
+        )
       }
     >
       <motion.div variants={staggerContainer} initial="initial" animate="animate">

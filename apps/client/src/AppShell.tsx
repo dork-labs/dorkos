@@ -23,6 +23,7 @@ import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
 import { DialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
+import { usePulseFreshness } from '@/layers/widgets/pulse';
 import { SidebarFooterBar } from '@/layers/features/session-list';
 import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
 import { useOnboarding, OnboardingFlow, ProgressCard } from '@/layers/features/onboarding';
@@ -240,6 +241,12 @@ export function AppShell() {
   // mutations and slow polling.
   useBindingsSync();
   useRelayAdaptersSync();
+  // Make the Pulse Activity teaser live off `/api/events`: invalidate the
+  // activity caches when an activity-generating broadcast (relay traffic/topology,
+  // extension reloads) fires, coalescing bursts. Attention's live source
+  // (sessions) already rides the list stream; its other sources have no server
+  // event and stay poll-based — see the hook's doc for the honest topology.
+  usePulseFreshness();
 
   const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
 

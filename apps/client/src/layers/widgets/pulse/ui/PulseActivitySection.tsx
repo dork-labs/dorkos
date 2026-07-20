@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Button, Table, TableBody } from '@/layers/shared/ui';
 import { useDashboardActivity } from '@/layers/features/dashboard-activity';
 import { ActivityRow } from '@/layers/features/activity-feed-page';
@@ -17,6 +17,9 @@ const PULSE_ACTIVITY_CAP = 5;
  */
 export function PulseActivitySection() {
   const navigate = useNavigate();
+  // /activity IS the "Open activity" destination — omit the link there rather
+  // than offer a self-navigation no-op (honest omission, no scroll hack).
+  const onActivityPage = useRouterState({ select: (s) => s.location.pathname === '/activity' });
   const { groups, isLoading } = useDashboardActivity();
 
   // Flatten the time-bucketed groups back into one most-recent-first list and cap
@@ -32,14 +35,16 @@ export function PulseActivitySection() {
       empty={!isLoading && items.length === 0}
       allClear="No recent activity."
       action={
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 text-xs"
-          onClick={() => navigate({ to: '/activity' })}
-        >
-          Open activity →
-        </Button>
+        onActivityPage ? undefined : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs"
+            onClick={() => navigate({ to: '/activity' })}
+          >
+            Open activity →
+          </Button>
+        )
       }
     >
       <Table>

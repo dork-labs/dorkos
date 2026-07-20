@@ -18,6 +18,23 @@ export function rightPanelTabDomId(contributionId: string): string {
   return `right-panel-tab-${contributionId}`;
 }
 
+/**
+ * Render a contribution's tab icon, guarding a garbage value.
+ *
+ * Extension-contributed tabs register no icon (the registry API allows one but
+ * doesn't require it), and an untyped JS extension can pass a non-component (e.g.
+ * `icon: 'foo'`) that a nullish `?? Puzzle` would wave through to render
+ * `<'foo' />` and kill the whole header — which lives OUTSIDE PanelErrorBoundary.
+ * So require an actual component, else fall back to the puzzle-piece. Shared by
+ * the tab strip and the single-tab title so both are equally hardened.
+ *
+ * @param props - The raw `icon` value and an optional className.
+ */
+function TabIcon({ raw, className }: { raw: RightPanelContribution['icon']; className?: string }) {
+  const Icon = typeof raw === 'function' ? raw : Puzzle;
+  return <Icon className={className} />;
+}
+
 interface RightPanelHeaderProps {
   /**
    * The visible panel contributions, in tab order. The tab strip renders one
@@ -35,8 +52,9 @@ interface RightPanelHeaderProps {
  * Rendered exactly once by {@link RightPanelContainer}, above the active
  * panel's content, so the tab strip and close button are structurally
  * guaranteed — a panel contribution can never omit or break them. Shows a
- * segmented tab control when 2+ contributions are visible, and renders the
- * active tab's `headerActions` beside the close button.
+ * segmented tab control when 2+ contributions are visible; with exactly one it
+ * names that single panel (icon + title) instead of leaving the header a blank
+ * bar, and renders the active tab's `headerActions` beside the close button.
  */
 export function RightPanelHeader({ contributions, actions }: RightPanelHeaderProps) {
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
@@ -65,15 +83,6 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
         >
           {contributions.map((contribution) => {
             const isActive = contribution.id === activeTab;
-            // Extension-contributed tabs register no icon (the registry API can
-            // supply one but doesn't require it), so fall back to a puzzle-piece.
-            // This is the single render choke point and
-            // it lives OUTSIDE PanelErrorBoundary, so it must survive not just a
-            // missing icon but a garbage one: an untyped JS extension can pass
-            // `icon: 'foo'`, which `?? Puzzle` (nullish-only) would wave through
-            // to render `<'foo' />` and kill the whole panel. Require a component.
-            const raw = contribution.icon;
-            const Icon = typeof raw === 'function' ? raw : Puzzle;
             return (
               <Tooltip key={contribution.id}>
                 <TooltipTrigger asChild>
@@ -92,7 +101,7 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
                         : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    <Icon className="size-3.5" />
+                    <TabIcon raw={contribution.icon} className="size-3.5" />
                     <span>{contribution.title}</span>
                   </button>
                 </TooltipTrigger>
@@ -100,6 +109,14 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
               </Tooltip>
             );
           })}
+        </div>
+      ) : contributions.length === 1 ? (
+        // Single panel: name it (icon + title) instead of a blank bar. Not a
+        // tab/tablist — a quiet title — so the "no tab strip with one
+        // contribution" contract holds.
+        <div className="text-foreground flex items-center gap-1.5 px-1 text-xs font-medium">
+          <TabIcon raw={contributions[0]!.icon} className="text-muted-foreground size-3.5" />
+          <span>{contributions[0]!.title}</span>
         </div>
       ) : (
         <div />

@@ -6,6 +6,13 @@ import type { ActivityItem } from '@/layers/entities/activity';
 /** Maximum items fetched for the dashboard preview. */
 const DASHBOARD_ACTIVITY_LIMIT = 15;
 
+/**
+ * Stable query key for the dashboard/Pulse activity preview. Exported so the
+ * SSE freshness bridge ({@link usePulseFreshness}) can invalidate the exact same
+ * cache this hook reads, instead of duplicating the string literal.
+ */
+export const DASHBOARD_ACTIVITY_QUERY_KEY = ['dashboard-activity'] as const;
+
 /** A labelled time bucket of activity items. */
 export interface DashboardActivityGroup {
   label: string;
@@ -54,7 +61,7 @@ export function useDashboardActivity() {
   const transport = useTransport();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-activity'],
+    queryKey: DASHBOARD_ACTIVITY_QUERY_KEY,
     queryFn: () => transport.listActivityEvents({ limit: DASHBOARD_ACTIVITY_LIMIT }),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
