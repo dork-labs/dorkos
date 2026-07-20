@@ -16,6 +16,11 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Generous 4x headroom over the ~9-11 minute baseline seen across the last
+    # three releases. Without this, a QEMU arm64 cross-compile deadlock (seen
+    # in the v0.52.0 run) burns hours silently before GitHub's 6h default
+    # job timeout finally kills it.
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -117,6 +122,9 @@ jobs:
     needs: build-and-push
     if: vars.DOCKERHUB_MIRROR == 'true'
     runs-on: ubuntu-latest
+    # A manifest copy normally finishes in under 2 minutes; this is headroom,
+    # not an expected duration.
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
