@@ -1,0 +1,69 @@
+{
+  "label": "v0.52.0",
+  "archivedAt": "2026-07-20T13:05:46.213Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-07-20T13:04:46.336Z",
+    "runId": "20260720-075931"
+  },
+  "shots": [
+    {
+      "id": "agents",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "marketplace",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "marketplace-detail",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["docs"]
+    }
+  ],
+  "count": 3,
+  "totalBytes": 331544,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "agents-light.png",
+      "surface": "agents",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 121250,
+      "runId": "20260720-075931",
+      "capturedAt": "2026-07-20T13:03:14.067Z"
+    },
+    {
+      "source": "auto",
+      "file": "marketplace-detail-light.png",
+      "surface": "marketplace-detail",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 121653,
+      "runId": "20260720-075931",
+      "capturedAt": "2026-07-20T13:03:14.067Z"
+    },
+    {
+      "source": "auto",
+      "file": "marketplace-light.png",
+      "surface": "marketplace",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 88641,
+      "runId": "20260720-075931",
+      "capturedAt": "2026-07-20T13:03:14.067Z"
+    }
+  ]
+}

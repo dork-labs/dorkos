@@ -1,3 +1,0 @@
-### Added
-
-- **A brand-new agent says hello first.** The moment you bring an agent to life, its first session opens with a quiet birth line — its name, the day it was born, where it lives, and the runtime it runs on — and then the agent speaks, without you typing a thing. A ready-made agent introduces itself in its own voice and offers a first action to take (it waits for your go-ahead, never runs off on its own). A blank "Design your own" agent says a warm hello and asks what you'd like it to take care of. The greeting is genuinely the agent's — the prompt that sparks it never shows up as if you had typed it. (DOR-355)
