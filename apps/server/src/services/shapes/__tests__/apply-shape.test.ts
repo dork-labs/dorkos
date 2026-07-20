@@ -69,6 +69,14 @@ const LINEAR_TENDER_AGENT: RegisteredAgentView = {
   projectPath: '/projects/linear-tender',
 };
 
+/** A schedule as tracked by the fake service — mirrors the real store's row. */
+interface FakeSchedule {
+  name: string;
+  /** `null` = global (unbound); a concrete id = agent-bound. */
+  agentId: string | null;
+  enabled: boolean;
+}
+
 /** Configurable fakes for {@link ApplyShapeDeps}. Every collaborator is observable. */
 function makeDeps(opts: {
   manifest: ShapePackageManifest | null;
@@ -76,17 +84,31 @@ function makeDeps(opts: {
   enablableExtensions?: string[];
   setSecrets?: [string, string][];
   registeredAgents?: RegisteredAgentView[];
-  existingSchedules?: Record<string, string[]>;
+  existingSchedules?: FakeSchedule[];
   autoFollowAgent?: boolean;
 }) {
   const present = new Set(opts.presentExtensions ?? []);
   const enablable = new Set(opts.enablableExtensions ?? opts.presentExtensions ?? []);
   const setSecrets = new Set((opts.setSecrets ?? []).map(([e, k]) => `${e}:${k}`));
-  const existingSchedules: Record<string, string[]> = { ...(opts.existingSchedules ?? {}) };
+  // The fake store, keyed by name (the real service's cross-scope identity).
+  const schedules: FakeSchedule[] = (opts.existingSchedules ?? []).map((s) => ({ ...s }));
 
   const createSchedule = vi.fn(async (req: CreateTaskRequest) => {
-    existingSchedules[req.target] = [...(existingSchedules[req.target] ?? []), req.name];
+    schedules.push({
+      name: req.name,
+      agentId: req.target === 'global' ? null : req.target,
+      enabled: req.enabled ?? true,
+    });
   });
+  const rebindSchedule = vi.fn(
+    async (name: string, rebind: { agentId: string; enabled: boolean }) => {
+      const existing = schedules.find((s) => s.name === name);
+      if (existing) {
+        existing.agentId = rebind.agentId;
+        existing.enabled = rebind.enabled;
+      }
+    }
+  );
   const enable = vi.fn(async (id: string) => (enablable.has(id) ? { reloadRequired: true } : null));
   const setActiveShape = vi.fn();
 
@@ -99,11 +121,11 @@ function makeDeps(opts: {
     secretChecker: { isSet: async (ext, key) => setSecrets.has(`${ext}:${key}`) },
     agentRegistry: { listWithPaths: () => opts.registeredAgents ?? [] },
     scheduleService: {
-      // Cross-scope by NAME (the real service's semantics): the record is still
-      // keyed by target so tests can assert WHERE a schedule landed, but
-      // existence is the union of every scope's names.
-      existingScheduleNames: () => Object.values(existingSchedules).flat(),
+      // Existence is by NAME across every scope; `agentId` distinguishes a
+      // still-waiting global copy (re-bindable) from an already-bound one.
+      listSchedules: () => schedules.map((s) => ({ ...s })),
       createSchedule,
+      rebindSchedule,
     },
     configStore: {
       getShapePrefs: () => ({
@@ -114,7 +136,7 @@ function makeDeps(opts: {
       setActiveShape,
     },
   };
-  return { deps, createSchedule, enable, setActiveShape };
+  return { deps, createSchedule, rebindSchedule, enable, setActiveShape, schedules };
 }
 
 describe('applyShape', () => {
@@ -275,22 +297,23 @@ describe('applyShape', () => {
   // === (c) Idempotency ===
 
   it('(c) applying twice creates no duplicate schedule and writes identical config', async () => {
-    const existingSchedules: Record<string, string[]> = {};
     const shared = makeDeps({
       manifest: linearOpsManifest(),
       presentExtensions: ['linear-issues'],
       setSecrets: [['linear-issues', 'linear_api_key']],
       registeredAgents: [LINEAR_TENDER_AGENT],
-      existingSchedules,
     });
 
     const first = await applyShape('linear-ops', shared.deps);
     const second = await applyShape('linear-ops', shared.deps);
 
-    // First apply creates the schedule; the second is a no-op (name match).
+    // First apply creates the schedule already bound; the second is a no-op — it
+    // is neither re-created (name match) nor re-bound (already agent-bound).
     expect(first.applied.schedulesCreated).toEqual(['inbox-tick']);
     expect(second.applied.schedulesCreated).toEqual([]);
+    expect(second.applied.schedulesRebound).toEqual([]);
     expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    expect(shared.rebindSchedule).not.toHaveBeenCalled();
     // Extensions + offers are identical across applies.
     expect(second.applied.activatedExtensions).toEqual(first.applied.activatedExtensions);
     expect(second.offeredAgents).toEqual(first.offeredAgents);
@@ -299,12 +322,13 @@ describe('applyShape', () => {
     expect(shared.setActiveShape).toHaveBeenNthCalledWith(2, 'linear-ops');
   });
 
-  it('(c) creates no duplicate when the schedule target flips global → agent between applies', async () => {
+  it('(c) re-binds + enables the waiting schedule when its agent appears between applies', async () => {
     // First apply: the offered agent does not exist yet, so the schedule is
     // created globally-disabled. Then the user accepts the offer (the agent now
-    // exists) and re-applies: the SAME schedule resolves to the agent's id. A
-    // name+target existence check would miss the earlier global copy and create
-    // a duplicate — existence must be by name across scopes.
+    // exists) and re-applies: the SAME schedule must re-target to the agent's id
+    // and enable — the whole point of the Shape's tick. No duplicate is created
+    // (existence is by name across scopes), and the earlier global copy is the
+    // one that flips.
     const registeredAgents: RegisteredAgentView[] = [];
     const shared = makeDeps({
       manifest: linearOpsManifest(),
@@ -315,21 +339,124 @@ describe('applyShape', () => {
 
     const first = await applyShape('linear-ops', shared.deps);
     expect(first.applied.schedulesCreated).toEqual(['inbox-tick']);
+    expect(first.applied.schedulesRebound).toEqual([]);
     expect(shared.createSchedule.mock.calls[0][0]).toMatchObject({
       target: 'global',
       enabled: false,
     });
+    // It landed global + disabled (waiting on its agent).
+    expect(shared.schedules).toEqual([{ name: 'inbox-tick', agentId: null, enabled: false }]);
 
     // The offered agent is created between applies.
     registeredAgents.push(LINEAR_TENDER_AGENT);
 
     const second = await applyShape('linear-ops', shared.deps);
-    // No duplicate: the earlier global copy satisfies the name check.
+    // Re-bound, not re-created: no duplicate, and the flip is reported.
     expect(second.applied.schedulesCreated).toEqual([]);
+    expect(second.applied.schedulesRebound).toEqual(['inbox-tick']);
     expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    expect(shared.rebindSchedule).toHaveBeenCalledTimes(1);
+    expect(shared.rebindSchedule).toHaveBeenCalledWith('inbox-tick', {
+      agentId: 'agent-tender',
+      enabled: true,
+    });
+    // The single schedule is now agent-bound and enabled — the tick turns on.
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: true },
+    ]);
     // And no repeat of the created-disabled warning for a schedule that was not created.
     expect(second.warnings).not.toContain(
       "Schedule 'inbox-tick' created disabled — agent 'linear-tender' missing"
     );
+  });
+
+  // === (d) Re-bind guards ===
+
+  it('(d) never force-enables a schedule the user disabled after it was agent-bound', async () => {
+    // The schedule already found its agent and the user turned it OFF — an
+    // explicit choice. A later apply must NOT resurrect it.
+    const shared = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      existingSchedules: [{ name: 'inbox-tick', agentId: 'agent-tender', enabled: false }],
+    });
+
+    const result = await applyShape('linear-ops', shared.deps);
+
+    expect(result.applied.schedulesCreated).toEqual([]);
+    expect(result.applied.schedulesRebound).toEqual([]);
+    expect(shared.rebindSchedule).not.toHaveBeenCalled();
+    expect(shared.createSchedule).not.toHaveBeenCalled();
+    // Left exactly as the user set it — still bound, still disabled.
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false },
+    ]);
+  });
+
+  it('(d) leaves a waiting schedule global when the registered agent does not match', async () => {
+    // A schedule waits global/disabled, but the only registered agent does not
+    // satisfy the entry's matchName — nothing re-binds.
+    const shared = makeDeps({
+      manifest: linearOpsManifest(),
+      presentExtensions: ['linear-issues'],
+      setSecrets: [['linear-issues', 'linear_api_key']],
+      registeredAgents: [
+        { id: 'agent-other', name: 'other', displayName: 'Other', projectPath: '/p/other' },
+      ],
+      existingSchedules: [{ name: 'inbox-tick', agentId: null, enabled: false }],
+    });
+
+    const result = await applyShape('linear-ops', shared.deps);
+
+    expect(result.applied.schedulesRebound).toEqual([]);
+    expect(shared.rebindSchedule).not.toHaveBeenCalled();
+    expect(shared.createSchedule).not.toHaveBeenCalled();
+    expect(shared.schedules).toEqual([{ name: 'inbox-tick', agentId: null, enabled: false }]);
+  });
+
+  it('(d) re-binds a startDisabled schedule to its agent but keeps it disabled', async () => {
+    // A schedule declared startDisabled should move to its agent when the agent
+    // appears (so it runs AS the agent when the user enables it), but the apply
+    // must not enable it against the manifest's wish.
+    const manifest = buildManifest({
+      agents: [
+        {
+          ref: 'linear-tender',
+          affinity: 'default',
+          matchName: 'Linear Tender',
+          template: { displayName: 'Linear Tender' },
+        },
+      ],
+      schedules: [
+        {
+          name: 'inbox-tick',
+          description: 'poll',
+          prompt: 'go',
+          cron: '*/15 * * * *',
+          agentRef: 'linear-tender',
+          permissionMode: 'acceptEdits',
+          startDisabled: true,
+        },
+      ],
+    });
+    const shared = makeDeps({
+      manifest,
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      existingSchedules: [{ name: 'inbox-tick', agentId: null, enabled: false }],
+    });
+
+    const result = await applyShape('s', shared.deps);
+
+    expect(result.applied.schedulesRebound).toEqual(['inbox-tick']);
+    expect(shared.rebindSchedule).toHaveBeenCalledWith('inbox-tick', {
+      agentId: 'agent-tender',
+      enabled: false,
+    });
+    // Bound to the agent, still disabled (its manifest wants it to start off).
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false },
+    ]);
   });
 });

@@ -4470,12 +4470,19 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "schedulesRebound": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [
               "layout",
               "activatedExtensions",
-              "schedulesCreated"
+              "schedulesCreated",
+              "schedulesRebound"
             ]
           },
           "warnings": {

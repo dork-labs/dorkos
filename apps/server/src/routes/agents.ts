@@ -40,13 +40,53 @@ interface MeshCoreLike {
 }
 
 /**
+ * Fired after a new agent is registered on disk + in the Mesh DB — the create
+ * seam for cross-cutting reactions to a fresh agent. Today it lets Shape
+ * schedules that were created global/disabled because this agent was missing
+ * re-target to it and enable (spec §"Contract changes" item 3), without the user
+ * re-applying the Shape. Best-effort: the route never fails a successful
+ * creation because a hook threw.
+ *
+ * @param agent - The just-registered agent's id, slug, and optional display name.
+ */
+export type AgentRegisteredHook = (agent: {
+  id: string;
+  name: string;
+  displayName?: string;
+}) => Promise<void>;
+
+/**
  * Create the agents router for agent identity CRUD.
  *
  * @param meshCore - Optional MeshCore instance for DB sync after writes
+ * @param onAgentRegistered - Optional hook fired after a new agent registers
  * @returns Express Router with agent identity endpoints
  */
-export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
+export function createAgentsRouter(
+  meshCore?: MeshCoreLike,
+  onAgentRegistered?: AgentRegisteredHook
+): Router {
   const router = Router();
+
+  /**
+   * Fire the post-registration hook, swallowing any failure — a created agent
+   * must never 500 because a downstream reaction (e.g. Shape-schedule re-bind)
+   * threw.
+   *
+   * @param agent - The just-registered agent.
+   */
+  const fireAgentRegistered = async (agent: {
+    id: string;
+    name: string;
+    displayName?: string;
+  }): Promise<void> => {
+    if (!onAgentRegistered) return;
+    try {
+      await onAgentRegistered(agent);
+    } catch (err) {
+      logger.warn('[agents] onAgentRegistered hook failed', { err });
+    }
+  };
 
   // GET /api/agents/current?path=/path/to/project
   // Returns the agent manifest for the given directory, or null
@@ -172,6 +212,13 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         });
       }
 
+      // Re-bind any Shape schedules that were waiting on this agent (best-effort).
+      await fireAgentRegistered({
+        id: manifest.id,
+        name: manifest.name,
+        displayName: manifest.displayName,
+      });
+
       return res.status(201).json(manifest);
     } catch (err) {
       if (err instanceof BoundaryError) {
@@ -203,6 +250,13 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
           linkPath: '/agents',
         });
       }
+
+      // Re-bind any Shape schedules that were waiting on this agent (best-effort).
+      await fireAgentRegistered({
+        id: result.manifest.id,
+        name: result.manifest.name,
+        displayName: result.manifest.displayName,
+      });
 
       return res.status(201).json({
         ...result.manifest,
