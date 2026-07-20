@@ -1428,7 +1428,7 @@ Each extension includes: `id`, `name`, `version`, `status`, `scope`, `bundleRead
 - **Parameters**:
   - `name` (string, required): Extension ID, kebab-case (e.g. `github-prs`). Must match `/^[a-z0-9][a-z0-9-]*$/`.
   - `description` (string, optional): Short description shown in settings UI
-  - `template` (enum, optional): `dashboard-card` | `command` | `settings-panel` (default: `dashboard-card`)
+  - `template` (enum, optional): `dashboard-card` | `right-panel-tab` | `command` | `settings-panel` | `data-provider` (default: `dashboard-card`)
   - `scope` (enum, optional): `global` | `local` (default: `global`)
 - **Returns**: `{ created: true, id, path, scope, template, status, bundleReady, files, message }`
 - **Errors**: Directory already exists, no CWD for local scope, compilation failure (returns `created: true` with `status: 'compile_error'`)

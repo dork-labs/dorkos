@@ -107,7 +107,7 @@ Cleanup is automatic: any registrations made through `api.registerComponent`, `a
 
 ```typescript
 // Add a React component to a UI slot
-api.registerComponent(slot, id, Component, { priority?: number }): () => void
+api.registerComponent(slot, id, Component, { priority?, label?, icon? }): () => void
 
 // Add a command palette item
 api.registerCommand(id, label, callback, { icon?, shortcut? }): () => void
@@ -118,6 +118,12 @@ api.registerDialog(id, Component): { open: () => void; close: () => void }
 // Add a tab to the settings dialog
 api.registerSettingsTab(id, label, Component): () => void
 ```
+
+`registerComponent` options:
+
+- **`priority?`** — orders the contribution within its slot; lower sorts earlier (leftward in a tab strip). Defaults to a mid value.
+- **`label?`** — the human name shown where the slot has a label or tab (the `right-panel` tab strip, `settings.tabs`, `sidebar.footer`). Defaults to the namespaced id, so set it for any tabbed or labelled slot.
+- **`icon?`** — the tab-strip glyph for slots that render one (today, `right-panel`). It is any component the host renders with a `className` (a `{ className?: string }` component). Omit it and the strip falls back to a default puzzle-piece. Note: extensions can only import `react`, `react-dom`, and `@dorkos/extension-api` at runtime, so you cannot import a `lucide-react` icon here — supply your own inline-SVG component instead.
 
 ### UI Control
 
@@ -233,6 +239,42 @@ api.id: string
 > The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
 > retired the sidebar tab strip. Contribute a contextual inspector tab via
 > `right-panel`, or a dashboard card via `dashboard.sections`, instead.
+
+### Right-panel tabs
+
+The `right-panel` slot adds a tab to the shell's right panel — the contextual inspector beside the chat. It is the headline surface for at-a-glance context, so it is worth a full example. Scaffold this shape directly with the `right-panel-tab` template (see [Template Types](#template-types)).
+
+```typescript
+import type { ExtensionAPI } from '@dorkos/extension-api';
+
+// The tab-strip icon is a component the host renders with a `className` for sizing.
+// You cannot import a lucide-react icon in an extension (only react, react-dom, and
+// @dorkos/extension-api are available at runtime), so ship your own inline SVG.
+// `currentColor` makes it inherit the strip's theme color.
+function InspectorTabIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+    </svg>
+  );
+}
+
+// Only the tab body — the panel container owns the shared header (tab strip + close button).
+function InspectorPanel() {
+  return <div style={{ padding: '16px' }}>Your contextual view goes here.</div>;
+}
+
+export function activate(api: ExtensionAPI): void {
+  api.registerComponent('right-panel', 'inspector', InspectorPanel, {
+    label: 'Inspector', // tab name (tooltip + accessibility); defaults to the id if omitted
+    icon: InspectorTabIcon, // omit for the host's default puzzle-piece glyph
+    priority: 50, // lower sorts earlier (leftward) in the tab strip
+  });
+}
+```
+
+**When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API does not expose the internal `visibleWhen` predicate that built-in tabs use to scope themselves to a route, transport, or agent, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (the dashboard, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
 
 ## TypeScript vs JavaScript
 
@@ -900,6 +942,8 @@ The `create_extension` tool handles scaffolding, compilation, and enabling in a 
 The `create_extension` tool accepts a `template` parameter:
 
 **`dashboard-card`** (default) — Registers a React component in the `dashboard.sections` slot. Produces a styled card with heading and description. Good starting point for data display extensions.
+
+**`right-panel-tab`** — Adds a tab to the shell's right panel (the contextual inspector) via the `right-panel` slot. The starter template ships a labelled tab with an inline-SVG tab icon and a placeholder body. Use for at-a-glance context beside the chat. See [Right-panel tabs](#right-panel-tabs).
 
 **`command`** — Registers a command palette item (`Cmd+K`). The starter template fires a toast notification on execution. Use for action-oriented extensions that do not need a persistent UI.
 

@@ -31,7 +31,11 @@ interface ExtensionAPI {
   readonly id: string;
 
   // --- UI Contributions ---
-  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number }): () => void;
+  // options.label names the contribution where the slot shows a label or tab (e.g. the
+  // right-panel tab strip; defaults to the id). options.icon is the tab-strip glyph for
+  // slots that render one (right-panel) — any { className } component; omit it and the
+  // strip falls back to a default puzzle-piece.
+  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }): () => void;
   registerCommand(id: string, label: string, callback: () => void, options?: { icon?: string; shortcut?: string }): () => void;
   registerDialog(id: string, component: ComponentType): { open: () => void; close: () => void };
   registerSettingsTab(id: string, label: string, component: ComponentType): () => void;
@@ -124,6 +128,30 @@ Manifest declaration (a category grants all its kinds):
 \`\`\`typescript
 export function activate(api: ExtensionAPI) {
   api.registerComponent('dashboard.sections', 'my-section', MyComponent, { priority: 50 });
+}
+\`\`\`
+
+### Right-Panel Tab (contextual inspector)
+\`\`\`typescript
+// icon is a { className } component — the host sizes it. React can't import
+// lucide-react here, so ship an inline SVG. Omit icon for a default puzzle-piece.
+function MyTabIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+    </svg>
+  );
+}
+
+export function activate(api: ExtensionAPI) {
+  // label names the tab; priority sorts the strip (lower = leftward). The panel
+  // container owns the header (tab strip + close), so MyPanel renders only the body.
+  api.registerComponent('right-panel', 'my-panel', MyPanel, {
+    label: 'My Panel',
+    icon: MyTabIcon,
+    priority: 50,
+  });
 }
 \`\`\`
 
@@ -381,6 +409,7 @@ export function createCreateExtensionHandler(deps: McpToolDeps) {
 
     const template = (args.template ?? 'dashboard-card') as
       | 'dashboard-card'
+      | 'right-panel-tab'
       | 'command'
       | 'settings-panel'
       | 'data-provider';
@@ -477,10 +506,10 @@ export function getExtensionTools(deps: McpToolDeps) {
         name: z.string().describe('Extension name (kebab-case, e.g. my-dashboard-widget)'),
         description: z.string().optional().describe('Short description shown in settings UI'),
         template: z
-          .enum(['dashboard-card', 'command', 'settings-panel', 'data-provider'])
+          .enum(['dashboard-card', 'right-panel-tab', 'command', 'settings-panel', 'data-provider'])
           .optional()
           .describe(
-            'Starter template (default: dashboard-card). Use data-provider for extensions with server-side API integration.'
+            'Starter template (default: dashboard-card). right-panel-tab adds a tab to the contextual inspector; data-provider adds server-side API integration.'
           ),
         scope: z
           .enum(['global', 'local'])
