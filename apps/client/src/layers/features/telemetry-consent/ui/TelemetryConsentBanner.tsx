@@ -1,19 +1,23 @@
-import { Button } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig, HEARTBEAT_PAYLOAD_EXAMPLE } from '@/layers/entities/config';
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+
+import { Banner, Button } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
+import { useConfig, useUpdateConfig, TelemetryPayloadBlock } from '@/layers/entities/config';
 
 /**
- * First-run telemetry disclosure. Surfaced app-wide until the user makes an
- * explicit choice. DorkOS shares a small anonymous heartbeat and marketplace
- * install counts by default (Tier 1, opt-out), so this banner discloses that
- * default and shows the exact payload rather than asking permission. Turning it
- * off is as easy as keeping it on. Either choice records the shared
- * `userHasDecided` flag so the disclosure never reappears.
- *
- * The full contract lives at https://dorkos.ai/telemetry.
+ * First-run telemetry disclosure, shown app-wide until the user makes an explicit
+ * choice. DorkOS shares a small anonymous heartbeat and marketplace install
+ * counts by default (Tier 1, opt-out), so this discloses that default in one
+ * line and tucks the exact payload behind a "See what's sent" toggle — one click
+ * away, never a wall of JSON. Turning it off is as easy as keeping it on; either
+ * choice records the shared `userHasDecided` flag so the disclosure never
+ * reappears. The full contract lives at https://dorkos.ai/telemetry.
  */
 export function TelemetryConsentBanner() {
   const { data: config } = useConfig();
   const updateConfig = useUpdateConfig();
+  const [expanded, setExpanded] = useState(false);
 
   if (config?.telemetry?.userHasDecided) return null;
 
@@ -30,39 +34,45 @@ export function TelemetryConsentBanner() {
   };
 
   return (
-    <div
-      role="region"
-      aria-label="Telemetry disclosure"
-      className="border-border bg-muted/40 flex flex-col gap-3 border-b px-4 py-3"
+    <Banner
+      variant="neutral"
+      detailsOpen={expanded}
+      details={<TelemetryPayloadBlock />}
+      actions={
+        <>
+          <Button variant="outline" size="sm" onClick={turnOff} disabled={updateConfig.isPending}>
+            Turn off
+          </Button>
+          <Button size="sm" onClick={keepSharing} disabled={updateConfig.isPending}>
+            Keep sharing
+          </Button>
+        </>
+      }
     >
-      <div className="min-w-0 space-y-1">
-        <h2 className="text-sm font-semibold">DorkOS shares a little anonymous data</h2>
-        <p className="text-muted-foreground text-sm">
-          To see roughly how many people run DorkOS, it sends a small anonymous heartbeat once a day
-          plus anonymous marketplace install counts. Here is exactly what is in it. No prompts,
-          code, file paths, or session content ever leave your machine. Turn it off any time.{' '}
-          <a
-            href="https://dorkos.ai/telemetry"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-foreground underline underline-offset-2"
-          >
-            Read the full contract
-          </a>
-          .
-        </p>
-      </div>
-      <pre className="text-muted-foreground bg-background/60 max-w-full overflow-x-auto rounded-md border p-3 text-xs">
-        <code>{HEARTBEAT_PAYLOAD_EXAMPLE}</code>
-      </pre>
-      <div className="flex flex-shrink-0 gap-2">
-        <Button variant="outline" size="sm" onClick={turnOff} disabled={updateConfig.isPending}>
-          Turn off
-        </Button>
-        <Button size="sm" onClick={keepSharing} disabled={updateConfig.isPending}>
-          Keep sharing
-        </Button>
-      </div>
-    </div>
+      <span className="text-muted-foreground">
+        DorkOS shares a little anonymous data — a daily “I&apos;m alive” ping and install counts.
+        Never your prompts, code, or files.{' '}
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="text-foreground focus-visible:ring-ring/50 inline-flex items-center gap-0.5 rounded-sm font-medium underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2"
+        >
+          See what&apos;s sent
+          <ChevronDown
+            aria-hidden
+            className={cn('size-3 transition-transform duration-200', expanded && 'rotate-180')}
+          />
+        </button>{' '}
+        <a
+          href="https://dorkos.ai/telemetry"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-foreground font-medium underline underline-offset-2"
+        >
+          Full contract
+        </a>
+      </span>
+    </Banner>
   );
 }

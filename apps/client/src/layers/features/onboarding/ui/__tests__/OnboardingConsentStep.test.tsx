@@ -1,11 +1,28 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useUpdateConfig } from '@/layers/entities/config';
 import { OnboardingConsentStep } from '../OnboardingConsentStep';
+
+// The payload disclosure animates open with motion, which reads matchMedia.
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
 vi.mock('@/layers/entities/config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/config')>();
@@ -39,14 +56,20 @@ describe('OnboardingConsentStep', () => {
 
   afterEach(() => cleanup());
 
-  it('shows the disclosure, the payload, and the contract link', () => {
+  it('shows the disclosure and contract link, revealing the payload on demand', async () => {
+    const user = userEvent.setup();
     render(<OnboardingConsentStep onComplete={vi.fn()} />);
+
     expect(screen.getByText(/shares a little anonymous data/i)).toBeInTheDocument();
-    expect(screen.getByText(/runtimesConfigured/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /full contract/i })).toHaveAttribute(
       'href',
       'https://dorkos.ai/telemetry'
     );
+
+    // Payload is one click away, not shown by default.
+    expect(screen.queryByText(/runtimesConfigured/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /see what.s sent/i }));
+    expect(await screen.findByText(/runtimesConfigured/)).toBeInTheDocument();
   });
 
   it('keeping sharing leaves both channels on, records the decision, and advances', async () => {

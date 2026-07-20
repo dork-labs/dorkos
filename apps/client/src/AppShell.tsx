@@ -21,8 +21,8 @@ import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
-import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
-import { TelemetryConsentBanner } from '@/layers/features/telemetry-consent';
+import { DialogHost } from '@/layers/widgets/app-layout';
+import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { SidebarFooterBar } from '@/layers/features/session-list';
 import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
 import { useOnboarding, OnboardingFlow, ProgressCard } from '@/layers/features/onboarding';
@@ -269,6 +269,10 @@ export function AppShell() {
     agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
   });
 
+  // Eligible global banners, ranked and rendered one-at-a-time by AppBannerSlot
+  // (below the header, inside the inset — so the sidebar never paints over them).
+  const appBanners = useAppBanners(activeSessionId);
+
   // Gate rendering until config is loaded — prevents a flash of chat UI before
   // onboarding appears on first run.
   if (isOnboardingLoading && !loadingTimedOut) {
@@ -302,8 +306,6 @@ export function AppShell() {
                   data-testid="app-shell"
                   className="bg-background text-foreground flex h-dvh flex-col"
                 >
-                  <TelemetryConsentBanner />
-                  <PermissionBanner sessionId={activeSessionId} />
                   <SidebarProvider
                     open={sidebarOpen}
                     onOpenChange={setSidebarOpen}
@@ -396,6 +398,11 @@ export function AppShell() {
                         {/* ── Right panel toggle — far right, always present on every route ── */}
                         <RightPanelToggle />
                       </header>
+                      {/* ── Global banner slot — one standing banner at a time, ranked
+                          by priority. Sits below the header and inside the inset, so the
+                          fixed sidebar can't paint over it and it never pushes the shell
+                          header down. ── */}
+                      <AppBannerSlot descriptors={appBanners} />
                       {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
                           routed content above the 64px bar — nothing occluded. */}
                       <main className="flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">

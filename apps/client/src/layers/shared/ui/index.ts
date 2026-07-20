@@ -17,6 +17,8 @@ export {
   AlertDialogCancel,
 } from './alert-dialog';
 export { Badge, badgeVariants } from './badge';
+export { Banner, bannerVariants } from './banner';
+export type { BannerVariant, BannerProps } from './banner';
 export { Button, buttonVariants } from './button';
 export type { ButtonSize, ButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';

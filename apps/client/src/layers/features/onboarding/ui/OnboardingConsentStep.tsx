@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { Button } from '@/layers/shared/ui';
-import { useUpdateConfig, HEARTBEAT_PAYLOAD_EXAMPLE } from '@/layers/entities/config';
+import { useUpdateConfig, TelemetryPayloadDisclosure } from '@/layers/entities/config';
 
 interface OnboardingConsentStepProps {
   /** Called once the telemetry choice has been recorded (proceeds to Complete). */
@@ -51,9 +51,7 @@ export function OnboardingConsentStep({ onComplete }: OnboardingConsentStepProps
         </p>
       </div>
 
-      <pre className="text-muted-foreground bg-muted/40 max-w-md overflow-x-auto rounded-md border p-3 text-xs">
-        <code>{HEARTBEAT_PAYLOAD_EXAMPLE}</code>
-      </pre>
+      <TelemetryPayloadDisclosure className="max-w-md text-center" />
 
       <div className="flex gap-2">
         <Button variant="outline" onClick={() => choose(false)} disabled={updateConfig.isPending}>
