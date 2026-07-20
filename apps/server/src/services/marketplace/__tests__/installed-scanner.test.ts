@@ -142,11 +142,26 @@ describe('scanInstalledPackages', () => {
     });
   });
 
-  it('surfaces plugins, agents, and shapes together across every install root', async () => {
+  it('surfaces all five package types together across every install root', async () => {
+    // One install per type, each at its real install root (skill-packs and
+    // adapters share plugins/ with plugins; agents and shapes have their own
+    // roots) — the load-bearing "no type is invisible to the scan" contract.
     await writeManifest(join(dorkHome, 'plugins', 'p'), {
       schemaVersion: 1,
       type: 'plugin',
       name: 'p',
+      version: '1.0.0',
+    });
+    await writeManifest(join(dorkHome, 'plugins', 'sp'), {
+      schemaVersion: 1,
+      type: 'skill-pack',
+      name: 'sp',
+      version: '1.0.0',
+    });
+    await writeManifest(join(dorkHome, 'plugins', 'ad'), {
+      schemaVersion: 1,
+      type: 'adapter',
+      name: 'ad',
       version: '1.0.0',
     });
     await writeManifest(join(dorkHome, 'agents', 'a'), {
@@ -164,7 +179,13 @@ describe('scanInstalledPackages', () => {
 
     const result = await scanInstalledPackages(dorkHome);
     const byType = Object.fromEntries(result.map((p) => [p.type, p.name]));
-    expect(byType).toEqual({ plugin: 'p', agent: 'a', shape: 's' });
+    expect(byType).toEqual({
+      plugin: 'p',
+      'skill-pack': 'sp',
+      adapter: 'ad',
+      agent: 'a',
+      shape: 's',
+    });
   });
 
   it('omits provenance fields when the install-metadata sidecar is missing', async () => {

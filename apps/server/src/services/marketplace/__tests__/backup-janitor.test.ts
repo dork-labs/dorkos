@@ -70,6 +70,22 @@ describe('sweepStaleInstallBackups', () => {
     expect(await pathExists(stalePath)).toBe(false);
   });
 
+  it('removes a stale backup dir under <dorkHome>/shapes (DOR-355 regression)', async () => {
+    // Shapes install to shapes/, a root the janitor originally never swept —
+    // a crash mid-Shape-reinstall left an unreclaimed .dorkos-bak orphan.
+    const shapesRoot = path.join(dorkHome, 'shapes');
+    await mkdir(shapesRoot, { recursive: true });
+    const staleTimestamp = Date.now() - 25 * 60 * 60 * 1000; // 25h old
+    const stalePath = path.join(shapesRoot, backupName('linear-ops', staleTimestamp));
+    await mkdir(stalePath, { recursive: true });
+    await writeFile(path.join(stalePath, 'marker.txt'), 'leftover', 'utf8');
+
+    const removed = await sweepStaleInstallBackups(dorkHome, noopLogger);
+
+    expect(removed).toBe(1);
+    expect(await pathExists(stalePath)).toBe(false);
+  });
+
   it('spares a fresh backup dir (default 24h threshold) — guards a live transaction', async () => {
     const pluginsRoot = path.join(dorkHome, 'plugins');
     await mkdir(pluginsRoot, { recursive: true });

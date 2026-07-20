@@ -32,18 +32,19 @@
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { INSTALL_ROOT_DIRS } from './lib/install-roots.js';
 import { BACKUP_SUFFIX } from './transaction.js';
 
 /** Default staleness threshold: backups older than this are swept. */
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Global-scope roots every install flow writes into (`install-plugin.ts`,
- * `install-agent.ts`, `install-skill-pack.ts`, `install-adapter.ts` all
- * compute their `target` under one of these two directories for a global
- * install). A crash-left backup is always a direct sibling of its target,
- * so a single non-recursive `readdir` of each root is sufficient — no need
- * to walk the tree.
+/*
+ * The swept roots are every global install root from the shared type → root
+ * mapping ({@link INSTALL_ROOT_DIRS}: `plugins/`, `agents/`, `shapes/`) —
+ * every install flow computes its global target under one of them, and a
+ * crash-left backup is always a direct sibling of its target, so a single
+ * non-recursive `readdir` of each root is sufficient — no need to walk the
+ * tree.
  *
  * Project-local installs (`--project <path>`) place their target under
  * `<projectPath>/.dork/plugins/<name>` or, for agents, `<projectPath>`
@@ -53,11 +54,10 @@ const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
  * `packages/mesh/src/discovery/unified-scanner.ts` is unconditional and
  * location-agnostic.
  */
-const GLOBAL_SCOPE_ROOTS = ['plugins', 'agents'] as const;
 
 /**
- * Sweep stale `*.dorkos-bak-*` install backups under `<dorkHome>/plugins/`
- * and `<dorkHome>/agents/`.
+ * Sweep stale `*.dorkos-bak-*` install backups under every global install
+ * root (`<dorkHome>/plugins/`, `<dorkHome>/agents/`, `<dorkHome>/shapes/`).
  *
  * Best-effort throughout: a missing root (fresh `dorkHome`, nothing
  * installed yet), an unreadable directory, an unparseable backup name, or a
@@ -80,7 +80,7 @@ export async function sweepStaleInstallBackups(
   const cutoff = Date.now() - maxAgeMs;
   let removed = 0;
 
-  for (const scope of GLOBAL_SCOPE_ROOTS) {
+  for (const scope of INSTALL_ROOT_DIRS) {
     const root = path.join(dorkHome, scope);
     removed += await sweepRoot(root, cutoff, logger);
   }

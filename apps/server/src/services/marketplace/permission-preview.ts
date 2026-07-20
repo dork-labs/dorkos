@@ -14,9 +14,11 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
+import { PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { installRootDirForType } from './lib/install-roots.js';
 import type { ConflictReport, PermissionPreview } from './types.js';
 
 /** Directory names ignored when walking the package contents. */
@@ -47,15 +49,27 @@ export interface BuildPreviewOptions {
 }
 
 /**
- * Computes the on-disk install root for a package given its type and name.
- * Plugins, skill-packs, and adapters all live under `plugins/`; agents live
- * under `agents/`.
+ * Computes the on-disk install root the preview's `fileChanges` paths resolve
+ * against, via the shared type → install-root mapping (`lib/install-roots.ts`)
+ * so the preview always shows the same destination the install flow writes to
+ * — plugins/skill-packs/adapters under `plugins/`, agents under `agents/`,
+ * Shapes under `shapes/`.
+ *
+ * Shapes are global-only (`install-shape.ts` accepts `projectPath` for
+ * signature symmetry but ignores it), so a Shape preview always resolves
+ * against `dorkHome` — showing a project-local destination the install would
+ * never write to would be a lie.
  */
-function computeInstallRoot(dorkHome: string, manifest: MarketplacePackageManifest): string {
-  if (manifest.type === 'agent') {
-    return join(dorkHome, 'agents', manifest.name);
+function computeInstallRoot(
+  dorkHome: string,
+  manifest: MarketplacePackageManifest,
+  projectPath: string | undefined
+): string {
+  const rootDir = installRootDirForType(manifest.type);
+  if (projectPath && manifest.type !== 'shape') {
+    return join(projectPath, '.dork', rootDir, manifest.name);
   }
-  return join(dorkHome, 'plugins', manifest.name);
+  return join(dorkHome, rootDir, manifest.name);
 }
 
 /**
@@ -191,16 +205,20 @@ function parseRequiresDeclaration(decl: string): { type: string; name: string; v
 
 /**
  * Resolve a single dependency declaration against the installed state on
- * disk. Plugin/skill-pack/adapter requirements are satisfied by a directory
- * under `<dorkHome>/plugins/<name>`; agent requirements by `<dorkHome>/agents/
- * <name>`.
+ * disk, probing the declared type's install root via the shared mapping
+ * (`lib/install-roots.ts`): plugin/skill-pack/adapter requirements under
+ * `<dorkHome>/plugins/<name>`, agents under `<dorkHome>/agents/<name>`,
+ * Shapes under `<dorkHome>/shapes/<name>`. A declaration whose type is not a
+ * known package type falls back to the `plugins/` root (the pre-mapping
+ * behavior for unrecognized types).
  */
 async function resolveRequirement(
   dorkHome: string,
   decl: string
 ): Promise<{ type: string; name: string; version?: string; satisfied: boolean }> {
   const parsed = parseRequiresDeclaration(decl);
-  const root = parsed.type === 'agent' ? 'agents' : 'plugins';
+  const parsedType = PackageTypeSchema.safeParse(parsed.type);
+  const root = parsedType.success ? installRootDirForType(parsedType.data) : 'plugins';
   const candidate = join(dorkHome, root, parsed.name);
   const satisfied = await pathExists(candidate);
   return { ...parsed, satisfied };
@@ -247,8 +265,8 @@ export class PermissionPreviewBuilder {
    *   marketplace manifest schema does not currently expose a top-level
    *   `externalHosts` field, so package-level hosts are not surfaced here.
    * - `requires` — `manifest.requires` declarations resolved against the
-   *   installed packages under `<dorkHome>/plugins/` and `<dorkHome>/agents/`,
-   *   tagged with `satisfied: boolean`.
+   *   installed packages under every global install root (`plugins/`,
+   *   `agents/`, `shapes/`), tagged with `satisfied: boolean`.
    * - `conflicts` — every collision returned by the injected
    *   {@link ConflictDetectorLike} for the staged package against the active
    *   scope.
@@ -262,14 +280,7 @@ export class PermissionPreviewBuilder {
     manifest: MarketplacePackageManifest,
     opts: BuildPreviewOptions = {}
   ): Promise<PermissionPreview> {
-    const installRoot = opts.projectPath
-      ? join(
-          opts.projectPath,
-          '.dork',
-          manifest.type === 'agent' ? 'agents' : 'plugins',
-          manifest.name
-        )
-      : computeInstallRoot(this.dorkHome, manifest);
+    const installRoot = computeInstallRoot(this.dorkHome, manifest, opts.projectPath);
 
     const preview: PermissionPreview = {
       fileChanges: [],

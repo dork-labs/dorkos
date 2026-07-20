@@ -47,6 +47,15 @@ export interface UninstallRequest {
   purge?: boolean;
   /** Project path for project-local uninstalls. */
   projectPath?: string;
+  /**
+   * Internal (installer-only): set `false` to keep `ui.shapes.active` intact
+   * when this flow removes the active Shape. The installer's `update()` sets
+   * it because its uninstall is the first half of a replace — the same Shape
+   * lands back at the same path moments later — not a removal. Defaults to
+   * `true`; the HTTP route's body schema does not expose this field, so
+   * external callers always get the honest clear-on-remove behavior.
+   */
+  deactivateShape?: boolean;
 }
 
 /** The outcome of a successful uninstall. */
@@ -145,7 +154,7 @@ export class UninstallFlow {
 
     try {
       const removedFiles = await this.countTopLevelEntries(stagingPath);
-      await this.runSideEffects(stagingPath, located);
+      await this.runSideEffects(stagingPath, located, req);
       const preservedData = req.purge
         ? []
         : await this.restorePreservedData(stagingPath, located.installRoot);
@@ -161,6 +170,15 @@ export class UninstallFlow {
    * Search the canonical install locations for a package matching `req.name`
    * and return the first match. Reads `dork-package.json` to determine the
    * package type when one is present, otherwise infers it from the layout.
+   *
+   * First-match wins across the probe order (project-local, then the global
+   * roots `plugins` → `agents` → `shapes`): {@link UninstallRequest} carries no
+   * package type, so when two different-type packages share a name (e.g. a
+   * plugin *and* a Shape both called "linear-ops"), an uninstall by name always
+   * resolves to the earlier root and the later one stays untouched. That
+   * cross-type collision is surfaced as a non-blocking warning at install time
+   * by the conflict detector's package-name rule, so the ambiguity is visible
+   * before it is ever created.
    *
    * @internal
    */
@@ -210,11 +228,17 @@ export class UninstallFlow {
    * extensions are disabled by walking the staged `.dork/extensions/`
    * directory; adapter entries are removed via `removeAdapter`; removing the
    * currently-active Shape clears `ui.shapes.active` so the pointer never
-   * dangles at a deleted install.
+   * dangles at a deleted install (suppressed when `req.deactivateShape` is
+   * `false` — the installer's update replace, where the Shape comes right
+   * back).
    *
    * @internal
    */
-  private async runSideEffects(stagingPath: string, located: LocatedPackage): Promise<void> {
+  private async runSideEffects(
+    stagingPath: string,
+    located: LocatedPackage,
+    req: UninstallRequest
+  ): Promise<void> {
     const type = located.inferredType;
     if (type === 'plugin' || type === 'skill-pack') {
       await this.disableBundledExtensions(stagingPath);
@@ -227,7 +251,7 @@ export class UninstallFlow {
         located.manifest?.name ?? path.basename(located.installRoot)
       );
     }
-    if (type === 'shape') {
+    if (type === 'shape' && req.deactivateShape !== false) {
       this.deactivateShapeIfActive(located);
     }
   }

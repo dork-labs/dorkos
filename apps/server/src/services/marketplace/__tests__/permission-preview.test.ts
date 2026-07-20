@@ -15,6 +15,7 @@ import type {
   AdapterPackageManifest,
   AgentPackageManifest,
   PluginPackageManifest,
+  ShapePackageManifest,
   SkillPackPackageManifest,
 } from '@dorkos/marketplace';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
@@ -107,6 +108,26 @@ function skillPackManifest(name: string): SkillPackPackageManifest {
   };
 }
 
+/** Build a minimal valid Shape manifest. */
+function shapeManifest(name: string): ShapePackageManifest {
+  return {
+    schemaVersion: 1,
+    name,
+    version: '1.0.0',
+    type: 'shape',
+    description: `${name} shape fixture`,
+    tags: [],
+    layers: [],
+    requires: [],
+    activates: [],
+    extensions: [],
+    layout: {},
+    agents: [],
+    schedules: [],
+    connections: [],
+  } as ShapePackageManifest;
+}
+
 /**
  * Materialize a fixture package on disk: a manifest.json plus optional
  * `.dork/extensions/<id>/extension.json` and `.dork/tasks/<name>/SKILL.md`
@@ -118,7 +139,8 @@ async function createFixturePackage(
     | PluginPackageManifest
     | SkillPackPackageManifest
     | AgentPackageManifest
-    | AdapterPackageManifest,
+    | AdapterPackageManifest
+    | ShapePackageManifest,
   options: FixtureOptions = {}
 ): Promise<string> {
   const pkgPath = join(root, manifest.name);
@@ -363,6 +385,21 @@ describe('PermissionPreviewBuilder', () => {
         satisfied: true,
       });
     });
+
+    it('checks the shapes directory for `shape:` requirements', async () => {
+      const shapeDir = join(dorkHome, 'shapes', 'linear-ops');
+      await mkdir(shapeDir, { recursive: true });
+      const manifest = pluginManifest('shape-consumer', { requires: ['shape:linear-ops'] });
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.requires[0]).toMatchObject({
+        type: 'shape',
+        name: 'linear-ops',
+        satisfied: true,
+      });
+    });
   });
 
   describe('agent package destination', () => {
@@ -386,6 +423,38 @@ describe('PermissionPreviewBuilder', () => {
 
       const expected = join(dorkHome, 'plugins', 'writing-skills', 'manifest.json');
       expect(preview.fileChanges.some((f) => f.path === expected)).toBe(true);
+    });
+  });
+
+  describe('shape package destination', () => {
+    it('routes file destinations to ${dorkHome}/shapes/<name> for Shape packages', async () => {
+      // Regression (DOR-355): the preview hardcoded agent→agents/,
+      // everything-else→plugins/, so a Shape's fileChanges showed
+      // plugins/<name>/ paths the install never writes — it lands in shapes/.
+      const manifest = shapeManifest('linear-ops');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      const expected = join(dorkHome, 'shapes', 'linear-ops', 'manifest.json');
+      expect(preview.fileChanges.some((f) => f.path === expected)).toBe(true);
+      expect(preview.fileChanges.some((f) => f.path.includes(join('plugins', 'linear-ops')))).toBe(
+        false
+      );
+    });
+
+    it('previews the global shapes/ destination even for a project-scoped request', async () => {
+      // Shapes are global-only: install-shape.ts accepts projectPath for
+      // signature symmetry but ignores it. The preview must show where files
+      // actually land, not a project-local path the install never writes.
+      const manifest = shapeManifest('linear-ops');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest, { projectPath: '/work/myapp' });
+
+      const expected = join(dorkHome, 'shapes', 'linear-ops', 'manifest.json');
+      expect(preview.fileChanges.some((f) => f.path === expected)).toBe(true);
+      expect(preview.fileChanges.some((f) => f.path.startsWith('/work/myapp'))).toBe(false);
     });
   });
 

@@ -274,6 +274,33 @@ describe('UninstallFlow', () => {
     expect(await pathExists(installRoot)).toBe(false);
   });
 
+  it('keeps the active Shape when deactivateShape is false (installer update replace)', async () => {
+    // The installer's update() runs uninstall as the first half of a replace —
+    // the same Shape lands right back at the same path. Clearing
+    // ui.shapes.active there would silently drop the cockpit to "no active
+    // Shape" on every active-Shape update, so the internal flag suppresses
+    // the deactivation side-effect.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'linear-ops');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildShapeManifest({ name: 'linear-ops' }),
+    });
+
+    const clearActiveShape = vi.fn();
+    const shapeDeactivator: UninstallShapeDeactivator = {
+      getActiveShapeName: () => 'linear-ops',
+      clearActiveShape,
+    };
+
+    const flow = new UninstallFlow({ ...deps, shapeDeactivator });
+    await flow.uninstall({ name: 'linear-ops', deactivateShape: false });
+
+    expect(clearActiveShape).not.toHaveBeenCalled();
+    expect(await pathExists(installRoot)).toBe(false);
+  });
+
   it('leaves the active Shape untouched when a different Shape is uninstalled', async () => {
     const deps = await buildDeps();
     cleanupDirs.push(deps.dorkHome);

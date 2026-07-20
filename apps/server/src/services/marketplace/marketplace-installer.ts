@@ -89,6 +89,29 @@ export class ConflictError extends Error {
 }
 
 /**
+ * Active-Shape hooks the installer's {@link MarketplaceInstaller.update} path
+ * uses so updating the currently-applied Shape survives the uninstall →
+ * reinstall round trip: the pointer is read before the uninstall (which runs
+ * with Shape deactivation suppressed — an update is a replace, not a removal)
+ * and the Shape is re-applied after the fresh version lands so its extensions,
+ * schedules, and chrome reflect the new manifest. Optional: Shape-unaware
+ * callers (and most tests) omit it, in which case an active-Shape update
+ * leaves the pointer intact but skips the re-apply.
+ */
+export interface ShapeUpdateHooks {
+  /** The currently-active Shape name (`ui.shapes.active`), or `null`. */
+  getActiveShapeName(): string | null;
+  /**
+   * Re-apply an installed Shape (the same idempotent `applyShape` service the
+   * `POST /api/shapes/:name/apply` route runs). The result is not surfaced to
+   * the update caller; failures are logged, never thrown.
+   *
+   * @param name - The installed Shape name to re-apply.
+   */
+  reapplyShape(name: string): Promise<unknown>;
+}
+
+/**
  * Constructor dependencies for {@link MarketplaceInstaller}. Every
  * collaborator is injected so the orchestrator is fully testable without
  * touching disk, the network, or the transaction engine.
@@ -114,6 +137,8 @@ export interface InstallerDeps {
   shapeFlow: ShapeInstallFlow;
   /** Flow for uninstalling packages — wired here for HTTP route symmetry. */
   uninstallFlow: UninstallFlow;
+  /** Active-Shape hooks for the update path; omit in Shape-unaware contexts. */
+  shapeUpdateHooks?: ShapeUpdateHooks;
   /** Structured logger for diagnostic output. */
   logger: Logger;
 }
@@ -279,14 +304,24 @@ export class MarketplaceInstaller implements InstallerLike {
     //    name, not whatever raw identifier the caller passed.
     const resolved = await this.deps.resolver.resolve(buildResolverInput(req));
 
+    // Capture whether this package is the currently-applied Shape BEFORE the
+    // uninstall half runs, so the post-install re-apply below knows to fire.
+    const wasActiveShape =
+      this.deps.shapeUpdateHooks?.getActiveShapeName() === resolved.packageName;
+
     // 2. Uninstall WITH purge so the install root is fully removed and
     //    `atomicMove(stagingDir, installRoot)` does not later trip on
     //    `ENOTEMPTY`. We do our own data preservation around the call so
     //    `.dork/data/` and `.dork/secrets.json` survive the round trip.
+    //    `deactivateShape: false` keeps `ui.shapes.active` intact: this
+    //    uninstall is the first half of a replace, not a removal — clearing
+    //    the pointer here would silently drop the user's cockpit to "no
+    //    active Shape" on every active-Shape update.
     const result = await this.deps.uninstallFlow.uninstall({
       name: resolved.packageName,
       purge: false,
       projectPath: req.projectPath,
+      deactivateShape: false,
     });
 
     // 3. Capture preserved data into a temp scratch directory and remove
@@ -322,6 +357,15 @@ export class MarketplaceInstaller implements InstallerLike {
       // If the install fails after we removed the data-only install root,
       // restore preserved data to the original location so the user does
       // not lose state. Best-effort: rethrow the original error either way.
+      //
+      // Residual (accepted): when the failed update targeted the ACTIVE
+      // Shape, `ui.shapes.active` still points at the now-removed install
+      // (deactivation was suppressed above). That is deliberate — clearing it
+      // here could wrongly deactivate when a same-name package of a different
+      // type was the one removed, and the dangling pointer is recoverable:
+      // the next apply attempt 404s honestly and the switcher offers a
+      // re-install, whereas an auto-clear would silently discard the user's
+      // place.
       if (scratchDir && installRoot) {
         try {
           await mkdir(installRoot, { recursive: true });
@@ -350,6 +394,27 @@ export class MarketplaceInstaller implements InstallerLike {
         await cp(scratchPath, destPath, { recursive: true });
       }
       await rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+
+    // 6. If the updated package is the currently-applied Shape, re-apply it so
+    //    the cockpit picks up the new version's extensions, schedules, and
+    //    chrome — the suppressed uninstall kept `ui.shapes.active` pointing
+    //    here, but only `applyShape` actually activates a manifest.
+    //    `installResult.type === 'shape'` guards the cross-type same-name edge
+    //    (a plugin named after the active Shape must not trigger a re-apply).
+    //    Best-effort: the update itself already succeeded, so a re-apply
+    //    failure is logged and the user re-applies from the switcher.
+    if (wasActiveShape && installResult.type === 'shape' && this.deps.shapeUpdateHooks) {
+      try {
+        await this.deps.shapeUpdateHooks.reapplyShape(resolved.packageName);
+        this.deps.logger.info(
+          `[marketplace/update] Re-applied active Shape "${resolved.packageName}" after update`
+        );
+      } catch (err) {
+        this.deps.logger.warn(
+          `[marketplace/update] Failed to re-apply active Shape "${resolved.packageName}" after update (the update itself succeeded — re-apply it from the Shape switcher): ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     }
 
     return installResult;
