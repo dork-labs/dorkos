@@ -31,7 +31,7 @@ Separately, the telemetry disclosure showed the exact heartbeat payload as an al
 
 **Severity-gated dismissal.** A banner shows a dismiss control only when it is given a dismiss handler. The permission-bypass warning is non-dismissible and clears itself when the session leaves bypass mode; the telemetry notice has no dismiss X at all — its two buttons (turn off / keep sharing) are the only exits.
 
-**Progressive disclosure for the telemetry payload.** The consent banner now leads with a one-line summary and tucks the exact payload behind a "See what's sent" toggle that expands in place. This amends 260711-141639: the payload is still shown verbatim and is still one click away on every telemetry surface (consent banner, onboarding step, privacy settings) — it is just no longer the first thing you read. The toggle-plus-payload affordance is a single shared component owned by the config entity, so all three surfaces look and read the same.
+**Progressive disclosure for the telemetry payload.** The consent banner now leads with a one-line summary and tucks the exact payload behind a "See what's sent" toggle that expands in place. This amends 260711-141639: the payload is still shown verbatim and is still one click away on every telemetry surface (consent banner, onboarding step, privacy settings) — it is just no longer the first thing you read. The affordance is single-sourced in the config entity as shared sub-components — the "See what's sent" toggle and the payload block — so all three surfaces read the same; the banner drives the `Banner` primitive's details region while onboarding and settings compose the same pieces in a self-contained disclosure.
 
 ## Consequences
 

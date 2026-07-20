@@ -11,7 +11,7 @@ import { HEARTBEAT_PAYLOAD_EXAMPLE } from '../lib/telemetry-payload';
  */
 export function TelemetryPayloadBlock({ className }: { className?: string }) {
   return (
-    <div className={cn('space-y-1.5', className)}>
+    <div className={cn('space-y-1.5 text-left', className)}>
       <pre className="text-muted-foreground bg-background/60 max-w-full overflow-x-auto rounded-md border p-3 text-xs">
         <code>{HEARTBEAT_PAYLOAD_EXAMPLE}</code>
       </pre>

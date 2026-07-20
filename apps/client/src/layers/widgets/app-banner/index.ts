@@ -8,5 +8,3 @@
 export { AppBannerSlot } from './ui/AppBannerSlot';
 export { PermissionBanner } from './ui/PermissionBanner';
 export { useAppBanners } from './model/use-app-banners';
-export { BANNER_PRIORITY } from './model/banner-descriptor';
-export type { BannerDescriptor } from './model/banner-descriptor';

@@ -89,6 +89,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Feedback',
     keywords: ['toast', 'notification', 'sonner', 'success', 'error', 'info', 'warning'],
   },
+  {
+    id: 'banner',
+    title: 'Banner',
+    page: 'components',
+    category: 'Feedback',
+    keywords: ['banner', 'alert', 'notice', 'critical', 'warning', 'info', 'neutral', 'dismiss'],
+  },
   // NavigationShowcases
   {
     id: 'navigationlayout',

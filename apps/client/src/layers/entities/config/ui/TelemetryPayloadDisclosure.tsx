@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown } from 'lucide-react';
 
 import { cn } from '@/layers/shared/lib';
 import { TelemetryPayloadBlock } from './TelemetryPayloadBlock';
+import { TelemetryPayloadToggle } from './TelemetryPayloadToggle';
 
 /**
  * Progressive-disclosure control for the heartbeat payload: a "See what's sent"
@@ -19,18 +19,7 @@ export function TelemetryPayloadDisclosure({ className }: { className?: string }
 
   return (
     <div className={cn('w-full', className)}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="text-foreground focus-visible:ring-ring/50 inline-flex items-center gap-1 rounded-sm text-xs font-medium underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2"
-      >
-        See what&apos;s sent
-        <ChevronDown
-          aria-hidden
-          className={cn('size-3 transition-transform duration-200', open && 'rotate-180')}
-        />
-      </button>
+      <TelemetryPayloadToggle open={open} onToggle={() => setOpen((v) => !v)} />
       <AnimatePresence initial={false}>
         {open && (
           <motion.div

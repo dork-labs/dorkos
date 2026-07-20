@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
 
 import { Banner, Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
-import { useConfig, useUpdateConfig, TelemetryPayloadBlock } from '@/layers/entities/config';
+import {
+  useConfig,
+  useUpdateConfig,
+  TelemetryPayloadBlock,
+  TelemetryPayloadToggle,
+} from '@/layers/entities/config';
 
 /**
  * First-run telemetry disclosure, shown app-wide until the user makes an explicit
@@ -52,18 +55,7 @@ export function TelemetryConsentBanner() {
       <span className="text-muted-foreground">
         DorkOS shares a little anonymous data — a daily “I&apos;m alive” ping and install counts.
         Never your prompts, code, or files.{' '}
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="text-foreground focus-visible:ring-ring/50 inline-flex items-center gap-0.5 rounded-sm font-medium underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2"
-        >
-          See what&apos;s sent
-          <ChevronDown
-            aria-hidden
-            className={cn('size-3 transition-transform duration-200', expanded && 'rotate-180')}
-          />
-        </button>{' '}
+        <TelemetryPayloadToggle open={expanded} onToggle={() => setExpanded((v) => !v)} />{' '}
         <a
           href="https://dorkos.ai/telemetry"
           target="_blank"

@@ -109,6 +109,9 @@ export function Banner({
         {detailsOpen && details && (
           <motion.div
             key="details"
+            // Silence the surrounding role="status" live region for the details
+            // content — expanding it should not read the raw payload aloud.
+            aria-live="off"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
