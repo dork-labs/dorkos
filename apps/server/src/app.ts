@@ -37,33 +37,62 @@ import { env } from './env.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Build a dynamic CORS origin callback that checks tunnel URL at request time.
+ * Build the CORS middleware.
  *
- * When a tunnel is connected, its origin is dynamically added to the allowlist
- * so that requests from the tunnel URL are accepted without restarting the server.
+ * `DORKOS_CORS_ORIGIN` is the manual override (a `*` wildcard or a
+ * comma-separated allowlist). Without it, origins are resolved per request: the
+ * static loopback origins plus the live tunnel origin (so a tunnel that connects
+ * after boot is trusted without a restart), plus any request whose `Origin` is
+ * same-origin with the request itself.
+ *
+ * The same-origin check exists because the server's loopback allowlist is keyed
+ * to the port it listens on *inside* its own process. When the host port is
+ * remapped — `docker run -p 4300:4242`, an `ssh -L` forward, a reverse proxy —
+ * the browser loads the page on the remapped port and requests same-origin
+ * assets with e.g. `Origin: http://localhost:4300`, which the container's own
+ * `:4242` allowlist does not contain, so every asset 503s and the cockpit goes
+ * blank. Allowing an `Origin` that equals `${req.protocol}://${req.headers.host}`
+ * fixes that: it is by definition same-origin traffic and adds no cross-origin
+ * exposure (an attacker page at evil.com still sends `Origin: https://evil.com`
+ * with its own `Host`, so it is rejected). `trust proxy` is set below, so
+ * `req.protocol` honors `X-Forwarded-Proto` behind Caddy/ngrok.
+ *
+ * The delegate form (`cors((req, cb) => ...)`) is required because the plain
+ * `origin` callback never receives the request, and the same-origin comparison
+ * needs `req.protocol` and `req.headers.host`.
  */
-function buildCorsOrigin(): cors.CorsOptions['origin'] {
+function buildCors(): express.RequestHandler {
   // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts (optional CORS override, not worth validating)
   const envOrigin = process.env.DORKOS_CORS_ORIGIN;
 
-  // Explicit wildcard opt-in
-  if (envOrigin === '*') return '*';
+  // Explicit wildcard opt-in.
+  if (envOrigin === '*') return cors({ origin: '*', credentials: true });
 
-  // User-specified origins (comma-separated) — static, no tunnel check needed
+  // User-specified origins (comma-separated) — static, no per-request check.
   if (envOrigin) {
-    return envOrigin.split(',').map((o) => o.trim());
+    const origins = envOrigin.split(',').map((o) => o.trim());
+    return cors({ origin: origins, credentials: true });
   }
 
-  // Dynamic callback: static loopback origins + the live tunnel origin,
-  // resolved per request via the shared trusted-origin policy.
-  return (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow requests with no origin (server-to-server, curl, etc.)
-    if (!origin) return callback(null, true);
+  // Dynamic per-request policy.
+  return cors<express.Request>((req, done) => {
+    done(null, {
+      credentials: true,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (server-to-server, curl, etc.)
+        if (!origin) return callback(null, true);
 
-    if (resolveTrustedOrigins().includes(origin)) return callback(null, true);
+        // Static loopback origins + the live tunnel origin.
+        if (resolveTrustedOrigins().includes(origin)) return callback(null, true);
 
-    callback(new Error(`Origin ${origin} not allowed by CORS`));
-  };
+        // Same-origin as this very request (host-port remap / forward / proxy).
+        const host = req.headers.host;
+        if (host && origin === `${req.protocol}://${host}`) return callback(null, true);
+
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      },
+    });
+  });
 }
 
 /** Create and configure the Express application with middleware and routes. */
@@ -81,7 +110,7 @@ export function createApp() {
   // `DORKOS_CORS_ORIGIN='*'` opt-in above — wildcard ACAO is invalid for
   // credentialed requests per the fetch spec, so browsers reject it
   // regardless of this flag; that path stays wildcard for non-credentialed use.
-  app.use(cors({ origin: buildCorsOrigin(), credentials: true }));
+  app.use(buildCors());
 
   // Better Auth handler — mounted BEFORE express.json because Better Auth parses
   // its own request body (mounting after express.json breaks it). Express 5
