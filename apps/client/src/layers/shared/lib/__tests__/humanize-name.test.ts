@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { humanizeAgentName, isSingleEmoji } from '../lib/humanize-name';
+import { humanizeAgentName, isSingleEmoji } from '../humanize-name';
 
 describe('humanizeAgentName', () => {
   it('strips a leading @scope/ and title-cases', () => {

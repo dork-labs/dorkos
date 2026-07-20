@@ -14,7 +14,6 @@ import {
   OnboardingComplete,
   OnboardingNavBar,
   ProgressCard,
-  NoAgentsFound,
 } from '@/layers/features/onboarding';
 import { CandidateCard, BulkAddBar, CollapsibleImportedSection } from '@/layers/entities/discovery';
 import type {
@@ -141,7 +140,6 @@ export function OnboardingFlowShowcases() {
       <OnboardingCompleteShowcase />
       <OnboardingNavBarShowcase />
       <ProgressCardShowcase />
-      <NoAgentsFoundShowcase />
     </>
   );
 }
@@ -442,19 +440,6 @@ function ProgressCardShowcase() {
         <div className="mx-auto max-w-xs">
           <ProgressCard onStepClick={noop} onDismiss={noop} />
         </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-function NoAgentsFoundShowcase() {
-  return (
-    <PlaygroundSection
-      title="NoAgentsFound"
-      description="Fallback form shown when discovery finds zero projects. Includes directory picker, name input, and persona textarea."
-    >
-      <ShowcaseDemo responsive>
-        <NoAgentsFound onAgentCreated={noop} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

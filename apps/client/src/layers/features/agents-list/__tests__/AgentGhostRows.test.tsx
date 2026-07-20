@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
@@ -18,24 +18,12 @@ vi.mock('motion/react', () => ({
   },
 }));
 
-// Mock ResponsiveDialog and family — render children directly so dialog content is testable
-vi.mock('@/layers/shared/ui/responsive-dialog', () => ({
-  ResponsiveDialog: ({
-    children,
-    open,
-  }: {
-    children: React.ReactNode;
-    open?: boolean;
-    onOpenChange?: (open: boolean) => void;
-  }) => (open ? <div data-testid="responsive-dialog">{children}</div> : null),
-  ResponsiveDialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  ResponsiveDialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  ResponsiveDialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-
-// Mock DiscoveryView — not under test here
-vi.mock('@/layers/features/mesh', () => ({
-  DiscoveryView: () => <div data-testid="discovery-view">DiscoveryView</div>,
+const mockImportOpen = vi.fn();
+vi.mock('@/layers/shared/model', () => ({
+  useImportProjectsStore: (selector?: (s: { open: () => void }) => unknown) => {
+    const state = { open: mockImportOpen };
+    return selector ? selector(state) : state;
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -68,6 +56,10 @@ import { AgentGhostRows } from '../ui/AgentGhostRows';
 // Tests
 // ---------------------------------------------------------------------------
 
+beforeEach(() => {
+  mockImportOpen.mockReset();
+});
+
 afterEach(cleanup);
 
 describe('AgentGhostRows', () => {
@@ -78,10 +70,10 @@ describe('AgentGhostRows', () => {
     expect(dashedRows).toHaveLength(3);
   });
 
-  it('renders heading "Discover Your Agent Fleet"', () => {
+  it('renders the unified import heading', () => {
     render(<AgentGhostRows />);
 
-    expect(screen.getByText('Import Your Projects')).toBeInTheDocument();
+    expect(screen.getByText('Bring in existing projects')).toBeInTheDocument();
   });
 
   it('renders "Search for Projects" button', () => {
@@ -90,14 +82,11 @@ describe('AgentGhostRows', () => {
     expect(screen.getByRole('button', { name: /search for projects/i })).toBeInTheDocument();
   });
 
-  it('clicking "Search for Projects" opens the discovery dialog', () => {
+  it('clicking "Search for Projects" opens the standalone import dialog', () => {
     render(<AgentGhostRows />);
-
-    expect(screen.queryByTestId('responsive-dialog')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /search for projects/i }));
 
-    expect(screen.getByTestId('responsive-dialog')).toBeInTheDocument();
-    expect(screen.getByTestId('discovery-view')).toBeInTheDocument();
+    expect(mockImportOpen).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,0 +1,4 @@
+### Changed
+
+- **One entry to create agents.** Every path now leads to the same welcome: when your first-run scan finds no projects, DorkOS offers "Create your first agent" and opens the real agent gallery — no more bare fill-in-the-blanks form. Installing a ready-made agent from the Marketplace introduces it first — meet it, name it, give it a face — and brings it to life through the standard creation flow, so it always lands in its own place and can never overwrite an agent you already have. (DOR-355)
+- **Import becomes its own flow, with a real finish.** Bring in existing projects from the gallery, the sidebar's add menu, or the command palette: scan your machine, add the projects you want, and see a clear "N projects joined" summary with a Done button — instead of a dead end. The label reads the same everywhere: "Bring in existing projects." (DOR-355)

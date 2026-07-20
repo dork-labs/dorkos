@@ -53,6 +53,7 @@ const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
 const mockSetRelayOpen = vi.fn();
 const mockSetPickerOpen = vi.fn();
+const mockImportOpen = vi.fn();
 const mockSetTheme = vi.fn();
 
 let mockGlobalPaletteOpen = true;
@@ -113,6 +114,9 @@ vi.mock('@/layers/shared/model', () => ({
   useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
     getState: () => ({ open: vi.fn() }),
   }),
+  useImportProjectsStore: Object.assign(() => ({ open: mockImportOpen }), {
+    getState: () => ({ open: mockImportOpen }),
+  }),
 }));
 
 const mockSetDir = vi.fn();
@@ -147,7 +151,12 @@ vi.mock('../model/use-palette-items', () => ({
     const commands = [{ name: '/deploy', description: 'Deploy service' }];
     const quickActions = [
       { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
-      { id: 'discover', label: 'Import Projects', icon: 'Search', action: 'discoverAgents' },
+      {
+        id: 'discover',
+        label: 'Bring in existing projects',
+        icon: 'Search',
+        action: 'discoverAgents',
+      },
       { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
     ];
@@ -413,12 +422,14 @@ describe('Command Palette Integration', () => {
 
   // --- Quick actions ---
 
-  it('Import Projects navigates to /agents', () => {
+  it('Bring in existing projects opens the import dialog', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Import Projects').closest('[data-slot="command-item"]');
+    const item = screen
+      .getByText('Bring in existing projects')
+      .closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    expect(mockImportOpen).toHaveBeenCalledTimes(1);
   });
 
   it('Browse Filesystem opens directory picker', () => {

@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { Search, ChevronDown } from 'lucide-react';
+import { Search, ChevronDown, Sparkles } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { useRegisterAgent, useMeshScanRoots } from '@/layers/entities/mesh';
 import {
   useDiscoveryScan,
@@ -15,7 +16,6 @@ import {
   ScanRootInput,
 } from '@/layers/entities/discovery';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
-import { NoAgentsFound } from './NoAgentsFound';
 
 interface AgentDiscoveryStepProps {
   onStepComplete: () => void;
@@ -105,10 +105,12 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
     startScan(displayRoots.length > 0 ? { roots: displayRoots, maxDepth: depth } : { roots: [] });
   }, [startScan, resetActed, displayRoots, depth]);
 
-  const handleAgentCreated = useCallback(() => {
-    // After creating an agent via the no-results form, re-scan
-    handleRescan();
-  }, [handleRescan]);
+  // Zero candidates found: open the real creation dialog (the gallery, M2). A
+  // successful create advances onboarding; closing it returns here cleanly (the
+  // dialog is a modal over the onboarding overlay, which stays mounted).
+  const handleCreateFirstAgent = useCallback(() => {
+    useAgentCreationStore.getState().open('new', { onCreated: onStepComplete });
+  }, [onStepComplete]);
 
   const hasExisting = existingAgents.length > 0;
   const hasCandidates = candidates.length > 0;
@@ -215,10 +217,18 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
         </div>
       )}
 
-      {/* No results — guided agent creation */}
+      {/* No results — hand off to the real creation flow */}
       {showNoResults && (
         <div className="mt-6 w-full">
-          <NoAgentsFound onAgentCreated={handleAgentCreated} />
+          <div className="flex flex-col items-center gap-2">
+            <Button size="lg" onClick={handleCreateFirstAgent} data-testid="create-first-agent">
+              <Sparkles className="size-4" />
+              Create your first agent
+            </Button>
+            <p className="text-muted-foreground text-xs">
+              Pick a ready-made agent or design your own.
+            </p>
+          </div>
 
           {/* Scan options — collapsible section for adjusting scan parameters */}
           <div className="mt-4">

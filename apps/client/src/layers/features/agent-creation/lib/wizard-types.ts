@@ -1,14 +1,14 @@
-import type { CreationMode as StoreCreationMode } from '@/layers/shared/model';
-
 /**
  * The steps of the creation dialog.
  *
  * - `gallery` (M2) — the generic entry: design-your-own + template job listings.
  * - `naming` (M3) — name, face, and details, with a live preview.
- * - `arrival` (M1) — a seeded one-card confirm (a Shape's offered agent).
- * - `import` — bring in an existing project on disk (leaves the creation fork).
+ * - `arrival` (M1) — a seeded one-card confirm (a Shape's or marketplace agent).
+ *
+ * Import is no longer a step here — it leaves the dialog entirely (see
+ * `useImportProjectsStore` + `ImportProjectsDialog`).
  */
-export type WizardStep = 'gallery' | 'naming' | 'arrival' | 'import';
+export type WizardStep = 'gallery' | 'naming' | 'arrival';
 
 /**
  * A template chosen from the gallery, distilled from a marketplace package (or
@@ -45,18 +45,4 @@ export const STEP_HEADERS: Record<WizardStep, { title: string; description: stri
   gallery: { title: 'New agent', description: 'What will your agent do?' },
   naming: { title: 'Name your agent', description: 'Give it a name and a face.' },
   arrival: { title: 'Meet your new agent', description: 'Bring a ready-made agent to life.' },
-  import: {
-    title: 'Bring in a project',
-    description: 'Scan for an existing project folder on disk.',
-  },
 };
-
-/**
- * Map the store's `initialMode` to the wizard's starting step. Generic entries
- * (`new`/`template`) open the gallery; `import` jumps straight to the scan.
- *
- * @param mode - The mode the store was opened with.
- */
-export function initialStepFromMode(mode: StoreCreationMode): WizardStep {
-  return mode === 'import' ? 'import' : 'gallery';
-}

@@ -341,7 +341,9 @@ describe('PackageDetailSheet', () => {
 
   it('shows the Install button when the package is not installed and uses the store action on click', async () => {
     const user = userEvent.setup();
-    openPackage(makePackage());
+    // A non-agent package queues the confirm dialog; agent packages leave for
+    // the creation flow (covered in use-request-install).
+    openPackage(makePackage({ type: 'plugin' }));
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([]); // not installed
@@ -481,7 +483,10 @@ describe('PackageDetailSheet', () => {
 
   it('row Reinstall delegates to the install confirmation dialog, pre-scoped for agent rows', async () => {
     const user = userEvent.setup();
-    openPackage(makePackage());
+    // Reinstalling a package INTO a specific agent (agent-local scope) is the
+    // legit scoped path — exercised with a non-agent package. An agent package
+    // would instead route to a fresh creation (no identity replacement).
+    openPackage(makePackage({ type: 'skill-pack' }));
     setDetailState({ data: makeDetail() });
     setInstalledState([GLOBAL_INSTALLATION, AGENT_INSTALLATION]);
     setInstallationsState([GLOBAL_INSTALLATION_ENRICHED, AGENT_INSTALLATION]);

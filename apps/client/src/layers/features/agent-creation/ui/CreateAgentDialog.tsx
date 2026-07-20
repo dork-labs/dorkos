@@ -1,27 +1,22 @@
 import { useState, useCallback } from 'react';
-import { ArrowLeft } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { playCelebration } from '@/layers/shared/lib';
+import { playCelebration, isSingleEmoji } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
-  ResponsiveDialogFooter,
-  Button,
   DirectoryPicker,
 } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
-import { DiscoveryView } from '@/layers/features/mesh';
+import { useAppStore, useImportProjectsStore } from '@/layers/shared/model';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
 import type { WizardStep, SelectedTemplate } from '../lib/wizard-types';
-import { STEP_HEADERS, initialStepFromMode } from '../lib/wizard-types';
-import { isSingleEmoji } from '../lib/humanize-name';
+import { STEP_HEADERS } from '../lib/wizard-types';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 import { resolveSuggestionPool } from '../lib/name-suggestions';
 import { AgentGallery } from './AgentGallery';
@@ -38,7 +33,8 @@ import { ArrivalConfirm } from './ArrivalConfirm';
  *   in one click, or "Customize first" to reach the naming step pre-filled.
  */
 export function CreateAgentDialog() {
-  const { isOpen, initialMode, seed, close } = useAgentCreationStore();
+  const { isOpen, seed, onCreated, close } = useAgentCreationStore();
+  const openImport = useImportProjectsStore((s) => s.open);
   const createAgent = useCreateAgent();
   const navigate = useNavigate();
   const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
@@ -54,13 +50,19 @@ export function CreateAgentDialog() {
     setPrevIsOpen(isOpen);
     if (isOpen) {
       setTemplate(null);
-      setStep(seed ? 'arrival' : initialStepFromMode(initialMode));
+      setStep(seed ? 'arrival' : 'gallery');
     }
   }
 
   // Seeds for the naming step, derived from the chosen template or the offer.
+  // A gallery template's icon wins; failing that, a seeded offer's icon
+  // (e.g. a marketplace agent package) seeds the face.
+  const seedIcon =
+    seed?.template.icon && isSingleEmoji(seed.template.icon) ? seed.template.icon : undefined;
   const faceSeed =
-    template?.icon && isSingleEmoji(template.icon) ? template.icon : DEFAULT_AGENT_FACE;
+    template?.icon && isSingleEmoji(template.icon)
+      ? template.icon
+      : (seedIcon ?? DEFAULT_AGENT_FACE);
   const runtimeSeed = seed?.template.runtime ?? 'claude-code';
 
   const form = useConfigureForm({
@@ -113,8 +115,27 @@ export function CreateAgentDialog() {
     setStep(seed ? 'arrival' : 'gallery');
   }
 
+  /**
+   * Leave the creation dialog for the standalone import flow (contract item 8).
+   *
+   * Known wrinkle: `close()` clears a host's one-shot `onCreated` hook, so a
+   * mid-onboarding detour into import does NOT advance onboarding — after Done
+   * the user lands back on the discovery step, which is a coherent (if
+   * unceremonious) place to continue. Re-arming would mean threading the hook
+   * through the import store and defining Done-with-zero-joins semantics;
+   * deferred until onboarding needs it.
+   */
+  function handleImport() {
+    close();
+    resetAll();
+    openImport();
+  }
+
   function handleCreate() {
     if (!form.canSubmit || createAgent.isPending) return;
+    // The download source: a gallery template, or a seeded offer that carries one
+    // (a marketplace agent package). A shape offer has no source (inline template).
+    const templateSource = template?.source ?? seed?.template.source;
     createAgent.mutate(
       {
         name: form.slug,
@@ -122,8 +143,10 @@ export function CreateAgentDialog() {
         runtime: form.runtime,
         ...(form.directoryOverride ? { directory: form.directoryOverride } : {}),
         ...(form.icon ? { icon: form.icon } : {}),
-        ...(template ? { template: template.source } : {}),
-        // A seeded offer carries its own voice + abilities through to create.
+        ...(templateSource ? { template: templateSource } : {}),
+        // A seeded offer carries its own voice + abilities through to create. For
+        // a marketplace agent the persona is the package's own description — an
+        // honest starting soul, not the blank default.
         ...(seed?.template.persona ? { persona: seed.template.persona } : {}),
         ...(seed?.template.capabilities?.length
           ? { capabilities: seed.template.capabilities }
@@ -132,8 +155,15 @@ export function CreateAgentDialog() {
       {
         onSuccess: (data) => {
           playCelebration();
+          // A host flow (onboarding) may take over on create — it stays mounted
+          // underneath and advances itself instead of navigating away.
+          const hostOnCreated = onCreated;
           close();
           resetAll();
+          if (hostOnCreated) {
+            hostOnCreated();
+            return;
+          }
           navigate({
             to: '/session',
             search: { dir: data._path, session: crypto.randomUUID() },
@@ -157,7 +187,7 @@ export function CreateAgentDialog() {
   const header = STEP_HEADERS[step];
   const isArrival = step === 'arrival';
   // Per-step canvas width: the gallery spreads across the fullscreen frame,
-  // naming holds a tighter two-column composition, arrival/import stay narrow.
+  // naming holds a tighter two-column composition, arrival stays narrow.
   const stepMaxWidth =
     step === 'gallery' ? 'max-w-6xl' : step === 'naming' ? 'max-w-5xl' : 'max-w-2xl';
 
@@ -193,7 +223,7 @@ export function CreateAgentDialog() {
                   <AgentGallery
                     onDesignYourOwn={handleDesignYourOwn}
                     onSelectTemplate={handleSelectTemplate}
-                    onImport={() => setStep('import')}
+                    onImport={handleImport}
                   />
                 )}
                 {step === 'arrival' && seed && (
@@ -214,12 +244,11 @@ export function CreateAgentDialog() {
                     jobLine={jobLine}
                     previewCapabilities={previewCapabilities}
                     onBack={handleBackFromNaming}
-                    onImportInstead={() => setStep('import')}
+                    onImportInstead={handleImport}
                     onCreate={handleCreate}
                     isCreating={createAgent.isPending}
                   />
                 )}
-                {step === 'import' && <DiscoveryView />}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -234,17 +263,6 @@ export function CreateAgentDialog() {
             if (!form.directoryOpen) form.setDirectoryOpen(true);
           }}
         />
-
-        {step === 'import' && (
-          <ResponsiveDialogFooter className="shrink-0 border-t px-5 py-3">
-            <div className="flex w-full items-center">
-              <Button variant="ghost" onClick={() => setStep('gallery')} data-testid="back-button">
-                <ArrowLeft className="mr-1 size-4" />
-                Back
-              </Button>
-            </div>
-          </ResponsiveDialogFooter>
-        )}
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );

@@ -9,6 +9,7 @@
  * @module features/mesh
  */
 export { DiscoveryView } from './ui/DiscoveryView';
+export { ImportProjectsDialog } from './ui/ImportProjectsDialog';
 export { TopologyPanel } from './ui/TopologyPanel';
 export { AgentHealthDetail } from './ui/AgentHealthDetail';
 export { MeshEmptyState } from './ui/MeshEmptyState';

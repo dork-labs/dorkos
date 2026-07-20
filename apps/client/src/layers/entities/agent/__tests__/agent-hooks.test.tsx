@@ -7,7 +7,6 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { useCurrentAgent } from '../model/use-current-agent';
-import { useInitAgent } from '../model/use-init-agent';
 import { useUpdateAgent } from '../model/use-update-agent';
 import { useResolvedAgents } from '../model/use-resolved-agents';
 import { useAgentVisual } from '../model/use-agent-visual';
@@ -104,113 +103,6 @@ describe('useCurrentAgent', () => {
     const { Wrapper } = createWrapper(transport);
 
     const { result } = renderHook(() => useCurrentAgent('/projects/failing'), { wrapper: Wrapper });
-
-    await waitFor(() => {
-      expect(result.current.isError).toBe(true);
-    });
-
-    expect(result.current.error).toBeInstanceOf(Error);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// useInitAgent
-// ---------------------------------------------------------------------------
-describe('useInitAgent', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('calls transport.initAgent with path and optional fields', async () => {
-    const transport = createMockTransport({
-      initAgent: vi.fn().mockResolvedValue(mockAgent),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useInitAgent(), { wrapper: Wrapper });
-
-    result.current.mutate({
-      path: '/projects/newapp',
-      name: 'New Agent',
-      description: 'A new agent',
-      runtime: 'claude-code',
-    });
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(transport.initAgent).toHaveBeenCalledWith(
-      '/projects/newapp',
-      'New Agent',
-      'A new agent',
-      'claude-code'
-    );
-    expect(result.current.data).toEqual(mockAgent);
-  });
-
-  it('calls transport.initAgent with only path when no optional fields', async () => {
-    const transport = createMockTransport({
-      initAgent: vi.fn().mockResolvedValue(mockAgent),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useInitAgent(), { wrapper: Wrapper });
-
-    result.current.mutate({ path: '/projects/minimal' });
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(transport.initAgent).toHaveBeenCalledWith(
-      '/projects/minimal',
-      undefined,
-      undefined,
-      undefined
-    );
-  });
-
-  it('invalidates agent queries on success', async () => {
-    const transport = createMockTransport({
-      initAgent: vi.fn().mockResolvedValue(mockAgent),
-      getAgentByPath: vi.fn().mockResolvedValue(null),
-    });
-    const { Wrapper, queryClient } = createWrapper(transport);
-
-    // Prime the cache for the path
-    const { result: agentResult } = renderHook(() => useCurrentAgent('/projects/newapp'), {
-      wrapper: Wrapper,
-    });
-    await waitFor(() => {
-      expect(agentResult.current.isSuccess).toBe(true);
-    });
-
-    const { result } = renderHook(() => useInitAgent(), { wrapper: Wrapper });
-
-    result.current.mutate({ path: '/projects/newapp' });
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    // Cache invalidation triggers additional refetches (byPath + all = at least 2 total)
-    await waitFor(() => {
-      expect(vi.mocked(transport.getAgentByPath).mock.calls.length).toBeGreaterThanOrEqual(2);
-    });
-
-    void queryClient; // prevent unused warning
-  });
-
-  it('exposes error state on transport failure', async () => {
-    const transport = createMockTransport({
-      initAgent: vi.fn().mockRejectedValue(new Error('Create failed')),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useInitAgent(), { wrapper: Wrapper });
-
-    result.current.mutate({ path: '/projects/failing' });
 
     await waitFor(() => {
       expect(result.current.isError).toBe(true);

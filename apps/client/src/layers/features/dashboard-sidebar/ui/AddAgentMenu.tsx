@@ -7,7 +7,7 @@ import {
   SidebarGroupAction,
   Separator,
 } from '@/layers/shared/ui';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { useAgentCreationStore, useImportProjectsStore } from '@/layers/shared/model';
 import { useNavigate } from '@tanstack/react-router';
 
 interface AddAgentMenuProps {
@@ -20,8 +20,8 @@ interface AddAgentMenuProps {
  * in the AGENTS sidebar group header.
  *
  * Actions:
- * - Create agent -> opens CreateAgentDialog on 'new' tab
- * - Import project -> opens CreateAgentDialog on 'import' tab
+ * - Create agent -> opens CreateAgentDialog on the gallery
+ * - Bring in a project -> opens the standalone import dialog
  * - Browse Marketplace -> navigates to /marketplace
  * - New group -> opens the inline group-create flow (when `onNewGroup` is given)
  */
@@ -52,12 +52,12 @@ export function AddAgentMenu({ onNewGroup }: AddAgentMenuProps) {
           type="button"
           onClick={() => {
             setOpen(false);
-            useAgentCreationStore.getState().open('import');
+            useImportProjectsStore.getState().open();
           }}
           className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
         >
           <FolderPlus className="size-4" />
-          Import project
+          Bring in a project
         </button>
         <button
           type="button"

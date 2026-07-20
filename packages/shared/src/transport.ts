@@ -1197,13 +1197,6 @@ export interface Transport {
   getAgentByPath(path: string): Promise<AgentManifest | null>;
   /** Batch resolve agents for multiple paths. Returns a map of path -> manifest|null. */
   resolveAgents(paths: string[]): Promise<Record<string, AgentManifest | null>>;
-  /** Initialize an agent at the given path (write config to existing directory). Returns the created manifest. */
-  initAgent(
-    path: string,
-    name?: string,
-    description?: string,
-    runtime?: string
-  ): Promise<AgentManifest>;
   /** Update an agent's fields by path. Returns the updated manifest. */
   updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
   /** Create a new agent: mkdir + scaffold files + register. Returns the created manifest and resolved path. */

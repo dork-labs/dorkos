@@ -47,7 +47,7 @@ import {
   useInstalledPackages,
   usePackageInstallations,
 } from '@/layers/entities/marketplace';
-import { useMarketplaceStore } from '../model/marketplace-store';
+import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
@@ -305,7 +305,7 @@ function InstallationsPanel({
  */
 export function PackageDetailSheet() {
   const { selectedPackageName, closeDetail } = useMarketplaceParams();
-  const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
+  const requestInstall = useRequestInstall();
 
   // Resolve the open package from the cached catalog by its URL `pkg` name. On a
   // fresh deep link the list may still be loading (pkg stays null → the sheet
@@ -368,8 +368,10 @@ export function PackageDetailSheet() {
   function handleReinstall(installation: InstalledPackage) {
     if (!pkg) return;
     // An agent row pre-scopes the confirm dialog to that agent; the global row
-    // opens it at the default global scope.
-    openInstallConfirm(
+    // opens it at the default global scope. An agent PACKAGE never reinstalls
+    // over an existing agent — `requestInstall` routes it to a fresh creation
+    // instead, so the scope here only ever reaches non-agent packages.
+    requestInstall(
       pkg,
       installation.agentPath
         ? { agentPath: installation.agentPath, agentName: installationTitle(installation) }
@@ -503,13 +505,13 @@ export function PackageDetailSheet() {
                 <Button
                   variant="outline"
                   disabled={uninstall.isPending}
-                  onClick={() => openInstallConfirm(pkg)}
+                  onClick={() => requestInstall(pkg)}
                   className="flex-1"
                 >
                   Install…
                 </Button>
               ) : (
-                <Button onClick={() => openInstallConfirm(pkg)} className="flex-1">
+                <Button onClick={() => requestInstall(pkg)} className="flex-1">
                   Install
                 </Button>
               )}

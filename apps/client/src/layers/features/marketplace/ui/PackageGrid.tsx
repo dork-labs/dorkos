@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { asMarketplaceCategory, CATEGORY_LABELS } from '@dorkos/marketplace';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
-import { useMarketplaceStore } from '../model/marketplace-store';
+import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { filterPackages } from '../lib/package-filter';
 import { sortPackages } from '../lib/package-sort';
@@ -61,7 +61,7 @@ export function PackageGrid() {
 
   const { type, categories, search, sort, resetFilters, clearCategories, openDetail } =
     useMarketplaceParams();
-  const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
+  const requestInstall = useRequestInstall();
 
   const visible = useMemo(() => {
     if (!data) return [];
@@ -119,7 +119,7 @@ export function PackageGrid() {
               pkg={pkg}
               installed={installedNames.has(pkg.name)}
               onClick={() => openDetail(pkg.name)}
-              onInstallClick={() => openInstallConfirm(pkg)}
+              onInstallClick={() => requestInstall(pkg)}
             />
           </motion.div>
         ))}

@@ -118,10 +118,15 @@ const DETECTION_STRATEGIES = [
 interface DiscoveryViewProps {
   /** When true, renders as full-bleed Mode A with contextual headline. */
   fullBleed?: boolean;
+  /**
+   * Called once per project successfully brought in (registered). Lets a host
+   * flow (the import dialog) count joins and offer a completion state.
+   */
+  onRegistered?: () => void;
 }
 
 /** Discovery view — used as full-bleed Mode A or as a tab in Mode B. */
-export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
+export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryViewProps) {
   const { roots, setScanRoots } = useMeshScanRoots();
   const [localRoots, setLocalRoots] = useState<string[] | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -178,7 +183,12 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
           overrides: buildRegistrationOverrides(c),
           scanRoot: pickScanRoot(c.path, displayRoots),
         },
-        { onSuccess: () => markActed(c.path) }
+        {
+          onSuccess: () => {
+            markActed(c.path);
+            onRegistered?.();
+          },
+        }
       );
     }
   }
@@ -270,9 +280,9 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
         <>
           {fullBleed && (
             <div className="mb-4 space-y-1">
-              <h2 className="text-lg font-semibold">Import Projects</h2>
+              <h2 className="text-lg font-semibold">Bring in existing projects</h2>
               <p className="text-muted-foreground text-sm">
-                Search for existing projects to import into DorkOS.
+                Search for existing projects to bring into DorkOS.
               </p>
             </div>
           )}
@@ -354,7 +364,12 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
                             overrides: buildRegistrationOverrides(cand),
                             scanRoot: pickScanRoot(cand.path, displayRoots),
                           },
-                          { onSuccess: () => markActed(cand.path) }
+                          {
+                            onSuccess: () => {
+                              markActed(cand.path);
+                              onRegistered?.();
+                            },
+                          }
                         )
                       }
                       onSkip={(cand) => markActed(cand.path)}

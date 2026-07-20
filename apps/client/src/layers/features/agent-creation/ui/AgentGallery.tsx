@@ -8,10 +8,9 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, humanizeAgentName } from '@/layers/shared/lib';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
-import { humanizeAgentName } from '../lib/humanize-name';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 import { useRovingFocus } from '../lib/use-roving-focus';
 import type { SelectedTemplate } from '../lib/wizard-types';
