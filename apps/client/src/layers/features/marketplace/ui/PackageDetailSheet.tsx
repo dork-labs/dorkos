@@ -472,7 +472,16 @@ export function PackageDetailSheet() {
               {!isLoading && detail?.readme && (
                 <section>
                   <h3 className="mb-3 text-sm font-semibold">About</h3>
-                  <MarkdownContent content={detail.readme} className="text-sm" linkSafety />
+                  <MarkdownContent
+                    content={detail.readme}
+                    className="text-sm"
+                    linkSafety
+                    errorFallback={
+                      <p className="text-muted-foreground text-sm">
+                        This README couldn&rsquo;t be displayed.
+                      </p>
+                    }
+                  />
                 </section>
               )}
             </div>

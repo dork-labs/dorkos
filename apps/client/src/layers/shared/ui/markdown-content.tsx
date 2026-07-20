@@ -6,10 +6,12 @@
  * StreamingText, this has no streaming cursor; external-link confirmation is
  * opt-in via `linkSafety`.
  */
+import type { ReactNode } from 'react';
 import { Streamdown } from 'streamdown';
 import type { LinkSafetyModalProps } from 'streamdown';
 import { cn } from '@/layers/shared/lib';
 import { LinkSafetyModal } from './link-safety-modal';
+import { MarkdownErrorBoundary } from './markdown-error-boundary';
 
 interface MarkdownContentProps {
   /** Markdown string to render. */
@@ -22,6 +24,12 @@ interface MarkdownContentProps {
    * surfaces (setup guides, help text) carry only trusted links.
    */
   linkSafety?: boolean;
+  /**
+   * Shown in place of the markdown if it fails to render (e.g. Streamdown's
+   * lazy code-block chunk fails to load). Defaults to a generic muted note;
+   * pass copy that fits the surface (e.g. "This README couldn't be displayed.").
+   */
+  errorFallback?: ReactNode;
 }
 
 const LINK_SAFETY_CONFIG = {
@@ -30,7 +38,12 @@ const LINK_SAFETY_CONFIG = {
 };
 
 /** Renders static markdown content using streamdown. */
-export function MarkdownContent({ content, className, linkSafety = false }: MarkdownContentProps) {
+export function MarkdownContent({
+  content,
+  className,
+  linkSafety = false,
+  errorFallback,
+}: MarkdownContentProps) {
   return (
     // desktop-darwin:select-text — see message-variants.ts for why: the
     // desktop shell defaults chrome to non-selectable, and static markdown
@@ -42,7 +55,11 @@ export function MarkdownContent({ content, className, linkSafety = false }: Mark
         className
       )}
     >
-      <Streamdown linkSafety={linkSafety ? LINK_SAFETY_CONFIG : undefined}>{content}</Streamdown>
+      {/* Guard the render so a failed code-block chunk degrades to a note here
+          instead of throwing to the route boundary. Reset on content change. */}
+      <MarkdownErrorBoundary resetKey={content} fallback={errorFallback}>
+        <Streamdown linkSafety={linkSafety ? LINK_SAFETY_CONFIG : undefined}>{content}</Streamdown>
+      </MarkdownErrorBoundary>
     </div>
   );
 }

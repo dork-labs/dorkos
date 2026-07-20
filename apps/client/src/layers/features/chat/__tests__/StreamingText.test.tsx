@@ -108,4 +108,25 @@ describe('StreamingText', () => {
       sep: 'word',
     });
   });
+
+  it('falls back to the raw content text when the markdown render throws', () => {
+    // Mimic Streamdown's lazy code-block chunk failing to load: the render
+    // throws, and MarkdownErrorBoundary must keep the message as plain text
+    // instead of letting the error take down the transcript. Throw on every
+    // call — concurrent React retries a throwing render synchronously before
+    // committing the boundary fallback.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    MockStreamdown.mockImplementation(() => {
+      throw new Error('Failed to fetch dynamically imported module');
+    });
+    try {
+      const content = 'Run `pnpm dev` to start';
+      render(<StreamingText content={content} />);
+      expect(screen.queryByTestId('streamdown')).toBeNull();
+      expect(screen.getByText(content)).toBeDefined();
+    } finally {
+      MockStreamdown.mockReset(); // restores the default render implementation
+      errorSpy.mockRestore();
+    }
+  });
 });

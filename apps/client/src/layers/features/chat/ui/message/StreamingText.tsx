@@ -3,7 +3,7 @@ import { Streamdown } from 'streamdown';
 import type { LinkSafetyModalProps } from 'streamdown';
 import { cn, DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
-import { LinkSafetyModal } from '@/layers/shared/ui';
+import { LinkSafetyModal, MarkdownErrorBoundary } from '@/layers/shared/ui';
 import { WidgetFence } from '@/layers/features/gen-ui';
 import 'streamdown/styles.css';
 
@@ -90,15 +90,23 @@ export function StreamingText({
   return (
     <FenceContext.Provider value={fenceContext}>
       <div className={cn('relative', isStreaming && 'streaming-cursor')}>
-        <Streamdown
-          shikiTheme={['github-light', 'github-dark']}
-          linkSafety={linkSafety}
-          animated={animatedConfig}
-          isAnimating={isStreaming}
-          plugins={widgetPlugins}
+        {/* Guard the render so a failed code-block chunk can't take down the
+            transcript. Degrade to the raw text — a message is worth keeping even
+            unstyled. Reset on content change so the next message re-attempts. */}
+        <MarkdownErrorBoundary
+          resetKey={content}
+          fallback={<div className="text-sm break-words whitespace-pre-wrap">{content}</div>}
         >
-          {content}
-        </Streamdown>
+          <Streamdown
+            shikiTheme={['github-light', 'github-dark']}
+            linkSafety={linkSafety}
+            animated={animatedConfig}
+            isAnimating={isStreaming}
+            plugins={widgetPlugins}
+          >
+            {content}
+          </Streamdown>
+        </MarkdownErrorBoundary>
       </div>
     </FenceContext.Provider>
   );
