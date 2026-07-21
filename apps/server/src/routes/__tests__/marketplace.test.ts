@@ -35,6 +35,7 @@ import {
   InvalidPackageError,
   type InstallerLike,
 } from '../../services/marketplace/marketplace-installer.js';
+import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
 import {
   PackageNotInstalledError,
   type UninstallFlow,
@@ -858,6 +859,22 @@ describe('Marketplace Routes', () => {
         marketplace: 'dorkos-community',
         force: false,
       });
+    });
+
+    it('surfaces warnings from installer.install verbatim (e.g. a Shape scoped-install warning, DOR-386)', async () => {
+      const result = {
+        ...buildSampleInstallResult(),
+        type: 'shape' as const,
+        warnings: [SHAPE_PROJECT_PATH_IGNORED_WARNING],
+      };
+      installer.install.mockResolvedValue(result);
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/linear-ops/install')
+        .send({ projectPath: '/some/project' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.warnings).toEqual([SHAPE_PROJECT_PATH_IGNORED_WARNING]);
     });
 
     it('fires onPluginsChanged with the install context (projectPath from body)', async () => {

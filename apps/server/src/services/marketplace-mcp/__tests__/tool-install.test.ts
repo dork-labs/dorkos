@@ -3,6 +3,7 @@ import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 
 import { createInstallHandler, InstallInputSchema } from '../tool-install.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
+import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../marketplace/flows/install-shape.js';
 import {
   ConflictError,
   InvalidPackageError,
@@ -279,6 +280,28 @@ describe('createInstallHandler — in-app approve happy path', () => {
 
     const payload = parseToolPayload<{ warnings: string[] }>(result);
     expect(payload.warnings).toEqual(['something subtle happened']);
+  });
+
+  it('surfaces the Shape scope-ignored warning in the tool result text (DOR-386)', async () => {
+    // Regression for DOR-386: an MCP caller that installs a Shape with a
+    // projectPath must see the scope-ignored warning in the tool response,
+    // not just have it dropped on the floor after a silently-global install.
+    installer = createStubInstaller({
+      preview: previewResult({ name: 'linear-ops' }),
+      install: installResult({
+        packageName: 'linear-ops',
+        type: 'shape',
+        warnings: [SHAPE_PROJECT_PATH_IGNORED_WARNING],
+      }),
+    });
+    deps = createStubDeps({ confirmationProvider: provider, installer });
+
+    const handler = createInstallHandler(deps);
+    const result = await handler({ name: 'linear-ops', projectPath: '/tmp/some-project' });
+
+    const payload = parseToolPayload<{ status: string; warnings: string[] }>(result);
+    expect(payload.status).toBe('installed');
+    expect(payload.warnings).toEqual([SHAPE_PROJECT_PATH_IGNORED_WARNING]);
   });
 });
 

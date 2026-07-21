@@ -45,7 +45,7 @@ import type { TemplateDownloader } from '../../core/template-downloader.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
-import { ShapeInstallFlow } from '../flows/install-shape.js';
+import { SHAPE_PROJECT_PATH_IGNORED_WARNING, ShapeInstallFlow } from '../flows/install-shape.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import { UninstallFlow } from '../flows/uninstall.js';
 
@@ -292,6 +292,25 @@ describe('marketplace install pipeline — integration', () => {
 
     // The template downloader must not have been invoked (local path).
     expect(spies.templateClone).not.toHaveBeenCalled();
+  });
+
+  it('warns (but still installs globally) when a shape install request carries a projectPath (DOR-386)', async () => {
+    // Shapes are global-only. A caller that requests an agent-scoped install
+    // (MCP tool, HTTP route, CLI --project) must be told their scope choice
+    // was ignored — via `installer.dispatchFlow` → `ShapeInstallFlow.install`
+    // — rather than have it silently dropped.
+    const { installer } = buildInstallerForTests(dorkHome);
+    const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-shape-scoped-project-'));
+
+    const result = await installer.install({ name: fixturePath('valid-shape'), projectPath });
+
+    const expectedInstallRoot = path.join(dorkHome, 'shapes', 'linear-ops');
+    expect(result.ok).toBe(true);
+    // Still lands globally — the projectPath never changes the install root.
+    expect(result.installPath).toBe(expectedInstallRoot);
+    expect(result.warnings).toEqual([SHAPE_PROJECT_PATH_IGNORED_WARNING]);
+
+    await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it('installs an agent package end-to-end via MarketplaceInstaller', async () => {

@@ -18,7 +18,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
 import { atomicMove } from '../../lib/atomic-move.js';
-import { ShapeInstallFlow } from '../../flows/install-shape.js';
+import { SHAPE_PROJECT_PATH_IGNORED_WARNING, ShapeInstallFlow } from '../../flows/install-shape.js';
 
 // Spy on atomicMove so one test can force an activate-phase failure (a rename
 // fault on the staging → target move) and exercise the transaction's restore
@@ -156,6 +156,30 @@ describe('ShapeInstallFlow', () => {
     expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
     // The fixture ships no inline extensions, so the compiler is never called.
     expect(deps.extensionCompiler.compile).not.toHaveBeenCalled();
+    // No projectPath was requested, so there is nothing to warn about.
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('warns that the project choice was ignored when the request carries a projectPath (DOR-386)', async () => {
+    // Shapes are global-only — a caller (MCP tool, HTTP route, CLI) that
+    // requests an agent-scoped install must be told their scope choice was
+    // ignored rather than have it silently dropped. The install still lands
+    // globally either way.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const manifest = buildManifest({ name: 'scoped-shape' });
+    const pkgPath = await stagePackage({ manifest });
+    cleanupDirs.push(pkgPath);
+
+    const flow = new ShapeInstallFlow(deps);
+    const result = await flow.install(pkgPath, manifest, { projectPath: '/some/project' });
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([SHAPE_PROJECT_PATH_IGNORED_WARNING]);
+    // The install root is unaffected — still global, never under projectPath.
+    const installRoot = path.join(deps.dorkHome, 'shapes', 'scoped-shape');
+    expect(result.installPath).toBe(installRoot);
+    expect(await pathExists(installRoot)).toBe(true);
   });
 
   it('compiles bundled inline extensions but never enables them (install stages, apply activates)', async () => {

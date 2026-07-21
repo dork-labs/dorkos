@@ -202,6 +202,9 @@ describe('PluginInstallFlow', () => {
     expect(await pathExists(expected)).toBe(true);
     // The global root must NOT be touched for a project-local install.
     expect(await pathExists(path.join(deps.dorkHome, 'plugins', 'local-plugin'))).toBe(false);
+    // A project-scoped plugin install is legitimate (unlike a project-scoped
+    // Shape install, DOR-386) — it never carries a scope warning.
+    expect(result.warnings).toEqual([]);
   });
 
   it('rolls back staging and skips installRoot when extension compilation throws', async () => {

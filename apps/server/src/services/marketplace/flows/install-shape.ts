@@ -29,6 +29,16 @@ import { compileStagedExtensions, type StagedExtensionCompiler } from '../lib/st
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
+/**
+ * Warning surfaced in {@link InstallResult.warnings} when an install request
+ * for a Shape carries a `projectPath`. Shapes are global-only (see
+ * {@link ShapeInstallFlow.install}), so the request still succeeds — this
+ * only tells the caller their scope choice was not honored, instead of
+ * silently discarding it (DOR-386).
+ */
+export const SHAPE_PROJECT_PATH_IGNORED_WARNING =
+  'Shapes always install for every project, not just the one you specified. Your project choice was ignored.';
+
 /** Constructor dependencies for {@link ShapeInstallFlow}. */
 export interface ShapeFlowDeps {
   /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
@@ -59,30 +69,35 @@ export class ShapeInstallFlow {
    *
    * Shapes are global-only in v1 — there is no project-scoped Shape install
    * (a Shape rearranges the whole cockpit, which is a person-scoped concept),
-   * so `opts.projectPath` is accepted for signature symmetry with the other
-   * flows but does not change the install root.
+   * so `opts.projectPath` never changes the install root. If the caller
+   * supplied one anyway, the install still succeeds globally, but the
+   * returned {@link InstallResult.warnings} carries
+   * {@link SHAPE_PROJECT_PATH_IGNORED_WARNING} so the caller knows their
+   * scope choice was ignored rather than silently dropped (DOR-386).
    *
    * @param packagePath - Absolute path to the staged package source directory.
    * @param manifest - Validated Shape manifest read from the package.
-   * @param _opts - Install request options (unused — Shapes install globally).
+   * @param opts - Install request options; only `projectPath` is read, and
+   *   only to decide whether to warn.
    * @returns The full {@link InstallResult} reporting where the Shape landed.
    */
   async install(
     packagePath: string,
     manifest: ShapePackageManifest,
-    _opts: Pick<InstallRequest, 'projectPath'>
+    opts: Pick<InstallRequest, 'projectPath'>
   ): Promise<InstallResult> {
     const installRoot = path.join(
       this.deps.dorkHome,
       installRootDirForType(manifest.type),
       manifest.name
     );
+    const warnings = opts.projectPath ? [SHAPE_PROJECT_PATH_IGNORED_WARNING] : [];
 
     return runTransaction<InstallResult>({
       name: `install-shape-${manifest.name}`,
       target: installRoot,
       stage: (staging) => this.stage(staging.path, packagePath),
-      activate: (staging) => this.activate(staging.path, installRoot, manifest),
+      activate: (staging) => this.activate(staging.path, installRoot, manifest, warnings),
     });
   }
 
@@ -116,7 +131,8 @@ export class ShapeInstallFlow {
   private async activate(
     stagingDir: string,
     installRoot: string,
-    manifest: ShapePackageManifest
+    manifest: ShapePackageManifest,
+    warnings: string[]
   ): Promise<InstallResult> {
     await mkdir(path.dirname(installRoot), { recursive: true });
     await atomicMove(stagingDir, installRoot);
@@ -128,7 +144,7 @@ export class ShapeInstallFlow {
       type: 'shape',
       installPath: installRoot,
       manifest,
-      warnings: [],
+      warnings,
     };
   }
 }
