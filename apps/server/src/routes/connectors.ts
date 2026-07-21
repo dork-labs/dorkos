@@ -79,11 +79,11 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
       res.status(400).json({ error: "Missing required 'service' query parameter" });
       return;
     }
-    const recommendations = await recommendConnector(service, {
+    const { recommendations, warnings } = await recommendConnector(service, {
       registry,
       relay: deps.relay,
     });
-    res.json({ recommendations });
+    res.json({ recommendations, warnings });
   });
 
   router.post('/:provider/connect', async (req, res) => {
@@ -127,6 +127,12 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
     // disconnect can route it later (first-write-wins; re-polling is harmless).
     if (poll.status === 'connected' && poll.account) {
       registry.recordConnect(poll.account);
+    }
+    // Drop the flow → provider binding once the flow reaches a terminal state so
+    // the map can't grow unbounded across many connect attempts. A pending poll
+    // keeps its binding for the next poll.
+    if (poll.status === 'connected' || poll.status === 'failed') {
+      flowProviders.delete(flowId);
     }
     res.json(poll);
   });

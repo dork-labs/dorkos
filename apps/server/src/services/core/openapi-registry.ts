@@ -2245,10 +2245,13 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'Ranked connector recommendations (ascending by rank)',
+      description: 'Ranked connector recommendations (ascending by rank) plus degradation warnings',
       content: {
         'application/json': {
-          schema: z.object({ recommendations: z.array(ConnectorRecommendationSchema) }),
+          schema: z.object({
+            recommendations: z.array(ConnectorRecommendationSchema),
+            warnings: z.array(ConnectorWarningSchema),
+          }),
         },
       },
     },

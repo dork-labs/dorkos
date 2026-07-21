@@ -3,6 +3,14 @@ import express from 'express';
 import request from 'supertest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
+import type {
+  ConnectedAccount,
+  ConnectorCapabilities,
+  ConnectorProvider,
+  ConnectorToolkit,
+  ConnectPoll,
+  ConnectStart,
+} from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import type { RelayAdapterCatalog } from '../../services/connectors/routing.js';
 import { createConnectorsRouter } from '../connectors.js';
@@ -12,6 +20,38 @@ function relayWith(slugs: Record<string, string>): RelayAdapterCatalog {
   return {
     getManifest: (type: string) => (slugs[type] ? { displayName: slugs[type] } : undefined),
   };
+}
+
+/** A gateway provider whose `listToolkits` never resolves — the hung-provider case. */
+class HungProvider implements ConnectorProvider {
+  readonly type = 'hung';
+  getCapabilities(): ConnectorCapabilities {
+    return {
+      type: this.type,
+      supportsMultiAccount: true,
+      custody: 'managed',
+      exposesOverMcp: true,
+      features: {},
+    };
+  }
+  listToolkits(): Promise<ConnectorToolkit[]> {
+    return new Promise<ConnectorToolkit[]>(() => {});
+  }
+  startConnect(): Promise<ConnectStart> {
+    return Promise.reject(new Error('hung'));
+  }
+  pollConnect(): Promise<ConnectPoll> {
+    return Promise.resolve({ status: 'failed', error: 'hung' });
+  }
+  listAccounts(): Promise<ConnectedAccount[]> {
+    return Promise.resolve([]);
+  }
+  disconnect(): Promise<void> {
+    return Promise.resolve();
+  }
+  toolServerForAccount() {
+    return Promise.resolve(null);
+  }
 }
 
 describe('connectors router', () => {
@@ -57,6 +97,29 @@ describe('connectors router', () => {
   it('GET /recommend 400s without a service param', async () => {
     const res = await request(buildApp()).get('/api/connectors/recommend');
     expect(res.status).toBe(400);
+  });
+
+  it('GET /recommend degrades a hung provider to a warning instead of hanging', async () => {
+    // A bounded registry so the hung provider times out fast rather than
+    // blocking /recommend forever (the latent risk once a gateway makes a live
+    // network call).
+    const bounded = new ConnectorRegistry({ db, providerTimeoutMs: 50 });
+    bounded.register(new FakeConnectorProvider({ type: 'composio', custody: 'managed' }));
+    bounded.register(new HungProvider());
+    const app = express();
+    app.use(express.json());
+    app.use('/api/connectors', createConnectorsRouter({ registry: bounded }));
+
+    const start = Date.now();
+    const res = await request(app).get('/api/connectors/recommend?service=gmail');
+    const elapsed = Date.now() - start;
+
+    expect(res.status).toBe(200);
+    expect(res.body.recommendations[0]).toMatchObject({ kind: 'gateway', provider: 'composio' });
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0]).toMatchObject({ provider: 'hung' });
+    expect(res.body.warnings[0].message).toMatch(/timed out/);
+    expect(elapsed).toBeLessThan(2000);
   });
 
   it('POST /:provider/connect starts a flow; GET /flows/:flowId polls it to connected', async () => {

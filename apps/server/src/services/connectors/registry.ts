@@ -201,6 +201,44 @@ export class ConnectorRegistry {
   }
 
   /**
+   * Find every registered provider that lists `toolkitSlug`, with the same
+   * per-provider timeout + degradation as the aggregation paths: a provider
+   * that throws or hangs on `listToolkits` becomes a `warnings[]` entry rather
+   * than blocking the caller. Used by the routing surface (`recommendConnector`)
+   * so `GET /api/connectors/recommend` degrades on a slow provider instead of
+   * hanging (a real risk once a gateway makes a live network call).
+   *
+   * @param toolkitSlug - The service slug to match against each provider's toolkits.
+   */
+  async providersForToolkit(
+    toolkitSlug: string
+  ): Promise<{ providers: ConnectorProvider[]; warnings: ConnectorWarning[] }> {
+    const providers = this.listProviders();
+    const settled = await Promise.allSettled(
+      providers.map((provider) =>
+        withTimeout(provider.listToolkits(), this._providerTimeoutMs, provider.type)
+      )
+    );
+
+    const matching: ConnectorProvider[] = [];
+    const warnings: ConnectorWarning[] = [];
+    settled.forEach((result, i) => {
+      const provider = providers[i]!;
+      if (result.status === 'fulfilled') {
+        if (result.value.some((tk) => tk.slug === toolkitSlug)) matching.push(provider);
+      } else {
+        const reason: unknown = result.reason;
+        warnings.push({
+          provider: provider.type,
+          message: reason instanceof Error ? reason.message : String(reason),
+        });
+      }
+    });
+
+    return { providers: matching, warnings };
+  }
+
+  /**
    * Run `call` against every registered provider in parallel with a per-provider
    * timeout, collecting the fulfilled results and degrading each rejection or
    * timeout to a `warnings[]` entry — the shared aggregation/degradation core

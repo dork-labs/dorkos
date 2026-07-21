@@ -10316,7 +10316,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Ranked connector recommendations (ascending by rank)",
+            "description": "Ranked connector recommendations (ascending by rank) plus degradation warnings",
             "content": {
               "application/json": {
                 "schema": {
@@ -10364,10 +10364,29 @@
                           "reason"
                         ]
                       }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "message"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "recommendations"
+                    "recommendations",
+                    "warnings"
                   ]
                 }
               }

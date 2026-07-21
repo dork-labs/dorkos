@@ -23,7 +23,20 @@ import type {
   ConnectorProvider,
   ConnectorRecommendation,
 } from '@dorkos/shared/connector-provider';
-import type { ConnectorRegistry } from './registry.js';
+import type { ConnectorRegistry, ConnectorWarning } from './registry.js';
+
+/**
+ * The routed ways to connect a service, plus any providers that degraded while
+ * being scanned. `warnings` mirrors the aggregation-degradation pattern used
+ * everywhere else (ADR-0310) so a slow/hung provider surfaces rather than
+ * blocking or silently vanishing.
+ */
+export interface RecommendConnectorResult {
+  /** Applicable connection routes, sorted ascending by precedence (best first). */
+  recommendations: ConnectorRecommendation[];
+  /** One entry per provider that threw or timed out during the toolkit scan. */
+  warnings: ConnectorWarning[];
+}
 
 /** Fixed rank per recommendation kind — the documented precedence. */
 const RANK = { relayAdapter: 0, gateway: 1, rawMcp: 2 } as const;
@@ -88,8 +101,9 @@ function relayRecommendation(
 }
 
 /**
- * Build the provider (gateway or raw-mcp) recommendations for a service by
- * asking each registered provider whether it lists the toolkit.
+ * Build the provider (gateway or raw-mcp) recommendations for a service. The
+ * toolkit scan runs through the registry, which bounds each provider with a
+ * timeout and degrades a hung/throwing provider to a `warnings[]` entry.
  *
  * @param serviceSlug - The service slug to route.
  * @param registry - The connector registry to scan.
@@ -97,24 +111,11 @@ function relayRecommendation(
 async function providerRecommendations(
   serviceSlug: string,
   registry: ConnectorRegistry
-): Promise<ConnectorRecommendation[]> {
-  const providers = registry.listProviders();
-  const listed = await Promise.all(
-    providers.map(async (provider) => {
-      try {
-        const toolkits = await provider.listToolkits();
-        return toolkits.some((tk) => tk.slug === serviceSlug) ? provider : undefined;
-      } catch {
-        // A provider that cannot list toolkits simply offers no recommendation;
-        // routing degrades silently rather than failing the whole surface.
-        return undefined;
-      }
-    })
-  );
+): Promise<{ recommendations: ConnectorRecommendation[]; warnings: ConnectorWarning[] }> {
+  const { providers, warnings } = await registry.providersForToolkit(serviceSlug);
 
   const recommendations: ConnectorRecommendation[] = [];
-  for (const provider of listed) {
-    if (!provider) continue;
+  for (const provider of providers) {
     const custody = provider.getCapabilities().custody;
     if (isRawMcp(provider)) {
       recommendations.push({
@@ -136,7 +137,7 @@ async function providerRecommendations(
       });
     }
   }
-  return recommendations;
+  return { recommendations, warnings };
 }
 
 /**
@@ -155,8 +156,9 @@ function byPrecedence(a: ConnectorRecommendation, b: ConnectorRecommendation): n
 
 /**
  * Recommend how to connect a service, best first. Returns every applicable way
- * (relay adapter, gateway, raw-MCP) sorted ascending by precedence; an empty
- * array means nothing can connect the service yet.
+ * (relay adapter, gateway, raw-MCP) sorted ascending by precedence, plus
+ * `warnings` for any provider that degraded during the scan. An empty
+ * `recommendations` array means nothing can connect the service yet.
  *
  * @param serviceSlug - The service slug to route, e.g. `'slack' | 'gmail'`.
  * @param deps - The relay catalog and connector registry to read; see {@link RecommendConnectorDeps}.
@@ -164,13 +166,14 @@ function byPrecedence(a: ConnectorRecommendation, b: ConnectorRecommendation): n
 export async function recommendConnector(
   serviceSlug: string,
   deps: RecommendConnectorDeps
-): Promise<ConnectorRecommendation[]> {
+): Promise<RecommendConnectorResult> {
   const recommendations: ConnectorRecommendation[] = [];
 
   const relay = relayRecommendation(serviceSlug, deps.relay);
   if (relay) recommendations.push(relay);
 
-  recommendations.push(...(await providerRecommendations(serviceSlug, deps.registry)));
+  const provided = await providerRecommendations(serviceSlug, deps.registry);
+  recommendations.push(...provided.recommendations);
 
-  return recommendations.sort(byPrecedence);
+  return { recommendations: recommendations.sort(byPrecedence), warnings: provided.warnings };
 }
