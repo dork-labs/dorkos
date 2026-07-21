@@ -16,7 +16,7 @@ import type {
   DeliveryResult,
   TraceStoreLike,
 } from '../../types.js';
-import { extractPayloadContent } from '../../lib/payload-utils.js';
+import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import type { AgentRuntimeLike, AgentSessionStoreLike } from './types.js';
 import {
@@ -412,17 +412,27 @@ export function buildResponseFormatBlock(ctx: ResponseContext | undefined): stri
   return `<response_format>\n${lines.filter(Boolean).join('\n')}\n</response_format>`;
 }
 
-/** Format the user prompt with a <relay_context> XML block. */
+/**
+ * Format the user prompt with a <relay_context> XML block.
+ *
+ * When the envelope's payload carries a sender name and/or chat title
+ * (Telegram/Slack inbound), a `Sender:`/`Chat:` line is inserted right after
+ * `From:` so the agent knows who it is talking to. Absent either field, the
+ * block is byte-identical to the plain envelope-metadata format.
+ */
 function formatPromptWithContext(
   content: string,
   envelope: RelayEnvelope,
   agentId: string,
   sdkSessionId: string
 ): string {
+  const { sender, chat } = extractSenderIdentity(envelope.payload);
   const lines = [
     `Agent-ID: ${agentId}`,
     `Session-ID: ${sdkSessionId}`,
     `From: ${envelope.from}`,
+    ...(sender !== undefined ? [`Sender: ${sender}`] : []),
+    ...(chat !== undefined ? [`Chat: ${chat}`] : []),
     `Message-ID: ${envelope.id}`,
     `Subject: ${envelope.subject}`,
     `Sent: ${envelope.createdAt}`,

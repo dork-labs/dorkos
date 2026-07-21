@@ -49,6 +49,71 @@ export function truncateText(text: string, maxLen: number): string {
   return `${text.slice(0, maxLen - 3)}...`;
 }
 
+// === Sender identity extraction ===
+
+/** Maximum length of a sanitized sender name or chat title, in characters. */
+const MAX_IDENTITY_LENGTH = 80;
+
+/** Sentinel value channel adapters fall back to when no display name is available. */
+const UNKNOWN_SENDER = 'unknown';
+
+/**
+ * Sanitize a raw identity string (sender name or chat title) for safe
+ * inclusion in a structured prompt header.
+ *
+ * Strips control characters — including CR/LF, which could otherwise forge
+ * additional header lines — collapses whitespace runs to a single space,
+ * trims, and caps the result at {@link MAX_IDENTITY_LENGTH} characters.
+ *
+ * @param value - The raw string to sanitize
+ * @returns The sanitized string, or `undefined` if it is empty after sanitization
+ */
+function sanitizeIdentity(value: string): string | undefined {
+  const collapsed = value
+    // eslint-disable-next-line no-control-regex -- stripping control chars is the point
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (collapsed.length === 0) return undefined;
+  return collapsed.slice(0, MAX_IDENTITY_LENGTH);
+}
+
+/**
+ * Extract the human sender's display name and chat/channel title from an
+ * unknown Relay envelope payload, for forwarding into the agent's prompt.
+ *
+ * Safe-parses `senderName`/`channelName` off object payloads — non-object
+ * payloads and non-string fields yield an absent value. Each present value is
+ * sanitized via {@link sanitizeIdentity}, and a sanitized sender name equal to
+ * `"unknown"` (case-insensitive — the channel adapters' own fallback
+ * constant) is treated as absent: a label like "Telegram · unknown" is worse
+ * than the plain "Telegram" it would replace.
+ *
+ * @param payload - The unknown payload from a RelayEnvelope
+ * @returns The sanitized sender name and/or chat title, each omitted when absent
+ */
+export function extractSenderIdentity(payload: unknown): { sender?: string; chat?: string } {
+  if (payload === null || typeof payload !== 'object') return {};
+  const obj = payload as Record<string, unknown>;
+  const result: { sender?: string; chat?: string } = {};
+
+  if (typeof obj.senderName === 'string') {
+    const sender = sanitizeIdentity(obj.senderName);
+    if (sender !== undefined && sender.toLowerCase() !== UNKNOWN_SENDER) {
+      result.sender = sender;
+    }
+  }
+
+  if (typeof obj.channelName === 'string') {
+    const chat = sanitizeIdentity(obj.channelName);
+    if (chat !== undefined) {
+      result.chat = chat;
+    }
+  }
+
+  return result;
+}
+
 // === StreamEvent helpers ===
 
 /**
