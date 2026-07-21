@@ -1688,6 +1688,43 @@ describe('readInbox payloads and ack', () => {
 });
 
 // ---------------------------------------------------------------------------
+// readInbox status filtering — DOR-337
+// ---------------------------------------------------------------------------
+
+describe('readInbox status filtering (DOR-337)', () => {
+  it('separates a budget-rejected failure from a deliverable message in the same inbox', async () => {
+    await relay.registerEndpoint('relay.agent.status-filter');
+
+    // A real deliverable.
+    await relay.publish(
+      'relay.agent.status-filter',
+      { text: 'deliverable' },
+      { from: 'relay.sender' }
+    );
+
+    // Rejected at the budget gate — indexed status='failed' under the SAME
+    // endpoint hash (endpoint hash is the subject itself), landing in the
+    // Maildir failed/ dir right alongside the deliverable's new/ entry.
+    await relay.publish(
+      'relay.agent.status-filter',
+      { text: 'rejected' },
+      { from: 'relay.sender', budget: { callBudgetRemaining: 0 } }
+    );
+
+    const pending = await relay.readInbox('relay.agent.status-filter', { status: 'pending' });
+    expect(pending.messages).toHaveLength(1);
+    expect(pending.messages[0].payload).toEqual({ text: 'deliverable' });
+
+    const failed = await relay.readInbox('relay.agent.status-filter', { status: 'failed' });
+    expect(failed.messages).toHaveLength(1);
+    expect(failed.messages[0].status).toBe('failed');
+
+    const all = await relay.readInbox('relay.agent.status-filter', { status: 'all' });
+    expect(all.messages).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Subscribe drains stranded messages — regression for H1
 // ---------------------------------------------------------------------------
 

@@ -39,8 +39,11 @@ export interface InboxMessage extends IndexedMessage {
 export interface ReadInboxOptions {
   /**
    * Status filter. Accepts DB statuses (`pending`, `delivered`, `failed`),
-   * Maildir aliases (`new`, `cur`), and natural-language aliases
-   * (`unread`, `read`).
+   * Maildir aliases (`new`, `cur`), natural-language aliases (`unread`,
+   * `read`), and `all` to opt out of filtering entirely. Omitted or
+   * `undefined` behaves like `all` — callers that want to exclude
+   * budget-rejected `failed` messages by default (e.g. the HTTP route) must
+   * pass `pending` explicitly rather than relying on this default.
    */
   status?: string;
   cursor?: string;
@@ -270,8 +273,10 @@ function maildirSubdirForStatus(status: IndexedMessage['status']): 'new' | 'fail
 }
 
 /**
- * Normalize Maildir-style (`new`, `cur`) and natural-language (`unread`,
- * `read`) status aliases to the DB vocabulary used by the SQLite index.
+ * Normalize Maildir-style (`new`, `cur`), natural-language (`unread`,
+ * `read`), and `all` status aliases to the DB vocabulary used by the SQLite
+ * index. `all` (like an omitted status) maps to `undefined`, which the
+ * index query treats as "no status filter."
  */
 function normalizeInboxStatus(status: string | undefined): string | undefined {
   switch (status) {
@@ -281,6 +286,8 @@ function normalizeInboxStatus(status: string | undefined): string | undefined {
     case 'cur':
     case 'read':
       return 'delivered';
+    case 'all':
+      return undefined;
     default:
       return status; // 'pending', 'delivered', 'failed', or undefined pass through
   }

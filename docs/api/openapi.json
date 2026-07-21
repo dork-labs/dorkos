@@ -3918,6 +3918,17 @@
           "subject"
         ]
       },
+      "InboxStatusFilter": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "delivered",
+          "failed",
+          "all"
+        ],
+        "default": "pending",
+        "description": "Filter messages by status. Defaults to \"pending\" (deliverable, unread messages) so budget-rejected failures never surface silently next to real deliverables. Pass \"failed\" to see budget-rejected/dead-lettered messages, \"delivered\" for already-read ones, or \"all\" for every status."
+      },
       "DiscoveryCandidate": {
         "type": "object",
         "properties": {
@@ -7449,6 +7460,7 @@
           "Relay"
         ],
         "summary": "Read inbox for an endpoint",
+        "description": "Defaults to `pending` messages only, so budget-rejected `failed` messages never surface next to deliverables unless a caller explicitly opts in via `?status=`.",
         "parameters": [
           {
             "schema": {
@@ -7460,14 +7472,10 @@
           },
           {
             "schema": {
-              "type": "string",
-              "enum": [
-                "new",
-                "cur",
-                "failed"
-              ]
+              "$ref": "#/components/schemas/InboxStatusFilter"
             },
             "required": false,
+            "description": "Filter messages by status. Defaults to \"pending\" (deliverable, unread messages) so budget-rejected failures never surface silently next to real deliverables. Pass \"failed\" to see budget-rejected/dead-lettered messages, \"delivered\" for already-read ones, or \"all\" for every status.",
             "name": "status",
             "in": "query"
           },
