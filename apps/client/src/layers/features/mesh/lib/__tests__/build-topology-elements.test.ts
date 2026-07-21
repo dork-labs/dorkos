@@ -61,8 +61,13 @@ const multiNamespace: NamespaceInfo[] = [
 const noRules: CrossNamespaceRule[] = [];
 
 const accessRules: CrossNamespaceRule[] = [
-  { sourceNamespace: 'staging', targetNamespace: 'production', action: 'allow' },
-  { sourceNamespace: 'production', targetNamespace: 'staging', action: 'deny' },
+  {
+    sourceNamespace: 'staging',
+    targetNamespace: 'production',
+    action: 'allow',
+    origin: 'explicit',
+  },
+  { sourceNamespace: 'production', targetNamespace: 'staging', action: 'deny', origin: 'explicit' },
 ];
 
 function emptyCallbacks() {
@@ -237,6 +242,39 @@ describe('buildTopologyElements', () => {
       expect(denyEdges).toHaveLength(1);
       expect(denyEdges[0].source).toBe('group:production');
       expect(denyEdges[0].target).toBe('group:staging');
+    });
+
+    it('does not draw edges for bridge-written default rules (DOR-336)', () => {
+      // Default rules are self-referencing (ns -> ns) or use the '*' catch-all
+      // target sentinel — neither maps to a meaningful graph edge between two
+      // namespace groups, so the graph only visualizes explicit grants.
+      const defaultAndExplicitRules: CrossNamespaceRule[] = [
+        ...accessRules,
+        {
+          sourceNamespace: 'production',
+          targetNamespace: 'production',
+          action: 'allow',
+          origin: 'default',
+        },
+        { sourceNamespace: 'production', targetNamespace: '*', action: 'deny', origin: 'default' },
+      ];
+
+      const result = buildTopologyElements(
+        multiNamespace,
+        defaultAndExplicitRules,
+        false,
+        undefined,
+        undefined,
+        emptyBindingCountByAdapter(),
+        vi.fn(),
+        emptyCallbacks()
+      );
+
+      const crossNamespaceEdges = result.rawEdges.filter(
+        (e) => e.type === 'cross-namespace' || e.type === 'cross-namespace-deny'
+      );
+      // Only the two explicit rules from `accessRules` produce edges.
+      expect(crossNamespaceEdges).toHaveLength(2);
     });
   });
 

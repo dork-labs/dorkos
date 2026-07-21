@@ -25,7 +25,21 @@ export interface CrossNamespaceRule {
   sourceNamespace: string;
   targetNamespace: string;
   action: 'allow' | 'deny';
+  /**
+   * Whether this rule was explicitly configured by a user ('explicit') or is a
+   * bridge-written default the Relay bridge re-asserts for every namespace with
+   * a registered agent ('default'). See {@link TopologyManager.getTopology}.
+   */
+  origin: 'default' | 'explicit';
 }
+
+/**
+ * Sentinel `targetNamespace` for the default catch-all cross-namespace deny
+ * rule ({@link TopologyManager.defaultAccessRules}) — it denies traffic to
+ * every OTHER namespace, not one specific pair, mirroring the single
+ * `relay.agent.{ns}.* -> relay.agent.>` rule the bridge actually writes.
+ */
+const CATCH_ALL_TARGET = '*';
 
 /** The full topology view filtered by caller's namespace access. */
 export interface TopologyView {
@@ -48,6 +62,12 @@ const CROSS_NAMESPACE_ALLOW_PRIORITY = 50;
  * (mesh #16): topology reads them from that store and never reverse-engineers
  * Relay rule strings. Writes go to BOTH the store and Relay (one-directional
  * projection); Relay remains the enforcer.
+ *
+ * `getTopology()`'s `accessRules` combines those explicit grants with the
+ * default rules the Relay bridge writes automatically for every namespace with
+ * a registered agent (same-namespace allow, catch-all cross-namespace deny —
+ * see {@link defaultAccessRules}), tagged `origin: 'default'` so the view
+ * reflects what's actually enforced, not just what a user configured on top.
  *
  * @example
  * ```typescript
@@ -130,22 +150,56 @@ export class TopologyManager {
       agents: entries.map((e) => this.stripRegistryFields(e)),
     }));
 
-    const accessRules = this.listCrossNamespaceRules();
-    // Filter access rules to only show rules involving accessible namespaces
-    const filteredRules =
+    const explicitRules = this.listCrossNamespaceRules();
+    // Filter explicit rules to only show rules involving accessible namespaces
+    const filteredExplicitRules =
       callerNamespace === '*'
-        ? accessRules
-        : accessRules.filter(
+        ? explicitRules
+        : explicitRules.filter(
             (r) =>
               accessibleNamespaces.has(r.sourceNamespace) ||
               accessibleNamespaces.has(r.targetNamespace)
           );
 
+    // Default rules are synthesized directly from the namespaces already
+    // filtered into this view, so they need no separate accessibility filter.
+    const defaultRules = this.defaultAccessRules(namespaces.map((ns) => ns.namespace));
+
     return {
       callerNamespace,
       namespaces,
-      accessRules: filteredRules,
+      accessRules: [...defaultRules, ...filteredExplicitRules],
     };
+  }
+
+  /**
+   * Synthesize the bridge-written default access rules for a set of namespaces:
+   * a same-namespace allow and a catch-all cross-namespace deny per namespace
+   * (see {@link RelayBridge.registerAgent}). These are never read from Relay or
+   * the Mesh rule store — they are deterministic given namespace existence,
+   * mirroring exactly what `registerAgent()` writes on every agent registration.
+   *
+   * Returns `[]` when Relay is absent, since the bridge never writes these
+   * rules without it (`RelayBridge.registerAgent` no-ops without Relay).
+   *
+   * @param namespaces - Namespaces present in the current topology view
+   */
+  private defaultAccessRules(namespaces: string[]): CrossNamespaceRule[] {
+    if (!this.relayCore) return [];
+    return namespaces.flatMap((ns) => [
+      {
+        sourceNamespace: ns,
+        targetNamespace: ns,
+        action: 'allow' as const,
+        origin: 'default' as const,
+      },
+      {
+        sourceNamespace: ns,
+        targetNamespace: CATCH_ALL_TARGET,
+        action: 'deny' as const,
+        origin: 'default' as const,
+      },
+    ]);
   }
 
   /**
@@ -209,6 +263,7 @@ export class TopologyManager {
       sourceNamespace: r.sourceNamespace,
       targetNamespace: r.targetNamespace,
       action: 'allow' as const,
+      origin: 'explicit' as const,
     }));
   }
 

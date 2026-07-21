@@ -247,6 +247,15 @@ export const CrossNamespaceRuleSchema = z
     sourceNamespace: z.string(),
     targetNamespace: z.string(),
     action: z.enum(['allow', 'deny']),
+    /**
+     * Where the rule came from: a user-configured grant via `PUT /topology/access`
+     * ('explicit'), or a rule the Relay bridge writes automatically for every
+     * namespace with a registered agent ('default' — same-namespace allow, and a
+     * catch-all cross-namespace deny using the `targetNamespace: '*'` sentinel).
+     * Defaults appear so the topology view reflects the rules actually enforced,
+     * not just the ones a user added on top of them.
+     */
+    origin: z.enum(['default', 'explicit']).default('explicit'),
   })
   .openapi('CrossNamespaceRule');
 

@@ -324,6 +324,7 @@ describe('MeshCore topology integration', () => {
         sourceNamespace: 'ns-a',
         targetNamespace: 'ns-b',
         action: 'allow',
+        origin: 'explicit',
       });
 
       // Deny removes the rule

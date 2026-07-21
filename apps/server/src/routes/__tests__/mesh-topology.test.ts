@@ -136,6 +136,7 @@ describe('Mesh topology routes', () => {
         sourceNamespace: 'ns-a',
         targetNamespace: 'ns-b',
         action: 'allow',
+        origin: 'explicit',
       });
       expect(meshCore.allowCrossNamespace).toHaveBeenCalledWith('ns-a', 'ns-b');
       expect(meshCore.denyCrossNamespace).not.toHaveBeenCalled();
@@ -153,6 +154,7 @@ describe('Mesh topology routes', () => {
         sourceNamespace: 'ns-a',
         targetNamespace: 'ns-b',
         action: 'deny',
+        origin: 'explicit',
       });
       expect(meshCore.denyCrossNamespace).toHaveBeenCalledWith('ns-a', 'ns-b');
       expect(meshCore.allowCrossNamespace).not.toHaveBeenCalled();
@@ -373,5 +375,77 @@ describe('Topology enrichment — Tasks agent linking', () => {
     expect(res.status).toBe(200);
     const agent = res.body.namespaces[0].agents[0];
     expect(agent.taskCount).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DOR-335 — relayAdapters must not mislabel sibling agent ULIDs as adapters
+// ---------------------------------------------------------------------------
+
+describe('Topology enrichment — relayAdapters excludes sibling agent ULIDs', () => {
+  let app: express.Application;
+  let meshCore: ReturnType<typeof createMockMeshCore>;
+
+  const NS = 'ns-a';
+  // Real agent IDs are ULIDs (26-char Crockford base32), e.g. '01KXQR317...'
+  const AGENT_1_ID = `01K${'A'.repeat(23)}`;
+  const AGENT_2_ID = `01K${'B'.repeat(23)}`;
+
+  const agent1 = { ...MOCK_MANIFEST, id: AGENT_1_ID, namespace: NS };
+  const agent2 = { ...MOCK_MANIFEST, id: AGENT_2_ID, namespace: NS, name: 'Agent 2' };
+
+  beforeEach(() => {
+    meshCore = createMockMeshCore();
+    meshCore.getTopology.mockReturnValue({
+      namespaces: [{ namespace: NS, agents: [agent1, agent2] }],
+      accessRules: [],
+      agentCount: 2,
+    });
+    meshCore.inspect.mockImplementation((id: unknown) => ({
+      relaySubject: `relay.agent.${NS}.${id as string}`,
+    }));
+
+    const deps: MeshRouterDeps = {
+      meshCore: meshCore as unknown as MeshCore,
+      relayCore: {
+        listEndpoints: () => [
+          { subject: `relay.agent.${NS}.${AGENT_1_ID}` }, // agent 1's own inbox
+          { subject: `relay.agent.${NS}.${AGENT_2_ID}` }, // sibling agent's inbox
+          { subject: `relay.agent.${NS}.slack` }, // a plausible non-agent adapter endpoint
+        ],
+      },
+    };
+    app = express();
+    app.use(express.json());
+    app.use('/api/mesh', createMeshRouter(deps));
+  });
+
+  function findAgent(
+    body: { namespaces: { agents: { id: string; relayAdapters: string[] }[] }[] },
+    id: string
+  ) {
+    return body.namespaces[0]!.agents.find((a) => a.id === id)!;
+  }
+
+  it('never lists a sibling agent ULID as one of its own relay adapters', async () => {
+    const res = await request(app).get('/api/mesh/topology');
+
+    expect(res.status).toBe(200);
+    const returnedAgent1 = findAgent(res.body, AGENT_1_ID);
+    expect(returnedAgent1.relayAdapters).not.toContain(AGENT_2_ID);
+  });
+
+  it('never lists an agent as its own relay adapter', async () => {
+    const res = await request(app).get('/api/mesh/topology');
+
+    const returnedAgent1 = findAgent(res.body, AGENT_1_ID);
+    expect(returnedAgent1.relayAdapters).not.toContain(AGENT_1_ID);
+  });
+
+  it('still surfaces non-agent-shaped adapter segments', async () => {
+    const res = await request(app).get('/api/mesh/topology');
+
+    const returnedAgent1 = findAgent(res.body, AGENT_1_ID);
+    expect(returnedAgent1.relayAdapters).toContain('slack');
   });
 });

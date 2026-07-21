@@ -31,6 +31,17 @@ import type { ActivityService } from '../services/activity/activity-service.js';
  */
 const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Canonical ULID regex (26-char Crockford base32) — used to exclude agent-ID-shaped
+ * subject segments from the mesh topology's `relayAdapters` list. Mesh agent IDs are
+ * ULIDs (`ulidx`), so a sibling agent's own Relay inbox subject
+ * (`relay.agent.<namespace>.<agentId>`) shares the exact namespace prefix every OTHER
+ * agent in that namespace matches on — without this filter, every agent in a
+ * multi-agent namespace would list its siblings (and itself) as "relay adapters".
+ * See the subject-space caveat comment in `enrichAgent()`.
+ */
+const ULID_LIKE = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+
 /** Optional cross-subsystem dependencies for topology enrichment. */
 export interface MeshRouterDeps {
   meshCore: MeshCore;
@@ -150,6 +161,12 @@ function enrichAgent(
   // `relayAdapters` list. We defensively exclude segments that look like
   // session identifiers (UUID shape) from the extracted adapter names so
   // the topology enrichment never misreports a session id as an adapter.
+  //
+  // Every OTHER agent registered in the same namespace also owns an endpoint
+  // under this exact prefix (its own inbox, `relay.agent.<namespace>.<agentId>`)
+  // — and mesh agent IDs are ULIDs, not UUIDs, so the UUID filter above doesn't
+  // catch them. Without also excluding ULID-shaped segments, every agent in a
+  // multi-agent namespace mislabels its siblings (and itself) as relay adapters.
   if (relaySubject && relayEndpoints.length > 0) {
     try {
       const nsPrefix = `relay.agent.${namespace}.`;
@@ -157,7 +174,7 @@ function enrichAgent(
       relayAdapters = matchingEndpoints
         .map((ep) => ep.subject.slice(nsPrefix.length))
         .filter(Boolean)
-        .filter((seg) => !UUID_LIKE.test(seg));
+        .filter((seg) => !UUID_LIKE.test(seg) && !ULID_LIKE.test(seg));
     } catch {
       // Relay matching failed — defaults apply
     }
@@ -328,7 +345,9 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     } else {
       meshCore.denyCrossNamespace(sourceNamespace, targetNamespace);
     }
-    return res.json({ sourceNamespace, targetNamespace, action });
+    // This endpoint only ever writes user-configured grants — bridge-written
+    // defaults are never created or removed here — so origin is always 'explicit'.
+    return res.json({ sourceNamespace, targetNamespace, action, origin: 'explicit' });
   });
 
   // GET /status — Aggregate mesh health status
