@@ -62,7 +62,14 @@ type SidebarDropOp =
   | { kind: 'unpin'; path: string }
   | { kind: 'remove-from-group'; path: string }
   | { kind: 'reorder-within-group'; groupId: string; path: string; from: number; to: number }
-  | { kind: 'reorder-pinned'; path: string; from: number; to: number };
+  | { kind: 'reorder-pinned'; path: string; from: number; to: number }
+  /**
+   * A drop targeted a smart group's body/header (smart-agent-groups,
+   * DOR-338). Applying this op is a no-op — smart-group membership is
+   * rule-derived, never a valid drop target — but the distinct kind lets
+   * `SidebarDnd` surface a hint instead of silently doing nothing.
+   */
+  | { kind: 'reject-smart-group'; groupId: string; path: string };
 
 // ---------------------------------------------------------------------------
 // Node-data ↔ descriptor conversion (used by the live dnd adapter + tests)
@@ -144,7 +151,11 @@ function resolveTarget(drop: SidebarDropDescriptor): {
   }
 }
 
-/** Build a move-to-group op, honoring the drop index only for `manual` groups. */
+/**
+ * Build a move-to-group op, honoring the drop index only for `manual`
+ * groups. Smart groups (DOR-338) are never a valid drop target — membership
+ * is rule-derived — so any drop resolving here rejects instead.
+ */
 function moveToGroupOp(
   prev: SidebarPrefs,
   path: string,
@@ -153,6 +164,7 @@ function moveToGroupOp(
 ): SidebarDropOp {
   const group = prev.groups.find((g) => g.id === groupId);
   if (!group) return { kind: 'none' };
+  if (group.kind === 'smart') return { kind: 'reject-smart-group', groupId, path };
   let toIndex: number | null = null;
   if (group.sortMode === 'manual' && overPath !== undefined) {
     const idx = group.agentPaths.indexOf(overPath);
@@ -247,6 +259,7 @@ export function classifySidebarDrop(
 function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs {
   switch (op.kind) {
     case 'none':
+    case 'reject-smart-group':
       return prev;
     case 'reorder-group':
       return reorderGroup(prev, op.from, op.to);
@@ -328,6 +341,8 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
       return `Reordered ${ctx.agentName(op.path)} in group ${ctx.groupName(op.groupId)}.`;
     case 'reorder-pinned':
       return `Reordered ${ctx.agentName(op.path)} in Pinned.`;
+    case 'reject-smart-group':
+      return `Can't move ${ctx.agentName(op.path)} into ${ctx.groupName(op.groupId)} — membership is rule-based. Edit rules instead.`;
     case 'none':
       return '';
   }

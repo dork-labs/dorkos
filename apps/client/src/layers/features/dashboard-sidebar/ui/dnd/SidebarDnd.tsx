@@ -11,11 +11,13 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { toast } from 'sonner';
 import { useIsMobile } from '@/layers/shared/model';
 import { useSidebarPrefs, useUpdateSidebarPrefs } from '@/layers/entities/config';
 import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import {
   buildSidebarAnnouncements,
+  classifySidebarDrop,
   readSidebarDndData,
   resolveSidebarDrop,
   toDragDescriptor,
@@ -104,6 +106,15 @@ export function SidebarDnd({ children, displayNames }: SidebarDndProps) {
     const drag = toDragDescriptor(readSidebarDndData(event.active.data.current));
     if (drag === null) return;
     const drop = toDropDescriptor(readSidebarDndData(event.over?.data.current));
+    // Smart groups (DOR-338) are never a valid drop target — classify first
+    // so a rejected drop surfaces a hint instead of silently doing nothing.
+    const op = classifySidebarDrop(prefsRef.current, drag, drop);
+    if (op.kind === 'reject-smart-group') {
+      toast.info('Membership is rule-based — edit rules instead.', {
+        description: groupName(op.groupId),
+      });
+      return;
+    }
     update((prev) => resolveSidebarDrop(prev, drag, drop));
   };
 

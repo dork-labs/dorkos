@@ -8,6 +8,7 @@ import { RevealRow } from './RevealRow';
 import { Droppable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
 import { sortAgentPaths, type SortAgentsContext } from '../model/sort-agents';
 import { filterSectionAgents } from '../model/filter-agents';
+import type { SmartGroupPreset } from '../model/smart-group-presets';
 
 interface UngroupedSectionProps {
   /** Ungrouped agent paths (known roster), pre-filter/pre-sort order. */
@@ -33,6 +34,16 @@ interface UngroupedSectionProps {
   renderRow: (path: string, keyPrefix: string) => ReactNode;
   /** Open the inline group-create flow (feeds the "+" menu's "New group" entry). */
   onNewGroup: () => void;
+  /**
+   * Smart-group preset chips (DOR-338) — empty below the disclosure
+   * threshold (spec §5), so the "+" menu shows no new chrome for small
+   * fleets.
+   */
+  smartGroupPresets: SmartGroupPreset[];
+  /** Create a smart group immediately from a preset (one click, no dialog). */
+  onCreatePresetSmartGroup: (preset: SmartGroupPreset) => void;
+  /** Open the custom-rules dialog for a from-scratch smart group. */
+  onOpenSmartGroupDialog: () => void;
 }
 
 /**
@@ -53,6 +64,9 @@ export function UngroupedSection({
   mutedPaths,
   renderRow,
   onNewGroup,
+  smartGroupPresets,
+  onCreatePresetSmartGroup,
+  onOpenSmartGroupDialog,
 }: UngroupedSectionProps) {
   const filtered = useMemo(
     () => filterSectionAgents(paths, { filter, attention, mutedPaths, groupMuted: false }),
@@ -76,7 +90,12 @@ export function UngroupedSection({
         // Reserve the header row so the top-right "+" never overlaps the first row.
         <div className="h-8" aria-hidden />
       )}
-      <AddAgentMenu onNewGroup={onNewGroup} />
+      <AddAgentMenu
+        onNewGroup={onNewGroup}
+        smartGroupPresets={smartGroupPresets}
+        onCreatePresetSmartGroup={onCreatePresetSmartGroup}
+        onOpenSmartGroupDialog={onOpenSmartGroupDialog}
+      />
       <Droppable
         id="container::ungrouped"
         data={{ type: 'container', container: { kind: 'ungrouped' } }}

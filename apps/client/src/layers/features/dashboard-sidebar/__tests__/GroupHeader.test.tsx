@@ -43,6 +43,14 @@ vi.mock('@/layers/entities/config', () => ({
     helperCalls.push({ name: 'setGroupMuted', args });
     return args[0];
   },
+  setGroupRules: (...args: unknown[]) => {
+    helperCalls.push({ name: 'setGroupRules', args });
+    return args[0];
+  },
+  convertSmartGroupToManual: (...args: unknown[]) => {
+    helperCalls.push({ name: 'convertSmartGroupToManual', args });
+    return args[0];
+  },
 }));
 
 beforeAll(() => {
@@ -72,6 +80,7 @@ function makeGroup(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
     collapsed: false,
     displayFilter: 'all',
     muted: false,
+    kind: 'manual',
     ...overrides,
   };
 }
@@ -80,12 +89,27 @@ function renderHeader({
   group = makeGroup(),
   memberCount = 0,
   showActivityDot = false,
+  derivedMemberPaths,
+  runtimeOptions,
+  namespaceOptions,
 }: {
   group?: SidebarGroup;
   memberCount?: number;
   showActivityDot?: boolean;
+  derivedMemberPaths?: string[];
+  runtimeOptions?: { value: string; label: string }[];
+  namespaceOptions?: string[];
 } = {}) {
-  render(<GroupHeader group={group} memberCount={memberCount} showActivityDot={showActivityDot} />);
+  render(
+    <GroupHeader
+      group={group}
+      memberCount={memberCount}
+      showActivityDot={showActivityDot}
+      derivedMemberPaths={derivedMemberPaths}
+      runtimeOptions={runtimeOptions}
+      namespaceOptions={namespaceOptions}
+    />
+  );
   return { group };
 }
 
@@ -272,5 +296,113 @@ describe('GroupHeader', () => {
     for (const label of ['Rename', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+  });
+
+  // --- Smart groups (DOR-338) ---
+
+  describe('smart groups', () => {
+    const smartGroup = (overrides: Partial<SidebarGroup> = {}) =>
+      makeGroup({
+        kind: 'smart',
+        sortMode: 'recent',
+        rules: { runtimes: ['codex'], lastActiveWithinMs: 60 * 60 * 1000 },
+        ...overrides,
+      });
+
+    it('shows the rule glyph next to the name for a smart group, not a manual one', () => {
+      renderHeader({ group: smartGroup() });
+      expect(screen.getByLabelText('Smart group — membership is rule-based')).toBeInTheDocument();
+      cleanup();
+      renderHeader({ group: makeGroup() });
+      expect(
+        screen.queryByLabelText('Smart group — membership is rule-based')
+      ).not.toBeInTheDocument();
+    });
+
+    it("renders the plain-language rule summary in the menu (the UI's honesty contract)", () => {
+      renderHeader({ group: smartGroup() });
+      openContextMenu();
+      expect(screen.getByText('Codex · active in the last hour')).toBeInTheDocument();
+    });
+
+    it('a rules-less smart group (hand-edited config, past the schema refine) opens its menu without crashing', () => {
+      // conf's Ajv/JSON-Schema bridge drops the superRefine, so a hand-edited
+      // config.json with kind: 'smart' and no `rules` at all still parses and
+      // reaches the client via the raw GET read path. The menu must never
+      // force-unwrap `group.rules`.
+      renderHeader({ group: smartGroup({ rules: undefined }) });
+      expect(() => openContextMenu()).not.toThrow();
+      expect(screen.getByText('No rules set')).toBeInTheDocument();
+    });
+
+    it('hides the "Manual" sort option for a smart group', () => {
+      renderHeader({ group: smartGroup() });
+      openContextMenu();
+      const subTrigger = screen.getByText('Sort by');
+      fireEvent.keyDown(subTrigger, { key: 'ArrowRight' });
+      expect(screen.queryByText('Manual')).not.toBeInTheDocument();
+      expect(screen.getByText('Recent activity')).toBeInTheDocument();
+      expect(screen.getByText('Name')).toBeInTheDocument();
+    });
+
+    it('a manual group still offers "Manual" sort', () => {
+      renderHeader({ group: makeGroup() });
+      openContextMenu();
+      const subTrigger = screen.getByText('Sort by');
+      fireEvent.keyDown(subTrigger, { key: 'ArrowRight' });
+      expect(screen.getByText('Manual')).toBeInTheDocument();
+    });
+
+    it('mute still applies to smart groups unchanged', () => {
+      renderHeader({ group: smartGroup({ muted: false }) });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Mute group'));
+      const calls = applyLatestUpdater();
+      expect(calls).toEqual([{ name: 'setGroupMuted', args: [PREV, 'g1', true] }]);
+    });
+
+    it('"Convert to manual group" materializes the current derived members via convertSmartGroupToManual', () => {
+      renderHeader({ group: smartGroup(), derivedMemberPaths: ['/a', '/b'] });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Convert to manual group'));
+      const calls = applyLatestUpdater();
+      expect(calls).toEqual([
+        { name: 'convertSmartGroupToManual', args: [PREV, 'g1', ['/a', '/b']] },
+      ]);
+    });
+
+    it('"Edit rules" opens the rule dialog prefilled from the group\'s current rules', () => {
+      renderHeader({
+        group: smartGroup(),
+        runtimeOptions: [{ value: 'codex', label: 'Codex' }],
+      });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Edit rules'));
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Edit rules' })).toBeInTheDocument();
+      // No "Name" field in edit mode — renaming lives in the header menu.
+      expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+      // Prefilled from the group's current rules.
+      expect(screen.getByRole('checkbox', { name: 'Codex' })).toBeChecked();
+    });
+
+    it('saving the "Edit rules" dialog commits via setGroupRules', () => {
+      renderHeader({
+        group: smartGroup(),
+        runtimeOptions: [{ value: 'codex', label: 'Codex' }],
+      });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Edit rules'));
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      const calls = applyLatestUpdater();
+      expect(calls).toEqual([
+        {
+          name: 'setGroupRules',
+          args: [PREV, 'g1', { runtimes: ['codex'], lastActiveWithinMs: 60 * 60 * 1000 }],
+        },
+      ]);
+    });
   });
 });

@@ -45,8 +45,13 @@ export interface SortableBindings {
   isOver: boolean;
 }
 
-/** Inert bindings used when the drag layer is disabled (no-op refs/handlers). */
-const DISABLED_BINDINGS: SortableBindings = {
+/**
+ * Inert bindings used when the drag layer is disabled (no-op refs/handlers).
+ * Also reused directly by callers that need a non-draggable row rendered
+ * WITHOUT a `Sortable` wrapper at all (smart-group member rows, DOR-338 —
+ * rule-owned membership is never draggable-out, drag layer or not).
+ */
+export const DISABLED_SORTABLE_BINDINGS: SortableBindings = {
   setNodeRef: () => {},
   handleProps: {},
   style: {},
@@ -114,7 +119,7 @@ function SortableInner({
  * tests without a `DndContext`.
  */
 export function Sortable({ id, data, children }: SortableProps) {
-  if (!useSidebarDndEnabled()) return <>{children(DISABLED_BINDINGS)}</>;
+  if (!useSidebarDndEnabled()) return <>{children(DISABLED_SORTABLE_BINDINGS)}</>;
   return <SortableInner id={id} data={data} render={children} />;
 }
 

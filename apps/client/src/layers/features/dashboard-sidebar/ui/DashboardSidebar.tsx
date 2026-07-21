@@ -12,6 +12,7 @@ import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
   createGroup,
+  createSmartGroup,
   moveToGroup,
   setGroupsHintDismissed,
 } from '@/layers/entities/config';
@@ -22,7 +23,9 @@ import {
   useRecentSessions,
   useAgentAttentionMap,
 } from '@/layers/entities/session';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
+import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
@@ -34,9 +37,23 @@ import { AgentGroupSection } from './AgentGroupSection';
 import { UngroupedSection } from './UngroupedSection';
 import { GroupCreateInput } from './GroupCreateInput';
 import { GroupsHintCard } from './GroupsHintCard';
+import { SmartGroupRuleDialog } from './SmartGroupRuleDialog';
 import { SidebarDnd } from './dnd/SidebarDnd';
-import { Sortable, SortableList, agentRowDndId, agentDndData } from './dnd/SidebarDndPrimitives';
+import {
+  Sortable,
+  SortableList,
+  agentRowDndId,
+  agentDndData,
+  DISABLED_SORTABLE_BINDINGS,
+} from './dnd/SidebarDndPrimitives';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
+import { evaluateSmartGroup, type SmartGroupCandidate } from '../model/evaluate-smart-group';
+import {
+  meetsSmartGroupDisclosureThreshold,
+  activeNowPreset,
+  byRuntimePresets,
+  type SmartGroupPreset,
+} from '../model/smart-group-presets';
 
 /**
  * Legacy localStorage key that held pinned agent paths before organization moved
@@ -121,6 +138,9 @@ export function DashboardSidebar() {
     [pinnedAgentPaths, knownSet]
   );
 
+  // Multi-presence is structural: smart groups' own `agentPaths` stays `[]`
+  // until a "Convert to manual group", so they never contribute here — a
+  // rule-matched agent still lives in its manual group / the ungrouped list.
   const groupedSet = useMemo(() => {
     const set = new Set<string>();
     for (const g of sidebarPrefs.groups) {
@@ -129,16 +149,71 @@ export function DashboardSidebar() {
     return set;
   }, [sidebarPrefs.groups, knownSet]);
 
+  // ── Smart groups (DOR-338): rule-derived membership, re-evaluated live ──
+  // Candidates are built ONCE per render from data the sidebar already holds;
+  // evaluation below is memoized on (groups, candidates) identity so unrelated
+  // store updates skip re-derivation (spec Performance Considerations).
+  const smartGroupCandidates = useMemo<SmartGroupCandidate[]>(
+    () =>
+      rawPaths.map((path) => ({
+        projectPath: path,
+        runtime: agents?.[path]?.runtime ?? 'claude-code',
+        namespace: agents?.[path]?.namespace ?? null,
+        attention: attentionMap[path] ?? 'inactive',
+        lastActivityAt: agentActivity[path] ? new Date(agentActivity[path]).getTime() : null,
+      })),
+    [rawPaths, agents, attentionMap, agentActivity]
+  );
+  const smartGroupMemberPaths = useMemo(() => {
+    const map = new Map<string, string[]>();
+    const now = Date.now();
+    for (const g of sidebarPrefs.groups) {
+      if (g.kind === 'smart' && g.rules) {
+        map.set(g.id, evaluateSmartGroup(g.rules, smartGroupCandidates, now));
+      }
+    }
+    return map;
+  }, [sidebarPrefs.groups, smartGroupCandidates]);
+
   const knownGroupMembers = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const g of sidebarPrefs.groups) {
       map.set(
         g.id,
-        g.agentPaths.filter((p) => knownSet.has(p))
+        g.kind === 'smart'
+          ? (smartGroupMemberPaths.get(g.id) ?? [])
+          : g.agentPaths.filter((p) => knownSet.has(p))
       );
     }
     return map;
-  }, [sidebarPrefs.groups, knownSet]);
+  }, [sidebarPrefs.groups, knownSet, smartGroupMemberPaths]);
+
+  // ── Smart-group create/edit chrome (DOR-338 spec §4-5) ──
+  const runtimeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const c of smartGroupCandidates) {
+      if (!seen.has(c.runtime)) seen.set(c.runtime, getRuntimeDescriptor(c.runtime).label);
+    }
+    return Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
+  }, [smartGroupCandidates]);
+  const namespaceOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of smartGroupCandidates) if (c.namespace) set.add(c.namespace);
+    return Array.from(set).sort();
+  }, [smartGroupCandidates]);
+  // "Small cockpits see zero new chrome" (spec §5) — the fork and its presets
+  // only appear once the fleet is large or varied enough to benefit.
+  const smartGroupsUnlocked = useMemo(
+    () => meetsSmartGroupDisclosureThreshold(smartGroupCandidates),
+    [smartGroupCandidates]
+  );
+  const smartGroupPresets = useMemo<SmartGroupPreset[]>(
+    () =>
+      smartGroupsUnlocked ? [activeNowPreset(), ...byRuntimePresets(smartGroupCandidates)] : [],
+    [smartGroupsUnlocked, smartGroupCandidates]
+  );
 
   // Pre-filter/pre-sort — UngroupedSection filters then sorts internally,
   // same order of operations as a group section (spec: sorting applies after
@@ -220,6 +295,21 @@ export function DashboardSidebar() {
     [updateSidebarPrefs]
   );
 
+  // ── Smart-group create flow (DOR-338) — presets create immediately; "Custom
+  // rules…" opens the same rule form the header's "Edit rules" reuses. ──
+  const [smartGroupDialogOpen, setSmartGroupDialogOpen] = useState(false);
+  const handleCreatePresetSmartGroup = useCallback(
+    (preset: SmartGroupPreset) =>
+      updateSidebarPrefs((prev) => createSmartGroup(prev, preset.label, preset.rules).next),
+    [updateSidebarPrefs]
+  );
+  const handleOpenSmartGroupDialog = useCallback(() => setSmartGroupDialogOpen(true), []);
+  const handleSubmitSmartGroupDialog = useCallback(
+    ({ name, rules }: { name: string; rules: SmartGroupRules }) =>
+      updateSidebarPrefs((prev) => createSmartGroup(prev, name, rules).next),
+    [updateSidebarPrefs]
+  );
+
   // ── Handlers ──
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
@@ -292,38 +382,47 @@ export function DashboardSidebar() {
   );
 
   // ── Shared agent-row renderer (keeps section components lean; keyPrefix lets a
-  // pinned reference coexist with its home copy) ──
+  // pinned reference coexist with its home copy). `draggable: false` renders
+  // the row without a `Sortable` wrapper at all — smart-group members
+  // (DOR-338) are rule-owned, never a drag source. ──
   const renderAgentRow = useCallback(
-    (path: string, keyPrefix: string): ReactNode => {
+    (path: string, keyPrefix: string, options?: { draggable?: boolean }): ReactNode => {
       const isActive = selectedCwd === path && pathname === '/session';
+      const itemProps = {
+        path,
+        agent: agents?.[path] ?? null,
+        displayName: displayNamesRecord[path],
+        isActive,
+        isExpanded: expandedPath === path,
+        isMuted: effectiveMutedForRender.has(path),
+        onSelect: () => handleSelectAgent(path),
+        onToggleExpand: () => handleToggleExpand(path),
+        onOpenProfile: () => handleOpenProfile(path),
+        onRequestNewGroup: handleRequestNewGroup,
+        sessions: isActive ? previewSessions : [],
+        isLoadingSessions: isActive && sessionsLoading,
+        activeSessionId,
+        onSessionClick: handleSessionClick,
+        onNewSession: () => handleNewSession(path),
+        onForkSession: handleForkSession,
+        onRenameSession: handleRenameSession,
+      };
+      if (options?.draggable === false) {
+        return (
+          <AgentListItem
+            key={`${keyPrefix}-${path}`}
+            {...itemProps}
+            sortable={DISABLED_SORTABLE_BINDINGS}
+          />
+        );
+      }
       return (
         <Sortable
           key={`${keyPrefix}-${path}`}
           id={agentRowDndId(keyPrefix, path)}
           data={agentDndData(keyPrefix, path)}
         >
-          {(bindings) => (
-            <AgentListItem
-              path={path}
-              agent={agents?.[path] ?? null}
-              displayName={displayNamesRecord[path]}
-              isActive={isActive}
-              isExpanded={expandedPath === path}
-              isMuted={effectiveMutedForRender.has(path)}
-              onSelect={() => handleSelectAgent(path)}
-              onToggleExpand={() => handleToggleExpand(path)}
-              onOpenProfile={() => handleOpenProfile(path)}
-              onRequestNewGroup={handleRequestNewGroup}
-              sessions={isActive ? previewSessions : []}
-              isLoadingSessions={isActive && sessionsLoading}
-              activeSessionId={activeSessionId}
-              onSessionClick={handleSessionClick}
-              onNewSession={() => handleNewSession(path)}
-              onForkSession={handleForkSession}
-              onRenameSession={handleRenameSession}
-              sortable={bindings}
-            />
-          )}
+          {(bindings) => <AgentListItem {...itemProps} sortable={bindings} />}
         </Sortable>
       );
     },
@@ -389,6 +488,8 @@ export function DashboardSidebar() {
                     attention={attentionMap}
                     mutedPaths={mutedPathsSet}
                     renderRow={renderAgentRow}
+                    runtimeOptions={runtimeOptions}
+                    namespaceOptions={namespaceOptions}
                   />
                 </motion.div>
               ))}
@@ -425,8 +526,20 @@ export function DashboardSidebar() {
             mutedPaths={mutedPathsSet}
             renderRow={renderAgentRow}
             onNewGroup={() => handleRequestNewGroup()}
+            smartGroupPresets={smartGroupPresets}
+            onCreatePresetSmartGroup={handleCreatePresetSmartGroup}
+            onOpenSmartGroupDialog={handleOpenSmartGroupDialog}
           />
         </SidebarDnd>
+
+        <SmartGroupRuleDialog
+          open={smartGroupDialogOpen}
+          onOpenChange={setSmartGroupDialogOpen}
+          mode="create"
+          runtimeOptions={runtimeOptions}
+          namespaceOptions={namespaceOptions}
+          onSubmit={handleSubmitSmartGroupDialog}
+        />
 
         <AnimatePresence>
           {showGroupsHint && (
