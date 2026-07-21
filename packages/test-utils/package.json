@@ -13,7 +13,8 @@
     "./sse-test-helpers": "./src/sse-test-helpers.ts"
   },
   "scripts": {
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@dorkos/db": "workspace:*",

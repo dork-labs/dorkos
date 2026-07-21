@@ -13,6 +13,7 @@ export default defineConfig({
       'packages/mesh',
       'packages/relay',
       'packages/shared',
+      'packages/test-utils',
     ],
   },
 });

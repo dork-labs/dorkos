@@ -61,6 +61,10 @@
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
     },
+    "./connector-provider": {
+      "types": "./src/connector-provider.ts",
+      "default": "./dist/connector-provider.js"
+    },
     "./command-intents": {
       "types": "./src/command-intents.ts",
       "default": "./dist/command-intents.js"
