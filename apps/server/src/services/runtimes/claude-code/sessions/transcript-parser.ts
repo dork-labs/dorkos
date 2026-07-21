@@ -44,6 +44,12 @@ export interface TranscriptLine {
   /** Marks the post-compaction continuation summary user record (SDK `isCompactSummary`). */
   isCompactSummary?: boolean;
   /**
+   * Marks a subagent/sidechain record — a Task-tool subagent's own turn, not
+   * the parent session's conversation. Absent or `false` on the parent
+   * session's own `user`/`assistant` records.
+   */
+  isSidechain?: boolean;
+  /**
    * Compaction metadata on a `system`/`compact_boundary` record (SDK
    * `compactMetadata`, already camelCase on disk). Only the token/trigger fields
    * are consumed here; `preservedSegment`/`preservedMessages` are ignored.
