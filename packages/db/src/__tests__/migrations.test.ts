@@ -40,6 +40,9 @@ describe('Database Migrations', () => {
       'agents',
       'apikey',
       'codex_threads',
+      // Derived cache binding a ConnectedAccountId → owning connector provider
+      // (connector-gateway spec §Detailed Design 2, migration 0029).
+      'connected_accounts',
       'mesh_namespace_rules',
       // Durable DorkOS-id <-> OpenCode-session-id bindings so OpenCode
       // session ids survive a server restart (DOR-251, migration 0027).

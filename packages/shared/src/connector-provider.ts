@@ -224,3 +224,41 @@ export interface ConnectorProvider {
    */
   toolServerForAccount(accountId: ConnectedAccountId): Promise<McpAppServerConnection | null>;
 }
+
+/**
+ * How a service should be connected, in precedence order — the output kind of
+ * `recommendConnector` (spec §Detailed Design 5).
+ *
+ * - `relay-adapter` — a purpose-built relay adapter exists for this service
+ *   (bidirectional messaging + consent binding); the richest option.
+ * - `gateway` — a {@link ConnectorProvider} gateway backend (Composio managed /
+ *   Nango self-host) that lists the service as a toolkit.
+ * - `raw-mcp` — a known remote MCP server for this service (single-account
+ *   baseline).
+ */
+export const ConnectorRecommendationKindSchema = z.enum(['relay-adapter', 'gateway', 'raw-mcp']);
+/** How a service should be connected. See {@link ConnectorRecommendationKindSchema}. */
+export type ConnectorRecommendationKind = z.infer<typeof ConnectorRecommendationKindSchema>;
+
+/**
+ * One ranked way to connect a service — the routing surface the "Connect to
+ * Slack" (relay-adapter-first) and "Connect to my Gmail" (gateway) W4 evals
+ * assert against. `recommendConnector` returns these sorted ascending by
+ * `rank` (0 = best).
+ */
+export const ConnectorRecommendationSchema = z.object({
+  /** Which mechanism this recommendation routes to. */
+  kind: ConnectorRecommendationKindSchema,
+  /** Service slug this recommendation is for, e.g. `'slack' | 'gmail'`. */
+  target: z.string(),
+  /** Relay adapter type, or `'composio' | 'nango'` for a gateway; absent for raw-mcp. */
+  provider: z.string().optional(),
+  /** Sort key — `0` is best; recommendations are returned ascending. */
+  rank: z.number().int().nonnegative(),
+  /** Plain-language "why this one", shown in the connect picker. */
+  reason: z.string(),
+  /** Custody stance, present for `gateway`/`raw-mcp` so the picker can disclose before connect. */
+  custody: ConnectorCustodySchema.optional(),
+});
+/** One ranked way to connect a service. See {@link ConnectorRecommendationSchema}. */
+export type ConnectorRecommendation = z.infer<typeof ConnectorRecommendationSchema>;

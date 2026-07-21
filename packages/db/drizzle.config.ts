@@ -13,6 +13,7 @@ export default defineConfig({
     './src/schema/session-events.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
+    './src/schema/connected-accounts.ts',
   ],
   out: './drizzle',
   dialect: 'sqlite',

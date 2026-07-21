@@ -10220,6 +10220,496 @@
           }
         }
       }
+    },
+    "/api/connectors/toolkits": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "List connectable services (aggregated across providers)",
+        "description": "Aggregates `listToolkits()` across every registered connector provider, deduped by slug, degrading one unreachable provider to a `warnings[]` entry (ADR-0310).",
+        "responses": {
+          "200": {
+            "description": "Connectable services plus per-provider degradation warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "toolkits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2",
+                              "api-key",
+                              "none"
+                            ]
+                          },
+                          "maxAccountsPerUser": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "displayName",
+                          "authKind"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "message"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "toolkits",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/recommend": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Recommend how to connect a service (relay-adapter > gateway > raw-mcp)",
+        "description": "Returns ranked recommendations for a service, best first: a purpose-built relay adapter (rank 0) outranks a gateway backend (rank 1), which outranks a raw-MCP baseline (rank 2). This is the routing surface the \"Connect to Slack\" and \"Connect to my Gmail\" evals assert against.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "service",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked connector recommendations (ascending by rank) plus degradation warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recommendations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "relay-adapter",
+                              "gateway",
+                              "raw-mcp"
+                            ]
+                          },
+                          "target": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "rank": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "custody": {
+                            "type": "string",
+                            "enum": [
+                              "managed",
+                              "self-host",
+                              "external"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "target",
+                          "rank",
+                          "reason"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "message"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "recommendations",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing service query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/{provider}/connect": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Begin a connect flow for a toolkit",
+        "description": "Starts an OAuth/connect flow on the named provider and returns a consent URL plus a pollable flow id. Secrets stay server-side — the response is reference-shaped.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "toolkit": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "toolkit"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connect started; carries the authorize URL and a pollable flow id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizeUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "flowId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "authorizeUrl",
+                    "flowId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, unknown toolkit, or a duplicate single-account connect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connector provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/flows/{flowId}": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Poll a connect flow to completion",
+        "description": "Polls an in-flight connect flow. Failure is typed on the result (`status: \"failed\"`), never thrown. On `connected`, the new account is bound to its owning provider for later routing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "flowId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pollable connect state (pending | connected | failed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "connected",
+                        "failed"
+                      ]
+                    },
+                    "account": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "toolkit": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "pending"
+                          ]
+                        },
+                        "custody": {
+                          "type": "string",
+                          "enum": [
+                            "managed",
+                            "self-host",
+                            "external"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "provider",
+                        "toolkit",
+                        "label",
+                        "status",
+                        "custody"
+                      ]
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connect flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/accounts": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "List connected accounts (aggregated, provider stripped)",
+        "description": "Aggregates connected accounts across providers with per-provider degradation. The server-only `provider` field is stripped and no connection details ever reach the client (spec §Security).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "toolkit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connected accounts (provider stripped) plus degradation warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "toolkit": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked",
+                              "pending"
+                            ]
+                          },
+                          "custody": {
+                            "type": "string",
+                            "enum": [
+                              "managed",
+                              "self-host",
+                              "external"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "toolkit",
+                          "label",
+                          "status",
+                          "custody"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "message"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "accounts",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/accounts/{accountId}": {
+      "delete": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Disconnect an account (idempotent)",
+        "description": "Revokes the account at its owning provider and clears its routing binding. Idempotent — disconnecting an unknown or already-removed id still resolves 204.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account disconnected (or already absent)"
+          }
+        }
+      }
     }
   },
   "webhooks": {}
