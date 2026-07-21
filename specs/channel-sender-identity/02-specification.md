@@ -45,7 +45,7 @@ None new. Existing: `StandardPayloadSchema` (`packages/shared/src/relay-envelope
 
 1. **`extractSenderIdentity(payload: unknown): { sender?: string; chat?: string }`** — new exported helper in `packages/relay/src/lib/payload-utils.ts`:
    - Safe-parses the identity subset off an arbitrary payload (`senderName`, `channelName` as optional strings; non-object / non-string values → absent).
-   - **Sanitizes each value**: strip CR/LF and other control characters, collapse runs of whitespace to single spaces, trim, cap at 80 chars; empty-after-sanitize → absent.
+   - **Sanitizes each value**: strip CR/LF and other control characters (C0, C1, DEL) plus the angle brackets that could forge relay_context tags, collapse runs of whitespace to single spaces, trim, cap at 80 chars; empty-after-sanitize → absent.
    - Sender value equal to `unknown` (case-insensitive; the adapters' fallback constant) → absent (decision 6: "Telegram · unknown" is worse than "Telegram").
 2. **`formatPromptWithContext`** (`agent-handler.ts`): call `extractSenderIdentity(envelope.payload)`; when `sender` is present, insert `Sender: <sender>` immediately after the `From:` line; when `chat` is present, insert `Chat: <chat>` after that. No identity → format unchanged (byte-identical for agent-to-agent traffic).
 
