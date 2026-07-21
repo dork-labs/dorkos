@@ -35,6 +35,10 @@ vi.mock('@/layers/entities/config', () => ({
     helperCalls.push({ name: 'setGroupCollapsed', args });
     return args[0];
   },
+  setGroupDisplayFilter: (...args: unknown[]) => {
+    helperCalls.push({ name: 'setGroupDisplayFilter', args });
+    return args[0];
+  },
 }));
 
 beforeAll(() => {
@@ -173,6 +177,19 @@ describe('GroupHeader', () => {
     expect(calls).toEqual([{ name: 'setGroupSortMode', args: [PREV, 'g1', 'recent'] }]);
   });
 
+  // --- Show (display filter) ---
+
+  it('Show radio calls setGroupDisplayFilter with the chosen value', () => {
+    renderHeader({ group: makeGroup({ displayFilter: 'all' }) });
+    openContextMenu();
+    const subTrigger = screen.getByText('Show');
+    fireEvent.keyDown(subTrigger, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByText('Needs attention'));
+
+    const calls = applyLatestUpdater();
+    expect(calls).toEqual([{ name: 'setGroupDisplayFilter', args: [PREV, 'g1', 'attention'] }]);
+  });
+
   // --- Delete ---
 
   it('deletes an empty group immediately without a dialog', () => {
@@ -219,7 +236,7 @@ describe('GroupHeader', () => {
     renderHeader();
     // Context menu items
     openContextMenu();
-    for (const label of ['Rename', 'Sort by', 'Delete group']) {
+    for (const label of ['Rename', 'Show', 'Sort by', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -227,7 +244,7 @@ describe('GroupHeader', () => {
     // "…" dropdown items
     fireEvent.pointerDown(screen.getByLabelText('Clients group actions'));
     fireEvent.click(screen.getByLabelText('Clients group actions'));
-    for (const label of ['Rename', 'Sort by', 'Delete group']) {
+    for (const label of ['Rename', 'Show', 'Sort by', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });

@@ -76,6 +76,7 @@ export type { SessionContextHealth } from './model/use-session-context-health';
 export { useFleetContextRollup } from './model/use-fleet-context-rollup';
 export type { FleetContextRollup } from './model/use-fleet-context-rollup';
 export { useAgentsAggregateStatus } from './model/use-agents-aggregate-status';
+export type { UseAgentsAggregateStatusOptions } from './model/use-agents-aggregate-status';
 export { usePulseMotion } from './model/use-pulse-motion';
 // Attention-signal model (DOR-339) — single source of per-agent "does this
 // need my eyes?" truth for filters, reveal rows, rollup dots, and mute.

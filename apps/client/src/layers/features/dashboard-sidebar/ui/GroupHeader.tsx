@@ -45,8 +45,10 @@ import {
   deleteGroup,
   setGroupSortMode,
   setGroupCollapsed,
+  setGroupDisplayFilter,
 } from '@/layers/entities/config';
 import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
+import { renderDisplayFilterSubmenu } from './DisplayFilterMenu';
 
 /** Maximum group-name length (matches `SidebarGroupSchema.name`). */
 const MAX_NAME = 40;
@@ -173,6 +175,10 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
 
   const setSort = (mode: string) =>
     update((prev) => setGroupSortMode(prev, group.id, mode as SidebarGroup['sortMode']));
+  const setFilter = (filter: string) =>
+    update((prev) =>
+      setGroupDisplayFilter(prev, group.id, filter as SidebarGroup['displayFilter'])
+    );
 
   const renderMenu = (slots: GroupMenuSlots): ReactNode => {
     const { Item, Separator, Sub, SubTrigger, SubContent, RadioGroup, RadioItem } = slots;
@@ -182,6 +188,7 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
           <Pencil className="mr-2 size-4" />
           Rename
         </Item>
+        {renderDisplayFilterSubmenu(slots, group.displayFilter, setFilter)}
         <Sub>
           <SubTrigger>
             <ArrowUpDown className="mr-2 size-4" />

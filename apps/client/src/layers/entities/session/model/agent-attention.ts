@@ -142,6 +142,7 @@ export function useAgentAttentionMap(paths: string[]): Record<string, AttentionS
   return useMemo(() => {
     const pathList = key.length === 0 ? [] : key.split('\n');
     const liveFolded = foldLiveKindsByPath(statusCwds, statuses, new Set(pathList));
+    // eslint-disable-next-line react-hooks/purity -- Date.now() is intentional for recency-threshold classification
     const now = Date.now();
     const result: Record<string, AttentionState> = {};
     for (const path of pathList) {

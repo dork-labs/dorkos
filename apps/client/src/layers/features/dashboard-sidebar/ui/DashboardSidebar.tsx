@@ -16,7 +16,12 @@ import {
   setGroupsHintDismissed,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useAgentSessions, useRenameSession, useRecentSessions } from '@/layers/entities/session';
+import {
+  useAgentSessions,
+  useRenameSession,
+  useRecentSessions,
+  useAgentAttentionMap,
+} from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
@@ -31,7 +36,6 @@ import { GroupCreateInput } from './GroupCreateInput';
 import { GroupsHintCard } from './GroupsHintCard';
 import { SidebarDnd } from './dnd/SidebarDnd';
 import { Sortable, SortableList, agentRowDndId, agentDndData } from './dnd/SidebarDndPrimitives';
-import { sortAgentPaths } from '../model/sort-agents';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 
 /**
@@ -90,6 +94,12 @@ export function DashboardSidebar() {
     [displayNamesRecord, agentActivity]
   );
 
+  // ── Attention + mute (DOR-339): one attention-map subscription for the whole
+  // sidebar, and the individually-muted path set every section's filter and
+  // every row's rendering reads. ──
+  const attentionMap = useAgentAttentionMap(rawPaths);
+  const mutedPathsSet = useMemo(() => new Set(sidebarPrefs.muted), [sidebarPrefs.muted]);
+
   // ── Membership maps (stale paths filtered at render, never pruned on write) ──
   const knownSet = useMemo(() => new Set(rawPaths), [rawPaths]);
 
@@ -117,14 +127,12 @@ export function DashboardSidebar() {
     return map;
   }, [sidebarPrefs.groups, knownSet]);
 
-  const ungroupedPaths = useMemo(
-    () =>
-      sortAgentPaths(
-        rawPaths.filter((p) => !groupedSet.has(p)),
-        sidebarPrefs.ungroupedSortMode,
-        sortCtx
-      ),
-    [rawPaths, groupedSet, sidebarPrefs.ungroupedSortMode, sortCtx]
+  // Pre-filter/pre-sort — UngroupedSection filters then sorts internally,
+  // same order of operations as a group section (spec: sorting applies after
+  // filtering).
+  const ungroupedRawPaths = useMemo(
+    () => rawPaths.filter((p) => !groupedSet.has(p)),
+    [rawPaths, groupedSet]
   );
 
   const agentCount = rawPaths.length;
@@ -363,6 +371,8 @@ export function DashboardSidebar() {
                     group={group}
                     memberPaths={knownGroupMembers.get(group.id) ?? []}
                     sortCtx={sortCtx}
+                    attention={attentionMap}
+                    mutedPaths={mutedPathsSet}
                     renderRow={renderAgentRow}
                   />
                 </motion.div>
@@ -391,8 +401,13 @@ export function DashboardSidebar() {
           </AnimatePresence>
 
           <UngroupedSection
-            paths={ungroupedPaths}
+            paths={ungroupedRawPaths}
             organized={organized}
+            sortMode={sidebarPrefs.ungroupedSortMode}
+            filter={sidebarPrefs.ungroupedDisplayFilter}
+            sortCtx={sortCtx}
+            attention={attentionMap}
+            mutedPaths={mutedPathsSet}
             renderRow={renderAgentRow}
             onNewGroup={() => handleRequestNewGroup()}
           />
