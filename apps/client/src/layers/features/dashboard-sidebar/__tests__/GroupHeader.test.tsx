@@ -72,6 +72,7 @@ function makeGroup(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
     collapsed: false,
     displayFilter: 'all',
     muted: false,
+    kind: 'manual',
     ...overrides,
   };
 }
