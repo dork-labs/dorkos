@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { SessionEvent, SessionListEvent } from '@dorkos/shared/session-stream';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
+import { createTestDb } from '@dorkos/test-utils/db';
 import {
   disposeProjector,
   getOrCreateProjector,
 } from '../../../session/session-state-projector.js';
+import { SessionEventStore, setSessionEventStore } from '../../../session/index.js';
 import { triggerTurn } from '../../../session/trigger-turn.js';
 import { scenarioStore } from '../scenario-store.js';
 import { TEST_MODE_CAPABILITIES } from '../runtime-constants.js';
@@ -223,6 +225,34 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     expect(snap.messages).toEqual([]);
     expect(snap.cursor).toBe(0);
     expect(await runtime.listSessions('/projects/test')).toEqual([]);
+  });
+
+  it('resetTrackedSessions also clears the DURABLE store — a reused id reads empty from SQLite', async () => {
+    // The e2e regression (DOR-334): with a durable SessionEventStore wired,
+    // completed turns are flushed to SQLite and `getMessageHistory` reads it
+    // FIRST. A reset that disposed only the in-memory projector left those rows,
+    // so a reused id resurrected pre-reset history straight from the store.
+    const store = new SessionEventStore(createTestDb());
+    setSessionEventStore(store);
+    try {
+      const runtime = new TestModeRuntime();
+      // Opt the projector into persistence (the real trigger path does this for
+      // log-backed runtimes) so the turn flushes to the durable store.
+      getOrCreateProjector(SESSION_A, CTX.cwd, { persist: true });
+      await runTurn(runtime, SESSION_A, 'before reset');
+
+      // The turn landed in the durable store, and history reads it back.
+      expect(store.readAll(SESSION_A).length).toBeGreaterThan(0);
+      expect(await runtime.getMessageHistory('/projects/test', SESSION_A)).not.toEqual([]);
+
+      runtime.resetTrackedSessions();
+
+      // Both tiers are clear: the SQLite rows are gone AND the reused id reads empty.
+      expect(store.readAll(SESSION_A)).toEqual([]);
+      expect(await runtime.getMessageHistory('/projects/test', SESSION_A)).toEqual([]);
+    } finally {
+      setSessionEventStore(undefined);
+    }
   });
 
   it('updateSession patches tracked metadata and is reflected in the next upsert', async () => {
