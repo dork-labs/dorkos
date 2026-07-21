@@ -377,21 +377,43 @@ export class PackageFetcher {
    */
   private async readLocalMarketplaceJson(source: MarketplaceSource): Promise<MarketplaceJson> {
     const root = fileUrlToPath(source.source);
-    const manifestPath = path.join(root, 'marketplace.json');
-    let raw: string;
-    try {
-      raw = await readFile(manifestPath, 'utf-8');
-    } catch (err) {
-      throw new Error(
-        `Failed to read local marketplace at ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
+    const raw = await this.readLocalMarketplaceJsonRaw(root);
     const parsed = parseMarketplaceJson(raw);
     if (!parsed.ok) {
       throw new Error(parsed.error);
     }
     await this.cache.writeMarketplace(source.name, parsed.marketplace);
     return parsed.marketplace;
+  }
+
+  /**
+   * Read the raw `marketplace.json` text for a local marketplace root,
+   * trying the repo-root layout first and falling back to the Claude Code
+   * standard `.claude-plugin/marketplace.json` layout used by registries
+   * like `dork-labs/marketplace`. The root file wins when both exist, so
+   * this mirrors {@link resolveMarketplaceJsonUrl}'s remote precedent —
+   * `.claude-plugin/marketplace.json` is the canonical location, root
+   * `marketplace.json` is the legacy/override path.
+   *
+   * @param root - Absolute filesystem path of the marketplace source root.
+   * @throws Error naming both attempted paths when neither is readable.
+   */
+  private async readLocalMarketplaceJsonRaw(root: string): Promise<string> {
+    const rootPath = path.join(root, 'marketplace.json');
+    const claudePluginPath = path.join(root, '.claude-plugin', 'marketplace.json');
+    try {
+      return await readFile(rootPath, 'utf-8');
+    } catch (rootErr) {
+      try {
+        return await readFile(claudePluginPath, 'utf-8');
+      } catch {
+        throw new Error(
+          `Failed to read local marketplace at ${rootPath} or ${claudePluginPath}: ${
+            rootErr instanceof Error ? rootErr.message : String(rootErr)
+          }`
+        );
+      }
+    }
   }
 
   /**
