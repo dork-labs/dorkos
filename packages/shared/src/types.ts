@@ -9,6 +9,7 @@
 export type {
   PermissionMode,
   Session,
+  SessionOrigin,
   SessionListWarning,
   SessionListResponse,
   RecentSessionsQuery,
