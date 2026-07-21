@@ -12,6 +12,12 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
+// Mock the reduced-motion hook — same pattern as BindingEdge.test.tsx.
+const mockUsePrefersReducedMotion = vi.fn(() => false);
+vi.mock('../../lib/use-reduced-motion', () => ({
+  usePrefersReducedMotion: () => mockUsePrefersReducedMotion(),
+}));
+
 import { useRelayFlowSubscription } from '../use-relay-flow-subscription';
 import { useEventSubscription } from '@/layers/shared/model';
 import { useRelayFlowStore } from '../relay-flow-store';
@@ -19,6 +25,7 @@ import { useRelayFlowStore } from '../relay-flow-store';
 beforeEach(() => {
   vi.clearAllMocks();
   useRelayFlowStore.setState({ activity: {} });
+  mockUsePrefersReducedMotion.mockReturnValue(false);
 });
 
 afterEach(cleanup);
@@ -72,6 +79,18 @@ describe('useRelayFlowSubscription', () => {
     // Purpose: the relay-off gate holds even if a stray event arrives.
     const dispatch = captureHandler();
     renderHook(() => useRelayFlowSubscription(false));
+
+    dispatch(VALID_FLOW_EVENT);
+
+    expect(useRelayFlowStore.getState().activity).toEqual({});
+  });
+
+  it('does not write to the store when reduced-motion is preferred, even with a valid payload and enabled=true', () => {
+    // Purpose: an entry that will never animate must never be written, so it
+    // can never accumulate and replay as a flurry once reduced-motion is off.
+    mockUsePrefersReducedMotion.mockReturnValue(true);
+    const dispatch = captureHandler();
+    renderHook(() => useRelayFlowSubscription(true));
 
     dispatch(VALID_FLOW_EVENT);
 

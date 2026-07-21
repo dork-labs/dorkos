@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -76,6 +76,17 @@ function BindingEdgeInner({
   const clear = useRelayFlowStore((s) => s.clear);
   const prefersReduced = usePrefersReducedMotion();
   const showPulse = !!activity && !prefersReduced && zoom >= PULSE_MIN_ZOOM;
+
+  // A pulse this edge declines to animate (zoomed out below the LOD
+  // threshold, or the edge remounting into view after having been
+  // viewport-culled) must not linger in the store — otherwise it survives
+  // until conditions change and every suppressed edge replays at once, a
+  // flurry instead of the live signal it was meant to be. `clear` here is
+  // idempotent (a no-op once the entry is gone), so this never races the
+  // in-flight animation's own `onAnimationComplete` cleanup.
+  useEffect(() => {
+    if (activity && !showPulse) clear(id);
+  }, [activity, showPulse, clear, id]);
 
   function handleDelete(e: React.MouseEvent) {
     e.stopPropagation();

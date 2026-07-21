@@ -428,9 +428,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getMeshTopology: vi
       .fn()
       .mockResolvedValue({ callerNamespace: '*', namespaces: [], accessRules: [] }),
-    updateMeshAccessRule: vi
-      .fn()
-      .mockResolvedValue({ sourceNamespace: '', targetNamespace: '', action: 'allow' }),
+    updateMeshAccessRule: vi.fn().mockResolvedValue({
+      sourceNamespace: '',
+      targetNamespace: '',
+      action: 'allow',
+      origin: 'explicit',
+    }),
     getMeshAgentAccess: vi.fn().mockResolvedValue({ agents: [] }),
     // Agent Identity
     getAgentByPath: vi.fn().mockResolvedValue(null),

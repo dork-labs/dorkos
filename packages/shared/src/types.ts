@@ -33,7 +33,6 @@ export type {
   ErrorCategory,
   ErrorEvent,
   ErrorPart,
-  RateLimitEvent,
   DoneEvent,
   SessionStatusEvent,
   TerminalReason,

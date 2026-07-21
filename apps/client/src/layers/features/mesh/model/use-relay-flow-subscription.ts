@@ -13,6 +13,7 @@
 import { useEventSubscription } from '@/layers/shared/model';
 import { RelayFlowEventSchema } from '@dorkos/shared/relay-schemas';
 import { useRelayFlowStore } from './relay-flow-store';
+import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
 
 /**
  * Subscribe to `relay_flow` and pulse the corresponding edge. Mount once for
@@ -20,15 +21,19 @@ import { useRelayFlowStore } from './relay-flow-store';
  *
  * @param enabled - Gate on the caller's `relayEnabled` flag. When false, no
  *   store writes happen — the store stays empty, degrading to nothing when
- *   relay is off. The subscription itself is not gated on reduced-motion;
- *   the store write is cheap and the render decision belongs to
- *   `BindingEdge`, keeping that gate in one place.
+ *   relay is off. Also gated on reduced-motion: while the user prefers
+ *   reduced motion, a pulse will never render, so it is never written
+ *   either — an entry with nowhere to render is an entry that can only sit
+ *   in the store until reduced-motion is turned off, at which point every
+ *   accumulated edge would replay at once. The zoom/LOD gate stays in
+ *   `BindingEdge` (this hook has no per-edge zoom to check against).
  */
 export function useRelayFlowSubscription(enabled: boolean): void {
   const pulse = useRelayFlowStore((s) => s.pulse);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEventSubscription('relay_flow', (raw) => {
-    if (!enabled) return;
+    if (!enabled || prefersReducedMotion) return;
     const parsed = RelayFlowEventSchema.safeParse(raw);
     if (!parsed.success) return;
     const { bindingId, direction } = parsed.data;

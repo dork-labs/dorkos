@@ -213,8 +213,12 @@ export function buildTopologyElements(
     }
   }
 
-  // Cross-namespace edges connect between group nodes.
-  for (const rule of accessRules) {
+  // Cross-namespace edges connect between group nodes. Bridge-written default
+  // rules (DOR-336) are self-referencing (ns -> ns) or use the '*' catch-all
+  // target sentinel — neither maps to a real group-to-group edge, so the graph
+  // only visualizes explicit grants a user configured.
+  const explicitRules = accessRules.filter((rule) => rule.origin !== 'default');
+  for (const rule of explicitRules) {
     const sourceId = useGroups
       ? `group:${rule.sourceNamespace}`
       : (namespaces[0]?.agents[0]?.id ?? '');

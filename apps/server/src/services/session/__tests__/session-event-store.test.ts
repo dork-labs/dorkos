@@ -46,6 +46,22 @@ describe('SessionEventStore', () => {
     expect(store.readAll('unknown')).toEqual([]);
   });
 
+  it('deleteSession wipes one session and leaves others intact', () => {
+    store.appendTurn('s1', turn(1, 'a'));
+    store.appendTurn('s2', turn(1, 'b'));
+
+    store.deleteSession('s1');
+
+    expect(store.readAll('s1')).toEqual([]);
+    expect(store.maxSeq('s1')).toBe(0);
+    // Sibling session is untouched.
+    expect(store.readAll('s2')).toHaveLength(3);
+  });
+
+  it('deleteSession on an unknown session is a no-op', () => {
+    expect(() => store.deleteSession('never-seen')).not.toThrow();
+  });
+
   it('appendTurn is idempotent — a re-flush of the same seqs inserts no duplicates', () => {
     const t = turn(1, 'once');
     store.appendTurn('s1', t);

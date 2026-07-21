@@ -18,7 +18,7 @@ import { AgentContextMenu } from './AgentContextMenu';
 import { AgentRowMenuItems } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
 import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
-import type { SortableBindings } from './SidebarDndPrimitives';
+import type { SortableBindings } from './dnd/SidebarDndPrimitives';
 
 /** Maximum sessions shown in the expanded agent preview. */
 const MAX_PREVIEW_SESSIONS = 3;

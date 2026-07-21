@@ -58,9 +58,6 @@ describe('mapResultEvent — rate_limit_event usage projection', () => {
       )
     );
 
-    // Still emits the rate_limit event for the strip countdown.
-    expect(events.some((e) => e.type === 'rate_limit')).toBe(true);
-
     const usage = usageOf(events);
     expect(UsageStatusSchema.parse(usage)).toMatchObject({
       kind: 'subscription',

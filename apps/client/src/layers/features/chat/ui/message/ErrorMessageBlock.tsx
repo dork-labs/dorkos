@@ -65,6 +65,7 @@ export function ErrorMessageBlock({
 
   return (
     <div
+      data-testid="error-message-block"
       className={cn(
         'my-2 rounded-lg border px-4 py-3',
         'border-destructive/30 bg-destructive/5 text-foreground'

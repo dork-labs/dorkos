@@ -189,9 +189,27 @@ export const MessageListQuerySchema = z
 
 export type MessageListQuery = z.infer<typeof MessageListQuerySchema>;
 
+/**
+ * Inbox status filter values, keyed to the real message status enum
+ * (`pending` | `delivered` | `failed`) plus `all` to opt out of filtering
+ * entirely.
+ */
+export const InboxStatusFilterSchema = z
+  .enum(['pending', 'delivered', 'failed', 'all'])
+  .openapi('InboxStatusFilter');
+
+export type InboxStatusFilter = z.infer<typeof InboxStatusFilterSchema>;
+
 export const InboxQuerySchema = z
   .object({
-    status: z.enum(['new', 'cur', 'failed']).optional(),
+    status: InboxStatusFilterSchema.default('pending').openapi({
+      description:
+        'Filter messages by status. Defaults to "pending" (deliverable, unread messages) so ' +
+        'budget-rejected failures never surface silently next to real deliverables. Pass ' +
+        '"failed" to see budget-rejected/dead-lettered messages, "delivered" for already-read ' +
+        'ones (metadata only — the payload is removed once a message completes), or "all" for ' +
+        'every status.',
+    }),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
   })

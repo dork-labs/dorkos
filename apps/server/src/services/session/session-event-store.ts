@@ -116,6 +116,20 @@ export class SessionEventStore {
   }
 
   /**
+   * Delete every persisted row for a session — the durable half of a full
+   * session teardown. Pairs with `disposeProjector` on the `/api/test/reset`
+   * control path: disposing the in-memory projector alone leaves these rows, so
+   * a reused id would resurrect pre-reset history straight from SQLite
+   * ({@link SessionEventStore.readAll} is the log-backed history source). A
+   * no-op when the session has no rows.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  deleteSession(sessionId: string): void {
+    this.db.delete(sessionEvents).where(eq(sessionEvents.sessionId, sessionId)).run();
+  }
+
+  /**
    * The highest persisted `seq` for a session, or `0` when none — restores the
    * projector's monotonic counter on hydration so the next `ingest` continues
    * where the pre-restart stream left off and `turn_start`-derived message ids
