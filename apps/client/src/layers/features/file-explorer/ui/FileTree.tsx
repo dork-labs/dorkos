@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FileEntry } from '@dorkos/shared/types';
-import { parentOf } from '../model/tree-reducer';
+import { parentOf } from '../model/tree';
 import type { FlatRow } from '../model/types';
 import { FileTreeRow } from './FileTreeRow';
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { baseName, parentOf } from './tree-reducer';
+import { baseName, parentOf } from './tree';
 import {
   emptyExplorerEntry,
   readExplorerEntry,

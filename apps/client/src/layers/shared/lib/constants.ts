@@ -109,6 +109,10 @@ export const QUERY_TIMING = {
   FILES_STALE_TIME_MS: 5 * 60 * 1000,
   /** File list garbage collection time (ms). */
   FILES_GC_TIME_MS: 30 * 60 * 1000,
+  /** File-explorer directory-listing staleTime (ms) — instant within a page session. */
+  FILE_TREE_STALE_TIME_MS: 30_000,
+  /** File-explorer directory-listing garbage collection time (ms). */
+  FILE_TREE_GC_TIME_MS: 30 * 60_000,
   /** Git status refetch interval (ms). */
   GIT_STATUS_REFETCH_MS: 10_000,
   /** Git status staleTime (ms). */

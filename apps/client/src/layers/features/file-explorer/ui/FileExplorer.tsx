@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
-import { ROOT_KEY } from '../model/tree-reducer';
+import { ROOT_KEY } from '../model/tree';
 import { useFileExplorer } from '../model/use-file-explorer';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 import { FileTree } from './FileTree';

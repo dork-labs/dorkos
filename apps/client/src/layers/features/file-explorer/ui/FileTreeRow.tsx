@@ -9,7 +9,7 @@ import {
   ResponsiveContextMenuTrigger,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { parentOf } from '../model/tree-reducer';
+import { parentOf } from '../model/tree';
 import type { FlatRow } from '../model/types';
 
 /** Left indentation per nesting level, in pixels. */

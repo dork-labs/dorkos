@@ -58,10 +58,21 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The explorer persists per-cwd navigation state to localStorage; clear it so
+  // expansion/selection from one test never leaks into the next.
+  localStorage.clear();
   useAppStore.setState({ selectedCwd: CWD });
   // The toolbar and tree share this store; reset it so per-test state (the
-  // show-hidden toggle, the published command bridge) never leaks.
-  useFileExplorerStore.setState({ showHidden: false, commands: null });
+  // show-hidden toggle, the published command bridge, and the per-cwd
+  // expansion/selection/scroll) never leaks.
+  useFileExplorerStore.setState({
+    showHidden: false,
+    commands: null,
+    scopeKey: null,
+    expanded: {},
+    selectedPath: null,
+    scrollTop: 0,
+  });
 });
 
 afterEach(() => cleanup());

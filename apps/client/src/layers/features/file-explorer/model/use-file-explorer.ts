@@ -1,18 +1,22 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import type { FileEntry } from '@dorkos/shared/types';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
-import { executeUiCommand, type DispatcherContext } from '@/layers/shared/lib';
-import { flattenTree, initialTreeState, ROOT_KEY, treeReducer } from './tree-reducer';
-import type { FlatRow } from './types';
+import { executeUiCommand, QUERY_TIMING, type DispatcherContext } from '@/layers/shared/lib';
+import { flattenTree, ROOT_KEY, visibleExpandedDirs } from './tree';
+import type { DirState, FlatRow } from './types';
 import { useFileCrud, type FileCrudApi } from './use-file-crud';
 import { useFileExplorerStore } from './file-explorer-store';
 
 /**
- * Orchestration hook for the file explorer (spec right-panel-workbench, Chunk
- * B): owns the lazy tree state, loads the cwd root, expands directories on
- * demand, opens files into the canvas via the shared `open_file` dispatcher
- * seam, and composes the optimistic-CRUD surface. Reads live state through a ref
- * so async callbacks never close over stale reducer state.
+ * Orchestration hook for the file explorer (DOR-404). Expansion, selection, and
+ * scroll live in the feature store (persisted per cwd); directory *data* lives
+ * in TanStack Query — one query per visible directory, keyed
+ * `['file-explorer', 'tree', cwd, dirPath, showHidden]`. So the tree survives an
+ * unmount (tab switch, reopen) from cache, a refresh refetches the whole
+ * expanded subtree with one `invalidateQueries`, and CRUD is optimistic against
+ * the query cache. Opening a file rides the shared `open_file` dispatcher seam,
+ * the same seam the agent's `open_file` tool drives.
  *
  * @module features/file-explorer/model/use-file-explorer
  */
@@ -23,14 +27,20 @@ export interface FileExplorerApi extends FileCrudApi {
   rows: FlatRow[];
   /** True while the root level's first fetch is in flight. */
   rootLoading: boolean;
-  /** Expand or collapse a directory (fetching its children lazily on expand). */
+  /** True when the root level's listing failed to load. */
+  rootError: boolean;
+  /** Visible expanded directories whose listing failed (for inline retry rows). */
+  errorPaths: Set<string>;
+  /** Expand or collapse a directory (its query mounts/unmounts declaratively). */
   toggleExpand: (entry: FileEntry) => void;
-  /** Ensure a directory is expanded (and its children loaded), e.g. before an inline create. */
+  /** Ensure a directory is expanded, e.g. before an inline create. */
   ensureExpanded: (path: string) => void;
   /** Open a file into the canvas via the shared `open_file` command. */
   openFile: (entry: FileEntry) => void;
-  /** Refetch the root level (e.g. after an external change). */
+  /** Refetch the whole expanded subtree (root + every expanded dir). */
   reload: () => void;
+  /** Refetch a single directory level (retry after a failed listing). */
+  retryDir: (path: string) => void;
 }
 
 /**
@@ -41,70 +51,96 @@ export interface FileExplorerApi extends FileCrudApi {
  */
 export function useFileExplorer(cwd: string | null): FileExplorerApi {
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const { setTheme } = useTheme();
-  const [state, dispatch] = useReducer(treeReducer, undefined, initialTreeState);
-  // Shared with the header-mounted toolbar so its toggle and this loader agree.
+
   const showHidden = useFileExplorerStore((s) => s.showHidden);
+  const expanded = useFileExplorerStore((s) => s.expanded);
+  const loadExplorerForCwd = useFileExplorerStore((s) => s.loadExplorerForCwd);
+  const pruneMissing = useFileExplorerStore((s) => s.pruneMissing);
 
-  // Live mirror of reducer state for async callbacks (expand/CRUD) that must
-  // read the latest children without re-subscribing. Synced after commit; the
-  // callbacks that read it only run from later user events, never mid-render.
-  const stateRef = useRef(state);
+  // Hydrate persisted UI state (expansion, selection, scroll) whenever the
+  // directory changes. Expanded dirs then mount their queries in the same
+  // render — after a refresh this cascades fetches for exactly the dirs the
+  // user had open (A3's prune keeps that bounded).
   useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+    loadExplorerForCwd(cwd);
+  }, [cwd, loadExplorerForCwd]);
 
-  const loadDir = useCallback(
-    async (path: string): Promise<void> => {
-      if (!cwd) return;
-      dispatch({ kind: 'setLoading', path, loading: true });
-      try {
-        const { entries } = await transport.readFileTree(cwd, {
-          path: path === ROOT_KEY ? undefined : path,
-          showHidden,
-        });
-        dispatch({ kind: 'setChildren', path, entries });
-      } catch {
-        dispatch({ kind: 'setLoading', path, loading: false });
-      }
-    },
-    [transport, cwd, showHidden]
-  );
+  // The directories to fetch: the root plus every *visible* expanded dir (one
+  // whose full ancestor chain is expanded). Derived from expansion alone, not
+  // per-row — virtualization must never affect what gets fetched.
+  const dirPaths = useMemo(() => [ROOT_KEY, ...visibleExpandedDirs(expanded)], [expanded]);
 
-  // (Re)load the root whenever the directory or the hidden-file toggle changes.
+  const results = useQueries({
+    queries: cwd
+      ? dirPaths.map((dirPath) => ({
+          queryKey: ['file-explorer', 'tree', cwd, dirPath, showHidden] as const,
+          queryFn: () =>
+            transport.readFileTree(cwd, {
+              path: dirPath === ROOT_KEY ? undefined : dirPath,
+              showHidden,
+            }),
+          staleTime: QUERY_TIMING.FILE_TREE_STALE_TIME_MS,
+          gcTime: QUERY_TIMING.FILE_TREE_GC_TIME_MS,
+        }))
+      : [],
+  });
+
+  const dirData = useMemo(() => {
+    const map: Record<string, DirState> = {};
+    dirPaths.forEach((dirPath, i) => {
+      const r = results[i];
+      map[dirPath] = {
+        entries: r?.data?.entries ?? [],
+        loading: r?.isLoading ?? false,
+        error: r?.isError ?? false,
+      };
+    });
+    return map;
+  }, [dirPaths, results]);
+
+  // Prune persisted paths that a freshly-loaded listing shows are gone (A3).
+  // Gate by the entries reference so a stable listing never re-triggers a store
+  // write, and a redundant render never spams a no-op prune.
+  const prunedRef = useRef<Record<string, FileEntry[]>>({});
   useEffect(() => {
-    dispatch({ kind: 'reset' });
-    if (cwd) void loadDir(ROOT_KEY);
-  }, [cwd, loadDir]);
+    dirPaths.forEach((dirPath, i) => {
+      const entries = results[i]?.data?.entries;
+      if (!entries || results[i]?.isError) return;
+      if (prunedRef.current[dirPath] === entries) return;
+      prunedRef.current[dirPath] = entries;
+      pruneMissing(
+        dirPath,
+        entries.map((e) => e.name)
+      );
+    });
+  }, [dirPaths, results, pruneMissing]);
 
-  // The root is "loading" until its first fetch resolves — derived from the
-  // reducer so no setState fires from the load effect.
-  const rootLoading = Boolean(state.loading[ROOT_KEY]) || !state.loaded[ROOT_KEY];
+  const rows = useMemo(() => flattenTree(expanded, dirData), [expanded, dirData]);
 
-  const toggleExpand = useCallback(
-    (entry: FileEntry): void => {
-      if (entry.type !== 'dir') return;
-      const current = stateRef.current;
-      if (current.expanded[entry.path]) {
-        dispatch({ kind: 'collapse', path: entry.path });
-        return;
-      }
-      dispatch({ kind: 'expand', path: entry.path });
-      if (!current.loaded[entry.path]) void loadDir(entry.path);
-    },
-    [loadDir]
-  );
+  const rootLoading = Boolean(cwd) && Boolean(dirData[ROOT_KEY]?.loading);
+  const rootError = Boolean(cwd) && Boolean(dirData[ROOT_KEY]?.error);
+  const errorPaths = useMemo(() => {
+    const set = new Set<string>();
+    for (const dirPath of dirPaths) {
+      if (dirPath !== ROOT_KEY && dirData[dirPath]?.error) set.add(dirPath);
+    }
+    return set;
+  }, [dirPaths, dirData]);
 
-  const ensureExpanded = useCallback(
-    (path: string): void => {
-      if (path === ROOT_KEY) return;
-      const current = stateRef.current;
-      if (current.expanded[path]) return;
-      dispatch({ kind: 'expand', path });
-      if (!current.loaded[path]) void loadDir(path);
-    },
-    [loadDir]
-  );
+  const toggleExpand = useCallback((entry: FileEntry): void => {
+    if (entry.type !== 'dir') return;
+    // Read live store state so the toggle never closes over a stale snapshot.
+    const store = useFileExplorerStore.getState();
+    store.setDirExpanded(entry.path, !store.expanded[entry.path]);
+  }, []);
+
+  const ensureExpanded = useCallback((path: string): void => {
+    if (path === ROOT_KEY) return;
+    const store = useFileExplorerStore.getState();
+    if (!store.expanded[path]) store.setDirExpanded(path, true);
+  }, []);
 
   const openFile = useCallback(
     (entry: FileEntry): void => {
@@ -125,34 +161,36 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
     [setTheme, transport]
   );
 
-  const getChildren = useCallback(
-    (path: string): FileEntry[] => stateRef.current.childrenByPath[path] ?? [],
-    []
+  // Refresh (D4): invalidate the whole cwd tree prefix — root and every
+  // expanded dir refetch, not just the root.
+  const reload = useCallback((): void => {
+    if (!cwd) return;
+    void queryClient.invalidateQueries({ queryKey: ['file-explorer', 'tree', cwd] });
+  }, [queryClient, cwd]);
+
+  const retryDir = useCallback(
+    (path: string): void => {
+      if (!cwd) return;
+      void queryClient.invalidateQueries({
+        queryKey: ['file-explorer', 'tree', cwd, path, showHidden],
+        exact: true,
+      });
+    },
+    [queryClient, cwd, showHidden]
   );
-  const isLoaded = useCallback(
-    (path: string): boolean => Boolean(stateRef.current.loaded[path]),
-    []
-  );
 
-  const crud = useFileCrud({
-    cwd: cwd ?? '',
-    dispatch,
-    getChildren,
-    isLoaded,
-    reloadDir: loadDir,
-  });
-
-  const reload = useCallback(() => void loadDir(ROOT_KEY), [loadDir]);
-
-  const rows = useMemo(() => flattenTree(state), [state]);
+  const crud = useFileCrud({ cwd: cwd ?? '', showHidden, queryClient });
 
   return {
     rows,
     rootLoading,
+    rootError,
+    errorPaths,
     toggleExpand,
     ensureExpanded,
     openFile,
     reload,
+    retryDir,
     ...crud,
   };
 }
