@@ -61,7 +61,6 @@ const mixedRequirements: SystemRequirements = {
       ],
     },
   },
-  allSatisfied: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -82,7 +81,6 @@ describe('isRuntimeReady', () => {
           ],
         },
       },
-      allSatisfied: false,
     };
     expect(isRuntimeReady(outdated, 'opencode')).toBe(false);
   });
@@ -126,7 +124,6 @@ describe('selectRuntimeReadiness', () => {
           ],
         },
       },
-      allSatisfied: false,
     };
     expect(selectRuntimeReadiness(served, 'opencode')).toEqual({
       state: 'connect',

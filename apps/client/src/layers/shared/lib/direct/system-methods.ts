@@ -677,10 +677,7 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       const runtimes: SystemRequirements['runtimes'] = {
         [type]: { dependencies: deps, ...deriveRuntimeReadiness(type, deps) },
       };
-      const allSatisfied = Object.values(runtimes).every((r) =>
-        r.dependencies.every((d) => d.status === 'satisfied')
-      );
-      return { runtimes, allSatisfied };
+      return { runtimes };
     },
 
     // ── File Uploads ───────────────────────────────────────────────────────

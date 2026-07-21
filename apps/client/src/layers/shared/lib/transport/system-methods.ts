@@ -332,13 +332,17 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
     },
 
-    async provisionOpenCode(
+    async provisionRuntime(
+      runtimeType: string,
       onProgress?: (progress: RuntimeProvisionProgress) => void
     ): Promise<RuntimeProvisionResult> {
-      const response = await fetch(`${baseUrl}/runtimes/opencode/provision`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const response = await fetch(
+        `${baseUrl}/runtimes/${encodeURIComponent(runtimeType)}/provision`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
       if (!response.ok) {
         const body = (await response.json().catch(() => ({
           error: response.statusText,

@@ -51,7 +51,6 @@ const MOCK_REQUIREMENTS: SystemRequirements = {
       ],
     },
   },
-  allSatisfied: false,
 };
 
 /**

@@ -16,6 +16,7 @@ import {
   ProgressCard,
 } from '@/layers/features/onboarding';
 import { CandidateCard, BulkAddBar, CollapsibleImportedSection } from '@/layers/entities/discovery';
+import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import type {
   DiscoveryCandidate,
   ExistingAgent,
@@ -91,37 +92,61 @@ const MOCK_AGENTS: AgentPathEntry[] = [
 
 const noop = () => {};
 
-const MOCK_REQUIREMENTS_SATISFIED: SystemRequirements = {
-  runtimes: {
-    'claude-code': {
-      dependencies: [
-        {
-          name: 'Claude Code CLI',
-          description: 'The Claude Code CLI powers agent sessions in DorkOS.',
-          status: 'satisfied',
-          version: '1.0.31',
-        },
-      ],
+const CLAUDE_READY: SystemRequirements['runtimes']['x'] = {
+  state: 'ready',
+  dependencies: [
+    {
+      name: 'Claude Code CLI',
+      description: 'The Claude Code CLI powers agent sessions in DorkOS.',
+      status: 'satisfied',
+      version: '1.0.31',
     },
-  },
-  allSatisfied: true,
+  ],
 };
 
-const MOCK_REQUIREMENTS_MISSING: SystemRequirements = {
-  runtimes: {
-    'claude-code': {
-      dependencies: [
-        {
-          name: 'Claude Code CLI',
-          description: 'The Claude Code CLI powers agent sessions in DorkOS.',
-          status: 'missing',
-          installHint: 'curl -fsSL https://claude.ai/install.sh | bash',
-          infoUrl: 'https://docs.anthropic.com/en/docs/claude-code',
-        },
-      ],
+const CODEX_CONNECT: SystemRequirements['runtimes']['x'] = {
+  state: 'connect',
+  connect: { kind: 'login', label: 'Connect Codex' },
+  dependencies: [
+    { name: 'Codex CLI', description: 'The Codex CLI binary.', status: 'satisfied' },
+    {
+      name: 'Codex authentication',
+      description: 'ChatGPT OAuth or CODEX_API_KEY.',
+      status: 'missing',
+      installHint: 'codex login',
     },
+  ],
+};
+
+const OPENCODE_INSTALL: SystemRequirements['runtimes']['x'] = {
+  state: 'connect',
+  connect: { kind: 'install', label: 'Install OpenCode' },
+  dependencies: [
+    {
+      name: 'OpenCode CLI',
+      description: 'The OpenCode binary.',
+      status: 'missing',
+      installHint: 'npm i -g opencode-ai',
+    },
+  ],
+};
+
+/** One runtime ready (Claude), two available to add — the common first run. */
+const MOCK_REQUIREMENTS_ONE_READY: SystemRequirements = {
+  runtimes: { 'claude-code': CLAUDE_READY, codex: CODEX_CONNECT, opencode: OPENCODE_INSTALL },
+};
+
+/** Everything connected — a pure success moment with no "more agents" count. */
+const MOCK_REQUIREMENTS_ALL_READY: SystemRequirements = {
+  runtimes: {
+    'claude-code': CLAUDE_READY,
+    codex: { ...CODEX_CONNECT, state: 'ready', connect: undefined },
   },
-  allSatisfied: false,
+};
+
+/** Nothing ready yet — the connect-your-first-agent gate. */
+const MOCK_REQUIREMENTS_ZERO_READY: SystemRequirements = {
+  runtimes: { codex: CODEX_CONNECT, opencode: OPENCODE_INSTALL },
 };
 
 // ── Showcases ────────────────────────────────────────────────
@@ -152,7 +177,7 @@ function InteractiveFlowShowcase() {
   return (
     <PlaygroundSection
       title="OnboardingFlow"
-      description="Full interactive onboarding flow. Click through each step — Welcome, System Requirements (3s scan), Meet DorkBot, Project Import, Tasks, and Complete. Rendered in a contained viewport."
+      description="Full interactive onboarding flow. Click through each step: Welcome, setup check (ready-first), Meet DorkBot, Project Import, Tasks, and Complete. Rendered in a contained viewport."
     >
       <div className="mb-3 flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => setFlowKey((k) => k + 1)}>
@@ -174,42 +199,62 @@ function InteractiveFlowShowcase() {
 // ── Individual steps ─────────────────────────────────────────
 
 function SystemRequirementsStepShowcase() {
-  const [happyKey, setHappyKey] = useState(0);
-  const [sadKey, setSadKey] = useState(0);
+  const [oneKey, setOneKey] = useState(0);
+  const [allKey, setAllKey] = useState(0);
+  const [zeroKey, setZeroKey] = useState(0);
 
   return (
     <PlaygroundSection
       title="SystemRequirementsStep"
-      description="System requirements check — three-phase experience: scanning animation (3s), progressive row-by-row reveal with scan-to-result transitions, then celebration (confetti) or install guidance. Click Replay to restart the full animation."
+      description="First-run setup check, ready-first. A brief scan animation, then one of three outcomes: at least one agent ready (a 'Get started' success moment with a quiet disclosure to add more), everything ready (no disclosure count), or nothing ready yet (connect cards that do the setup). Click Replay to restart the scan."
     >
-      <ShowcaseLabel>Happy path — all requirements satisfied</ShowcaseLabel>
+      <ShowcaseLabel>At least one ready — Claude connected, two more available</ShowcaseLabel>
       <div className="mb-3">
-        <Button variant="outline" size="sm" onClick={() => setHappyKey((k) => k + 1)}>
+        <Button variant="outline" size="sm" onClick={() => setOneKey((k) => k + 1)}>
           Replay
         </Button>
       </div>
       <ShowcaseDemo responsive>
-        <div className="flex min-h-[450px] items-center justify-center">
+        <div className="flex min-h-[520px] items-center justify-center">
           <SystemRequirementsStep
-            key={`happy-${happyKey}`}
+            key={`one-${oneKey}`}
             onContinue={noop}
-            simulatedResult={MOCK_REQUIREMENTS_SATISFIED}
+            renderConnect={renderRuntimeConnect}
+            simulatedResult={MOCK_REQUIREMENTS_ONE_READY}
           />
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Unhappy path — missing dependency</ShowcaseLabel>
+      <ShowcaseLabel>Everything ready — no "more agents" count</ShowcaseLabel>
       <div className="mb-3">
-        <Button variant="outline" size="sm" onClick={() => setSadKey((k) => k + 1)}>
+        <Button variant="outline" size="sm" onClick={() => setAllKey((k) => k + 1)}>
           Replay
         </Button>
       </div>
       <ShowcaseDemo responsive>
-        <div className="flex min-h-[550px] items-center justify-center">
+        <div className="flex min-h-[420px] items-center justify-center">
           <SystemRequirementsStep
-            key={`sad-${sadKey}`}
+            key={`all-${allKey}`}
             onContinue={noop}
-            simulatedResult={MOCK_REQUIREMENTS_MISSING}
+            renderConnect={renderRuntimeConnect}
+            simulatedResult={MOCK_REQUIREMENTS_ALL_READY}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Nothing ready yet — connect your first agent</ShowcaseLabel>
+      <div className="mb-3">
+        <Button variant="outline" size="sm" onClick={() => setZeroKey((k) => k + 1)}>
+          Replay
+        </Button>
+      </div>
+      <ShowcaseDemo responsive>
+        <div className="flex min-h-[560px] items-center justify-center">
+          <SystemRequirementsStep
+            key={`zero-${zeroKey}`}
+            onContinue={noop}
+            renderConnect={renderRuntimeConnect}
+            simulatedResult={MOCK_REQUIREMENTS_ZERO_READY}
           />
         </div>
       </ShowcaseDemo>

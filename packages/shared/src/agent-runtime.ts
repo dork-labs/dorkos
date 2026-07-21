@@ -155,12 +155,17 @@ export interface RuntimeRequirements extends Partial<RuntimeReadiness> {
   dependencies: DependencyCheck[];
 }
 
-/** Aggregated system requirements report for all registered runtimes. */
+/**
+ * Aggregated system requirements report for all registered runtimes.
+ *
+ * There is deliberately no cross-runtime "all satisfied" flag: readiness is
+ * per-runtime (each entry's {@link RuntimeReadiness}), and consumers gate on
+ * "at least one runtime ready" rather than "every runtime ready" — one working
+ * agent is enough to start.
+ */
 export interface SystemRequirements {
   /** Per-runtime dependency results + Ready/Connect projection, keyed by runtime type. */
   runtimes: Record<string, RuntimeRequirements>;
-  /** True when every dependency across all runtimes is satisfied. */
-  allSatisfied: boolean;
 }
 
 /** Human-facing display names for the known runtime types (identity is honest, never a raw type slug). */

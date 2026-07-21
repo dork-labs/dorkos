@@ -21,8 +21,8 @@ export {
   REQUIREMENTS_KEY,
 } from './model/use-runtime-requirements';
 export type { RuntimeReadiness } from './model/use-runtime-requirements';
-export { useProvisionOpenCode } from './model/use-provision-opencode';
-export type { UseProvisionOpenCode } from './model/use-provision-opencode';
+export { useProvisionRuntime } from './model/use-provision-runtime';
+export type { UseProvisionRuntime } from './model/use-provision-runtime';
 export {
   RUNTIME_DESCRIPTORS,
   PRIMARY_RUNTIME_TYPES,
@@ -37,5 +37,6 @@ export { ModelNatureBadge } from './ui/ModelNatureBadge';
 export { deriveModelNature, parseParamsB } from './lib/model-nature';
 export type { ModelNature, ModelLocality } from './lib/model-nature';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
+export { CommandTransparencyNote } from './ui/CommandTransparencyNote';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
 export type { RuntimeConnectSlot, RuntimeConnectSlotProps } from './ui/RuntimeSetupDialog';

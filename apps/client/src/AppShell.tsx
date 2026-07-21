@@ -29,6 +29,7 @@ import { usePulseFreshness } from '@/layers/widgets/pulse';
 import { SidebarFooterBar } from '@/layers/features/session-list';
 import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
 import { useOnboarding, OnboardingFlow, ProgressCard } from '@/layers/features/onboarding';
+import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
   SessionHeader,
   DashboardHeader,
@@ -313,7 +314,10 @@ export function AppShell() {
                 transition={{ duration: 0.2 }}
                 className="fixed inset-0 z-50"
               >
-                <OnboardingFlow onComplete={handleOnboardingComplete} />
+                <OnboardingFlow
+                  onComplete={handleOnboardingComplete}
+                  renderRuntimeConnect={renderRuntimeConnect}
+                />
               </motion.div>
             ) : (
               <motion.div

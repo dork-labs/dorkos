@@ -30,11 +30,7 @@ router.get('/requirements', async (_req, res) => {
 
   const runtimes: SystemRequirements['runtimes'] = Object.fromEntries(entries);
 
-  const allSatisfied = Object.values(runtimes).every((r) =>
-    r.dependencies.every((d) => d.status === 'satisfied')
-  );
-
-  res.json({ runtimes, allSatisfied } satisfies SystemRequirements);
+  res.json({ runtimes } satisfies SystemRequirements);
 });
 
 export default router;

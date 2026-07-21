@@ -234,7 +234,6 @@ function requirementsFor(types: string[], missing: string[] = []): SystemRequire
         },
       ])
     ),
-    allSatisfied: missing.length === 0,
   };
 }
 

@@ -202,7 +202,6 @@ const OPENCODE_CONNECT: SystemRequirements = {
       dependencies: [{ name: 'OpenCode CLI', description: 'binary', status: 'satisfied' }],
     },
   },
-  allSatisfied: false,
 };
 const OPENCODE_READY: SystemRequirements = {
   runtimes: {
@@ -211,7 +210,6 @@ const OPENCODE_READY: SystemRequirements = {
       dependencies: [{ name: 'OpenCode CLI', description: 'binary', status: 'satisfied' }],
     },
   },
-  allSatisfied: true,
 };
 
 describe('GuidedOllamaPull — flips OpenCode to Ready (task 3.6)', () => {

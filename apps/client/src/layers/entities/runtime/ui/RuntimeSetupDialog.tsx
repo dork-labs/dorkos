@@ -19,8 +19,9 @@ import { cn } from '@/layers/shared/lib';
 import { PRIMARY_RUNTIME_TYPES, getRuntimeDescriptor } from '../config/runtime-descriptors';
 import { useRuntimeCapabilities } from '../model/use-runtime-capabilities';
 import { useRuntimeRequirements, selectRuntimeReadiness } from '../model/use-runtime-requirements';
-import { useProvisionOpenCode } from '../model/use-provision-opencode';
+import { useProvisionRuntime } from '../model/use-provision-runtime';
 import { DependencyInstallHint } from './DependencyInstallHint';
+import { CommandTransparencyNote } from './CommandTransparencyNote';
 
 /**
  * Context handed to a feature-supplied connect renderer for a not-ready runtime.
@@ -48,6 +49,13 @@ export type RuntimeConnectSlot = (props: RuntimeConnectSlotProps) => ReactNode;
 interface RuntimeSetupPanelProps {
   /** Scope to one runtime; `undefined` renders the "Your runtimes" overview. */
   runtime?: string;
+  /**
+   * Explicit list of runtime types to render, in order — wins over the default
+   * "all primaries" overview. Used where the caller has already decided which
+   * runtimes belong on the surface (e.g. onboarding showing only the not-yet-ready
+   * runtimes under "more agents available"). Ignored when `runtime` is set.
+   */
+  types?: string[];
   /** Aggregated dependency checks (`undefined` while loading). */
   requirements?: SystemRequirements;
   /** Registered runtime types from the capability map (`undefined` while loading). */
@@ -70,8 +78,13 @@ interface RuntimeSetupPanelProps {
  * Ready-or-one-Connect — plus any other registered runtime (a future backend),
  * appended stably so the list never reshuffles when a recheck flips a state.
  */
-function selectTargetRuntimes(runtime: string | undefined, registeredTypes: string[]): string[] {
+function selectTargetRuntimes(
+  runtime: string | undefined,
+  types: string[] | undefined,
+  registeredTypes: string[]
+): string[] {
   if (runtime) return [runtime];
+  if (types) return types;
   const extras = registeredTypes.filter(
     (t) => !(PRIMARY_RUNTIME_TYPES as readonly string[]).includes(t) && t !== 'test-mode'
   );
@@ -89,13 +102,14 @@ function selectTargetRuntimes(runtime: string | undefined, registeredTypes: stri
  */
 export function RuntimeSetupPanel({
   runtime,
+  types,
   requirements,
   registeredTypes = [],
   onRecheck,
   isRechecking = false,
   renderConnect,
 }: RuntimeSetupPanelProps) {
-  const targets = selectTargetRuntimes(runtime, registeredTypes);
+  const targets = selectTargetRuntimes(runtime, types, registeredTypes);
 
   return (
     <div className="space-y-4" data-testid="runtime-setup-panel">
@@ -149,6 +163,14 @@ function RuntimeSection({
   const isReady = readiness.state === 'ready';
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  // The command a one-click install would run — sourced from the live install
+  // dependency's hint, falling back to the descriptor's static setup command.
+  // Drives the transparency fine print and the manual fallback when a runtime's
+  // server has no provision endpoint.
+  const installDep = entry?.dependencies.find((d) => d.status !== 'satisfied' && d.installHint);
+  const installCommand = installDep?.installHint ?? descriptor.setup?.installCommand;
+  const installInfoUrl = installDep?.infoUrl ?? descriptor.setup?.infoUrl;
+
   // Advanced is offered whenever there is something honest to disclose: live
   // dependency rows (registered) or the descriptor's static setup command
   // (a known runtime this server has not registered).
@@ -180,6 +202,8 @@ function RuntimeSection({
             type={type}
             connect={readiness.connect}
             renderConnect={renderConnect}
+            installCommand={installCommand}
+            installInfoUrl={installInfoUrl}
             onShowDetails={() => setAdvancedOpen(true)}
           />
         </div>
@@ -221,29 +245,41 @@ function RuntimeSection({
 /**
  * The single Connect call-to-action for a not-ready runtime.
  *
- * OpenCode's `install` is one-click provisioning (no terminal — ADR-0317); its
- * button streams inline progress and flips the runtime to Ready on success.
+ * The `install` kind is one-click provisioning (no terminal — ADR-0317): the
+ * button streams inline progress, flips the runtime to Ready on success, and —
+ * when the runtime's server exposes no provision endpoint — degrades to the
+ * manual install hint rather than a dead end. Muted transparency fine print
+ * always states the exact command that would run on the machine.
  *
  * The `login` and `provider-picker` kinds render the feature-supplied
  * {@link RuntimeConnectSlot} inline (Codex/Claude paste-key + delegated login,
- * the OpenCode provider picker). When no slot is injected — the dev playground,
- * or a Codex install this server cannot auto-provision — the button reveals the
- * Advanced disclosure where the terminal steps live (the honest T0 escape hatch).
+ * the OpenCode provider picker). When no slot is injected — the dev playground —
+ * the button reveals the Advanced disclosure where the terminal steps live.
  */
 function RuntimeConnectAction({
   type,
   connect,
   renderConnect,
+  installCommand,
+  installInfoUrl,
   onShowDetails,
 }: {
   type: string;
   connect: NonNullable<RuntimeConnectState['connect']>;
   renderConnect?: RuntimeConnectSlot;
+  installCommand?: string;
+  installInfoUrl?: string;
   onShowDetails: () => void;
 }) {
-  const canProvision = type === 'opencode' && connect.kind === 'install';
-  if (canProvision) {
-    return <OpenCodeProvisionButton label={connect.label} />;
+  if (connect.kind === 'install') {
+    return (
+      <RuntimeProvisionButton
+        type={type}
+        label={connect.label}
+        installCommand={installCommand}
+        installInfoUrl={installInfoUrl}
+      />
+    );
   }
   if (renderConnect && (connect.kind === 'login' || connect.kind === 'provider-picker')) {
     return <>{renderConnect({ type, connect })}</>;
@@ -256,18 +292,38 @@ function RuntimeConnectAction({
 }
 
 /**
- * OpenCode's one-click Connect: triggers on-demand provisioning, renders inline
- * `motion` progress while installing, and surfaces an honest, retryable error
- * on failure. On success the requirements query is invalidated (by the hook) so
- * the parent section re-renders as Ready and this button unmounts.
+ * One-click Connect for an `install` runtime: triggers on-demand provisioning,
+ * renders inline `motion` progress while installing, and surfaces an honest,
+ * retryable error on failure. On success the requirements query is invalidated
+ * (by the hook) so the parent section re-renders as Ready and this button
+ * unmounts.
+ *
+ * Graceful degradation: when the runtime's server has no provision endpoint the
+ * install rejects (e.g. HTTP 404), so on error the manual install hint is shown
+ * alongside the retry — the user is never stranded on a button that cannot work.
+ * The transparency note under the idle button always names the exact command.
  */
-function OpenCodeProvisionButton({ label }: { label: string }) {
-  const { provision, isPending, isError, errorMessage, progress, result } = useProvisionOpenCode();
+function RuntimeProvisionButton({
+  type,
+  label,
+  installCommand,
+  installInfoUrl,
+}: {
+  type: string;
+  label: string;
+  installCommand?: string;
+  installInfoUrl?: string;
+}) {
+  const descriptor = getRuntimeDescriptor(type);
+  const { provision, isPending, isError, errorMessage, progress, result } =
+    useProvisionRuntime(type);
 
   // While installing — or after a successful result, until the parent flips to
   // Ready — show progress instead of a re-clickable button.
   if (isPending || result?.ok) {
-    return <ProvisionProgressRow message={progress?.message ?? 'Installing OpenCode…'} />;
+    return (
+      <ProvisionProgressRow message={progress?.message ?? `Installing ${descriptor.label}…`} />
+    );
   }
 
   if (isError) {
@@ -276,6 +332,16 @@ function OpenCodeProvisionButton({ label }: { label: string }) {
         <p className="text-destructive text-xs" role="alert">
           {errorMessage}
         </p>
+        {installCommand && (
+          <>
+            <p className="text-muted-foreground text-xs">You can install it yourself instead:</p>
+            <DependencyInstallHint
+              command={installCommand}
+              infoUrl={installInfoUrl}
+              copyLabel={`Copy install command for ${descriptor.label}`}
+            />
+          </>
+        )}
         <Button size="sm" onClick={provision}>
           Try again
         </Button>
@@ -284,9 +350,12 @@ function OpenCodeProvisionButton({ label }: { label: string }) {
   }
 
   return (
-    <Button size="sm" onClick={provision}>
-      {label}
-    </Button>
+    <div>
+      <Button size="sm" onClick={provision}>
+        {label}
+      </Button>
+      {installCommand && <CommandTransparencyNote command={installCommand} />}
+    </div>
   );
 }
 
