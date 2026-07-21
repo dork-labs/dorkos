@@ -8,3 +8,5 @@
 export { AppBannerSlot } from './ui/AppBannerSlot';
 export { PermissionBanner } from './ui/PermissionBanner';
 export { useAppBanners } from './model/use-app-banners';
+/** @internal Exported for the app-shell placement regression test only. */
+export { BANNER_PRIORITY, type BannerDescriptor } from './model/banner-descriptor';
