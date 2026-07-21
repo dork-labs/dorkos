@@ -1,8 +1,19 @@
+import path from 'node:path';
 import { createMDX } from 'fumadocs-mdx/next';
 import type { NextConfig } from 'next';
 import { deriveAssetHost } from './src/lib/posthog-host';
 
 const withMDX = createMDX();
+
+// Pin the workspace root so Turbopack resolves the app directory from this
+// package, not from an inferred ancestor. Next infers the root by walking up to
+// the nearest lockfile; when this checkout is a git worktree nested under
+// another repo that also has a lockfile (`.claude/worktrees/*`, the isolated
+// path every agent uses), it guesses the OUTER repo and fails to discover the
+// `src/app` routes — every route, including `/`, then 404s to `_not-found`,
+// which stalled the e2e site webServer's readiness gate (DOR-407). Two levels
+// up from `apps/site` is the monorepo root in every checkout, worktree or not.
+const workspaceRoot = path.join(import.meta.dirname, '..', '..');
 
 // Next's built-in HTML_LIMITED_BOTS pattern (from
 // next/dist/shared/lib/router/utils/html-bots.js). Setting `htmlLimitedBots`
@@ -39,6 +50,12 @@ const nextConfig: NextConfig = {
   htmlLimitedBots,
   // Transpile Base UI packages for better Turbopack compatibility
   transpilePackages: ['@base-ui/react', '@base-ui/utils'],
+
+  // See workspaceRoot above — pins Turbopack's root so nested-worktree checkouts
+  // resolve routes correctly instead of 404ing every page.
+  turbopack: {
+    root: workspaceRoot,
+  },
 
   // Docs pages that moved in the 2026-07 docs reorganization
   async redirects() {

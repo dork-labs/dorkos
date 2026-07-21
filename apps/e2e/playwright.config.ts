@@ -14,6 +14,22 @@ const MOCK_VITE_PORT = process.env.DORKOS_MOCK_VITE_PORT || '4248';
 // Marketing site (Next.js) — hosts the public /marketplace pages exercised by
 // `tests/marketplace.spec.ts`. Port matches `apps/site/package.json` `dev` script.
 const SITE_PORT = process.env.DORKOS_SITE_PORT || '6244';
+
+// The marketing-site leg is heavy (Next.js + Turbopack + a fumadocs file
+// watcher) and only the site specs (see SITE_SPECS) need it. Booting it for
+// cockpit-only runs wastes minutes and, under file-descriptor pressure (many
+// recursive watchers → EMFILE), stalls its 180s readiness gate so no spec can
+// run — exactly what blocked isolated runs in DOR-407. So the site leg (and its
+// specs) are opt-in: set `E2E_SITE=1` to include them. No workflow runs this
+// browser suite in CI today; the CI default-on below is a forward-looking
+// mechanism so that if/when the suite is CI-wired, the site legs stay on unless
+// `E2E_SITE=0` forces them off.
+const INCLUDE_SITE = process.env.E2E_SITE === '1' || (CI && process.env.E2E_SITE !== '0');
+
+// Specs that override baseURL to the marketing site (http://localhost:6244) —
+// they need the site leg, so they are excluded from the cockpit project unless
+// the leg is booted. Keep in sync by grepping tests/ for `6244`/`SITE_BASE_URL`.
+const SITE_SPECS = ['**/marketplace.spec.ts', '**/features.spec.ts'];
 /* eslint-enable no-restricted-syntax */
 
 export default defineConfig({
@@ -90,26 +106,42 @@ export default defineConfig({
       reuseExistingServer: !CI,
       stdout: 'pipe',
     },
-    // Marketing site (Next.js) — hosts the public /marketplace pages exercised
-    // by `tests/marketplace.spec.ts`. The marketplace test mocks the upstream
-    // GitHub registry fetch so the dev server does not need network access.
-    {
-      command: 'pnpm --filter @dorkos/site dev',
-      url: `http://localhost:${SITE_PORT}`,
-      name: 'Marketing Site',
-      timeout: 180_000,
-      reuseExistingServer: !CI,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
+    // Marketing site (Next.js) — hosts the public /marketplace and /features
+    // pages exercised by the SITE_SPECS (marketplace.spec.ts, features.spec.ts).
+    // The marketplace test mocks the upstream GitHub registry fetch so the dev
+    // server does not need network access.
+    // Opt-in via E2E_SITE (see INCLUDE_SITE) — omitted for cockpit-only runs.
+    //
+    // Wrapped in `dotenv --` to mirror the other legs: when Playwright is run
+    // directly (e.g. `pnpm --filter @dorkos/e2e e2e`, no root `dotenv` wrapper),
+    // this loads the root `.env` the site would otherwise start without.
+    // SITE_PORT is passed through so the leg honors DORKOS_SITE_PORT overrides
+    // (the site `dev` script binds `${SITE_PORT:-6244}`); dotenv does not clobber
+    // an already-set env var, so the override wins.
+    ...(INCLUDE_SITE
+      ? [
+          {
+            command: `SITE_PORT=${SITE_PORT} dotenv -- pnpm --filter @dorkos/site dev`,
+            url: `http://localhost:${SITE_PORT}`,
+            name: 'Marketing Site',
+            timeout: 180_000,
+            reuseExistingServer: !CI,
+            stdout: 'pipe' as const,
+            stderr: 'pipe' as const,
+          },
+        ]
+      : []),
   ],
 
   projects: [
     {
       // Standard integration project — runs all tests except mock-browser specs.
+      // The site specs (SITE_SPECS) need the marketing-site leg, so they are
+      // ignored unless that leg is booted (E2E_SITE / INCLUDE_SITE) — otherwise
+      // they would hang on an unreachable http://localhost:6244.
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: ['**/chat-mock.spec.ts'],
+      testIgnore: ['**/chat-mock.spec.ts', ...(INCLUDE_SITE ? [] : SITE_SPECS)],
     },
     {
       // Mock-browser project — runs chat-mock.spec.ts against the test-mode server.
