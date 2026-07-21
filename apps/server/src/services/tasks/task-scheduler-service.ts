@@ -6,7 +6,6 @@ import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import type { TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
-import { eventFanOut } from '../core/event-fan-out.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
@@ -591,20 +590,12 @@ export class TaskSchedulerService {
     durationMs: number,
     error?: string
   ): void {
-    // Fire the attention-freshness broadcast on the failure transition BEFORE the
-    // activity guard: the Pulse "Needs attention" badge must tick the moment a run
-    // is recorded failed (DOR-403), regardless of whether activity logging is
-    // wired. This is the real transition edge — emitRunEvent is called exactly
-    // once per terminal run, never on a poll re-observation.
-    if (status === 'failed') {
-      eventFanOut.broadcast('task_run_failed', {
-        runId: run.id,
-        taskId: task.id,
-        scheduleId: run.scheduleId,
-        failedAt: new Date().toISOString(),
-      });
-    }
-
+    // NOTE: the Pulse attention broadcast (`task_run_failed`, DOR-403) is NOT
+    // emitted here. emitRunEvent only covers scheduler-side terminal paths; a
+    // relay-delivered run is finalized by the receiver writing 'failed' through
+    // TaskStore, which never reaches this method. The broadcast rides the
+    // TaskStore run-terminal hook (the single terminal funnel for both paths) —
+    // see run-terminal-broadcaster.ts, wired in index.ts.
     if (!this.activityService) return;
 
     const eventType =

@@ -17,14 +17,15 @@
  *    redundant refetch of a cache the list stream already patched.
  *
  *  • **Attention → failed runs, dead letters, offline agents** NOW broadcast on
- *    `/api/events` at their transition points (DOR-403): the tasks service emits
- *    `task_run_failed` when a run is recorded failed, the relay dead-letter queue
- *    emits `relay_dead_letter` when a message is dead-lettered, and mesh liveness
- *    emits `mesh_liveness_changed` when the reconciler flips an agent
- *    offline/online. Each invalidates only its own attention cache, so the badge
- *    and the open panel tick within the coalesce window instead of on the next
- *    30s poll. A failed run also writes an `activity_events` row, so it refreshes
- *    the activity caches too.
+ *    `/api/events` at their transition points (DOR-403): the TaskStore
+ *    run-terminal hook emits `task_run_failed` on the single terminal write that
+ *    marks a run failed (covering both scheduler-side and relay-delivered runs),
+ *    the relay dead-letter queue emits `relay_dead_letter` when a message is
+ *    dead-lettered, and mesh liveness emits `mesh_liveness_changed` when the
+ *    reconciler flips an agent offline/online. Each invalidates only its own
+ *    attention cache, so the badge and the open panel tick within the coalesce
+ *    window instead of on the next 30s poll. A failed run also writes an
+ *    `activity_events` row, so it refreshes the activity caches too.
  *
  *  • **Activity** is a standalone append-only log (`activity_events`): it is fed
  *    ONLY by explicit `activityService.emit(...)` calls after primary ops, NOT
