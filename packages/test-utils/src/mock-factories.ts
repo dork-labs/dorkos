@@ -10,7 +10,12 @@ import type {
   UpdateBindingRequest,
 } from '@dorkos/shared/relay-schemas';
 
-/** Create a mock Session with sensible defaults. */
+/**
+ * Create a mock Session with sensible defaults. Every optional `Session`
+ * field — including `origin`/`originLabel` (session-origin-legibility) and
+ * `contextTokens`/`lastAutoCompactAt` — passes through via `overrides`
+ * with no changes needed here; add fields to `overrides`, not new params.
+ */
 export function createMockSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 'test-session-1',

@@ -183,6 +183,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "origin": {
+            "$ref": "#/components/schemas/SessionOrigin"
+          },
+          "originLabel": {
+            "type": "string"
+          },
           "cwd": {
             "type": "string"
           }
@@ -217,6 +223,16 @@
           "high",
           "max",
           "xhigh"
+        ]
+      },
+      "SessionOrigin": {
+        "type": "string",
+        "enum": [
+          "user",
+          "agent",
+          "channel",
+          "task",
+          "external"
         ]
       },
       "SessionListWarning": {

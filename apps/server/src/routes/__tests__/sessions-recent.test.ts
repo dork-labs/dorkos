@@ -85,6 +85,7 @@ describe('GET /api/sessions/recent', () => {
   afterEach(() => {
     vi.clearAllMocks();
     delete app.locals.meshCore;
+    delete app.locals.resolveTaskOrigins;
   });
 
   it('returns the { sessions, agentActivity, warnings } envelope', async () => {
@@ -150,5 +151,24 @@ describe('GET /api/sessions/recent', () => {
     const res = await request(app).get('/api/sessions/recent');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ sessions: [], agentActivity: {}, warnings: [] });
+  });
+
+  it('applies the Pulse task-origin overlay (session-origin-legibility)', async () => {
+    setAgentPaths(['/p1']);
+    // Classified user by the head-scan (e.g. a direct-branch Pulse run whose
+    // marker never made it into JSONL) — the Pulse-run overlay is the only
+    // thing that can catch and re-tag this session as `task`.
+    runtime.listSessions.mockImplementation((dir: string) =>
+      Promise.resolve(dir === '/p1' ? [makeSession('s1', '2026-03-01T00:00:00.000Z', '/p1')] : [])
+    );
+    app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
+      sessionIds.includes('s1') ? new Map([['s1', { taskName: 'daily-digest' }]]) : new Map();
+
+    const res = await request(app).get('/api/sessions/recent');
+
+    expect(res.status).toBe(200);
+    const session = res.body.sessions.find((s: Session) => s.id === 's1');
+    expect(session.origin).toBe('task');
+    expect(session.originLabel).toBe('Scheduled task · daily-digest');
   });
 });

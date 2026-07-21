@@ -816,6 +816,70 @@ describe('TranscriptReader', () => {
       expect(sessions).toHaveLength(1);
       expect(sessions[0].title).toBe('Analyze logs');
       expect(sessions[0].title).not.toContain('relay_context');
+      // The fixture's <relay_context> block has no `From:` line, so it
+      // classifies as an unrecognized/malformed relay block.
+      expect(sessions[0].origin).toBe('external');
+      expect(sessions[0].originLabel).toBe('Relay');
+    });
+
+    it('classifies origin from a relay_context block with a From line, title still derives from the next real message', async () => {
+      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['relay-agent-session.jsonl']);
+
+      const statResult = {
+        birthtime: new Date('2026-03-05'),
+        mtime: new Date('2026-03-05'),
+        mtimeMs: Date.now(),
+      };
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(statResult);
+
+      const content = [
+        JSON.stringify({
+          type: 'user',
+          uuid: 'relay-1',
+          message: {
+            role: 'user',
+            content: '<relay_context>\nFrom: relay.agent.01H8SOMEULID\n</relay_context>',
+          },
+          timestamp: '2026-03-05T00:00:00Z',
+        }),
+        JSON.stringify({
+          type: 'user',
+          uuid: 'u1',
+          message: { role: 'user', content: 'Analyze logs' },
+          timestamp: '2026-03-05T00:00:01Z',
+        }),
+      ].join('\n');
+      (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(mockFileHandle(content));
+
+      const sessions = await transcriptReader.listSessions('/vault');
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].title).toBe('Analyze logs');
+      expect(sessions[0].origin).toBe('agent');
+    });
+
+    it('leaves origin absent for a plain session with no relay-context or task-scheduler marker', async () => {
+      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['plain-session.jsonl']);
+
+      const statResult = {
+        birthtime: new Date('2026-03-05'),
+        mtime: new Date('2026-03-05'),
+        mtimeMs: Date.now(),
+      };
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(statResult);
+
+      const content = JSON.stringify({
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: 'Hello, can you help me?' },
+        timestamp: '2026-03-05T00:00:00Z',
+      });
+      (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(mockFileHandle(content));
+
+      const sessions = await transcriptReader.listSessions('/vault');
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].origin).toBeUndefined();
     });
 
     it('uses mtime cache on second call', async () => {

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { Session } from '@dorkos/shared/types';
 import { AgentListItem } from '../ui/AgentListItem';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 
@@ -38,49 +39,60 @@ const mockAgentStatus = vi.fn<() => MockAgentStatus>(() => ({
   label: 'Idle',
 }));
 
-vi.mock('@/layers/entities/session', () => ({
-  useAgentHottestStatus: () => mockAgentStatus(),
-  usePulseMotion: () => ({ animate: undefined, transition: undefined }),
-  SessionRow: ({
-    session,
-    isActive,
-    onClick,
-    onFork,
-    onRename,
-  }: {
-    variant: string;
-    session: { id: string; title: string };
-    isActive: boolean;
-    onClick: () => void;
-    onFork?: (sessionId: string) => void;
-    onRename?: (sessionId: string, title: string) => void;
-  }) => (
-    <button
-      type="button"
-      data-testid={`session-${session.id}`}
-      data-active={isActive}
-      data-has-fork={!!onFork}
-      data-has-rename={!!onRename}
-      onClick={onClick}
-    >
-      {session.title}
-      {onFork && (
-        <button type="button" data-testid={`fork-${session.id}`} onClick={() => onFork(session.id)}>
-          Fork
-        </button>
-      )}
-      {onRename && (
-        <button
-          type="button"
-          data-testid={`rename-${session.id}`}
-          onClick={() => onRename(session.id, 'New name')}
-        >
-          Rename
-        </button>
-      )}
-    </button>
-  ),
-}));
+vi.mock('@/layers/entities/session', async (importOriginal) => {
+  // Extend the real module rather than replacing it wholesale: this file
+  // depends on the real `partitionSessionsByOrigin` (session-origin-legibility)
+  // to exercise conversations/automated splitting the same way production does.
+  const actual = await importOriginal<typeof import('@/layers/entities/session')>();
+  return {
+    ...actual,
+    useAgentHottestStatus: () => mockAgentStatus(),
+    usePulseMotion: () => ({ animate: undefined, transition: undefined }),
+    SessionRow: ({
+      session,
+      isActive,
+      onClick,
+      onFork,
+      onRename,
+    }: {
+      variant: string;
+      session: { id: string; title: string };
+      isActive: boolean;
+      onClick: () => void;
+      onFork?: (sessionId: string) => void;
+      onRename?: (sessionId: string, title: string) => void;
+    }) => (
+      <button
+        type="button"
+        data-testid={`session-${session.id}`}
+        data-active={isActive}
+        data-has-fork={!!onFork}
+        data-has-rename={!!onRename}
+        onClick={onClick}
+      >
+        {session.title}
+        {onFork && (
+          <button
+            type="button"
+            data-testid={`fork-${session.id}`}
+            onClick={() => onFork(session.id)}
+          >
+            Fork
+          </button>
+        )}
+        {onRename && (
+          <button
+            type="button"
+            data-testid={`rename-${session.id}`}
+            onClick={() => onRename(session.id, 'New name')}
+          >
+            Rename
+          </button>
+        )}
+      </button>
+    ),
+  };
+});
 
 vi.mock('../ui/AgentContextMenu', () => ({
   AgentContextMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -126,7 +138,7 @@ afterEach(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mockSession(id: string, title: string) {
+function mockSession(id: string, title: string, overrides: Partial<Session> = {}) {
   return {
     id,
     title,
@@ -134,6 +146,7 @@ function mockSession(id: string, title: string) {
     updatedAt: new Date().toISOString(),
     permissionMode: 'default' as const,
     runtime: 'claude-code',
+    ...overrides,
   };
 }
 
@@ -287,6 +300,70 @@ describe('AgentListItem', () => {
     const { props } = renderItem({ isActive: true, isExpanded: true, sessions: MOCK_SESSIONS });
     fireEvent.click(screen.getByText('New session'));
     expect(props.onNewSession).toHaveBeenCalledTimes(1);
+  });
+
+  // --- Origin partition: conversations preview + automated reveal (session-origin-legibility) ---
+
+  it('shows only conversations (user-origin sessions) in the initial preview', () => {
+    const mixed = [
+      mockSession('u1', 'User session 1'),
+      mockSession('a1', 'Agent session', { origin: 'agent', originLabel: 'warden (agent)' }),
+      mockSession('u2', 'User session 2'),
+    ];
+    renderItem({ isActive: true, isExpanded: true, sessions: mixed });
+    expect(screen.getByText('User session 1')).toBeInTheDocument();
+    expect(screen.getByText('User session 2')).toBeInTheDocument();
+    expect(screen.queryByText('Agent session')).not.toBeInTheDocument();
+  });
+
+  it('renders the + N automated reveal row with the correct count', () => {
+    const mixed = [
+      mockSession('u1', 'User session 1'),
+      mockSession('a1', 'Agent session', { origin: 'agent' }),
+      mockSession('c1', 'Channel session', { origin: 'channel' }),
+    ];
+    renderItem({ isActive: true, isExpanded: true, sessions: mixed });
+    expect(screen.getByText('+ 2 automated')).toBeInTheDocument();
+  });
+
+  it('renders the "New session" button for an all-automated agent (empty conversations)', () => {
+    const automatedOnly = [mockSession('t1', 'Task session', { origin: 'task' })];
+    renderItem({ isActive: true, isExpanded: true, sessions: automatedOnly });
+    expect(screen.getByText('New session')).toBeInTheDocument();
+  });
+
+  it('hides the automated reveal row when there are no automated sessions', () => {
+    renderItem({ isActive: true, isExpanded: true, sessions: MOCK_SESSIONS });
+    expect(screen.queryByText(/automated/)).not.toBeInTheDocument();
+  });
+
+  it('reveals automated sessions when the reveal row is clicked', () => {
+    const mixed = [
+      mockSession('u1', 'User session 1'),
+      mockSession('a1', 'Agent session', { origin: 'agent' }),
+    ];
+    renderItem({ isActive: true, isExpanded: true, sessions: mixed });
+    expect(screen.queryByText('Agent session')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('+ 1 automated'));
+    expect(screen.getByText('Agent session')).toBeInTheDocument();
+    expect(screen.getByText('Hide')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Hide'));
+    expect(screen.queryByText('Agent session')).not.toBeInTheDocument();
+  });
+
+  it('shows the reveal row instead of "First session" when conversations are empty but automated sessions exist', () => {
+    const automatedOnly = [mockSession('t1', 'Task session', { origin: 'task' })];
+    renderItem({ isActive: true, isExpanded: true, sessions: automatedOnly });
+    expect(screen.queryByText('First session')).not.toBeInTheDocument();
+    expect(screen.getByText('+ 1 automated')).toBeInTheDocument();
+  });
+
+  it('still shows "First session" for an agent with zero sessions of any origin', () => {
+    renderItem({ isActive: true, isExpanded: true, sessions: [] });
+    expect(screen.getByText('First session')).toBeInTheDocument();
+    expect(screen.queryByText(/automated/)).not.toBeInTheDocument();
   });
 
   // --- Accessibility ---

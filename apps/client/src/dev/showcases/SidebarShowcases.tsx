@@ -104,6 +104,22 @@ const MOCK_SESSIONS: Session[] = [
   },
 ];
 
+// Origin-varied sessions (session-origin-legibility) — makes OriginMark
+// visually discoverable in the playground alongside the plain-user rows above.
+const CHANNEL_ORIGIN_SESSION: Session = {
+  ...MOCK_SESSIONS[0],
+  id: '00000000-0000-0000-0000-000000000007',
+  origin: 'channel',
+  originLabel: 'Telegram',
+};
+
+const TASK_ORIGIN_SESSION: Session = {
+  ...MOCK_SESSIONS[1],
+  id: '00000000-0000-0000-0000-000000000008',
+  origin: 'task',
+  originLabel: 'Scheduled task · daily-digest',
+};
+
 const GROUPED_SESSIONS = [
   { label: 'Today', sessions: MOCK_SESSIONS.slice(0, 2) },
   { label: 'Yesterday', sessions: MOCK_SESSIONS.slice(2, 4) },
@@ -175,6 +191,30 @@ function SessionItemShowcase() {
           <SessionRow
             variant="full"
             session={MOCK_SESSIONS[3]}
+            isActive={false}
+            onClick={() => {}}
+          />
+        </SidebarItemWrapper>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Origin — channel (Telegram)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <SidebarItemWrapper>
+          <SessionRow
+            variant="full"
+            session={CHANNEL_ORIGIN_SESSION}
+            isActive={false}
+            onClick={() => {}}
+          />
+        </SidebarItemWrapper>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Origin — task (Scheduled task)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <SidebarItemWrapper>
+          <SessionRow
+            variant="full"
+            session={TASK_ORIGIN_SESSION}
             isActive={false}
             onClick={() => {}}
           />

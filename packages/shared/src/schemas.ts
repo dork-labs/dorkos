@@ -109,6 +109,11 @@ export const EffortLevelSchema = z
   .openapi('EffortLevel');
 export type EffortLevel = z.infer<typeof EffortLevelSchema>;
 
+export const SessionOriginSchema = z
+  .enum(['user', 'agent', 'channel', 'task', 'external'])
+  .openapi('SessionOrigin');
+export type SessionOrigin = z.infer<typeof SessionOriginSchema>;
+
 export const SessionSchema = z
   .object({
     id: z.string().uuid(),
@@ -142,6 +147,19 @@ export const SessionSchema = z
      * a deferred follow-up). Drives the row's discreet "auto-compacted" marker.
      */
     lastAutoCompactAt: z.string().datetime().optional(),
+    /**
+     * Best-effort classification of what initiated this session, derived from
+     * durable markers in the transcript head (never persisted, never trusted as
+     * a security boundary). ABSENT means user-initiated — the unmarked default —
+     * so runtimes that never receive automated traffic need no changes.
+     */
+    origin: SessionOriginSchema.optional(),
+    /**
+     * Short human-readable origin descriptor for non-user origins, e.g.
+     * "Telegram", "warden (agent)", "Scheduled task · daily-digest", "A2A client".
+     * Absent when `origin` is absent or no better label than the kind exists.
+     */
+    originLabel: z.string().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');

@@ -1015,6 +1015,16 @@ async function start() {
     logger.info('[Mesh] Routes mounted');
   }
 
+  // Session-origin Pulse overlay (session-origin-legibility): expose a narrow
+  // batched lookup to the sessions router via app.locals, mirroring the
+  // meshCore/relayCore pattern above. Tasks-disabled installs leave this
+  // unset, and applyTaskOriginOverlay treats that as a safe no-op — keeps
+  // transcript-reader.ts/classify-origin.ts free of any Tasks-subsystem import.
+  if (taskStore) {
+    app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
+      taskStore!.resolveTaskOrigins(sessionIds);
+  }
+
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the
   // marketplace block below) so the agent-create re-bind works even when the

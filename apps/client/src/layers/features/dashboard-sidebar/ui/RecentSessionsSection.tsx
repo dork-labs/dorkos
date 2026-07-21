@@ -1,15 +1,21 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionListWarning } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
-import { SidebarGroup, SidebarMenu, SidebarMenuSkeleton } from '@/layers/shared/ui';
+import {
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuSkeleton,
+} from '@/layers/shared/ui';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
   setRecentsCollapsed,
 } from '@/layers/entities/config';
+import { partitionSessionsByOrigin } from '@/layers/entities/session';
 import { RecentSessionRow } from './RecentSessionRow';
 
 /** Most sessions the Recent section ever renders. */
@@ -56,7 +62,18 @@ export function RecentSessionsSection({
     }
   }, [warnings]);
 
-  const rows = sessions.slice(0, MAX_RECENT_ROWS);
+  // Conversations first, capped: automated sessions (agent/channel/task/external
+  // origin) stay tucked behind the reveal row below (session-origin-legibility).
+  const { conversations, automated } = useMemo(
+    () => partitionSessionsByOrigin(sessions),
+    [sessions]
+  );
+  const rows = conversations.slice(0, MAX_RECENT_ROWS);
+  const [automatedExpanded, setAutomatedExpanded] = useState(false);
+
+  const resolveAgent = (session: Session) => (session.cwd && agents[session.cwd]) || null;
+  const resolveDisplayName = (session: Session) =>
+    (session.cwd && displayNames[session.cwd]) || session.cwd?.split('/').pop() || 'Agent';
 
   return (
     <SidebarGroup>
@@ -79,23 +96,49 @@ export function RecentSessionsSection({
 
       {!recentsCollapsed && (
         <SidebarMenu>
-          {isLoading && sessions.length === 0
-            ? Array.from({ length: SKELETON_ROWS }, (_, i) => (
-                <SidebarMenuSkeleton key={`recent-skeleton-${i}`} showIcon />
-              ))
-            : rows.map((session) => (
+          {isLoading && sessions.length === 0 ? (
+            Array.from({ length: SKELETON_ROWS }, (_, i) => (
+              <SidebarMenuSkeleton key={`recent-skeleton-${i}`} showIcon />
+            ))
+          ) : (
+            <>
+              {rows.map((session) => (
                 <RecentSessionRow
                   key={session.id}
                   session={session}
-                  agent={(session.cwd && agents[session.cwd]) || null}
-                  displayName={
-                    (session.cwd && displayNames[session.cwd]) ||
-                    session.cwd?.split('/').pop() ||
-                    'Agent'
-                  }
+                  agent={resolveAgent(session)}
+                  displayName={resolveDisplayName(session)}
                   onClick={() => onSelectSession(session)}
                 />
               ))}
+
+              {automated.length > 0 && (
+                <SidebarMenuItem>
+                  <button
+                    type="button"
+                    onClick={() => setAutomatedExpanded((prev) => !prev)}
+                    aria-expanded={automatedExpanded}
+                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors duration-100"
+                  >
+                    {automatedExpanded ? 'Hide' : `+ ${automated.length} automated`}
+                  </button>
+                </SidebarMenuItem>
+              )}
+
+              {automatedExpanded &&
+                automated
+                  .slice(0, MAX_RECENT_ROWS)
+                  .map((session) => (
+                    <RecentSessionRow
+                      key={session.id}
+                      session={session}
+                      agent={resolveAgent(session)}
+                      displayName={resolveDisplayName(session)}
+                      onClick={() => onSelectSession(session)}
+                    />
+                  ))}
+            </>
+          )}
         </SidebarMenu>
       )}
     </SidebarGroup>

@@ -83,3 +83,7 @@ export { listRecentSessions, RECENT_FANOUT_CONCURRENCY } from './recent-sessions
 
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';
+
+// --- Pulse task-origin overlay (session-origin-legibility) ---
+export { applyTaskOriginOverlay } from './task-origin-overlay.js';
+export type { ResolveTaskOrigins } from './task-origin-overlay.js';

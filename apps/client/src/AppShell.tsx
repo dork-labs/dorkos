@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
+import type { SessionOrigin } from '@dorkos/shared/types';
 import {
   useAppStore,
   useFavicon,
@@ -15,6 +16,7 @@ import {
   useDefaultCwd,
   useDirectoryState,
   useGlobalSessionStream,
+  useSessionOrigin,
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useCommandsSync } from '@/layers/entities/command';
@@ -139,7 +141,15 @@ function useSidebarSlot(): SidebarSlot {
  * All routes use a page-specific header with consistent `PageHeader` layout.
  * The session route includes a breadcrumb with the agent name.
  */
-function useHeaderSlot({ agentName }: { agentName: string | undefined }): HeaderSlot {
+function useHeaderSlot({
+  agentName,
+  origin,
+  originLabel,
+}: {
+  agentName: string | undefined;
+  origin: SessionOrigin | undefined;
+  originLabel: string | undefined;
+}): HeaderSlot {
   const { pathname, searchStr } = useRouterState({
     select: (s) => ({ pathname: s.location.pathname, searchStr: s.location.searchStr }),
   });
@@ -173,7 +183,7 @@ function useHeaderSlot({ agentName }: { agentName: string | undefined }): Header
     case '/session':
       return {
         key: 'session',
-        content: <SessionHeader agentName={agentName} />,
+        content: <SessionHeader agentName={agentName} origin={origin} originLabel={originLabel} />,
         borderStyle: undefined,
       };
     default:
@@ -272,8 +282,12 @@ export function AppShell() {
 
   // Route-aware sidebar and header slots — cross-fade on route change
   const sidebarSlot = useSidebarSlot();
+  const { origin: activeSessionOrigin, originLabel: activeSessionOriginLabel } =
+    useSessionOrigin(activeSessionId);
   const headerSlot = useHeaderSlot({
     agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
+    origin: activeSessionOrigin,
+    originLabel: activeSessionOriginLabel,
   });
 
   // Eligible global banners, ranked and rendered one-at-a-time by AppBannerSlot

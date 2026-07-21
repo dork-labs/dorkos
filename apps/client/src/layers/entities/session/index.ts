@@ -92,3 +92,12 @@ export { useRenameSession } from './model/use-rename-session';
 export { SessionRow } from './ui/SessionRow';
 export type { SessionRowProps } from './ui/SessionRow';
 export { SessionContextGauge } from './ui/SessionContextGauge';
+
+// Origin — session-origin-legibility: descriptor registry, the row glyph, and the sidebar partition selector.
+export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
+export type { OriginDescriptor } from './config/origin-descriptors';
+export { OriginMark } from './ui/OriginMark';
+export { partitionSessionsByOrigin } from './lib/partition-sessions-by-origin';
+export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
+export { useSessionOrigin } from './model/use-sessions';
+export type { SessionOriginData } from './model/use-sessions';

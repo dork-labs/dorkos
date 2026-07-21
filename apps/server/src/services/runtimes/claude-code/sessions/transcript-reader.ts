@@ -10,6 +10,7 @@ import type {
 } from '@dorkos/shared/types';
 import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
+import { classifyOrigin } from './classify-origin.js';
 import { parseTasks } from './task-reader.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
 import { resolveClaudeConfigDir } from '../claude-config-dir.js';
@@ -270,6 +271,7 @@ export class TranscriptReader {
     const lines = chunk.split('\n').filter((l) => l.trim());
 
     let firstUserMessage = '';
+    let firstRawUserMessage = '';
     let permissionMode: PermissionMode = 'default';
     let firstTimestamp = '';
     let model: string | undefined;
@@ -325,6 +327,9 @@ export class TranscriptReader {
       // Extract first user message for title
       if (!firstUserMessage && parsed.type === 'user' && parsed.message) {
         const text = extractTextContent(parsed.message.content);
+        if (!firstRawUserMessage) {
+          firstRawUserMessage = text;
+        }
         if (
           text.startsWith('<local-command') ||
           text.startsWith('<command-name>') ||
@@ -355,6 +360,7 @@ export class TranscriptReader {
     // creation, via renameSession, or auto-generated). Prefer the persisted
     // title; fall back to the first-message derivation for untitled sessions.
     const title = (await this.resolveSdkTitle(sessionId, cwd)) ?? derivedTitle;
+    const { origin, originLabel } = classifyOrigin(firstRawUserMessage);
 
     const session: Session = {
       id: sessionId,
@@ -365,6 +371,8 @@ export class TranscriptReader {
       permissionMode,
       runtime: 'claude-code',
       model,
+      origin,
+      originLabel,
       cwd,
     };
 

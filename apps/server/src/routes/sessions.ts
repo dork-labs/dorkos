@@ -26,7 +26,9 @@ import {
   getOrCreateProjector,
   rekeyProjector,
   triggerTurn,
+  applyTaskOriginOverlay,
 } from '../services/session/index.js';
+import type { ResolveTaskOrigins } from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
@@ -86,6 +88,10 @@ router.get('/', async (req, res) => {
     const settings = stored.get(session.id);
     if (settings) applyStoredSettings(session, settings);
   }
+  // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
+  // catches direct-branch Pulse runs the transcript-head classifier can't see.
+  const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
+  applyTaskOriginOverlay(page, resolveTaskOrigins);
   res.json(warnings.length > 0 ? { sessions: page, warnings } : { sessions: page });
 });
 
@@ -110,6 +116,10 @@ router.get('/recent', async (req, res) => {
     agentPaths,
     limit,
   });
+  // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
+  // catches direct-branch Pulse runs the transcript-head classifier can't see.
+  const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
+  applyTaskOriginOverlay(sessions, resolveTaskOrigins);
   res.json({ sessions, agentActivity, warnings });
 });
 
@@ -144,6 +154,8 @@ router.get('/:id', async (req, res) => {
   // chosen mode/model/etc., not just what the transcript recorded.
   const stored = await runtimeRegistry.getSessionSettings(internalSessionId);
   if (stored) applyStoredSettings(session, stored);
+  const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
+  applyTaskOriginOverlay([session], resolveTaskOrigins);
   res.json(session);
 });
 

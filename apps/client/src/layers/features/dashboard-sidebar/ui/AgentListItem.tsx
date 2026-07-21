@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Plus, MoreHorizontal, BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -13,7 +13,12 @@ import {
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useAgentVisual, AgentIdentity } from '@/layers/entities/agent';
-import { useAgentHottestStatus, usePulseMotion, SessionRow } from '@/layers/entities/session';
+import {
+  useAgentHottestStatus,
+  usePulseMotion,
+  SessionRow,
+  partitionSessionsByOrigin,
+} from '@/layers/entities/session';
 import { AgentContextMenu } from './AgentContextMenu';
 import { AgentRowMenuItems } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
@@ -122,7 +127,14 @@ export function AgentListItem({
   const visual = useAgentVisual(agent, path);
   const displayName =
     displayNameProp ?? getAgentDisplayName(agent, path.split('/').pop() ?? 'Agent');
-  const previewSessions = sessions.slice(0, MAX_PREVIEW_SESSIONS);
+  // Conversations preview first, capped: automated sessions (agent/channel/task/
+  // external origin) stay tucked behind the reveal row below (session-origin-legibility).
+  const { conversations, automated } = useMemo(
+    () => partitionSessionsByOrigin(sessions),
+    [sessions]
+  );
+  const previewSessions = conversations.slice(0, MAX_PREVIEW_SESSIONS);
+  const [automatedExpanded, setAutomatedExpanded] = useState(false);
   const showExpanded = isActive && isExpanded;
 
   // Aggregate status across all sessions for left-border indicator. The path
@@ -261,29 +273,32 @@ export function AgentListItem({
                 </motion.div>
               )}
 
-              {showExpanded && !isLoadingSessions && previewSessions.length === 0 && (
-                <motion.div
-                  key="first-session"
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                    transition: {
-                      opacity: { duration: 0.15, ease: [0.0, 0.0, 0.2, 1] },
-                      y: { type: 'spring', stiffness: 500, damping: 30 },
-                      delay: ROW_INITIAL_DELAY,
-                    },
-                  }}
-                  exit={{ opacity: 0, y: -6, transition: { duration: 0.1 } }}
-                >
-                  <div className="flex items-center gap-2 px-2.5 py-1.5">
-                    <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
-                      #1
-                    </span>
-                    <span className="text-muted-foreground/50 text-[11px]">First session</span>
-                  </div>
-                </motion.div>
-              )}
+              {showExpanded &&
+                !isLoadingSessions &&
+                previewSessions.length === 0 &&
+                automated.length === 0 && (
+                  <motion.div
+                    key="first-session"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      transition: {
+                        opacity: { duration: 0.15, ease: [0.0, 0.0, 0.2, 1] },
+                        y: { type: 'spring', stiffness: 500, damping: 30 },
+                        delay: ROW_INITIAL_DELAY,
+                      },
+                    }}
+                    exit={{ opacity: 0, y: -6, transition: { duration: 0.1 } }}
+                  >
+                    <div className="flex items-center gap-2 px-2.5 py-1.5">
+                      <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
+                        #1
+                      </span>
+                      <span className="text-muted-foreground/50 text-[11px]">First session</span>
+                    </div>
+                  </motion.div>
+                )}
 
               {showExpanded &&
                 previewSessions.map((session, i) => (
@@ -319,7 +334,7 @@ export function AgentListItem({
                   </motion.div>
                 ))}
 
-              {showExpanded && previewSessions.length > 0 && (
+              {showExpanded && (previewSessions.length > 0 || automated.length > 0) && (
                 <motion.div
                   key="new-session-btn"
                   initial={{ opacity: 0, y: -6 }}
@@ -347,6 +362,67 @@ export function AgentListItem({
                   </button>
                 </motion.div>
               )}
+
+              {showExpanded && automated.length > 0 && (
+                <motion.div
+                  key="automated-reveal"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    transition: {
+                      opacity: { duration: 0.15, ease: [0.0, 0.0, 0.2, 1] },
+                      y: { type: 'spring', stiffness: 500, damping: 30 },
+                      delay: ROW_INITIAL_DELAY + (previewSessions.length + 1) * ROW_STAGGER,
+                    },
+                  }}
+                  exit={{ opacity: 0, y: -6, transition: { duration: 0.1 } }}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAutomatedExpanded((prev) => !prev);
+                    }}
+                    aria-expanded={automatedExpanded}
+                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors duration-100"
+                  >
+                    {automatedExpanded ? 'Hide' : `+ ${automated.length} automated`}
+                  </button>
+                </motion.div>
+              )}
+
+              {showExpanded &&
+                automatedExpanded &&
+                automated.slice(0, MAX_PREVIEW_SESSIONS).map((session, i) => (
+                  <motion.div
+                    key={session.id}
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      transition: {
+                        opacity: { duration: 0.15, ease: [0.0, 0.0, 0.2, 1] },
+                        y: { type: 'spring', stiffness: 500, damping: 30 },
+                        delay: ROW_INITIAL_DELAY + i * ROW_STAGGER,
+                      },
+                    }}
+                    exit={{
+                      opacity: 0,
+                      y: -6,
+                      transition: { duration: 0.1 },
+                    }}
+                  >
+                    <SessionRow
+                      variant="compact"
+                      session={session}
+                      isActive={session.id === activeSessionId}
+                      onClick={() => onSessionClick(session.id)}
+                      onFork={onForkSession}
+                      onRename={onRenameSession}
+                    />
+                  </motion.div>
+                ))}
             </AnimatePresence>
           </div>
         </motion.div>
