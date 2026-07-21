@@ -825,7 +825,7 @@ describe('mapSdkMessage', () => {
   });
 
   describe('rate_limit_event messages', () => {
-    it('emits rate_limit with retryAfter when retry_after is present', async () => {
+    it('yields nothing when rate_limit_info is absent', async () => {
       const events = await collectEvents(
         mapSdkMessage(
           {
@@ -837,16 +837,15 @@ describe('mapSdkMessage', () => {
           makeToolState()
         )
       );
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('rate_limit');
-      expect((events[0].data as Record<string, unknown>).retryAfter).toBe(30);
+      expect(events).toHaveLength(0);
     });
 
-    it('emits rate_limit with undefined retryAfter when retry_after is absent', async () => {
+    it('projects subscription usage onto session_status when rate_limit_info is present', async () => {
       const events = await collectEvents(
         mapSdkMessage(
           {
             type: 'rate_limit_event',
+            rate_limit_info: { status: 'allowed', utilization: 0.5, rateLimitType: 'five_hour' },
           } as unknown,
           makeSession(),
           'session-1',
@@ -854,8 +853,7 @@ describe('mapSdkMessage', () => {
         )
       );
       expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('rate_limit');
-      expect((events[0].data as Record<string, unknown>).retryAfter).toBeUndefined();
+      expect(events[0].type).toBe('session_status');
     });
   });
 
