@@ -29,6 +29,7 @@ import {
   getOrCreateProjector,
   getSessionEventStore,
 } from '../../session/session-state-projector.js';
+import { logger } from '../../../lib/logger.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { scenarioStore } from './scenario-store.js';
@@ -109,7 +110,16 @@ export class TestModeRuntime implements AgentRuntime {
     const store = getSessionEventStore();
     for (const sessionId of this.registry.ids()) {
       disposeProjector(sessionId);
-      store?.deleteSession(sessionId);
+      try {
+        store?.deleteSession(sessionId);
+      } catch (error) {
+        // Warn-and-swallow (the flushTurn pattern): one session's failed durable
+        // delete must not abort the loop and leave later projectors un-disposed.
+        logger.warn('[TestModeRuntime] durable session delete failed during reset', {
+          sessionId,
+          error,
+        });
+      }
     }
     this.registry.reset();
   }
