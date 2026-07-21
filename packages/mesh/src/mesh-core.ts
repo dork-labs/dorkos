@@ -104,6 +104,7 @@ export class MeshCore {
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private readonly onUnregisterCallbacks: Array<(agentId: string, projectPath: string) => void> =
     [];
+  private readonly onLivenessChangeCallbacks: Array<(result: ReconcileResult) => void> = [];
 
   /**
    * Create the Mesh coordination core.
@@ -242,6 +243,21 @@ export class MeshCore {
     this.onUnregisterCallbacks.push(callback);
   }
 
+  /**
+   * Register a callback fired after a periodic reconciliation pass that flipped
+   * at least one agent's liveness — newly marked unreachable (went offline) or
+   * resurrected (came back online). The DorkOS server wires this to the
+   * `/api/events` SSE fan-out so the Pulse attention badge ticks on the real
+   * transition edge instead of waiting for the next 30s mesh-status poll
+   * (DOR-403). Callbacks fire ONLY when `unreachable > 0 || resurrected > 0`, so
+   * a steady-state pass with no change broadcasts nothing.
+   *
+   * @param callback - Invoked with the reconcile result on a liveness transition.
+   */
+  onLivenessChange(callback: (result: ReconcileResult) => void): void {
+    this.onLivenessChangeCallbacks.push(callback);
+  }
+
   // --- Query ---
 
   /** List all registered agents, optionally filtered by runtime, capability, or namespace. */
@@ -376,12 +392,34 @@ export class MeshCore {
     if (this.reconcileTimer) return;
     this.reconcileTimer = setInterval(async () => {
       try {
-        await reconcile(this.reconcilerDeps());
+        const result = await reconcile(this.reconcilerDeps());
+        // Fire liveness observers ONLY on a real transition edge — an agent went
+        // offline (newly unreachable) or came back online (resurrected). A
+        // no-change pass broadcasts nothing (DOR-403).
+        if (result.unreachable > 0 || result.resurrected > 0) {
+          this.notifyLivenessChange(result);
+        }
       } catch (err) {
         this.logger.error('[Mesh] Periodic reconciliation failed:', err);
       }
     }, intervalMs);
     this.reconcileTimer.unref();
+  }
+
+  /**
+   * Invoke every registered liveness-change observer, isolating failures so one
+   * bad listener cannot break the reconcile loop or the others.
+   *
+   * @param result - The reconcile result carrying the transition counts.
+   */
+  private notifyLivenessChange(result: ReconcileResult): void {
+    for (const callback of this.onLivenessChangeCallbacks) {
+      try {
+        callback(result);
+      } catch (err) {
+        this.logger.warn('[Mesh] onLivenessChange callback threw', { err });
+      }
+    }
   }
 
   /**

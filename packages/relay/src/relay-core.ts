@@ -167,6 +167,7 @@ export class RelayCore {
       maildirStore,
       sqliteIndex: this.sqliteIndex,
       rootDir: mailboxesDir,
+      onDeadLetter: options?.onDeadLetter,
     });
     this.accessControl = new AccessControl(dataDir);
     this.signalEmitter = new SignalEmitter();

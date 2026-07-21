@@ -2,7 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type { ListTaskRunsQuery } from '@dorkos/shared/types';
 
-const TASK_RUNS_KEY = ['tasks', 'runs'] as const;
+/** Query-key prefix for every Task-runs cache. Exported so cross-cutting freshness bridges can invalidate it. */
+export const TASK_RUNS_KEY = ['tasks', 'runs'] as const;
 
 /**
  * Fetch Task runs with optional filters.

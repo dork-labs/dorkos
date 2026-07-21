@@ -691,7 +691,16 @@ async function start() {
       // traceRelay wraps publish with a relay.dispatch span when debug tracing
       // is on; returns the core untouched otherwise (zero overhead).
       relayCore = traceRelay(
-        new RelayCore({ dataDir: relayDataDir, adapterRegistry, db, traceStore, logger })
+        new RelayCore({
+          dataDir: relayDataDir,
+          adapterRegistry,
+          db,
+          traceStore,
+          logger,
+          // Tick the Pulse attention badge the instant a message is dead-lettered
+          // (DOR-403) instead of waiting for the 30s dead-letters poll.
+          onDeadLetter: (notice) => eventFanOut.broadcast('relay_dead_letter', notice),
+        })
       );
       await relayCore.registerEndpoint('relay.system.console');
       logger.info(`[Relay] RelayCore initialized (dataDir: ${relayDataDir})`);
@@ -743,6 +752,17 @@ async function start() {
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
+
+    // Tick the Pulse attention badge on a real liveness transition (an agent
+    // went offline or came back online) instead of waiting for the 30s
+    // mesh-status poll (DOR-403).
+    meshCore.onLivenessChange((result) =>
+      eventFanOut.broadcast('mesh_liveness_changed', {
+        unreachable: result.unreachable,
+        resurrected: result.resurrected,
+        changedAt: new Date().toISOString(),
+      })
+    );
 
     // Start periodic reconciliation (every 5 minutes)
     meshCore.startPeriodicReconciliation(300_000);

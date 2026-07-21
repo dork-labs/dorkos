@@ -32,6 +32,7 @@ export type { SqliteIndexOptions, IndexedMessage, MessageStatus } from './sqlite
 export { DeadLetterQueue } from './dead-letter-queue.js';
 export type {
   DeadLetterQueueOptions,
+  DeadLetterNotice,
   RejectResult,
   DeadLetterEntry,
   ListDeadOptions,

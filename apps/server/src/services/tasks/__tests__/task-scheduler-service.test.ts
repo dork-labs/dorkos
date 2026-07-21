@@ -17,7 +17,12 @@ vi.mock('../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn(() => false),
 }));
 
+vi.mock('../../core/event-fan-out.js', () => ({
+  eventFanOut: { broadcast: vi.fn() },
+}));
+
 import { isRelayEnabled } from '../../relay/relay-state.js';
+import { eventFanOut } from '../../core/event-fan-out.js';
 
 function createMockAgentManager(): SchedulerAgentManager {
   return {
@@ -432,6 +437,7 @@ describe('TaskSchedulerService', () => {
 
     beforeEach(() => {
       vi.mocked(isRelayEnabled).mockReturnValue(true);
+      vi.mocked(eventFanOut.broadcast).mockClear();
       mockRelay = {
         publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
       };
@@ -533,6 +539,56 @@ describe('TaskSchedulerService', () => {
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
       expect(updatedRun?.error).toBe('No receiver for task dispatch');
+
+      await service.stop();
+    });
+
+    it('DOR-403: broadcasts task_run_failed on /api/events when a run fails', async () => {
+      mockRelay.publish.mockResolvedValue({ messageId: 'msg-df', deliveredTo: 0 });
+
+      const task = store.createTask(
+        taskInput({ name: 'Broadcast On Fail', prompt: 'orphan', cron: '0 * * * *' })
+      );
+
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      const run = await service.triggerManualRun(task.id);
+      await new Promise((r) => setTimeout(r, 100));
+
+      const failCalls = vi
+        .mocked(eventFanOut.broadcast)
+        .mock.calls.filter(([name]) => name === 'task_run_failed');
+      expect(failCalls).toHaveLength(1);
+      expect(failCalls[0][1]).toMatchObject({ runId: run!.id, taskId: task.id });
+
+      await service.stop();
+    });
+
+    it('DOR-403: does NOT broadcast task_run_failed on successful delivery', async () => {
+      mockRelay.publish.mockResolvedValue({ messageId: 'msg-ok', deliveredTo: 2 });
+
+      const task = store.createTask(
+        taskInput({ name: 'No Fail Broadcast', prompt: 'ok', cron: '0 * * * *' })
+      );
+
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      await service.triggerManualRun(task.id);
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(
+        vi.mocked(eventFanOut.broadcast).mock.calls.filter(([name]) => name === 'task_run_failed')
+      ).toHaveLength(0);
 
       await service.stop();
     });

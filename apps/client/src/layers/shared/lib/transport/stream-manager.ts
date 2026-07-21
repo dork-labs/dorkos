@@ -154,6 +154,9 @@ export const GENERIC_EVENTS = [
   'relay_bindings_changed',
   'relay_adapters_changed',
   'relay_flow',
+  'relay_dead_letter',
+  'task_run_failed',
+  'mesh_liveness_changed',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

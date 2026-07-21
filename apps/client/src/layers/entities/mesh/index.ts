@@ -13,7 +13,7 @@ export { useDeleteAgentData } from './model/use-delete-agent-data';
 export { useClearDenial } from './model/use-clear-denial';
 export { useUpdateAgent } from './model/use-mesh-update';
 export { useDeniedAgents } from './model/use-mesh-denied';
-export { useMeshStatus } from './model/use-mesh-status';
+export { useMeshStatus, MESH_STATUS_KEY } from './model/use-mesh-status';
 export { useMeshAgentHealth } from './model/use-mesh-agent-health';
 export { useMeshHeartbeat } from './model/use-mesh-heartbeat';
 export { useTopology } from './model/use-mesh-topology';
