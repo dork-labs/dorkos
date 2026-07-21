@@ -205,8 +205,85 @@ export function createGroup(prev: SidebarPrefs, name: string): { next: SidebarPr
     collapsed: false,
     displayFilter: 'all',
     muted: false,
+    kind: 'manual',
   };
   return { next: { ...prev, groups: [...prev.groups, group] }, id };
+}
+
+/**
+ * Create a new expanded smart group (smart-agent-groups, DOR-338) with the
+ * given name and rules. `sortMode` is forced to `'recent'` — smart groups
+ * reject `'manual'` sort at the schema level (derived membership has no
+ * hand-orderable sequence).
+ *
+ * @param prev - Current prefs.
+ * @param name - Display name for the new group.
+ * @param rules - The rule set to evaluate membership from (≥1 constraint).
+ * @returns The next prefs plus the newly-minted group `id`.
+ */
+export function createSmartGroup(
+  prev: SidebarPrefs,
+  name: string,
+  rules: SidebarGroup['rules']
+): { next: SidebarPrefs; id: string } {
+  const id = crypto.randomUUID();
+  const group: SidebarGroup = {
+    id,
+    name,
+    agentPaths: [],
+    sortMode: 'recent',
+    collapsed: false,
+    displayFilter: 'all',
+    muted: false,
+    kind: 'smart',
+    rules,
+  };
+  return { next: { ...prev, groups: [...prev.groups, group] }, id };
+}
+
+/**
+ * Convert a smart group to a manual group, materializing its currently-
+ * matching members into `agentPaths` (spec §4, ideation decision 5 — the
+ * escape hatch). Keeps name/collapse/sort/mute/displayFilter untouched;
+ * drops `rules` since a manual group never reads it.
+ *
+ * @param prev - Current prefs.
+ * @param groupId - The smart group to convert.
+ * @param currentMembers - The group's currently-matching project paths
+ *   (from `evaluateSmartGroup`), materialized verbatim into `agentPaths`.
+ */
+export function convertSmartGroupToManual(
+  prev: SidebarPrefs,
+  groupId: string,
+  currentMembers: string[]
+): SidebarPrefs {
+  return {
+    ...prev,
+    groups: prev.groups.map((g) =>
+      g.id === groupId
+        ? { ...g, kind: 'manual', rules: undefined, agentPaths: [...currentMembers] }
+        : g
+    ),
+  };
+}
+
+/**
+ * Replace a smart group's `rules` (the "Edit rules" flow). A no-op for a
+ * manual group or an unknown id.
+ *
+ * @param prev - Current prefs.
+ * @param groupId - The smart group to edit.
+ * @param rules - The new rule set (≥1 constraint — schema-enforced).
+ */
+export function setGroupRules(
+  prev: SidebarPrefs,
+  groupId: string,
+  rules: SidebarGroup['rules']
+): SidebarPrefs {
+  return {
+    ...prev,
+    groups: prev.groups.map((g) => (g.id === groupId && g.kind === 'smart' ? { ...g, rules } : g)),
+  };
 }
 
 /** Rename the group with `groupId`. */

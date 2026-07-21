@@ -85,20 +85,88 @@ export const SidebarDisplayFilterSchema = z.enum(['all', 'active', 'attention'])
 /** A section's display filter value (see {@link SidebarDisplayFilterSchema}). */
 export type SidebarDisplayFilter = z.infer<typeof SidebarDisplayFilterSchema>;
 
-export const SidebarGroupSchema = z.object({
+/**
+ * A smart group's membership rule set (smart-agent-groups, DOR-338). Every
+ * PRESENT field is an AND constraint; within a field, values are OR'd (e.g.
+ * `runtimes: ['codex', 'opencode']` matches either). An absent field imposes
+ * no constraint. Evaluated client-side by `evaluateSmartGroup` — never
+ * persisted as materialized membership.
+ */
+export const SmartGroupRulesSchema = z.object({
+  /** Match any of these runtimes (OR). Absent field = no constraint. */
+  runtimes: z.array(z.string()).optional(),
+  /** Match any of these mesh namespaces (OR). */
+  namespaces: z.array(z.string()).optional(),
+  /** Match any of these attention states (OR). Mirrors `AttentionState`. */
+  statuses: z.array(z.enum(['needs-attention', 'active', 'idle', 'inactive'])).optional(),
+  /** Activity within this window (ms), inclusive at the boundary. */
+  lastActiveWithinMs: z.number().int().positive().optional(),
+  /** `projectPath` starts-with match. */
+  pathPrefix: z.string().min(1).optional(),
+});
+
+/** A smart group's rule set (see {@link SmartGroupRulesSchema}). */
+export type SmartGroupRules = z.infer<typeof SmartGroupRulesSchema>;
+
+const SidebarGroupShapeSchema = z.object({
   /** Stable id, `crypto.randomUUID()` minted client-side at creation. */
   id: z.string().min(1),
   /** Display name. Duplicates allowed (ids disambiguate). */
   name: z.string().trim().min(1).max(40),
-  /** Ordered member agent projectPaths - the durable manual order. */
+  /**
+   * Ordered member agent projectPaths - the durable manual order. Ignored
+   * when `kind === 'smart'` (membership derives from `rules` instead); kept
+   * as-is so "Convert to manual group" has somewhere to materialize into.
+   */
   agentPaths: z.array(z.string()).default(() => []),
-  /** How rows inside this group are ordered. Switching away from 'manual' never mutates agentPaths. */
+  /**
+   * How rows inside this group are ordered. Switching away from 'manual'
+   * never mutates agentPaths. Smart groups reject `'manual'` (see the
+   * cross-field refine below) — derived membership has no hand-orderable
+   * sequence.
+   */
   sortMode: z.enum(['manual', 'recent', 'name']).default('manual'),
   collapsed: z.boolean().default(false),
   /** Which members render: all, active-recently, or needs-attention only (DOR-339). */
   displayFilter: SidebarDisplayFilterSchema.default('all'),
   /** Muted groups drop every attention signal for all members at once (DOR-339). */
   muted: z.boolean().default(false),
+  /**
+   * Manual groups own `agentPaths`; smart groups derive members from `rules`
+   * (smart-agent-groups, DOR-338). Additive discriminator — existing groups
+   * default `'manual'`, zero migration risk.
+   */
+  kind: z.enum(['manual', 'smart']).default('manual'),
+  /** Present iff `kind === 'smart'`. At least one field must be set (refine below). */
+  rules: SmartGroupRulesSchema.optional(),
+});
+
+/**
+ * A single user-defined sidebar group (Slack-style section), with the
+ * DOR-338 cross-field invariants a plain object shape can't express:
+ * a `'smart'` group must carry at least one rule constraint, and smart
+ * groups can never use `sortMode: 'manual'` (derived membership has no
+ * hand-orderable sequence — the group-create flow forces `'recent'`, and the
+ * render path falls back `manual → recent` defensively for any data that
+ * somehow predates this constraint).
+ */
+export const SidebarGroupSchema = SidebarGroupShapeSchema.superRefine((group, ctx) => {
+  if (group.kind !== 'smart') return;
+  if (!group.rules || Object.keys(group.rules).length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rules'],
+      message: 'A smart group requires at least one rule constraint.',
+    });
+  }
+  if (group.sortMode === 'manual') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sortMode'],
+      message:
+        "Smart groups can't use 'manual' sort — membership is rule-derived, not hand-orderable.",
+    });
+  }
 });
 
 /** A single user-defined sidebar group (Slack-style section). */

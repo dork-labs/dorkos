@@ -9,6 +9,7 @@ import {
   backfillSidebarDefaults,
   backfillShapesDefaults,
   backfillSidebarSettingsDefaults,
+  backfillSmartGroupKindDefaults,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
@@ -1027,6 +1028,86 @@ describe('backfillSidebarSettingsDefaults migration (DOR-339)', () => {
   it('is a no-op when the ui section is absent entirely', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillSmartGroupKindDefaults migration (smart-agent-groups, DOR-338)', () => {
+  it('adds kind: "manual" to every existing group missing it', () => {
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        sidebar: {
+          pinned: [],
+          groups: [
+            {
+              id: 'g1',
+              name: 'Clients',
+              agentPaths: ['/a'],
+              sortMode: 'manual',
+              collapsed: false,
+              displayFilter: 'all',
+              muted: false,
+            },
+            {
+              id: 'g2',
+              name: 'Experiments',
+              agentPaths: [],
+              sortMode: 'name',
+              collapsed: false,
+              displayFilter: 'active',
+              muted: true,
+            },
+          ],
+        },
+      },
+    });
+    backfillSmartGroupKindDefaults(store);
+    const groups = (store.data.ui as { sidebar: { groups: { kind: string }[] } }).sidebar.groups;
+    expect(groups[0]!.kind).toBe('manual');
+    expect(groups[1]!.kind).toBe('manual');
+  });
+
+  it('is idempotent — never overwrites an already-set kind (e.g. a smart group)', () => {
+    const existing = {
+      theme: 'system',
+      sidebar: {
+        pinned: [],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Active now',
+            agentPaths: [],
+            sortMode: 'recent',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'smart',
+            rules: { statuses: ['needs-attention', 'active'] },
+          },
+        ],
+      },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillSmartGroupKindDefaults(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when ui.sidebar.groups is absent', () => {
+    const store = createMockStore({ ui: { theme: 'dark', sidebar: { pinned: [] } } });
+    backfillSmartGroupKindDefaults(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', sidebar: { pinned: [] } });
+  });
+
+  it('is a no-op when ui.sidebar is absent', () => {
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    backfillSmartGroupKindDefaults(store);
+    expect(store.data.ui).toEqual({ theme: 'dark' });
+  });
+
+  it('is a no-op when the ui section is absent entirely', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillSmartGroupKindDefaults(store);
     expect(store.data.ui).toBeUndefined();
   });
 });

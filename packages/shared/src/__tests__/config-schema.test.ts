@@ -9,6 +9,7 @@ import {
   SidebarPrefsSchema,
   SIDEBAR_PREFS_DEFAULTS,
   SidebarDisplayFilterSchema,
+  SmartGroupRulesSchema,
 } from '../config-schema.js';
 import type { UserConfig } from '../config-schema.js';
 
@@ -695,6 +696,7 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
       collapsed: false,
       displayFilter: 'all',
       muted: false,
+      kind: 'manual',
     });
   });
 
@@ -719,6 +721,7 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
           collapsed: true,
           displayFilter: 'attention',
           muted: true,
+          kind: 'manual',
         },
       ],
       ungroupedSortMode: 'recent',
@@ -788,7 +791,117 @@ describe('SidebarDisplayFilterSchema + display filter / mute fields (DOR-339)', 
       collapsed: false,
       displayFilter: 'all',
       muted: false,
+      kind: 'manual',
     });
+  });
+});
+
+describe('SmartGroupRulesSchema + SidebarGroupSchema kind/rules (smart-agent-groups, DOR-338)', () => {
+  it('a group defaults kind to "manual" and omits rules', () => {
+    const group = SidebarGroupSchema.parse({ id: 'g1', name: 'Clients' });
+    expect(group.kind).toBe('manual');
+    expect(group.rules).toBeUndefined();
+  });
+
+  it('a manual group ignores an empty/absent rules object', () => {
+    expect(() =>
+      SidebarGroupSchema.parse({ id: 'g1', name: 'Clients', kind: 'manual' })
+    ).not.toThrow();
+  });
+
+  it('parses a valid smart group with one rule constraint and a non-manual sort', () => {
+    const group = SidebarGroupSchema.parse({
+      id: 'g1',
+      name: 'Active now',
+      kind: 'smart',
+      sortMode: 'recent',
+      rules: { statuses: ['needs-attention', 'active'] },
+    });
+    expect(group.kind).toBe('smart');
+    expect(group.rules).toEqual({ statuses: ['needs-attention', 'active'] });
+    expect(group.sortMode).toBe('recent');
+  });
+
+  it('accepts every documented rule field', () => {
+    const rules = {
+      runtimes: ['codex', 'opencode'],
+      namespaces: ['default'],
+      statuses: ['needs-attention', 'active', 'idle', 'inactive'] as const,
+      lastActiveWithinMs: 3_600_000,
+      pathPrefix: '/Users/dorian/work',
+    };
+    expect(SmartGroupRulesSchema.parse(rules)).toEqual(rules);
+  });
+
+  it('rejects a smart group with no rules field at all', () => {
+    expect(() =>
+      SidebarGroupSchema.parse({ id: 'g1', name: 'Empty', kind: 'smart', sortMode: 'recent' })
+    ).toThrow(/at least one rule constraint/);
+  });
+
+  it('rejects a smart group with an empty rules object', () => {
+    expect(() =>
+      SidebarGroupSchema.parse({
+        id: 'g1',
+        name: 'Empty',
+        kind: 'smart',
+        sortMode: 'recent',
+        rules: {},
+      })
+    ).toThrow(/at least one rule constraint/);
+  });
+
+  it('rejects a smart group whose sortMode defaults to "manual"', () => {
+    expect(() =>
+      SidebarGroupSchema.parse({
+        id: 'g1',
+        name: 'Active now',
+        kind: 'smart',
+        rules: { statuses: ['active'] },
+      })
+    ).toThrow(/can't use 'manual' sort/);
+  });
+
+  it('rejects a smart group with an explicit sortMode of "manual"', () => {
+    expect(() =>
+      SidebarGroupSchema.parse({
+        id: 'g1',
+        name: 'Active now',
+        kind: 'smart',
+        sortMode: 'manual',
+        rules: { statuses: ['active'] },
+      })
+    ).toThrow(/can't use 'manual' sort/);
+  });
+
+  it('rejects an unrecognized attention status in rules.statuses', () => {
+    expect(() => SmartGroupRulesSchema.parse({ statuses: ['bogus'] })).toThrow();
+  });
+
+  it('rejects a non-positive lastActiveWithinMs', () => {
+    expect(() => SmartGroupRulesSchema.parse({ lastActiveWithinMs: 0 })).toThrow();
+    expect(() => SmartGroupRulesSchema.parse({ lastActiveWithinMs: -1 })).toThrow();
+  });
+
+  it('rejects an empty pathPrefix', () => {
+    expect(() => SmartGroupRulesSchema.parse({ pathPrefix: '' })).toThrow();
+  });
+
+  it('a legacy (pre-DOR-338) stored group without kind/rules still parses, defaulting to manual', () => {
+    const legacy = {
+      id: 'g1',
+      name: 'Clients',
+      agentPaths: ['/a'],
+      sortMode: 'manual',
+      collapsed: false,
+      displayFilter: 'all',
+      muted: false,
+    };
+    const result = UserConfigSchema.parse({
+      version: 1,
+      ui: { sidebar: { groups: [legacy] } },
+    });
+    expect(result.ui.sidebar.groups[0]?.kind).toBe('manual');
   });
 });
 

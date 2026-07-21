@@ -695,6 +695,45 @@ export function backfillSidebarSettingsDefaults(store: {
 }
 
 /**
+ * Migration body: backfill `kind: 'manual'` onto every EXISTING stored group
+ * (smart-agent-groups, DOR-338). conf merges top-level defaults SHALLOWLY and
+ * never reaches inside array elements, so a `ui.sidebar.groups` array already
+ * on disk never inherits the new `kind` discriminator on its own — every
+ * pre-DOR-338 group would read back with `kind: undefined` even though the
+ * `SidebarGroupSchema` type says it's always `'manual' | 'smart'`. Additive +
+ * idempotent: only writes `kind` when it is actually missing, never touches
+ * `rules` (absent is correct for a manual group). The whole-`ui`/whole-section
+ * -absent cases are handled by the schema default on read.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillSmartGroupKindDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  const sidebar = (ui as { sidebar?: unknown }).sidebar;
+  if (!sidebar || typeof sidebar !== 'object') return;
+
+  const s = sidebar as Record<string, unknown>;
+  if (!Array.isArray(s.groups)) return;
+
+  let changed = false;
+  const groups = s.groups.map((g: unknown) => {
+    if (!g || typeof g !== 'object') return g;
+    const group = g as Record<string, unknown>;
+    if (group.kind !== undefined) return group;
+    changed = true;
+    return { ...group, kind: 'manual' };
+  });
+  if (!changed) return;
+
+  store.set('ui', { ...(ui as Record<string, unknown>), sidebar: { ...s, groups } });
+}
+
+/**
  * @internal Exported for testing only — lets the migration-key invariant test
  * assert the newest key is always ahead of the current release (the DOR-339
  * "0.54.0 shipped mid-flight" class of bug: a key equal to or behind an
@@ -806,15 +845,27 @@ export const CONFIG_MIGRATIONS = {
   // version (0.51.0 is already tagged); /system:release reconciles the key at
   // tag time if the real release differs.
   '0.52.0': backfillShapesDefaults,
-  // Backfill the DOR-339 display-filter/mute fields (`ui.sidebar.muted`,
-  // `ui.sidebar.ungroupedDisplayFilter`, and `displayFilter`/`muted` on every
-  // stored group) onto an existing `ui.sidebar`. Additive + idempotent; every
-  // filter defaults to 'all' and nothing starts muted. Keyed to the next
-  // unreleased version — 0.54.0 shipped (tagged) while this branch was in
-  // flight, so this landed on 0.55.0 instead of the original 0.54.0 draft;
-  // /system:release reconciles the key at tag time if the real release
-  // differs again.
-  '0.55.0': backfillSidebarSettingsDefaults,
+  // Composite: both DOR-339 and DOR-338 targeted "the next unreleased
+  // version" while developed concurrently and landed on the same key
+  // (0.55.0) — a plain object literal can't repeat a key, so their bodies
+  // compose here in insertion order (same convention as the 0.45.0/0.46.0/
+  // 0.48.0 composites above). Each body is independent and idempotent.
+  '0.55.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // Backfill the DOR-339 display-filter/mute fields (`ui.sidebar.muted`,
+    // `ui.sidebar.ungroupedDisplayFilter`, and `displayFilter`/`muted` on
+    // every stored group) onto an existing `ui.sidebar`. Additive +
+    // idempotent; every filter defaults to 'all' and nothing starts muted.
+    backfillSidebarSettingsDefaults(store);
+    // Backfill `kind: 'manual'` onto every existing stored group
+    // (smart-agent-groups, DOR-338). Additive + idempotent; runs AFTER the
+    // DOR-339 backfill above so it sees the same groups array (order is
+    // immaterial here since the two bodies touch disjoint fields, but
+    // matches the "append yours after it" sequencing).
+    backfillSmartGroupKindDefaults(store);
+  },
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

@@ -21,7 +21,7 @@
       "slug": "smart-agent-groups",
       "title": "Smart agent groups from mesh metadata (rule-based membership)",
       "created": "2026-07-21",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260721-134154",
