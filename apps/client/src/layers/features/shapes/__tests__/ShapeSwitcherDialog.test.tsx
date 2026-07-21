@@ -106,6 +106,16 @@ function applyResult(): ApplyShapeResult {
   };
 }
 
+/** An apply result whose satisfied arrival agent opted into auto-follow. */
+function autoFollowResult(): ApplyShapeResult {
+  const base = applyResult();
+  return {
+    ...base,
+    // Auto-follow off in applyResult(); flip it on for this satisfied arrival.
+    offeredAgents: base.offeredAgents.map((a) => (a.arrival ? { ...a, autoFollow: true } : a)),
+  };
+}
+
 function renderDialog(transport = createMockTransport()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onOpenChange = vi.fn();
@@ -173,6 +183,32 @@ describe('ShapeSwitcherDialog', () => {
         })
       )
     );
+  });
+
+  it('auto-follows a satisfied arrival agent, then dismisses itself with no redundant Open', async () => {
+    const { onOpenChange } = renderDialog(
+      createMockTransport({
+        listShapes: vi.fn().mockResolvedValue(SHAPES),
+        applyShape: vi.fn().mockResolvedValue(autoFollowResult()),
+      })
+    );
+
+    fireEvent.click(await screen.findByText('Linear Ops'));
+
+    // Auto-follow (opt-in) routed us to the agent's cwd inside applyShapeAction.
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: '/session',
+          search: expect.objectContaining({ dir: '/home/kai/linear' }),
+        })
+      )
+    );
+    // §3c: the switcher's job is done — it dismisses itself rather than sitting
+    // as dead chrome over the place it just took you.
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    // §3a: the redundant "Open" button never appears (we're already there).
+    expect(screen.queryByRole('button', { name: /open linear tender/i })).not.toBeInTheDocument();
   });
 
   it('seeds M1 agent creation when an unsatisfied arrival offer is set up', async () => {

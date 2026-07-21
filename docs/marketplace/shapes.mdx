@@ -101,6 +101,31 @@ Applying a different Shape swaps your setup rather than stacking on top of it. D
   extension you wanted disappears after a switch, just turn it back on.
 </Callout>
 
+## Make your own version
+
+Found a Shape that is close to what you want, but not quite? You can make a copy and change it, without touching the original. This is called forking.
+
+Fork a Shape from the command line:
+
+```bash
+dorkos shape fork linear-ops --as my-ops
+```
+
+That gives you a new Shape named `my-ops`, a copy of `linear-ops` that you own and can edit. The copy remembers where it came from, so the switcher shows a small "forked from linear-ops@dorkos-community" note under its name. The original is left exactly as it was.
+
+If you fork the Shape you have applied right now, add `--capture-current`:
+
+```bash
+dorkos shape fork linear-ops --as my-ops --capture-current
+```
+
+From the command line, `--capture-current` snapshots which of the Shape's extensions you have turned on right now, so your copy starts from that set instead of the original's. It cannot capture your window layout: from the command line there is no way to see how your workspace is arranged. Only the in-app switcher (coming in a later release) can carry your live layout into a fork.
+
+<Callout type="info">
+  Forking is how you save your own take on a Shape. Applying a Shape never changes the Shape itself,
+  so the way to keep your tweaks is to fork, then edit your copy.
+</Callout>
+
 ## Updating a Shape
 
 Update a Shape like any other package, from the **Installed** panel or with `dorkos update`. Updating reinstalls the newer version and keeps your active Shape and its schedules in place.
