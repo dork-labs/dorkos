@@ -144,6 +144,13 @@ vi.mock('@/layers/entities/session', () => ({
   useRecentSessions: () => mockRecent(),
   sessionDisplayTitle: (t: string) => t,
   SessionRow: () => null,
+  OriginMark: () => null,
+  // Stubbed rather than imported: mirrors the real partition (session-origin-legibility)
+  // without pulling the real module into this wholesale mock.
+  partitionSessionsByOrigin: (sessions: Array<{ origin?: string }>) => ({
+    conversations: sessions.filter((s) => !s.origin || s.origin === 'user'),
+    automated: sessions.filter((s) => s.origin && s.origin !== 'user'),
+  }),
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({ PromoSlot: () => null }));
