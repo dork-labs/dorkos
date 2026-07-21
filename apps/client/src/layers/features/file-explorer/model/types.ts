@@ -38,3 +38,19 @@ export interface TreeState {
   /** Directory path → whether it is currently expanded. */
   expanded: Record<string, boolean>;
 }
+
+/**
+ * Persisted per-cwd file-explorer UI state (DOR-404, D1). One of these lives
+ * under each cwd key in the `dorkos-file-explorer-state` localStorage blob;
+ * `accessedAt` is the LRU recency stamp that bounds the map.
+ */
+export interface FileExplorerEntry {
+  /** Expanded directories (cwd-relative path, `''`-root-relative → `true`). */
+  expanded: Record<string, boolean>;
+  /** The selected row's cwd-relative path, or `null` when nothing is selected. */
+  selectedPath: string | null;
+  /** Saved scroll offset (px) of the tree body. */
+  scrollTop: number;
+  /** Epoch ms of last access — the LRU recency stamp. */
+  accessedAt: number;
+}
