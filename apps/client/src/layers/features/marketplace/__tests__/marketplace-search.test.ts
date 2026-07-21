@@ -22,13 +22,12 @@ describe('marketplaceSearchSchema — sort facet', () => {
   it('keeps the supported sorts', () => {
     expect(marketplaceSearchSchema.parse({ sort: 'featured' }).sort).toBe('featured');
     expect(marketplaceSearchSchema.parse({ sort: 'name' }).sort).toBe('name');
+    expect(marketplaceSearchSchema.parse({ sort: 'popular' }).sort).toBe('popular');
   });
 
-  it('drops the retired Popular/Recent sorts rather than throwing', () => {
-    for (const sort of ['popular', 'recent'] as const) {
-      expect(() => marketplaceSearchSchema.parse({ sort })).not.toThrow();
-      expect(marketplaceSearchSchema.parse({ sort }).sort).toBeUndefined();
-    }
+  it('drops the retired Recent sort rather than throwing', () => {
+    expect(() => marketplaceSearchSchema.parse({ sort: 'recent' })).not.toThrow();
+    expect(marketplaceSearchSchema.parse({ sort: 'recent' }).sort).toBeUndefined();
   });
 });
 

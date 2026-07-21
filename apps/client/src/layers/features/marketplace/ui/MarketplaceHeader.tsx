@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
+import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import {
   Input,
   Label,
@@ -19,11 +20,11 @@ import { useMarketplaceParams } from '../model/use-marketplace-params';
 /** Debounce delay (ms) before the local search value is committed to the store. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-// Only sorts backed by real data are offered. `Recent` and `Popular` return
-// when AggregatedPackage carries `updatedAt`/`installCount` (tracked in Linear).
+/** Sort options offered by the menu. `Recent` returns once `updatedAt` lands. */
 const SORT_OPTIONS: ReadonlyArray<{ value: MarketplaceSort; label: string }> = [
   { value: 'featured', label: 'Featured' },
   { value: 'name', label: 'A–Z' },
+  { value: 'popular', label: 'Popular' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,16 @@ const SORT_OPTIONS: ReadonlyArray<{ value: MarketplaceSort; label: string }> = [
  */
 export function MarketplaceHeader() {
   const { sort, setSort } = useMarketplaceParams();
+  const { data: packages } = useMarketplacePackages();
+
+  // Popular is backed by community install counts enriched server-side. When
+  // dorkos.ai is unreachable (offline-first: the marketplace still works) no
+  // package carries a count, so the option grays out rather than silently
+  // no-op'ing. One counted package is enough to know counts are available.
+  const popularAvailable = useMemo(
+    () => (packages ?? []).some((pkg) => pkg.installCount !== undefined),
+    [packages]
+  );
 
   return (
     <header className="flex items-center gap-3">
@@ -54,7 +65,12 @@ export function MarketplaceHeader() {
         </SelectTrigger>
         <SelectContent>
           {SORT_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value} className="text-xs">
+            <SelectItem
+              key={opt.value}
+              value={opt.value}
+              disabled={opt.value === 'popular' && !popularAvailable}
+              className="text-xs"
+            >
               {opt.label}
             </SelectItem>
           ))}

@@ -2,8 +2,39 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
+import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { MarketplaceHeader } from '../ui/MarketplaceHeader';
+
+// ---------------------------------------------------------------------------
+// Marketplace packages mock
+//
+// The header reads the package catalog to decide whether the Popular sort has
+// backing install-count data (offline-first: it grays out when counts are
+// unavailable). Mock the entity hook so tests control that signal without a
+// Transport/QueryClient.
+// ---------------------------------------------------------------------------
+
+vi.mock('@/layers/entities/marketplace', () => ({
+  useMarketplacePackages: vi.fn(),
+}));
+
+function pkg(overrides: Partial<AggregatedPackage> & { name: string }): AggregatedPackage {
+  return {
+    source: 'https://github.com/example/pkg',
+    marketplace: 'dorkos-community',
+    ...overrides,
+  };
+}
+
+/** Point the mocked hook at a fixed package list (only `data` is read). */
+function mockPackages(packages: AggregatedPackage[]): void {
+  vi.mocked(useMarketplacePackages).mockReturnValue({
+    data: packages,
+  } as ReturnType<typeof useMarketplacePackages>);
+}
 
 // ---------------------------------------------------------------------------
 // URL params mock
@@ -54,6 +85,13 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   });
+
+  // Radix Select needs these DOM APIs jsdom doesn't implement to open its
+  // listbox under userEvent (same shim used by MarketplaceSourcesView.test).
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (!proto.hasPointerCapture) proto.hasPointerCapture = vi.fn();
+  if (!proto.releasePointerCapture) proto.releasePointerCapture = vi.fn();
+  if (!proto.scrollIntoView) proto.scrollIntoView = vi.fn();
 });
 
 // ---------------------------------------------------------------------------
@@ -68,6 +106,8 @@ describe('MarketplaceHeader', () => {
     mockParams.search = '';
     mockParams.categories = [];
     mockParams.selectedPackageName = null;
+    // Default: counts unavailable (offline) unless a test opts in.
+    mockPackages([]);
   });
 
   afterEach(() => {
@@ -166,6 +206,30 @@ describe('MarketplaceHeader', () => {
     render(<MarketplaceHeader />);
 
     expect(screen.getByRole('combobox', { name: 'Sort packages' })).toHaveTextContent('A–Z');
+  });
+
+  it('offers the Popular sort as selectable when packages carry install counts', async () => {
+    const user = userEvent.setup();
+    mockPackages([pkg({ name: 'code-reviewer', installCount: 42 }), pkg({ name: 'flow' })]);
+    render(<MarketplaceHeader />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
+
+    const listbox = await screen.findByRole('listbox');
+    const popular = within(listbox).getByRole('option', { name: 'Popular' });
+    expect(popular).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('grays out the Popular sort when no package carries an install count (offline)', async () => {
+    const user = userEvent.setup();
+    mockPackages([pkg({ name: 'code-reviewer' }), pkg({ name: 'flow' })]);
+    render(<MarketplaceHeader />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
+
+    const listbox = await screen.findByRole('listbox');
+    const popular = within(listbox).getByRole('option', { name: 'Popular' });
+    expect(popular).toHaveAttribute('aria-disabled', 'true');
   });
 
   // -------------------------------------------------------------------------

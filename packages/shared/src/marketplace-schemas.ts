@@ -81,6 +81,14 @@ export interface AggregatedPackage {
   icon?: string;
   /** DorkOS extension: whether to highlight in the browse UI. */
   featured?: boolean;
+  /**
+   * Total successful community installs, enriched server-side from the public
+   * dorkos.ai telemetry endpoint (`0` when the package has no recorded
+   * installs). Absent when counts are unavailable — a cold server cache or an
+   * unreachable dorkos.ai — so the client hides the Popular sort whenever no
+   * package carries a count and the marketplace works fully offline.
+   */
+  installCount?: number;
   /** Marketplace source the entry was discovered in. */
   marketplace: string;
 }
