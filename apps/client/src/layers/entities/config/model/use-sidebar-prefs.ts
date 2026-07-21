@@ -267,6 +267,25 @@ export function convertSmartGroupToManual(
   };
 }
 
+/**
+ * Replace a smart group's `rules` (the "Edit rules" flow). A no-op for a
+ * manual group or an unknown id.
+ *
+ * @param prev - Current prefs.
+ * @param groupId - The smart group to edit.
+ * @param rules - The new rule set (≥1 constraint — schema-enforced).
+ */
+export function setGroupRules(
+  prev: SidebarPrefs,
+  groupId: string,
+  rules: SidebarGroup['rules']
+): SidebarPrefs {
+  return {
+    ...prev,
+    groups: prev.groups.map((g) => (g.id === groupId && g.kind === 'smart' ? { ...g, rules } : g)),
+  };
+}
+
 /** Rename the group with `groupId`. */
 export function renameGroup(prev: SidebarPrefs, groupId: string, name: string): SidebarPrefs {
   return {

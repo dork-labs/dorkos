@@ -12,6 +12,7 @@ import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
   createGroup,
+  createSmartGroup,
   moveToGroup,
   setGroupsHintDismissed,
 } from '@/layers/entities/config';
@@ -22,7 +23,9 @@ import {
   useRecentSessions,
   useAgentAttentionMap,
 } from '@/layers/entities/session';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
+import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
@@ -34,6 +37,7 @@ import { AgentGroupSection } from './AgentGroupSection';
 import { UngroupedSection } from './UngroupedSection';
 import { GroupCreateInput } from './GroupCreateInput';
 import { GroupsHintCard } from './GroupsHintCard';
+import { SmartGroupRuleDialog } from './SmartGroupRuleDialog';
 import { SidebarDnd } from './dnd/SidebarDnd';
 import {
   Sortable,
@@ -44,6 +48,12 @@ import {
 } from './dnd/SidebarDndPrimitives';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 import { evaluateSmartGroup, type SmartGroupCandidate } from '../model/evaluate-smart-group';
+import {
+  meetsSmartGroupDisclosureThreshold,
+  activeNowPreset,
+  byRuntimePresets,
+  type SmartGroupPreset,
+} from '../model/smart-group-presets';
 
 /**
  * Legacy localStorage key that held pinned agent paths before organization moved
@@ -178,6 +188,33 @@ export function DashboardSidebar() {
     return map;
   }, [sidebarPrefs.groups, knownSet, smartGroupMemberPaths]);
 
+  // ── Smart-group create/edit chrome (DOR-338 spec §4-5) ──
+  const runtimeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const c of smartGroupCandidates) {
+      if (!seen.has(c.runtime)) seen.set(c.runtime, getRuntimeDescriptor(c.runtime).label);
+    }
+    return Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
+  }, [smartGroupCandidates]);
+  const namespaceOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of smartGroupCandidates) if (c.namespace) set.add(c.namespace);
+    return Array.from(set).sort();
+  }, [smartGroupCandidates]);
+  // "Small cockpits see zero new chrome" (spec §5) — the fork and its presets
+  // only appear once the fleet is large or varied enough to benefit.
+  const smartGroupsUnlocked = useMemo(
+    () => meetsSmartGroupDisclosureThreshold(smartGroupCandidates),
+    [smartGroupCandidates]
+  );
+  const smartGroupPresets = useMemo<SmartGroupPreset[]>(
+    () =>
+      smartGroupsUnlocked ? [activeNowPreset(), ...byRuntimePresets(smartGroupCandidates)] : [],
+    [smartGroupsUnlocked, smartGroupCandidates]
+  );
+
   // Pre-filter/pre-sort — UngroupedSection filters then sorts internally,
   // same order of operations as a group section (spec: sorting applies after
   // filtering).
@@ -255,6 +292,21 @@ export function DashboardSidebar() {
   const handleCancelNewGroup = useCallback(() => setGroupCreation(null), []);
   const handleDismissGroupsHint = useCallback(
     () => updateSidebarPrefs((prev) => setGroupsHintDismissed(prev, true)),
+    [updateSidebarPrefs]
+  );
+
+  // ── Smart-group create flow (DOR-338) — presets create immediately; "Custom
+  // rules…" opens the same rule form the header's "Edit rules" reuses. ──
+  const [smartGroupDialogOpen, setSmartGroupDialogOpen] = useState(false);
+  const handleCreatePresetSmartGroup = useCallback(
+    (preset: SmartGroupPreset) =>
+      updateSidebarPrefs((prev) => createSmartGroup(prev, preset.label, preset.rules).next),
+    [updateSidebarPrefs]
+  );
+  const handleOpenSmartGroupDialog = useCallback(() => setSmartGroupDialogOpen(true), []);
+  const handleSubmitSmartGroupDialog = useCallback(
+    ({ name, rules }: { name: string; rules: SmartGroupRules }) =>
+      updateSidebarPrefs((prev) => createSmartGroup(prev, name, rules).next),
     [updateSidebarPrefs]
   );
 
@@ -436,6 +488,8 @@ export function DashboardSidebar() {
                     attention={attentionMap}
                     mutedPaths={mutedPathsSet}
                     renderRow={renderAgentRow}
+                    runtimeOptions={runtimeOptions}
+                    namespaceOptions={namespaceOptions}
                   />
                 </motion.div>
               ))}
@@ -472,8 +526,20 @@ export function DashboardSidebar() {
             mutedPaths={mutedPathsSet}
             renderRow={renderAgentRow}
             onNewGroup={() => handleRequestNewGroup()}
+            smartGroupPresets={smartGroupPresets}
+            onCreatePresetSmartGroup={handleCreatePresetSmartGroup}
+            onOpenSmartGroupDialog={handleOpenSmartGroupDialog}
           />
         </SidebarDnd>
+
+        <SmartGroupRuleDialog
+          open={smartGroupDialogOpen}
+          onOpenChange={setSmartGroupDialogOpen}
+          mode="create"
+          runtimeOptions={runtimeOptions}
+          namespaceOptions={namespaceOptions}
+          onSubmit={handleSubmitSmartGroupDialog}
+        />
 
         <AnimatePresence>
           {showGroupsHint && (

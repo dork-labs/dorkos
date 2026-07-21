@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, FolderPlus, FolderKanban, Store } from 'lucide-react';
+import { Plus, FolderPlus, FolderKanban, Store, Wand2 } from 'lucide-react';
 import {
   Popover,
   PopoverTrigger,
@@ -9,10 +9,21 @@ import {
 } from '@/layers/shared/ui';
 import { useAgentCreationStore, useImportProjectsStore } from '@/layers/shared/model';
 import { useNavigate } from '@tanstack/react-router';
+import type { SmartGroupPreset } from '../model/smart-group-presets';
 
 interface AddAgentMenuProps {
   /** Open the inline group-create flow (adds a "New group" entry to the menu). */
   onNewGroup?: () => void;
+  /**
+   * Smart-group preset chips (DOR-338) — one click creates the group with
+   * that preset's rules. Empty below the disclosure threshold, so the menu
+   * shows no new chrome for small fleets (spec §5).
+   */
+  smartGroupPresets?: SmartGroupPreset[];
+  /** Create a smart group immediately from a preset. */
+  onCreatePresetSmartGroup?: (preset: SmartGroupPreset) => void;
+  /** Open the custom-rules dialog for a from-scratch smart group. */
+  onOpenSmartGroupDialog?: () => void;
 }
 
 /**
@@ -24,8 +35,15 @@ interface AddAgentMenuProps {
  * - Bring in a project -> opens the standalone import dialog
  * - Browse Marketplace -> navigates to /marketplace
  * - New group -> opens the inline group-create flow (when `onNewGroup` is given)
+ * - Smart-group presets + "Custom rules…" -> one-click or dialog-based smart
+ *   group creation (DOR-338), shown only once `smartGroupPresets` is non-empty
  */
-export function AddAgentMenu({ onNewGroup }: AddAgentMenuProps) {
+export function AddAgentMenu({
+  onNewGroup,
+  smartGroupPresets = [],
+  onCreatePresetSmartGroup,
+  onOpenSmartGroupDialog,
+}: AddAgentMenuProps) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -84,6 +102,41 @@ export function AddAgentMenu({ onNewGroup }: AddAgentMenuProps) {
               <FolderKanban className="size-4" />
               New group
             </button>
+          </>
+        )}
+        {smartGroupPresets.length > 0 && (
+          <>
+            <Separator className="my-1" />
+            <p className="text-muted-foreground px-2 pt-1 pb-0.5 text-xs font-medium tracking-wide uppercase">
+              Smart group
+            </p>
+            {smartGroupPresets.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onCreatePresetSmartGroup?.(preset);
+                }}
+                className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
+              >
+                <Wand2 className="size-4" />
+                {preset.label}
+              </button>
+            ))}
+            {onOpenSmartGroupDialog && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenSmartGroupDialog();
+                }}
+                className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
+              >
+                <Wand2 className="size-4" />
+                Custom rules…
+              </button>
+            )}
           </>
         )}
       </PopoverContent>

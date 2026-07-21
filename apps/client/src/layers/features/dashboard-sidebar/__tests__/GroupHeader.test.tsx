@@ -43,6 +43,14 @@ vi.mock('@/layers/entities/config', () => ({
     helperCalls.push({ name: 'setGroupMuted', args });
     return args[0];
   },
+  setGroupRules: (...args: unknown[]) => {
+    helperCalls.push({ name: 'setGroupRules', args });
+    return args[0];
+  },
+  convertSmartGroupToManual: (...args: unknown[]) => {
+    helperCalls.push({ name: 'convertSmartGroupToManual', args });
+    return args[0];
+  },
 }));
 
 beforeAll(() => {
@@ -81,12 +89,27 @@ function renderHeader({
   group = makeGroup(),
   memberCount = 0,
   showActivityDot = false,
+  derivedMemberPaths,
+  runtimeOptions,
+  namespaceOptions,
 }: {
   group?: SidebarGroup;
   memberCount?: number;
   showActivityDot?: boolean;
+  derivedMemberPaths?: string[];
+  runtimeOptions?: { value: string; label: string }[];
+  namespaceOptions?: string[];
 } = {}) {
-  render(<GroupHeader group={group} memberCount={memberCount} showActivityDot={showActivityDot} />);
+  render(
+    <GroupHeader
+      group={group}
+      memberCount={memberCount}
+      showActivityDot={showActivityDot}
+      derivedMemberPaths={derivedMemberPaths}
+      runtimeOptions={runtimeOptions}
+      namespaceOptions={namespaceOptions}
+    />
+  );
   return { group };
 }
 
@@ -326,6 +349,50 @@ describe('GroupHeader', () => {
       fireEvent.click(screen.getByText('Mute group'));
       const calls = applyLatestUpdater();
       expect(calls).toEqual([{ name: 'setGroupMuted', args: [PREV, 'g1', true] }]);
+    });
+
+    it('"Convert to manual group" materializes the current derived members via convertSmartGroupToManual', () => {
+      renderHeader({ group: smartGroup(), derivedMemberPaths: ['/a', '/b'] });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Convert to manual group'));
+      const calls = applyLatestUpdater();
+      expect(calls).toEqual([
+        { name: 'convertSmartGroupToManual', args: [PREV, 'g1', ['/a', '/b']] },
+      ]);
+    });
+
+    it('"Edit rules" opens the rule dialog prefilled from the group\'s current rules', () => {
+      renderHeader({
+        group: smartGroup(),
+        runtimeOptions: [{ value: 'codex', label: 'Codex' }],
+      });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Edit rules'));
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Edit rules' })).toBeInTheDocument();
+      // No "Name" field in edit mode — renaming lives in the header menu.
+      expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+      // Prefilled from the group's current rules.
+      expect(screen.getByRole('checkbox', { name: 'Codex' })).toBeChecked();
+    });
+
+    it('saving the "Edit rules" dialog commits via setGroupRules', () => {
+      renderHeader({
+        group: smartGroup(),
+        runtimeOptions: [{ value: 'codex', label: 'Codex' }],
+      });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Edit rules'));
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      const calls = applyLatestUpdater();
+      expect(calls).toEqual([
+        {
+          name: 'setGroupRules',
+          args: [PREV, 'g1', { runtimes: ['codex'], lastActiveWithinMs: 60 * 60 * 1000 }],
+        },
+      ]);
     });
   });
 });

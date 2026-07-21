@@ -9,9 +9,13 @@ import {
   BellOff,
   Bell,
   ListFilter,
+  Wand2,
+  Users,
 } from 'lucide-react';
 import type { SidebarGroup } from '@dorkos/shared/config-schema';
 import { describeRules } from '../model/evaluate-smart-group';
+import type { RuntimeOption } from './SmartGroupRuleDialog';
+import { SmartGroupRuleDialog } from './SmartGroupRuleDialog';
 import { cn } from '@/layers/shared/lib';
 import {
   AlertDialog,
@@ -51,6 +55,8 @@ import {
   setGroupCollapsed,
   setGroupDisplayFilter,
   setGroupMuted,
+  setGroupRules,
+  convertSmartGroupToManual,
 } from '@/layers/entities/config';
 import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
 import { renderDisplayFilterSubmenu } from './DisplayFilterMenu';
@@ -103,6 +109,16 @@ interface GroupHeaderProps {
   memberCount: number;
   /** Show the collapsed-group activity dot (orchestrated: collapsed && a member is working). */
   showActivityDot: boolean;
+  /**
+   * The group's currently-derived members (smart groups only) — what "Convert
+   * to manual group" materializes into `agentPaths`. Ignored for manual
+   * groups.
+   */
+  derivedMemberPaths?: string[];
+  /** Runtimes present in the fleet, for the "Edit rules" form (smart groups only). */
+  runtimeOptions?: RuntimeOption[];
+  /** Distinct namespaces present in the fleet, for the "Edit rules" form (smart groups only). */
+  namespaceOptions?: string[];
 }
 
 /**
@@ -111,13 +127,24 @@ interface GroupHeaderProps {
  * rendered identically into the "…" dropdown and the right-click context
  * menu. Muting the group is a lens over its members (DOR-339): it never
  * writes member paths into `ui.sidebar.muted`, so unmuting restores whatever
- * individual mute state each member already had.
+ * individual mute state each member already had. Smart groups (DOR-338) add
+ * a rule glyph + plain-language summary, an "Edit rules" action that reopens
+ * the rule form, and "Convert to manual group" — the escape hatch that
+ * freezes the currently-matching members into a hand-tunable manual group.
  */
-export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeaderProps) {
+export function GroupHeader({
+  group,
+  memberCount,
+  showActivityDot,
+  derivedMemberPaths,
+  runtimeOptions,
+  namespaceOptions,
+}: GroupHeaderProps) {
   const { update } = useUpdateSidebarPrefs();
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(group.name);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editRulesOpen, setEditRulesOpen] = useState(false);
   const renameRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
   // "Rename" mounts an inline editor; the launching menu's close-time focus
@@ -193,6 +220,15 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
       setGroupDisplayFilter(prev, group.id, filter as SidebarGroup['displayFilter'])
     );
   const toggleMuted = () => update((prev) => setGroupMuted(prev, group.id, !group.muted));
+  const openEditRules = () => setEditRulesOpen(true);
+  const convertToManual = () =>
+    update((prev) => convertSmartGroupToManual(prev, group.id, derivedMemberPaths ?? []));
+  const handleSaveRules = ({
+    rules,
+  }: {
+    name: string;
+    rules: NonNullable<SidebarGroup['rules']>;
+  }) => update((prev) => setGroupRules(prev, group.id, rules));
 
   const renderMenu = (slots: GroupMenuSlots): ReactNode => {
     const { Item, Separator, Sub, SubTrigger, SubContent, RadioGroup, RadioItem } = slots;
@@ -228,6 +264,18 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
           {group.muted ? <Bell className="mr-2 size-4" /> : <BellOff className="mr-2 size-4" />}
           {group.muted ? 'Unmute group' : 'Mute group'}
         </Item>
+        {isSmart && (
+          <>
+            <Item onClick={openEditRules}>
+              <Wand2 className="mr-2 size-4" />
+              Edit rules
+            </Item>
+            <Item onClick={convertToManual}>
+              <Users className="mr-2 size-4" />
+              Convert to manual group
+            </Item>
+          </>
+        )}
         <Separator />
         <Item variant="destructive" onClick={requestDelete}>
           <Trash2 className="mr-2 size-4" />
@@ -333,6 +381,19 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {isSmart && (
+        <SmartGroupRuleDialog
+          open={editRulesOpen}
+          onOpenChange={setEditRulesOpen}
+          mode="edit"
+          initialName={group.name}
+          initialRules={group.rules}
+          runtimeOptions={runtimeOptions ?? []}
+          namespaceOptions={namespaceOptions ?? []}
+          onSubmit={handleSaveRules}
+        />
+      )}
     </>
   );
 }

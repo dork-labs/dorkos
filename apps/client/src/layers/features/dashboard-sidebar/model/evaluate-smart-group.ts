@@ -76,8 +76,11 @@ export function evaluateSmartGroup(
   return candidates.filter((c) => matchesRules(rules, c, now)).map((c) => c.projectPath);
 }
 
-/** Human-readable labels for {@link AttentionState}, in rules-summary order. */
-const STATUS_LABELS: Record<AttentionState, string> = {
+/**
+ * Human-readable labels for {@link AttentionState}, in rules-summary order.
+ * Also the status-checkbox labels in the smart-group rule form.
+ */
+export const STATUS_LABELS: Record<AttentionState, string> = {
   'needs-attention': 'needs attention',
   active: 'active',
   idle: 'idle',

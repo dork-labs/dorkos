@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { AddAgentMenu } from '../ui/AddAgentMenu';
+import type { SmartGroupPreset } from '../model/smart-group-presets';
 import {
   SidebarProvider,
   SidebarGroup,
@@ -126,5 +127,42 @@ describe('AddAgentMenu', () => {
     expect(onNewGroup).toHaveBeenCalledOnce();
     // The popover closes after selection.
     expect(screen.queryByText('Create agent')).not.toBeInTheDocument();
+  });
+
+  // --- Smart-group presets (DOR-338) ---
+
+  it('shows no smart-group chrome when there are no presets (below the disclosure threshold)', () => {
+    renderMenu({ smartGroupPresets: [] });
+    fireEvent.click(screen.getByLabelText('Add agent'));
+    expect(screen.queryByText('Smart group')).not.toBeInTheDocument();
+    expect(screen.queryByText('Custom rules…')).not.toBeInTheDocument();
+  });
+
+  it('clicking a preset creates it immediately with that preset’s rules, no dialog', () => {
+    const onCreatePresetSmartGroup = vi.fn();
+    const preset: SmartGroupPreset = { label: 'Active now', rules: { statuses: ['active'] } };
+    renderMenu({ smartGroupPresets: [preset], onCreatePresetSmartGroup });
+    fireEvent.click(screen.getByLabelText('Add agent'));
+    expect(screen.getByText('Smart group')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Active now'));
+    expect(onCreatePresetSmartGroup).toHaveBeenCalledWith(preset);
+    // The popover closes — no dialog opened.
+    expect(screen.queryByText('Create agent')).not.toBeInTheDocument();
+  });
+
+  it('renders one chip per preset and a trailing "Custom rules…" entry', () => {
+    const onOpenSmartGroupDialog = vi.fn();
+    renderMenu({
+      smartGroupPresets: [
+        { label: 'Active now', rules: { statuses: ['active'] } },
+        { label: 'By runtime · Codex', rules: { runtimes: ['codex'] } },
+      ] satisfies SmartGroupPreset[],
+      onOpenSmartGroupDialog,
+    });
+    fireEvent.click(screen.getByLabelText('Add agent'));
+    expect(screen.getByText('Active now')).toBeInTheDocument();
+    expect(screen.getByText('By runtime · Codex')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Custom rules…'));
+    expect(onOpenSmartGroupDialog).toHaveBeenCalledOnce();
   });
 });

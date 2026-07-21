@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
-import type { SidebarPrefs } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs, SidebarGroup } from '@dorkos/shared/config-schema';
 import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -18,6 +18,9 @@ import {
   unpinPath,
   moveToGroup,
   createGroup,
+  createSmartGroup,
+  convertSmartGroupToManual,
+  setGroupRules,
   renameGroup,
   deleteGroup,
   reorderGroup,
@@ -144,6 +147,119 @@ describe('sidebar prefs pure helpers', () => {
         displayFilter: 'all',
         muted: false,
       });
+    });
+
+    // --- Smart groups (DOR-338) ---
+
+    it('createSmartGroup mints an id, forces sortMode "recent", and stores the rules', () => {
+      const rules: SidebarGroup['rules'] = { statuses: ['needs-attention', 'active'] };
+      const { next, id } = createSmartGroup(prefs(), 'Active now', rules);
+      expect(id).toBeTruthy();
+      expect(next.groups).toHaveLength(1);
+      expect(next.groups[0]).toEqual({
+        id,
+        name: 'Active now',
+        agentPaths: [],
+        sortMode: 'recent',
+        kind: 'smart',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        rules,
+      });
+    });
+
+    it('convertSmartGroupToManual materializes the exact current members and drops rules', () => {
+      const seeded = prefs({
+        groups: [
+          {
+            id: 'g1',
+            name: 'Active now',
+            agentPaths: [],
+            sortMode: 'recent',
+            kind: 'smart',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            rules: { statuses: ['active'] },
+          },
+        ],
+      });
+      const next = convertSmartGroupToManual(seeded, 'g1', ['/x', '/y']);
+      expect(next.groups[0]).toEqual({
+        id: 'g1',
+        name: 'Active now',
+        agentPaths: ['/x', '/y'],
+        sortMode: 'recent',
+        kind: 'manual',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        rules: undefined,
+      });
+    });
+
+    it('convertSmartGroupToManual keeps name/collapse/sort/mute/displayFilter untouched', () => {
+      const seeded = prefs({
+        groups: [
+          {
+            id: 'g1',
+            name: 'Codex fleet',
+            agentPaths: [],
+            sortMode: 'name',
+            kind: 'smart',
+            collapsed: true,
+            displayFilter: 'attention',
+            muted: true,
+            rules: { runtimes: ['codex'] },
+          },
+        ],
+      });
+      const next = convertSmartGroupToManual(seeded, 'g1', []);
+      const g = next.groups[0]!;
+      expect(g.name).toBe('Codex fleet');
+      expect(g.sortMode).toBe('name');
+      expect(g.collapsed).toBe(true);
+      expect(g.displayFilter).toBe('attention');
+      expect(g.muted).toBe(true);
+      expect(g.agentPaths).toEqual([]);
+    });
+
+    it('setGroupRules replaces a smart group’s rules and is a no-op for a manual group', () => {
+      const seeded = prefs({
+        groups: [
+          {
+            id: 'smart1',
+            name: 'Active now',
+            agentPaths: [],
+            sortMode: 'recent',
+            kind: 'smart',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            rules: { statuses: ['active'] },
+          },
+          {
+            id: 'manual1',
+            name: 'Clients',
+            agentPaths: ['/x'],
+            sortMode: 'manual',
+            kind: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+        ],
+      });
+      const newRules = { runtimes: ['codex'] };
+      const next = setGroupRules(seeded, 'smart1', newRules);
+      expect(next.groups[0]!.rules).toEqual(newRules);
+      // The manual group is untouched — same reference.
+      expect(next.groups[1]).toBe(seeded.groups[1]);
+
+      // No-op against a manual group id.
+      const noop = setGroupRules(seeded, 'manual1', newRules);
+      expect(noop.groups[1]).toBe(seeded.groups[1]);
     });
 
     it('renameGroup sets the name', () => {

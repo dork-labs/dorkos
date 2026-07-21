@@ -5,6 +5,7 @@ import { SidebarGroup as SidebarGroupWrapper, SidebarMenu } from '@/layers/share
 import { useAgentsAggregateStatus, type AttentionState } from '@/layers/entities/session';
 import { GroupHeader } from './GroupHeader';
 import { RevealRow } from './RevealRow';
+import type { RuntimeOption } from './SmartGroupRuleDialog';
 import { Droppable, Sortable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
 import { sortAgentPaths, type SortAgentsContext, type AgentSortMode } from '../model/sort-agents';
 import { filterSectionAgents } from '../model/filter-agents';
@@ -31,6 +32,10 @@ interface AgentGroupSectionProps {
    * (DOR-338 spec §3).
    */
   renderRow: (path: string, keyPrefix: string, options?: { draggable?: boolean }) => ReactNode;
+  /** Runtimes present in the fleet, for a smart group's "Edit rules" form. */
+  runtimeOptions: RuntimeOption[];
+  /** Distinct namespaces present in the fleet, for a smart group's "Edit rules" form. */
+  namespaceOptions: string[];
 }
 
 /**
@@ -53,6 +58,8 @@ export function AgentGroupSection({
   attention,
   mutedPaths,
   renderRow,
+  runtimeOptions,
+  namespaceOptions,
 }: AgentGroupSectionProps) {
   const isSmart = group.kind === 'smart';
   // Schema-level refine already rejects a *new* smart group with sortMode
@@ -104,6 +111,9 @@ export function AgentGroupSection({
               group={group}
               memberCount={memberPaths.length}
               showActivityDot={group.collapsed && !group.muted && hasActivity}
+              derivedMemberPaths={isSmart ? memberPaths : undefined}
+              runtimeOptions={runtimeOptions}
+              namespaceOptions={namespaceOptions}
             />
           </div>
         )}
