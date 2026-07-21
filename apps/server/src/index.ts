@@ -50,7 +50,10 @@ import {
 } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { createConnectorsRouter } from './routes/connectors.js';
+import { createSessionConnectorsRouter } from './routes/session-connectors.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
+import { SessionConnectorService } from './services/connectors/session-exposure.js';
+import { toSdkMcpServers } from './services/runtimes/claude-code/mcp-server-config.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import { createInitiateConsentGate } from './services/relay/initiate-consent.js';
@@ -871,6 +874,14 @@ async function start() {
   // by the time the first MCP request arrives this is either populated or
   // intentionally undefined (relay disabled).
   let marketplaceMcpDeps: MarketplaceMcpDeps | undefined;
+  // Connector registry + the per-account → session tool-server binder, created
+  // up front (both need only `db`) so the MCP factory closure can inject a
+  // session's attached connector accounts as named MCP tool servers alongside
+  // the built-in `dorkos` server (connector-gateway spec §Detailed Design 3).
+  // The `/api/connectors` and attach/detach routes are mounted later, once the
+  // relay adapter catalog is available.
+  const connectorRegistry = new ConnectorRegistry({ db });
+  const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
   if (claudeRuntime) {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
@@ -886,6 +897,12 @@ async function start() {
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) => ({
       dorkos: createDorkOsToolServer(mcpToolDeps!, session, sessionId),
+      // Connected accounts explicitly attached to this session become named MCP
+      // tool servers (`gmail-personal`, `gmail-work`). The connection details
+      // are provider-neutral; the SDK-shape conversion is confined to the
+      // claude-code runtime. Null-branch accounts (expired/revoked) are skipped
+      // here and surfaced via the session connector status.
+      ...toSdkMcpServers(sessionConnectorService.mcpServersForSession(sessionId).servers),
     }));
   }
 
@@ -1009,7 +1026,6 @@ async function start() {
   // relay adapter catalog (relay-adapter-first), and the aggregate endpoints
   // return empty until a provider is registered. `adapterManager` satisfies the
   // routing catalog structurally via its public `getManifest` accessor.
-  const connectorRegistry = new ConnectorRegistry({ db });
   app.use(
     '/api/connectors',
     createConnectorsRouter({
@@ -1017,6 +1033,11 @@ async function start() {
       ...(adapterManager && { relay: adapterManager }),
     })
   );
+  // The attach/detach consent routes ride under `/api/sessions` (a sibling of
+  // the static sessions router; the `/:id/connectors[...]` paths do not collide
+  // with its single-segment `/:id` routes). The binder itself was created up
+  // front so the MCP factory closure could reference it.
+  app.use('/api/sessions', createSessionConnectorsRouter({ service: sessionConnectorService }));
   logger.info('[Connectors] Routes mounted');
 
   // Mount Relay routes if enabled

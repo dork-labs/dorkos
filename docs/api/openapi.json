@@ -10710,6 +10710,257 @@
           }
         }
       }
+    },
+    "/api/sessions/{id}/connectors": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "A session's connector surface (attached accounts + warnings)",
+        "description": "Lists the connected accounts explicitly attached to a session, each with its exposure state, plus per-account warnings for attached accounts that cannot be exposed right now (the `toolServerForAccount` null branch: expired / revoked / unavailable).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attached accounts and per-account degradation warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "toolkit": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked",
+                              "pending"
+                            ]
+                          },
+                          "serverName": {
+                            "type": "string"
+                          },
+                          "exposed": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "toolkit",
+                          "label",
+                          "status",
+                          "exposed"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "expired",
+                              "revoked",
+                              "unavailable"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "label",
+                          "reason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "accounts",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/connectors/{accountId}": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Attach a connected account to a session (the consent point)",
+        "description": "Attaches an account to a session so its tools are exposed as an MCP tool server, and re-shows the custody disclosure (spec §Detailed Design 3). A known account whose connection resolves null still attaches (consent recorded) but is reported unexposed via a warning; no connection detail ever crosses to the client.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account attached; carries its status, the custody disclosure, and any warning",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string"
+                        },
+                        "toolkit": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "pending"
+                          ]
+                        },
+                        "serverName": {
+                          "type": "string"
+                        },
+                        "exposed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "toolkit",
+                        "label",
+                        "status",
+                        "exposed"
+                      ]
+                    },
+                    "disclosure": {
+                      "type": "string"
+                    },
+                    "warning": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "expired",
+                            "revoked",
+                            "unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "label",
+                        "reason"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "account",
+                    "disclosure"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connected account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Detach a connected account from a session (idempotent)",
+        "description": "Removes the consent binding so the account is no longer exposed to the session. Idempotent — detaching an unattached account still resolves 204.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account detached (or already absent)"
+          }
+        }
+      }
     }
   },
   "webhooks": {}
