@@ -155,21 +155,49 @@ describe('Relay MCP Tools', () => {
       expect(data.messages[0].payload).toEqual({ text: 'hello' });
       expect(deps.relayCore!.readInbox).toHaveBeenCalledWith('relay.agent.a', {
         limit: 10,
-        status: undefined,
+        status: 'pending',
         ack: undefined,
       });
     });
 
-    it('forwards ack and status to readInbox', async () => {
+    it('defaults status to "pending" when omitted (DOR-406, matches the HTTP inbox route)', async () => {
+      // Purpose: a naive poller that never passes status must never see
+      // budget-rejected `failed` messages next to real deliverables.
       const deps = makeMockDeps({
         readInbox: vi.fn().mockResolvedValue({ messages: [], nextCursor: undefined }),
       });
       const handler = createRelayInboxHandler(deps);
-      await handler({ endpoint_subject: 'relay.inbox.dispatch.x', status: 'unread', ack: true });
+      await handler({ endpoint_subject: 'relay.agent.a' });
+      expect(deps.relayCore!.readInbox).toHaveBeenCalledWith('relay.agent.a', {
+        limit: undefined,
+        status: 'pending',
+        ack: undefined,
+      });
+    });
+
+    it('forwards an explicit status to readInbox, overriding the pending default', async () => {
+      const deps = makeMockDeps({
+        readInbox: vi.fn().mockResolvedValue({ messages: [], nextCursor: undefined }),
+      });
+      const handler = createRelayInboxHandler(deps);
+      await handler({ endpoint_subject: 'relay.inbox.dispatch.x', status: 'failed', ack: true });
       expect(deps.relayCore!.readInbox).toHaveBeenCalledWith('relay.inbox.dispatch.x', {
         limit: undefined,
-        status: 'unread',
+        status: 'failed',
         ack: true,
+      });
+    });
+
+    it('forwards status="all" verbatim (opts back into the unfiltered view)', async () => {
+      const deps = makeMockDeps({
+        readInbox: vi.fn().mockResolvedValue({ messages: [], nextCursor: undefined }),
+      });
+      const handler = createRelayInboxHandler(deps);
+      await handler({ endpoint_subject: 'relay.agent.a', status: 'all' });
+      expect(deps.relayCore!.readInbox).toHaveBeenCalledWith('relay.agent.a', {
+        limit: undefined,
+        status: 'all',
+        ack: undefined,
       });
     });
 

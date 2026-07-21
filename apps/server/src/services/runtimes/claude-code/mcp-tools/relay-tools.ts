@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { RelayProgressPayload } from '@dorkos/shared/relay-schemas';
+import {
+  InboxStatusFilterSchema,
+  type InboxStatusFilter,
+  type RelayProgressPayload,
+} from '@dorkos/shared/relay-schemas';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import {
@@ -54,12 +58,19 @@ export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdenti
   };
 }
 
-/** Read inbox messages (with payloads) for a Relay endpoint. */
+/**
+ * Read inbox messages (with payloads) for a Relay endpoint.
+ *
+ * Defaults `status` to `'pending'` when omitted — mirrors the HTTP inbox
+ * route's contract (DOR-337/DOR-406) so budget-rejected `failed` messages
+ * never surface silently next to real deliverables. Pass `status: 'all'`
+ * to opt back into the unfiltered view.
+ */
 export function createRelayInboxHandler(deps: McpToolDeps) {
   return async (args: {
     endpoint_subject: string;
     limit?: number;
-    status?: string;
+    status?: InboxStatusFilter;
     ack?: boolean;
   }) => {
     const err = requireRelay(deps);
@@ -67,7 +78,7 @@ export function createRelayInboxHandler(deps: McpToolDeps) {
     try {
       const result = await deps.relayCore!.readInbox(args.endpoint_subject, {
         limit: args.limit,
-        status: args.status,
+        status: args.status ?? 'pending',
         ack: args.ack,
       });
       return jsonContent({ messages: result.messages, nextCursor: result.nextCursor });
@@ -304,7 +315,7 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
       return jsonContent({
         messageId: result.messageId,
         inboxSubject,
-        note: `Poll relay_inbox(endpoint_subject="${inboxSubject}", status="unread", ack=true) for progress. Call relay_unregister_endpoint("${inboxSubject}") when a payload with done:true is received.`,
+        note: `Poll relay_inbox(endpoint_subject="${inboxSubject}", ack=true) for progress (defaults to pending/unread messages). Call relay_unregister_endpoint("${inboxSubject}") when a payload with done:true is received.`,
       });
     } catch (e) {
       // Clean up inbox on publish error
@@ -485,17 +496,17 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
       'Read inbox messages for a Relay endpoint. Each message includes the sender payload: ' +
         '{ id, subject, status, createdAt, sender, payload }. For agent dispatch inboxes the payload is ' +
         'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
-        '{ type: "agent_result", text, done: true }. Pass ack=true when polling so returned unread ' +
-        'messages are marked read and the next poll only returns new ones.',
+        '{ type: "agent_result", text, done: true }. Defaults to status="pending" (deliverable, unread ' +
+        'messages) so budget-rejected failures never surface silently next to real deliverables. Pass ' +
+        'ack=true when polling so returned messages are marked read and the next poll only returns new ones.',
       {
         endpoint_subject: z.string().describe('Subject of the endpoint to read inbox for'),
         limit: z.number().int().min(1).max(100).optional().describe('Max messages to return'),
-        status: z
-          .string()
-          .optional()
-          .describe(
-            'Filter by status. Use "unread" (or "new"/"pending") for unread messages, "read" (or "cur"/"delivered") for processed messages, "failed" for delivery failures. Omit to return all.'
-          ),
+        status: InboxStatusFilterSchema.optional().describe(
+          'Filter messages by status. Defaults to "pending" (deliverable, unread messages). Pass ' +
+            '"failed" to see budget-rejected/dead-lettered messages, "delivered" for already-read ones ' +
+            '(metadata only — the payload is removed once a message completes), or "all" for every status.'
+        ),
         ack: z
           .boolean()
           .optional()
@@ -564,8 +575,9 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
       'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
         'Unlike relay_send_and_wait (which blocks), relay_send_async returns { messageId, inboxSubject } at once. ' +
         'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
-        'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject, status="unread", ack=true) for updates. ' +
-        'When you receive a payload with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
+        'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject, ack=true) for updates (defaults ' +
+        'to pending/unread messages). When you receive a payload with done:true, call ' +
+        'relay_unregister_endpoint(inboxSubject) to clean up.',
       {
         to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
         payload: z.unknown().describe('Message payload'),
