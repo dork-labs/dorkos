@@ -47,7 +47,6 @@ export const StreamEventTypeSchema = z
     'approval_required',
     'question_prompt',
     'error',
-    'rate_limit',
     'api_retry',
     'done',
     'session_status',
@@ -667,14 +666,6 @@ export const ErrorEventSchema = z
 
 export type ErrorEvent = z.infer<typeof ErrorEventSchema>;
 
-export const RateLimitEventSchema = z
-  .object({
-    retryAfter: z.number().optional(),
-  })
-  .openapi('RateLimitEvent');
-
-export type RateLimitEvent = z.infer<typeof RateLimitEventSchema>;
-
 export const ApiRetryEventSchema = z
   .object({
     attempt: z.number(),
@@ -1254,7 +1245,6 @@ export const StreamEventSchema = z
       ApprovalEventSchema,
       QuestionPromptEventSchema,
       ErrorEventSchema,
-      RateLimitEventSchema,
       ApiRetryEventSchema,
       DoneEventSchema,
       SessionStatusEventSchema,

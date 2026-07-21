@@ -45,8 +45,9 @@ function toUsageState(status: 'allowed' | 'allowed_warning' | 'rejected'): Usage
  *
  * `result` emits the final session_status (cost/tokens/cache/terminalReason), a
  * context_usage breakdown, an optional error event, and the terminal `done`.
- * `rate_limit_event` emits rate_limit plus a usage-only `session_status`
- * carrying runtime-neutral subscription `usage` (utilization/window/reset).
+ * `rate_limit_event` emits a usage-only `session_status` carrying
+ * runtime-neutral subscription `usage` (utilization/window/reset), when the
+ * SDK attaches `rate_limit_info`.
  * `prompt_suggestion` forwards a single suggestion.
  *
  * @param message - The SDK message to map (result/rate_limit_event/prompt_suggestion).
@@ -74,11 +75,6 @@ export async function* mapResultEvent(
   // Handle rate limit events (includes subscription utilization data)
   if (message.type === 'rate_limit_event') {
     const msg = message as Record<string, unknown>;
-    const retryAfter = msg.retry_after as number | undefined;
-    yield {
-      type: 'rate_limit',
-      data: { retryAfter },
-    };
 
     // Project subscription utilization onto a usage-only `session_status`. The
     // projector merges partial status payloads, so a status carrying only
