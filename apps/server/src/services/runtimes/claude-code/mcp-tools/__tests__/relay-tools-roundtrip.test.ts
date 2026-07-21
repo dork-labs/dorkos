@@ -123,7 +123,7 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
     expect(relay.listEndpoints()).toHaveLength(0);
   });
 
-  it('relay_send_async + relay_inbox polling returns payloads and ack drains unread (C2)', async () => {
+  it('relay_send_async + relay_inbox polling (no status arg) returns payloads and ack drains pending (C2, DOR-406)', async () => {
     const dispatchHandler = createRelayDispatchHandler(deps, CALLER);
     const inboxHandler = createRelayInboxHandler(deps);
 
@@ -136,15 +136,15 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
     expect(inboxSubject).toMatch(/^relay\.inbox\.dispatch\./);
 
     // Wait for the detached agent turn to finish streaming into the inbox.
+    // No status arg passed — relay_inbox defaults to "pending" (DOR-406), so
+    // this exercises the real default rather than an explicit override.
     await vi.waitFor(async () => {
-      const peek = parse(await inboxHandler({ endpoint_subject: inboxSubject, status: 'unread' }));
+      const peek = parse(await inboxHandler({ endpoint_subject: inboxSubject }));
       expect((peek.messages as unknown[]).length).toBe(3);
     });
 
     // Poll with ack: payloads are the actual envelope contents.
-    const polled = parse(
-      await inboxHandler({ endpoint_subject: inboxSubject, status: 'unread', ack: true })
-    );
+    const polled = parse(await inboxHandler({ endpoint_subject: inboxSubject, ack: true }));
     const payloads = (polled.messages as Array<{ payload: Record<string, unknown> }>).map(
       (m) => m.payload
     );
@@ -152,10 +152,8 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
     expect(payloads[1]).toMatchObject({ type: 'progress', step: 2, done: false });
     expect(payloads[2]).toMatchObject({ type: 'agent_result', text: 'final answer', done: true });
 
-    // Acked messages stop being returned as unread — polling terminates.
-    const afterAck = parse(
-      await inboxHandler({ endpoint_subject: inboxSubject, status: 'unread' })
-    );
+    // Acked messages stop being returned by the (still-defaulted) pending filter.
+    const afterAck = parse(await inboxHandler({ endpoint_subject: inboxSubject }));
     expect(afterAck.messages).toEqual([]);
   });
 });

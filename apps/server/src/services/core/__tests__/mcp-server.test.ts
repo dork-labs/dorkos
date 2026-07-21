@@ -410,4 +410,33 @@ describe('createExternalMcpServer', () => {
       }
     });
   });
+
+  describe('relay_inbox status filter (DOR-406)', () => {
+    beforeEach(() => {
+      createExternalMcpServer(createMinimalDeps());
+    });
+
+    /** The `status` field's Zod schema, as captured off the real (unmocked) tool registration. */
+    function statusSchema(): { safeParse: (value: unknown) => { success: boolean } } {
+      return findTool('relay_inbox').schema.status as {
+        safeParse: (value: unknown) => { success: boolean };
+      };
+    }
+
+    it('accepts the HTTP inbox route vocabulary: pending, delivered, failed, all', () => {
+      for (const value of ['pending', 'delivered', 'failed', 'all']) {
+        expect(statusSchema().safeParse(value).success, value).toBe(true);
+      }
+    });
+
+    it('rejects the retired freeform aliases (unread, new, cur, read) to keep vocabulary aligned with InboxStatusFilterSchema', () => {
+      for (const value of ['unread', 'new', 'cur', 'read', 'bogus']) {
+        expect(statusSchema().safeParse(value).success, value).toBe(false);
+      }
+    });
+
+    it('is optional — omitting it is valid at the schema level (the pending default applies in the handler)', () => {
+      expect(statusSchema().safeParse(undefined).success).toBe(true);
+    });
+  });
 });
