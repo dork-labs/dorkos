@@ -79,6 +79,10 @@ vi.mock('@/layers/entities/session', () => ({
   useDefaultCwd: () => {},
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
   useGlobalSessionStream: () => {},
+  // AppShell reads the active session's origin for the header chip
+  // (session-origin-legibility): no active session in this shell-level
+  // isolation test, so it always resolves to "no origin".
+  useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {
