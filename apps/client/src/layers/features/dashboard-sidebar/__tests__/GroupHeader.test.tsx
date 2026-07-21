@@ -62,6 +62,8 @@ function makeGroup(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
     agentPaths: [],
     sortMode: 'manual',
     collapsed: false,
+    displayFilter: 'all',
+    muted: false,
     ...overrides,
   };
 }

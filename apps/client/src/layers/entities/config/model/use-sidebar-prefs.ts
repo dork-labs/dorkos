@@ -197,7 +197,15 @@ export function moveToGroup(
  */
 export function createGroup(prev: SidebarPrefs, name: string): { next: SidebarPrefs; id: string } {
   const id = crypto.randomUUID();
-  const group: SidebarGroup = { id, name, agentPaths: [], sortMode: 'manual', collapsed: false };
+  const group: SidebarGroup = {
+    id,
+    name,
+    agentPaths: [],
+    sortMode: 'manual',
+    collapsed: false,
+    displayFilter: 'all',
+    muted: false,
+  };
   return { next: { ...prev, groups: [...prev.groups, group] }, id };
 }
 
@@ -289,4 +297,52 @@ export function setUngroupedSortMode(
 /** Mark the one-time "group your agents" hint card as dismissed. */
 export function setGroupsHintDismissed(prev: SidebarPrefs, dismissed: boolean): SidebarPrefs {
   return { ...prev, groupsHintDismissed: dismissed };
+}
+
+// ---------------------------------------------------------------------------
+// Display filter + mute (DOR-339) — additive on the DOR-329 shape above.
+// ---------------------------------------------------------------------------
+
+/** Set a group's display filter (All / Active / Needs attention). */
+export function setGroupDisplayFilter(
+  prev: SidebarPrefs,
+  groupId: string,
+  filter: SidebarGroup['displayFilter']
+): SidebarPrefs {
+  return {
+    ...prev,
+    groups: prev.groups.map((g) => (g.id === groupId ? { ...g, displayFilter: filter } : g)),
+  };
+}
+
+/**
+ * Set a group's muted flag. Group mute is a LENS over its members — it never
+ * writes member paths into `muted`, so unmuting the group restores whatever
+ * individual mute state each member already had (ideation decision 4).
+ */
+export function setGroupMuted(prev: SidebarPrefs, groupId: string, muted: boolean): SidebarPrefs {
+  return {
+    ...prev,
+    groups: prev.groups.map((g) => (g.id === groupId ? { ...g, muted } : g)),
+  };
+}
+
+/** Set the ungrouped ("Agents") section's display filter. */
+export function setUngroupedDisplayFilter(
+  prev: SidebarPrefs,
+  filter: SidebarPrefs['ungroupedDisplayFilter']
+): SidebarPrefs {
+  return { ...prev, ungroupedDisplayFilter: filter };
+}
+
+/** Mute an individual agent path (idempotent). Mute owns ALL signals for the path at once. */
+export function mutePath(prev: SidebarPrefs, path: string): SidebarPrefs {
+  if (prev.muted.includes(path)) return prev;
+  return { ...prev, muted: [...prev.muted, path] };
+}
+
+/** Unmute an individual agent path. */
+export function unmutePath(prev: SidebarPrefs, path: string): SidebarPrefs {
+  if (!prev.muted.includes(path)) return prev;
+  return { ...prev, muted: prev.muted.filter((p) => p !== path) };
 }

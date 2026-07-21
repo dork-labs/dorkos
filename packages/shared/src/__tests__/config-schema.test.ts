@@ -8,6 +8,7 @@ import {
   SidebarGroupSchema,
   SidebarPrefsSchema,
   SIDEBAR_PREFS_DEFAULTS,
+  SidebarDisplayFilterSchema,
 } from '../config-schema.js';
 import type { UserConfig } from '../config-schema.js';
 
@@ -33,6 +34,8 @@ describe('UserConfigSchema', () => {
           ungroupedCollapsed: false,
           recentsCollapsed: false,
           groupsHintDismissed: false,
+          muted: [],
+          ungroupedDisplayFilter: 'all',
         },
         shapes: {
           active: null,
@@ -291,6 +294,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
           ungroupedCollapsed: false,
           recentsCollapsed: false,
           groupsHintDismissed: false,
+          muted: [],
+          ungroupedDisplayFilter: 'all',
         },
         shapes: {
           active: null,
@@ -663,6 +668,8 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
     ungroupedCollapsed: false,
     recentsCollapsed: false,
     groupsHintDismissed: false,
+    muted: [],
+    ungroupedDisplayFilter: 'all',
   };
 
   it('parsing an empty config yields ui.sidebar with all documented defaults', () => {
@@ -686,6 +693,8 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
       agentPaths: [],
       sortMode: 'manual',
       collapsed: false,
+      displayFilter: 'all',
+      muted: false,
     });
   });
 
@@ -702,15 +711,84 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
     const sidebar = {
       pinned: ['/a', '/b'],
       groups: [
-        { id: 'g1', name: 'Clients', agentPaths: ['/a'], sortMode: 'recent', collapsed: true },
+        {
+          id: 'g1',
+          name: 'Clients',
+          agentPaths: ['/a'],
+          sortMode: 'recent',
+          collapsed: true,
+          displayFilter: 'attention',
+          muted: true,
+        },
       ],
       ungroupedSortMode: 'recent',
       ungroupedCollapsed: true,
       recentsCollapsed: true,
       groupsHintDismissed: true,
+      muted: ['/b'],
+      ungroupedDisplayFilter: 'active',
     };
     const result = UserConfigSchema.parse({ version: 1, ui: { sidebar } });
     expect(result.ui.sidebar).toEqual(sidebar);
+  });
+});
+
+describe('SidebarDisplayFilterSchema + display filter / mute fields (DOR-339)', () => {
+  it('accepts all three filter values', () => {
+    expect(SidebarDisplayFilterSchema.parse('all')).toBe('all');
+    expect(SidebarDisplayFilterSchema.parse('active')).toBe('active');
+    expect(SidebarDisplayFilterSchema.parse('attention')).toBe('attention');
+  });
+
+  it('rejects an unrecognized filter value', () => {
+    expect(() => SidebarDisplayFilterSchema.parse('needs-attention')).toThrow();
+    expect(() => SidebarDisplayFilterSchema.parse('')).toThrow();
+  });
+
+  it('a group defaults displayFilter to "all" and muted to false', () => {
+    const group = SidebarGroupSchema.parse({ id: 'g1', name: 'Clients' });
+    expect(group.displayFilter).toBe('all');
+    expect(group.muted).toBe(false);
+  });
+
+  it('a group accepts an explicit displayFilter and muted', () => {
+    const group = SidebarGroupSchema.parse({
+      id: 'g1',
+      name: 'Clients',
+      displayFilter: 'active',
+      muted: true,
+    });
+    expect(group.displayFilter).toBe('active');
+    expect(group.muted).toBe(true);
+  });
+
+  it('SidebarPrefsSchema defaults muted to [] and ungroupedDisplayFilter to "all"', () => {
+    const prefs = SidebarPrefsSchema.parse({});
+    expect(prefs.muted).toEqual([]);
+    expect(prefs.ungroupedDisplayFilter).toBe('all');
+  });
+
+  it('an existing (pre-DOR-339) legacy sidebar object still parses, picking up the new defaults', () => {
+    const legacy = {
+      pinned: ['/a'],
+      groups: [{ id: 'g1', name: 'Clients', agentPaths: ['/a'], sortMode: 'manual' }],
+      ungroupedSortMode: 'name',
+      ungroupedCollapsed: false,
+      recentsCollapsed: false,
+      groupsHintDismissed: false,
+    };
+    const result = UserConfigSchema.parse({ version: 1, ui: { sidebar: legacy } });
+    expect(result.ui.sidebar.muted).toEqual([]);
+    expect(result.ui.sidebar.ungroupedDisplayFilter).toBe('all');
+    expect(result.ui.sidebar.groups[0]).toEqual({
+      id: 'g1',
+      name: 'Clients',
+      agentPaths: ['/a'],
+      sortMode: 'manual',
+      collapsed: false,
+      displayFilter: 'all',
+      muted: false,
+    });
   });
 });
 

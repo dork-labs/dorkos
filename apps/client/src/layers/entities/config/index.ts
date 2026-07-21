@@ -31,5 +31,10 @@ export {
   setRecentsCollapsed,
   setUngroupedSortMode,
   setGroupsHintDismissed,
+  setGroupDisplayFilter,
+  setGroupMuted,
+  setUngroupedDisplayFilter,
+  mutePath,
+  unmutePath,
 } from './model/use-sidebar-prefs';
 export type { UpdateSidebarPrefs } from './model/use-sidebar-prefs';

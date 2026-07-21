@@ -61,8 +61,24 @@ describe('sidebar prefs pure helpers', () => {
 
   describe('moveToGroup disjointness invariant', () => {
     const groups = [
-      { id: 'A', name: 'A', agentPaths: ['/x'], sortMode: 'manual' as const, collapsed: false },
-      { id: 'B', name: 'B', agentPaths: [], sortMode: 'manual' as const, collapsed: false },
+      {
+        id: 'A',
+        name: 'A',
+        agentPaths: ['/x'],
+        sortMode: 'manual' as const,
+        collapsed: false,
+        displayFilter: 'all' as const,
+        muted: false,
+      },
+      {
+        id: 'B',
+        name: 'B',
+        agentPaths: [],
+        sortMode: 'manual' as const,
+        collapsed: false,
+        displayFilter: 'all' as const,
+        muted: false,
+      },
     ];
 
     it('moving a path already in group A into group B leaves it only in B', () => {
@@ -79,8 +95,24 @@ describe('sidebar prefs pure helpers', () => {
     it('appends to the target group at the end', () => {
       const seeded = prefs({
         groups: [
-          { id: 'A', name: 'A', agentPaths: ['/x'], sortMode: 'manual', collapsed: false },
-          { id: 'B', name: 'B', agentPaths: ['/y'], sortMode: 'manual', collapsed: false },
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+          {
+            id: 'B',
+            name: 'B',
+            agentPaths: ['/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
         ],
       });
       const next = moveToGroup(seeded, '/x', 'B');
@@ -99,6 +131,8 @@ describe('sidebar prefs pure helpers', () => {
         agentPaths: [],
         sortMode: 'manual',
         collapsed: false,
+        displayFilter: 'all',
+        muted: false,
       });
     });
 
@@ -110,7 +144,15 @@ describe('sidebar prefs pure helpers', () => {
     it('deleteGroup returns members to ungrouped (they vanish from all agentPaths)', () => {
       const seeded = prefs({
         groups: [
-          { id: 'A', name: 'A', agentPaths: ['/x', '/y'], sortMode: 'manual', collapsed: false },
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x', '/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
         ],
       });
       const next = deleteGroup(seeded, 'A');
@@ -124,8 +166,24 @@ describe('sidebar prefs pure helpers', () => {
     const seeded = prefs({
       pinned: ['/a', '/b', '/c'],
       groups: [
-        { id: 'A', name: 'A', agentPaths: ['/x', '/y'], sortMode: 'manual', collapsed: false },
-        { id: 'B', name: 'B', agentPaths: [], sortMode: 'manual', collapsed: false },
+        {
+          id: 'A',
+          name: 'A',
+          agentPaths: ['/x', '/y'],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
+        {
+          id: 'B',
+          name: 'B',
+          agentPaths: [],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
       ],
     });
 
@@ -151,7 +209,15 @@ describe('sidebar prefs pure helpers', () => {
     it('changes sortMode without mutating agentPaths', () => {
       const seeded = prefs({
         groups: [
-          { id: 'A', name: 'A', agentPaths: ['/x', '/y'], sortMode: 'manual', collapsed: false },
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x', '/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
         ],
       });
       const next = setGroupSortMode(seeded, 'A', 'recent');
@@ -174,8 +240,24 @@ describe('sidebar prefs pure helpers', () => {
   it('setGroupCollapsed toggles only the targeted group', () => {
     const seeded = prefs({
       groups: [
-        { id: 'A', name: 'A', agentPaths: [], sortMode: 'manual', collapsed: false },
-        { id: 'B', name: 'B', agentPaths: [], sortMode: 'manual', collapsed: false },
+        {
+          id: 'A',
+          name: 'A',
+          agentPaths: [],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
+        {
+          id: 'B',
+          name: 'B',
+          agentPaths: [],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
       ],
     });
     const next = setGroupCollapsed(seeded, 'A', true);

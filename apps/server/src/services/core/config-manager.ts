@@ -636,6 +636,64 @@ export function backfillShapesDefaults(store: {
   }
 }
 
+/**
+ * Migration body: backfill the DOR-339 display-filter/mute fields onto an
+ * EXISTING `ui.sidebar` — `muted: []` and `ungroupedDisplayFilter: 'all'` on
+ * the section itself, plus `displayFilter: 'all'` and `muted: false` on every
+ * already-stored group. conf merges top-level defaults SHALLOWLY and never
+ * reaches inside array elements at all, so a `ui.sidebar` already on disk —
+ * including every group inside it — never inherits these new fields on its
+ * own; this supplies them. Additive + idempotent: only writes a field that is
+ * actually missing, never overwrites an existing value (a user who already
+ * set a group's filter, or muted a group or agent, keeps that choice
+ * untouched). The whole-section-absent case is handled by the schema default
+ * on read (already yields these defaults) and by `backfillSidebarDefaults`
+ * for an existing `ui` block with no `sidebar` at all.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillSidebarSettingsDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  const sidebar = (ui as { sidebar?: unknown }).sidebar;
+  if (!sidebar || typeof sidebar !== 'object') return;
+
+  const s = sidebar as Record<string, unknown>;
+
+  let groups = s.groups;
+  let groupsChanged = false;
+  if (Array.isArray(s.groups)) {
+    groups = s.groups.map((g: unknown) => {
+      if (!g || typeof g !== 'object') return g;
+      const group = g as Record<string, unknown>;
+      if (group.displayFilter !== undefined && group.muted !== undefined) return group;
+      groupsChanged = true;
+      return {
+        ...group,
+        displayFilter: group.displayFilter ?? 'all',
+        muted: group.muted ?? false,
+      };
+    });
+  }
+
+  const needsSectionFields = s.muted === undefined || s.ungroupedDisplayFilter === undefined;
+  if (!needsSectionFields && !groupsChanged) return;
+
+  store.set('ui', {
+    ...(ui as Record<string, unknown>),
+    sidebar: {
+      ...s,
+      muted: s.muted ?? [],
+      ungroupedDisplayFilter: s.ungroupedDisplayFilter ?? 'all',
+      groups,
+    },
+  });
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -741,6 +799,13 @@ const CONFIG_MIGRATIONS = {
   // version (0.51.0 is already tagged); /system:release reconciles the key at
   // tag time if the real release differs.
   '0.52.0': backfillShapesDefaults,
+  // Backfill the DOR-339 display-filter/mute fields (`ui.sidebar.muted`,
+  // `ui.sidebar.ungroupedDisplayFilter`, and `displayFilter`/`muted` on every
+  // stored group) onto an existing `ui.sidebar`. Additive + idempotent; every
+  // filter defaults to 'all' and nothing starts muted. Keyed to the next
+  // unreleased version (0.53.0 is already tagged); /system:release reconciles
+  // the key at tag time if the real release differs.
+  '0.54.0': backfillSidebarSettingsDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

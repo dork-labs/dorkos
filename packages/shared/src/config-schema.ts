@@ -72,6 +72,19 @@ export const OnboardingStateSchema = z.object({
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
 
+/**
+ * A section's per-agent display filter (agent-list-settings, DOR-339): `all`
+ * shows every member (inactive ones collapse behind a reveal row), `active`
+ * keeps only agents that need attention or are active, `attention` narrows to
+ * agents that need attention. Mirrors {@link AttentionState} in
+ * `entities/session/model/agent-attention.ts` minus `idle`/`inactive`, which
+ * never have their own filter value — they are what filtering hides.
+ */
+export const SidebarDisplayFilterSchema = z.enum(['all', 'active', 'attention']);
+
+/** A section's display filter value (see {@link SidebarDisplayFilterSchema}). */
+export type SidebarDisplayFilter = z.infer<typeof SidebarDisplayFilterSchema>;
+
 export const SidebarGroupSchema = z.object({
   /** Stable id, `crypto.randomUUID()` minted client-side at creation. */
   id: z.string().min(1),
@@ -82,6 +95,10 @@ export const SidebarGroupSchema = z.object({
   /** How rows inside this group are ordered. Switching away from 'manual' never mutates agentPaths. */
   sortMode: z.enum(['manual', 'recent', 'name']).default('manual'),
   collapsed: z.boolean().default(false),
+  /** Which members render: all, active-recently, or needs-attention only (DOR-339). */
+  displayFilter: SidebarDisplayFilterSchema.default('all'),
+  /** Muted groups drop every attention signal for all members at once (DOR-339). */
+  muted: z.boolean().default(false),
 });
 
 /** A single user-defined sidebar group (Slack-style section). */
@@ -96,6 +113,14 @@ export const SidebarPrefsSchema = z.object({
   ungroupedCollapsed: z.boolean().default(false),
   recentsCollapsed: z.boolean().default(false),
   groupsHintDismissed: z.boolean().default(false),
+  /**
+   * Muted agent projectPaths (DOR-339). Mute owns ALL attention signals for a
+   * path at once (badge, rollup-dot contribution, filter/reveal emphasis); no
+   * partial mute states.
+   */
+  muted: z.array(z.string()).default(() => []),
+  /** Display filter for the ungrouped "Agents" section (DOR-339). */
+  ungroupedDisplayFilter: SidebarDisplayFilterSchema.default('all'),
 });
 
 /** Server-persisted sidebar organization preferences (`ui.sidebar`). */
@@ -184,6 +209,8 @@ export const UserConfigSchema = z.object({
         ungroupedCollapsed: false,
         recentsCollapsed: false,
         groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all' as const,
       })),
       /** Person-scoped Shape state (active Shape, reverse affinity hints, follow toggle). */
       shapes: ShapeUserPrefsSchema.default(() => ({
@@ -202,6 +229,8 @@ export const UserConfigSchema = z.object({
         ungroupedCollapsed: false,
         recentsCollapsed: false,
         groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all' as const,
       },
       shapes: {
         active: null,

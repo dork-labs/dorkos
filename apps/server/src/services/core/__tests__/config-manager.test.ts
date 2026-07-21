@@ -7,6 +7,7 @@ import {
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
+  backfillSidebarSettingsDefaults,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
   backfillCloudDefaults,
@@ -937,6 +938,91 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
   it('is a no-op when the ui section is absent (schema default owns that case)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillShapesDefaults(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillSidebarSettingsDefaults migration (DOR-339)', () => {
+  it('adds muted + ungroupedDisplayFilter to an existing sidebar, and displayFilter + muted to every group', () => {
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        sidebar: {
+          pinned: ['/a'],
+          groups: [
+            { id: 'g1', name: 'Clients', agentPaths: ['/a'], sortMode: 'manual', collapsed: false },
+          ],
+          ungroupedSortMode: 'name',
+          ungroupedCollapsed: false,
+          recentsCollapsed: false,
+          groupsHintDismissed: false,
+        },
+      },
+    });
+    backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/a'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/a'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all',
+      },
+    });
+  });
+
+  it('is idempotent — does not overwrite an existing muted/displayFilter choice', () => {
+    const existing = {
+      theme: 'system',
+      sidebar: {
+        pinned: [],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Experiments',
+            agentPaths: ['/x'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'attention',
+            muted: true,
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: ['/y'],
+        ungroupedDisplayFilter: 'active',
+      },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when ui.sidebar is absent (schema default / backfillSidebarDefaults own that case)', () => {
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toEqual({ theme: 'dark' });
+  });
+
+  it('is a no-op when the ui section is absent entirely', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillSidebarSettingsDefaults(store);
     expect(store.data.ui).toBeUndefined();
   });
 });
