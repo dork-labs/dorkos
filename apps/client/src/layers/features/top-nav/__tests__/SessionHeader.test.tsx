@@ -81,4 +81,32 @@ describe('SessionHeader', () => {
     const nav = screen.getByLabelText('Breadcrumb');
     expect(nav).toHaveTextContent('Session');
   });
+
+  // --- Origin chip (session-origin-legibility) ---
+
+  it('shows a muted origin chip for a non-user session', () => {
+    renderWithTooltip(
+      <SessionHeader agentName="dorkbot" origin="channel" originLabel="Telegram" />
+    );
+    const nav = screen.getByLabelText('Breadcrumb');
+    expect(nav).toHaveTextContent('Telegram');
+  });
+
+  it('falls back to the descriptor label when no originLabel is set', () => {
+    renderWithTooltip(<SessionHeader agentName="dorkbot" origin="task" />);
+    const nav = screen.getByLabelText('Breadcrumb');
+    expect(nav).toHaveTextContent('Scheduled task');
+  });
+
+  it('shows no origin chip for a user-origin session', () => {
+    renderWithTooltip(<SessionHeader agentName="dorkbot" origin="user" />);
+    const nav = screen.getByLabelText('Breadcrumb');
+    expect(nav).not.toHaveTextContent('Telegram');
+    expect(screen.queryByLabelText(/^Origin:/)).not.toBeInTheDocument();
+  });
+
+  it('shows no origin chip when origin is absent', () => {
+    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    expect(screen.queryByLabelText(/^Origin:/)).not.toBeInTheDocument();
+  });
 });

@@ -90,3 +90,5 @@ export type { OriginDescriptor } from './config/origin-descriptors';
 export { OriginMark } from './ui/OriginMark';
 export { partitionSessionsByOrigin } from './lib/partition-sessions-by-origin';
 export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
+export { useSessionOrigin } from './model/use-session-origin';
+export type { SessionOriginData } from './model/use-session-origin';
