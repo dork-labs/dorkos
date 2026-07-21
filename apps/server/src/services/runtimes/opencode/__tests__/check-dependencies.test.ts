@@ -14,7 +14,8 @@ vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn() },
 }));
 
-const INSTALL_HINT = 'npm i -g opencode-ai && opencode auth login';
+const INSTALL_HINT = 'npm i -g opencode-ai';
+const LOGIN_HINT = 'opencode auth login';
 const INFO_URL = 'https://opencode.ai/docs/server';
 
 /** A canonical PATH-resolved opencode, distinct from the provisioned path. */
@@ -90,7 +91,10 @@ describe('checkOpenCodeDependencies', () => {
       infoUrl: INFO_URL,
     });
     expect(cli.description).toBeTruthy();
-    expect(auth).toMatchObject({ status: 'missing', installHint: INSTALL_HINT, infoUrl: INFO_URL });
+    // The CLI and auth checks now carry distinct, correct hints (never the same
+    // command twice): install for the CLI, login for auth.
+    expect(auth).toMatchObject({ status: 'missing', installHint: LOGIN_HINT, infoUrl: INFO_URL });
+    expect(cli.installHint).not.toBe(auth.installHint);
   });
 
   it('returns satisfied for both checks when the binary is on PATH and credentials exist', async () => {
@@ -153,10 +157,11 @@ describe('checkOpenCodeDependencies', () => {
     expect(cli.status).toBe('missing');
     expect(cli.installHint).toBe(INSTALL_HINT);
     expect(auth.status).toBe('missing');
+    expect(auth.installHint).toBe(LOGIN_HINT);
     expect(execFile).not.toHaveBeenCalled();
   });
 
-  it('reports the CLI satisfied but auth missing when no credentials are stored', async () => {
+  it('reports the CLI satisfied but auth missing, with the login-only hint (never the install command)', async () => {
     mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
     vi.mocked(existsSync).mockImplementation((p) => p === PATH_OPENCODE);
     pathProbes({
@@ -168,7 +173,9 @@ describe('checkOpenCodeDependencies', () => {
     const [cli, auth] = await checkOpenCodeDependencies();
 
     expect(cli.status).toBe('satisfied');
-    expect(auth).toMatchObject({ status: 'missing', installHint: INSTALL_HINT, infoUrl: INFO_URL });
+    expect(auth).toMatchObject({ status: 'missing', installHint: LOGIN_HINT, infoUrl: INFO_URL });
+    // With the CLI present the user only needs to log in — never re-install.
+    expect(auth.installHint).not.toBe(INSTALL_HINT);
   });
 
   it('treats env-var-only auth (0 credentials + active environment variables) as satisfied', async () => {
@@ -212,7 +219,7 @@ describe('checkOpenCodeDependencies', () => {
 
     const [, auth] = await checkOpenCodeDependencies();
 
-    expect(auth).toMatchObject({ status: 'missing', installHint: INSTALL_HINT, infoUrl: INFO_URL });
+    expect(auth).toMatchObject({ status: 'missing', installHint: LOGIN_HINT, infoUrl: INFO_URL });
   });
 
   it('reports auth missing when the auth probe fails to run', async () => {

@@ -4,9 +4,10 @@
  *
  * The binary is resolved uniformly via the shared runtime-binary resolver
  * (ADR-0316): a configured `runtimes.codex.binaryPath` is authoritative, then
- * the SDK-vendored binary (present out of the box), then `PATH`. Probes are
- * bounded and non-blocking (shared run-probe helper) so a hung CLI degrades to
- * "missing" rather than stalling the event loop.
+ * the SDK-vendored binary (present out of the box), then an on-demand
+ * provisioned install (ADR-0317), then `PATH`. Probes are bounded and
+ * non-blocking (shared run-probe helper) so a hung CLI degrades to "missing"
+ * rather than stalling the event loop.
  *
  * @module services/runtimes/codex/check-dependencies
  */
@@ -16,9 +17,16 @@ import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../core/config-manager.js';
 import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
 import { runBinaryProbe, findBinaryOnPath } from '../shared/run-probe.js';
+import { resolveProvisionedCodexPath } from './provision.js';
 
-/** One remedy covers both failure modes: install the CLI, then log in. */
-const CODEX_INSTALL_HINT = 'npm i -g @openai/codex && codex login';
+/**
+ * Each failure mode gets its own remedy so the onboarding screen never renders
+ * the same command twice: the CLI check hands out the install command, the auth
+ * check hands out the login command. When the CLI itself is missing the auth
+ * check reports missing too, but the two hints stay distinct and correct.
+ */
+const CODEX_INSTALL_HINT = 'npm i -g @openai/codex';
+const CODEX_LOGIN_HINT = 'codex login';
 const CODEX_INFO_URL = 'https://developers.openai.com/codex';
 
 /** Defensive cap on how long a CLI probe may run. */
@@ -97,7 +105,8 @@ function runCodex(binary: string, args: string[]): Promise<string> {
  * Precedence (ADR-0316, refined): a configured `runtimes.codex.binaryPath` is
  * authoritative — when set but absent we report the dependency missing rather
  * than silently probing a different binary — then the SDK-vendored binary, then
- * a `codex` on `PATH`.
+ * an on-demand provisioned install (ADR-0317, the one-click fallback when the
+ * vendored binary is absent), then a `codex` on `PATH`.
  *
  * @returns Absolute path to the binary, or `null` when unresolvable.
  */
@@ -106,6 +115,7 @@ export function resolveCodexBinaryPath(): Promise<string | null> {
   return resolveRuntimeBinary([
     { resolve: () => binaryPath, authoritative: true },
     { resolve: resolveCodexVendoredBinary },
+    { resolve: resolveProvisionedCodexPath },
     { resolve: () => findBinaryOnPath('codex', PROBE_TIMEOUT_MS) },
   ]);
 }
@@ -156,7 +166,7 @@ async function checkLoginState(binary: string | null): Promise<DependencyCheck> 
     name,
     description,
     status: 'missing',
-    installHint: CODEX_INSTALL_HINT,
+    installHint: CODEX_LOGIN_HINT,
     infoUrl: CODEX_INFO_URL,
   };
 }
