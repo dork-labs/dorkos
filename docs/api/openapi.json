@@ -3927,7 +3927,7 @@
           "all"
         ],
         "default": "pending",
-        "description": "Filter messages by status. Defaults to \"pending\" (deliverable, unread messages) so budget-rejected failures never surface silently next to real deliverables. Pass \"failed\" to see budget-rejected/dead-lettered messages, \"delivered\" for already-read ones, or \"all\" for every status."
+        "description": "Filter messages by status. Defaults to \"pending\" (deliverable, unread messages) so budget-rejected failures never surface silently next to real deliverables. Pass \"failed\" to see budget-rejected/dead-lettered messages, \"delivered\" for already-read ones (metadata only — the payload is removed once a message completes), or \"all\" for every status."
       },
       "DiscoveryCandidate": {
         "type": "object",
@@ -7475,7 +7475,7 @@
               "$ref": "#/components/schemas/InboxStatusFilter"
             },
             "required": false,
-            "description": "Filter messages by status. Defaults to \"pending\" (deliverable, unread messages) so budget-rejected failures never surface silently next to real deliverables. Pass \"failed\" to see budget-rejected/dead-lettered messages, \"delivered\" for already-read ones, or \"all\" for every status.",
+            "description": "Filter messages by status. Defaults to \"pending\" (deliverable, unread messages) so budget-rejected failures never surface silently next to real deliverables. Pass \"failed\" to see budget-rejected/dead-lettered messages, \"delivered\" for already-read ones (metadata only — the payload is removed once a message completes), or \"all\" for every status.",
             "name": "status",
             "in": "query"
           },

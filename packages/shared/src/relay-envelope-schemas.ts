@@ -207,7 +207,8 @@ export const InboxQuerySchema = z
         'Filter messages by status. Defaults to "pending" (deliverable, unread messages) so ' +
         'budget-rejected failures never surface silently next to real deliverables. Pass ' +
         '"failed" to see budget-rejected/dead-lettered messages, "delivered" for already-read ' +
-        'ones, or "all" for every status.',
+        'ones (metadata only — the payload is removed once a message completes), or "all" for ' +
+        'every status.',
     }),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
