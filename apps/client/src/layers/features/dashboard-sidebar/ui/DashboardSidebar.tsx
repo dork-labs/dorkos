@@ -29,8 +29,8 @@ import { AgentGroupSection } from './AgentGroupSection';
 import { UngroupedSection } from './UngroupedSection';
 import { GroupCreateInput } from './GroupCreateInput';
 import { GroupsHintCard } from './GroupsHintCard';
-import { SidebarDnd } from './SidebarDnd';
-import { Sortable, SortableList, agentRowDndId, agentDndData } from './SidebarDndPrimitives';
+import { SidebarDnd } from './dnd/SidebarDnd';
+import { Sortable, SortableList, agentRowDndId, agentDndData } from './dnd/SidebarDndPrimitives';
 import { sortAgentPaths } from '../model/sort-agents';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 

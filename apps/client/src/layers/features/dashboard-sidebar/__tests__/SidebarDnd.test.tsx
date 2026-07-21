@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import { SidebarDnd } from '../ui/SidebarDnd';
-import { Sortable, agentDndData } from '../ui/SidebarDndPrimitives';
+import { SidebarDnd } from '../ui/dnd/SidebarDnd';
+import { Sortable, agentDndData } from '../ui/dnd/SidebarDndPrimitives';
 
 let mockIsMobile = false;
 vi.mock('@/layers/shared/model', () => ({

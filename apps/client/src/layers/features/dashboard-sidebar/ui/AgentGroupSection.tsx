@@ -4,7 +4,7 @@ import { cn } from '@/layers/shared/lib';
 import { SidebarGroup as SidebarGroupWrapper, SidebarMenu } from '@/layers/shared/ui';
 import { useAgentsAggregateStatus } from '@/layers/entities/session';
 import { GroupHeader } from './GroupHeader';
-import { Droppable, Sortable, SortableList, agentRowDndId } from './SidebarDndPrimitives';
+import { Droppable, Sortable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
 import { sortAgentPaths, type SortAgentsContext } from '../model/sort-agents';
 
 interface AgentGroupSectionProps {

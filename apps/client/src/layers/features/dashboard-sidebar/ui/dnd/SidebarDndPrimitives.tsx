@@ -9,7 +9,7 @@ import {
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { cn } from '@/layers/shared/lib';
-import type { SidebarDndData } from '../model/use-sidebar-dnd';
+import type { SidebarDndData } from '../../model/use-sidebar-dnd';
 
 /**
  * Whether the sidebar drag layer is active. `SidebarDnd` sets this `true`; it
