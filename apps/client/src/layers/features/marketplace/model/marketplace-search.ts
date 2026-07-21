@@ -24,11 +24,14 @@ export type MarketplaceTypeFilter = 'all' | MarketplacePackageType;
 /**
  * Sort order for the Marketplace browse grid.
  *
- * Only sorts backed by real data ship: `featured` (the `featured` flag) and
- * `name` (alphabetical). `popular` and `recent` return once `AggregatedPackage`
- * carries `installCount`/`updatedAt` — until then an honest menu offers neither.
+ * Every sort is backed by real data: `featured` (the `featured` flag), `name`
+ * (alphabetical), and `popular` (community install counts from
+ * `AggregatedPackage.installCount`). `popular` only appears in the menu when
+ * counts are available — offline (no reachable dorkos.ai) it grays out, and a
+ * stale `?sort=popular` link falls back to name order. (`recent` returns once
+ * `AggregatedPackage` carries `updatedAt`.)
  */
-export type MarketplaceSort = 'featured' | 'name';
+export type MarketplaceSort = 'featured' | 'name' | 'popular';
 
 /**
  * Top-level Marketplace view. `'browse'` is the catalog (search, featured rail,
@@ -50,8 +53,8 @@ export type MarketplaceView = 'browse' | 'installed';
  *
  * The closed-enum facets (`type`, `sort`) use `.catch(undefined)` so a stale
  * shared link — an old bookmark whose value this release changed, e.g.
- * `?sort=popular` after Popular/Recent were retired — degrades to the default
- * instead of throwing a route validation error. `category` accepts BOTH the
+ * `?sort=recent` after Recent was retired — degrades to the default instead of
+ * throwing a route validation error. `category` accepts BOTH the
  * legacy single-value form (`?category=security`, from links shared before the
  * facet panel went multi-select) and the array form the sidebar now writes; its
  * own `.catch(undefined)` drops any garbage rather than erroring the route.
@@ -64,7 +67,7 @@ export const marketplaceSearchSchema = z.object({
     .enum(['all', ...PackageTypeSchema.options])
     .optional()
     .catch(undefined),
-  sort: z.enum(['featured', 'name']).optional().catch(undefined),
+  sort: z.enum(['featured', 'name', 'popular']).optional().catch(undefined),
   q: z.string().optional(),
   category: z
     .union([z.string(), z.array(z.string())])

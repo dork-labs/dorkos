@@ -111,6 +111,55 @@ describe('sortPackages — name', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Popular sort
+// ---------------------------------------------------------------------------
+
+describe('sortPackages — popular', () => {
+  it('orders by install count, most-installed first', () => {
+    const low = pkg({ name: 'low', installCount: 3 });
+    const high = pkg({ name: 'high', installCount: 99 });
+    const mid = pkg({ name: 'mid', installCount: 40 });
+
+    const result = sortPackages([low, high, mid], 'popular');
+
+    expect(result.map((p) => p.name)).toEqual(['high', 'mid', 'low']);
+  });
+
+  it('breaks install-count ties by displayed label', () => {
+    const zebra = pkg({ name: 'zebra', installCount: 10 });
+    const apple = pkg({ name: 'apple', installCount: 10 });
+
+    const result = sortPackages([zebra, apple], 'popular');
+
+    expect(result.map((p) => p.name)).toEqual(['apple', 'zebra']);
+  });
+
+  it('treats a missing install count as zero (sorts last, then by name)', () => {
+    const counted = pkg({ name: 'counted', installCount: 5 });
+    const uncountedB = pkg({ name: 'bravo' });
+    const uncountedA = pkg({ name: 'alpha' });
+
+    const result = sortPackages([uncountedB, counted, uncountedA], 'popular');
+
+    expect(result.map((p) => p.name)).toEqual(['counted', 'alpha', 'bravo']);
+  });
+
+  it('falls back to name order when no package has a count (offline degrade)', () => {
+    // Every installCount undefined → equivalent to A–Z, so a stale ?sort=popular
+    // link stays well-behaved even though the menu hides the option offline.
+    const result = sortPackages(PACKAGES, 'popular');
+    expect(result.map((p) => p.name)).toEqual(['alpha', 'bravo', 'charlie', 'delta']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [pkg({ name: 'x', installCount: 1 }), pkg({ name: 'y', installCount: 9 })];
+    const first = input[0].name;
+    sortPackages(input, 'popular');
+    expect(input[0].name).toBe(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // General
 // ---------------------------------------------------------------------------
 

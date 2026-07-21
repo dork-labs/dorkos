@@ -39,6 +39,10 @@ import {
   type UninstallFlow,
 } from '../services/marketplace/flows/uninstall.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
+import {
+  installCountsProvider,
+  enrichWithInstallCounts,
+} from '../services/marketplace/install-counts.js';
 import type { MarketplaceSource } from '../services/marketplace/types.js';
 import {
   scanInstalledPackages,
@@ -416,7 +420,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const sources = await sourceManager.list();
       const enabled = sources.filter((source) => source.enabled);
       const packages = await aggregatePackages(enabled, fetcher);
-      res.json({ packages });
+      // Enrich with community install counts so the client can offer the
+      // Popular sort. Reads a cached map (background-refreshed) — never blocks
+      // the browse response on the dorkos.ai network call, and degrades to
+      // no counts when the cache is cold or the site is unreachable.
+      res.json({ packages: enrichWithInstallCounts(packages, installCountsProvider.getCounts()) });
     } catch (err) {
       logger.error('[Marketplace] Failed to aggregate packages', err);
       const mapped = mapErrorToStatus(err);

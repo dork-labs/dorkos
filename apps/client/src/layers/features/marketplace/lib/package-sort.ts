@@ -37,6 +37,22 @@ function byFeatured(a: AggregatedPackage, b: AggregatedPackage): number {
   return byName(a, b);
 }
 
+/**
+ * Most-installed-first comparator, backed by the community `installCount`
+ * enriched server-side. A missing count sorts as `0`, so packages with no
+ * recorded installs (and the whole list when counts are unavailable) fall back
+ * to name order — the same graceful degrade the Popular menu option relies on.
+ *
+ * @param a - Left-hand package.
+ * @param b - Right-hand package.
+ */
+function byPopular(a: AggregatedPackage, b: AggregatedPackage): number {
+  const ac = a.installCount ?? 0;
+  const bc = b.installCount ?? 0;
+  if (ac !== bc) return bc - ac;
+  return byName(a, b);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -46,11 +62,13 @@ function byFeatured(a: AggregatedPackage, b: AggregatedPackage): number {
  *
  * - `featured`: featured packages first, then alphabetical by name.
  * - `name`: alphabetical by name.
+ * - `popular`: most community installs first (`installCount`), tie-broken by
+ *   name. Degrades to name order when counts are unavailable (offline), so a
+ *   stale `?sort=popular` link stays well-behaved even though the menu hides
+ *   the option in that case.
  *
- * `popular` and `recent` sorts were removed because the data behind them —
- * `installCount` and `updatedAt` — isn't on `AggregatedPackage` yet, so both
- * silently fell back to name order. Add them back here and in the sort menu
- * once those fields land (tracked in Linear).
+ * The `recent` sort is still absent because `updatedAt` isn't on
+ * `AggregatedPackage` yet; add it back here and in the sort menu once it lands.
  *
  * @param packages - Package list to sort (original array is not mutated).
  * @param sort - Active sort order from the Marketplace store.
@@ -69,5 +87,7 @@ export function sortPackages(
       return copy.sort(byFeatured);
     case 'name':
       return copy.sort(byName);
+    case 'popular':
+      return copy.sort(byPopular);
   }
 }
