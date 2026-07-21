@@ -1,7 +1,7 @@
 # Implementation Summary: File explorer state persistence + UX polish
 
 **Created:** 2026-07-21
-**Last Updated:** 2026-07-21
+**Last Updated:** 2026-07-21 (post-review: three review nits fixed)
 **Spec:** specs/file-explorer-state-persistence/02-specification.md
 **Issue:** DOR-404
 **Worktree:** `/Users/doriancollier/.dork/workspaces/dorkos/feat-dor-404-file-explorer-state`
@@ -96,9 +96,45 @@
 - **Scroll persistence scope races:** the unmount flush writes to the store's _current_
   `scopeKey`. For the primary bug scenario (open file / tab switch, same cwd) this is always
   correct; a cwd change while a scroll debounce is still pending is the only edge that could
-  misattribute a stale offset, and is not worth extra coupling.
+  misattribute a stale offset, and is not worth extra coupling. **Reviewer confirmed this note
+  accurate and negligible-by-design (DOR-404 review, nit 4):** after nit 2 the debounce only ever
+  holds a _user_ scroll (programmatic restore scrolls are ignored), so the edge is even narrower —
+  only a user scroll landing microseconds before a cwd switch — and still not worth the coupling.
 - **No server/transport changes.** Only `apps/client/src/layers/features/file-explorer/`, the two
   `QUERY_TIMING` constants, and tests were touched.
+
+## Review follow-ups (APPROVE-WITH-NITS, DOR-404)
+
+Independent review returned APPROVE-WITH-NITS (0 important, 4 nits). Nits 1–3 fixed in one commit;
+nit 4 needs no code change.
+
+1. **Nit 1 — failed optimistic delete no longer loses selection/expansion.** A shared in-flight
+   counter (`inFlightRef`, threaded from `use-file-explorer.ts` into `use-file-crud.ts`) is raised
+   around every optimistic op via a `guard` wrapper; the prune effect stands down while it is
+   raised, so a transient optimistic cache edit (a removed/renamed row) can never be misread as the
+   entry vanishing and pruned from the store — a prune a rollback couldn't undo. On settle the op
+   invalidates and the refetch re-runs the prune against real data. Regression tests (file delete +
+   directory recursive delete) use a test-controlled deferred rejection so the optimistic render
+   commits before the reject; both fail without the gate.
+2. **Nit 2 — scroll no longer under-restores after a cold refresh with a deep offset.** The one-shot
+   restore in `FileTree.tsx` became a re-applying restore: it re-applies the saved offset every time
+   content grows (rows stream in) and latches permanently only once the container can hold the full
+   offset unclamped, or the user scrolls (a user scroll always wins — `handleScroll` distinguishes
+   its own programmatic scrolls from real ones and latches immediately on a real one). Latch is per
+   `scopeKey`. Also fixes a latent bug: clamped programmatic restore scrolls are no longer persisted
+   (they would have corrupted the saved offset). New `FileTree.test.tsx` covers grow-then-latch and
+   user-scroll-cancels-restore.
+3. **Nit 3 — first show-hidden toggle no longer blanks the tree to a root spinner.** Tree queries got
+   a `placeholderData` that holds the previous rows across the toggle. **Deviation from the review's
+   suggested mechanism:** the literal `placeholderData: keepPreviousData` does _not_ work here —
+   `useQueries` matches observers by `queryHash`, so a show-hidden toggle (part of the key) spins up
+   a _fresh_ observer with no previous data (verified against `@tanstack/query-core` 5.99
+   `queriesObserver` source; `keepPreviousData` works only for single `useQuery`). The working
+   equivalent reads the sibling (opposite show-hidden) listing straight from the cache as the
+   placeholder. A first-ever expand has neither key cached, so its skeleton still shows. New
+   regression test asserts the previous rows hold across the toggle.
+4. **Nit 4 — no code change.** The scroll-flush misattribution note above was reviewed and confirmed
+   negligible-by-design.
 
 ## Deferred follow-ups (D8)
 

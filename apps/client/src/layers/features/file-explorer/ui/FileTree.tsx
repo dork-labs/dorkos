@@ -63,18 +63,39 @@ export function FileTree(props: FileTreeProps) {
     enabled: virtualize,
   });
 
-  // Restore the saved scroll offset once per cwd, after the first render in
-  // which the flattened rows are non-empty (§4). Gated on `scopeKey` (which the
-  // store updates atomically with `scrollTop` on hydration) so a new cwd
-  // restores its own offset and later data arrivals never re-scroll.
-  const restoredScopeRef = useRef<string | null | undefined>(undefined);
+  // Restore the saved scroll offset for the active cwd (§4, review nit 2). A cold
+  // refresh with a deep saved offset renders root-only first — too short to hold
+  // it — so re-apply the offset every time the content grows (rows.length climbs
+  // as deeper levels stream in), and latch permanently only once either the
+  // container is finally tall enough to apply it unclamped, or the user scrolls
+  // (a user scroll always wins — see `handleScroll`). `scope` resets the latch on
+  // a cwd change so each cwd restores its own offset; `programmaticTop` records
+  // the offset our own restore applied so the scroll events it emits are never
+  // mistaken for a user scroll.
+  const scrollRestoreRef = useRef<{ scope: string | null | undefined; done: boolean }>({
+    scope: undefined,
+    done: false,
+  });
+  const programmaticTopRef = useRef<number | null>(null);
   useLayoutEffect(() => {
-    if (rows.length === 0 || restoredScopeRef.current === scopeKey) return;
-    restoredScopeRef.current = scopeKey;
+    const restore = scrollRestoreRef.current;
+    if (restore.scope !== scopeKey) {
+      restore.scope = scopeKey;
+      restore.done = false;
+    }
+    if (restore.done || rows.length === 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
     const saved = useFileExplorerStore.getState().scrollTop;
-    if (saved <= 0) return;
+    if (saved <= 0) {
+      restore.done = true; // nothing to restore for this cwd
+      return;
+    }
     if (virtualize) virtualizer.scrollToOffset(saved);
-    else if (scrollRef.current) scrollRef.current.scrollTop = saved;
+    else el.scrollTop = saved;
+    programmaticTopRef.current = el.scrollTop;
+    // Latch once the offset landed unclamped — the container can finally hold it.
+    if (el.scrollTop >= saved) restore.done = true;
   }, [rows.length, scopeKey, virtualize, virtualizer]);
 
   // Persist the scroll offset, trailing-debounced so localStorage is never
@@ -85,6 +106,11 @@ export function FileTree(props: FileTreeProps) {
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // Ignore the scroll events our own restore emits — only a genuine user scroll
+    // latches the restore (the user always wins) and gets persisted. Persisting a
+    // programmatic, possibly-clamped offset would corrupt the saved position.
+    if (el.scrollTop === programmaticTopRef.current) return;
+    scrollRestoreRef.current.done = true;
     pendingScrollRef.current = el.scrollTop;
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {

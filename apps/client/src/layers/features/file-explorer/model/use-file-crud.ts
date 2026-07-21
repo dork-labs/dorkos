@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type RefObject } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { FileEntry, FileTreeResponse } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
@@ -28,6 +28,15 @@ export interface FileCrudDeps {
   showHidden: boolean;
   /** The active query client, for optimistic cache reads/writes and invalidation. */
   queryClient: QueryClient;
+  /**
+   * Shared in-flight-mutation counter the explorer's prune effect reads to
+   * suspend pruning while any optimistic op is mid-flight. Raised for the
+   * duration of every mutation so a transient optimistic cache edit (a removed or
+   * renamed row) is never misread as the entry vanishing and pruned from the
+   * store — a store prune a transport rollback could not undo (DOR-404 review
+   * nit 1).
+   */
+  inFlightRef: RefObject<number>;
 }
 
 /** The CRUD surface the explorer UI drives. */
@@ -50,8 +59,24 @@ function draftEntry(path: string, name: string, type: 'file' | 'dir'): FileEntry
 /** Optimistic file-service mutations bound to the explorer's query cache. */
 export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   const transport = useTransport();
-  const { cwd, showHidden, queryClient } = deps;
+  const { cwd, showHidden, queryClient, inFlightRef } = deps;
   const [pendingRecursiveDelete, setPendingRecursiveDelete] = useState<FileEntry | null>(null);
+
+  // Raise the in-flight guard for the whole duration of an optimistic op. While
+  // it is raised the explorer's prune effect stands down, so the op's transient
+  // cache edit can't be read as a real deletion and prune the store; on settle
+  // the op invalidates, the refetch re-runs the prune against real data (nit 1).
+  const guard = useCallback(
+    async <T>(op: () => Promise<T>): Promise<T> => {
+      inFlightRef.current += 1;
+      try {
+        return await op();
+      } finally {
+        inFlightRef.current -= 1;
+      }
+    },
+    [inFlightRef]
+  );
 
   // A stable helper bundle over the per-directory query cache. `treeKey` matches
   // the keys `useFileExplorer` mounts, so writes here land in the same cache the
@@ -85,84 +110,68 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   }, [queryClient, cwd, showHidden]);
 
   const createEntry = useCallback(
-    async (parent: string, name: string, type: 'file' | 'dir'): Promise<boolean> => {
-      const path = joinPath(parent, name);
-      // Only add optimistically when the name is genuinely new; if it already
-      // exists locally the create will conflict, and rolling back a removal
-      // would wrongly delete the pre-existing entry (they share this path).
-      const isNew = !cache.getChildren(parent).some((e) => e.path === path);
-      const prev = cache.snapshot(parent);
-      if (isNew) cache.setChildren(parent, (es) => [...es, draftEntry(path, name, type)]);
-      try {
-        await transport.createEntry(cwd, path, type);
-        return true;
-      } catch (err) {
-        if (isNew) cache.restore(parent, prev);
-        toastCrudError(err, `Couldn't create ${type === 'dir' ? 'folder' : 'file'}`);
-        return false;
-      } finally {
-        cache.invalidate(parent);
-      }
-    },
-    [transport, cwd, cache]
+    (parent: string, name: string, type: 'file' | 'dir'): Promise<boolean> =>
+      guard(async () => {
+        const path = joinPath(parent, name);
+        // Only add optimistically when the name is genuinely new; if it already
+        // exists locally the create will conflict, and rolling back a removal
+        // would wrongly delete the pre-existing entry (they share this path).
+        const isNew = !cache.getChildren(parent).some((e) => e.path === path);
+        const prev = cache.snapshot(parent);
+        if (isNew) cache.setChildren(parent, (es) => [...es, draftEntry(path, name, type)]);
+        try {
+          await transport.createEntry(cwd, path, type);
+          return true;
+        } catch (err) {
+          if (isNew) cache.restore(parent, prev);
+          toastCrudError(err, `Couldn't create ${type === 'dir' ? 'folder' : 'file'}`);
+          return false;
+        } finally {
+          cache.invalidate(parent);
+        }
+      }),
+    [transport, cwd, cache, guard]
   );
 
   const renameEntry = useCallback(
-    async (entry: FileEntry, newName: string): Promise<boolean> => {
-      if (newName === entry.name || newName.length === 0) return true;
-      const parent = parentOf(entry.path);
-      const newPath = joinPath(parent, newName);
-      // Only mutate optimistically when the target name is free. If a sibling
-      // already occupies `newPath`, the rename will conflict — and an optimistic
-      // replace + rollback (both keyed on the shared path) would corrupt that
-      // pre-existing sibling. Let the transport reject and just toast.
-      const collides = cache.getChildren(parent).some((e) => e.path === newPath);
-      const prev = cache.snapshot(parent);
-      const renamed: FileEntry = { ...entry, name: newName, path: newPath };
-      if (!collides)
-        cache.setChildren(parent, (es) => es.map((e) => (e.path === entry.path ? renamed : e)));
-      try {
-        await transport.renameEntry(cwd, entry.path, newPath);
-        // Keep persisted expansion/selection pointing at the moved subtree.
-        useFileExplorerStore.getState().remapExpandedPaths(entry.path, newPath);
-        return true;
-      } catch (err) {
-        if (!collides) cache.restore(parent, prev);
-        toastCrudError(err, "Couldn't rename");
-        return false;
-      } finally {
-        cache.invalidate(parent);
-      }
-    },
-    [transport, cwd, cache]
+    (entry: FileEntry, newName: string): Promise<boolean> =>
+      guard(async () => {
+        if (newName === entry.name || newName.length === 0) return true;
+        const parent = parentOf(entry.path);
+        const newPath = joinPath(parent, newName);
+        // Only mutate optimistically when the target name is free. If a sibling
+        // already occupies `newPath`, the rename will conflict — and an optimistic
+        // replace + rollback (both keyed on the shared path) would corrupt that
+        // pre-existing sibling. Let the transport reject and just toast.
+        const collides = cache.getChildren(parent).some((e) => e.path === newPath);
+        const prev = cache.snapshot(parent);
+        const renamed: FileEntry = { ...entry, name: newName, path: newPath };
+        if (!collides)
+          cache.setChildren(parent, (es) => es.map((e) => (e.path === entry.path ? renamed : e)));
+        try {
+          await transport.renameEntry(cwd, entry.path, newPath);
+          // Keep persisted expansion/selection pointing at the moved subtree.
+          useFileExplorerStore.getState().remapExpandedPaths(entry.path, newPath);
+          return true;
+        } catch (err) {
+          if (!collides) cache.restore(parent, prev);
+          toastCrudError(err, "Couldn't rename");
+          return false;
+        } finally {
+          cache.invalidate(parent);
+        }
+      }),
+    [transport, cwd, cache, guard]
   );
 
   const deleteRecursive = useCallback(
-    async (entry: FileEntry): Promise<void> => {
-      const parent = parentOf(entry.path);
-      const prev = cache.snapshot(parent);
-      cache.setChildren(parent, (es) => es.filter((e) => e.path !== entry.path));
-      try {
-        await transport.deleteEntry(cwd, entry.path, { recursive: true });
-        useFileExplorerStore.getState().dropExpandedPaths(entry.path);
-      } catch (err) {
-        cache.restore(parent, prev);
-        toastCrudError(err, "Couldn't delete");
-      } finally {
-        cache.invalidate(parent);
-      }
-    },
-    [transport, cwd, cache]
-  );
-
-  const removeEntry = useCallback(
-    async (entry: FileEntry): Promise<void> => {
-      const parent = parentOf(entry.path);
-      if (entry.type === 'file') {
+    (entry: FileEntry): Promise<void> =>
+      guard(async () => {
+        const parent = parentOf(entry.path);
         const prev = cache.snapshot(parent);
         cache.setChildren(parent, (es) => es.filter((e) => e.path !== entry.path));
         try {
-          await transport.deleteEntry(cwd, entry.path);
+          await transport.deleteEntry(cwd, entry.path, { recursive: true });
           useFileExplorerStore.getState().dropExpandedPaths(entry.path);
         } catch (err) {
           cache.restore(parent, prev);
@@ -170,24 +179,44 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         } finally {
           cache.invalidate(parent);
         }
-        return;
-      }
-      // Directory: try the safe non-recursive delete; a non-empty directory
-      // throws DIR_NOT_EMPTY, which we surface as a confirm before wiping it.
-      try {
-        await transport.deleteEntry(cwd, entry.path);
-        cache.setChildren(parent, (es) => es.filter((e) => e.path !== entry.path));
-        useFileExplorerStore.getState().dropExpandedPaths(entry.path);
-        cache.invalidate(parent);
-      } catch (err) {
-        if (getErrorCode(err) === 'DIR_NOT_EMPTY') {
-          setPendingRecursiveDelete(entry);
+      }),
+    [transport, cwd, cache, guard]
+  );
+
+  const removeEntry = useCallback(
+    (entry: FileEntry): Promise<void> =>
+      guard(async () => {
+        const parent = parentOf(entry.path);
+        if (entry.type === 'file') {
+          const prev = cache.snapshot(parent);
+          cache.setChildren(parent, (es) => es.filter((e) => e.path !== entry.path));
+          try {
+            await transport.deleteEntry(cwd, entry.path);
+            useFileExplorerStore.getState().dropExpandedPaths(entry.path);
+          } catch (err) {
+            cache.restore(parent, prev);
+            toastCrudError(err, "Couldn't delete");
+          } finally {
+            cache.invalidate(parent);
+          }
           return;
         }
-        toastCrudError(err, "Couldn't delete");
-      }
-    },
-    [transport, cwd, cache]
+        // Directory: try the safe non-recursive delete; a non-empty directory
+        // throws DIR_NOT_EMPTY, which we surface as a confirm before wiping it.
+        try {
+          await transport.deleteEntry(cwd, entry.path);
+          cache.setChildren(parent, (es) => es.filter((e) => e.path !== entry.path));
+          useFileExplorerStore.getState().dropExpandedPaths(entry.path);
+          cache.invalidate(parent);
+        } catch (err) {
+          if (getErrorCode(err) === 'DIR_NOT_EMPTY') {
+            setPendingRecursiveDelete(entry);
+            return;
+          }
+          toastCrudError(err, "Couldn't delete");
+        }
+      }),
+    [transport, cwd, cache, guard]
   );
 
   const confirmRecursiveDelete = useCallback(async (): Promise<void> => {
@@ -199,42 +228,43 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
   const cancelRecursiveDelete = useCallback(() => setPendingRecursiveDelete(null), []);
 
   const moveEntry = useCallback(
-    async (fromPath: string, toDir: string): Promise<void> => {
-      const fromParent = parentOf(fromPath);
-      const name = baseName(fromPath);
-      const newPath = joinPath(toDir, name);
-      // No-ops and self-nesting: dropping onto the current parent, onto itself,
-      // or into its own subtree.
-      if (toDir === fromParent || newPath === fromPath) return;
-      if (toDir === fromPath || toDir.startsWith(`${fromPath}/`)) return;
-      const entry = cache.getChildren(fromParent).find((e) => e.path === fromPath);
-      if (!entry) return;
+    (fromPath: string, toDir: string): Promise<void> =>
+      guard(async () => {
+        const fromParent = parentOf(fromPath);
+        const name = baseName(fromPath);
+        const newPath = joinPath(toDir, name);
+        // No-ops and self-nesting: dropping onto the current parent, onto itself,
+        // or into its own subtree.
+        if (toDir === fromParent || newPath === fromPath) return;
+        if (toDir === fromPath || toDir.startsWith(`${fromPath}/`)) return;
+        const entry = cache.getChildren(fromParent).find((e) => e.path === fromPath);
+        if (!entry) return;
 
-      // Add to the destination optimistically only when the name is free there.
-      // A collision would make the move conflict, and an optimistic add + rollback
-      // removal (both keyed on the shared path) would destroy the destination's
-      // pre-existing sibling. When it collides we still remove from the source
-      // optimistically; on failure it snaps back.
-      const destShown = cache.isLoaded(toDir);
-      const destCollides = destShown && cache.getChildren(toDir).some((e) => e.path === newPath);
-      const moved: FileEntry = { ...entry, name, path: newPath };
-      const prevFrom = cache.snapshot(fromParent);
-      const prevTo = destShown ? cache.snapshot(toDir) : undefined;
-      cache.setChildren(fromParent, (es) => es.filter((e) => e.path !== fromPath));
-      if (destShown && !destCollides) cache.setChildren(toDir, (es) => [...es, moved]);
-      try {
-        await transport.renameEntry(cwd, fromPath, newPath);
-        useFileExplorerStore.getState().remapExpandedPaths(fromPath, newPath);
-      } catch (err) {
-        cache.restore(fromParent, prevFrom);
-        if (destShown && !destCollides) cache.restore(toDir, prevTo);
-        toastCrudError(err, "Couldn't move");
-      } finally {
-        cache.invalidate(fromParent);
-        if (destShown) cache.invalidate(toDir);
-      }
-    },
-    [transport, cwd, cache]
+        // Add to the destination optimistically only when the name is free there.
+        // A collision would make the move conflict, and an optimistic add + rollback
+        // removal (both keyed on the shared path) would destroy the destination's
+        // pre-existing sibling. When it collides we still remove from the source
+        // optimistically; on failure it snaps back.
+        const destShown = cache.isLoaded(toDir);
+        const destCollides = destShown && cache.getChildren(toDir).some((e) => e.path === newPath);
+        const moved: FileEntry = { ...entry, name, path: newPath };
+        const prevFrom = cache.snapshot(fromParent);
+        const prevTo = destShown ? cache.snapshot(toDir) : undefined;
+        cache.setChildren(fromParent, (es) => es.filter((e) => e.path !== fromPath));
+        if (destShown && !destCollides) cache.setChildren(toDir, (es) => [...es, moved]);
+        try {
+          await transport.renameEntry(cwd, fromPath, newPath);
+          useFileExplorerStore.getState().remapExpandedPaths(fromPath, newPath);
+        } catch (err) {
+          cache.restore(fromParent, prevFrom);
+          if (destShown && !destCollides) cache.restore(toDir, prevTo);
+          toastCrudError(err, "Couldn't move");
+        } finally {
+          cache.invalidate(fromParent);
+          if (destShown) cache.invalidate(toDir);
+        }
+      }),
+    [transport, cwd, cache, guard]
   );
 
   return {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import type { FileEntry } from '@dorkos/shared/types';
+import type { FileEntry, FileTreeResponse } from '@dorkos/shared/types';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { executeUiCommand, QUERY_TIMING, type DispatcherContext } from '@/layers/shared/lib';
 import { flattenTree, ROOT_KEY, visibleExpandedDirs } from './tree';
@@ -83,6 +83,22 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
             }),
           staleTime: QUERY_TIMING.FILE_TREE_STALE_TIME_MS,
           gcTime: QUERY_TIMING.FILE_TREE_GC_TIME_MS,
+          // Hold the previous rows while a show-hidden toggle refetches, so the
+          // tree never blanks to a root spinner (DOR-404 review nit 3). Toggling
+          // show-hidden repartitions this dir's key, and `useQueries` spins up a
+          // *fresh* observer for the new key — so `keepPreviousData` alone finds
+          // no previous data. Instead read the sibling (opposite show-hidden)
+          // listing straight from the cache as the placeholder. A first-ever
+          // expand has neither key cached, so its loading skeleton still shows.
+          placeholderData: (prev: FileTreeResponse | undefined) =>
+            prev ??
+            queryClient.getQueryData<FileTreeResponse>([
+              'file-explorer',
+              'tree',
+              cwd,
+              dirPath,
+              !showHidden,
+            ]),
         }))
       : [],
   });
@@ -100,11 +116,20 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
     return map;
   }, [dirPaths, results]);
 
+  // In-flight optimistic mutations, shared with `useFileCrud`. The prune effect
+  // stands down while any op is running so a transient optimistic cache edit (a
+  // removed/renamed row) is never read as the entry vanishing and pruned from the
+  // store — a store prune a transport rollback could not undo (review nit 1).
+  const inFlightMutations = useRef(0);
+
   // Prune persisted paths that a freshly-loaded listing shows are gone (A3).
   // Gate by the entries reference so a stable listing never re-triggers a store
   // write, and a redundant render never spams a no-op prune.
   const prunedRef = useRef<Record<string, FileEntry[]>>({});
   useEffect(() => {
+    // Suspend pruning mid-mutation (nit 1). On settle the op invalidates, and the
+    // refetch re-runs this effect against real (post-rollback or committed) data.
+    if (inFlightMutations.current > 0) return;
     dirPaths.forEach((dirPath, i) => {
       const entries = results[i]?.data?.entries;
       if (!entries || results[i]?.isError) return;
@@ -179,7 +204,12 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
     [queryClient, cwd, showHidden]
   );
 
-  const crud = useFileCrud({ cwd: cwd ?? '', showHidden, queryClient });
+  const crud = useFileCrud({
+    cwd: cwd ?? '',
+    showHidden,
+    queryClient,
+    inFlightRef: inFlightMutations,
+  });
 
   return {
     rows,
