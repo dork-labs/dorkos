@@ -1,0 +1,61 @@
+{
+  "spec": "specs/channel-sender-identity/02-specification.md",
+  "slug": "channel-sender-identity",
+  "generatedAt": "2026-07-21T22:05:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-07-21",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Producer (packages/relay)",
+      "subject": "[channel-sender-identity] [P1] Add extractSenderIdentity helper with sanitization",
+      "description": "New exported helper in packages/relay/src/lib/payload-utils.ts: extractSenderIdentity(payload: unknown): { sender?: string; chat?: string }. Safe-parse senderName/channelName off an arbitrary payload (non-object payloads or non-string fields yield absent). Sanitize each value: strip CR/LF and control chars, collapse whitespace runs to single spaces, trim, cap at 80 chars; empty-after-sanitize absent. Sender equal to 'unknown' (case-insensitive) yields absent sender. TSDoc. Unit tests covering: pass-through, control-char flattening, whitespace collapse, 80-char cap, unknown dropped, non-object/non-string inputs.",
+      "activeForm": "Adding the extractSenderIdentity helper",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Producer (packages/relay)",
+      "subject": "[channel-sender-identity] [P1] Bake Sender:/Chat: lines into formatPromptWithContext",
+      "description": "In packages/relay/src/adapters/claude-code/agent-handler.ts formatPromptWithContext: call extractSenderIdentity(envelope.payload); when sender present insert 'Sender: <sender>' immediately after the 'From:' line; when chat present insert 'Chat: <chat>' after Sender (or after From if no sender). No identity => output byte-identical to today. Tests: sender+chat ordering, sender-only, no-identity regression pin (exact current format), multi-line malicious name flattened to one line.",
+      "activeForm": "Wiring identity lines into the relay prompt",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — Consumer (apps/server)",
+      "subject": "[channel-sender-identity] [P2] Enrich channel originLabel in classify-origin",
+      "description": "In apps/server/src/services/runtimes/claude-code/sessions/classify-origin.ts: extract optional 'Sender:' and 'Chat:' lines from the <relay_context> block (same single-line regex pattern as From:). In the channel branch only, compose originLabel = '<Platform> · <chat ?? sender>' (chat wins; neither => legacy plain label). Cap composed label at 60 chars. Agent/task/external branches ignore identity lines. Update the relayContext() lockstep fixture in __tests__/classify-origin.test.ts to the new producer format (per its in-file comment) and add cases: Telegram+Sender, Slack+Chat+Sender (chat wins), legacy no-identity labels unchanged, 60-char cap, identity ignored on agent branch.",
+      "activeForm": "Enriching channel origin labels",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — Verification",
+      "subject": "[channel-sender-identity] [P3] Targeted suites + package typecheck/lint + verify",
+      "description": "Run the touched test files (payload-utils, agent-handler prompt tests, classify-origin), then pnpm --filter @dorkos/relay typecheck+lint, pnpm --filter @dorkos/server typecheck+lint, then full pnpm verify at the batch gate. All green before review.",
+      "activeForm": "Verifying the change end to end",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["2.1"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}
