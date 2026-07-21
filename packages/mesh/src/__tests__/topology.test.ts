@@ -285,6 +285,64 @@ describe('TopologyManager', () => {
       });
     });
 
+    it('surfaces a system agent namespace as bidirectional allow, not a false deny', () => {
+      // DorkBot (isSystem: true) exists in every install. RelayBridge.registerAgent()
+      // writes a bidirectional allow at priority 200 for a system agent's namespace,
+      // which outranks (and, for the forward direction, shares the exact same Relay
+      // pattern as) the standard catch-all deny at priority 10 — so that deny is never
+      // actually enforced for the system namespace. Surfacing it anyway would repeat
+      // the DOR-336 bug class: a topology row that's confidently false.
+      const dorkbot = makeEntry({
+        id: 'DORKBOT01',
+        name: 'DorkBot',
+        namespace: 'system',
+        projectPath: '/dork/agents/dorkbot',
+        isSystem: true,
+      });
+      const registry = makeMockRegistry([dorkbot, agentA1]);
+      const relay = makeMockRelayCore();
+      const tm = makeTopology(registry, relay);
+
+      const view = tm.getTopology('*');
+      const systemRules = view.accessRules.filter(
+        (r) =>
+          r.origin === 'default' &&
+          (r.sourceNamespace === 'system' || r.targetNamespace === 'system')
+      );
+
+      expect(systemRules).toContainEqual({
+        sourceNamespace: 'system',
+        targetNamespace: 'system',
+        action: 'allow',
+        origin: 'default',
+      });
+      expect(systemRules).toContainEqual({
+        sourceNamespace: 'system',
+        targetNamespace: '*',
+        action: 'allow',
+        origin: 'default',
+      });
+      expect(systemRules).toContainEqual({
+        sourceNamespace: '*',
+        targetNamespace: 'system',
+        action: 'allow',
+        origin: 'default',
+      });
+      // The catch-all deny is shadowed by the same-pattern allow above it and must
+      // not appear — it would misreport the system namespace as blocked.
+      expect(systemRules).not.toContainEqual(
+        expect.objectContaining({ sourceNamespace: 'system', action: 'deny' })
+      );
+
+      // A non-system namespace elsewhere in the same view keeps its own, real deny.
+      expect(view.accessRules).toContainEqual({
+        sourceNamespace: 'ns-a',
+        targetNamespace: '*',
+        action: 'deny',
+        origin: 'default',
+      });
+    });
+
     it('surfaces default rules alongside explicit grants, not instead of them', () => {
       const registry = makeMockRegistry([agentA1, agentB1]);
       const relay = makeMockRelayCore();

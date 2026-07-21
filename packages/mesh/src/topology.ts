@@ -12,6 +12,7 @@ import type { RelayCore } from '@dorkos/relay';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { RelayBridge } from './relay-bridge.js';
 import type { NamespaceRuleStoreLike } from './namespace-rule-store.js';
+import { defaultAccessRuleSpecs, type DefaultAccessRuleSpec } from './default-access-rules.js';
 
 /** Information about a single namespace in the topology. */
 export interface NamespaceInfo {
@@ -32,14 +33,6 @@ export interface CrossNamespaceRule {
    */
   origin: 'default' | 'explicit';
 }
-
-/**
- * Sentinel `targetNamespace` for the default catch-all cross-namespace deny
- * rule ({@link TopologyManager.defaultAccessRules}) — it denies traffic to
- * every OTHER namespace, not one specific pair, mirroring the single
- * `relay.agent.{ns}.* -> relay.agent.>` rule the bridge actually writes.
- */
-const CATCH_ALL_TARGET = '*';
 
 /** The full topology view filtered by caller's namespace access. */
 export interface TopologyView {
@@ -65,9 +58,11 @@ const CROSS_NAMESPACE_ALLOW_PRIORITY = 50;
  *
  * `getTopology()`'s `accessRules` combines those explicit grants with the
  * default rules the Relay bridge writes automatically for every namespace with
- * a registered agent (same-namespace allow, catch-all cross-namespace deny —
- * see {@link defaultAccessRules}), tagged `origin: 'default'` so the view
- * reflects what's actually enforced, not just what a user configured on top.
+ * a registered agent — same-namespace allow, catch-all cross-namespace deny,
+ * and (for a namespace with a system agent like DorkBot) a bidirectional
+ * allow that outranks and shadows that namespace's own deny — see
+ * {@link defaultAccessRules}. Tagged `origin: 'default'` so the view reflects
+ * what's actually enforced, not just what a user configured on top.
  *
  * @example
  * ```typescript
@@ -163,7 +158,15 @@ export class TopologyManager {
 
     // Default rules are synthesized directly from the namespaces already
     // filtered into this view, so they need no separate accessibility filter.
-    const defaultRules = this.defaultAccessRules(namespaces.map((ns) => ns.namespace));
+    // isSystem is per-namespace (true if ANY agent in it is a system agent,
+    // e.g. DorkBot) since the bridge's default rules are namespace-scoped —
+    // registering one system agent elevates the whole namespace's rules.
+    const defaultRules = this.defaultAccessRules(
+      namespaces.map((ns) => ({
+        namespace: ns.namespace,
+        isSystem: ns.agents.some((agent) => agent.isSystem === true),
+      }))
+    );
 
     return {
       callerNamespace,
@@ -173,33 +176,60 @@ export class TopologyManager {
   }
 
   /**
-   * Synthesize the bridge-written default access rules for a set of namespaces:
-   * a same-namespace allow and a catch-all cross-namespace deny per namespace
-   * (see {@link RelayBridge.registerAgent}). These are never read from Relay or
-   * the Mesh rule store — they are deterministic given namespace existence,
-   * mirroring exactly what `registerAgent()` writes on every agent registration.
+   * Synthesize the bridge-written default access rules for a set of namespaces
+   * — sourced from {@link defaultAccessRuleSpecs}, the same function
+   * {@link RelayBridge.registerAgent} writes to Relay, so this view can never
+   * drift from what's actually enforced. These are never read from Relay or
+   * the Mesh rule store — they are deterministic given namespace existence
+   * (and, for the system-agent bidirectional allow, whether the namespace has
+   * a system agent).
+   *
+   * Rules that share the exact same Relay subject pattern pair collapse to
+   * only the highest-priority one, matching Relay's own highest-priority-first
+   * evaluation: a system namespace's catch-all deny (priority 10) uses the
+   * identical pattern as its bidirectional allow (priority 200), so the deny
+   * is never actually enforced there and showing it would misreport
+   * enforcement — the exact bug this method exists to avoid. This collapse is
+   * intentionally scoped to same-pattern shadowing within one namespace's own
+   * rule set; it does not resolve cross-namespace precedence (e.g. a system
+   * namespace's bidirectional allow also carves an exception into every OTHER
+   * namespace's catch-all deny for messages addressed to the system
+   * namespace specifically — that other namespace's deny row is still
+   * substantially true and is left as-is).
    *
    * Returns `[]` when Relay is absent, since the bridge never writes these
    * rules without it (`RelayBridge.registerAgent` no-ops without Relay).
    *
-   * @param namespaces - Namespaces present in the current topology view
+   * @param namespaceInfos - Namespaces present in the current topology view, each
+   *   flagged for whether it contains a system agent (elevates its rules)
    */
-  private defaultAccessRules(namespaces: string[]): CrossNamespaceRule[] {
+  private defaultAccessRules(
+    namespaceInfos: { namespace: string; isSystem: boolean }[]
+  ): CrossNamespaceRule[] {
     if (!this.relayCore) return [];
-    return namespaces.flatMap((ns) => [
-      {
-        sourceNamespace: ns,
-        targetNamespace: ns,
-        action: 'allow' as const,
-        origin: 'default' as const,
-      },
-      {
-        sourceNamespace: ns,
-        targetNamespace: CATCH_ALL_TARGET,
-        action: 'deny' as const,
-        origin: 'default' as const,
-      },
-    ]);
+    return namespaceInfos.flatMap(({ namespace, isSystem }) => {
+      const specs = defaultAccessRuleSpecs(namespace, isSystem);
+
+      // Keep only the highest-priority spec per (from, to) pattern pair —
+      // ties with a lower-priority spec are never reached at evaluation time.
+      const winnerByPattern = new Map<string, DefaultAccessRuleSpec>();
+      for (const spec of specs) {
+        const key = `${spec.from}=>${spec.to}`;
+        const existing = winnerByPattern.get(key);
+        if (!existing || spec.priority > existing.priority) {
+          winnerByPattern.set(key, spec);
+        }
+      }
+
+      return Array.from(winnerByPattern.values()).map(
+        (spec): CrossNamespaceRule => ({
+          sourceNamespace: spec.sourceNamespace,
+          targetNamespace: spec.targetNamespace,
+          action: spec.action,
+          origin: 'default',
+        })
+      );
+    });
   }
 
   /**
