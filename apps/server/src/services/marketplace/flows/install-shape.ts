@@ -37,7 +37,7 @@ import type { InstallRequest, InstallResult } from '../types.js';
  * silently discarding it (DOR-386).
  */
 export const SHAPE_PROJECT_PATH_IGNORED_WARNING =
-  'Shapes always install for every project, not just the one you specified — your project choice was ignored.';
+  'Shapes always install for every project, not just the one you specified. Your project choice was ignored.';
 
 /** Constructor dependencies for {@link ShapeInstallFlow}. */
 export interface ShapeFlowDeps {
