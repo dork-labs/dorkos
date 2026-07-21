@@ -39,6 +39,10 @@ vi.mock('@/layers/entities/config', () => ({
     helperCalls.push({ name: 'setGroupDisplayFilter', args });
     return args[0];
   },
+  setGroupMuted: (...args: unknown[]) => {
+    helperCalls.push({ name: 'setGroupMuted', args });
+    return args[0];
+  },
 }));
 
 beforeAll(() => {
@@ -190,6 +194,27 @@ describe('GroupHeader', () => {
     expect(calls).toEqual([{ name: 'setGroupDisplayFilter', args: [PREV, 'g1', 'attention'] }]);
   });
 
+  // --- Mute group ---
+
+  it('"Mute group" calls setGroupMuted(true)', () => {
+    renderHeader({ group: makeGroup({ muted: false }) });
+    openContextMenu();
+    fireEvent.click(screen.getByText('Mute group'));
+
+    const calls = applyLatestUpdater();
+    expect(calls).toEqual([{ name: 'setGroupMuted', args: [PREV, 'g1', true] }]);
+  });
+
+  it('"Unmute group" calls setGroupMuted(false) when already muted', () => {
+    renderHeader({ group: makeGroup({ muted: true }) });
+    openContextMenu();
+    expect(screen.getByText('Unmute group')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Unmute group'));
+
+    const calls = applyLatestUpdater();
+    expect(calls).toEqual([{ name: 'setGroupMuted', args: [PREV, 'g1', false] }]);
+  });
+
   // --- Delete ---
 
   it('deletes an empty group immediately without a dialog', () => {
@@ -236,7 +261,7 @@ describe('GroupHeader', () => {
     renderHeader();
     // Context menu items
     openContextMenu();
-    for (const label of ['Rename', 'Show', 'Sort by', 'Delete group']) {
+    for (const label of ['Rename', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -244,7 +269,7 @@ describe('GroupHeader', () => {
     // "…" dropdown items
     fireEvent.pointerDown(screen.getByLabelText('Clients group actions'));
     fireEvent.click(screen.getByLabelText('Clients group actions'));
-    for (const label of ['Rename', 'Show', 'Sort by', 'Delete group']) {
+    for (const label of ['Rename', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });

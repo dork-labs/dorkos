@@ -96,9 +96,22 @@ export function DashboardSidebar() {
 
   // ── Attention + mute (DOR-339): one attention-map subscription for the whole
   // sidebar, and the individually-muted path set every section's filter and
-  // every row's rendering reads. ──
+  // rollup dot reads. ──
   const attentionMap = useAgentAttentionMap(rawPaths);
   const mutedPathsSet = useMemo(() => new Set(sidebarPrefs.muted), [sidebarPrefs.muted]);
+  // Rendering (dim + glyph) reads a DIFFERENT, wider set: individual mute OR
+  // membership in a muted group. Computed once so every appearance of an
+  // agent — its home row AND a pinned copy — renders muted identically ("one
+  // agent, one mute state"). Group mute stays a pure lens: this set is
+  // derived, never written back into `ui.sidebar.muted`.
+  const effectiveMutedForRender = useMemo(() => {
+    const set = new Set(sidebarPrefs.muted);
+    for (const g of sidebarPrefs.groups) {
+      if (!g.muted) continue;
+      for (const p of g.agentPaths) set.add(p);
+    }
+    return set;
+  }, [sidebarPrefs.muted, sidebarPrefs.groups]);
 
   // ── Membership maps (stale paths filtered at render, never pruned on write) ──
   const knownSet = useMemo(() => new Set(rawPaths), [rawPaths]);
@@ -296,6 +309,7 @@ export function DashboardSidebar() {
               displayName={displayNamesRecord[path]}
               isActive={isActive}
               isExpanded={expandedPath === path}
+              isMuted={effectiveMutedForRender.has(path)}
               onSelect={() => handleSelectAgent(path)}
               onToggleExpand={() => handleToggleExpand(path)}
               onOpenProfile={() => handleOpenProfile(path)}
@@ -319,6 +333,7 @@ export function DashboardSidebar() {
       agents,
       displayNamesRecord,
       expandedPath,
+      effectiveMutedForRender,
       previewSessions,
       sessionsLoading,
       activeSessionId,

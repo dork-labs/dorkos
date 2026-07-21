@@ -23,8 +23,11 @@ const groups = [
 ];
 const mockUpdate = vi.fn<(updater: (prev: unknown) => unknown) => void>();
 const moveToGroupCalls: unknown[][] = [];
+const mutePathCalls: unknown[][] = [];
+const unmutePathCalls: unknown[][] = [];
+let mockMuted: string[] = [];
 vi.mock('@/layers/entities/config', () => ({
-  useSidebarPrefs: () => ({ pinned: [], groups, ungroupedSortMode: 'name' }),
+  useSidebarPrefs: () => ({ pinned: [], groups, ungroupedSortMode: 'name', muted: mockMuted }),
   useUpdateSidebarPrefs: () => ({
     update: mockUpdate,
     updateAsync: vi.fn(),
@@ -33,6 +36,14 @@ vi.mock('@/layers/entities/config', () => ({
   }),
   pinPath: (p: unknown) => p,
   unpinPath: (p: unknown) => p,
+  mutePath: (...args: unknown[]) => {
+    mutePathCalls.push(args);
+    return args[0];
+  },
+  unmutePath: (...args: unknown[]) => {
+    unmutePathCalls.push(args);
+    return args[0];
+  },
   moveToGroup: (...args: unknown[]) => {
     moveToGroupCalls.push(args);
     return args[0];
@@ -56,6 +67,9 @@ beforeAll(() => {
 beforeEach(() => {
   mockUpdate.mockReset();
   moveToGroupCalls.length = 0;
+  mutePathCalls.length = 0;
+  unmutePathCalls.length = 0;
+  mockMuted = [];
 });
 
 afterEach(() => cleanup());
@@ -67,12 +81,14 @@ afterEach(() => cleanup());
 function model(overrides: Partial<RowMenuModel> = {}): RowMenuModel {
   return {
     isPinned: false,
+    isMuted: false,
     currentGroupId: null,
     groups: [
       { id: 'g1', name: 'Clients' },
       { id: 'g2', name: 'Experiments' },
     ],
     onTogglePin: vi.fn(),
+    onToggleMute: vi.fn(),
     onOpenProfile: vi.fn(),
     onNewSession: vi.fn(),
     onMoveToGroup: vi.fn(),
@@ -92,6 +108,11 @@ describe('buildRowMenuNodes', () => {
   it('labels the pin item by pin state', () => {
     expect(buildRowMenuNodes(model({ isPinned: false }))[0]).toMatchObject({ label: 'Pin agent' });
     expect(buildRowMenuNodes(model({ isPinned: true }))[0]).toMatchObject({ label: 'Unpin agent' });
+  });
+
+  it('labels the mute item by mute state', () => {
+    expect(buildRowMenuNodes(model({ isMuted: false }))[1]).toMatchObject({ label: 'Mute agent' });
+    expect(buildRowMenuNodes(model({ isMuted: true }))[1]).toMatchObject({ label: 'Unmute agent' });
   });
 
   it('checks the current group in the Move-to-group submenu', () => {
@@ -213,6 +234,7 @@ describe('AgentRowMenuItems variant parity', () => {
     expect(labels).toEqual(
       [
         'Pin agent',
+        'Mute agent',
         'Move to group',
         'Agent profile',
         'New session',
@@ -314,5 +336,27 @@ describe('AgentContextMenu end-to-end wiring', () => {
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     mockUpdate.mock.calls[0]![0]({ groups });
     expect(moveToGroupCalls).toEqual([[{ groups }, '/agents/api-server', null]]);
+  });
+
+  it('"Mute agent" commits mutePath(path)', () => {
+    render(<InlineCreateHarness />);
+    openRowMenu();
+    fireEvent.click(screen.getByText('Mute agent'));
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    mockUpdate.mock.calls[0]![0]({ groups });
+    expect(mutePathCalls).toEqual([[{ groups }, '/agents/api-server']]);
+  });
+
+  it('"Unmute agent" commits unmutePath(path) when already muted', () => {
+    mockMuted = ['/agents/api-server'];
+    render(<InlineCreateHarness />);
+    openRowMenu();
+    expect(screen.getByText('Unmute agent')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Unmute agent'));
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    mockUpdate.mock.calls[0]![0]({ groups });
+    expect(unmutePathCalls).toEqual([[{ groups }, '/agents/api-server']]);
   });
 });

@@ -6,6 +6,8 @@ import {
   Pencil,
   ArrowUpDown,
   Trash2,
+  BellOff,
+  Bell,
 } from 'lucide-react';
 import type { SidebarGroup } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
@@ -46,6 +48,7 @@ import {
   setGroupSortMode,
   setGroupCollapsed,
   setGroupDisplayFilter,
+  setGroupMuted,
 } from '@/layers/entities/config';
 import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
 import { renderDisplayFilterSubmenu } from './DisplayFilterMenu';
@@ -102,8 +105,11 @@ interface GroupHeaderProps {
 
 /**
  * A user group's header: collapse chevron, name (with inline rename), a
- * collapsed-activity dot, and the sort / rename / delete menu — rendered
- * identically into the "…" dropdown and the right-click context menu.
+ * collapsed-activity dot, and the show / sort / mute / rename / delete menu —
+ * rendered identically into the "…" dropdown and the right-click context
+ * menu. Muting the group is a lens over its members (DOR-339): it never
+ * writes member paths into `ui.sidebar.muted`, so unmuting restores whatever
+ * individual mute state each member already had.
  */
 export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeaderProps) {
   const { update } = useUpdateSidebarPrefs();
@@ -179,6 +185,7 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
     update((prev) =>
       setGroupDisplayFilter(prev, group.id, filter as SidebarGroup['displayFilter'])
     );
+  const toggleMuted = () => update((prev) => setGroupMuted(prev, group.id, !group.muted));
 
   const renderMenu = (slots: GroupMenuSlots): ReactNode => {
     const { Item, Separator, Sub, SubTrigger, SubContent, RadioGroup, RadioItem } = slots;
@@ -204,6 +211,10 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
             </RadioGroup>
           </SubContent>
         </Sub>
+        <Item onClick={toggleMuted}>
+          {group.muted ? <Bell className="mr-2 size-4" /> : <BellOff className="mr-2 size-4" />}
+          {group.muted ? 'Unmute group' : 'Mute group'}
+        </Item>
         <Separator />
         <Item variant="destructive" onClick={requestDelete}>
           <Trash2 className="mr-2 size-4" />
