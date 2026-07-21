@@ -160,6 +160,58 @@ describe('sortPackages — popular', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Recent sort
+// ---------------------------------------------------------------------------
+
+describe('sortPackages — recent', () => {
+  it('orders by update date, most-recent first', () => {
+    const old = pkg({ name: 'old', updatedAt: '2026-01-01T00:00:00Z' });
+    const newest = pkg({ name: 'newest', updatedAt: '2026-07-18T17:41:20Z' });
+    const mid = pkg({ name: 'mid', updatedAt: '2026-04-10T09:00:00Z' });
+
+    const result = sortPackages([old, newest, mid], 'recent');
+
+    expect(result.map((p) => p.name)).toEqual(['newest', 'mid', 'old']);
+  });
+
+  it('breaks update-date ties by displayed label', () => {
+    const zebra = pkg({ name: 'zebra', updatedAt: '2026-07-01T00:00:00Z' });
+    const apple = pkg({ name: 'apple', updatedAt: '2026-07-01T00:00:00Z' });
+
+    const result = sortPackages([zebra, apple], 'recent');
+
+    expect(result.map((p) => p.name)).toEqual(['apple', 'zebra']);
+  });
+
+  it('treats a missing update date as oldest (sorts last, then by name)', () => {
+    const dated = pkg({ name: 'dated', updatedAt: '2026-07-01T00:00:00Z' });
+    const undatedB = pkg({ name: 'bravo' });
+    const undatedA = pkg({ name: 'alpha' });
+
+    const result = sortPackages([undatedB, dated, undatedA], 'recent');
+
+    expect(result.map((p) => p.name)).toEqual(['dated', 'alpha', 'bravo']);
+  });
+
+  it('falls back to name order when no package has a date (offline degrade)', () => {
+    // Every updatedAt undefined → equivalent to A–Z, so a stale ?sort=recent
+    // link stays well-behaved even though the menu hides the option offline.
+    const result = sortPackages(PACKAGES, 'recent');
+    expect(result.map((p) => p.name)).toEqual(['alpha', 'bravo', 'charlie', 'delta']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [
+      pkg({ name: 'x', updatedAt: '2026-01-01T00:00:00Z' }),
+      pkg({ name: 'y', updatedAt: '2026-09-01T00:00:00Z' }),
+    ];
+    const first = input[0].name;
+    sortPackages(input, 'recent');
+    expect(input[0].name).toBe(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // General
 // ---------------------------------------------------------------------------
 

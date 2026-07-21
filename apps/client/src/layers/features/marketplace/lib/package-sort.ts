@@ -53,6 +53,26 @@ function byPopular(a: AggregatedPackage, b: AggregatedPackage): number {
   return byName(a, b);
 }
 
+/**
+ * Most-recently-updated-first comparator, backed by the registry-derived
+ * `updatedAt` enriched server-side. A missing date sorts as oldest, so packages
+ * with no registry-recorded update — an external-source package, or the whole
+ * list when dates are unavailable — fall to the end and then to name order, the
+ * same graceful degrade the Recent menu option relies on.
+ *
+ * Dates are ISO 8601 strings, which sort lexicographically in chronological
+ * order, so a plain string compare is correct without parsing to `Date`.
+ *
+ * @param a - Left-hand package.
+ * @param b - Right-hand package.
+ */
+function byRecent(a: AggregatedPackage, b: AggregatedPackage): number {
+  const ad = a.updatedAt ?? '';
+  const bd = b.updatedAt ?? '';
+  if (ad !== bd) return bd.localeCompare(ad);
+  return byName(a, b);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -66,9 +86,9 @@ function byPopular(a: AggregatedPackage, b: AggregatedPackage): number {
  *   name. Degrades to name order when counts are unavailable (offline), so a
  *   stale `?sort=popular` link stays well-behaved even though the menu hides
  *   the option in that case.
- *
- * The `recent` sort is still absent because `updatedAt` isn't on
- * `AggregatedPackage` yet; add it back here and in the sort menu once it lands.
+ * - `recent`: most recently updated first (`updatedAt`, the registry-derived
+ *   last-commit date), tie-broken by name. Degrades to name order when dates are
+ *   unavailable (offline), same as `popular`.
  *
  * @param packages - Package list to sort (original array is not mutated).
  * @param sort - Active sort order from the Marketplace store.
@@ -89,5 +109,7 @@ export function sortPackages(
       return copy.sort(byName);
     case 'popular':
       return copy.sort(byPopular);
+    case 'recent':
+      return copy.sort(byRecent);
   }
 }
