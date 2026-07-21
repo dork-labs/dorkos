@@ -24,7 +24,11 @@ function classifyRelayFrom(from: string): { origin?: SessionOrigin; originLabel?
   if (from.startsWith('relay.system.tasks.')) {
     return { origin: 'task', originLabel: 'Scheduled task' };
   }
-  if (from === 'relay.human.console') {
+  if (from === 'relay.human.console' || from.startsWith('relay.human.console.')) {
+    // Suffixed principals exist for the same human operator — e.g.
+    // `relay.human.console.inferred` (routes/relay.ts) and
+    // `relay.human.console.user` (test-mode) — and must stay classified
+    // as the operator, not fall through to the relay.human.* channel bucket.
     return {};
   }
   const lower = from.toLowerCase();

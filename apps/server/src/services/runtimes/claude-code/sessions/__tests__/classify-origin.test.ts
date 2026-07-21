@@ -47,6 +47,11 @@ describe('classifyOrigin', () => {
     expect(classifyOrigin(relayContext('relay.human.console'))).toEqual({});
   });
 
+  it('returns {} (user) for suffixed relay.human.console principals', () => {
+    expect(classifyOrigin(relayContext('relay.human.console.inferred'))).toEqual({});
+    expect(classifyOrigin(relayContext('relay.human.console.user'))).toEqual({});
+  });
+
   it.each([
     ['a2a-gateway', { origin: 'external', originLabel: 'A2A client' }],
     ['relay.external.mcp', { origin: 'external', originLabel: 'External MCP client' }],

@@ -116,6 +116,10 @@ router.get('/recent', async (req, res) => {
     agentPaths,
     limit,
   });
+  // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
+  // catches direct-branch Pulse runs the transcript-head classifier can't see.
+  const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
+  applyTaskOriginOverlay(sessions, resolveTaskOrigins);
   res.json({ sessions, agentActivity, warnings });
 });
 
