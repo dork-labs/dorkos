@@ -9,7 +9,8 @@ environment (a worktree, or any machine whose default ports are busy).
 ## Projects
 
 - `chromium` — the cockpit suite. Runs every spec except `chat-mock.spec.ts`
-  (and `marketplace.spec.ts` unless the site leg is enabled — see below).
+  (and the site specs — `marketplace.spec.ts`, `features.spec.ts` — unless the
+  site leg is enabled; see below).
 - `chromium-mock` — `chat-mock.spec.ts` only, against a `TestModeRuntime` server
   (no real Claude API calls).
 
@@ -28,10 +29,18 @@ every run, regardless of `--project`. The legs are:
 
 ## The marketing-site leg is opt-in (`E2E_SITE`)
 
-The site leg (`Next.js` + Turbopack + a fumadocs file watcher) is heavy and only
-`marketplace.spec.ts` needs it. It is booted only when `E2E_SITE=1` (and on by
-default in CI; set `E2E_SITE=0` to force it off there). When the site leg is off,
-`marketplace.spec.ts` is skipped so it never hangs on an unreachable site.
+The site leg (`Next.js` + Turbopack + a fumadocs file watcher) is heavy, and only
+the site specs need it: `marketplace.spec.ts` and `features.spec.ts` (the
+`SITE_SPECS` list in `playwright.config.ts`), which point their baseURL at the
+marketing site instead of the cockpit. The leg boots only when `E2E_SITE=1`. When
+it is off, those specs are skipped so they never hang on an unreachable site.
+
+No workflow runs this browser suite in CI today. The config also turns the leg on
+by default when `CI` is set (unless `E2E_SITE=0`) — a forward-looking default so
+that if the suite is ever CI-wired, the site specs keep running there.
+
+If you add another spec that targets the site, add it to `SITE_SPECS`. Grep
+`tests/` for `6244` and `SITE_BASE_URL` to keep the list complete.
 
 Leaving it off for cockpit-only runs is not just a speed win. On a machine with
 many recursive file watchers already running (several worktrees, several dev
@@ -74,6 +83,11 @@ Notes:
 - Use a fresh `DORK_HOME` so the run never touches your real `~/.dork` data.
 - `--project chromium` runs the cockpit project; add `-g "<title>"` to run a
   single test by name.
+- Moving the site leg to another port takes two env vars, not one.
+  `DORKOS_SITE_PORT` relocates the leg, but `marketplace.spec.ts` hardcodes
+  `http://localhost:6244` and `features.spec.ts` falls back to it. Only
+  `features.spec.ts` reads `SITE_BASE_URL`, so set `DORKOS_SITE_PORT` and
+  `SITE_BASE_URL` together (and leave `marketplace.spec.ts` on 6244).
 
 ## Common commands
 
