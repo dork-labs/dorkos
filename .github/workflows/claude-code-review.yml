@@ -93,7 +93,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          file_count=$(gh pr view "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --json changedFiles --jq '.changedFiles')
+          # Degrade to the default budget rather than aborting the step: an
+          # aborted step here would skip Claude Code review entirely (outcome
+          # 'skipped', not 'failure'), so the infra-note step below wouldn't
+          # fire either — a silent red check with no review at all, exactly
+          # the DOR-396 symptom this workflow exists to prevent.
+          file_count=$(gh pr view "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --json changedFiles --jq '.changedFiles' 2>/dev/null || echo 0)
+          case "$file_count" in ''|*[!0-9]*) file_count=0 ;; esac
           if [ "$file_count" -gt "$REVIEW_LARGE_PR_FILE_THRESHOLD" ]; then
             echo "max_turns=$REVIEW_MAX_TURNS_LARGE" >> "$GITHUB_OUTPUT"
           else
@@ -181,7 +187,7 @@ jobs:
 
           posted_verdict=$(gh api "repos/$repo/issues/$pr_number/comments" \
             --jq ".[] | select(.created_at > \"$since\") | .body" \
-            | grep -qE '^[0-9]+ important, [0-9]+ nits?|No blocking issues|No factual issues' \
+            | grep -qE '[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues' \
             && echo yes || echo no)
 
           if [ "$posted_verdict" = "yes" ]; then
