@@ -57,6 +57,40 @@ Muting a whole **group** works the same way, from the group's "…" menu: every 
   agent itself does, it just quiets down what you see in the list.
 </Callout>
 
+## Smart groups: sections that keep themselves organized
+
+A regular group is a list you build by hand: you drag agents into it, and they stay there until you move them out. Once you're running a lot of agents, or a mix of runtimes like Claude Code and Codex, hand-tuning that list gets old fast. Agents finish work, go idle, switch projects, and your group falls out of date.
+
+A **smart group** is a section that fills itself in. Instead of a list of agents, it holds a rule, like "agents that are active or need me right now." Every time the sidebar refreshes, DorkOS checks the rule against your fleet and shows whoever matches. Idle agent drops off the list. New agent starts working and joins in. You never touch it.
+
+<Callout type="info">
+  Smart groups only show up once you're running 8 or more agents, or 2 or more runtimes. Below that,
+  a hand-built group is simpler, so DorkOS keeps the sidebar's "New group" menu exactly as it was.
+</Callout>
+
+### Creating one
+
+Click the **+** button above your agent list and you'll see a "Smart group" section with one-click starters:
+
+- **Active now**: agents that need you or are actively working.
+- **By runtime**: one starter per runtime you're running, like "By runtime · Codex," for any runtime with two or more agents.
+
+Pick one and the group appears instantly, already filled in. Want something more specific? Choose **Custom rules…** to build your own: which runtimes, which namespaces, which status (active, needs attention, idle, or inactive), how recently active, or agents whose folder starts with a certain path. Combine as many of these as you want. Every rule you add narrows the group further.
+
+### Always honest about what it's showing
+
+A smart group tells you exactly what rule it's running. Open its "…" menu and you'll see a plain-English summary, like "Codex · active in the last hour," right above the usual options.
+
+If nothing matches the rule, the group doesn't disappear. It shows "No agents match these rules," so you always know the group is there and working, just empty for now.
+
+You can't drag an agent into a smart group. Since its membership comes from the rule, dropping an agent on it does nothing but show a reminder that you'll want to edit the rule instead. An agent that matches a smart group's rule still shows up in its usual group too. Nothing gets moved out from where you put it by hand.
+
+### Editing or converting
+
+Change your mind about the rule any time: open the group's "…" menu and choose **Edit rules**. The same form you used to create it comes back, prefilled with the current rule.
+
+If you'd rather freeze today's members and manage the group by hand from here on, choose **Convert to manual group**. DorkOS takes whoever matches right now, drops them into a regular group with that same name, and you're free to add, remove, and reorder them yourself.
+
 ## Where these settings live
 
 Show filters and mute are saved to your account, the same as groups and pinning, so they follow you across the desktop app and the browser. They don't affect anyone else on a shared DorkOS instance.

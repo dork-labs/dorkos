@@ -2671,6 +2671,15 @@
       "title": "Derive session origin at read time from transcript-head markers",
       "status": "proposed",
       "created": "2026-07-21"
+    },
+    {
+      "id": "260721-170411",
+      "slug": "smart-group-membership-rule-derived-client-side-never-materialized",
+      "title": "Smart-group membership is rule-derived client-side from config-stored rules, never materialized",
+      "status": "accepted",
+      "created": "2026-07-21",
+      "extractedFrom": "smart-agent-groups",
+      "specSlug": "smart-agent-groups"
     }
   ]
 }
