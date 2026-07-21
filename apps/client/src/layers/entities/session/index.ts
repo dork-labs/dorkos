@@ -76,7 +76,16 @@ export type { SessionContextHealth } from './model/use-session-context-health';
 export { useFleetContextRollup } from './model/use-fleet-context-rollup';
 export type { FleetContextRollup } from './model/use-fleet-context-rollup';
 export { useAgentsAggregateStatus } from './model/use-agents-aggregate-status';
+export type { UseAgentsAggregateStatusOptions } from './model/use-agents-aggregate-status';
 export { usePulseMotion } from './model/use-pulse-motion';
+// Attention-signal model (DOR-339) — single source of per-agent "does this
+// need my eyes?" truth for filters, reveal rows, rollup dots, and mute.
+export {
+  deriveAttention,
+  useAgentAttentionMap,
+  ATTENTION_THRESHOLDS,
+} from './model/agent-attention';
+export type { AttentionState, LiveBorderKind } from './model/agent-attention';
 export { useRenameSession } from './model/use-rename-session';
 
 // UI — session row display primitive
@@ -90,5 +99,5 @@ export type { OriginDescriptor } from './config/origin-descriptors';
 export { OriginMark } from './ui/OriginMark';
 export { partitionSessionsByOrigin } from './lib/partition-sessions-by-origin';
 export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
-export { useSessionOrigin } from './model/use-session-origin';
-export type { SessionOriginData } from './model/use-session-origin';
+export { useSessionOrigin } from './model/use-sessions';
+export type { SessionOriginData } from './model/use-sessions';

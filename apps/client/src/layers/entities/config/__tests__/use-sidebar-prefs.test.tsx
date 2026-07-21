@@ -29,6 +29,11 @@ import {
   setRecentsCollapsed,
   setUngroupedSortMode,
   setGroupsHintDismissed,
+  setGroupDisplayFilter,
+  setGroupMuted,
+  setUngroupedDisplayFilter,
+  mutePath,
+  unmutePath,
 } from '../model/use-sidebar-prefs';
 
 function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
@@ -61,8 +66,24 @@ describe('sidebar prefs pure helpers', () => {
 
   describe('moveToGroup disjointness invariant', () => {
     const groups = [
-      { id: 'A', name: 'A', agentPaths: ['/x'], sortMode: 'manual' as const, collapsed: false },
-      { id: 'B', name: 'B', agentPaths: [], sortMode: 'manual' as const, collapsed: false },
+      {
+        id: 'A',
+        name: 'A',
+        agentPaths: ['/x'],
+        sortMode: 'manual' as const,
+        collapsed: false,
+        displayFilter: 'all' as const,
+        muted: false,
+      },
+      {
+        id: 'B',
+        name: 'B',
+        agentPaths: [],
+        sortMode: 'manual' as const,
+        collapsed: false,
+        displayFilter: 'all' as const,
+        muted: false,
+      },
     ];
 
     it('moving a path already in group A into group B leaves it only in B', () => {
@@ -79,8 +100,24 @@ describe('sidebar prefs pure helpers', () => {
     it('appends to the target group at the end', () => {
       const seeded = prefs({
         groups: [
-          { id: 'A', name: 'A', agentPaths: ['/x'], sortMode: 'manual', collapsed: false },
-          { id: 'B', name: 'B', agentPaths: ['/y'], sortMode: 'manual', collapsed: false },
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+          {
+            id: 'B',
+            name: 'B',
+            agentPaths: ['/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
         ],
       });
       const next = moveToGroup(seeded, '/x', 'B');
@@ -99,6 +136,8 @@ describe('sidebar prefs pure helpers', () => {
         agentPaths: [],
         sortMode: 'manual',
         collapsed: false,
+        displayFilter: 'all',
+        muted: false,
       });
     });
 
@@ -110,7 +149,15 @@ describe('sidebar prefs pure helpers', () => {
     it('deleteGroup returns members to ungrouped (they vanish from all agentPaths)', () => {
       const seeded = prefs({
         groups: [
-          { id: 'A', name: 'A', agentPaths: ['/x', '/y'], sortMode: 'manual', collapsed: false },
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x', '/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
         ],
       });
       const next = deleteGroup(seeded, 'A');
@@ -124,8 +171,24 @@ describe('sidebar prefs pure helpers', () => {
     const seeded = prefs({
       pinned: ['/a', '/b', '/c'],
       groups: [
-        { id: 'A', name: 'A', agentPaths: ['/x', '/y'], sortMode: 'manual', collapsed: false },
-        { id: 'B', name: 'B', agentPaths: [], sortMode: 'manual', collapsed: false },
+        {
+          id: 'A',
+          name: 'A',
+          agentPaths: ['/x', '/y'],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
+        {
+          id: 'B',
+          name: 'B',
+          agentPaths: [],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
       ],
     });
 
@@ -151,7 +214,15 @@ describe('sidebar prefs pure helpers', () => {
     it('changes sortMode without mutating agentPaths', () => {
       const seeded = prefs({
         groups: [
-          { id: 'A', name: 'A', agentPaths: ['/x', '/y'], sortMode: 'manual', collapsed: false },
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x', '/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
         ],
       });
       const next = setGroupSortMode(seeded, 'A', 'recent');
@@ -174,13 +245,139 @@ describe('sidebar prefs pure helpers', () => {
   it('setGroupCollapsed toggles only the targeted group', () => {
     const seeded = prefs({
       groups: [
-        { id: 'A', name: 'A', agentPaths: [], sortMode: 'manual', collapsed: false },
-        { id: 'B', name: 'B', agentPaths: [], sortMode: 'manual', collapsed: false },
+        {
+          id: 'A',
+          name: 'A',
+          agentPaths: [],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
+        {
+          id: 'B',
+          name: 'B',
+          agentPaths: [],
+          sortMode: 'manual',
+          collapsed: false,
+          displayFilter: 'all',
+          muted: false,
+        },
       ],
     });
     const next = setGroupCollapsed(seeded, 'A', true);
     expect(next.groups.find((g) => g.id === 'A')!.collapsed).toBe(true);
     expect(next.groups.find((g) => g.id === 'B')!.collapsed).toBe(false);
+  });
+
+  // --- Display filter + mute (DOR-339) ---
+
+  describe('setGroupDisplayFilter / setUngroupedDisplayFilter', () => {
+    it('sets only the targeted group’s filter', () => {
+      const seeded = prefs({
+        groups: [
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: [],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+          {
+            id: 'B',
+            name: 'B',
+            agentPaths: [],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+        ],
+      });
+      const next = setGroupDisplayFilter(seeded, 'A', 'attention');
+      expect(next.groups.find((g) => g.id === 'A')!.displayFilter).toBe('attention');
+      expect(next.groups.find((g) => g.id === 'B')!.displayFilter).toBe('all');
+    });
+
+    it('sets the ungrouped section filter', () => {
+      const next = setUngroupedDisplayFilter(prefs(), 'active');
+      expect(next.ungroupedDisplayFilter).toBe('active');
+    });
+  });
+
+  describe('setGroupMuted — a lens over members, never writes muted[]', () => {
+    it('sets only the targeted group’s muted flag', () => {
+      const seeded = prefs({
+        groups: [
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+          {
+            id: 'B',
+            name: 'B',
+            agentPaths: ['/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+        ],
+      });
+      const next = setGroupMuted(seeded, 'A', true);
+      expect(next.groups.find((g) => g.id === 'A')!.muted).toBe(true);
+      expect(next.groups.find((g) => g.id === 'B')!.muted).toBe(false);
+    });
+
+    it('never writes member paths into ui.sidebar.muted (individual state survives group mute/unmute untouched)', () => {
+      const seeded = prefs({
+        muted: ['/y'], // /y is individually muted; /x is not
+        groups: [
+          {
+            id: 'A',
+            name: 'A',
+            agentPaths: ['/x', '/y'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+        ],
+      });
+      const muted = setGroupMuted(seeded, 'A', true);
+      expect(muted.muted).toEqual(['/y']); // untouched by the group-mute lens
+
+      const unmuted = setGroupMuted(muted, 'A', false);
+      expect(unmuted.muted).toEqual(['/y']); // still untouched — /y's individual mute survives
+    });
+  });
+
+  describe('mutePath / unmutePath', () => {
+    it('mutePath appends when absent and is idempotent', () => {
+      const p1 = mutePath(prefs(), '/a');
+      expect(p1.muted).toEqual(['/a']);
+      const p2 = mutePath(p1, '/a');
+      expect(p2).toBe(p1); // no change → same reference
+    });
+
+    it('unmutePath removes and is a no-op for unknown paths', () => {
+      const base = prefs({ muted: ['/a', '/b'] });
+      expect(unmutePath(base, '/a').muted).toEqual(['/b']);
+      expect(unmutePath(base, '/missing')).toBe(base);
+    });
+
+    it('does not mutate the input', () => {
+      const base = prefs({ muted: ['/a'] });
+      mutePath(base, '/b');
+      expect(base.muted).toEqual(['/a']);
+    });
   });
 });
 

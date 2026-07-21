@@ -25,6 +25,20 @@ vi.mock('@/layers/entities/agent', () => ({
   ),
 }));
 
+interface MockAgentStatus {
+  kind: 'idle' | 'streaming' | 'pendingApproval' | 'error' | 'unseen';
+  color: string;
+  pulse: boolean;
+  label: string;
+}
+
+const mockAgentStatus = vi.fn<() => MockAgentStatus>(() => ({
+  kind: 'idle',
+  color: 'rgba(128,128,128,0.08)',
+  pulse: false,
+  label: 'Idle',
+}));
+
 vi.mock('@/layers/entities/session', async (importOriginal) => {
   // Extend the real module rather than replacing it wholesale: this file
   // depends on the real `partitionSessionsByOrigin` (session-origin-legibility)
@@ -32,12 +46,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/session')>();
   return {
     ...actual,
-    useAgentHottestStatus: () => ({
-      kind: 'idle',
-      color: 'rgba(128,128,128,0.08)',
-      pulse: false,
-      label: 'Idle',
-    }),
+    useAgentHottestStatus: () => mockAgentStatus(),
     usePulseMotion: () => ({ animate: undefined, transition: undefined }),
     SessionRow: ({
       session,
@@ -90,9 +99,10 @@ vi.mock('../ui/AgentContextMenu', () => ({
 }));
 
 vi.mock('../ui/AgentActivityBadge', () => ({
-  AgentActivityBadge: ({ label }: { label: string }) => (
-    <span data-testid="activity-badge">{label}</span>
-  ),
+  // Mirrors the real component's contract: idle renders nothing, so tests
+  // can assert badge suppression the same way the real DOT_COLOR map does.
+  AgentActivityBadge: ({ status, label }: { status: string; label: string }) =>
+    status === 'idle' ? null : <span data-testid="activity-badge">{label}</span>,
 }));
 
 // ---------------------------------------------------------------------------
@@ -180,6 +190,12 @@ function renderItem(overrides: Partial<Parameters<typeof AgentListItem>[0]> = {}
 describe('AgentListItem', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAgentStatus.mockReturnValue({
+      kind: 'idle',
+      color: 'rgba(128,128,128,0.08)',
+      pulse: false,
+      label: 'Idle',
+    });
   });
 
   // --- Rendering ---
@@ -194,9 +210,20 @@ describe('AgentListItem', () => {
     expect(screen.getByText('Custom Name')).toBeInTheDocument();
   });
 
-  it('renders the activity badge', () => {
+  it('renders the activity badge for a non-idle status', () => {
+    mockAgentStatus.mockReturnValue({
+      kind: 'streaming',
+      color: 'rgb(34,197,94)',
+      pulse: true,
+      label: 'Working',
+    });
     renderItem();
-    expect(screen.getByTestId('activity-badge')).toHaveTextContent('Idle');
+    expect(screen.getByTestId('activity-badge')).toHaveTextContent('Working');
+  });
+
+  it('renders no activity badge for an idle status', () => {
+    renderItem();
+    expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
   });
 
   // --- Row click behavior ---
@@ -400,5 +427,42 @@ describe('AgentListItem', () => {
     });
     fireEvent.click(screen.getByTestId('rename-s1'));
     expect(onRenameSession).toHaveBeenCalledWith('s1', 'New name');
+  });
+
+  // --- Mute (DOR-339) ---
+
+  describe('muted rendering', () => {
+    it('is not dimmed and shows no mute glyph by default', () => {
+      const { container } = renderItem();
+      const bordered = container.querySelector('[data-slot="agent-list-item"]')!.parentElement!;
+      expect(bordered.className).not.toContain('opacity-60');
+      expect(screen.queryByLabelText('Muted')).not.toBeInTheDocument();
+    });
+
+    it('dims the row and shows a mute glyph when muted', () => {
+      const { container } = renderItem({ isMuted: true });
+      const bordered = container.querySelector('[data-slot="agent-list-item"]')!.parentElement!;
+      expect(bordered.className).toContain('opacity-60');
+      expect(screen.getByLabelText('Muted')).toBeInTheDocument();
+    });
+
+    it('drops the activity badge for a muted agent even while it is working', () => {
+      mockAgentStatus.mockReturnValue({
+        kind: 'streaming',
+        color: 'rgb(34,197,94)',
+        pulse: true,
+        label: 'Working',
+      });
+      renderItem({ isMuted: true });
+      expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
+    });
+
+    it('the row stays clickable while muted', () => {
+      const { props } = renderItem({ isMuted: true, isActive: false });
+      fireEvent.click(
+        screen.getByTestId('agent-identity').closest('[data-slot="agent-list-item"]')!
+      );
+      expect(props.onSelect).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
+import * as semver from 'semver';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import {
   initConfigManager,
@@ -7,6 +8,8 @@ import {
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
+  backfillSidebarSettingsDefaults,
+  CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
   backfillCloudDefaults,
@@ -25,6 +28,8 @@ import {
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 /**
  * Expected `runtimes` section defaults (spec: additional-agent-runtimes +
@@ -938,6 +943,152 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillShapesDefaults(store);
     expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillSidebarSettingsDefaults migration (DOR-339)', () => {
+  it('adds muted + ungroupedDisplayFilter to an existing sidebar, and displayFilter + muted to every group', () => {
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        sidebar: {
+          pinned: ['/a'],
+          groups: [
+            { id: 'g1', name: 'Clients', agentPaths: ['/a'], sortMode: 'manual', collapsed: false },
+          ],
+          ungroupedSortMode: 'name',
+          ungroupedCollapsed: false,
+          recentsCollapsed: false,
+          groupsHintDismissed: false,
+        },
+      },
+    });
+    backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/a'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/a'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all',
+      },
+    });
+  });
+
+  it('is idempotent — does not overwrite an existing muted/displayFilter choice', () => {
+    const existing = {
+      theme: 'system',
+      sidebar: {
+        pinned: [],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Experiments',
+            agentPaths: ['/x'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'attention',
+            muted: true,
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: ['/y'],
+        ungroupedDisplayFilter: 'active',
+      },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when ui.sidebar is absent (schema default / backfillSidebarDefaults own that case)', () => {
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toEqual({ theme: 'dark' });
+  });
+
+  it('is a no-op when the ui section is absent entirely', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
+  // Bit once before (0.47.0 -> 0.48.0, see config-manager.ts around the
+  // '0.48.0' entry) and again on this very branch (a '0.54.0' key drafted as
+  // "the next unreleased version" went stale the moment v0.54.0 was actually
+  // tagged while this branch was still open). conf only runs a key in
+  // `(storedVersion, projectVersion]`, so a key equal to (or behind) an
+  // already-tagged release is silently excluded for every upgrading user —
+  // no error, no warning, the backfill just never runs.
+  //
+  // A local checkout's root package.json is NOT a reliable "already
+  // released?" signal by itself — a feature branch can sit open past a real
+  // release without ever touching its own stale copy of that file (that's
+  // exactly how the 0.54.0 bug slipped through: this branch's package.json
+  // still read 0.53.0 after v0.54.0 shipped on main). Git tags are shared
+  // across every worktree of this checkout regardless of which commit a
+  // branch is sitting on, so they're the ground truth this test checks
+  // against; it degrades to a package.json-only check if tags are
+  // unavailable (e.g. a shallow CI checkout with no tag history) rather than
+  // failing the whole suite over an environment limitation.
+  it('the newest migration key is strictly newer than every released version', () => {
+    const rootPkgPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../../../../../package.json'
+    );
+    const rootVersion = (JSON.parse(fs.readFileSync(rootPkgPath, 'utf-8')) as { version: string })
+      .version;
+
+    // The most-recently-authored migration is the LAST object key, not the
+    // semver-maximum one: the '1.0.0' bootstrap entry (the schema-version-1
+    // seed, predating this file's app-version-keyed migrations) is
+    // semver-greater than every real 0.x.x release key despite being first
+    // in the file. `CONFIG_MIGRATIONS`'s own top-of-file contract is
+    // append-only ("never edit a shipped migration body... append a new
+    // entry instead"), so the newest entry is always the last one inserted —
+    // object key order is insertion order for non-array-index string keys.
+    const keys = Object.keys(CONFIG_MIGRATIONS);
+    expect(keys.length).toBeGreaterThan(0);
+    const newest = keys[keys.length - 1]!;
+
+    let latestReleased = rootVersion;
+    try {
+      const tags = execSync('git tag -l "v*"', { encoding: 'utf-8', cwd: process.cwd() })
+        .split('\n')
+        .map((t) => t.trim().replace(/^v/, ''))
+        .filter((t) => semver.valid(t));
+      if (tags.length > 0) {
+        latestReleased = tags.reduce((a, b) => (semver.gt(a, b) ? a : b));
+      }
+    } catch {
+      // No git available (e.g. a tarball checkout) — fall back to package.json.
+    }
+
+    expect(
+      semver.gt(newest, latestReleased),
+      `newest migration key "${newest}" must be > the latest released version "${latestReleased}" ` +
+        `(a key <= an already-released version is excluded by conf's (storedVersion, ` +
+        `projectVersion] window and silently never runs for upgrading users)`
+    ).toBe(true);
   });
 });
 
