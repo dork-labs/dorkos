@@ -48,6 +48,8 @@ import {
   type ClaudeCodeAgentRuntimeLike,
 } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
+import { createConnectorsRouter } from './routes/connectors.js';
+import { ConnectorRegistry } from './services/connectors/registry.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import { createInitiateConsentGate } from './services/relay/initiate-consent.js';
@@ -969,6 +971,22 @@ async function start() {
       logger.warn('[Tasks] Failed to seed default templates', logError(err));
     });
   }
+
+  // Mount connector routes (connector-gateway spec, DOR-371). The registry
+  // starts empty — provider backends (raw-MCP, Composio) register in later
+  // phases — but the routing surface is already live: `recommend` reads the
+  // relay adapter catalog (relay-adapter-first), and the aggregate endpoints
+  // return empty until a provider is registered. `adapterManager` satisfies the
+  // routing catalog structurally via its public `getManifest` accessor.
+  const connectorRegistry = new ConnectorRegistry({ db });
+  app.use(
+    '/api/connectors',
+    createConnectorsRouter({
+      registry: connectorRegistry,
+      ...(adapterManager && { relay: adapterManager }),
+    })
+  );
+  logger.info('[Connectors] Routes mounted');
 
   // Mount Relay routes if enabled
   if (relayEnabled && relayCore) {

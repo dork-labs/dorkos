@@ -58,6 +58,13 @@ import {
   AgentListQuerySchema,
 } from '@dorkos/shared/mesh-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
+import {
+  ConnectorToolkitSchema,
+  ConnectorRecommendationSchema,
+  ConnectStartSchema,
+  ConnectPollSchema,
+  ConnectedAccountSchema,
+} from '@dorkos/shared/connector-provider';
 import { z } from 'zod';
 
 /**
@@ -2183,6 +2190,171 @@ registry.registerPath({
       description: 'Fork name is invalid or already taken',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+// --- Connectors ---
+
+/** A per-provider degradation notice from a cross-provider aggregation (ADR-0310). */
+const ConnectorWarningSchema = z.object({
+  provider: z.string(),
+  message: z.string(),
+});
+
+/**
+ * The session-facing connected-account shape — the server-only `provider` field
+ * is stripped before an account crosses to the client (spec §Security
+ * Considerations), so it is absent here by design.
+ */
+const PublicConnectedAccountSchema = ConnectedAccountSchema.omit({ provider: true });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/toolkits',
+  tags: ['Connectors'],
+  summary: 'List connectable services (aggregated across providers)',
+  description:
+    'Aggregates `listToolkits()` across every registered connector provider, deduped by slug, ' +
+    'degrading one unreachable provider to a `warnings[]` entry (ADR-0310).',
+  responses: {
+    200: {
+      description: 'Connectable services plus per-provider degradation warnings',
+      content: {
+        'application/json': {
+          schema: z.object({
+            toolkits: z.array(ConnectorToolkitSchema),
+            warnings: z.array(ConnectorWarningSchema),
+          }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/recommend',
+  tags: ['Connectors'],
+  summary: 'Recommend how to connect a service (relay-adapter > gateway > raw-mcp)',
+  description:
+    'Returns ranked recommendations for a service, best first: a purpose-built relay adapter ' +
+    '(rank 0) outranks a gateway backend (rank 1), which outranks a raw-MCP baseline (rank 2). ' +
+    'This is the routing surface the "Connect to Slack" and "Connect to my Gmail" evals assert against.',
+  request: {
+    query: z.object({ service: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Ranked connector recommendations (ascending by rank)',
+      content: {
+        'application/json': {
+          schema: z.object({ recommendations: z.array(ConnectorRecommendationSchema) }),
+        },
+      },
+    },
+    400: {
+      description: 'Missing service query parameter',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/connectors/{provider}/connect',
+  tags: ['Connectors'],
+  summary: 'Begin a connect flow for a toolkit',
+  description:
+    'Starts an OAuth/connect flow on the named provider and returns a consent URL plus a ' +
+    'pollable flow id. Secrets stay server-side — the response is reference-shaped.',
+  request: {
+    params: z.object({ provider: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ toolkit: z.string(), label: z.string().optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Connect started; carries the authorize URL and a pollable flow id',
+      content: { 'application/json': { schema: ConnectStartSchema } },
+    },
+    400: {
+      description: 'Validation error, unknown toolkit, or a duplicate single-account connect',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Unknown connector provider',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/flows/{flowId}',
+  tags: ['Connectors'],
+  summary: 'Poll a connect flow to completion',
+  description:
+    'Polls an in-flight connect flow. Failure is typed on the result (`status: "failed"`), never ' +
+    'thrown. On `connected`, the new account is bound to its owning provider for later routing.',
+  request: {
+    params: z.object({ flowId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The pollable connect state (pending | connected | failed)',
+      content: { 'application/json': { schema: ConnectPollSchema } },
+    },
+    404: {
+      description: 'Unknown connect flow',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/accounts',
+  tags: ['Connectors'],
+  summary: 'List connected accounts (aggregated, provider stripped)',
+  description:
+    'Aggregates connected accounts across providers with per-provider degradation. The server-only ' +
+    '`provider` field is stripped and no connection details ever reach the client (spec §Security).',
+  request: {
+    query: z.object({ toolkit: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      description: 'Connected accounts (provider stripped) plus degradation warnings',
+      content: {
+        'application/json': {
+          schema: z.object({
+            accounts: z.array(PublicConnectedAccountSchema),
+            warnings: z.array(ConnectorWarningSchema),
+          }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/connectors/accounts/{accountId}',
+  tags: ['Connectors'],
+  summary: 'Disconnect an account (idempotent)',
+  description:
+    'Revokes the account at its owning provider and clears its routing binding. Idempotent — ' +
+    'disconnecting an unknown or already-removed id still resolves 204.',
+  request: {
+    params: z.object({ accountId: z.string() }),
+  },
+  responses: {
+    204: { description: 'Account disconnected (or already absent)' },
   },
 });
 
