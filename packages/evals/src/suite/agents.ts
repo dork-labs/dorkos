@@ -54,11 +54,32 @@
  * artifact. `driveConversation` (`../runner/drive.js`) is now remap-robust — it
  * re-subscribes to the canonical id the 202 trigger response reveals — as a
  * general harness fix (it benefits any multi-turn credentialed eval, not just
- * this one), covered by a fake-transport unit test. This case STAYS
- * `quarantined` until that fix is proven against a real claude-code
- * credentialed run (the unit test exercises the re-subscribe logic, not the
- * live remap itself) — promote once a real run confirms it, per the
+ * this one), covered by a fake-transport unit test.
+ *
+ * RESIDUAL RISK (why this case STAYS `quarantined`): the fake-transport test
+ * pins the re-subscribe LOGIC, not the one concrete failure mode only the real
+ * server can produce. The re-subscribe is a mid-turn COLD connect — on the
+ * real server that means (a) `turn_start` arrives FOLDED into the snapshot's
+ * in-progress-turn state, not replayed as a discrete `turn_start` frame, and
+ * (b) if the turn is FAST enough to reach `turn_end` before the re-subscribe
+ * lands, `turn_end` is folded into snapshot state too: `replayFrom(snap.cursor)`
+ * has nothing left with `seq > cursor` to re-emit, no live `turn_end` frame
+ * ever arrives, and the drive burns its remaining budget and reports `timeout`
+ * for a turn that actually finished. A real multi-turn interview (multiple
+ * model calls + a file write per turn) is unlikely to race the re-subscribe
+ * this tightly, which is exactly why the risk is residual rather than
+ * disqualifying — but "unlikely" is not "proven," so promotion to `core`
+ * needs a real claude-code credentialed run to confirm it holds, per the
  * demo-claim gate (`AGENTS.md`: never claim a still-unverified surface works).
+ *
+ * The robust fix for a FUTURE pass: instead of a cold connect, carry the
+ * last-seen `seq` from the pre-remap stream forward as the re-subscribe's
+ * `Last-Event-ID` (or `?after=`) cursor. `rekeyProjector` moves the SAME
+ * projector instance (ADR-0267) — both the old and new subscriptions read the
+ * ONE seq counter — so a cursor-based reconnect's `replayFrom(cursor)`
+ * gap-free-replays any `turn_end` that already fired instead of folding it
+ * into a snapshot no one asked to see. `drive.ts` deliberately did not add
+ * that seq-tracking here; land it alongside the credentialed proof run above.
  *
  * @module evals/suite/agents
  */
