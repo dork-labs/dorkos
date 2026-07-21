@@ -3,9 +3,14 @@
  *
  * Keyed by edge id (`binding:{bindingId}`), this store is the single source
  * of truth `BindingEdge` reads to decide whether to render a traveling pulse.
- * Entries are self-expiring — they are cleared by the edge's own
- * animation-complete callback, not a wall-clock timer — so there is nothing
- * to leak.
+ * Entries are self-expiring — not via a wall-clock timer, but by the two
+ * consumers that would otherwise leave them stranded: the subscription hook
+ * never writes an entry that reduced-motion means will never render, and
+ * `BindingEdge` clears any entry it declines to animate (LOD zoom, or a
+ * remount after viewport-culling) instead of leaving it queued for later.
+ * A pulse that does render clears itself via its own animation-complete
+ * callback. Either way, there is nothing to leak and nothing that survives
+ * to replay as a flurry once the suppressing condition lifts.
  *
  * @module features/mesh/model/relay-flow-store
  */

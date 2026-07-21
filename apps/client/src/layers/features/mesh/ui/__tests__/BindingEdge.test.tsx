@@ -125,6 +125,24 @@ describe('BindingEdge', () => {
       const { container } = render(<BindingEdge {...BASE_EDGE_PROPS} />);
       expect(container.querySelector('circle.fill-primary')).not.toBeInTheDocument();
     });
+
+    it('clears the store entry immediately when declining to animate below PULSE_MIN_ZOOM', () => {
+      // Purpose: a pulse suppressed by the LOD gate must not sit in the store
+      // waiting for zoom to return — it's dropped now, not stockpiled for a
+      // later flurry when the user zooms back in.
+      mockActivity = { 'binding-edge-1': { direction: 'inbound', nonce: 1 } };
+      mockZoom = 0.3;
+      render(<BindingEdge {...BASE_EDGE_PROPS} />);
+      expect(mockClear).toHaveBeenCalledWith('binding-edge-1');
+    });
+
+    it('clears the store entry immediately when declining to animate under reduced-motion', () => {
+      // Purpose: same expiry guarantee for the reduced-motion gate.
+      mockActivity = { 'binding-edge-1': { direction: 'inbound', nonce: 1 } };
+      mockUsePrefersReducedMotion.mockReturnValue(true);
+      render(<BindingEdge {...BASE_EDGE_PROPS} />);
+      expect(mockClear).toHaveBeenCalledWith('binding-edge-1');
+    });
   });
 
   describe('label display', () => {
