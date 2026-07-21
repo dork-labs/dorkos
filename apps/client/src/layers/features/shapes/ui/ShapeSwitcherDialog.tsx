@@ -115,10 +115,12 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const pendingName = applyShape.isPending ? applyShape.variables?.name : undefined;
   const activeShape = shapes?.find((s) => s.active);
   const arrival = result?.offeredAgents.find((a) => a.arrival);
-  // Show "Open" only when the agent exists and auto-follow did NOT already take
-  // us there — otherwise it is a redundant button for a place we're standing in.
+  // Show "Open" when the arrival agent exists. No auto-follow guard is needed
+  // here: the `onSuccess` early-return skips `setResult` on the auto-follow
+  // path, so `result` (and this `arrival`) never holds an auto-followed agent —
+  // we never render a redundant "Open" for a place we already landed on.
   // "Set up" shows only for an unsatisfied offer (no agent to open yet).
-  const showOpenArrival = Boolean(arrival?.satisfied && arrival.projectPath && !arrival.autoFollow);
+  const showOpenArrival = Boolean(arrival?.satisfied && arrival.projectPath);
   const showSetUpArrival = Boolean(arrival && !arrival.satisfied);
 
   return (

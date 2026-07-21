@@ -496,7 +496,7 @@ Apply is a handful of config writes + task creations + one extension re-mount �
 - `contributing/marketplace-installs.md` — add the Shape flow to the flows list and note the apply/activation split (install stages; apply activates).
 - A new `contributing/shapes.md` developer guide (authoring a Shape manifest, the apply/degradation model, fork/lineage) — via `writing-developer-guides`.
 - `docs/` concept page "What is a Shape?" is **S2's** deliverable, not this spec's; this spec provides the schema it documents.
-- ADR extraction (`/adr:from-spec`) for the load-bearing decisions: composition-not-monolith; reverse-affinity-in-config; layout-excludes-filing; offer-not-force; preset-semantics/fork.
+- ADR extraction (`/adr:from-spec`) for the load-bearing decisions: composition-not-monolith (extracted — ADR 260721-221810); reverse-affinity-in-config (already covered by ADR 260717-001409); layout-excludes-filing, offer-not-force, and preset-semantics/fork still to extract.
 
 ## Implementation Phases
 
@@ -522,6 +522,7 @@ Apply is a handful of config writes + task creations + one extension re-mount �
 - ADR-0043 — agent storage file-first write-through (why UI/shape state stays off `.dork/agent.json`).
 - ADR-0310 — per-runtime degradation (the degradation model this spec mirrors).
 - ADR 260721-221810 — the Shape ontology (D2): the fifth package type as a composition manifest that activates existing packages, holding agents by affinity, not ownership (extracted from this spec).
+- Still to extract from this spec (`/adr:from-spec`): layout-excludes-filing (§4.1 D4); offer-not-force switching (§4.4 D5); preset-semantics-and-fork (D6). Reverse-affinity + active-shape state is already covered by ADR 260717-001409 (above).
 
 ## References
 

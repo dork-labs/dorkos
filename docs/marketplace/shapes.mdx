@@ -111,15 +111,15 @@ Fork a Shape from the command line:
 dorkos shape fork linear-ops --as my-ops
 ```
 
-That gives you a new Shape named `my-ops`, a copy of `linear-ops` that you own and can edit. The copy remembers where it came from, so the switcher shows a small "forked from linear-ops" note under its name. The original is left exactly as it was.
+That gives you a new Shape named `my-ops`, a copy of `linear-ops` that you own and can edit. The copy remembers where it came from, so the switcher shows a small "forked from linear-ops@dorkos-community" note under its name. The original is left exactly as it was.
 
-If you fork the Shape you have applied right now, add `--capture-current` to snapshot your live setup into the copy:
+If you fork the Shape you have applied right now, add `--capture-current`:
 
 ```bash
 dorkos shape fork linear-ops --as my-ops --capture-current
 ```
 
-This captures how your workspace is arranged at that moment, along with the extensions and schedules the Shape set up, so your version starts from what you actually have in front of you.
+From the command line, `--capture-current` snapshots which of the Shape's extensions you have turned on right now, so your copy starts from that set instead of the original's. It cannot capture your window layout: from the command line there is no way to see how your workspace is arranged. Only the in-app switcher (coming in a later release) can carry your live layout into a fork.
 
 <Callout type="info">
   Forking is how you save your own take on a Shape. Applying a Shape never changes the Shape itself,
