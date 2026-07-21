@@ -6,14 +6,14 @@
       "slug": "smart-agent-groups",
       "title": "Smart agent groups from mesh metadata (rule-based membership)",
       "created": "2026-07-21",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260721-134154",
       "slug": "agent-list-settings",
       "title": "Agent list settings: per-group display filters, inactive reveal, and muting",
       "created": "2026-07-21",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260718-050609",
