@@ -590,6 +590,12 @@ export class TaskSchedulerService {
     durationMs: number,
     error?: string
   ): void {
+    // NOTE: the Pulse attention broadcast (`task_run_failed`, DOR-403) is NOT
+    // emitted here. emitRunEvent only covers scheduler-side terminal paths; a
+    // relay-delivered run is finalized by the receiver writing 'failed' through
+    // TaskStore, which never reaches this method. The broadcast rides the
+    // TaskStore run-terminal hook (the single terminal funnel for both paths) —
+    // see run-terminal-broadcaster.ts, wired in index.ts.
     if (!this.activityService) return;
 
     const eventType =

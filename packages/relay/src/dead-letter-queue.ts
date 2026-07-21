@@ -22,6 +22,21 @@ import type { SqliteIndex } from './sqlite-index.js';
 
 // === Types ===
 
+/**
+ * A dead-letter arrival notice, delivered to {@link DeadLetterQueueOptions.onDeadLetter}
+ * at the moment a message is rejected — never on a later poll re-observation.
+ */
+export interface DeadLetterNotice {
+  /** The ULID message ID that was dead-lettered. */
+  messageId: string;
+  /** The endpoint hash where the message was rejected. */
+  endpointHash: string;
+  /** Human-readable rejection reason. */
+  reason: string;
+  /** ISO 8601 timestamp of the rejection. */
+  failedAt: string;
+}
+
 /** Options for creating a DeadLetterQueue. */
 export interface DeadLetterQueueOptions {
   /** The MaildirStore instance for filesystem operations. */
@@ -36,6 +51,15 @@ export interface DeadLetterQueueOptions {
    * for purge operations.
    */
   rootDir: string;
+
+  /**
+   * Optional observer invoked exactly once whenever a message is dead-lettered
+   * via {@link DeadLetterQueue.reject} — the true arrival edge, not a poll. The
+   * DorkOS server wires this to the `/api/events` SSE fan-out so the Pulse
+   * attention badge ticks the instant a message bounces (DOR-403). Failures in
+   * the observer are swallowed so a bad listener can never break a rejection.
+   */
+  onDeadLetter?: (notice: DeadLetterNotice) => void;
 }
 
 /** Result of a reject operation. */
@@ -110,11 +134,13 @@ export class DeadLetterQueue {
   private readonly maildirStore: MaildirStore;
   private readonly sqliteIndex: SqliteIndex;
   private readonly rootDir: string;
+  private readonly onDeadLetter?: (notice: DeadLetterNotice) => void;
 
   constructor(options: DeadLetterQueueOptions) {
     this.maildirStore = options.maildirStore;
     this.sqliteIndex = options.sqliteIndex;
     this.rootDir = options.rootDir;
+    this.onDeadLetter = options.onDeadLetter;
   }
 
   /**
@@ -149,6 +175,21 @@ export class DeadLetterQueue {
       createdAt: envelope.createdAt,
       expiresAt: envelope.budget.ttl ? new Date(envelope.budget.ttl).toISOString() : null,
     });
+
+    // Notify the arrival observer (DorkOS SSE fan-out). Isolated: a listener
+    // throwing must never turn a successful rejection into a failed one.
+    if (this.onDeadLetter) {
+      try {
+        this.onDeadLetter({
+          messageId: envelope.id,
+          endpointHash,
+          reason,
+          failedAt: new Date().toISOString(),
+        });
+      } catch {
+        // Swallow — observer failure is not a rejection failure.
+      }
+    }
 
     return { ok: true, messageId: envelope.id };
   }

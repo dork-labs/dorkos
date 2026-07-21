@@ -31,6 +31,7 @@ import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
 import { TaskCompletionNotifier } from './services/tasks/task-completion-notifier.js';
+import { broadcastRunTerminal } from './services/tasks/run-terminal-broadcaster.js';
 import {
   TaskSchedulerService,
   type SchedulerAgentManager,
@@ -691,7 +692,16 @@ async function start() {
       // traceRelay wraps publish with a relay.dispatch span when debug tracing
       // is on; returns the core untouched otherwise (zero overhead).
       relayCore = traceRelay(
-        new RelayCore({ dataDir: relayDataDir, adapterRegistry, db, traceStore, logger })
+        new RelayCore({
+          dataDir: relayDataDir,
+          adapterRegistry,
+          db,
+          traceStore,
+          logger,
+          // Tick the Pulse attention badge the instant a message is dead-lettered
+          // (DOR-403) instead of waiting for the 30s dead-letters poll.
+          onDeadLetter: (notice) => eventFanOut.broadcast('relay_dead_letter', notice),
+        })
       );
       await relayCore.registerEndpoint('relay.system.console');
       logger.info(`[Relay] RelayCore initialized (dataDir: ${relayDataDir})`);
@@ -743,6 +753,17 @@ async function start() {
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
+
+    // Tick the Pulse attention badge on a real liveness transition (an agent
+    // went offline or came back online) instead of waiting for the 30s
+    // mesh-status poll (DOR-403).
+    meshCore.onLivenessChange((result) =>
+      eventFanOut.broadcast('mesh_liveness_changed', {
+        unreachable: result.unreachable,
+        resurrected: result.resurrected,
+        changedAt: new Date().toISOString(),
+      })
+    );
 
     // Start periodic reconciliation (every 5 minutes)
     meshCore.startPeriodicReconciliation(300_000);
@@ -798,27 +819,37 @@ async function start() {
     }
   }
 
-  // Automatic task-completion notifications (DOR-240): one store-level terminal
-  // hook feeds a TaskCompletionNotifier that resolves the linked agent's bound
-  // channel and delivers via RelayCore. The relay task-handler and the scheduler
-  // share this same in-process TaskStore, so this single registration covers
-  // every execution path. Guarded on the relay deps the notifier needs to
-  // deliver — without them there is no channel to notify on.
-  if (taskStore && relayCore && adapterManager) {
-    const bindingStore = adapterManager.getBindingStore();
-    const bindingRouter = adapterManager.getBindingRouter();
-    if (bindingStore && bindingRouter) {
-      const notifier = new TaskCompletionNotifier({
-        bindingStore,
-        bindingRouter,
-        adapterManager,
-        relayCore,
-        taskStore,
-        logger,
-      });
-      taskStore.setOnRunTerminal((run, task) => void notifier.handle(run, task));
-      logger.info('[Tasks] Completion notifier wired to run-terminal hook');
+  // Store-level run-terminal hook (DOR-240): the single seam that fires exactly
+  // once per non-terminal → terminal transition, for BOTH scheduler-side
+  // failures and relay-delivered runs finalized by the receiver's
+  // updateRun('failed'). Two consumers ride it, composed into one listener
+  // because setOnRunTerminal holds a single listener:
+  //   1. Pulse attention broadcast (DOR-403) — always on when Tasks is enabled;
+  //      broadcastRunTerminal fans `task_run_failed` onto /api/events so the
+  //      badge ticks the instant a run fails, on every execution path.
+  //   2. TaskCompletionNotifier (DOR-240) — optional, only when the relay deps
+  //      it needs to deliver a channel notification are present.
+  if (taskStore) {
+    let notifier: TaskCompletionNotifier | undefined;
+    if (relayCore && adapterManager) {
+      const bindingStore = adapterManager.getBindingStore();
+      const bindingRouter = adapterManager.getBindingRouter();
+      if (bindingStore && bindingRouter) {
+        notifier = new TaskCompletionNotifier({
+          bindingStore,
+          bindingRouter,
+          adapterManager,
+          relayCore,
+          taskStore,
+          logger,
+        });
+        logger.info('[Tasks] Completion notifier wired to run-terminal hook');
+      }
     }
+    taskStore.setOnRunTerminal((run, task) => {
+      broadcastRunTerminal(run);
+      if (notifier) void notifier.handle(run, task);
+    });
   }
 
   // Subscribe to lifecycle signals for diagnostic logging

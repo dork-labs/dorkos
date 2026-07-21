@@ -33,6 +33,7 @@ export {
   useDeadLetters,
   useAggregatedDeadLetters,
   useDismissDeadLetterGroup,
+  DEAD_LETTERS_KEY,
 } from './model/use-dead-letters';
 export type { DeadLetter, AggregatedDeadLetter } from './model/use-dead-letters';
 export { useRelayConversations } from './model/use-relay-conversations';

@@ -26,6 +26,7 @@ import type {
   AdapterConfig,
   AdapterStatus as SharedAdapterStatus,
 } from '@dorkos/shared/relay-schemas';
+import type { DeadLetterNotice } from './dead-letter-queue.js';
 
 // --- Re-exported config types — @dorkos/shared is the single source of truth ---
 
@@ -254,6 +255,14 @@ export interface RelayOptions {
    * Default: 30 * 60 * 1000 (30 minutes)
    */
   inFlightRecoveryMs?: number;
+
+  /**
+   * Optional observer invoked at the moment a message is dead-lettered (the
+   * arrival edge, never a poll). The DorkOS server wires this to the `/api/events`
+   * SSE fan-out so the Pulse attention badge ticks instantly when a message
+   * bounces (DOR-403). See {@link DeadLetterQueueOptions.onDeadLetter}.
+   */
+  onDeadLetter?: (notice: DeadLetterNotice) => void;
 }
 
 export interface PublishOptions {

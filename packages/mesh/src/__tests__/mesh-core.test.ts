@@ -949,6 +949,115 @@ describe('reconciliation', () => {
     mesh.close();
   });
 
+  it('DOR-403: onLivenessChange fires when a pass marks an agent unreachable', async () => {
+    const base = await makeTempDir();
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
+      synced: 0,
+      unreachable: 1,
+      removed: 0,
+      resurrected: 0,
+      discovered: 0,
+    });
+
+    const changes: number[] = [];
+    mesh.onLivenessChange((r) => changes.push(r.unreachable));
+
+    vi.useFakeTimers();
+    mesh.startPeriodicReconciliation(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(changes).toEqual([1]);
+
+    mesh.stopPeriodicReconciliation();
+    vi.useRealTimers();
+    mesh.close();
+  });
+
+  it('DOR-403: onLivenessChange fires on resurrection (came back online)', async () => {
+    const base = await makeTempDir();
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
+      synced: 0,
+      unreachable: 0,
+      removed: 0,
+      resurrected: 2,
+      discovered: 0,
+    });
+
+    let fired = 0;
+    mesh.onLivenessChange(() => fired++);
+
+    vi.useFakeTimers();
+    mesh.startPeriodicReconciliation(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(fired).toBe(1);
+
+    mesh.stopPeriodicReconciliation();
+    vi.useRealTimers();
+    mesh.close();
+  });
+
+  it('DOR-403: onLivenessChange does NOT fire on a steady-state pass', async () => {
+    const base = await makeTempDir();
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    // A no-change pass — synced/discovered may move, but no liveness edge.
+    vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
+      synced: 3,
+      unreachable: 0,
+      removed: 0,
+      resurrected: 0,
+      discovered: 1,
+    });
+
+    let fired = 0;
+    mesh.onLivenessChange(() => fired++);
+
+    vi.useFakeTimers();
+    mesh.startPeriodicReconciliation(1000);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(fired).toBe(0);
+
+    mesh.stopPeriodicReconciliation();
+    vi.useRealTimers();
+    mesh.close();
+  });
+
+  it('DOR-403: a throwing onLivenessChange listener does not break the loop', async () => {
+    const base = await makeTempDir();
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
+      synced: 0,
+      unreachable: 1,
+      removed: 0,
+      resurrected: 0,
+      discovered: 0,
+    });
+
+    let goodFired = 0;
+    mesh.onLivenessChange(() => {
+      throw new Error('bad listener');
+    });
+    mesh.onLivenessChange(() => goodFired++);
+
+    vi.useFakeTimers();
+    mesh.startPeriodicReconciliation(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // The throwing listener is isolated; the second still fires.
+    expect(goodFired).toBe(1);
+
+    mesh.stopPeriodicReconciliation();
+    vi.useRealTimers();
+    mesh.close();
+  });
+
   it('startPeriodicReconciliation() no-ops if already running', () => {
     const base = '/tmp/mesh-noop-test';
     const mesh = new MeshCore({ db, defaultScanRoot: base });

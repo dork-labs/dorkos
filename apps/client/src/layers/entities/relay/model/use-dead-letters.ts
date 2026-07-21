@@ -18,7 +18,8 @@ export interface DeadLetter {
   failedAt: string;
 }
 
-const DEAD_LETTERS_KEY = ['relay', 'dead-letters'] as const;
+/** Query-key prefix for every dead-letters cache. Exported so cross-cutting freshness bridges can invalidate it. */
+export const DEAD_LETTERS_KEY = ['relay', 'dead-letters'] as const;
 
 /**
  * Fetch relay dead-letter messages with 30-second polling.

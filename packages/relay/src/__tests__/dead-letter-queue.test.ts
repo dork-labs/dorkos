@@ -161,6 +161,80 @@ describe('reject', () => {
 });
 
 // ---------------------------------------------------------------------------
+// onDeadLetter observer (DOR-403)
+// ---------------------------------------------------------------------------
+
+describe('onDeadLetter observer', () => {
+  it('fires exactly once on reject, with the arrival notice', async () => {
+    const notices: Array<{ messageId: string; endpointHash: string; reason: string }> = [];
+    const observed = new DeadLetterQueue({
+      maildirStore,
+      sqliteIndex,
+      rootDir: mailboxesDir,
+      onDeadLetter: (n) => notices.push(n),
+    });
+
+    await observed.reject(TEST_ENDPOINT, makeEnvelope({ id: 'DLQ-OBS-01' }), 'budget exceeded');
+
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({
+      messageId: 'DLQ-OBS-01',
+      endpointHash: TEST_ENDPOINT,
+      reason: 'budget exceeded',
+    });
+    expect(notices[0]).toHaveProperty('failedAt');
+  });
+
+  it('does NOT fire on a failed reject (maildir missing)', async () => {
+    let calls = 0;
+    const observed = new DeadLetterQueue({
+      maildirStore,
+      sqliteIndex,
+      rootDir: mailboxesDir,
+      onDeadLetter: () => calls++,
+    });
+
+    const result = await observed.reject('nonexistent-endpoint', makeEnvelope(), 'reason');
+    expect(result.ok).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it('does NOT fire on a poll re-observation (listDead)', async () => {
+    let calls = 0;
+    const observed = new DeadLetterQueue({
+      maildirStore,
+      sqliteIndex,
+      rootDir: mailboxesDir,
+      onDeadLetter: () => calls++,
+    });
+
+    await observed.reject(TEST_ENDPOINT, makeEnvelope({ id: 'DLQ-OBS-POLL' }), 'access denied');
+    expect(calls).toBe(1);
+
+    // Repeated polls re-observe the same dead letter but must NOT re-notify.
+    await observed.listDead();
+    await observed.listDead({ endpointHash: TEST_ENDPOINT });
+    expect(calls).toBe(1);
+  });
+
+  it('swallows a throwing observer without failing the rejection', async () => {
+    const observed = new DeadLetterQueue({
+      maildirStore,
+      sqliteIndex,
+      rootDir: mailboxesDir,
+      onDeadLetter: () => {
+        throw new Error('bad listener');
+      },
+    });
+
+    const result = await observed.reject(TEST_ENDPOINT, makeEnvelope({ id: 'DLQ-OBS-THROW' }), 'x');
+    expect(result.ok).toBe(true);
+    // The dead letter still landed despite the observer throwing.
+    expect(sqliteIndex.getMessage('DLQ-OBS-THROW')?.status).toBe('failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // listDead
 // ---------------------------------------------------------------------------
 
