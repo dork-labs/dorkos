@@ -69,6 +69,30 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
     await expect(provider.toolServerForAccount(account!.id)).resolves.toBeNull();
   });
 
+  it('disconnect scopes flow cleanup to the disconnected toolkit — a pending flow for another survives', async () => {
+    const slack = {
+      slug: 'slack',
+      displayName: 'Slack',
+      connection: {
+        transport: 'http',
+        url: 'https://mcp.slack.example/mcp',
+      } as RemoteMcpConnection,
+    };
+    const provider = new RawMcpConnectorProvider({ servers: [NOTION, slack] });
+
+    // Connect notion; start (but don't finish) a slack flow.
+    const notion = await provider.startConnect('notion');
+    const { account } = await provider.pollConnect(notion.flowId);
+    const slackFlow = await provider.startConnect('slack');
+
+    await provider.disconnect(account!.id);
+
+    // The still-pending slack flow must resolve — it was not wiped.
+    const poll = await provider.pollConnect(slackFlow.flowId);
+    expect(poll.status).toBe('connected');
+    expect(poll.account?.toolkit).toBe('slack');
+  });
+
   it('returns null for an unknown account id rather than throwing', async () => {
     const provider = makeProvider();
     await expect(

@@ -37,6 +37,20 @@ connectorConformance(
   }
 );
 
+// No MCP exposure (exposesOverMcp:false) — a backend that connects accounts but
+// cannot surface them as tool servers. The suite's exposure test asserts a
+// healthy account resolves null here.
+connectorConformance(() => new FakeConnectorProvider({ exposesOverMcp: false }), {
+  name: 'FakeConnectorProvider (no MCP exposure) — conformance',
+  makeUnexposableAccount: async () => {
+    const provider = new FakeConnectorProvider({ exposesOverMcp: false });
+    const { flowId } = await provider.startConnect('gmail');
+    const { account } = await provider.pollConnect(flowId);
+    // A healthy, active account is already unexposable when exposesOverMcp:false.
+    return { provider, accountId: account!.id };
+  },
+});
+
 // Guard: the null-branch assertion the suite runs would FAIL for a provider
 // that throws instead of returning null. An active account exposes a server; an
 // expired one resolves null — never a throw.

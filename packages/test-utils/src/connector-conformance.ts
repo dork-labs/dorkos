@@ -75,9 +75,10 @@ function assertMcpConnection(connection: unknown): void {
   expect(MCP_TRANSPORTS, `invalid transport '${String(conn.transport)}'`).toContain(conn.transport);
   if (conn.transport === 'http' || conn.transport === 'sse') {
     expect(typeof conn.url, 'http/sse connection must carry a url').toBe('string');
-    expect(conn.url!.length).toBeGreaterThan(0);
+    expect(conn.url!.length, 'http/sse connection url must be non-empty').toBeGreaterThan(0);
   } else {
     expect(typeof conn.command, 'stdio connection must carry a command').toBe('string');
+    expect(conn.command!.length, 'stdio connection command must be non-empty').toBeGreaterThan(0);
   }
 }
 
@@ -216,11 +217,20 @@ export function connectorConformance(
     });
 
     describe('tool exposure (the MCP seam)', () => {
-      it('toolServerForAccount returns a valid McpAppServerConnection for an active account', async () => {
+      it('toolServerForAccount honors exposesOverMcp for a healthy account', async () => {
         const provider = makeProvider();
         const account = await connectOk(provider);
         const connection = await provider.toolServerForAccount(account.id);
-        assertMcpConnection(connection);
+        if (provider.getCapabilities().exposesOverMcp) {
+          assertMcpConnection(connection);
+        } else {
+          // A backend that does not expose over MCP resolves null even for a
+          // perfectly healthy account — never a throw.
+          expect(
+            connection,
+            'a provider with exposesOverMcp:false resolves null for a healthy account'
+          ).toBeNull();
+        }
       });
 
       it('toolServerForAccount returns NULL (never throws) for an unexposable account', async () => {

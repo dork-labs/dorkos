@@ -154,8 +154,17 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
   }
 
   disconnect(accountId: ConnectedAccountId): Promise<void> {
+    const account = this._accounts.get(accountId);
     this._accounts.delete(accountId);
-    this._flows.clear();
+    // Drop only THIS toolkit's resolved flow — leaving a pending flow for
+    // another toolkit (e.g. slack) untouched. Scoped, not a blanket clear: a
+    // lingering resolved flow for the disconnected toolkit would otherwise let
+    // a stale pollConnect resurrect the account we just removed.
+    if (account) {
+      for (const [flowId, flow] of this._flows) {
+        if (flow.slug === account.toolkit) this._flows.delete(flowId);
+      }
+    }
     return Promise.resolve();
   }
 
