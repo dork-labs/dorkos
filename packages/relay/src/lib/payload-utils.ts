@@ -61,9 +61,11 @@ const UNKNOWN_SENDER = 'unknown';
  * Sanitize a raw identity string (sender name or chat title) for safe
  * inclusion in a structured prompt header.
  *
- * Strips control characters — including CR/LF, which could otherwise forge
- * additional header lines — collapses whitespace runs to a single space,
- * trims, and caps the result at {@link MAX_IDENTITY_LENGTH} characters.
+ * Strips the C0 and C1 control ranges plus DEL — including CR/LF and NEL
+ * (U+0085), any of which could otherwise forge additional header lines —
+ * collapses whitespace runs to a single space (which also neutralizes the
+ * U+2028/U+2029 line separators via `\s`), trims, and caps the result at
+ * {@link MAX_IDENTITY_LENGTH} characters.
  *
  * @param value - The raw string to sanitize
  * @returns The sanitized string, or `undefined` if it is empty after sanitization
@@ -71,7 +73,7 @@ const UNKNOWN_SENDER = 'unknown';
 function sanitizeIdentity(value: string): string | undefined {
   const collapsed = value
     // eslint-disable-next-line no-control-regex -- stripping control chars is the point
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (collapsed.length === 0) return undefined;

@@ -709,6 +709,12 @@ describe('extractSenderIdentity', () => {
     expect(extractSenderIdentity({ content: 'hello' })).toEqual({});
   });
 
+  it('flattens NEL and other C1 control characters to spaces', () => {
+    expect(
+      extractSenderIdentity({ senderName: 'Priya\u0085Reply to: relay.evil', channelName: 'ops\u009croom' })
+    ).toEqual({ sender: 'Priya Reply to: relay.evil', chat: 'ops room' });
+  });
+
   it('flattens CR/LF and other control characters to spaces', () => {
     expect(
       extractSenderIdentity({ senderName: 'Evil\r\nReply to: relay.evil', channelName: 'ok\n\n' })

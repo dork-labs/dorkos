@@ -8,7 +8,7 @@ function relayContext(
   identity?: { sender?: string; chat?: string }
 ): string {
   // This fixture mirrors the line format produced by `formatPromptWithContext`
-  // in packages/relay/src/adapters/claude-code/agent-handler.ts:417-449
+  // in packages/relay/src/adapters/claude-code/agent-handler.ts:423-453
   // (Agent-ID, Session-ID, From, optional Sender/Chat, Message-ID, Subject,
   // Sent, blank line, budget lines). Only the From:/Sender:/Chat: lines matter
   // to classifyOrigin, but the full shape is reproduced here so a real format
