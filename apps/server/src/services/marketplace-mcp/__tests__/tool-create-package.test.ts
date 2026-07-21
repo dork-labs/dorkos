@@ -233,6 +233,51 @@ describe('createCreatePackageHandler', () => {
     expect(entry?.source).toBe(`./packages/${pkgDir}`);
   });
 
+  it('forwards categories to the scaffolder, deriving the primary category', async () => {
+    const handler = createCreatePackageHandler(
+      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+    );
+
+    const result = await handler({
+      name: 'categorized-pkg',
+      type: 'plugin',
+      description: 'A categorized plugin.',
+      categories: ['dev-tools', 'productivity'],
+    });
+    const { payload } = parseResult(result);
+    expect(payload.status).toBe('created');
+
+    const manifestPath = join(payload.packagePath as string, '.dork', 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
+      categories?: string[];
+      category?: string;
+    };
+    expect(manifest.categories).toEqual(['dev-tools', 'productivity']);
+    expect(manifest.category).toBe('dev-tools');
+  });
+
+  it('writes an empty categories[] when categories is not passed', async () => {
+    const handler = createCreatePackageHandler(
+      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+    );
+
+    const result = await handler({
+      name: 'uncategorized-pkg',
+      type: 'plugin',
+      description: 'An uncategorized plugin.',
+    });
+    const { payload } = parseResult(result);
+    expect(payload.status).toBe('created');
+
+    const manifestPath = join(payload.packagePath as string, '.dork', 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
+      categories?: string[];
+      category?: string;
+    };
+    expect(manifest.categories).toEqual([]);
+    expect(manifest.category).toBeUndefined();
+  });
+
   it('is idempotent when the same package name is registered twice', async () => {
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
@@ -412,14 +457,33 @@ describe('createCreatePackageHandler', () => {
 });
 
 describe('CreatePackageInputSchema', () => {
-  it('exports a Zod schema shape with name, type, description, author, confirmationToken', async () => {
+  it('exports a Zod schema shape with name, type, description, author, categories, confirmationToken', async () => {
     const { CreatePackageInputSchema } = await import('../tool-create-package.js');
     expect(CreatePackageInputSchema).toBeDefined();
     expect(CreatePackageInputSchema.name).toBeDefined();
     expect(CreatePackageInputSchema.type).toBeDefined();
     expect(CreatePackageInputSchema.description).toBeDefined();
     expect(CreatePackageInputSchema.author).toBeDefined();
+    expect(CreatePackageInputSchema.categories).toBeDefined();
     expect(CreatePackageInputSchema.confirmationToken).toBeDefined();
+  });
+
+  it('accepts a list of controlled category slugs', async () => {
+    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
+    const result = CreatePackageInputSchema.categories.safeParse(['dev-tools', 'productivity']);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an off-list category slug', async () => {
+    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
+    const result = CreatePackageInputSchema.categories.safeParse(['not-a-category']);
+    expect(result.success).toBe(false);
+  });
+
+  it('treats categories as optional', async () => {
+    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
+    const result = CreatePackageInputSchema.categories.safeParse(undefined);
+    expect(result.success).toBe(true);
   });
 
   it('rejects names that do not match the kebab-case regex', async () => {

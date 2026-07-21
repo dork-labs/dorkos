@@ -6,10 +6,10 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p scripts",
     "test": "vitest",
-    "check-categories": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/check-categories.ts",
-    "lint": "eslint src/"
+    "check-categories": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/run-check-categories.ts",
+    "lint": "eslint ."
   },
   "exports": {
     ".": {

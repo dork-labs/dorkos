@@ -2,6 +2,11 @@ import { parseArgs } from 'node:util';
 
 import { createPackage } from '@dorkos/marketplace/scaffolder';
 import { PackageTypeSchema, type PackageType } from '@dorkos/marketplace/package-types';
+import {
+  MARKETPLACE_CATEGORIES,
+  MarketplaceCategorySchema,
+  type MarketplaceCategory,
+} from '@dorkos/marketplace';
 
 /**
  * Parsed arguments accepted by {@link runPackageInit}.
@@ -26,6 +31,14 @@ export interface PackageInitArgs {
    * defaults to the package name when omitted. Ignored for non-adapter types.
    */
   adapterType?: string;
+  /**
+   * Controlled multi-membership categories written into the starter manifest
+   * (see {@link MARKETPLACE_CATEGORIES} for the closed vocabulary). The first
+   * entry also becomes the singular `category`. When omitted, the scaffolder
+   * writes an empty `categories: []`, which trips the validator's
+   * `CATEGORY_MISSING` warning until the author edits the manifest by hand.
+   */
+  categories?: MarketplaceCategory[];
 }
 
 /** Allowed values for the `--type` flag, derived from the canonical schema. */
@@ -35,19 +48,45 @@ const ALLOWED_PACKAGE_TYPES: readonly PackageType[] = PackageTypeSchema.options;
  * with {@link ALLOWED_PACKAGE_TYPES} (derived from the canonical schema). */
 const USAGE_LINE =
   `Usage: dorkos package init <name> [--type ${ALLOWED_PACKAGE_TYPES.join('|')}] ` +
-  '[--parent-dir <path>] [--description <text>] [--author <text>] [--adapter-type <id>]';
+  '[--parent-dir <path>] [--description <text>] [--author <text>] [--adapter-type <id>] ' +
+  '[--categories <slug,slug,...>]';
+
+/**
+ * Parse a comma-separated `--categories` value into a validated
+ * {@link MarketplaceCategory} list. Empty segments (from stray commas or
+ * surrounding whitespace) are dropped.
+ *
+ * @param raw - The raw `--categories` flag value.
+ * @returns The validated category slugs, in the order given.
+ * @throws When any slug is not in {@link MARKETPLACE_CATEGORIES}.
+ */
+function parseCategories(raw: string): MarketplaceCategory[] {
+  const slugs = raw
+    .split(',')
+    .map((slug) => slug.trim())
+    .filter((slug) => slug.length > 0);
+
+  const invalid = slugs.filter((slug) => !MarketplaceCategorySchema.safeParse(slug).success);
+  if (invalid.length > 0) {
+    throw new Error(
+      `Invalid --categories value(s): ${invalid.join(', ')}. Allowed: ${MARKETPLACE_CATEGORIES.join(', ')}`
+    );
+  }
+  return slugs as MarketplaceCategory[];
+}
 
 /**
  * Parse raw CLI arguments for `dorkos package init` into a typed
  * {@link PackageInitArgs} object.
  *
  * Expected shape: `<name> [--type <type>] [--parent-dir <path>]
- * [--description <text>] [--author <text>] [--adapter-type <id>]`.
+ * [--description <text>] [--author <text>] [--adapter-type <id>]
+ * [--categories <slug,slug,...>]`.
  *
  * Throws an `Error` (caught and formatted by the CLI dispatcher) when
- * `<name>` is missing, `--type` is invalid, or an unknown option is passed.
- * Never calls `process.exit` directly — exit-code policy lives in the
- * top-level dispatcher in `cli.ts`.
+ * `<name>` is missing, `--type` is invalid, `--categories` contains an
+ * off-list slug, or an unknown option is passed. Never calls `process.exit`
+ * directly — exit-code policy lives in the top-level dispatcher in `cli.ts`.
  *
  * @param rawArgs - Raw argv slice that comes after `package init`.
  * @returns Parsed and validated {@link PackageInitArgs}.
@@ -63,6 +102,7 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
         description: { type: 'string' },
         author: { type: 'string' },
         'adapter-type': { type: 'string' },
+        categories: { type: 'string' },
       },
       allowPositionals: true,
       strict: true,
@@ -97,6 +137,12 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
     type = result.data;
   }
 
+  const rawCategories = values.categories;
+  const categories =
+    typeof rawCategories === 'string' && rawCategories.length > 0
+      ? parseCategories(rawCategories)
+      : undefined;
+
   return {
     name,
     type,
@@ -104,6 +150,7 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
     description: typeof values.description === 'string' ? values.description : undefined,
     author: typeof values.author === 'string' ? values.author : undefined,
     adapterType: typeof values['adapter-type'] === 'string' ? values['adapter-type'] : undefined,
+    categories,
   };
 }
 
@@ -127,6 +174,7 @@ export async function runPackageInit(args: PackageInitArgs): Promise<void> {
     description: args.description,
     author: args.author,
     adapterType: args.adapterType,
+    categories: args.categories,
   });
 
   console.log(`Created package at: ${result.packagePath}`);
