@@ -237,7 +237,7 @@ export function GroupHeader({
         {isSmart && (
           <div className="text-muted-foreground flex items-start gap-1.5 px-2 py-1.5 text-xs">
             <ListFilter className="mt-0.5 size-3.5 shrink-0" />
-            <span>{describeRules(group.rules!)}</span>
+            <span>{describeRules(group.rules ?? {})}</span>
           </div>
         )}
         <Item onClick={startRename}>

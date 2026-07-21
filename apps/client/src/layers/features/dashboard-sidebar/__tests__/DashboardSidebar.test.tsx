@@ -646,6 +646,23 @@ describe('DashboardSidebar smart groups (DOR-338)', () => {
     expect(screen.getAllByText('beta')).toHaveLength(1);
   });
 
+  it('mute never filters membership: a muted needs-attention agent still matches the rule and renders dimmed in both places', () => {
+    // Mute is a rendering/rollup lens (DOR-339), never a membership filter —
+    // evaluateSmartGroup reads the raw attention map, independent of mute.
+    attentionOverride({ '/projects/alpha': 'needs-attention', '/projects/beta': 'active' });
+    mockSidebarPrefs.mockReturnValue(
+      makePrefs({ groups: [smartGroup()], muted: ['/projects/alpha'] })
+    );
+    renderWithProviders(<DashboardSidebar />);
+
+    // Still matches the statuses: ['needs-attention'] rule — one copy in the
+    // smart group, one in the ungrouped list (multi-presence).
+    expect(screen.getAllByText('alpha')).toHaveLength(2);
+    // Both copies render muted (dimmed + the "Muted" glyph) — mute is a
+    // per-path rendering state, not a per-section one.
+    expect(screen.getAllByLabelText('Muted')).toHaveLength(2);
+  });
+
   it('shows an honest "0 matching" state when nothing matches the rules', () => {
     attentionOverride({ '/projects/alpha': 'active', '/projects/beta': 'active' });
     mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [smartGroup()] }));

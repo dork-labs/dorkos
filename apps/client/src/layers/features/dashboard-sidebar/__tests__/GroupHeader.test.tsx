@@ -325,6 +325,16 @@ describe('GroupHeader', () => {
       expect(screen.getByText('Codex · active in the last hour')).toBeInTheDocument();
     });
 
+    it('a rules-less smart group (hand-edited config, past the schema refine) opens its menu without crashing', () => {
+      // conf's Ajv/JSON-Schema bridge drops the superRefine, so a hand-edited
+      // config.json with kind: 'smart' and no `rules` at all still parses and
+      // reaches the client via the raw GET read path. The menu must never
+      // force-unwrap `group.rules`.
+      renderHeader({ group: smartGroup({ rules: undefined }) });
+      expect(() => openContextMenu()).not.toThrow();
+      expect(screen.getByText('No rules set')).toBeInTheDocument();
+    });
+
     it('hides the "Manual" sort option for a smart group', () => {
       renderHeader({ group: smartGroup() });
       openContextMenu();
