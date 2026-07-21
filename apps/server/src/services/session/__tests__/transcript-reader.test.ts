@@ -709,12 +709,24 @@ describe('TranscriptReader', () => {
         }),
       ].join('\n');
 
-      const file2Content = JSON.stringify({
-        type: 'system',
-        subtype: 'init',
-        permissionMode: 'bypassPermissions',
-        timestamp: '2024-01-01T10:00:00Z',
-      });
+      const file2Content = [
+        JSON.stringify({
+          type: 'system',
+          subtype: 'init',
+          permissionMode: 'bypassPermissions',
+          timestamp: '2024-01-01T10:00:00Z',
+        }),
+        // A real conversation record whose content is filtered from title
+        // extraction (a local-command echo) — this keeps the session out of
+        // the empty-transcript hidden filter (DOR-410) while still exercising
+        // the fallback-title path below.
+        JSON.stringify({
+          type: 'user',
+          uuid: 'u2',
+          message: { role: 'user', content: '<local-command-stdout></local-command-stdout>' },
+          timestamp: '2024-01-01T10:00:01Z',
+        }),
+      ].join('\n');
 
       // Each changed session now performs TWO opens — the 8 KB head read plus
       // the 16 KB tail read folded in for fleet context health (DOR-113) — so

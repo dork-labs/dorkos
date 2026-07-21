@@ -30,7 +30,7 @@ export type { HistoryMessage, HistoryToolCall };
  * Uses a metadata cache keyed by file mtime to avoid re-parsing unchanged files.
  */
 export class TranscriptReader {
-  private metaCache = new Map<string, { session: Session; mtimeMs: number }>();
+  private metaCache = new Map<string, { session: Session; mtimeMs: number; hidden: boolean }>();
 
   /**
    * Drop the cached metadata for a session so the next listSessions/getSession
@@ -99,6 +99,15 @@ export class TranscriptReader {
    * each session's true working directory comes from its JSONL head, not the
    * lossy slug.
    *
+   * Filters out two classes of noise before returning: whole-file sidechain
+   * (subagent) transcripts, and empty transcripts that carry no `user`/
+   * `assistant` record (queue-operation/mode/title bookkeeping only) — see
+   * {@link extractSessionMeta} for how `hidden` is decided. Hidden entries are
+   * still cached under their mtime so a later edit (e.g. gaining a real user
+   * message) is picked up on the next mtime change; only the returned array
+   * excludes them. {@link getSession} is unaffected — fetching a hidden
+   * session by id still returns it.
+   *
    * @param transcriptsDir - Absolute path of a `~/.claude/projects/{slug}` dir.
    */
   async listSessionsInDir(transcriptsDir: string): Promise<Session[]> {
@@ -119,12 +128,12 @@ export class TranscriptReader {
         const fileStat = await fs.stat(filePath);
         const cached = this.metaCache.get(sessionId);
         if (cached && cached.mtimeMs === fileStat.mtimeMs) {
-          sessions.push(cached.session);
+          if (!cached.hidden) sessions.push(cached.session);
           continue;
         }
-        const meta = await this.extractSessionMeta(filePath, sessionId, fileStat);
-        this.metaCache.set(sessionId, { session: meta, mtimeMs: fileStat.mtimeMs });
-        sessions.push(meta);
+        const { session, hidden } = await this.extractSessionMeta(filePath, sessionId, fileStat);
+        this.metaCache.set(sessionId, { session, mtimeMs: fileStat.mtimeMs, hidden });
+        if (!hidden) sessions.push(session);
       } catch {
         // Skip unreadable files
       }
@@ -139,12 +148,16 @@ export class TranscriptReader {
    * Get metadata for a single session. Both the head (title/timestamps) and the
    * tail (latest model/context/auto-compaction) are read inside
    * {@link extractSessionMeta} — the single tail-read path shared with the list.
+   *
+   * Unfiltered by design: unlike {@link listSessionsInDir}, a sidechain or
+   * empty transcript is still returned when fetched directly by id — those
+   * are list-noise, not invalid sessions.
    */
   async getSession(vaultRoot: string, sessionId: string): Promise<Session | null> {
     await validateBoundary(vaultRoot);
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     try {
-      const session = await this.extractSessionMeta(filePath, sessionId);
+      const { session } = await this.extractSessionMeta(filePath, sessionId);
       // Attribute a head-record-less transcript to the directory it was
       // fetched from — same rule as listSessions (ADR 260707-193314).
       if (session.cwd === undefined) session.cwd = vaultRoot;
@@ -249,12 +262,21 @@ export class TranscriptReader {
    * best-effort `contextTokens` reading, and any auto-compaction marker — the
    * enriched result is what {@link listSessionsInDir} caches under the file
    * mtime, so an unchanged transcript pays for neither read again.
+   *
+   * Also decides `hidden`, the list-noise verdict {@link listSessionsInDir}
+   * filters on: true when the transcript is a whole-file sidechain (subagent)
+   * recording, or when it is provably empty of real conversation — the entire
+   * file fit inside the head read and none of its lines were a `user`/
+   * `assistant` record. The size check is what makes emptiness provable: a
+   * transcript whose first user message sits beyond the head buffer is never
+   * hidden, protecting the oversized-head sessions attributed by ADR
+   * 260707-193314.
    */
   private async extractSessionMeta(
     filePath: string,
     sessionId: string,
     fileStat?: Awaited<ReturnType<typeof fs.stat>>
-  ): Promise<Session> {
+  ): Promise<{ session: Session; hidden: boolean }> {
     const stat = fileStat ?? (await fs.stat(filePath));
 
     // Read only the head of the file (8KB) — metadata is always in the first few lines
@@ -276,6 +298,10 @@ export class TranscriptReader {
     let firstTimestamp = '';
     let model: string | undefined;
     let cwd: string | undefined;
+    // List-noise detection (see the hidden-verdict TSDoc above).
+    let sawConversation = false;
+    let sawFirstConversationLine = false;
+    let sidechain = false;
 
     for (const line of lines) {
       let parsed: TranscriptLine;
@@ -283,6 +309,14 @@ export class TranscriptReader {
         parsed = JSON.parse(line);
       } catch {
         continue;
+      }
+
+      if (parsed.type === 'user' || parsed.type === 'assistant') {
+        sawConversation = true;
+        if (!sawFirstConversationLine) {
+          sidechain = parsed.isSidechain === true;
+          sawFirstConversationLine = true;
+        }
       }
 
       // Extract permission mode from init message or user messages
@@ -390,7 +424,14 @@ export class TranscriptReader {
     if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
     if (tailStatus.lastAutoCompactAt) session.lastAutoCompactAt = tailStatus.lastAutoCompactAt;
 
-    return session;
+    // Provably empty means the whole file fit in the head read and still had
+    // no conversation — a larger transcript's user message could simply live
+    // past the head buffer, so size is what turns "none found" into "none
+    // exist" (see the TSDoc above; ADR 260707-193314).
+    const provablyEmpty = Number(stat.size) <= TRANSCRIPT.HEAD_BUFFER_BYTES && !sawConversation;
+    const hidden = sidechain || provablyEmpty;
+
+    return { session, hidden };
   }
 
   /**
