@@ -74,7 +74,6 @@ const THREE_SIBLINGS: SystemRequirements = {
       ],
     },
   },
-  allSatisfied: false,
 };
 
 const REGISTERED = ['claude-code', 'codex', 'opencode'];
@@ -209,7 +208,6 @@ const OPENCODE_CONNECT: SystemRequirements = {
       ],
     },
   },
-  allSatisfied: false,
 };
 
 const OPENCODE_READY: SystemRequirements = {
@@ -226,7 +224,6 @@ const OPENCODE_READY: SystemRequirements = {
       ],
     },
   },
-  allSatisfied: true,
 };
 
 // A login-kind connect (Codex/Claude), distinct from OpenCode's one-click
@@ -248,7 +245,6 @@ const CODEX_CONNECT: SystemRequirements = {
       ],
     },
   },
-  allSatisfied: false,
 };
 
 const CODEX_READY: SystemRequirements = {
@@ -270,7 +266,6 @@ const CODEX_READY: SystemRequirements = {
       ],
     },
   },
-  allSatisfied: true,
 };
 
 function renderDialog(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
@@ -308,17 +303,19 @@ describe('RuntimeSetupDialog — OpenCode provisioning', () => {
         call += 1;
         return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
       }),
-      provisionOpenCode: vi.fn((onProgress?: (p: RuntimeProvisionProgress) => void) => {
-        onProgress?.({ stage: 'installing', message: 'Downloading OpenCode…' });
-        return install.promise;
-      }),
+      provisionRuntime: vi.fn(
+        (_type: string, onProgress?: (p: RuntimeProvisionProgress) => void) => {
+          onProgress?.({ stage: 'installing', message: 'Downloading OpenCode…' });
+          return install.promise;
+        }
+      ),
     });
 
     const connectButton = await screen.findByRole('button', { name: 'Install OpenCode' });
     await user.click(connectButton);
 
     // Progress row appears while the install is in flight.
-    expect(transport.provisionOpenCode).toHaveBeenCalledTimes(1);
+    expect(transport.provisionRuntime).toHaveBeenCalledTimes(1);
     expect(await screen.findByTestId('provision-progress')).toHaveTextContent(
       'Downloading OpenCode…'
     );
@@ -341,9 +338,7 @@ describe('RuntimeSetupDialog — OpenCode provisioning', () => {
     const user = userEvent.setup();
     const transport = renderDialog({
       checkRequirements: vi.fn().mockResolvedValue(OPENCODE_CONNECT),
-      provisionOpenCode: vi
-        .fn()
-        .mockRejectedValue(new Error('Install failed: network unreachable')),
+      provisionRuntime: vi.fn().mockRejectedValue(new Error('Install failed: network unreachable')),
     });
 
     const connectButton = await screen.findByRole('button', { name: 'Install OpenCode' });

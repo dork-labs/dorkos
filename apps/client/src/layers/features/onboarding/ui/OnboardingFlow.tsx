@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useIsMobile } from '@/layers/shared/model';
 import { OnboardingNavBar } from './OnboardingNavBar';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
+import type { RuntimeConnectSlot } from '@/layers/entities/runtime';
 import { useOnboarding } from '../model/use-onboarding';
 import { SystemRequirementsStep } from './SystemRequirementsStep';
 import { WelcomeStep } from './WelcomeStep';
@@ -26,6 +27,13 @@ const REQUIREMENTS_STEP = -1;
 interface OnboardingFlowProps {
   onComplete: () => void;
   initialStep?: number;
+  /**
+   * Terminal-free connect-flow renderer, injected by the app shell and threaded
+   * into the requirements step's connect cards. The onboarding feature may not
+   * import the runtime-connect feature (sibling features), so the app root
+   * (which may import any layer) supplies it as a slot.
+   */
+  renderRuntimeConnect?: RuntimeConnectSlot;
 }
 
 /**
@@ -37,7 +45,11 @@ interface OnboardingFlowProps {
  * @param onComplete - Called when onboarding finishes (last step or skip all)
  * @param initialStep - Step index to start at (default: -2 for welcome)
  */
-export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: OnboardingFlowProps) {
+export function OnboardingFlow({
+  onComplete,
+  initialStep = WELCOME_STEP,
+  renderRuntimeConnect,
+}: OnboardingFlowProps) {
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [direction, setDirection] = useState(1);
   const [showComplete, setShowComplete] = useState(false);
@@ -136,8 +148,10 @@ export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: Onboa
   // Show the completion screen
   if (showComplete) {
     return (
-      <div className="bg-background flex h-full w-full items-center justify-center">
-        <OnboardingComplete onComplete={navigateToDefaultAgent} />
+      <div className="bg-background h-full w-full overflow-y-auto">
+        <div className="flex min-h-full w-full items-center justify-center p-4">
+          <OnboardingComplete onComplete={navigateToDefaultAgent} />
+        </div>
       </div>
     );
   }
@@ -145,8 +159,10 @@ export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: Onboa
   // Telemetry consent — shown once, just before the completion screen
   if (showConsent) {
     return (
-      <div className="bg-background flex h-full w-full items-center justify-center px-4">
-        <OnboardingConsentStep onComplete={finishOnboarding} />
+      <div className="bg-background h-full w-full overflow-y-auto">
+        <div className="flex min-h-full w-full items-center justify-center p-4">
+          <OnboardingConsentStep onComplete={finishOnboarding} />
+        </div>
       </div>
     );
   }
@@ -154,17 +170,26 @@ export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: Onboa
   // Welcome screen (step -2) — greet the user first
   if (currentStep === WELCOME_STEP) {
     return (
-      <div className="bg-background flex h-full w-full items-center justify-center">
-        <WelcomeStep onGetStarted={handleWelcomeStart} onSkip={handleSkipAll} />
+      <div className="bg-background h-full w-full overflow-y-auto">
+        <div className="flex min-h-full w-full items-center justify-center p-4">
+          <WelcomeStep onGetStarted={handleWelcomeStart} onSkip={handleSkipAll} />
+        </div>
       </div>
     );
   }
 
-  // System requirements check (step -1) — after welcome, before numbered steps
+  // System requirements check (step -1) — after welcome, before numbered steps.
+  // The wrapper scrolls (min-h-full + overflow-y-auto) so the connect cards and
+  // "more agents" disclosure never clip on short viewports or mobile.
   if (currentStep === REQUIREMENTS_STEP) {
     return (
-      <div className="bg-background flex h-full w-full items-center justify-center">
-        <SystemRequirementsStep onContinue={handleRequirementsContinue} />
+      <div className="bg-background h-full w-full overflow-y-auto">
+        <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
+          <SystemRequirementsStep
+            onContinue={handleRequirementsContinue}
+            renderConnect={renderRuntimeConnect}
+          />
+        </div>
       </div>
     );
   }

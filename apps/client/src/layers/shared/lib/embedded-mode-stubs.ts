@@ -449,14 +449,15 @@ export const serverOnlyStubs = {
     throw new Error('Discovery scan is not supported in Obsidian plugin mode.');
   },
 
-  async provisionOpenCode(
+  async provisionRuntime(
+    _runtimeType: string,
     _onProgress?: (progress: RuntimeProvisionProgress) => void
   ): Promise<RuntimeProvisionResult> {
     // On-demand install spawns a package manager — a desktop-server concern, not
     // available in the in-process Obsidian embedding. Honest Connect/error state.
     return {
       ok: false,
-      error: 'Installing OpenCode is not supported in Obsidian plugin mode.',
+      error: 'Installing a runtime is not supported in Obsidian plugin mode.',
     };
   },
 

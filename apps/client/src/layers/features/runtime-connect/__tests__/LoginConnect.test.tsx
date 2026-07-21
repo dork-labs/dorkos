@@ -73,7 +73,6 @@ function connectThenReady(type: string, connectLabel: string) {
         ],
       },
     },
-    allSatisfied: false,
   };
   const ready: SystemRequirements = {
     runtimes: {
@@ -82,7 +81,6 @@ function connectThenReady(type: string, connectLabel: string) {
         dependencies: [{ name: `${type} CLI`, description: 'binary', status: 'satisfied' }],
       },
     },
-    allSatisfied: true,
   };
   return { connect, ready };
 }

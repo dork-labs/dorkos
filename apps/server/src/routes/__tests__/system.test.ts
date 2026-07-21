@@ -72,7 +72,6 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
     expect(res.status).toBe(200);
     expect(res.body.runtimes.codex.state).toBe('ready');
     expect(res.body.runtimes.codex.connect).toBeUndefined();
-    expect(res.body.allSatisfied).toBe(true);
   });
 
   it('projects state:connect with kind:install when the binary is missing', async () => {
@@ -138,7 +137,6 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
     expect(res.body.runtimes.codex.dependencies).toHaveLength(2);
     expect(res.body.runtimes.codex.dependencies[0].name).toBe('Codex CLI');
     expect(res.body.runtimes.opencode.dependencies).toHaveLength(2);
-    expect(res.body.allSatisfied).toBe(false);
   });
 
   it('does not block on a slow probe — the handler still responds', async () => {

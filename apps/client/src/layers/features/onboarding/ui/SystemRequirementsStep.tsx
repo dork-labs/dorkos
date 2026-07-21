@@ -1,387 +1,365 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence, useReducedMotion, LayoutGroup } from 'motion/react';
-import { Check, X, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { ChevronDown, RefreshCw } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
-import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
-import { DependencyInstallHint } from '@/layers/entities/runtime';
-import { useTransport } from '@/layers/shared/model';
-import { cn, fireCelebration } from '@/layers/shared/lib';
-import { Button, HoverBorderGradient } from '@/layers/shared/ui';
+import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
+import {
+  useRuntimeRequirements,
+  useRuntimeCapabilities,
+  selectRuntimeReadiness,
+  getRuntimeDescriptor,
+  RuntimeSetupPanel,
+  type RuntimeConnectSlot,
+} from '@/layers/entities/runtime';
+import { cn } from '@/layers/shared/lib';
+import {
+  Button,
+  HoverBorderGradient,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/layers/shared/ui';
 
 /**
- * Phase 1: "checking" — logo pulses, animated dots, heading says "Checking..."
- * Phase 2: "revealing" — rows appear one by one, each shimmer then resolve
- * Phase 3: "done" — heading transitions, CTA appears, confetti if all pass
+ * Two phases: `checking` keeps the original scan animation; `done` reveals the
+ * outcome. There are no failure rows — a not-ready runtime is an opportunity to
+ * connect, never an error. See ADR-0316/0318 (Ready/Connect model).
  */
-type CheckPhase = 'checking' | 'revealing' | 'done';
+type CheckPhase = 'checking' | 'done';
+
+/** How long the scan animation holds before revealing the result, for pacing. */
+const CHECKING_MIN_MS = 2200;
+
+const HEADING_CHECKING = ['Checking', 'your', 'setup'];
+const HEADING_READY = ["You're", 'ready'];
+const HEADING_CONNECT = ['Connect', 'your', 'first', 'agent'];
+const HEADING_ERROR = ['One', 'moment'];
 
 interface SystemRequirementsStepProps {
-  /** Called when the user proceeds (all requirements satisfied). */
+  /** Advance out of the requirements step (at least one runtime is ready). */
   onContinue: () => void;
-  /** Pre-baked result to bypass the transport call — used by the dev playground. */
+  /**
+   * Feature-supplied connect-flow renderer, injected from the app shell (the
+   * onboarding feature may not import the runtime-connect feature). Wires the
+   * terminal-free flows — sign in with ChatGPT, paste key, provider picker —
+   * into each connect card. Omit and cards fall back to their setup details.
+   */
+  renderConnect?: RuntimeConnectSlot;
+  /**
+   * Pre-baked requirements that bypass the live query — dev playground only, so
+   * every state renders deterministically without a transport.
+   */
   simulatedResult?: SystemRequirements;
 }
 
-const HEADING_WORDS_CHECKING = ['Checking', 'system', 'requirements'];
-const HEADING_WORDS_SUCCESS = ['Ready', 'to', 'go'];
-const HEADING_WORDS_MISSING = ['Almost', 'there'];
-
-/** Delay between each row reveal during the revealing phase. */
-const REVEAL_INTERVAL_MS = 600;
-/** How long each row "scans" before showing its result. */
-const ROW_SCAN_DURATION_MS = 800;
-
 /**
- * System requirements check — shown after the welcome screen.
+ * First-run setup check — shown after the welcome screen.
  *
- * Creates a three-phase experience: scanning animation, progressive row-by-row
- * reveal with individual scan-to-result transitions, then a celebration or
- * install guidance depending on the results.
+ * Leads with readiness, not requirements: the moment one coding agent is ready,
+ * the user can start. It runs the work for them (one-click installs, in-app
+ * sign-in) instead of handing out terminal commands, and never blocks on
+ * getting every runtime connected. Three outcomes after the scan:
+ *
+ * - **Ready** — at least one runtime is connected: a success moment with a
+ *   single "Get started" CTA, and a quiet disclosure to add the others.
+ * - **Connect** — nothing is ready yet: connect cards (Claude first) that do the
+ *   setup, flipping to the Ready state the instant one succeeds.
+ * - **Error** — the check could not reach the server: an honest, retryable note.
  */
 export function SystemRequirementsStep({
   onContinue,
+  renderConnect,
   simulatedResult,
 }: SystemRequirementsStepProps) {
-  const transport = useTransport();
   const reducedMotion = useReducedMotion();
-  const [phase, setPhase] = useState<CheckPhase>('checking');
-  const [requirements, setRequirements] = useState<SystemRequirements | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [runCount, setRunCount] = useState(0);
+  const query = useRuntimeRequirements();
+  const { data: capabilityMap } = useRuntimeCapabilities();
 
-  // Progressive reveal: how many rows are visible, and which have resolved
-  const [revealedCount, setRevealedCount] = useState(0);
-  const [resolvedSet, setResolvedSet] = useState<Set<number>>(new Set());
-  const confettiFired = useRef(false);
+  const requirements = simulatedResult ?? query.data;
+  const settled = simulatedResult !== undefined || query.isSuccess || query.isError;
+  const errored = simulatedResult === undefined && query.isError;
 
-  const recheck = useCallback(() => {
-    setPhase('checking');
-    setRequirements(null);
-    setError(null);
-    setRevealedCount(0);
-    setResolvedSet(new Set());
-    confettiFired.current = false;
-    setRunCount((n) => n + 1);
-  }, []);
-
-  // Phase 1: Fetch requirements (or use simulated result for playground)
+  // Hold the scan animation for a beat even when the probe returns instantly.
+  const [minElapsed, setMinElapsed] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      const startedAt = Date.now();
-
-      let result: SystemRequirements | null = null;
-      let fetchError: string | null = null;
-
-      if (simulatedResult) {
-        result = simulatedResult;
-      } else {
-        try {
-          result = await transport.checkRequirements();
-        } catch (err) {
-          fetchError = err instanceof Error ? err.message : 'Failed to check requirements';
-        }
-      }
-
-      // Minimum 3s in checking phase
-      const elapsed = Date.now() - startedAt;
-      const MIN_DURATION_MS = 3000;
-      if (elapsed < MIN_DURATION_MS) {
-        await new Promise((r) => setTimeout(r, MIN_DURATION_MS - elapsed));
-      }
-
-      if (cancelled) return;
-      if (fetchError) {
-        setError(fetchError);
-        setPhase('done');
-      } else {
-        setRequirements(result);
-        setPhase('revealing');
-      }
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [transport, simulatedResult, runCount]);
-
-  const allDeps = requirements
-    ? Object.values(requirements.runtimes).flatMap((r) => r.dependencies)
-    : [];
-  const allSatisfied = requirements?.allSatisfied ?? false;
-  const missingDeps = allDeps.filter((d) => d.status !== 'satisfied');
-
-  // Phase 2: Progressive row reveal
-  useEffect(() => {
-    if (phase !== 'revealing' || allDeps.length === 0) return;
-
-    if (revealedCount < allDeps.length) {
-      const timer = setTimeout(
-        () => setRevealedCount((n) => n + 1),
-        revealedCount === 0 ? 200 : REVEAL_INTERVAL_MS
-      );
-      return () => clearTimeout(timer);
-    }
-  }, [phase, revealedCount, allDeps.length]);
-
-  // Each row resolves from scanning → result after a delay
-  useEffect(() => {
-    if (phase !== 'revealing') return;
-
-    for (let i = 0; i < revealedCount; i++) {
-      if (resolvedSet.has(i)) continue;
-      const timer = setTimeout(() => {
-        setResolvedSet((prev) => new Set(prev).add(i));
-      }, ROW_SCAN_DURATION_MS);
-      return () => clearTimeout(timer);
-    }
-  }, [phase, revealedCount, resolvedSet]);
-
-  // Phase 3: All rows resolved → transition to done
-  useEffect(() => {
-    if (phase !== 'revealing') return;
-    if (allDeps.length === 0) return;
-    if (resolvedSet.size < allDeps.length) return;
-
-    const timer = setTimeout(() => {
-      setPhase('done');
-      if (allSatisfied && !confettiFired.current) {
-        confettiFired.current = true;
-        void fireCelebration();
-      }
-    }, 400);
+    const timer = setTimeout(() => setMinElapsed(true), reducedMotion ? 0 : CHECKING_MIN_MS);
     return () => clearTimeout(timer);
-  }, [phase, resolvedSet.size, allDeps.length, allSatisfied]);
+  }, [reducedMotion]);
+
+  const phase: CheckPhase = minElapsed && settled ? 'done' : 'checking';
+
+  const registeredTypes = capabilityMap ? Object.keys(capabilityMap.capabilities) : undefined;
+
+  const { readyTypes, notReadyTypes } = useMemo(() => {
+    if (!requirements) return { readyTypes: [] as string[], notReadyTypes: [] as string[] };
+    const ready: string[] = [];
+    const notReady: string[] = [];
+    for (const type of Object.keys(requirements.runtimes)) {
+      if (selectRuntimeReadiness(requirements, type, true).state === 'ready') ready.push(type);
+      else notReady.push(type);
+    }
+    return { readyTypes: ready, notReadyTypes: notReady };
+  }, [requirements]);
+
+  const hasReady = readyTypes.length > 0;
+
+  // Enter proceeds the moment the user is ready — the CTA is the obvious default.
+  useEffect(() => {
+    if (phase !== 'done' || errored || !hasReady) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      // Enter inside the disclosure's connect forms (e.g. pasting an API key)
+      // must submit the form, not eject the user out of the step.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable], form')) return;
+      onContinue();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [phase, errored, hasReady, onContinue]);
 
   const headingWords =
-    phase === 'done'
-      ? allSatisfied
-        ? HEADING_WORDS_SUCCESS
-        : HEADING_WORDS_MISSING
-      : HEADING_WORDS_CHECKING;
+    phase === 'checking'
+      ? HEADING_CHECKING
+      : errored
+        ? HEADING_ERROR
+        : hasReady
+          ? HEADING_READY
+          : HEADING_CONNECT;
 
-  const isActive = phase === 'checking' || phase === 'revealing';
+  const subtitle =
+    phase === 'checking'
+      ? 'Looking for coding agents on your machine.'
+      : errored
+        ? "We couldn't check your setup just now."
+        : hasReady
+          ? connectedSentence(readyTypes)
+          : 'DorkOS drives coding agents. Set one up to get started. It takes about a minute.';
+
+  const isActive = phase === 'checking';
 
   return (
-    <LayoutGroup>
+    <motion.div className="mx-auto flex w-full max-w-md flex-col items-center text-center">
+      {/* Logo — pulses while scanning, settles when done. */}
       <motion.div
-        layout={!reducedMotion}
-        className="mx-auto flex w-full max-w-md flex-col items-center px-4 text-center"
-        transition={{ layout: { duration: 0.4, ease: [0.25, 0.1, 0.25, 1] } }}
+        className="mb-8"
+        initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
+        animate={{ opacity: isActive ? 0.6 : 0.9, scale: 1 }}
+        transition={{ duration: 0.5 }}
       >
-        {/* Logo — pulses while active, settles when done */}
         <motion.div
-          layout={!reducedMotion}
-          className="mb-8"
-          initial={reducedMotion ? false : { opacity: 0, scale: 0.8 }}
-          animate={{ opacity: isActive ? 0.6 : 0.9, scale: 1 }}
-          transition={{ duration: 0.5 }}
+          animate={
+            isActive && !reducedMotion
+              ? { scale: [1, 1.04, 1], opacity: [0.6, 0.8, 0.6] }
+              : { scale: 1, opacity: 1 }
+          }
+          transition={isActive ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : {}}
         >
-          <motion.div
-            animate={
-              isActive && !reducedMotion
-                ? { scale: [1, 1.04, 1], opacity: [0.6, 0.8, 0.6] }
-                : { scale: 1, opacity: 1 }
-            }
-            transition={isActive ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : {}}
-          >
-            <DorkLogo size={120} className="dark:hidden" />
-            <DorkLogo variant="white" size={120} className="hidden dark:block" />
-          </motion.div>
+          <DorkLogo size={104} className="dark:hidden" />
+          <DorkLogo variant="white" size={104} className="hidden dark:block" />
         </motion.div>
-
-        {/* Heading — opacity-only crossfade to avoid vertical shift */}
-        <motion.div layout={!reducedMotion}>
-          <AnimatePresence mode="wait">
-            <motion.h1
-              key={headingWords.join('-')}
-              className="text-2xl font-semibold tracking-tight sm:text-3xl"
-            >
-              {reducedMotion ? (
-                headingWords.join(' ')
-              ) : (
-                <motion.span
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  variants={{
-                    visible: { transition: { staggerChildren: 0.08 } },
-                    exit: { transition: { staggerChildren: 0.02, staggerDirection: -1 } },
-                  }}
-                >
-                  {headingWords.map((word, i) => (
-                    <motion.span
-                      key={i}
-                      className="inline-block"
-                      variants={{
-                        hidden: { opacity: 0, filter: 'blur(4px)' },
-                        visible: { opacity: 1, filter: 'blur(0px)' },
-                        exit: { opacity: 0, filter: 'blur(4px)' },
-                      }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      {word}
-                      {i < headingWords.length - 1 ? '\u00A0' : ''}
-                    </motion.span>
-                  ))}
-                </motion.span>
-              )}
-            </motion.h1>
-          </AnimatePresence>
-        </motion.div>
-
-        {/* Subtitle — opacity crossfade, no movement */}
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={phase + String(allSatisfied)}
-            className="text-muted-foreground mt-3 text-sm"
-            initial={reducedMotion ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-          >
-            {phase === 'checking'
-              ? 'Making sure everything is in place.'
-              : phase === 'revealing'
-                ? 'Verifying dependencies...'
-                : allSatisfied
-                  ? 'Everything checked out perfectly.'
-                  : 'Some dependencies need to be installed.'}
-          </motion.p>
-        </AnimatePresence>
-
-        {/* Results area — layout-animated so height changes are smooth */}
-        <motion.div layout={!reducedMotion} className="mt-8 w-full">
-          {/* Phase 1: Scanning dots */}
-          <AnimatePresence>
-            {phase === 'checking' && <ScanningIndicator key="scanning" />}
-          </AnimatePresence>
-
-          {/* Error state */}
-          <AnimatePresence>
-            {phase === 'done' && error && (
-              <motion.div
-                key="error"
-                className="border-border bg-card rounded-xl border p-4 text-left"
-                initial={reducedMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <div className="flex items-center gap-2">
-                  <X className="text-destructive size-4 shrink-0" />
-                  <span className="text-sm font-medium">Could not reach the server</span>
-                </div>
-                <p className="text-muted-foreground mt-1.5 text-xs">{error}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Phase 2+3: Progressive row reveal */}
-          {(phase === 'revealing' || phase === 'done') && !error && (
-            <div className="space-y-3">
-              {allDeps.map((dep, i) => {
-                if (i >= revealedCount) return null;
-                const isResolved = resolvedSet.has(i);
-                return <DependencyRow key={dep.name} dep={dep} isResolved={isResolved} index={i} />;
-              })}
-            </div>
-          )}
-
-          {/* Install guidance — appears after done */}
-          <AnimatePresence>
-            {phase === 'done' && missingDeps.length > 0 && (
-              <motion.div
-                className="border-border bg-card mt-3 space-y-3 rounded-xl border p-4 text-left"
-                initial={reducedMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ delay: 0.15, duration: 0.3 }}
-              >
-                <p className="text-sm font-medium">
-                  {missingDeps.length === 1
-                    ? 'One dependency is missing'
-                    : `${missingDeps.length} dependencies are missing`}
-                </p>
-                {missingDeps.map((dep) => (
-                  <DependencyInstallHint
-                    key={dep.name}
-                    command={dep.installHint}
-                    infoUrl={dep.infoUrl}
-                    copyLabel={`Copy install command for ${dep.name}`}
-                  />
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* CTA — layout-animated to smoothly enter the flow */}
-        <AnimatePresence mode="wait">
-          {phase === 'done' && !error && (
-            <motion.div
-              key={allSatisfied ? 'continue' : 'recheck'}
-              layout={!reducedMotion}
-              className="mt-10 flex flex-col items-center gap-3"
-              initial={reducedMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ delay: 0.3, duration: 0.35 }}
-            >
-              {allSatisfied ? (
-                <HoverBorderGradient className="px-6 py-2" duration={1.2} onClick={onContinue}>
-                  Continue
-                </HoverBorderGradient>
-              ) : (
-                <>
-                  <Button onClick={recheck} variant="outline" className="gap-2">
-                    <RefreshCw className="size-3.5" />
-                    Check again
-                  </Button>
-                  <p className="text-muted-foreground text-xs">
-                    Install the missing dependencies, then check again.
-                  </p>
-                </>
-              )}
-            </motion.div>
-          )}
-
-          {phase === 'done' && error && (
-            <motion.div
-              key="error-recheck"
-              layout={!reducedMotion}
-              className="mt-10 flex flex-col items-center gap-3"
-              initial={reducedMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.35 }}
-            >
-              <Button onClick={recheck} variant="outline" className="gap-2">
-                <RefreshCw className="size-3.5" />
-                Try again
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </motion.div>
-    </LayoutGroup>
+
+      <AnimatedHeading words={headingWords} reducedMotion={!!reducedMotion} />
+
+      <AnimatePresence mode="wait">
+        <motion.p
+          key={subtitle}
+          className="text-muted-foreground mt-3 text-sm text-balance"
+          initial={reducedMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+        >
+          {subtitle}
+        </motion.p>
+      </AnimatePresence>
+
+      {/* Scan animation */}
+      <AnimatePresence>{isActive && <ScanningIndicator key="scanning" />}</AnimatePresence>
+
+      {/* Outcome */}
+      {phase === 'done' && (
+        <div className="mt-8 w-full">
+          {errored ? (
+            <ErrorPanel onRetry={() => void query.refetch()} isRetrying={query.isFetching} />
+          ) : hasReady ? (
+            <ReadyView
+              onContinue={onContinue}
+              notReadyTypes={notReadyTypes}
+              requirements={requirements}
+              registeredTypes={registeredTypes}
+              renderConnect={renderConnect}
+              onRecheck={() => void query.refetch()}
+              isRechecking={query.isFetching}
+              reducedMotion={!!reducedMotion}
+            />
+          ) : (
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="text-left"
+            >
+              <RuntimeSetupPanel
+                requirements={requirements}
+                registeredTypes={registeredTypes}
+                renderConnect={renderConnect}
+                onRecheck={() => void query.refetch()}
+                isRechecking={query.isFetching}
+              />
+            </motion.div>
+          )}
+        </div>
+      )}
+    </motion.div>
   );
 }
 
-// ── Internal components ──────────────────────────────────────
+// ── Ready state ──────────────────────────────────────────────
+
+/**
+ * The success moment: one primary CTA, plus a quiet disclosure to connect any
+ * remaining runtimes without leaving onboarding.
+ */
+function ReadyView({
+  onContinue,
+  notReadyTypes,
+  requirements,
+  registeredTypes,
+  renderConnect,
+  onRecheck,
+  isRechecking,
+  reducedMotion,
+}: {
+  onContinue: () => void;
+  notReadyTypes: string[];
+  requirements?: SystemRequirements;
+  registeredTypes?: string[];
+  renderConnect?: RuntimeConnectSlot;
+  onRecheck: () => void;
+  isRechecking: boolean;
+  reducedMotion: boolean;
+}) {
+  const [showMore, setShowMore] = useState(false);
+  const moreCount = notReadyTypes.length;
+
+  return (
+    <motion.div
+      className="flex flex-col items-center"
+      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+    >
+      <HoverBorderGradient
+        className="px-6 py-2"
+        duration={1.2}
+        onClick={onContinue}
+        autoFocus
+        data-testid="onboarding-get-started"
+      >
+        Get started
+      </HoverBorderGradient>
+
+      {moreCount > 0 && (
+        <Collapsible open={showMore} onOpenChange={setShowMore} className="mt-8 w-full">
+          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground mx-auto inline-flex items-center gap-1.5 text-xs transition-colors">
+            <ChevronDown
+              className={cn('size-3.5 transition-transform', showMore && 'rotate-180')}
+            />
+            {moreCount === 1 ? '1 more agent available' : `${moreCount} more agents available`}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-4 space-y-3 text-left">
+            <RuntimeSetupPanel
+              types={notReadyTypes}
+              requirements={requirements}
+              registeredTypes={registeredTypes}
+              renderConnect={renderConnect}
+              onRecheck={onRecheck}
+              isRechecking={isRechecking}
+            />
+            <p className="text-muted-foreground text-center text-xs">
+              You can add these anytime from the status bar.
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </motion.div>
+  );
+}
+
+// ── Error state ──────────────────────────────────────────────
+
+/** Honest, retryable note when the requirements check cannot reach the server. */
+function ErrorPanel({ onRetry, isRetrying }: { onRetry: () => void; isRetrying: boolean }) {
+  return (
+    <div className="flex flex-col items-center gap-3" role="alert">
+      <p className="text-muted-foreground text-sm text-balance">
+        The check couldn't reach the server. Make sure DorkOS is running, then try again.
+      </p>
+      <Button variant="outline" className="gap-2" onClick={onRetry} disabled={isRetrying}>
+        <RefreshCw className={cn('size-3.5', isRetrying && 'animate-spin')} />
+        Try again
+      </Button>
+    </div>
+  );
+}
+
+// ── Shared animation vocabulary ──────────────────────────────
+
+/** Word-by-word blur reveal, keyed so a changed heading re-reveals in place. */
+function AnimatedHeading({ words, reducedMotion }: { words: string[]; reducedMotion: boolean }) {
+  return (
+    <AnimatePresence mode="wait">
+      <motion.h1
+        key={words.join('-')}
+        className="text-2xl font-semibold tracking-tight sm:text-3xl"
+      >
+        {reducedMotion ? (
+          words.join(' ')
+        ) : (
+          <motion.span
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={{
+              visible: { transition: { staggerChildren: 0.08 } },
+              exit: { transition: { staggerChildren: 0.02, staggerDirection: -1 } },
+            }}
+          >
+            {words.map((word, i) => (
+              <motion.span
+                key={i}
+                className="inline-block"
+                variants={{
+                  hidden: { opacity: 0, filter: 'blur(4px)' },
+                  visible: { opacity: 1, filter: 'blur(0px)' },
+                  exit: { opacity: 0, filter: 'blur(4px)' },
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                {word}
+                {i < words.length - 1 ? ' ' : ''}
+              </motion.span>
+            ))}
+          </motion.span>
+        )}
+      </motion.h1>
+    </AnimatePresence>
+  );
+}
 
 /** Animated scanning indicator with sequentially pulsing dots. */
 function ScanningIndicator() {
   const reducedMotion = useReducedMotion();
-
   return (
     <motion.div
-      className="flex flex-col items-center gap-4 py-6"
+      className="mt-8 flex flex-col items-center gap-4 py-2"
       initial={reducedMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.25 }}
+      data-testid="requirements-checking"
     >
       <div className="flex items-center gap-1.5">
         {[0, 1, 2].map((i) => (
@@ -389,118 +367,24 @@ function ScanningIndicator() {
             key={i}
             className="bg-muted-foreground/40 size-2 rounded-full"
             animate={reducedMotion ? {} : { scale: [1, 1.5, 1], opacity: [0.3, 1, 0.3] }}
-            transition={{
-              duration: 1.2,
-              repeat: Infinity,
-              delay: i * 0.2,
-              ease: 'easeInOut',
-            }}
+            transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2, ease: 'easeInOut' }}
           />
         ))}
       </div>
-      <span className="text-muted-foreground text-sm">Scanning...</span>
+      <span className="text-muted-foreground text-sm">Scanning…</span>
     </motion.div>
   );
 }
 
 /**
- * A single dependency row with a two-phase animation:
- * 1. Appears with a scanning shimmer placeholder
- * 2. Resolves to show the actual pass/fail result
+ * Human-readable sentence naming the connected runtime(s), e.g.
+ * "Claude Code is connected." or "Claude Code and Codex are connected."
  */
-function DependencyRow({
-  dep,
-  isResolved,
-  index,
-}: {
-  dep: DependencyCheck;
-  isResolved: boolean;
-  index: number;
-}) {
-  const isSatisfied = dep.status === 'satisfied';
-  const reducedMotion = useReducedMotion();
-
-  return (
-    <motion.div
-      className={cn(
-        'flex items-center gap-3 rounded-xl border px-4 py-3.5 transition-colors duration-500',
-        isResolved && isSatisfied && 'border-emerald-500/20 bg-emerald-500/5',
-        isResolved && !isSatisfied && 'border-destructive/20 bg-destructive/5',
-        !isResolved && 'border-border bg-card'
-      )}
-      initial={reducedMotion ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{
-        type: 'spring',
-        damping: 24,
-        stiffness: 200,
-        delay: index * 0.05,
-      }}
-    >
-      {/* Icon: scanning dot → resolved icon */}
-      <AnimatePresence mode="wait">
-        {!isResolved ? (
-          <motion.div
-            key="scanning"
-            className="bg-muted flex size-7 items-center justify-center rounded-full"
-            exit={reducedMotion ? {} : { scale: 0, opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            <motion.div
-              className="bg-muted-foreground/30 size-3 rounded-full"
-              animate={reducedMotion ? {} : { opacity: [0.3, 0.8, 0.3] }}
-              transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          </motion.div>
-        ) : isSatisfied ? (
-          <motion.div
-            key="pass"
-            className="flex size-7 items-center justify-center rounded-full bg-emerald-500/15"
-            initial={reducedMotion ? false : { scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', damping: 10, stiffness: 400 }}
-          >
-            <Check className="size-4 text-emerald-500" />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="fail"
-            className="bg-destructive/10 flex size-7 items-center justify-center rounded-full"
-            initial={reducedMotion ? false : { scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', damping: 14, stiffness: 300 }}
-          >
-            <X className="text-destructive size-4" />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Text: name always visible, subtitle crossfades */}
-      <div className="min-w-0 flex-1 text-left">
-        <p className="text-sm font-medium">{dep.name}</p>
-        <AnimatePresence mode="wait">
-          {isResolved ? (
-            <motion.p
-              key="resolved"
-              className="text-muted-foreground truncate text-xs"
-              initial={reducedMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              {isSatisfied && dep.version ? `v${dep.version}` : dep.description}
-            </motion.p>
-          ) : (
-            <motion.p
-              key="scanning"
-              className="text-muted-foreground/50 text-xs"
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.1 }}
-            >
-              Checking...
-            </motion.p>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
-  );
+function connectedSentence(types: string[]): string {
+  const names = types.map((t) => getRuntimeDescriptor(t).label);
+  if (names.length === 0) return 'An agent is connected.';
+  if (names.length === 1) return `${names[0]} is connected.`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are connected.`;
+  const last = names[names.length - 1];
+  return `${names.slice(0, -1).join(', ')}, and ${last} are connected.`;
 }

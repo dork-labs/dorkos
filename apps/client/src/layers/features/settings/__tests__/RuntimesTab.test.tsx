@@ -49,7 +49,6 @@ const MIXED_REQUIREMENTS: SystemRequirements = {
       dependencies: [{ name: 'OpenCode CLI', description: 'binary', status: 'satisfied' }],
     },
   },
-  allSatisfied: false,
 };
 
 function renderTab(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {

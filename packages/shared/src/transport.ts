@@ -907,16 +907,22 @@ export interface Transport {
   /** Check system requirements (external dependencies) for all registered runtimes. */
   checkRequirements(): Promise<SystemRequirements>;
   /**
-   * Provision the OpenCode runtime binary on demand (opt-in install, ADR-0317).
+   * Provision a runtime's CLI binary on demand (opt-in install, ADR-0317).
    *
-   * Installs `opencode-ai` into a DorkOS-owned location and resolves to the
-   * terminal result; when `onProgress` is supplied, streamed install progress is
-   * delivered to it. Loopback-only server action. On failure the partial install
-   * is cleaned up and the result carries an honest error.
+   * Installs the runtime's package into a DorkOS-owned location and resolves to
+   * the terminal result; when `onProgress` is supplied, streamed install progress
+   * is delivered to it. Loopback-only server action. On failure the partial
+   * install is cleaned up and the result carries an honest error.
    *
+   * Not every runtime can be provisioned in one click — a runtime whose server
+   * does not expose a provision endpoint rejects (e.g. HTTP 404), which the
+   * caller degrades into the manual install hint rather than a dead end.
+   *
+   * @param runtimeType - Runtime type to install, e.g. `'opencode'` or `'codex'`.
    * @param onProgress - Optional callback for streamed install progress frames.
    */
-  provisionOpenCode(
+  provisionRuntime(
+    runtimeType: string,
     onProgress?: (progress: RuntimeProvisionProgress) => void
   ): Promise<RuntimeProvisionResult>;
 

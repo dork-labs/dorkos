@@ -326,6 +326,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     checkRequirements: vi.fn().mockResolvedValue({
       runtimes: {
         'claude-code': {
+          state: 'ready',
           dependencies: [
             {
               name: 'Claude Code CLI',
@@ -336,9 +337,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           ],
         },
       },
-      allSatisfied: true,
     }),
-    provisionOpenCode: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
+    provisionRuntime: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),

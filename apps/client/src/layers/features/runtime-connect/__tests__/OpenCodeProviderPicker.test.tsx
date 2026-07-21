@@ -193,7 +193,6 @@ const OPENCODE_CONNECT: SystemRequirements = {
       dependencies: [{ name: 'OpenCode CLI', description: 'binary', status: 'satisfied' }],
     },
   },
-  allSatisfied: false,
 };
 const OPENCODE_READY: SystemRequirements = {
   runtimes: {
@@ -202,7 +201,6 @@ const OPENCODE_READY: SystemRequirements = {
       dependencies: [{ name: 'OpenCode CLI', description: 'binary', status: 'satisfied' }],
     },
   },
-  allSatisfied: true,
 };
 
 describe('OpenCodeProviderPicker — flips OpenCode to Ready (task 2.8)', () => {

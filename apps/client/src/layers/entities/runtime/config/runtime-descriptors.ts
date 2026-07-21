@@ -18,14 +18,16 @@ import {
 /**
  * Static setup guidance for a runtime that is not registered with the server.
  *
- * When a runtime IS registered, its live `DependencyCheck.installHint` from
- * `checkDependencies()` is authoritative — this hint only covers the case
- * where no server-side data exists (the runtime is disabled or unknown to
- * this server), so the "Add a runtime" panel still has something honest to
- * show. The commands mirror the server adapters' installHint copy.
+ * When a runtime IS registered, its live per-check `DependencyCheck.installHint`
+ * from `checkDependencies()` is authoritative (install-only vs auth-only) — this
+ * hint only covers the case where no server-side data exists (the runtime is
+ * disabled or unknown to this server), so the "Add a runtime" panel still has
+ * something honest to show. It is **install-only** (get the binary): auth is a
+ * separate step that only becomes actionable once the runtime is registered, so
+ * this never bundles a `… && … login` combined command.
  */
 export interface RuntimeSetupHint {
-  /** Copyable shell command that installs the CLI and signs in. */
+  /** Copyable shell command that installs the CLI (binary only, no auth step). */
   installCommand: string;
   /** Docs URL for manual setup. */
   infoUrl?: string;
@@ -68,7 +70,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     icon: OpenCodeLogo,
     accent: 'var(--color-violet-500)',
     setup: {
-      installCommand: 'npm i -g opencode-ai && opencode auth login',
+      installCommand: 'npm i -g opencode-ai',
       infoUrl: 'https://opencode.ai/docs/server',
     },
   },
@@ -78,7 +80,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     icon: CodexLogo,
     accent: 'var(--color-teal-500)',
     setup: {
-      installCommand: 'npm i -g @openai/codex && codex login',
+      installCommand: 'npm i -g @openai/codex',
       infoUrl: 'https://developers.openai.com/codex',
     },
   },
