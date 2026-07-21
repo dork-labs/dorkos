@@ -16,6 +16,7 @@
     "---Go autonomous---",
     "flow",
     "---Scale to a fleet---",
+    "sidebar-settings",
     "agent-discovery",
     "agent-coordination",
     "relay-messaging",

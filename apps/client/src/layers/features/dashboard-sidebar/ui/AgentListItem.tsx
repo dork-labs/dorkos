@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
-import { Plus, MoreHorizontal } from 'lucide-react';
+import { Plus, MoreHorizontal, BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
@@ -44,6 +44,14 @@ const ROW_INITIAL_DELAY = 0.06;
 /** Stagger between consecutive rows (seconds). */
 const ROW_STAGGER = 0.04;
 
+/**
+ * Barely-visible resting border color, matching the idle state's own
+ * constant (`use-agent-hottest-status.ts`, `use-session-border-state.ts`) —
+ * a muted row renders as if idle regardless of live session activity
+ * (DOR-339 decision 4: mute owns ALL attention signals at once).
+ */
+const MUTED_BORDER_COLOR = 'rgba(128, 128, 128, 0.08)';
+
 interface AgentListItemProps {
   path: string;
   agent: AgentManifest | null;
@@ -51,6 +59,15 @@ interface AgentListItemProps {
   displayName?: string;
   isActive: boolean;
   isExpanded: boolean;
+  /**
+   * Whether this agent is muted — individually, or via its containing
+   * group's mute lens (computed once by the orchestrator so every appearance
+   * of the same agent, home row or pinned copy, renders muted identically).
+   * Drops the activity badge and live-work border emphasis, dims the row,
+   * and shows a small mute glyph after the name; the row stays in place and
+   * clickable (DOR-339).
+   */
+  isMuted?: boolean;
   onSelect: () => void;
   onToggleExpand: () => void;
   /** Open agent profile in the right panel hub. */
@@ -87,6 +104,7 @@ export function AgentListItem({
   displayName: displayNameProp,
   isActive,
   isExpanded,
+  isMuted = false,
   onSelect,
   onToggleExpand,
   onOpenProfile,
@@ -111,9 +129,22 @@ export function AgentListItem({
   // enables fleet-wide cwd matching: collapsed agents receive sessions=[] from
   // the parent, but session_status fan-outs carry each live session's cwd.
   const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
-  const agentStatus = useAgentHottestStatus(sessionIds, path);
+  const rawAgentStatus = useAgentHottestStatus(sessionIds, path);
+  // Mute suppresses every attention-driven emphasis at once: force the
+  // status this row renders from to idle-shaped, regardless of the agent's
+  // real live work, so the badge (which returns null for 'idle') and the
+  // pulsing/colored border both drop together (DOR-339 decision 4).
+  const agentStatus = isMuted
+    ? {
+        kind: 'idle' as const,
+        color: MUTED_BORDER_COLOR,
+        pulse: false,
+        label: rawAgentStatus.label,
+      }
+    : rawAgentStatus;
   // Use the agent's identity color as the left border when active + idle,
   // giving a strong "you are here" signal that matches the agent's visual.
+  // Selection is orthogonal to mute, so this still applies to a muted row.
   const effectiveBorderColor =
     agentStatus.kind === 'idle' && isActive ? visual.color : agentStatus.color;
 
@@ -152,7 +183,7 @@ export function AgentListItem({
         animate={borderAnimate}
         transition={borderTransition}
         style={agentStatus.pulse ? undefined : { borderLeftColor: effectiveBorderColor }}
-        className="rounded-md border-l-2"
+        className={cn('rounded-md border-l-2', isMuted && 'opacity-60')}
       >
         <AgentContextMenu
           path={path}
@@ -170,8 +201,11 @@ export function AgentListItem({
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             )}
           >
-            <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 flex-1 items-center gap-1">
               <AgentIdentity {...visual} name={displayName} size="xs" />
+              {isMuted && (
+                <BellOff className="text-muted-foreground/60 size-3 shrink-0" aria-label="Muted" />
+              )}
             </span>
             <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
             <DropdownMenu>

@@ -40,6 +40,8 @@ function makePrefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
     ungroupedCollapsed: false,
     recentsCollapsed: false,
     groupsHintDismissed: false,
+    muted: [],
+    ungroupedDisplayFilter: 'all',
     ...overrides,
   };
 }
@@ -134,11 +136,23 @@ vi.mock('@/layers/entities/agent', () => ({
   AgentAvatar: ({ emoji }: { emoji: string }) => <span data-testid="avatar">{emoji}</span>,
 }));
 
+// DOR-329 fixtures carry no live sessions or recent-activity timestamps, so
+// the real hook would classify every path 'inactive' and collapse it behind
+// the DOR-339 reveal row. These pre-existing tests are about layout/sort, not
+// attention filtering, so the default treats every agent as 'active' — the
+// same "keep fixtures fresh" intent the spec calls for, applied at the mock
+// instead of threading timestamps through every fixture. DOR-339 tests
+// override this per-case via `mockAttentionMap.mockImplementation(...)`.
+const mockAttentionMap = vi.fn((paths: string[]) =>
+  Object.fromEntries(paths.map((p) => [p, 'active']))
+);
+
 vi.mock('@/layers/entities/session', () => ({
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
+  useAgentAttentionMap: (paths: string[]) => mockAttentionMap(paths),
   usePulseMotion: () => ({ animate: undefined, transition: undefined }),
   useRenameSession: () => ({ mutate: vi.fn() }),
   useRecentSessions: () => mockRecent(),
@@ -192,6 +206,8 @@ function group(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
     agentPaths: [],
     sortMode: 'manual',
     collapsed: false,
+    displayFilter: 'all',
+    muted: false,
     ...overrides,
   };
 }
@@ -211,6 +227,10 @@ describe('DashboardSidebar', () => {
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockSidebarPrefs.mockReturnValue(makePrefs());
     mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockAttentionMap.mockReset();
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
     mockSelectedCwd = null;
     mockPathname = '/';
   });
@@ -497,5 +517,64 @@ describe('DashboardSidebar', () => {
       fireEvent.click(screen.getByLabelText('Dismiss grouping tip'));
       expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('DashboardSidebar attention filters + reveal (DOR-339)', () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMeshPaths.mockReset();
+    mockSidebarPrefs.mockReset();
+    mockUpdateSidebar.mockReset();
+    mockRecent.mockReset();
+    mockNavigate.mockReset();
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
+    mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
+    mockSidebarPrefs.mockReturnValue(makePrefs());
+    mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockAttentionMap.mockReset();
+    mockSelectedCwd = null;
+    mockPathname = '/';
+  });
+
+  /** Override the attention map for specific paths; everything else stays 'active'. */
+  function attentionOverride(states: Record<string, string>) {
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, states[p] ?? 'active']))
+    );
+  }
+
+  it("a group's 'Needs attention' filter shows only the qualifying member, hiding the rest behind a reveal row that expands on click", () => {
+    attentionOverride({ '/projects/alpha': 'needs-attention', '/projects/beta': 'inactive' });
+    mockSidebarPrefs.mockReturnValue(
+      makePrefs({
+        groups: [
+          group({ agentPaths: ['/projects/alpha', '/projects/beta'], displayFilter: 'attention' }),
+        ],
+      })
+    );
+    renderWithProviders(<DashboardSidebar />);
+
+    expect(screen.getByText('alpha')).toBeInTheDocument();
+    expect(screen.queryByText('beta')).not.toBeInTheDocument();
+    expect(screen.getByText('1 hidden')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('1 hidden'));
+    expect(screen.getByText('beta')).toBeInTheDocument();
+  });
+
+  it("the ungrouped section's default 'all' filter collapses an inactive agent behind '1 inactive agent', which expands on click", () => {
+    attentionOverride({ '/projects/beta': 'inactive' });
+    renderWithProviders(<DashboardSidebar />);
+
+    expect(screen.getByText('alpha')).toBeInTheDocument();
+    expect(screen.queryByText('beta')).not.toBeInTheDocument();
+    expect(screen.getByText('1 inactive agent')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('1 inactive agent'));
+    expect(screen.getByText('beta')).toBeInTheDocument();
   });
 });

@@ -83,6 +83,23 @@ describe('useAgentsAggregateStatus', () => {
     expect(result.current).toBe(false);
   });
 
+  it('excludes a muted path from the rollup even while it is streaming', () => {
+    work('s1', 'streaming', A);
+    const { result } = renderHook(() =>
+      useAgentsAggregateStatus([A, B], { mutedPaths: new Set([A]) })
+    );
+    expect(result.current).toBe(false);
+  });
+
+  it('still counts an unmuted member while a muted one is also working', () => {
+    work('s1', 'streaming', A);
+    work('s2', 'streaming', B);
+    const { result } = renderHook(() =>
+      useAgentsAggregateStatus([A, B], { mutedPaths: new Set([A]) })
+    );
+    expect(result.current).toBe(true);
+  });
+
   it('uses one aggregated subscription independent of member count', () => {
     const { unmount } = renderHook(() => useAgentsAggregateStatus([A, B]));
     const callsForTwo = vi.mocked(useSessionListStore).mock.calls.length;

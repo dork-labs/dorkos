@@ -1,0 +1,73 @@
+---
+title: Filtering and Muting Your Agent List
+description: Show only the agents that need you, tuck away the quiet ones, and mute the noisy groups without losing them
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Filtering and Muting Your Agent List
+
+Once you're running more than a handful of agents, the sidebar list gets crowded. Some agents are waiting on you right now. Some are quietly idle. A few might not have done anything in a week. DorkOS gives you three simple controls to cut through that: **show filters**, an **inactive count** you can reveal on demand, and **mute**.
+
+None of these delete or hide an agent for good. They just change what's on screen, and every one of them is one click away from showing everything again.
+
+## Show only what matters
+
+Every group, and the "Agents" section for agents you haven't grouped, has a **Show** menu with three options:
+
+- **All**: everything shows, except agents that have been quiet for a while (see [Inactive agents](#inactive-agents-tuck-themselves-away) below).
+- **Active**: only agents that are working right now, or that need your attention.
+- **Needs attention**: only agents waiting on you, like an approval or a failed run.
+
+Open a group's "…" menu, or right-click it, and pick **Show**. Switch a busy "Clients" group to **Needs attention** and it collapses down to just the agents actually waiting on you, no scrolling required.
+
+Filters are per-section: each group remembers its own choice, and the ungrouped "Agents" section has its own too. Switching one group's filter never touches another.
+
+<Callout type="info">
+  Filtering never deletes anything. It's just a different view onto agents that are still there,
+  still running, still one click away.
+</Callout>
+
+## Nothing hides silently
+
+When a filter (or the inactive check below) hides some of a section's agents, DorkOS always leaves a trail back to them: a small row at the bottom of the section that says something like **"3 hidden"** or **"5 inactive agents."** Click it to expand the hidden agents right there, in place. Click again to collapse them back.
+
+You'll never wonder "wait, where did that agent go?" It's always one click away.
+
+### Inactive agents tuck themselves away
+
+With the default **All** filter, agents that haven't had any activity in the last week automatically collapse behind an honest count, like "4 inactive agents." Everything else in the section, active or waiting-on-you, still shows normally. This keeps a section clean as your fleet grows, without you having to filter anything by hand.
+
+## Muting an agent or a group
+
+Sometimes an agent (or a whole group) is doing a lot of work you don't need to watch closely right now, an experiment, a background job, something you'll check on later. Muting quiets it down without removing it from the sidebar.
+
+Right-click an agent (or open its "…" menu) and choose **Mute agent**. A muted agent:
+
+- Renders a little dimmer, with a small mute icon next to its name.
+- Stops showing its activity badge (the small colored dot for "working" or "needs you").
+- Never lights up a group's activity dot, even while it's actively working.
+- Stays exactly where it is, and stays fully clickable. Muting is a display choice, not a way to disable an agent.
+
+Muting a whole **group** works the same way, from the group's "…" menu: every member renders muted while the group stays muted, and the group's own activity dot goes dark too. Unmute the group and every member goes right back to whatever its own mute state was before, muting a group never changes an individual agent's mute setting underneath it.
+
+<Callout type="info">
+  Mute is a sidebar display setting only. It doesn't touch notifications, sounds, or anything the
+  agent itself does, it just quiets down what you see in the list.
+</Callout>
+
+## Where these settings live
+
+Show filters and mute are saved to your account, the same as groups and pinning, so they follow you across the desktop app and the browser. They don't affect anyone else on a shared DorkOS instance.
+
+## Next steps
+
+<Cards>
+  <Card title="Agent Identity" href="/docs/guides/agents">
+    Give your agents a name, color, and emoji so a busy sidebar is still easy to scan.
+  </Card>
+  <Card title="Agent Discovery" href="/docs/guides/agent-discovery">
+    Find and register the agent projects on your computer with Mesh.
+  </Card>
+</Cards>

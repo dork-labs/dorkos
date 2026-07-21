@@ -376,6 +376,15 @@
       "patterns": ["routes/agents", "manifest", "agent.json"]
     },
     {
+      "doc": "docs/guides/sidebar-settings.mdx",
+      "description": "Sidebar display filters, inactive reveal, and mute guide",
+      "patterns": [
+        "features/dashboard-sidebar/",
+        "entities/session/model/agent-attention",
+        "config-schema"
+      ]
+    },
+    {
       "doc": "docs/guides/agent-discovery.mdx",
       "description": "Agent discovery guide",
       "patterns": ["packages/mesh/", "unified-scanner"]

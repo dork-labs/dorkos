@@ -7,6 +7,8 @@ import {
   FolderInput,
   FolderPlus,
   FolderMinus,
+  BellOff,
+  Bell,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -29,6 +31,8 @@ import {
   pinPath,
   unpinPath,
   moveToGroup,
+  mutePath,
+  unmutePath,
 } from '@/layers/entities/config';
 
 /** Which Radix menu the shared item list renders into. */
@@ -48,9 +52,13 @@ type RowMenuNode =
 /** Inputs the pure item list is built from (fabricated directly in unit tests). */
 export interface RowMenuModel {
   isPinned: boolean;
+  /** Whether this agent path is individually muted (`ui.sidebar.muted`). */
+  isMuted: boolean;
   currentGroupId: string | null;
   groups: { id: string; name: string }[];
   onTogglePin: () => void;
+  /** Toggle this agent's individual mute state. */
+  onToggleMute: () => void;
   onOpenProfile: () => void;
   onNewSession: () => void;
   onMoveToGroup: (groupId: string | null) => void;
@@ -103,6 +111,13 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
       label: model.isPinned ? 'Unpin agent' : 'Pin agent',
       icon: model.isPinned ? PinOff : Pin,
       onSelect: model.onTogglePin,
+    },
+    {
+      type: 'item',
+      key: 'mute',
+      label: model.isMuted ? 'Unmute agent' : 'Mute agent',
+      icon: model.isMuted ? Bell : BellOff,
+      onSelect: model.onToggleMute,
     },
     {
       type: 'sub',
@@ -216,9 +231,9 @@ interface AgentRowMenuItemsProps {
 
 /**
  * The agent-row menu, rendered from ONE item definition into both the right-click
- * ContextMenu and the "…" DropdownMenu. Pin/Unpin and Move-to-group read and
- * mutate `ui.sidebar` directly (optimistic), so callers only supply the row
- * actions the sidebar owns.
+ * ContextMenu and the "…" DropdownMenu. Pin/Unpin, Mute/Unmute, and
+ * Move-to-group read and mutate `ui.sidebar` directly (optimistic), so
+ * callers only supply the row actions the sidebar owns.
  */
 export function AgentRowMenuItems({
   path,
@@ -231,13 +246,16 @@ export function AgentRowMenuItems({
   const { update } = useUpdateSidebarPrefs();
 
   const isPinned = prefs.pinned.includes(path);
+  const isMuted = prefs.muted.includes(path);
   const currentGroupId = prefs.groups.find((g) => g.agentPaths.includes(path))?.id ?? null;
 
   const nodes = buildRowMenuNodes({
     isPinned,
+    isMuted,
     currentGroupId,
     groups: prefs.groups.map((g) => ({ id: g.id, name: g.name })),
     onTogglePin: () => update((prev) => (isPinned ? unpinPath(prev, path) : pinPath(prev, path))),
+    onToggleMute: () => update((prev) => (isMuted ? unmutePath(prev, path) : mutePath(prev, path))),
     onOpenProfile,
     onNewSession,
     onMoveToGroup: (groupId) => update((prev) => moveToGroup(prev, path, groupId)),

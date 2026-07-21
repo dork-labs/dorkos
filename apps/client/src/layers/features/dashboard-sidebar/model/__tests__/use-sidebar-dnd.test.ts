@@ -24,6 +24,8 @@ function grp(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
     agentPaths: [],
     sortMode: 'manual',
     collapsed: false,
+    displayFilter: 'all',
+    muted: false,
     ...overrides,
   };
 }
@@ -36,6 +38,8 @@ function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
     ungroupedCollapsed: false,
     recentsCollapsed: false,
     groupsHintDismissed: false,
+    muted: [],
+    ungroupedDisplayFilter: 'all',
     ...overrides,
   };
 }
