@@ -63,9 +63,13 @@ export function useProvisionRuntime(runtimeType: string): UseProvisionRuntime {
   });
 
   const failed = mutation.isError || mutation.data?.ok === false;
-  const errorMessage = mutation.isError
+  const rawMessage = mutation.isError
     ? (mutation.error as Error).message
     : (mutation.data?.error ?? null);
+  // A bare HTTP status line (e.g. "Not Found" when the server has no one-click
+  // install for this runtime) is jargon to the person reading it.
+  const errorMessage =
+    rawMessage === 'Not Found' ? 'One-click install is not available for this agent.' : rawMessage;
 
   return {
     provision: () => mutation.mutate(),

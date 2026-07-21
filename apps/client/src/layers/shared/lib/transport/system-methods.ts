@@ -451,7 +451,7 @@ export function createSystemMethods(baseUrl: string) {
       }
 
       // Progress frames stream as `progress` events; the terminal `result` event
-      // carries the outcome (mirrors provisionOpenCode).
+      // carries the outcome (mirrors provisionRuntime).
       const reader = response.body!.getReader();
       let result: OllamaPullResult = {
         ok: false,

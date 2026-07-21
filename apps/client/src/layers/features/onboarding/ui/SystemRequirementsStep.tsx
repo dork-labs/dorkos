@@ -107,7 +107,12 @@ export function SystemRequirementsStep({
   useEffect(() => {
     if (phase !== 'done' || errored || !hasReady) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') onContinue();
+      if (e.key !== 'Enter') return;
+      // Enter inside the disclosure's connect forms (e.g. pasting an API key)
+      // must submit the form, not eject the user out of the step.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable], form')) return;
+      onContinue();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);

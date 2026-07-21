@@ -75,7 +75,10 @@ const OPENCODE_INSTALL: RuntimeRequirements = {
 
 /** A stand-in for the injected feature connect flow (Codex/Claude login). */
 const stubConnect = ({ type }: { type: string }) => (
-  <div data-testid={`connect-${type}`}>connect</div>
+  <div data-testid={`connect-${type}`}>
+    connect
+    <input aria-label={`stub-key-${type}`} />
+  </div>
 );
 
 function renderStep(options: {
@@ -174,6 +177,22 @@ describe('SystemRequirementsStep', () => {
     await userEvent.click(disclosure);
     expect(await screen.findByTestId('runtime-setup-panel')).toBeInTheDocument();
     expect(screen.getByText('You can add these anytime from the status bar.')).toBeInTheDocument();
+  });
+
+  it('Enter inside a connect form field does not eject the user out of the step', async () => {
+    const onContinue = vi.fn();
+    renderStep({
+      requirements: { runtimes: { 'claude-code': CLAUDE_READY, codex: CODEX_LOGIN } },
+      onContinue,
+    });
+
+    await screen.findByTestId('onboarding-get-started');
+    await userEvent.click(screen.getByText('1 more agent available'));
+
+    const keyField = await screen.findByLabelText('stub-key-codex');
+    await userEvent.click(keyField);
+    await userEvent.keyboard('{Enter}');
+    expect(onContinue).not.toHaveBeenCalled();
   });
 
   it('recheck uses the shared requirements query', async () => {
