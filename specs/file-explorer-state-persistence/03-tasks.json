@@ -1,0 +1,61 @@
+{
+  "spec": "specs/file-explorer-state-persistence/02-specification.md",
+  "slug": "file-explorer-state-persistence",
+  "generatedAt": "2026-07-21T14:05:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-07-21",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Persisted store",
+      "subject": "[file-explorer-state-persistence] [P1] Extend the feature store with per-cwd persisted entries",
+      "description": "In model/file-explorer-store.ts: add scopeKey/expanded/selectedPath/scrollTop state, loadExplorerForCwd hydration, setDirExpanded/setSelectedPath/setScrollTop write-through actions, pruneMissing, co-located localStorage helpers (blob 'dorkos-file-explorer-state', Record<cwd, FileExplorerEntry>, LRU 50 by accessedAt), and persisted showHidden ('dorkos-file-explorer-show-hidden'). Mirror app-store-helpers read/write conventions (try/catch, inline persist after set). Store unit tests per spec §6 including corrupted-JSON fallback and LRU eviction.",
+      "activeForm": "Extending the file-explorer store with persistence",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Query data layer",
+      "subject": "[file-explorer-state-persistence] [P1] Move directory listings to TanStack Query and delete the reducer",
+      "description": "Rework model/use-file-explorer.ts: useQueries over root + expanded dirs with keys ['file-explorer','tree',cwd,path,showHidden], new QUERY_TIMING.FILE_TREE_* constants, flattenTree as a pure function of (expanded, queryDataByPath), reload = invalidateQueries on the cwd tree prefix (whole-subtree refresh, spec §2/D4), hydration via loadExplorerForCwd + pruneMissing on listing arrival (spec §3). Delete the tree reducer and dead actions entirely; keep pure helpers in a pure module with ported tests. Retarget use-file-crud.ts optimistic create/rename/delete/move to setQueryData with snapshot rollback + settle invalidation, plus store path fixups for expanded/selected on rename/move/delete.",
+      "activeForm": "Migrating tree data to TanStack Query",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — UI wiring & restore",
+      "subject": "[file-explorer-state-persistence] [P2] Wire persisted selection + scroll restore into the UI",
+      "description": "Lift selectedPath out of FileExplorer.tsx useState into the store; scroll save (debounced >=250ms trailing + unmount flush) and one-shot restore after first non-empty render in FileTree.tsx for both plain and virtualized paths (spec §4); loading/error rows for expanded dirs from query state with retry; keyboard nav, DnD, context menus, inline create/rename unchanged (spec §5.7). Headline regression test: expand + select, unmount, remount -> state intact and children served from cache with no extra transport call (assert call counts). Update FileExplorer.test.tsx for the new data layer incl. subtree-refresh assertion.",
+      "activeForm": "Wiring persisted selection and scroll restore",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — Docs & changelog",
+      "subject": "[file-explorer-state-persistence] [P2] Changelog fragment + implementation notes",
+      "description": "Write changelog/unreleased/<timestamp-id>-file-explorer-state-persistence.md in writing-for-humans voice (describe what the user gets: the file tree remembers where you were). Write specs/file-explorer-state-persistence/04-implementation.md summarizing what shipped vs spec, deviations, and follow-ups deferred per D8. Run pnpm verify.",
+      "activeForm": "Writing changelog and implementation notes",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["2.1"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

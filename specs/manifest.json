@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260721-140257",
+      "slug": "file-explorer-state-persistence",
+      "title": "File explorer: persist state across refreshes and tab switches + holistic UX polish",
+      "created": "2026-07-21",
+      "status": "specified"
+    },
+    {
       "id": "260721-134155",
       "slug": "smart-agent-groups",
       "title": "Smart agent groups from mesh metadata (rule-based membership)",

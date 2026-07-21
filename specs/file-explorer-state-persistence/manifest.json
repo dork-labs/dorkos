@@ -1,0 +1,8 @@
+{
+  "id": "260721-140257",
+  "slug": "file-explorer-state-persistence",
+  "title": "File explorer: persist state across refreshes and tab switches + holistic UX polish",
+  "created": "2026-07-21",
+  "status": "specified",
+  "linearIssue": "DOR-404"
+}
