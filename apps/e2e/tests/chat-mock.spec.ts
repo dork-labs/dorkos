@@ -169,11 +169,13 @@ test.describe('TestModeRuntime — mock browser tests', () => {
   test('a session id reused across POST /api/test/reset gets a fresh session, not resurrected history', async ({
     request,
   }) => {
-    // Pins the FULL-reset contract over the real HTTP stack: the test-mode
-    // runtime's only persistence is the per-session projector (EventLog), so a
-    // reset that cleared tracked metadata but left projectors alive would
+    // Pins the FULL-reset contract over the real HTTP stack. Test-mode history
+    // is reconstructed from the DorkOS-owned event stream, persisted in TWO
+    // tiers: the live per-session projector AND the durable SQLite
+    // `session_events` store (DOR-189), which the history read prefers. A reset
+    // that cleared tracked metadata + projectors but left the durable rows would
     // resurrect pre-reset history the moment the same id is used again
-    // (review finding, acceptance run 20260611-145454).
+    // (review finding, acceptance run 20260611-145454; durable-tier gap DOR-334).
     const sessionId = crypto.randomUUID();
     const messagesUrl = `${API_URL}/api/sessions/${sessionId}/messages`;
     const historyUrl = `${messagesUrl}?cwd=${encodeURIComponent(agentDir)}`;
@@ -247,16 +249,31 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await secondary.click();
     await expect(statusLine.getByRole('button', { name: 'test-mode-b' })).toBeVisible();
     await expect(page).toHaveURL(/runtime=test-mode-b/);
+    // The selection closes the dropdown. Wait for it to be fully closed before
+    // reopening — a reopen click that lands during Radix's close animation
+    // toggles the menu shut instead of open (the reopen flake this guards).
+    await expect(secondary).toBeHidden();
 
     // Known-but-unregistered runtimes (OpenCode, Codex) surface through the
     // picker's "Add a runtime" entry, which opens the setup panel with a
-    // needs-setup section and copyable install command per runtime.
+    // needs-setup section per runtime.
     await statusLine.getByRole('button', { name: 'test-mode-b' }).click();
-    await page.getByRole('menuitem', { name: /add a runtime/i }).click();
+    const addRuntime = page.getByRole('menuitem', { name: /add a runtime/i });
+    await expect(addRuntime).toBeVisible();
+    await addRuntime.click();
     await expect(page.getByTestId('runtime-setup-panel')).toBeVisible();
+    const codexSection = page.getByTestId('runtime-section-codex');
     await expect(page.getByTestId('runtime-section-opencode')).toBeVisible();
-    await expect(page.getByTestId('runtime-section-codex')).toBeVisible();
-    await expect(page.getByRole('button', { name: /copy install command/i }).first()).toBeVisible();
+    await expect(codexSection).toBeVisible();
+
+    // The copyable install command lives behind each runtime's "Setup details"
+    // disclosure (ADR-0317 moved the default path to a one-click Connect action,
+    // demoting the raw shell command to the Advanced reveal). Expanding it
+    // surfaces the per-runtime "Copy install command" button.
+    await codexSection.getByRole('button', { name: /setup details/i }).click();
+    await expect(
+      codexSection.getByRole('button', { name: /copy install command/i }).first()
+    ).toBeVisible();
   });
 
   test('?runtime= launch binds the session to that runtime; chip is read-only after start', async ({
@@ -318,7 +335,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     ).toHaveCount(1);
   });
 
-  test('a turn that ends in error shows the turn-failed notice with a working Retry', async ({
+  test('a turn that ends in error shows an inline error block with a working Retry', async ({
     page,
     request,
   }) => {
@@ -328,12 +345,17 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage('please fail');
 
-    // turn_end{terminalReason:'error'} settles the session into the error
-    // lifecycle; with no inline error affordance (test-mode history carries no
-    // error entry) the panel-level notice is the retry surface.
-    const notice = page.getByTestId('turn-failed-notice');
-    await expect(notice).toBeVisible({ timeout: 10_000 });
-    const retry = notice.getByRole('button', { name: /retry/i });
+    // The 'error' scenario yields a full-fidelity typed error event
+    // (category 'execution_error'), which the projector folds into the turn as
+    // an inline error part. That renders the inline ErrorMessageBlock — the
+    // retry surface — and deliberately SUPPRESSES the panel-level
+    // turn-failed-notice (no double affordance, per shouldShowTurnFailedNotice;
+    // the notice's own no-inline-error path is covered by turn-failed-notice.test.tsx).
+    const errorBlock = page.getByTestId('error-message-block');
+    await expect(errorBlock).toBeVisible({ timeout: 10_000 });
+    await expect(errorBlock.getByText('Agent stopped unexpectedly')).toBeVisible();
+    await expect(page.getByTestId('turn-failed-notice')).toHaveCount(0);
+    const retry = errorBlock.getByRole('button', { name: /retry/i });
     await expect(retry).toBeVisible();
 
     // Retry re-sends the last user message; with the scenario healed the

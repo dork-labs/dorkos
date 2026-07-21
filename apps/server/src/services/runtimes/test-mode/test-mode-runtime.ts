@@ -24,7 +24,11 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { RelayCore } from '@dorkos/relay';
-import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
+import {
+  disposeProjector,
+  getOrCreateProjector,
+  getSessionEventStore,
+} from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { scenarioStore } from './scenario-store.js';
@@ -88,15 +92,24 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   /**
-   * Full state reset (the `/api/test/reset` control path): disposes every
-   * tracked session's projector — the runtime's ONLY persistence, so leaving
-   * them would resurrect pre-reset history on the next snapshot for a reused
-   * id — then drops the tracked metadata (which emits `session_removed` to
-   * live list subscribers).
+   * Full state reset (the `/api/test/reset` control path): for every tracked
+   * session, disposes its in-memory projector AND deletes its durable
+   * `session_events` rows, then drops the tracked metadata (which emits
+   * `session_removed` to live list subscribers).
+   *
+   * Both persistence tiers must be cleared. The projector is the LIVE tier, but
+   * a completed turn is also flushed to the durable SQLite store (DOR-189),
+   * which `readLogBackedHistory` reads FIRST when a store is wired (the e2e
+   * server). Disposing only the projector would leave those rows behind, so a
+   * reused id resurrects pre-reset history straight from SQLite. The store is
+   * absent in bare unit tests — then `getSessionEventStore()` is `undefined`
+   * and only the projector is disposed, the pre-DOR-189 behavior.
    */
   resetTrackedSessions(): void {
+    const store = getSessionEventStore();
     for (const sessionId of this.registry.ids()) {
       disposeProjector(sessionId);
+      store?.deleteSession(sessionId);
     }
     this.registry.reset();
   }
