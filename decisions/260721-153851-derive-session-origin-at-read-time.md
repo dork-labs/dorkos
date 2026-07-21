@@ -1,7 +1,7 @@
 ---
 id: 260721-153851
 title: Derive session origin at read time from transcript-head markers
-status: proposed
+status: accepted
 created: 2026-07-21
 spec: session-origin-legibility
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
