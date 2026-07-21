@@ -11,6 +11,8 @@ import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionContextGauge } from './SessionContextGauge';
+import { OriginMark } from './OriginMark';
+import { getOriginDescriptor } from '../config/origin-descriptors';
 
 interface SessionRowFullProps {
   session: Session;
@@ -214,6 +216,11 @@ export function SessionRowFull({
                 />
               ) : (
                 <div className="mt-0.5 flex items-center gap-1.5">
+                  <OriginMark
+                    origin={session.origin}
+                    label={session.originLabel}
+                    className="text-muted-foreground/50"
+                  />
                   <RuntimeMark
                     type={session.runtime}
                     model={session.model}
@@ -248,6 +255,10 @@ export function SessionRowFull({
                 <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
                 <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
                 <DetailRow label="Runtime" value={getRuntimeDescriptor(session.runtime).label} />
+                <DetailRow
+                  label="Origin"
+                  value={session.originLabel ?? getOriginDescriptor(session.origin)?.label ?? 'You'}
+                />
                 <DetailRow label="Permissions" value={isUnsafe ? 'Skip (unsafe)' : 'Default'} />
                 {onFork && (
                   <button

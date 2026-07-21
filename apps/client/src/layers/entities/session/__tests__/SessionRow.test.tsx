@@ -447,6 +447,49 @@ describe('SessionRow variant="full"', () => {
     expect(screen.getByText('Runtime')).toBeDefined();
     expect(screen.getByText('Codex')).toBeDefined();
   });
+
+  // Origin mark
+  it('renders the origin mark for a non-user session', () => {
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession({ origin: 'channel', originLabel: 'Telegram' })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByLabelText('Origin: Telegram')).toBeDefined();
+  });
+
+  it('does not render the origin mark for a user-origin session', () => {
+    renderRow(
+      <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    expect(screen.queryByLabelText(/^Origin:/)).toBeNull();
+  });
+
+  it('shows the origin in the details panel using originLabel', () => {
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession({ origin: 'task', originLabel: 'Scheduled task · daily-digest' })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByLabelText('Session details'));
+    expect(screen.getByText('Origin')).toBeDefined();
+    expect(screen.getByText('Scheduled task · daily-digest')).toBeDefined();
+  });
+
+  it('shows "You" for the origin in the details panel for a user session', () => {
+    renderRow(
+      <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    fireEvent.click(screen.getByLabelText('Session details'));
+    expect(screen.getByText('Origin')).toBeDefined();
+    expect(screen.getByText('You')).toBeDefined();
+  });
 });
 
 // ==========================================================================
@@ -635,5 +678,24 @@ describe('SessionRow variant="compact"', () => {
       />
     );
     expect(screen.getByLabelText('Runtime: Codex')).toBeDefined();
+  });
+
+  it('renders the origin mark for a non-user session', () => {
+    renderRow(
+      <SessionRow
+        variant="compact"
+        session={makeSession({ origin: 'agent', originLabel: 'warden (agent)' })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByLabelText('Origin: warden (agent)')).toBeDefined();
+  });
+
+  it('does not render the origin mark for a user-origin session', () => {
+    renderRow(
+      <SessionRow variant="compact" session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    expect(screen.queryByLabelText(/^Origin:/)).toBeNull();
   });
 });

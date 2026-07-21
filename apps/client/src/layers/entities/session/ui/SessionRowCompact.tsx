@@ -10,6 +10,7 @@ import { usePulseMotion } from '../model/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
+import { OriginMark } from './OriginMark';
 
 interface SessionRowCompactProps {
   session: Session;
@@ -135,6 +136,11 @@ export function SessionRowCompact({
                   aria-label="Awaiting approval"
                 />
               )}
+              <OriginMark
+                origin={session.origin}
+                label={session.originLabel}
+                className="text-muted-foreground/50"
+              />
               <RuntimeMark
                 type={session.runtime}
                 model={session.model}
