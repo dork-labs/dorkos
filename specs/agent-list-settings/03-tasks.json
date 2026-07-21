@@ -1,0 +1,74 @@
+{
+  "spec": "specs/agent-list-settings/02-specification.md",
+  "slug": "agent-list-settings",
+  "generatedAt": "2026-07-21T14:05:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-07-21",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Attention substrate",
+      "subject": "[agent-list-settings] [P1] Build the agent-attention derivation module",
+      "description": "Create entities/session/model/agent-attention.ts: AttentionState type, ATTENTION_THRESHOLDS constants, pure deriveAttention(), and useAgentAttentionMap() with the single-subscription fold (spec §1). Verify borderKindFromLifecycle's output enum and map pendingApproval → needs-attention, streaming → active; fold any error/blocked kind into needs-attention. Full deriveAttention unit matrix + hook tests with mock store.",
+      "activeForm": "Building the attention derivation module",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2"],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Attention substrate",
+      "subject": "[agent-list-settings] [P1] Extend SidebarPrefs/SidebarGroup schemas + config migration",
+      "description": "Add SidebarDisplayFilterSchema, displayFilter + muted on SidebarGroupSchema, muted[] + ungroupedDisplayFilter on SidebarPrefsSchema (spec §2), all defaulted. Semver-keyed conf migration per the adding-config-fields skill. Schema tests: new defaults, legacy parse, round-trip.",
+      "activeForm": "Extending the sidebar config schema",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1"],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — Filter + reveal",
+      "subject": "[agent-list-settings] [P2] Implement filterSectionAgents + reveal rows + Show menu",
+      "description": "Pure filter-agents.ts implementing the filter × mute × state matrix (spec §3, incl. the muted needs-attention downgrade — the ONE place mute semantics live). Ghost reveal rows ('N hidden' / 'N inactive agents', local expand state). 'Show' radio submenu in group + ungrouped header menus writing config. Exhaustive matrix tests + RTL component tests.",
+      "activeForm": "Implementing filters and reveal rows",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — Mute",
+      "subject": "[agent-list-settings] [P3] Wire mute end-to-end",
+      "description": "Agent-row context-menu mute toggle (ui.sidebar.muted) + group-header mute toggle (groups[i].muted). Muted rendering: dim + glyph, no attention badge, excluded from rollup dots (refactor useAgentsAggregateStatus to the shared fold with muted exclusion, back-compat signature). Group mute is a lens (never writes member paths). Pinned copies render muted. Component tests for atomicity: badge + dot + emphasis all drop together.",
+      "activeForm": "Wiring mute end-to-end",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["2.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "P4 — Ship",
+      "subject": "[agent-list-settings] [P4] Docs, changelog fragment, implementation report",
+      "description": "Docs-site sidebar guide section (filters, inactive reveal, muting — writing-for-humans register), changelog fragment, 04-implementation.md, manifest → implemented. Existing DOR-329 suites green; pnpm verify clean.",
+      "activeForm": "Shipping docs and changelog",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["3.1"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

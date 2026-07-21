@@ -1,0 +1,61 @@
+{
+  "spec": "specs/smart-agent-groups/02-specification.md",
+  "slug": "smart-agent-groups",
+  "generatedAt": "2026-07-21T14:05:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-07-21",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Pure core",
+      "subject": "[smart-agent-groups] [P1] Schema discriminator + rules + evaluation core",
+      "description": "Add kind discriminator + SmartGroupRulesSchema to SidebarGroupSchema with the cross-field refine (smart requires ≥1 rule; manual ignores rules), conf migration per adding-config-fields. Pure evaluate-smart-group.ts (AND across fields, OR within; injected now) and describeRules() summary helper. Full predicate/combination test matrix + summary snapshots + schema refine tests (spec §1-2).",
+      "activeForm": "Building the smart-group schema and evaluation core",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — Render path",
+      "subject": "[smart-agent-groups] [P2] Render smart sections: derived members, multi-presence, honesty UI",
+      "description": "Smart sections resolve members via evaluateSmartGroup (memoized on rules/candidates identity); multi-presence preserved; rule glyph + summary in header menu; '0 matching' ghost row; drop rejection with inline hint; member rows not draggable-out; DOR-339 collapse/mute/displayFilter apply unchanged (spec §3). RTL tests incl. live re-evaluation on attention flip.",
+      "activeForm": "Rendering smart sections",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — Create/edit + presets",
+      "subject": "[smart-agent-groups] [P3] Create/edit fork, presets, disclosure, convert-to-manual",
+      "description": "Group-create dialog manual/smart fork with the rule form (runtime checkboxes, namespace multi-select when >1, status multi-select, activity-window select, path prefix); preset chips (Active now, By-runtime per runtime with ≥2 agents); 'Edit rules' from header menu; convert-to-manual materialization; disclosure threshold (≥8 agents or ≥2 runtimes) hides the fork for small fleets (spec §4-5). Component tests for each.",
+      "activeForm": "Building create/edit flow and presets",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["2.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "P4 — Ship",
+      "subject": "[smart-agent-groups] [P4] ADR, docs, changelog fragment, implementation report",
+      "description": "Extract the ADR (rule-derived client-side membership, never materialized — mesh stays source of truth); docs-site smart-groups section; changelog fragment; 04-implementation.md; manifest → implemented. DOR-329 + DOR-339 suites green; pnpm verify clean.",
+      "activeForm": "Shipping ADR, docs, and changelog",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["3.1"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}
