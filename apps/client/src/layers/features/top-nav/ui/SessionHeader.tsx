@@ -44,7 +44,7 @@ export function SessionHeader({ agentName, origin, originLabel }: SessionHeaderP
           <>
             <ChevronRight className="text-muted-foreground/50 size-3" aria-hidden />
             <span className="text-muted-foreground flex items-center gap-1">
-              <OriginMark origin={origin} label={originText} />
+              <OriginMark origin={origin} label={originText} decorative />
               {originText}
             </span>
           </>

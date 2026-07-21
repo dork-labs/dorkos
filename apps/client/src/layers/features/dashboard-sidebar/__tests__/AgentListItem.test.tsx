@@ -299,6 +299,12 @@ describe('AgentListItem', () => {
     expect(screen.getByText('+ 2 automated')).toBeInTheDocument();
   });
 
+  it('renders the "New session" button for an all-automated agent (empty conversations)', () => {
+    const automatedOnly = [mockSession('t1', 'Task session', { origin: 'task' })];
+    renderItem({ isActive: true, isExpanded: true, sessions: automatedOnly });
+    expect(screen.getByText('New session')).toBeInTheDocument();
+  });
+
   it('hides the automated reveal row when there are no automated sessions', () => {
     renderItem({ isActive: true, isExpanded: true, sessions: MOCK_SESSIONS });
     expect(screen.queryByText(/automated/)).not.toBeInTheDocument();

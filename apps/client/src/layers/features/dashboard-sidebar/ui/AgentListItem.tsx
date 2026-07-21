@@ -300,7 +300,7 @@ export function AgentListItem({
                   </motion.div>
                 ))}
 
-              {showExpanded && previewSessions.length > 0 && (
+              {showExpanded && (previewSessions.length > 0 || automated.length > 0) && (
                 <motion.div
                   key="new-session-btn"
                   initial={{ opacity: 0, y: -6 }}

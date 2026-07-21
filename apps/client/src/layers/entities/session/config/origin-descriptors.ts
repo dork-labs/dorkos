@@ -1,8 +1,8 @@
 /**
  * Session-origin visual-identity registry — the single source of truth for
- * every non-user origin's icon, fallback label, and accent color. Unlike the
- * runtime registry, `user` has no entry: it is never marked (calm-tech —
- * automation is marked, humans are not).
+ * every non-user origin's icon and fallback label. Unlike the runtime
+ * registry, `user` has no entry: it is never marked (calm-tech: automation
+ * is marked, humans are not).
  *
  * @module entities/session/config
  */
@@ -17,8 +17,6 @@ export interface OriginDescriptor {
   label: string;
   /** Icon component. Renders at 12px by default in `OriginMark`; pass `size` to override. */
   icon: ComponentType<{ size?: number; className?: string }>;
-  /** Accent color as a CSS color value (theme `--color-*` variable). */
-  accent: string;
 }
 
 /**
@@ -26,20 +24,10 @@ export interface OriginDescriptor {
  * absent — {@link getOriginDescriptor} returns `undefined` for it.
  */
 export const ORIGIN_DESCRIPTORS: Partial<Record<SessionOrigin, OriginDescriptor>> = {
-  agent: { origin: 'agent', label: 'Agent', icon: Bot, accent: 'var(--color-violet-500)' },
-  channel: {
-    origin: 'channel',
-    label: 'Channel',
-    icon: MessagesSquare,
-    accent: 'var(--color-sky-500)',
-  },
-  task: {
-    origin: 'task',
-    label: 'Scheduled task',
-    icon: CalendarClock,
-    accent: 'var(--color-amber-500)',
-  },
-  external: { origin: 'external', label: 'External', icon: Globe, accent: 'var(--color-teal-500)' },
+  agent: { origin: 'agent', label: 'Agent', icon: Bot },
+  channel: { origin: 'channel', label: 'Channel', icon: MessagesSquare },
+  task: { origin: 'task', label: 'Scheduled task', icon: CalendarClock },
+  external: { origin: 'external', label: 'External', icon: Globe },
 };
 
 /**

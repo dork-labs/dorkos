@@ -68,4 +68,20 @@ describe('OriginMark', () => {
     render(<OriginMark origin="bogus" />, { wrapper: Wrapper });
     expect(screen.queryByLabelText(/^Origin:/)).toBeNull();
   });
+
+  // --- decorative mode (no duplicate announcement next to a visible label) ---
+
+  it('suppresses the accessible label and tooltip when decorative', () => {
+    const { container } = render(<OriginMark origin="channel" label="Telegram" decorative />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.queryByLabelText('Origin: Telegram')).toBeNull();
+    expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    expect(container.querySelector('svg')).not.toBeNull();
+  });
+
+  it('still renders the accessible label and tooltip when not decorative (default)', () => {
+    render(<OriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
+    expect(screen.getByLabelText('Origin: Telegram')).toBeDefined();
+  });
 });

@@ -44,7 +44,11 @@ export function RecentSessionRow({ session, agent, displayName, onClick }: Recen
       >
         <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
         <span className="min-w-0 flex-1 truncate">{sessionDisplayTitle(session.title)}</span>
-        <OriginMark origin={session.origin} label={session.originLabel} />
+        <OriginMark
+          origin={session.origin}
+          label={session.originLabel}
+          className="text-muted-foreground/50"
+        />
         <span className="text-muted-foreground/60 shrink-0 text-[10px]">{relativeTime}</span>
       </button>
     </SidebarMenuItem>
