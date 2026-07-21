@@ -135,6 +135,15 @@ nit 4 needs no code change.
    regression test asserts the previous rows hold across the toggle.
 4. **Nit 4 — no code change.** The scroll-flush misattribution note above was reviewed and confirmed
    negligible-by-design.
+5. **Live-verification fix — selection reveal no longer fights scroll restore on remount.** A live-browser
+   probe found the "keep selected row in view" effect fired on mount, not just on selection change:
+   on remount it dragged the restored offset back to the (out-of-view) selection and, because the reveal
+   scroll wasn't marked programmatic, `handleScroll` persisted it over the user's saved offset. Fixed by
+   making the reveal change-driven (a previous-selection ref; the first run per mount only records, and an
+   unchanged selection never re-reveals — this also stops late query loads from fighting the restore) and
+   marking the reveal scroll programmatic (`programmaticTopRef` from the post-reveal `scrollTop`). New
+   `FileTree.test.tsx` cases: no reveal on mount + saved offset preserved; reveal still fires on
+   keyboard/click selection change.
 
 ## Deferred follow-ups (D8)
 

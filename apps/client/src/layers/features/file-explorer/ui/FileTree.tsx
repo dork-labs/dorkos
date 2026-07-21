@@ -126,18 +126,34 @@ export function FileTree(props: FileTreeProps) {
     [setScrollTop]
   );
 
-  // Keep the selected row in view as the keyboard moves it.
+  // Reveal the selected row when the selection *changes* — on keyboard nav or a
+  // row click — never on mount, and never when rows merely stream in under an
+  // unchanged selection; either would drag a restored scroll offset back to the
+  // selection and fight the restore above. The previous selection is tracked in
+  // a ref: the first run for a mount only records it, and any run where the
+  // selection is unchanged does nothing (so late query loads never re-reveal). A
+  // reveal scroll is marked programmatic (`programmaticTop`), exactly like the
+  // restore path, so `handleScroll` never mistakes it for a user scroll — it must
+  // neither latch the restore nor be persisted.
+  const prevSelectedPathRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    const prev = prevSelectedPathRef.current;
+    prevSelectedPathRef.current = selectedPath;
+    if (prev === undefined || selectedPath === prev) return;
     if (selectedPath === null) return;
     const index = rows.findIndex((r) => r.entry.path === selectedPath);
     if (index < 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
     if (virtualize) {
       virtualizer.scrollToIndex(index, { align: 'auto' });
-      return;
+    } else {
+      // `scrollIntoView` is unimplemented in jsdom — guard so tests don't throw.
+      el.querySelector(`[data-row-index="${index}"]`)?.scrollIntoView?.({ block: 'nearest' });
     }
-    const el = scrollRef.current?.querySelector(`[data-row-index="${index}"]`);
-    // `scrollIntoView` is unimplemented in jsdom — guard so tests don't throw.
-    el?.scrollIntoView?.({ block: 'nearest' });
+    // `scrollTo`/`scrollIntoView` update `scrollTop` synchronously, so the
+    // container's post-reveal offset is what to record (same as the restore path).
+    programmaticTopRef.current = el.scrollTop;
   }, [selectedPath, rows, virtualize, virtualizer]);
 
   const renderRow = (row: FlatRow) => (

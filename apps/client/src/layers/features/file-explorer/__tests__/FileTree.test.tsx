@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -137,5 +138,83 @@ describe('FileTree scroll restore (review nit 2)', () => {
     sim.scrollHeight = 800;
     view.rerender(<FileTree {...baseProps} rows={rowsOf(6)} />);
     expect(tree.scrollTop).toBe(40);
+  });
+});
+
+describe('FileTree selection reveal (mount vs restore, DOR-404)', () => {
+  // A stubbed `scrollIntoView` — jsdom leaves it undefined, so the reveal path
+  // never runs by accident. Each test decides whether it merely records calls or
+  // (regression) also models a real browser reveal that moves the container and
+  // fires a scroll event.
+  let scrollIntoView: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView as never;
+  });
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    vi.useRealTimers();
+  });
+
+  // Regression: the reveal effect used to fire on mount, dragging the restored
+  // offset to the selection AND persisting that reveal over the user's saved
+  // position (the reveal scroll wasn't marked programmatic, so `handleScroll`
+  // treated it as a user scroll). Mount must not reveal, and the saved offset
+  // must survive untouched. jsdom stores `scrollTop` verbatim, so restoring 40
+  // needs no scroll sim.
+  it('does not reveal the selection on mount, and preserves the restored offset', () => {
+    vi.useFakeTimers();
+    // Model a real-browser reveal: scroll the container to the row and notify.
+    scrollIntoView.mockImplementation(function (this: HTMLElement) {
+      const container = this.closest('[role="tree"]') as HTMLElement | null;
+      if (!container) return;
+      container.scrollTop = 300; // reveal would drag the offset down to the row
+      fireEvent.scroll(container);
+    });
+    const setScrollTop = vi.fn();
+    // Saved offset 40; selection f5 is passed as a prop (out of the restored view).
+    useFileExplorerStore.setState({ scrollTop: 40, setScrollTop });
+
+    render(<FileTree {...baseProps} rows={rowsOf(6)} selectedPath="f5.ts" />);
+    vi.advanceTimersByTime(300); // past SCROLL_PERSIST_MS (250)
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    // A mount-time reveal persist would have written 300 over the saved 40.
+    expect(setScrollTop).not.toHaveBeenCalledWith(300);
+  });
+
+  // Existing behavior preserved: once the user moves the selection (ArrowDown),
+  // the tree reveals the new row.
+  it('reveals the selection when it changes after mount (keyboard nav)', () => {
+    useFileExplorerStore.setState({ scrollTop: 0, selectedPath: 'f0.ts' });
+
+    function Harness() {
+      const [sel, setSel] = useState<string | null>('f0.ts');
+      return <FileTree {...baseProps} rows={rowsOf(6)} selectedPath={sel} onSelectPath={setSel} />;
+    }
+    render(<Harness />);
+    const tree = screen.getByRole('tree');
+
+    // No reveal on mount.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // ArrowDown moves the selection f0 → f1; the reveal fires for the change.
+    fireEvent.keyDown(tree, { key: 'ArrowDown' });
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // A row click that changes the selection also reveals it.
+  it('reveals the selection when a different row is clicked', () => {
+    useFileExplorerStore.setState({ scrollTop: 0, selectedPath: 'f0.ts' });
+
+    function Harness() {
+      const [sel, setSel] = useState<string | null>('f0.ts');
+      return <FileTree {...baseProps} rows={rowsOf(6)} selectedPath={sel} onSelectPath={setSel} />;
+    }
+    render(<Harness />);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('f4.ts'));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 });
