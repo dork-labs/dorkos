@@ -21,7 +21,7 @@ import {
   toDragDescriptor,
   toDropDescriptor,
   type SidebarDndData,
-} from '../model/use-sidebar-dnd';
+} from '../../model/use-sidebar-dnd';
 import { SidebarDndEnabledProvider } from './SidebarDndPrimitives';
 
 interface SidebarDndProps {

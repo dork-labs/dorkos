@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
-import { Droppable, SortableList, agentRowDndId } from './SidebarDndPrimitives';
+import { Droppable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
 
 interface PinnedSectionProps {
   /** Pinned agent project paths, already filtered to the known roster and ordered. */

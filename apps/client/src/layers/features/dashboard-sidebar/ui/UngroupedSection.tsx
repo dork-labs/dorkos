@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
 import { AddAgentMenu } from './AddAgentMenu';
-import { Droppable, SortableList, agentRowDndId } from './SidebarDndPrimitives';
+import { Droppable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
 
 interface UngroupedSectionProps {
   /** Ungrouped agent paths (known roster, already sorted by the ungrouped sort mode). */
