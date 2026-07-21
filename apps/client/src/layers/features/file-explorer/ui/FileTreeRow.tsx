@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Loader2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  File,
+  Folder,
+  FolderOpen,
+  Loader2,
+  RotateCw,
+} from 'lucide-react';
 import type { FileEntry } from '@dorkos/shared/types';
 import {
   ResponsiveContextMenu,
@@ -19,8 +27,12 @@ interface FileTreeRowProps {
   row: FlatRow;
   selected: boolean;
   renaming: boolean;
+  /** True when this is an expanded directory whose listing failed to load. */
+  error: boolean;
   onSelect: (entry: FileEntry) => void;
   onActivate: (entry: FileEntry) => void;
+  /** Retry this directory's failed listing. */
+  onRetry: () => void;
   onSubmitRename: (entry: FileEntry, newName: string) => void;
   onCancelRename: () => void;
   onNewFile: (parent: string) => void;
@@ -41,8 +53,10 @@ export function FileTreeRow({
   row,
   selected,
   renaming,
+  error,
   onSelect,
   onActivate,
+  onRetry,
   onSubmitRename,
   onCancelRename,
   onNewFile,
@@ -105,6 +119,19 @@ export function FileTreeRow({
             {isDir &&
               (loading ? (
                 <Loader2 className="text-muted-foreground size-3.5 animate-spin" />
+              ) : error ? (
+                <button
+                  type="button"
+                  aria-label="Retry loading"
+                  title="Couldn't load — retry"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRetry();
+                  }}
+                  className="flex items-center justify-center"
+                >
+                  <RotateCw className="text-destructive size-3.5" />
+                </button>
               ) : expanded ? (
                 <ChevronDown className="text-muted-foreground size-3.5" />
               ) : (

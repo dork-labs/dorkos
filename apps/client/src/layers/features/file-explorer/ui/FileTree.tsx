@@ -1,22 +1,29 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FileEntry } from '@dorkos/shared/types';
 import { parentOf } from '../model/tree';
 import type { FlatRow } from '../model/types';
+import { useFileExplorerStore } from '../model/file-explorer-store';
 import { FileTreeRow } from './FileTreeRow';
 
 /** Above this many visible rows, switch from a plain list to a virtualized one. */
 const VIRTUALIZE_THRESHOLD = 100;
 /** Estimated row height (px) for the virtualizer. */
 const ROW_HEIGHT = 28;
+/** Trailing-debounce window before a scroll position is persisted (ms). */
+const SCROLL_PERSIST_MS = 250;
 
 interface FileTreeProps {
   rows: FlatRow[];
   selectedPath: string | null;
   renamingPath: string | null;
+  /** Visible expanded directories whose listing failed (render an inline retry). */
+  errorPaths: Set<string>;
   onSelectPath: (path: string) => void;
   onToggle: (entry: FileEntry) => void;
   onOpen: (entry: FileEntry) => void;
+  /** Retry a directory whose listing failed. */
+  onRetryDir: (path: string) => void;
   onSubmitRename: (entry: FileEntry, newName: string) => void;
   onCancelRename: () => void;
   onStartRename: (entry: FileEntry) => void;
@@ -34,8 +41,11 @@ interface FileTreeProps {
  * Delete removes.
  */
 export function FileTree(props: FileTreeProps) {
-  const { rows, selectedPath, renamingPath, onSelectPath } = props;
+  const { rows, selectedPath, renamingPath, errorPaths, onSelectPath, onRetryDir } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const setScrollTop = useFileExplorerStore((s) => s.setScrollTop);
+  const scopeKey = useFileExplorerStore((s) => s.scopeKey);
 
   const activate = useCallback(
     (entry: FileEntry) => (entry.type === 'dir' ? props.onToggle(entry) : props.onOpen(entry)),
@@ -52,6 +62,43 @@ export function FileTree(props: FileTreeProps) {
     overscan: 12,
     enabled: virtualize,
   });
+
+  // Restore the saved scroll offset once per cwd, after the first render in
+  // which the flattened rows are non-empty (§4). Gated on `scopeKey` (which the
+  // store updates atomically with `scrollTop` on hydration) so a new cwd
+  // restores its own offset and later data arrivals never re-scroll.
+  const restoredScopeRef = useRef<string | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (rows.length === 0 || restoredScopeRef.current === scopeKey) return;
+    restoredScopeRef.current = scopeKey;
+    const saved = useFileExplorerStore.getState().scrollTop;
+    if (saved <= 0) return;
+    if (virtualize) virtualizer.scrollToOffset(saved);
+    else if (scrollRef.current) scrollRef.current.scrollTop = saved;
+  }, [rows.length, scopeKey, virtualize, virtualizer]);
+
+  // Persist the scroll offset, trailing-debounced so localStorage is never
+  // written per frame (the PIP "never per-frame" rule); the latest value flushes
+  // on unmount so a tab switch or file-open keeps the exact position.
+  const pendingScrollRef = useRef<number | null>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    pendingScrollRef.current = el.scrollTop;
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      scrollTimerRef.current = null;
+      if (pendingScrollRef.current !== null) setScrollTop(pendingScrollRef.current);
+    }, SCROLL_PERSIST_MS);
+  }, [setScrollTop]);
+  useEffect(
+    () => () => {
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+      if (pendingScrollRef.current !== null) setScrollTop(pendingScrollRef.current);
+    },
+    [setScrollTop]
+  );
 
   // Keep the selected row in view as the keyboard moves it.
   useEffect(() => {
@@ -72,8 +119,10 @@ export function FileTree(props: FileTreeProps) {
       row={row}
       selected={row.entry.path === selectedPath}
       renaming={row.entry.path === renamingPath}
+      error={row.entry.type === 'dir' && row.expanded && errorPaths.has(row.entry.path)}
       onSelect={(entry) => onSelectPath(entry.path)}
       onActivate={activate}
+      onRetry={() => onRetryDir(row.entry.path)}
       onSubmitRename={props.onSubmitRename}
       onCancelRename={props.onCancelRename}
       onStartRename={props.onStartRename}
@@ -91,6 +140,7 @@ export function FileTree(props: FileTreeProps) {
       aria-label="File explorer"
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      onScroll={handleScroll}
       className="focus-visible:ring-ring/40 h-full overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset"
     >
       {virtualize ? (

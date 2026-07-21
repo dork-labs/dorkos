@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { FileEntry } from '@dorkos/shared/types';
@@ -289,5 +290,79 @@ describe('FileExplorer', () => {
     await waitFor(() =>
       expect(transport.deleteEntry).toHaveBeenLastCalledWith(CWD, 'pkg', { recursive: true })
     );
+  });
+
+  // The headline regression (DOR-404): the reported bug is that navigating deep,
+  // opening a file (which unmounts the explorer), and coming back collapses the
+  // tree to root. Expansion + selection must survive the unmount, and the
+  // children must render from cache without a fresh fetch.
+  it('restores expansion and selection from cache across unmount and remount', async () => {
+    const readFileTree = vi.fn(async (_cwd: string, opts?: { path?: string }) => {
+      if (!opts?.path) return { entries: [dir('src'), file('README.md')] };
+      if (opts.path === 'src') return { entries: [file('src/index.ts')] };
+      return { entries: [] };
+    });
+    const transport = createMockTransport();
+    transport.readFileTree = readFileTree;
+
+    // One QueryClient shared across the unmount → the tree cache survives, the
+    // way it does within a real page session.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    const view = render(<FileExplorer />, { wrapper: Wrapper });
+
+    // Expand src, then select its child file.
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'src' }));
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'index.ts' }));
+    await waitFor(() =>
+      expect(screen.getByRole('treeitem', { name: 'index.ts' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    );
+    const callsBeforeRemount = readFileTree.mock.calls.length;
+
+    // Switch away (unmount) and back (remount).
+    view.unmount();
+    render(<FileExplorer />, { wrapper: Wrapper });
+
+    // Expansion + selection intact, and the child renders straight from cache —
+    // no new transport call for either level.
+    const child = await screen.findByRole('treeitem', { name: 'index.ts' });
+    expect(child).toHaveAttribute('aria-selected', 'true');
+    expect(readFileTree.mock.calls.length).toBe(callsBeforeRemount);
+  });
+
+  it('refreshes the whole expanded subtree, not just the root (D4)', async () => {
+    const readFileTree = vi.fn(async (_cwd: string, opts?: { path?: string }) => {
+      if (!opts?.path) return { entries: [dir('src')] };
+      if (opts.path === 'src') return { entries: [file('src/index.ts')] };
+      return { entries: [] };
+    });
+    const transport = createMockTransport();
+    transport.readFileTree = readFileTree;
+
+    renderExplorer(transport);
+
+    // Expand src so both root and src are active queries.
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'src' }));
+    await screen.findByRole('treeitem', { name: 'index.ts' });
+
+    readFileTree.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    // Refresh refetched BOTH levels (root + the expanded src), not root-only.
+    await waitFor(() => {
+      const paths = readFileTree.mock.calls.map((c) => c[1]?.path);
+      expect(paths).toContain(undefined); // root
+      expect(paths).toContain('src'); // the expanded subdirectory
+    });
   });
 });

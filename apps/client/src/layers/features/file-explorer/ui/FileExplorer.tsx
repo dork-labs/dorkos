@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { File, Folder, Loader2 } from 'lucide-react';
+import { File, Folder, Loader2, RotateCw } from 'lucide-react';
 import type { FileEntry } from '@dorkos/shared/types';
 import {
   AlertDialog,
@@ -10,9 +10,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Button,
 } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
-import { ROOT_KEY } from '../model/tree';
+import { joinPath, parentOf, ROOT_KEY } from '../model/tree';
 import { useFileExplorer } from '../model/use-file-explorer';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 import { FileTree } from './FileTree';
@@ -35,12 +36,15 @@ interface DraftCreate {
 export function FileExplorer() {
   const cwd = useAppStore((s) => s.selectedCwd);
   const explorer = useFileExplorer(cwd);
-  const { rows, rootLoading } = explorer;
+  const { rows, rootLoading, rootError, errorPaths } = explorer;
   const setCommands = useFileExplorerStore((s) => s.setCommands);
+  // Selection lives in the store (DOR-404 D1) so it survives an unmount and a
+  // refresh; `renamingPath`/`draft` stay component-local (ephemeral, D7).
+  const selectedPath = useFileExplorerStore((s) => s.selectedPath);
+  const setSelectedPath = useFileExplorerStore((s) => s.setSelectedPath);
 
   const [draft, setDraft] = useState<DraftCreate | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const startCreate = useCallback(
     (parent: string, type: 'file' | 'dir') => {
@@ -72,17 +76,20 @@ export function FileExplorer() {
       if (!draft) return;
       const target = draft;
       setDraft(null);
-      await explorer.createEntry(target.parent, name, target.type);
+      const ok = await explorer.createEntry(target.parent, name, target.type);
+      // Select the freshly-created entry (§3.4) so it becomes the keyboard anchor.
+      if (ok) setSelectedPath(joinPath(target.parent, name));
     },
-    [draft, explorer]
+    [draft, explorer, setSelectedPath]
   );
 
   const submitRename = useCallback(
     async (entry: FileEntry, newName: string) => {
       setRenamingPath(null);
-      await explorer.renameEntry(entry, newName);
+      const ok = await explorer.renameEntry(entry, newName);
+      if (ok) setSelectedPath(joinPath(parentOf(entry.path), newName));
     },
-    [explorer]
+    [explorer, setSelectedPath]
   );
 
   if (!cwd) {
@@ -107,6 +114,14 @@ export function FileExplorer() {
           <div className="flex h-20 items-center justify-center">
             <Loader2 className="text-muted-foreground size-(--size-icon-md) animate-spin" />
           </div>
+        ) : rootError && rows.length === 0 ? (
+          <div className="text-muted-foreground flex h-20 flex-col items-center justify-center gap-2 text-xs">
+            <span>Couldn&apos;t load files.</span>
+            <Button variant="outline" size="xs" onClick={explorer.reload}>
+              <RotateCw />
+              Retry
+            </Button>
+          </div>
         ) : rows.length === 0 && !draft ? (
           <div className="text-muted-foreground/60 flex h-20 items-center justify-center text-xs">
             Empty directory
@@ -116,9 +131,11 @@ export function FileExplorer() {
             rows={rows}
             selectedPath={selectedPath}
             renamingPath={renamingPath}
+            errorPaths={errorPaths}
             onSelectPath={setSelectedPath}
             onToggle={explorer.toggleExpand}
             onOpen={explorer.openFile}
+            onRetryDir={explorer.retryDir}
             onSubmitRename={(entry, name) => void submitRename(entry, name)}
             onCancelRename={() => setRenamingPath(null)}
             onStartRename={(entry) => setRenamingPath(entry.path)}
