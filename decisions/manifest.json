@@ -2669,7 +2669,7 @@
       "id": "260721-153851",
       "slug": "derive-session-origin-at-read-time",
       "title": "Derive session origin at read time from transcript-head markers",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-21"
     },
     {
