@@ -138,4 +138,15 @@ describe('provisionCodex', () => {
     expect(result.error).toContain('Could not install Codex');
     expect(spawn).not.toHaveBeenCalled();
   });
+
+  it('pins the provisioned version to the @openai/codex dependency in package.json', async () => {
+    const { CODEX_PACKAGE_VERSION } = await import('../provision.js');
+    const { readFile } =
+      await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    const pkg = JSON.parse(
+      await readFile(new URL('../../../../../package.json', import.meta.url), 'utf8')
+    ) as { dependencies: Record<string, string> };
+
+    expect(CODEX_PACKAGE_VERSION).toBe(pkg.dependencies['@openai/codex']);
+  });
 });
