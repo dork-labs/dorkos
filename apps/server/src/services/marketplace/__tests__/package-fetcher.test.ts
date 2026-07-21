@@ -285,9 +285,62 @@ describe('PackageFetcher', () => {
       expect(cache.writeMarketplace).toHaveBeenCalledWith('personal', expect.any(Object));
     });
 
-    it('fetchMarketplaceJson throws a clear error when the local marketplace.json is missing', async () => {
+    it('fetchMarketplaceJson reads .claude-plugin/marketplace.json when the root has none', async () => {
+      // Mirrors the Claude Code standard layout used by dork-labs/marketplace:
+      // marketplace.json lives under .claude-plugin/, not the source root.
       workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
-      // Note: do not seed marketplace.json on purpose.
+      const json = buildMarketplaceJson('dork-labs');
+      await mkdir(path.join(workDir, '.claude-plugin'), { recursive: true });
+      await writeFile(
+        path.join(workDir, '.claude-plugin', 'marketplace.json'),
+        JSON.stringify(json),
+        'utf-8'
+      );
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const cache = buildCacheMock();
+      const downloader = buildDownloaderMock();
+      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+
+      const result = await fetcher.fetchMarketplaceJson(
+        buildSource({ name: 'dork-labs', source: pathToFileURL(workDir).href })
+      );
+
+      expect(result.name).toBe('dork-labs');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(cache.writeMarketplace).toHaveBeenCalledWith('dork-labs', expect.any(Object));
+    });
+
+    it('fetchMarketplaceJson prefers the root marketplace.json when both layouts exist', async () => {
+      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      const rootJson = buildMarketplaceJson('root-wins');
+      const pluginJson = buildMarketplaceJson('claude-plugin-loses');
+      await mkdir(path.join(workDir, '.claude-plugin'), { recursive: true });
+      await writeFile(path.join(workDir, 'marketplace.json'), JSON.stringify(rootJson), 'utf-8');
+      await writeFile(
+        path.join(workDir, '.claude-plugin', 'marketplace.json'),
+        JSON.stringify(pluginJson),
+        'utf-8'
+      );
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const cache = buildCacheMock();
+      const downloader = buildDownloaderMock();
+      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+
+      const result = await fetcher.fetchMarketplaceJson(
+        buildSource({ name: 'root-wins', source: pathToFileURL(workDir).href })
+      );
+
+      expect(result.name).toBe('root-wins');
+      expect(cache.writeMarketplace).toHaveBeenCalledWith('root-wins', expect.any(Object));
+    });
+
+    it('fetchMarketplaceJson throws a clear error naming both paths when neither layout exists', async () => {
+      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      // Note: do not seed marketplace.json at either the root or .claude-plugin/ on purpose.
 
       const cache = buildCacheMock();
       const downloader = buildDownloaderMock();
@@ -296,7 +349,9 @@ describe('PackageFetcher', () => {
       const sourceUrl = pathToFileURL(workDir).href;
       await expect(
         fetcher.fetchMarketplaceJson(buildSource({ name: 'personal', source: sourceUrl }))
-      ).rejects.toThrow(/Failed to read local marketplace at .*marketplace\.json:/);
+      ).rejects.toThrow(
+        /Failed to read local marketplace at .*marketplace\.json or .*\.claude-plugin[/\\]marketplace\.json:/
+      );
       expect(cache.writeMarketplace).not.toHaveBeenCalled();
     });
 
