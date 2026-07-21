@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RuntimeProvisionResult } from '@dorkos/shared/transport';
 
-// Mock the provisioning service — never run a real install through the route.
+// Mock the provisioning services — never run a real install through the route.
 vi.mock('../../services/runtimes/opencode/provision.js', () => ({
   provisionOpenCode: vi.fn(),
+}));
+
+vi.mock('../../services/runtimes/codex/provision.js', () => ({
+  provisionCodex: vi.fn(),
 }));
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -17,6 +21,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import { provisionOpenCode } from '../../services/runtimes/opencode/provision.js';
+import { provisionCodex } from '../../services/runtimes/codex/provision.js';
 
 const app = createApp();
 
@@ -69,5 +74,57 @@ describe('POST /api/runtimes/opencode/provision', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
     expect(provisionOpenCode).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/runtimes/codex/provision', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('streams progress frames and a terminal result on success (loopback)', async () => {
+    vi.mocked(provisionCodex).mockImplementation(async (onProgress) => {
+      onProgress?.({ stage: 'starting', message: 'Installing @openai/codex@0.144.1…' });
+      onProgress?.({ stage: 'installing', message: 'added 1 package' });
+      const result: RuntimeProvisionResult = { ok: true, binaryPath: '/dork/codex' };
+      onProgress?.({ stage: 'done', message: 'Codex installed.' });
+      return result;
+    });
+
+    const res = await request(app).post('/api/runtimes/codex/provision');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    // The SSE frame contract is identical to the OpenCode endpoint (pinned for the client).
+    expect(res.text).toContain('event: progress');
+    expect(res.text).toContain('event: result');
+    expect(res.text).toContain('"ok":true');
+    expect(res.text).toContain('/dork/codex');
+    expect(provisionCodex).toHaveBeenCalledOnce();
+    expect(typeof vi.mocked(provisionCodex).mock.calls[0][0]).toBe('function');
+  });
+
+  it('streams the honest error result when provisioning fails', async () => {
+    vi.mocked(provisionCodex).mockResolvedValue({
+      ok: false,
+      error: 'Could not install Codex. Check your connection and try again.',
+    });
+
+    const res = await request(app).post('/api/runtimes/codex/provision');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('event: result');
+    expect(res.text).toContain('"ok":false');
+    expect(res.text).toContain('Could not install Codex');
+  });
+
+  it('rejects a non-loopback origin with 403 and never provisions', async () => {
+    const res = await request(app)
+      .post('/api/runtimes/codex/provision')
+      .set('Host', 'evil.example.com');
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/locally/i);
+    expect(provisionCodex).not.toHaveBeenCalled();
   });
 });

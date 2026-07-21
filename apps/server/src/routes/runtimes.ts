@@ -13,7 +13,9 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { provisionOpenCode } from '../services/runtimes/opencode/provision.js';
+import { provisionCodex } from '../services/runtimes/codex/provision.js';
 import {
   storeRuntimeCredential,
   storeProviderCredential,
@@ -73,15 +75,31 @@ const ProviderCredentialBodySchema = z.object({
 });
 const OllamaPullBodySchema = z.object({ model: z.string().min(1).optional() });
 
+/** A runtime's on-demand provisioning function (streams progress, resolves to a result). */
+type ProvisionFn = (
+  onProgress: (progress: RuntimeProvisionProgress) => void
+) => Promise<RuntimeProvisionResult>;
+
 /**
- * POST /api/runtimes/opencode/provision — opt-in, on-demand OpenCode install.
+ * Stream an on-demand runtime install over SSE: `progress` frames as the install
+ * runs, then a terminal `result` frame carrying the outcome. Every provisioning
+ * runtime shares this handler — the SSE frame contract is identical across
+ * runtimes so the client renders one flow. Loopback-only (host-mutating).
  *
- * Streams install progress as `progress` SSE frames and a terminal `result`
- * frame carrying the {@link provisionOpenCode} outcome. Loopback-only.
+ * @param req - The incoming request (loopback-checked before any output).
+ * @param res - The response the SSE frames are written to.
+ * @param provision - The runtime's provisioning function.
+ * @param runtimeLabel - Display name for the defensive fallback error message.
  */
-router.post('/opencode/provision', async (req, res) => {
+async function streamRuntimeProvision(
+  req: Request,
+  res: Response,
+  provision: ProvisionFn,
+  runtimeLabel: string
+): Promise<void> {
   if (!isLoopbackRequest(req)) {
-    return res.status(403).json({ error: 'Runtime provisioning is only available locally' });
+    res.status(403).json({ error: 'Runtime provisioning is only available locally' });
+    return;
   }
 
   res.writeHead(200, {
@@ -92,19 +110,40 @@ router.post('/opencode/provision', async (req, res) => {
   });
 
   try {
-    const result = await provisionOpenCode((progress) => sendEvent(res, 'progress', progress));
+    const result = await provision((progress) => sendEvent(res, 'progress', progress));
     sendEvent(res, 'result', result);
   } catch (err) {
-    // provisionOpenCode returns failures rather than throwing; guard defensively.
-    logger.error('[Runtimes] OpenCode provisioning failed unexpectedly', err);
+    // The provision functions return failures rather than throwing; guard defensively.
+    logger.error(`[Runtimes] ${runtimeLabel} provisioning failed unexpectedly`, err);
     sendEvent(res, 'result', {
       ok: false,
-      error: 'Could not install OpenCode. Please try again.',
+      error: `Could not install ${runtimeLabel}. Please try again.`,
     });
   } finally {
     if (!res.writableEnded) res.end();
   }
-});
+}
+
+/**
+ * POST /api/runtimes/opencode/provision — opt-in, on-demand OpenCode install.
+ *
+ * Streams install progress as `progress` SSE frames and a terminal `result`
+ * frame carrying the {@link provisionOpenCode} outcome. Loopback-only.
+ */
+router.post('/opencode/provision', (req, res) =>
+  streamRuntimeProvision(req, res, provisionOpenCode, 'OpenCode')
+);
+
+/**
+ * POST /api/runtimes/codex/provision — opt-in, on-demand Codex install (ADR-0317).
+ *
+ * The one-click fallback when the SDK-vendored Codex binary is absent. Shares the
+ * exact SSE frame contract as the OpenCode endpoint: `progress` frames then a
+ * terminal `result` frame carrying the {@link provisionCodex} outcome. Loopback-only.
+ */
+router.post('/codex/provision', (req, res) =>
+  streamRuntimeProvision(req, res, provisionCodex, 'Codex')
+);
 
 // --- OpenRouter (OpenCode Gateway) -----------------------------------------
 // Registered before the generic `/:type/*` routes for readability; the path

@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { checkCodexDependencies } from '../check-dependencies.js';
+import { resolveProvisionedCodexPath } from '../provision.js';
 import { configManager } from '../../../core/config-manager.js';
 
 // execFile (callback form) is the async probe primitive after the T0 async
@@ -14,11 +15,14 @@ vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn() },
 }));
 
-const INSTALL_HINT = 'npm i -g @openai/codex && codex login';
+const INSTALL_HINT = 'npm i -g @openai/codex';
+const LOGIN_HINT = 'codex login';
 const INFO_URL = 'https://developers.openai.com/codex';
 
 /** A canonical PATH-resolved codex, distinct from any vendored path. */
 const PATH_CODEX = '/usr/local/bin/codex';
+/** The on-demand provisioned binary location (dork-home scoped). */
+const PROVISIONED_CODEX = resolveProvisionedCodexPath();
 
 function mockRuntimesConfig(codex: { enabled: boolean; binaryPath: string | null }) {
   const runtimes: UserConfig['runtimes'] = {
@@ -101,6 +105,27 @@ describe('checkCodexDependencies', () => {
     );
   });
 
+  it('resolves the on-demand provisioned binary before consulting PATH', async () => {
+    mockRuntimesConfig({ enabled: true, binaryPath: null });
+    // The provisioned binary exists; the vendored candidate does not, and PATH is
+    // never consulted because the provisioned install wins first.
+    vi.mocked(existsSync).mockImplementation((p) => p === PROVISIONED_CODEX);
+    onExecFile((_file, args) => {
+      if (args[0] === '--version') return { stdout: 'codex-cli 0.144.1\n' };
+      if (args[0] === 'login') return { stdout: 'ok\n' };
+      return { error: new Error(`unexpected args: ${args.join(' ')}`) };
+    });
+
+    const [cli, auth] = await checkCodexDependencies();
+
+    expect(cli.status).toBe('satisfied');
+    expect(auth.status).toBe('satisfied');
+    // Every probe ran against the provisioned binary; no which/where lookup.
+    for (const call of vi.mocked(execFile).mock.calls) {
+      expect(call[0]).toBe(PROVISIONED_CODEX);
+    }
+  });
+
   it('returns missing for both checks when every source is absent', async () => {
     mockRuntimesConfig({ enabled: true, binaryPath: null });
     vi.mocked(existsSync).mockReturnValue(false);
@@ -117,7 +142,10 @@ describe('checkCodexDependencies', () => {
       infoUrl: INFO_URL,
     });
     expect(cli.description).toBeTruthy();
-    expect(auth).toMatchObject({ status: 'missing', installHint: INSTALL_HINT, infoUrl: INFO_URL });
+    // The CLI and auth checks now carry distinct, correct hints (never the same
+    // command twice): install for the CLI, login for auth.
+    expect(auth).toMatchObject({ status: 'missing', installHint: LOGIN_HINT, infoUrl: INFO_URL });
+    expect(cli.installHint).not.toBe(auth.installHint);
   });
 
   it('uses the configured binaryPath and never consults the vendored path or PATH', async () => {
@@ -149,11 +177,12 @@ describe('checkCodexDependencies', () => {
     expect(cli.status).toBe('missing');
     expect(cli.installHint).toBe(INSTALL_HINT);
     expect(auth.status).toBe('missing');
+    expect(auth.installHint).toBe(LOGIN_HINT);
     // An authoritative configured path short-circuits — nothing was probed.
     expect(execFile).not.toHaveBeenCalled();
   });
 
-  it('reports the CLI satisfied but auth missing when login status fails', async () => {
+  it('reports the CLI satisfied but auth missing, with the login-only hint (never the install command)', async () => {
     mockRuntimesConfig({ enabled: true, binaryPath: null });
     vi.mocked(existsSync).mockReturnValue(true);
     onExecFile((_file, args) => {
@@ -166,7 +195,9 @@ describe('checkCodexDependencies', () => {
     const [cli, auth] = await checkCodexDependencies();
 
     expect(cli.status).toBe('satisfied');
-    expect(auth).toMatchObject({ status: 'missing', installHint: INSTALL_HINT, infoUrl: INFO_URL });
+    expect(auth).toMatchObject({ status: 'missing', installHint: LOGIN_HINT, infoUrl: INFO_URL });
+    // With the CLI present the user only needs to log in — never re-install.
+    expect(auth.installHint).not.toBe(INSTALL_HINT);
   });
 
   it('reports missing when the resolved binary fails to launch', async () => {

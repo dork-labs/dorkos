@@ -21,8 +21,14 @@ import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
 import { runBinaryProbe, findBinaryOnPath } from '../shared/run-probe.js';
 import { resolveProvisionedOpenCodePath } from './provision.js';
 
-/** One remedy covers both failure modes: install the CLI, then log in. */
-const OPENCODE_INSTALL_HINT = 'npm i -g opencode-ai && opencode auth login';
+/**
+ * Each failure mode gets its own remedy so the onboarding screen never renders
+ * the same command twice: the CLI check hands out the install command, the auth
+ * check hands out the login command. When the CLI itself is missing the auth
+ * check reports missing too, but the two hints stay distinct and correct.
+ */
+const OPENCODE_INSTALL_HINT = 'npm i -g opencode-ai';
+const OPENCODE_LOGIN_HINT = 'opencode auth login';
 const OPENCODE_INFO_URL = 'https://opencode.ai/docs/server';
 
 /** Defensive cap on how long a CLI probe may run. */
@@ -112,7 +118,7 @@ async function checkAuthState(binary: string | null): Promise<DependencyCheck> {
           name,
           description,
           status: 'missing',
-          installHint: OPENCODE_INSTALL_HINT,
+          installHint: OPENCODE_LOGIN_HINT,
           infoUrl: OPENCODE_INFO_URL,
         };
       }
@@ -126,7 +132,7 @@ async function checkAuthState(binary: string | null): Promise<DependencyCheck> {
     name,
     description,
     status: 'missing',
-    installHint: OPENCODE_INSTALL_HINT,
+    installHint: OPENCODE_LOGIN_HINT,
     infoUrl: OPENCODE_INFO_URL,
   };
 }
