@@ -48,6 +48,31 @@ describe('parsePackageInitArgs', () => {
     expect(args.adapterType).toBe('slack');
   });
 
+  it('parses a single --categories slug', () => {
+    const args = parsePackageInitArgs(['my-pkg', '--categories', 'dev-tools']);
+    expect(args.categories).toEqual(['dev-tools']);
+  });
+
+  it('parses a comma-separated --categories list, trimming whitespace and blanks', () => {
+    const args = parsePackageInitArgs([
+      'my-pkg',
+      '--categories',
+      'dev-tools, productivity ,,security',
+    ]);
+    expect(args.categories).toEqual(['dev-tools', 'productivity', 'security']);
+  });
+
+  it('leaves categories undefined when --categories is not passed', () => {
+    const args = parsePackageInitArgs(['my-pkg']);
+    expect(args.categories).toBeUndefined();
+  });
+
+  it('throws with a clear message when --categories contains an off-list slug', () => {
+    expect(() =>
+      parsePackageInitArgs(['my-pkg', '--categories', 'dev-tools,not-a-category'])
+    ).toThrow(/Invalid --categories value\(s\): not-a-category/);
+  });
+
   it('throws with a clear message when name is missing', () => {
     expect(() => parsePackageInitArgs([])).toThrow(/Missing required <name>/);
   });
@@ -172,5 +197,32 @@ describe('runPackageInit', () => {
       fs.readFileSync(path.join(tmpDir, name, '.dork', 'manifest.json'), 'utf-8')
     );
     expect(manifest.adapterType).toBe('auto-adapter');
+  });
+
+  it('forwards categories to the scaffolder, deriving the primary category', async () => {
+    const name = 'categorized-pkg';
+    await runPackageInit({
+      name,
+      type: 'plugin',
+      parentDir: tmpDir,
+      categories: ['dev-tools', 'productivity'],
+    });
+
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, name, '.dork', 'manifest.json'), 'utf-8')
+    );
+    expect(manifest.categories).toEqual(['dev-tools', 'productivity']);
+    expect(manifest.category).toBe('dev-tools');
+  });
+
+  it('writes an empty categories[] when --categories is not passed', async () => {
+    const name = 'uncategorized-pkg';
+    await runPackageInit({ name, type: 'plugin', parentDir: tmpDir });
+
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, name, '.dork', 'manifest.json'), 'utf-8')
+    );
+    expect(manifest.categories).toEqual([]);
+    expect(manifest.category).toBeUndefined();
   });
 });

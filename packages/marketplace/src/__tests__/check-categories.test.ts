@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { MARKETPLACE_CATEGORIES, CATEGORY_LABELS, CATEGORY_DESCRIPTIONS } from '../categories.js';
+import { MarketplacePackageManifestSchema } from '../manifest-schema.js';
 import {
   checkVocabulary,
   checkFixtures,
   validateManifest,
 } from '../../scripts/check-categories.js';
+
+// `validateManifest`/`checkFixtures` require a schema argument — always the
+// source-imported schema here, never the script's dynamic `@dorkos/marketplace`
+// import (used only by its CLI-only `runChecks()`) — so
+// `pnpm --filter @dorkos/marketplace test` stays correct with no prior build.
+// See the module doc comment atop `scripts/check-categories.ts`.
 
 describe('checkVocabulary', () => {
   // The shipped vocabulary + records must be exhaustive (the CI guarantee).
@@ -46,19 +53,23 @@ describe('validateManifest', () => {
   // An off-list categories[] entry is exactly what a drifted fixture would
   // carry — the fixture check must reject it.
   it('rejects an off-list categories[] entry', () => {
-    expect(validateManifest({ ...base, categories: ['not-a-cat'] })).not.toEqual([]);
+    expect(
+      validateManifest({ ...base, categories: ['not-a-cat'] }, MarketplacePackageManifestSchema)
+    ).not.toEqual([]);
   });
 
   // A legacy free-string singular-only category still parses (the harness
   // regression guard is upheld by the fixture check too).
   it('accepts a legacy free-string singular-only category', () => {
-    expect(validateManifest({ ...base, category: 'workflow' })).toEqual([]);
+    expect(
+      validateManifest({ ...base, category: 'workflow' }, MarketplacePackageManifestSchema)
+    ).toEqual([]);
   });
 });
 
 describe('checkFixtures', () => {
   // Every bundled (valid) fixture manifest parses under the updated schema.
   it('returns clean for the shipped fixtures', async () => {
-    expect(await checkFixtures()).toEqual([]);
+    expect(await checkFixtures(MarketplacePackageManifestSchema)).toEqual([]);
   });
 });

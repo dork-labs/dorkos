@@ -1,51 +1,53 @@
 /**
- * check-categories.ts — CI guard for the controlled marketplace category
- * vocabulary (spec §D3).
+ * check-categories.ts — pure checks backing the controlled marketplace
+ * category vocabulary CI guard (spec §D3).
  *
- * Two checks:
+ * Two checks, both exported as pure/parameterized functions so they can be
+ * unit-tested without a filesystem-scanning CLI run:
  *
- * 1. Exhaustiveness — `CATEGORY_LABELS` and `CATEGORY_DESCRIPTIONS` key-sets
- *    each exactly equal `MARKETPLACE_CATEGORIES`. This is a runtime backstop
- *    for the compile-time `Record<MarketplaceCategory, string>` typing: a
+ * 1. Exhaustiveness ({@link checkVocabulary}) — a label/description record's
+ *    key-set exactly equals a vocabulary. This is a runtime backstop for the
+ *    compile-time `Record<MarketplaceCategory, string>` typing: a
  *    missing/misspelled key is already a TS error, but an *extra* key or a
  *    drift introduced through a cast slips past the type — this catches it.
- * 2. Fixture coherence — every bundled `.dork/manifest.json` package-manifest
- *    fixture parses under `MarketplacePackageManifestSchema`, so an off-list
- *    `categories[]` entry or an incoherent `category`/`categories[0]` pair
- *    added to a fixture fails CI. Intentionally-invalid fixtures (the `broken/`
- *    tree and `invalid-*` packages) are skipped by design.
+ * 2. Fixture coherence ({@link checkFixtures}, {@link validateManifest}) —
+ *    every bundled `.dork/manifest.json` package-manifest fixture parses
+ *    under a given schema, so an off-list `categories[]` entry or an
+ *    incoherent `category`/`categories[0]` pair added to a fixture fails CI.
+ *    Intentionally-invalid fixtures (the `broken/` tree and `invalid-*`
+ *    packages) are skipped by design.
  *
  * The external registry gate — every `dork-labs/marketplace` package's
  * `categories[]` ∈ the closed list and `category === categories[0]` — runs in
  * THAT repo's CI via the same exported `MarketplaceCategorySchema` (spec §H /
  * task 6.1). This repo cannot validate an external registry at build time.
  *
- * Run directly (exits non-zero on any failure):
- *
- *   node --experimental-strip-types --disable-warning=ExperimentalWarning \
- *     packages/marketplace/scripts/check-categories.ts
- *
  * The vitest test `src/__tests__/check-categories.test.ts` invokes these same
  * functions, so `pnpm verify` (which runs the marketplace test task) catches a
  * taxonomy drift or an off-list fixture category too.
  *
- * Imports from the built package (`@dorkos/marketplace`, resolved to `dist/`)
- * rather than `../src/*.ts`: Node's type stripping does not remap the `.js`
- * NodeNext specifiers the source modules use internally, so a source import
- * would fail to resolve. Build the package before running the script.
+ * `validateManifest` and `checkFixtures` take the schema to validate against
+ * as a **required** parameter — this module deliberately holds no import,
+ * static or dynamic, of `@dorkos/marketplace` itself. A top-level
+ * `import { MarketplacePackageManifestSchema } from '@dorkos/marketplace'`
+ * (or even an `await import(...)` never actually called) resolves through the
+ * package's `exports` map to `dist/index.js` (the `types` condition only
+ * steers the type-checker, not the runtime, and Vite's import-analysis
+ * statically resolves dynamic-import specifiers too) — either form makes
+ * *importing this module at all* fail without a prior
+ * `pnpm --filter @dorkos/marketplace build`. `check-categories.test.ts`
+ * imports the schema straight from `../manifest-schema.ts` and passes it in
+ * explicitly, so `pnpm --filter @dorkos/marketplace test` stays correct — and
+ * immune to a stale `dist/` — with no prior build. The CLI entry point that
+ * *does* need the built package lives in the sibling `run-check-categories.ts`.
  *
  * @module @dorkos/marketplace/scripts/check-categories
  */
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import {
-  MARKETPLACE_CATEGORIES,
-  CATEGORY_LABELS,
-  CATEGORY_DESCRIPTIONS,
-  MarketplacePackageManifestSchema,
-} from '@dorkos/marketplace';
+import { fileURLToPath } from 'node:url';
+import type { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -59,7 +61,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..', '..');
  * registry (`marketplace.json`) fixtures, which are intentionally lenient and
  * out of scope here.
  */
-const FIXTURE_ROOTS = [
+export const FIXTURE_ROOTS = [
   path.join(PACKAGE_ROOT, 'fixtures'),
   path.join(PACKAGE_ROOT, 'src', '__tests__', 'fixtures'),
   path.join(REPO_ROOT, 'apps', 'server', 'src', 'services', 'marketplace', 'fixtures'),
@@ -105,11 +107,17 @@ export function checkVocabulary(
  * committing a broken fixture.
  *
  * @param raw - The parsed JSON manifest object.
+ * @param schema - Schema to validate against — always passed explicitly (see
+ *   the module doc comment for why there is no built-in default).
  * @param label - A human-readable source label for error messages.
  * @returns Error strings; empty when the manifest parses.
  */
-export function validateManifest(raw: unknown, label = 'manifest'): string[] {
-  const result = MarketplacePackageManifestSchema.safeParse(raw);
+export function validateManifest(
+  raw: unknown,
+  schema: typeof MarketplacePackageManifestSchema,
+  label = 'manifest'
+): string[] {
+  const result = schema.safeParse(raw);
   if (result.success) return [];
   return result.error.issues.map(
     (issue) => `${label}: ${issue.path.join('.') || '<root>'}: ${issue.message}`
@@ -151,10 +159,15 @@ async function findFixtureManifests(root: string): Promise<string[]> {
  * Parse and schema-validate every bundled package-manifest fixture. Returns one
  * error string per parse/schema failure; empty when all valid fixtures pass.
  *
+ * @param schema - Schema to validate against — always passed explicitly (see
+ *   the module doc comment for why there is no built-in default).
  * @param roots - Fixture roots to scan (defaults to the bundled roots).
  * @returns Error strings; empty when every scanned fixture parses.
  */
-export async function checkFixtures(roots: string[] = FIXTURE_ROOTS): Promise<string[]> {
+export async function checkFixtures(
+  schema: typeof MarketplacePackageManifestSchema,
+  roots: string[] = FIXTURE_ROOTS
+): Promise<string[]> {
   const errors: string[] = [];
   for (const root of roots) {
     for (const manifestPath of await findFixtureManifests(root)) {
@@ -169,31 +182,8 @@ export async function checkFixtures(roots: string[] = FIXTURE_ROOTS): Promise<st
         );
         continue;
       }
-      errors.push(...validateManifest(raw, path.relative(REPO_ROOT, manifestPath)));
+      errors.push(...validateManifest(raw, schema, path.relative(REPO_ROOT, manifestPath)));
     }
   }
   return errors;
-}
-
-/**
- * Run both checks against the shipped vocabulary and bundled fixtures.
- *
- * @returns All error strings; empty when everything is coherent.
- */
-export async function runChecks(): Promise<string[]> {
-  return [
-    ...checkVocabulary(MARKETPLACE_CATEGORIES, CATEGORY_LABELS, CATEGORY_DESCRIPTIONS),
-    ...(await checkFixtures()),
-  ];
-}
-
-// Run as a CLI: report every failure and exit non-zero on any.
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const errors = await runChecks();
-  if (errors.length > 0) {
-    for (const e of errors) console.error(`✗ ${e}`);
-    console.error(`\ncheck-categories: ${errors.length} problem(s) found.`);
-    process.exit(1);
-  }
-  console.log('✓ check-categories: vocabulary exhaustive and all fixtures coherent.');
 }

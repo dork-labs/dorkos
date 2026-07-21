@@ -60,6 +60,7 @@ Subcommands:
 Examples:
   dorkos package init my-plugin --type plugin
   dorkos package init my-bot --type adapter --adapter-type slack
+  dorkos package init my-tool --categories dev-tools,productivity
   dorkos package validate ./my-plugin
 `);
     process.exit(0);
