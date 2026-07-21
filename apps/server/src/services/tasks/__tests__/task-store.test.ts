@@ -229,6 +229,29 @@ describe('TaskStore', () => {
     });
   });
 
+  // === resolveTaskOrigins (session-origin-legibility) ===
+
+  describe('resolveTaskOrigins', () => {
+    it('resolves the task name for a session id backed by a Pulse run', () => {
+      const task = store.createTask(
+        taskInput({ name: 'daily-digest', prompt: 'p', cron: '0 9 * * *' })
+      );
+      const run = store.createRun(task.id, 'scheduled');
+      store.updateRun(run.id, { sessionId: 'session-with-run' });
+
+      const origins = store.resolveTaskOrigins(['session-with-run', 'unrelated-id']);
+
+      expect(origins.size).toBe(1);
+      expect(origins.get('session-with-run')).toEqual({ taskName: 'daily-digest' });
+      expect(origins.has('unrelated-id')).toBe(false);
+    });
+
+    it('returns an empty map without querying for an empty input', () => {
+      const origins = store.resolveTaskOrigins([]);
+      expect(origins.size).toBe(0);
+    });
+  });
+
   // === Terminal-status guard (DOR-248) ===
 
   describe('updateRun terminal guard', () => {

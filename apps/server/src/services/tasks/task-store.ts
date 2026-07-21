@@ -449,6 +449,29 @@ export class TaskStore {
     return result.changes;
   }
 
+  /**
+   * Resolve Pulse task origin for a batch of session ids, keyed by the id.
+   * One indexed IN query over pulse_runs joined to pulse_schedules — O(1)
+   * queries regardless of list size, used by the session-list origin
+   * overlay (never called per-session).
+   *
+   * @param sessionIds - Session ids to look up; sessions with no matching run are absent from the returned map
+   */
+  resolveTaskOrigins(sessionIds: string[]): Map<string, { taskName: string }> {
+    if (sessionIds.length === 0) return new Map();
+    const rows = this.db
+      .select({ sessionId: pulseRuns.sessionId, taskName: pulseSchedules.name })
+      .from(pulseRuns)
+      .innerJoin(pulseSchedules, eq(pulseRuns.scheduleId, pulseSchedules.id))
+      .where(inArray(pulseRuns.sessionId, sessionIds))
+      .all();
+    const map = new Map<string, { taskName: string }>();
+    for (const row of rows) {
+      if (row.sessionId) map.set(row.sessionId, { taskName: row.taskName });
+    }
+    return map;
+  }
+
   // === Reliability ===
 
   /**
