@@ -6,6 +6,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-banner';
 
 // ── Route-aware mock: control the pathname returned by useRouterState ──
 
@@ -48,10 +49,16 @@ vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,
 }));
 
-vi.mock('@/layers/widgets/app-banner', () => ({
-  AppBannerSlot: () => null,
-  useAppBanners: () => [],
-}));
+// Keep the real AppBannerSlot so this suite can prove *where* the global banner
+// lands in the shell (DOR-389): inside SidebarInset, below the header — never
+// above the shell where the fixed sidebar would paint over it. `useAppBanners` is
+// driven by a mutable list so a single test can make a banner eligible; it
+// defaults to empty, so every other test renders no banner and is unaffected.
+let mockBanners: BannerDescriptor[] = [];
+vi.mock('@/layers/widgets/app-banner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/widgets/app-banner')>();
+  return { ...actual, useAppBanners: () => mockBanners };
+});
 
 vi.mock('@/layers/features/command-palette', () => ({
   CommandPaletteDialog: () => null,
@@ -402,6 +409,51 @@ describe('AppShell slot integration', () => {
       renderAppShell();
       expect(screen.getByTestId('session-header')).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('global banner placement (DOR-389)', () => {
+    afterEach(() => {
+      mockBanners = [];
+    });
+
+    it('mounts the standing banner inside the content inset and below the header — never behind the fixed sidebar', () => {
+      // Regression guard for DOR-389. The first-run telemetry notice once mounted
+      // above the shell, where the fixed (z-10) sidebar painted over its opening
+      // line and it shoved the header down. The global slot now lives inside
+      // SidebarInset, below the header. Lock the structural invariant that keeps
+      // the notice readable from its first word: the rendered banner sits within
+      // the content inset, after the header, and outside the fixed sidebar.
+      mockBanners = [
+        {
+          id: 'placement-probe',
+          variant: 'neutral',
+          priority: BANNER_PRIORITY.neutral,
+          render: () => <div data-testid="standing-banner">standing notice</div>,
+        },
+      ];
+      mockPathname = '/';
+      renderAppShell();
+
+      const banner = screen.getByTestId('standing-banner');
+
+      // Inside the content inset...
+      const inset = document.querySelector('[data-slot="sidebar-inset"]');
+      expect(inset).not.toBeNull();
+      expect(inset).toContainElement(banner);
+
+      // ...below the header (its own row, not nested in the header)...
+      const header = inset?.querySelector('header');
+      expect(header).not.toBeNull();
+      expect(header).not.toContainElement(banner);
+      expect(
+        header && header.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+
+      // ...and outside the fixed sidebar that would otherwise occlude it.
+      const sidebar = document.querySelector('[data-slot="sidebar"]');
+      expect(sidebar).not.toBeNull();
+      expect(sidebar).not.toContainElement(banner);
     });
   });
 
