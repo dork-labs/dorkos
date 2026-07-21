@@ -41,18 +41,24 @@
  * — not asserted here, because a loose prose match would be a weaker and flakier
  * signal than the concrete checks this case pins.
  *
- * KNOWN CREDENTIALED-RUN LIMITATION (verified 2026-07-20 against real
- * claude-code on host auth): the subscribe-first drive opens `/events` on the
- * session id it holds BEFORE the trigger POST, but claude-code re-mints its
- * internal session id on a resume, so an intermediate turn's frames can land on
- * the post-remap id and the pre-remap subscription times out — surfacing this
- * eval as a runner `error` (never a false pass). The interview's PRODUCT
- * behavior was confirmed end-to-end by hand (the newborn agent read then Edited
- * its own `.dork/SOUL.md` mid-conversation, markers intact, addressing the job,
- * and only OFFERED its first action) — every oracle here passed against that
- * real artifact. Making the multi-turn drive robust to the mid-conversation
- * remap is a general harness improvement (it affects any multi-turn credentialed
- * eval, not just this one) and is deliberately left to a focused follow-up.
+ * FORMER CREDENTIALED-RUN LIMITATION (verified 2026-07-20 against real
+ * claude-code on host auth; fixed 2026-07-21, DOR-397): the subscribe-first
+ * drive used to open `/events` on the session id it held BEFORE the trigger
+ * POST, but claude-code re-mints its internal session id on a resume, so an
+ * intermediate turn's frames could land on the post-remap id and the
+ * pre-remap subscription would time out — surfacing this eval as a runner
+ * `error` (never a false pass). The interview's PRODUCT behavior was
+ * confirmed end-to-end by hand (the newborn agent read then Edited its own
+ * `.dork/SOUL.md` mid-conversation, markers intact, addressing the job, and
+ * only OFFERED its first action) — every oracle here passed against that real
+ * artifact. `driveConversation` (`../runner/drive.js`) is now remap-robust — it
+ * re-subscribes to the canonical id the 202 trigger response reveals — as a
+ * general harness fix (it benefits any multi-turn credentialed eval, not just
+ * this one), covered by a fake-transport unit test. This case STAYS
+ * `quarantined` until that fix is proven against a real claude-code
+ * credentialed run (the unit test exercises the re-subscribe logic, not the
+ * live remap itself) — promote once a real run confirms it, per the
+ * demo-claim gate (`AGENTS.md`: never claim a still-unverified surface works).
  *
  * @module evals/suite/agents
  */
@@ -196,12 +202,14 @@ export const designYourOwnInterviewCase: EvalCase = {
   prompt: INTERVIEW_TURNS,
   runtimeTier: 'claude-code-cheap',
   costClass: 'cheap',
-  // `experimental`, NOT `core`, and quarantined: on the credentialed tier the
-  // multi-turn drive can hit a claude-code session-remap timeout (see the module
-  // doc's KNOWN CREDENTIALED-RUN LIMITATION), so it cannot yet be a reliable live
-  // gate. Keeping it out of `core` + non-gating means a credentialed core run
-  // stays green; the deterministic oracle unit tests still gate on every PR.
-  // Promote to `core` (drop `quarantined`) once the remap-robust drive lands.
+  // `experimental`, NOT `core`, and still quarantined: the drive is now
+  // remap-robust (DOR-397, see the module doc), but that fix is proven only
+  // against a fake transport unit test, not a real claude-code credentialed
+  // run — so this case cannot yet be trusted as a reliable live gate. Keeping
+  // it out of `core` + non-gating means a credentialed core run stays green;
+  // the deterministic oracle unit tests still gate on every PR. Promote to
+  // `core` (drop `quarantined`) once a real credentialed run confirms the
+  // re-subscribe holds end-to-end.
   tags: ['experimental'],
   quarantined: true,
   // A real multi-turn interview + a file write is more than a trivial turn; give
