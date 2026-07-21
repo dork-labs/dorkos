@@ -11,19 +11,7 @@ import path from 'path';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RelayCore, SignalEmitter } from '@dorkos/relay';
 import { agentSubject, guardNamespaceCollision } from '@dorkos/relay';
-
-/** Priority for same-namespace allow rules. */
-const SAME_NAMESPACE_ALLOW_PRIORITY = 100;
-
-/** Priority for cross-namespace deny rules. */
-const CROSS_NAMESPACE_DENY_PRIORITY = 10;
-
-/**
- * Priority for system-agent allow rules — above the same-namespace allow so a
- * system agent (DorkBot) is reachable from, and can reach, every namespace
- * despite the default cross-namespace deny.
- */
-const SYSTEM_AGENT_ALLOW_PRIORITY = 200;
+import { defaultAccessRuleSpecs } from './default-access-rules.js';
 
 /**
  * Resolve the namespace segment for relay subjects: explicit namespace or
@@ -105,7 +93,10 @@ export function subjectForAgent(agent: {
  * `relay.agent.{namespace}.{agentId}`. When namespace is not provided,
  * falls back to `path.basename(projectPath)` for backward compatibility.
  *
- * On registration, writes default access rules:
+ * On registration, writes the default access rules from
+ * {@link defaultAccessRuleSpecs} — the single source of truth
+ * {@link TopologyManager.defaultAccessRules} also reads to surface these
+ * rules in the topology view:
  * - Same-namespace allow (priority 100)
  * - Cross-namespace deny (priority 10)
  * - System-agent bidirectional allow (priority 200, `isSystem` agents only)
@@ -174,37 +165,19 @@ export class RelayBridge {
       }
     }
 
-    // Write default same-namespace allow rule (idempotent — deduped by addRule)
-    this.relayCore.addAccessRule({
-      from: `relay.agent.${ns}.*`,
-      to: `relay.agent.${ns}.*`,
-      action: 'allow',
-      priority: SAME_NAMESPACE_ALLOW_PRIORITY,
-    });
-
-    // Write default cross-namespace deny rule (catch-all, lower priority)
-    this.relayCore.addAccessRule({
-      from: `relay.agent.${ns}.*`,
-      to: 'relay.agent.>',
-      action: 'deny',
-      priority: CROSS_NAMESPACE_DENY_PRIORITY,
-    });
-
-    // System agents (DorkBot) must bridge namespaces: they run background
-    // tasks and onboarding for every project agent, so both directions get a
-    // high-priority allow that beats the per-namespace deny rules.
-    if (agent.isSystem) {
+    // Write the default access rules for this namespace (idempotent — deduped
+    // by addRule): same-namespace allow, catch-all cross-namespace deny, and —
+    // for system agents (DorkBot) — a bidirectional allow so the system agent
+    // can bridge namespaces despite the per-namespace deny. Sourced from
+    // defaultAccessRuleSpecs(), the single place these rules are defined, so
+    // TopologyManager's surfaced view can never drift from what's actually
+    // written here.
+    for (const spec of defaultAccessRuleSpecs(ns, agent.isSystem ?? false)) {
       this.relayCore.addAccessRule({
-        from: `relay.agent.${ns}.*`,
-        to: 'relay.agent.>',
-        action: 'allow',
-        priority: SYSTEM_AGENT_ALLOW_PRIORITY,
-      });
-      this.relayCore.addAccessRule({
-        from: 'relay.agent.>',
-        to: `relay.agent.${ns}.*`,
-        action: 'allow',
-        priority: SYSTEM_AGENT_ALLOW_PRIORITY,
+        from: spec.from,
+        to: spec.to,
+        action: spec.action,
+        priority: spec.priority,
       });
     }
 

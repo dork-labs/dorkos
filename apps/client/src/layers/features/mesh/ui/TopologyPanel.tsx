@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Plus, Trash2, Shield } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Lock, Plus, Trash2, Shield } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -63,10 +63,26 @@ interface AccessRuleRowProps {
   sourceNamespace: string;
   targetNamespace: string;
   action: 'allow' | 'deny';
+  /**
+   * 'default' rules are written automatically for every namespace (same-namespace
+   * allow, catch-all cross-namespace deny) and are re-asserted on every agent
+   * registration — removing one wouldn't stick, and for the same-namespace allow
+   * it would briefly break that namespace's own agent-to-agent messaging. They
+   * render read-only; only 'explicit' rules (user-added via the form below) get
+   * a remove affordance.
+   */
+  origin: 'default' | 'explicit';
   onRemove: () => void;
 }
 
-function AccessRuleRow({ sourceNamespace, targetNamespace, action, onRemove }: AccessRuleRowProps) {
+function AccessRuleRow({
+  sourceNamespace,
+  targetNamespace,
+  action,
+  origin,
+  onRemove,
+}: AccessRuleRowProps) {
+  const isDefault = origin === 'default';
   return (
     <div className="flex items-center justify-between rounded-lg border px-3 py-2">
       <div className="flex items-center gap-2 text-sm">
@@ -76,17 +92,31 @@ function AccessRuleRow({ sourceNamespace, targetNamespace, action, onRemove }: A
         <Badge variant={action === 'allow' ? 'default' : 'destructive'} className="text-xs">
           {action}
         </Badge>
+        {isDefault && (
+          <Badge variant="outline" className="text-muted-foreground text-xs">
+            built-in
+          </Badge>
+        )}
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        onClick={onRemove}
-        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-        aria-label={`Remove access from ${sourceNamespace} to ${targetNamespace}`}
-      >
-        <Trash2 />
-      </Button>
+      {isDefault ? (
+        <span
+          className="text-muted-foreground flex size-8 items-center justify-center"
+          title="Built-in rule, always enforced — not removable"
+        >
+          <Lock className="size-4" aria-hidden="true" />
+        </span>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onRemove}
+          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          aria-label={`Remove access from ${sourceNamespace} to ${targetNamespace}`}
+        >
+          <Trash2 />
+        </Button>
+      )}
     </div>
   );
 }
@@ -222,14 +252,17 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
           <div className="space-y-1">
             {accessRules.map((rule) => (
               <AccessRuleRow
-                key={`${rule.sourceNamespace}-${rule.targetNamespace}`}
+                key={`${rule.sourceNamespace}-${rule.targetNamespace}-${rule.action}-${rule.origin}`}
                 sourceNamespace={rule.sourceNamespace}
                 targetNamespace={rule.targetNamespace}
                 action={rule.action}
+                origin={rule.origin}
                 // Removing genuinely deletes the rule: server-side `action: 'deny'`
                 // maps to `removeAccessRule`, reverting the pair to the default
                 // blocked state (no lingering deny row). Cross-namespace access is
                 // allow-or-default, so a Remove affordance is the honest model.
+                // Only wired for explicit rules — AccessRuleRow hides the button
+                // entirely for 'default' rows, so this never fires for one.
                 onRemove={() =>
                   updateRule({
                     sourceNamespace: rule.sourceNamespace,
