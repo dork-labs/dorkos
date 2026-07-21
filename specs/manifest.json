@@ -2,6 +2,20 @@
   "version": 1,
   "specs": [
     {
+      "id": "260721-134155",
+      "slug": "smart-agent-groups",
+      "title": "Smart agent groups from mesh metadata (rule-based membership)",
+      "created": "2026-07-21",
+      "status": "ideation"
+    },
+    {
+      "id": "260721-134154",
+      "slug": "agent-list-settings",
+      "title": "Agent list settings: per-group display filters, inactive reveal, and muting",
+      "created": "2026-07-21",
+      "status": "ideation"
+    },
+    {
       "id": "260718-050609",
       "slug": "connector-gateway",
       "title": "ConnectorProvider gateway — one port for many connector backends",
