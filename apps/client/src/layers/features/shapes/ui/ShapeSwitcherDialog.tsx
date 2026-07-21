@@ -85,13 +85,24 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
         { name: shape.name, label },
         {
           onSuccess: (r) => {
+            // Auto-follow (opt-in) already navigated us to the Shape's arrival
+            // agent inside applyShapeAction. The switcher's job is done, so it
+            // dismisses itself rather than lingering as dead chrome over the
+            // place it just took you.
+            const followed = r.offeredAgents.some(
+              (a) => a.arrival && a.autoFollow && a.projectPath
+            );
+            if (followed) {
+              handleOpenChange(false);
+              return;
+            }
             setResult(r);
             setAppliedLabel(label);
           },
         }
       );
     },
-    [applyShape]
+    [applyShape, handleOpenChange]
   );
 
   // Callback ref for the highlighted card — React invokes it with the element
@@ -104,6 +115,11 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const pendingName = applyShape.isPending ? applyShape.variables?.name : undefined;
   const activeShape = shapes?.find((s) => s.active);
   const arrival = result?.offeredAgents.find((a) => a.arrival);
+  // Show "Open" only when the agent exists and auto-follow did NOT already take
+  // us there — otherwise it is a redundant button for a place we're standing in.
+  // "Set up" shows only for an unsatisfied offer (no agent to open yet).
+  const showOpenArrival = Boolean(arrival?.satisfied && arrival.projectPath && !arrival.autoFollow);
+  const showSetUpArrival = Boolean(arrival && !arrival.satisfied);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -220,7 +236,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                       {arrival.scheduleSummary}
                     </p>
                   )}
-                  {arrival.satisfied && arrival.projectPath ? (
+                  {showOpenArrival && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -231,18 +247,19 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                     >
                       Open {arrival.displayName}
                     </Button>
-                  ) : (
+                  )}
+                  {showSetUpArrival && (
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => {
                         openWithSeed({
+                          // Prefill the creation dialog from the Shape's own
+                          // template; the resolved display name wins and the
+                          // human cadence line rides along.
                           template: {
+                            ...arrival.template,
                             displayName: arrival.displayName,
-                            runtime: arrival.template?.runtime,
-                            persona: arrival.template?.persona,
-                            capabilities: arrival.template?.capabilities,
-                            skills: arrival.template?.skills,
                             schedule: arrival.scheduleSummary,
                           },
                           origin: 'shape-offer',

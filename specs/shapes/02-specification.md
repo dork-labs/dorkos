@@ -521,7 +521,7 @@ Apply is a handful of config writes + task creations + one extension re-mount �
 - ADR-0230 — the four package types (this spec adds the fifth).
 - ADR-0043 — agent storage file-first write-through (why UI/shape state stays off `.dork/agent.json`).
 - ADR-0310 — per-runtime degradation (the degradation model this spec mirrors).
-- To be extracted from this spec (`/adr:from-spec`): composition-manifest model; reverse-affinity-in-config; layout-excludes-filing; offer-not-force switching; preset-semantics-and-fork.
+- ADR 260721-221810 — the Shape ontology (D2): the fifth package type as a composition manifest that activates existing packages, holding agents by affinity, not ownership (extracted from this spec).
 
 ## References
 

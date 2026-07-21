@@ -2680,6 +2680,15 @@
       "created": "2026-07-21",
       "extractedFrom": "smart-agent-groups",
       "specSlug": "smart-agent-groups"
+    },
+    {
+      "id": "260721-221810",
+      "slug": "shape-is-fifth-package-type-composition-manifest-affinity-not-ownership",
+      "title": "The Shape is the fifth marketplace package type — a composition manifest that activates existing packages, holding agents by affinity, not ownership",
+      "status": "accepted",
+      "created": "2026-07-21",
+      "extractedFrom": "shapes",
+      "specSlug": "shapes"
     }
   ]
 }
