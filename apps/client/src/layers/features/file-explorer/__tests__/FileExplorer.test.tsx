@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { FileEntry } from '@dorkos/shared/types';
@@ -58,10 +59,21 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The explorer persists per-cwd navigation state to localStorage; clear it so
+  // expansion/selection from one test never leaks into the next.
+  localStorage.clear();
   useAppStore.setState({ selectedCwd: CWD });
   // The toolbar and tree share this store; reset it so per-test state (the
-  // show-hidden toggle, the published command bridge) never leaks.
-  useFileExplorerStore.setState({ showHidden: false, commands: null });
+  // show-hidden toggle, the published command bridge, and the per-cwd
+  // expansion/selection/scroll) never leaks.
+  useFileExplorerStore.setState({
+    showHidden: false,
+    commands: null,
+    scopeKey: null,
+    expanded: {},
+    selectedPath: null,
+    scrollTop: 0,
+  });
 });
 
 afterEach(() => cleanup());
@@ -278,5 +290,190 @@ describe('FileExplorer', () => {
     await waitFor(() =>
       expect(transport.deleteEntry).toHaveBeenLastCalledWith(CWD, 'pkg', { recursive: true })
     );
+  });
+
+  // The headline regression (DOR-404): the reported bug is that navigating deep,
+  // opening a file (which unmounts the explorer), and coming back collapses the
+  // tree to root. Expansion + selection must survive the unmount, and the
+  // children must render from cache without a fresh fetch.
+  it('restores expansion and selection from cache across unmount and remount', async () => {
+    const readFileTree = vi.fn(async (_cwd: string, opts?: { path?: string }) => {
+      if (!opts?.path) return { entries: [dir('src'), file('README.md')] };
+      if (opts.path === 'src') return { entries: [file('src/index.ts')] };
+      return { entries: [] };
+    });
+    const transport = createMockTransport();
+    transport.readFileTree = readFileTree;
+
+    // One QueryClient shared across the unmount → the tree cache survives, the
+    // way it does within a real page session.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    const view = render(<FileExplorer />, { wrapper: Wrapper });
+
+    // Expand src, then select its child file.
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'src' }));
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'index.ts' }));
+    await waitFor(() =>
+      expect(screen.getByRole('treeitem', { name: 'index.ts' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    );
+    const callsBeforeRemount = readFileTree.mock.calls.length;
+
+    // Switch away (unmount) and back (remount).
+    view.unmount();
+    render(<FileExplorer />, { wrapper: Wrapper });
+
+    // Expansion + selection intact, and the child renders straight from cache —
+    // no new transport call for either level.
+    const child = await screen.findByRole('treeitem', { name: 'index.ts' });
+    expect(child).toHaveAttribute('aria-selected', 'true');
+    expect(readFileTree.mock.calls.length).toBe(callsBeforeRemount);
+  });
+
+  // Review nit 1: a *failed* optimistic delete must leave store selection and
+  // expansion exactly as they were. The optimistic cache filter briefly removes
+  // the row before the transport rejects; the prune effect must not read that as
+  // "the entry vanished" and drop the selection/subtree — a store prune the
+  // rollback can't undo (the row would reappear unselected / collapsed).
+  it('keeps a file selected when its optimistic delete fails (row returns, still selected)', async () => {
+    // A test-controlled rejection: the optimistic removal must *commit* (and the
+    // prune effect run) before the transport rejects — an immediate throw would
+    // let React coalesce the optimistic + rollback renders and never reproduce it.
+    const deferred: { reject: (e: unknown) => void } = { reject: () => {} };
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn(async () => ({
+      entries: [file('README.md'), file('other.ts')],
+    }));
+    transport.deleteEntry = vi.fn(
+      () => new Promise<never>((_resolve, reject) => (deferred.reject = reject))
+    );
+
+    renderExplorer(transport);
+    const row = await screen.findByRole('treeitem', { name: 'README.md' });
+
+    // Select it, then Delete → the optimistic removal commits (the row vanishes).
+    fireEvent.click(row);
+    await waitFor(() =>
+      expect(screen.getByRole('treeitem', { name: 'README.md' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    );
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'Delete' });
+    await waitFor(() => expect(screen.queryByRole('treeitem', { name: 'README.md' })).toBeNull());
+
+    // Now the transport rejects → the cache rolls back with an uncoded error.
+    deferred.reject(new Error('denied'));
+
+    // The row comes back AND is still selected — the prune never fired mid-delete.
+    const restored = await screen.findByRole('treeitem', { name: 'README.md' });
+    expect(restored).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't delete"));
+  });
+
+  it('keeps a directory expanded when its optimistic recursive delete fails', async () => {
+    const deferred: { reject: (e: unknown) => void } = { reject: () => {} };
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn(async (_cwd, opts?: { path?: string }) =>
+      opts?.path === 'pkg' ? { entries: [file('pkg/index.ts')] } : { entries: [dir('pkg')] }
+    );
+    transport.deleteEntry = vi.fn((_cwd, _path, opts?: { recursive?: boolean }) =>
+      // Non-recursive → DIR_NOT_EMPTY (surfaces the confirm); recursive → hangs
+      // until the test rejects, so the optimistic removal commits first.
+      opts?.recursive
+        ? new Promise<never>((_resolve, reject) => (deferred.reject = reject))
+        : Promise.reject(Object.assign(new Error('not empty'), { code: 'DIR_NOT_EMPTY' }))
+    );
+
+    renderExplorer(transport);
+
+    // Expand pkg (this also selects it), so its child loads and the subtree is open.
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'pkg' }));
+    await screen.findByRole('treeitem', { name: 'index.ts' });
+    await waitFor(() =>
+      expect(screen.getByRole('treeitem', { name: 'pkg' })).toHaveAttribute('aria-selected', 'true')
+    );
+
+    // Delete pkg → DIR_NOT_EMPTY → confirm, then confirm the recursive delete.
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'Delete' });
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/isn.t empty/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    // The optimistic removal commits: pkg (and its child) briefly vanish.
+    await waitFor(() =>
+      expect(transport.deleteEntry).toHaveBeenLastCalledWith(CWD, 'pkg', { recursive: true })
+    );
+    await waitFor(() => expect(screen.queryByRole('treeitem', { name: 'pkg' })).toBeNull());
+
+    // Now the recursive delete fails → rollback.
+    deferred.reject(new Error('denied'));
+
+    // pkg returns AND is still expanded — its child renders from the surviving
+    // cache (the store's expansion was never pruned during the failed delete).
+    expect(await screen.findByRole('treeitem', { name: 'pkg' })).toBeInTheDocument();
+    expect(await screen.findByRole('treeitem', { name: 'index.ts' })).toBeInTheDocument();
+  });
+
+  // Review nit 3: toggling show-hidden repartitions every query key. Without
+  // placeholder data the tree blanks to a root spinner while the new keys fetch;
+  // `keepPreviousData` must hold the previous rows across the toggle.
+  it('holds the previous rows while a show-hidden toggle refetches (no blank spinner)', async () => {
+    const deferred: { resolve: (v: { entries: FileEntry[] }) => void } = { resolve: () => {} };
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn((_cwd, opts?: { showHidden?: boolean }) =>
+      opts?.showHidden
+        ? new Promise<{ entries: FileEntry[] }>((res) => {
+            deferred.resolve = res;
+          })
+        : Promise.resolve({ entries: [file('README.md')] })
+    );
+
+    renderExplorer(transport);
+    await screen.findByRole('treeitem', { name: 'README.md' });
+
+    // Flip show-hidden: the new key's fetch hangs, but the previous row holds.
+    fireEvent.click(screen.getByRole('button', { name: 'Show hidden files' }));
+    expect(screen.getByRole('treeitem', { name: 'README.md' })).toBeInTheDocument();
+
+    // Resolving the hidden fetch swaps the dotfile in alongside.
+    deferred.resolve({ entries: [file('README.md'), file('.env')] });
+    await screen.findByRole('treeitem', { name: '.env' });
+  });
+
+  it('refreshes the whole expanded subtree, not just the root (D4)', async () => {
+    const readFileTree = vi.fn(async (_cwd: string, opts?: { path?: string }) => {
+      if (!opts?.path) return { entries: [dir('src')] };
+      if (opts.path === 'src') return { entries: [file('src/index.ts')] };
+      return { entries: [] };
+    });
+    const transport = createMockTransport();
+    transport.readFileTree = readFileTree;
+
+    renderExplorer(transport);
+
+    // Expand src so both root and src are active queries.
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'src' }));
+    await screen.findByRole('treeitem', { name: 'index.ts' });
+
+    readFileTree.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    // Refresh refetched BOTH levels (root + the expanded src), not root-only.
+    await waitFor(() => {
+      const paths = readFileTree.mock.calls.map((c) => c[1]?.path);
+      expect(paths).toContain(undefined); // root
+      expect(paths).toContain('src'); // the expanded subdirectory
+    });
   });
 });
