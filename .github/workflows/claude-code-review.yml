@@ -32,6 +32,13 @@ on:
 # for the Node 20 runtime (matches docs-openapi-check.yml).
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # Turn budget for the review step (DOR-396). Large PRs need more read/grep/
+  # verify turns than small ones, or the action dies mid-review and leaves a
+  # red check that looks identical to one backed by real findings. Tune these
+  # here rather than inside claude_args below.
+  REVIEW_MAX_TURNS_DEFAULT: '50'
+  REVIEW_MAX_TURNS_LARGE: '100'
+  REVIEW_LARGE_PR_FILE_THRESHOLD: '30'
 
 # A newer review trigger for the same PR cancels an in-flight older one — but
 # only when this run will itself review. Without the condition, creating a PR
@@ -61,15 +68,47 @@ jobs:
       (github.event.action != 'labeled' || github.event.label.name == 're-review')
     runs-on: ubuntu-latest
     # Guards against a runaway review if --max-turns is not honored (the action
-    # has no internal timeout). Raise if large PRs legitimately need more.
-    timeout-minutes: 15
+    # has no internal timeout). Sized for the large-PR turn budget above
+    # (REVIEW_MAX_TURNS_LARGE): raising max-turns without headroom here would
+    # just trade the turn cap for a wall-clock cap on big PRs.
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Timestamp cutoff for the infra-failure step below, so it only looks at
+      # comments this run could plausibly have posted (not leftovers from an
+      # earlier review or re-review pass on the same PR).
+      - name: Record review start time
+        id: review-start
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # Scale the turn budget with PR size (DOR-396): a 5-file PR and a 45-file
+      # PR need very different amounts of read/grep/verify work to finish a
+      # review, and one fixed cap starves the large ones.
+      - name: Count changed files
+        id: pr-size
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Degrade to the default budget rather than aborting the step: an
+          # aborted step here would skip Claude Code review entirely (outcome
+          # 'skipped', not 'failure'), so the infra-note step below wouldn't
+          # fire either — a silent red check with no review at all, exactly
+          # the DOR-396 symptom this workflow exists to prevent.
+          file_count=$(gh pr view "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --json changedFiles --jq '.changedFiles' 2>/dev/null || echo 0)
+          case "$file_count" in ''|*[!0-9]*) file_count=0 ;; esac
+          if [ "$file_count" -gt "$REVIEW_LARGE_PR_FILE_THRESHOLD" ]; then
+            echo "max_turns=$REVIEW_MAX_TURNS_LARGE" >> "$GITHUB_OUTPUT"
+          else
+            echo "max_turns=$REVIEW_MAX_TURNS_DEFAULT" >> "$GITHUB_OUTPUT"
+          fi
+          echo "$file_count files changed"
+
       - name: Claude Code review
+        id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -128,7 +167,36 @@ jobs:
             found" summary comment.
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git grep:*),Bash(git log:*),Bash(git show:*),Bash(grep:*),Bash(rg:*),Bash(ls:*),Read,Grep,Glob"
-            --max-turns 50
+            --max-turns ${{ steps.pr-size.outputs.max_turns }}
+
+      # Self-explaining infra failures (DOR-396): a review that dies mid-run
+      # (most often by exhausting its turn budget) produces a red check
+      # indistinguishable from a red check backed by real findings, forcing a
+      # human to read Actions logs to tell them apart. Post a plain comment
+      # naming the cause, and distinguish "posted a verdict, then died" (the
+      # findings already posted stand) from "died before posting anything"
+      # (no verdict exists yet).
+      - name: Note infra failure if the review did not complete
+        if: failure() && steps.claude-review.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number="${{ github.event.pull_request.number }}"
+          repo="${{ github.repository }}"
+          since="${{ steps.review-start.outputs.time }}"
+
+          posted_verdict=$(gh api "repos/$repo/issues/$pr_number/comments" \
+            --jq ".[] | select(.created_at > \"$since\") | .body" \
+            | grep -qE '[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues' \
+            && echo yes || echo no)
+
+          if [ "$posted_verdict" = "yes" ]; then
+            body="This check is red because the review ran out of its turn budget wrapping up, not because it found more issues. The verdict already posted above stands. Add the \`re-review\` label for a fresh pass."
+          else
+            body="This check is red because the review ran out of its turn budget before it could post a verdict, not because it found blocking issues. Add the \`re-review\` label to try again."
+          fi
+
+          gh pr comment "$pr_number" --repo "$repo" --body "$body"
 
       # Re-review is a reusable button: clear the label so re-applying it later
       # fires another pass. Runs even if the review failed, so the label never
