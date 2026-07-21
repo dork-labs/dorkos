@@ -348,7 +348,7 @@ Three `ui.*` backfills have landed. All are append-only and idempotent:
 | -------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0.50.0` | `backfillSidebarDefaults`         | Writes `ui.sidebar` (empty pins/groups, `name` ungrouped sort, all sections expanded) onto an existing `ui` block when absent.                          |
 | `0.52.0` | `backfillShapesDefaults`          | Writes `ui.shapes` (no active Shape, no affinity hints, follow off) onto an existing `ui` block when absent.                                            |
-| `0.54.0` | `backfillSidebarSettingsDefaults` | Writes `ui.sidebar.muted: []`, `ui.sidebar.ungroupedDisplayFilter: 'all'`, and `displayFilter: 'all'` / `muted: false` on every stored group (DOR-339). |
+| `0.55.0` | `backfillSidebarSettingsDefaults` | Writes `ui.sidebar.muted: []`, `ui.sidebar.ungroupedDisplayFilter: 'all'`, and `displayFilter: 'all'` / `muted: false` on every stored group (DOR-339). |
 
 `ui.sidebar` holds the server-persisted sidebar organization — pinned agents, user-defined groups (each with its own member order, sort mode, collapse state, display filter, and mute flag), and per-section sort/collapse/filter/mute preferences. conf merges top-level defaults shallowly and never reaches inside array elements at all, so a `ui.sidebar` already on disk — including every group inside it — never inherits a newly-added field on its own; each backfill above supplies exactly the fields it introduced. None of them overwrite an existing value, so a user's organization, filters, and mute choices all survive untouched across upgrades.
 

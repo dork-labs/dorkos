@@ -694,7 +694,14 @@ export function backfillSidebarSettingsDefaults(store: {
   });
 }
 
-const CONFIG_MIGRATIONS = {
+/**
+ * @internal Exported for testing only — lets the migration-key invariant test
+ * assert the newest key is always ahead of the current release (the DOR-339
+ * "0.54.0 shipped mid-flight" class of bug: a key equal to or behind an
+ * already-tagged version is silently excluded by conf's `(storedVersion,
+ * projectVersion]` window, so it never runs for upgrading users).
+ */
+export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
     set: (key: string, value: unknown) => void;
@@ -803,9 +810,11 @@ const CONFIG_MIGRATIONS = {
   // `ui.sidebar.ungroupedDisplayFilter`, and `displayFilter`/`muted` on every
   // stored group) onto an existing `ui.sidebar`. Additive + idempotent; every
   // filter defaults to 'all' and nothing starts muted. Keyed to the next
-  // unreleased version (0.53.0 is already tagged); /system:release reconciles
-  // the key at tag time if the real release differs.
-  '0.54.0': backfillSidebarSettingsDefaults,
+  // unreleased version — 0.54.0 shipped (tagged) while this branch was in
+  // flight, so this landed on 0.55.0 instead of the original 0.54.0 draft;
+  // /system:release reconciles the key at tag time if the real release
+  // differs again.
+  '0.55.0': backfillSidebarSettingsDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
