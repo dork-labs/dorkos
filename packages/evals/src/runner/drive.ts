@@ -20,6 +20,17 @@
  * connection error, and a rejected trigger — destroys the durable GET so the
  * `/events` connection is never left open.
  *
+ * REMAP-ROBUST (DOR-397): on the claude-code tiers, a resumed session can have
+ * its internal SDK session id re-minted mid-turn, moving subsequent frames onto
+ * a different id than the one the drive subscribed under BEFORE the trigger
+ * POST. The 202 trigger response is the first place the remap surfaces (its
+ * body carries the CANONICAL id, ADR-0264) — {@link triggerAndCollect} compares
+ * it against the subscribed id and, on a mismatch, swaps to a fresh
+ * subscription on the canonical id before collecting. No frames are lost: the
+ * new subscribe is a cold connect, and its `snapshot` reflects everything the
+ * SAME underlying server-side projector has ingested so far (ADR-0267 rekeys
+ * the projector instance, not its content), then goes live for the rest.
+ *
  * @module evals/runner/drive
  */
 import http from 'node:http';
@@ -317,17 +328,30 @@ function openStream(opts: OpenStreamOptions): LiveStream {
  * {@link driveWidgetAction} (POST `/ui-action`): they differ ONLY in which
  * endpoint + body they POST, so the drive contract lives here once.
  *
- * @param stream - The open {@link LiveStream} (subscribe-first collector).
- * @param sessionId - Fallback session id when the 202 body omits one.
+ * REMAP RE-SUBSCRIBE (DOR-397): the 202 body's `sessionId` is the CANONICAL id
+ * (ADR-0264). When it differs from the id `opts` subscribed under — claude-code
+ * re-minting its internal session id on a resume — the pre-remap stream can
+ * miss frames the remap moves onto the new id. Rather than keep collecting on a
+ * connection that may now be watching the wrong id, close it and open a FRESH
+ * subscription on the canonical id: a cold connect's `snapshot` reflects
+ * everything the same underlying projector has ingested so far (the rekey
+ * moves the projector instance, not its content, ADR-0267), so nothing is
+ * lost — only the collector's own connection changes. The remaining timeout
+ * budget carries over so a remap cannot silently double a turn's time budget.
+ *
+ * @param opts - The stream options (baseUrl, sessionId, timeouts, abort guard) —
+ *   also the id to subscribe under first, BEFORE the trigger POST.
  * @param post - Fires the trigger POST and resolves with its `Response`.
  * @returns The canonical id, collected frames, and the turn outcome.
  * @throws {DriveError} On a `409 SESSION_LOCKED`, any non-202 trigger, or a `/events` stream error.
  */
 async function triggerAndCollect(
-  stream: LiveStream,
-  sessionId: string,
+  opts: OpenStreamOptions,
   post: () => ReturnType<typeof fetch>
 ): Promise<DriveTurnResult> {
+  const startedAt = Date.now();
+  let stream = openStream(opts);
+  let subscribedId = opts.sessionId;
   try {
     await stream.ready;
 
@@ -343,7 +367,16 @@ async function triggerAndCollect(
       );
     }
     const body = (await res.json()) as { sessionId?: string };
-    const canonicalId = body.sessionId ?? sessionId;
+    const canonicalId = body.sessionId ?? subscribedId;
+
+    if (canonicalId !== subscribedId) {
+      stream.close();
+      const timeoutMs = opts.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
+      const remainingMs = Math.max(timeoutMs - (Date.now() - startedAt), 0);
+      stream = openStream({ ...opts, sessionId: canonicalId, timeoutMs: remainingMs });
+      subscribedId = canonicalId;
+      await stream.ready;
+    }
 
     const { frames, outcome } = await stream.done;
     return { canonicalId, frames, outcome };
@@ -366,8 +399,7 @@ async function triggerAndCollect(
  * @throws {DriveError} On a `409 SESSION_LOCKED`, any non-202 trigger, or a `/events` stream error.
  */
 export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult> {
-  const stream = openStream(opts);
-  return triggerAndCollect(stream, opts.sessionId, () =>
+  return triggerAndCollect(opts, () =>
     fetch(`${opts.baseUrl}/api/sessions/${opts.sessionId}/messages`, {
       method: 'POST',
       headers: {
@@ -411,8 +443,7 @@ export interface DriveWidgetActionOptions extends OpenStreamOptions {
  * @throws {DriveError} On a `409 SESSION_LOCKED`, any non-202 trigger, or a `/events` stream error.
  */
 export async function driveWidgetAction(opts: DriveWidgetActionOptions): Promise<DriveTurnResult> {
-  const stream = openStream(opts);
-  return triggerAndCollect(stream, opts.sessionId, () =>
+  return triggerAndCollect(opts, () =>
     fetch(`${opts.baseUrl}/api/sessions/${opts.sessionId}/ui-action`, {
       method: 'POST',
       headers: {

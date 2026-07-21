@@ -117,6 +117,74 @@ async function startFakeServer(
 }
 
 /**
+ * A fake server that simulates claude-code re-minting its internal session id
+ * mid-turn (DOR-397): the trigger POST's 202 body reports `remappedId` — a
+ * DIFFERENT id than the one the caller subscribed under — and the turn's
+ * frames stream onto a `/events` connection opened under `remappedId`, never
+ * the pre-remap id. A driver that keeps collecting on its original
+ * subscription would see nothing but the cold snapshot and time out; a
+ * remap-robust driver re-subscribes to `remappedId` and collects there. The
+ * POST handler waits for the remapped `/events` connection to arrive before
+ * streaming (mirrors subscribe-before-trigger ordering, just on the NEW id).
+ */
+async function startRemapFakeServer(
+  runtime: FakeAgentRuntime,
+  remappedId: string
+): Promise<string> {
+  const live = new Map<string, http.ServerResponse>();
+  const waitForSink = (id: string): Promise<http.ServerResponse> =>
+    new Promise((resolve) => {
+      const poll = (): void => {
+        const sink = live.get(id);
+        if (sink) resolve(sink);
+        else setTimeout(poll, 5);
+      };
+      poll();
+    });
+
+  server = http.createServer((req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const sessionId = url.pathname.split('/')[3];
+
+    if (req.method === 'GET' && url.pathname.endsWith('/events')) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write(sse('snapshot', { cursor: 0, status: { lifecycle: 'idle' } }));
+      live.set(sessionId, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname.endsWith('/messages')) {
+      let body = '';
+      req.on('data', (chunk: Buffer) => (body += chunk.toString()));
+      req.on('end', () => {
+        capturedPost = { path: url.pathname, body: body ? JSON.parse(body) : undefined };
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ sessionId: remappedId }));
+        // Stream the turn onto the REMAPPED id's /events connection only —
+        // the pre-remap subscription under `sessionId` is never written to.
+        void (async () => {
+          const sink = await waitForSink(remappedId);
+          let seq = 1;
+          sink.write(sse('turn_start', { type: 'turn_start', seq: seq++ }));
+          for await (const ev of runtime.sendMessage(remappedId, 'x', {})) {
+            const frame = projectEvent(ev as StreamEvent, seq++);
+            if (frame) sink.write(frame);
+          }
+          sink.write(sse('turn_end', { type: 'turn_end', seq: seq++ }));
+        })();
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+  const { port } = server!.address() as AddressInfo;
+  return `http://127.0.0.1:${port}`;
+}
+
+/**
  * A server that accepts GET `/events` with a 200 but writes NO snapshot and
  * holds the connection open — so the subscribe gate never resolves on its own
  * and only the ready-wait timeout can end the wait.
@@ -316,6 +384,68 @@ describe('driveTurn', () => {
 
     // The gate never opened, so the trigger was never fired.
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('driveTurn — session-id remap (DOR-397)', () => {
+  it('re-subscribes to the canonical id when the 202 reveals a remap, and still collects to turn_end', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'resumed' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startRemapFakeServer(runtime, 'sess-1-remapped');
+    const destroySpy = spyOnConnectionDestroy();
+
+    const result = await driveTurn({
+      baseUrl,
+      sessionId: 'sess-1',
+      content: 'continue',
+      cwd: '/tmp/proj',
+      timeoutMs: 2000,
+    });
+
+    // The turn completed on the NEW id, not the pre-remap one the drive
+    // originally subscribed under — proof the collector followed the remap
+    // instead of timing out on the abandoned subscription.
+    expect(result.outcome).toBe('done');
+    expect(result.canonicalId).toBe('sess-1-remapped');
+    expect(result.frames.map((f) => f.event)).toEqual([
+      'snapshot',
+      'turn_start',
+      'text_delta',
+      'turn_end',
+    ]);
+    // Both the pre-remap and the re-subscribed /events connections were torn
+    // down — the abandoned one is not leaked.
+    expect(destroySpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not time out on remap: the turn resolves well inside the per-turn budget', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startRemapFakeServer(runtime, 'sess-2-remapped');
+
+    const start = Date.now();
+    const result = await driveTurn({
+      baseUrl,
+      sessionId: 'sess-2',
+      content: 'continue',
+      cwd: '/tmp/proj',
+      timeoutMs: 5000,
+    });
+    const elapsed = Date.now() - start;
+
+    expect(result.outcome).toBe('done');
+    // A driver that fell back to the stale subscription would burn the whole
+    // 5000ms turn timeout instead of resolving promptly off the remap.
+    expect(elapsed).toBeLessThan(2000);
   });
 });
 
