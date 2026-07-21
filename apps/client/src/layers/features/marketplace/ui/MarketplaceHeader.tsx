@@ -20,11 +20,12 @@ import { useMarketplaceParams } from '../model/use-marketplace-params';
 /** Debounce delay (ms) before the local search value is committed to the store. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-/** Sort options offered by the menu. `Recent` returns once `updatedAt` lands. */
+/** Sort options offered by the menu. */
 const SORT_OPTIONS: ReadonlyArray<{ value: MarketplaceSort; label: string }> = [
   { value: 'featured', label: 'Featured' },
   { value: 'name', label: 'A–Z' },
   { value: 'popular', label: 'Popular' },
+  { value: 'recent', label: 'Recent' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -45,14 +46,27 @@ export function MarketplaceHeader() {
   const { sort, setSort } = useMarketplaceParams();
   const { data: packages } = useMarketplacePackages();
 
-  // Popular is backed by community install counts enriched server-side. When
-  // dorkos.ai is unreachable (offline-first: the marketplace still works) no
-  // package carries a count, so the option grays out rather than silently
-  // no-op'ing. One counted package is enough to know counts are available.
+  // Popular and Recent are backed by data enriched server-side (community
+  // install counts and registry-derived update dates). When dorkos.ai is
+  // unreachable (offline-first: the marketplace still works) no package carries
+  // that field, so the option grays out rather than silently no-op'ing. One
+  // package carrying the field is enough to know the data is available.
   const popularAvailable = useMemo(
     () => (packages ?? []).some((pkg) => pkg.installCount !== undefined),
     [packages]
   );
+  const recentAvailable = useMemo(
+    () => (packages ?? []).some((pkg) => pkg.updatedAt !== undefined),
+    [packages]
+  );
+
+  // A data-backed sort with no data behind it is grayed out. Featured and A–Z
+  // are always available.
+  const isSortDisabled = (value: MarketplaceSort): boolean => {
+    if (value === 'popular') return !popularAvailable;
+    if (value === 'recent') return !recentAvailable;
+    return false;
+  };
 
   return (
     <header className="flex items-center gap-3">
@@ -68,7 +82,7 @@ export function MarketplaceHeader() {
             <SelectItem
               key={opt.value}
               value={opt.value}
-              disabled={opt.value === 'popular' && !popularAvailable}
+              disabled={isSortDisabled(opt.value)}
               className="text-xs"
             >
               {opt.label}

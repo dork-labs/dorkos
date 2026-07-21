@@ -25,13 +25,13 @@ export type MarketplaceTypeFilter = 'all' | MarketplacePackageType;
  * Sort order for the Marketplace browse grid.
  *
  * Every sort is backed by real data: `featured` (the `featured` flag), `name`
- * (alphabetical), and `popular` (community install counts from
- * `AggregatedPackage.installCount`). `popular` only appears in the menu when
- * counts are available — offline (no reachable dorkos.ai) it grays out, and a
- * stale `?sort=popular` link falls back to name order. (`recent` returns once
- * `AggregatedPackage` carries `updatedAt`.)
+ * (alphabetical), `popular` (community install counts from
+ * `AggregatedPackage.installCount`), and `recent` (registry-derived update times
+ * from `AggregatedPackage.updatedAt`). `popular` and `recent` only appear in the
+ * menu when their data is available — offline (no reachable dorkos.ai) they gray
+ * out, and a stale `?sort=popular`/`?sort=recent` link falls back to name order.
  */
-export type MarketplaceSort = 'featured' | 'name' | 'popular';
+export type MarketplaceSort = 'featured' | 'name' | 'popular' | 'recent';
 
 /**
  * Top-level Marketplace view. `'browse'` is the catalog (search, featured rail,
@@ -52,9 +52,9 @@ export type MarketplaceView = 'browse' | 'installed';
  * open package's unique `name` for the detail drawer.
  *
  * The closed-enum facets (`type`, `sort`) use `.catch(undefined)` so a stale
- * shared link — an old bookmark whose value this release changed, e.g.
- * `?sort=recent` after Recent was retired — degrades to the default instead of
- * throwing a route validation error. `category` accepts BOTH the
+ * shared link — an old bookmark whose value this release no longer accepts, e.g.
+ * a `type` the taxonomy dropped — degrades to the default instead of throwing a
+ * route validation error. `category` accepts BOTH the
  * legacy single-value form (`?category=security`, from links shared before the
  * facet panel went multi-select) and the array form the sidebar now writes; its
  * own `.catch(undefined)` drops any garbage rather than erroring the route.
@@ -67,7 +67,7 @@ export const marketplaceSearchSchema = z.object({
     .enum(['all', ...PackageTypeSchema.options])
     .optional()
     .catch(undefined),
-  sort: z.enum(['featured', 'name', 'popular']).optional().catch(undefined),
+  sort: z.enum(['featured', 'name', 'popular', 'recent']).optional().catch(undefined),
   q: z.string().optional(),
   category: z
     .union([z.string(), z.array(z.string())])

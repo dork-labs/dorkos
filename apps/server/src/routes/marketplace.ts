@@ -43,6 +43,7 @@ import {
   installCountsProvider,
   enrichWithInstallCounts,
 } from '../services/marketplace/install-counts.js';
+import { updatedAtProvider, enrichWithUpdatedAt } from '../services/marketplace/updated-at.js';
 import type { MarketplaceSource } from '../services/marketplace/types.js';
 import {
   scanInstalledPackages,
@@ -420,11 +421,14 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const sources = await sourceManager.list();
       const enabled = sources.filter((source) => source.enabled);
       const packages = await aggregatePackages(enabled, fetcher);
-      // Enrich with community install counts so the client can offer the
-      // Popular sort. Reads a cached map (background-refreshed) — never blocks
-      // the browse response on the dorkos.ai network call, and degrades to
-      // no counts when the cache is cold or the site is unreachable.
-      res.json({ packages: enrichWithInstallCounts(packages, installCountsProvider.getCounts()) });
+      // Enrich with community install counts and registry-recency dates so the
+      // client can offer the Popular and Recent sorts. Both read cached maps
+      // (background-refreshed) — never block the browse response on the
+      // dorkos.ai network calls, and each degrades to no data (hiding its sort)
+      // when the cache is cold or the site is unreachable.
+      const withCounts = enrichWithInstallCounts(packages, installCountsProvider.getCounts());
+      const enriched = enrichWithUpdatedAt(withCounts, updatedAtProvider.getUpdatedAt());
+      res.json({ packages: enriched });
     } catch (err) {
       logger.error('[Marketplace] Failed to aggregate packages', err);
       const mapped = mapErrorToStatus(err);

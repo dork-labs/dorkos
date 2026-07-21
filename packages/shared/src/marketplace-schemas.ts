@@ -89,6 +89,18 @@ export interface AggregatedPackage {
    * package carries a count and the marketplace works fully offline.
    */
   installCount?: number;
+  /**
+   * Registry-derived recency: the ISO 8601 timestamp of the last commit that
+   * touched this package's directory in the `dork-labs/marketplace` registry,
+   * enriched server-side from the public dorkos.ai endpoint
+   * (`GET /api/telemetry/updated-at`). Present only for community packages that
+   * live inside the registry repo — a package sourced from an external repo has
+   * no registry directory, so it honestly carries no timestamp. Absent whenever
+   * dates are unavailable (a cold server cache, an unreachable dorkos.ai, or a
+   * telemetry kill switch), so the client hides the Recent sort and the
+   * marketplace works fully offline.
+   */
+  updatedAt?: string;
   /** Marketplace source the entry was discovered in. */
   marketplace: string;
 }

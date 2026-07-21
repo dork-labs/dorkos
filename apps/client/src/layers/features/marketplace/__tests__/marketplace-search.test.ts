@@ -23,11 +23,14 @@ describe('marketplaceSearchSchema — sort facet', () => {
     expect(marketplaceSearchSchema.parse({ sort: 'featured' }).sort).toBe('featured');
     expect(marketplaceSearchSchema.parse({ sort: 'name' }).sort).toBe('name');
     expect(marketplaceSearchSchema.parse({ sort: 'popular' }).sort).toBe('popular');
+    expect(marketplaceSearchSchema.parse({ sort: 'recent' }).sort).toBe('recent');
   });
 
-  it('drops the retired Recent sort rather than throwing', () => {
-    expect(() => marketplaceSearchSchema.parse({ sort: 'recent' })).not.toThrow();
-    expect(marketplaceSearchSchema.parse({ sort: 'recent' }).sort).toBeUndefined();
+  it('drops an unknown sort value rather than throwing', () => {
+    // A stale bookmark whose value this release no longer accepts degrades to
+    // the default instead of erroring the route.
+    expect(() => marketplaceSearchSchema.parse({ sort: 'trending' })).not.toThrow();
+    expect(marketplaceSearchSchema.parse({ sort: 'trending' }).sort).toBeUndefined();
   });
 });
 

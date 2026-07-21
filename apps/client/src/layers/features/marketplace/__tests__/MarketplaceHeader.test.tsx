@@ -232,6 +232,33 @@ describe('MarketplaceHeader', () => {
     expect(popular).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('offers the Recent sort as selectable when packages carry update dates', async () => {
+    const user = userEvent.setup();
+    mockPackages([
+      pkg({ name: 'code-reviewer', updatedAt: '2026-07-18T17:41:20Z' }),
+      pkg({ name: 'flow' }),
+    ]);
+    render(<MarketplaceHeader />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
+
+    const listbox = await screen.findByRole('listbox');
+    const recent = within(listbox).getByRole('option', { name: 'Recent' });
+    expect(recent).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('grays out the Recent sort when no package carries an update date (offline)', async () => {
+    const user = userEvent.setup();
+    mockPackages([pkg({ name: 'code-reviewer' }), pkg({ name: 'flow' })]);
+    render(<MarketplaceHeader />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Sort packages' }));
+
+    const listbox = await screen.findByRole('listbox');
+    const recent = within(listbox).getByRole('option', { name: 'Recent' });
+    expect(recent).toHaveAttribute('aria-disabled', 'true');
+  });
+
   // -------------------------------------------------------------------------
   // The filter facets moved to the sidebar — they must NOT appear here anymore.
   // -------------------------------------------------------------------------
