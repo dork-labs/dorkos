@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260721-153518",
+      "slug": "session-origin-legibility",
+      "title": "Session origin legibility — distinguish your conversations from automated sessions",
+      "created": "2026-07-21",
+      "status": "specified",
+      "project": "Chat Session Reliability"
+    },
+    {
       "id": "260721-140257",
       "slug": "file-explorer-state-persistence",
       "title": "File explorer: persist state across refreshes and tab switches + holistic UX polish",
