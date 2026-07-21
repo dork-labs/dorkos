@@ -1172,6 +1172,9 @@ registry.registerPath({
   path: '/api/relay/endpoints/{subject}/inbox',
   tags: ['Relay'],
   summary: 'Read inbox for an endpoint',
+  description:
+    'Defaults to `pending` messages only, so budget-rejected `failed` messages never surface ' +
+    'next to deliverables unless a caller explicitly opts in via `?status=`.',
   request: {
     params: z.object({ subject: z.string() }),
     query: InboxQuerySchema,

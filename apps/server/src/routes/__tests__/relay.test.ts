@@ -377,6 +377,65 @@ describe('Relay routes', () => {
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Endpoint not found');
     });
+
+    // DOR-337: a naive consumer that ignores the `status` field could act on a
+    // budget-rejected message as if it were a deliverable one. The default
+    // must exclude `failed` messages; callers opt in explicitly.
+    it('defaults to pending-only, excluding budget-rejected failures', async () => {
+      vi.mocked(relayCore.readInbox).mockReturnValue({ messages: [] });
+
+      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox');
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(relayCore.readInbox)).toHaveBeenCalledWith(
+        'relay.test',
+        expect.objectContaining({ status: 'pending' })
+      );
+    });
+
+    it('returns failed (budget-rejected) messages when ?status=failed is passed', async () => {
+      vi.mocked(relayCore.readInbox).mockReturnValue({
+        messages: [
+          {
+            id: 'msg-rejected',
+            subject: 'relay.test',
+            sender: 'agent-a',
+            endpointHash: 'h1',
+            status: 'failed',
+            createdAt: '2026-02-24T00:00:00Z',
+          },
+        ],
+      });
+
+      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox?status=failed');
+
+      expect(res.status).toBe(200);
+      expect(res.body.messages).toHaveLength(1);
+      expect(vi.mocked(relayCore.readInbox)).toHaveBeenCalledWith(
+        'relay.test',
+        expect.objectContaining({ status: 'failed' })
+      );
+    });
+
+    it('supports ?status=all to opt into every status in one view', async () => {
+      vi.mocked(relayCore.readInbox).mockReturnValue({ messages: [] });
+
+      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox?status=all');
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(relayCore.readInbox)).toHaveBeenCalledWith(
+        'relay.test',
+        expect.objectContaining({ status: 'all' })
+      );
+    });
+
+    it('rejects an unrecognized status value with 400', async () => {
+      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox?status=bogus');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Validation failed');
+      expect(vi.mocked(relayCore.readInbox)).not.toHaveBeenCalled();
+    });
   });
 
   describe('DELETE /api/relay/endpoints/:subject (dotted subjects)', () => {
