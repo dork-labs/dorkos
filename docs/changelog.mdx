@@ -5,6 +5,40 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.0] - 2026-07-21
+
+> Pulse now counts what needs you and refreshes the moment something happens, Shapes are easier to apply and clean up after themselves, and a brand-new agent visibly wakes up in its first chat.
+
+### Added
+
+- A single global banner slot now shows the app's notices just below the header, one at a time — banners take turns by priority (a queue), never a pile. (#367)
+- Extension authors can now scaffold a right-panel tab in one step: `create_extension` offers a `right-panel-tab` template that ships a labelled inspector tab with its own icon. The authoring guide and the built-in extension API reference now document the tab `label` and `icon` options, so a tab can carry a real name and glyph instead of the default puzzle-piece. (#368)
+- After you install a Shape, you can apply it straight away — the "Installed" toast now has an Apply button, and every Shape in your installed list has one too. Both open the Shape switcher, where the change actually happens. (#372)
+- Your installed list now shows an "Active" badge on the Shape you're currently in, so you can tell at a glance which one is running. (#372)
+- When a Shape offers you an agent, the switcher now spells out that agent's schedule in plain words (like "Every weekday at 9:00 AM") instead of leaving it unsaid. (#372)
+- Right after you create an agent, its first chat now shows the newborn agent waking up — its face and name, with a soft pulse — instead of a generic empty screen. The moment it says hello, the greeting takes over. (#374)
+- The right-panel button now keeps a running count of what needs your attention — the same items Pulse surfaces, like stalled sessions and failed runs — and updates it while the panel is closed, so you notice without opening anything. No items, no badge.
+
+### Changed
+
+- That notice leads with a plain one-line summary and tucks the exact data it sends behind a "See what's sent" link — there when you want the details, out of the way when you don't. The same "See what's sent" control now shows the payload in onboarding and in Privacy & Data too, so it reads the same everywhere. (#367)
+- Pulse's Activity feed now updates the moment something happens, off the live event stream instead of waiting on a timer.
+- When the panel is showing only one thing, its header now names that tab (icon + title) instead of sitting there blank.
+- Pulse hides a "View all" link when you're already on the page it points to — no more clicking a link that goes nowhere.
+- Switching from one Shape to another now turns off the previous Shape's extensions (unless the Shape you're switching to also uses them), instead of leaving every Shape's extensions piled on. Uninstalling the Shape you're currently in also turns its extensions back off. (#369)
+
+### Fixed
+
+- The "we share a little anonymous data" notice no longer hides behind the sidebar or shoves the app header down the screen. It now sits in its own row just under the header, where you can actually read it. (#367)
+- When a newborn agent can't say hello — the opening greeting never arrives, or stops halfway through — it now tells you plainly ("couldn't say hello just now — send a message to get started") instead of leaving you on the generic "Start a conversation" screen.
+- Three cockpit papercuts, one per surface: real Marketplace names (with a matching A–Z sort), Cmd+. and Cmd+Shift+A handed back to Obsidian, and the arrival card's emoji face.
+- Marketplace cards, dialogs, and messages now show each package's real name instead of its code-style ID — you see "Security Scanner", not "security-scanner". This covers the browse cards, the install and detail windows, the installed list, and the install, update, and uninstall messages, and the "A–Z" sort now orders by those same names.
+- In Obsidian, two keyboard shortcuts that did nothing there — Cmd+. and Cmd+Shift+A — no longer swallow those keys, so they stay free for Obsidian to use.
+- The "Meet your new agent" card now shows the agent's emoji face — the same one you pick in the picker and see in the live preview — instead of just the first letter of its name.
+- Fixed a case where a Shape's scheduled task — created while its agent didn't exist yet — would never switch on after you added the agent, if the task's name wasn't already lowercase-with-dashes. It now links up and starts running as intended. (#372)
+- Uninstalling a Shape now removes the scheduled tasks it created. Before, those schedules kept firing forever after the Shape was gone, with no trace in the app to find or stop them. (#369)
+- Updating a Shape now cleans up any scheduled tasks the new version dropped or renamed, so an old task can't keep running next to its replacement. (#369)
+
 ## [0.53.0] - 2026-07-20
 
 > Pulse turns the right panel into an at-a-glance read on what needs you, the sidebar refocuses on your agents, and a batch of fixes hardens the inspector panel, Docker, and server startup.
@@ -469,30 +503,6 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Agent-to-agent messages now carry a verified sender identity, and DorkOS enforces that agents in different namespaces can't message each other unless you allow it.
 - The external MCP server's mesh tools now enforce the same directory boundaries as the HTTP API, so a caller can't register agents outside the allowed folders.
 
-## [0.44.0] - 2026-06-16
-
-> Your messages now reach the agent exactly as written — per-turn context (git status, UI state, queued-message notes) travels alongside them instead of being injected into the text — and the chat status strip gains live feedback for session hooks and context compaction. Plus a Core Extensions tier, a smarter command palette (ranking + alias provenance), and in-chat output for local slash commands.
-
-### Added
-
-- Agent context (git status, UI state, queued-message notes) now travels alongside your message instead of inside it — your message reaches the agent exactly as written, and that context never shows up as if you had typed it (#258)
-- Agents no longer receive git status twice per turn, trimming redundant prompt context (DOR-132)
-- Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
-- Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
-- Render local slash-command output in chat (DOR-126)
-- Introduce Core Extensions tier (rename builtin → core)
-- Match slash commands by their aliases in the palette, and refresh the command
-  list when the agent changes it mid-session (DOR-108)
-- Persist a context-compaction row in chat ("Context compacted · N tokens ·
-  manual/auto") sourced from the durable transcript, plus a live "Compacting
-  context…" strip that resolves and an inline failed-compaction notice (DOR-118)
-
-### Fixed
-
-- Chat status strip was starved of live `system_status` events (the projected turn dropped them), so "Compacting context…" and hook progress only appeared after the durable history reload — now retained live (DOR-125, completes DOR-118)
-- Open the canvas when an agent pushes content (DOR-97, DOR-104)
-- Apply enable/disable live instead of requiring a page reload
-
 ---
 
-Older releases (v0.1.0 – v0.43.1) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.44.0) live in the [Changelog archive](/changelog-archive).
