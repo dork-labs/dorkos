@@ -76,7 +76,10 @@ async function shootTasks(page: Page, theme: Theme, rec: RunRecorder): Promise<v
 /** Capture the in-app marketplace browse view. */
 async function shootMarketplace(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/marketplace'));
-  await page.getByText('code-reviewer', { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  // Cards render the humanized display label (`packageDisplayLabel`), not the
+  // raw slug, so wait for "Code Reviewer" — the rendered name of the
+  // `code-reviewer` fixture — not its id (#371).
+  await page.getByText('Code Reviewer', { exact: false }).first().waitFor({ timeout: WAIT_MS });
   await shoot(page, 'marketplace', theme, rec);
 }
 
