@@ -225,6 +225,50 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       classifySidebarDrop(p, dragAgent('/a', UNGROUPED), dropContainer(inGroup('missing')))
     ).toEqual({ kind: 'none' });
   });
+
+  // ── Smart groups reject drops (smart-agent-groups, DOR-338) ──
+
+  const smartGrp = (overrides: Partial<SidebarGroup> = {}): SidebarGroup =>
+    grp({ kind: 'smart', sortMode: 'recent', rules: { statuses: ['active'] }, ...overrides });
+
+  it('rejects (does not mutate) an agent dropped on a smart group body from Agents', () => {
+    const p = prefs({ groups: [smartGrp({ id: 'g1' })] });
+    const op = classifySidebarDrop(p, dragAgent('/new', UNGROUPED), dropContainer(inGroup('g1')));
+    expect(op).toEqual({ kind: 'reject-smart-group', groupId: 'g1', path: '/new' });
+    expect(resolveSidebarDrop(p, dragAgent('/new', UNGROUPED), dropContainer(inGroup('g1')))).toBe(
+      p
+    );
+  });
+
+  it('rejects an agent dropped on a smart group’s (collapsed) header', () => {
+    const p = prefs({ groups: [smartGrp({ id: 'g1', collapsed: true })] });
+    const op = classifySidebarDrop(p, dragAgent('/new', UNGROUPED), dropHeader('g1'));
+    expect(op).toEqual({ kind: 'reject-smart-group', groupId: 'g1', path: '/new' });
+  });
+
+  it('rejects an agent dragged from a manual group onto a smart group', () => {
+    const p = prefs({
+      groups: [grp({ id: 'manual1', agentPaths: ['/a'] }), smartGrp({ id: 'smart1' })],
+    });
+    const op = classifySidebarDrop(
+      p,
+      dragAgent('/a', inGroup('manual1')),
+      dropContainer(inGroup('smart1'))
+    );
+    expect(op).toEqual({ kind: 'reject-smart-group', groupId: 'smart1', path: '/a' });
+    const next = resolveSidebarDrop(
+      p,
+      dragAgent('/a', inGroup('manual1')),
+      dropContainer(inGroup('smart1'))
+    );
+    expect(next.groups[0]!.agentPaths).toEqual(['/a']); // untouched — the drop was rejected
+  });
+
+  it('still allows reordering a smart group’s own header among other sections', () => {
+    const p = prefs({ groups: [smartGrp({ id: 'a' }), grp({ id: 'b' }), grp({ id: 'c' })] });
+    const op = classifySidebarDrop(p, dragGroup('a'), dropHeader('c'));
+    expect(op).toEqual({ kind: 'reorder-group', groupId: 'a', from: 0, to: 2 });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -349,6 +393,22 @@ describe('buildSidebarAnnouncements', () => {
     );
     expect(a.onDragCancel(active({ type: 'agent', path: '/api', container: PINNED }))).toBe(
       'Movement cancelled. api-server returned to its place.'
+    );
+  });
+
+  it('announces a rejected drop onto a smart group distinctly', () => {
+    const p = prefs({
+      groups: [
+        grp({ id: 'g1', kind: 'smart', sortMode: 'recent', rules: { statuses: ['active'] } }),
+      ],
+    });
+    const a = announcements(p);
+    const msg = a.onDragEnd({
+      ...active({ type: 'agent', path: '/api', container: UNGROUPED }),
+      over: over({ type: 'container', container: inGroup('g1') }),
+    });
+    expect(msg).toBe(
+      "Can't move api-server into Clients — membership is rule-based. Edit rules instead."
     );
   });
 

@@ -8,8 +8,10 @@ import {
   Trash2,
   BellOff,
   Bell,
+  ListFilter,
 } from 'lucide-react';
 import type { SidebarGroup } from '@dorkos/shared/config-schema';
+import { describeRules } from '../model/evaluate-smart-group';
 import { cn } from '@/layers/shared/lib';
 import {
   AlertDialog,
@@ -179,6 +181,11 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
     setDeleteOpen(false);
   };
 
+  const isSmart = group.kind === 'smart';
+  // Smart groups reject 'manual' sort at the schema level — derived
+  // membership has no hand-orderable sequence, so the option never appears.
+  const sortOptions = isSmart ? SORT_OPTIONS.filter((o) => o.value !== 'manual') : SORT_OPTIONS;
+
   const setSort = (mode: string) =>
     update((prev) => setGroupSortMode(prev, group.id, mode as SidebarGroup['sortMode']));
   const setFilter = (filter: string) =>
@@ -191,6 +198,12 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
     const { Item, Separator, Sub, SubTrigger, SubContent, RadioGroup, RadioItem } = slots;
     return (
       <>
+        {isSmart && (
+          <div className="text-muted-foreground flex items-start gap-1.5 px-2 py-1.5 text-xs">
+            <ListFilter className="mt-0.5 size-3.5 shrink-0" />
+            <span>{describeRules(group.rules!)}</span>
+          </div>
+        )}
         <Item onClick={startRename}>
           <Pencil className="mr-2 size-4" />
           Rename
@@ -203,7 +216,7 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
           </SubTrigger>
           <SubContent className="w-44">
             <RadioGroup value={group.sortMode} onValueChange={setSort}>
-              {SORT_OPTIONS.map((opt) => (
+              {sortOptions.map((opt) => (
                 <RadioItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </RadioItem>
@@ -257,6 +270,12 @@ export function GroupHeader({ group, memberCount, showActivityDot }: GroupHeader
                   <ChevronRight className="size-3.5 shrink-0" />
                 ) : (
                   <ChevronDown className="size-3.5 shrink-0" />
+                )}
+                {isSmart && (
+                  <ListFilter
+                    aria-label="Smart group — membership is rule-based"
+                    className="size-3 shrink-0"
+                  />
                 )}
                 <span className="truncate tracking-wider uppercase">{group.name}</span>
                 {showActivityDot && (

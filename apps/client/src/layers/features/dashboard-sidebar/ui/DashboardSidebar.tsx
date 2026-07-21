@@ -35,8 +35,15 @@ import { UngroupedSection } from './UngroupedSection';
 import { GroupCreateInput } from './GroupCreateInput';
 import { GroupsHintCard } from './GroupsHintCard';
 import { SidebarDnd } from './dnd/SidebarDnd';
-import { Sortable, SortableList, agentRowDndId, agentDndData } from './dnd/SidebarDndPrimitives';
+import {
+  Sortable,
+  SortableList,
+  agentRowDndId,
+  agentDndData,
+  DISABLED_SORTABLE_BINDINGS,
+} from './dnd/SidebarDndPrimitives';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
+import { evaluateSmartGroup, type SmartGroupCandidate } from '../model/evaluate-smart-group';
 
 /**
  * Legacy localStorage key that held pinned agent paths before organization moved
@@ -121,6 +128,9 @@ export function DashboardSidebar() {
     [pinnedAgentPaths, knownSet]
   );
 
+  // Multi-presence is structural: smart groups' own `agentPaths` stays `[]`
+  // until a "Convert to manual group", so they never contribute here — a
+  // rule-matched agent still lives in its manual group / the ungrouped list.
   const groupedSet = useMemo(() => {
     const set = new Set<string>();
     for (const g of sidebarPrefs.groups) {
@@ -129,16 +139,44 @@ export function DashboardSidebar() {
     return set;
   }, [sidebarPrefs.groups, knownSet]);
 
+  // ── Smart groups (DOR-338): rule-derived membership, re-evaluated live ──
+  // Candidates are built ONCE per render from data the sidebar already holds;
+  // evaluation below is memoized on (groups, candidates) identity so unrelated
+  // store updates skip re-derivation (spec Performance Considerations).
+  const smartGroupCandidates = useMemo<SmartGroupCandidate[]>(
+    () =>
+      rawPaths.map((path) => ({
+        projectPath: path,
+        runtime: agents?.[path]?.runtime ?? 'claude-code',
+        namespace: agents?.[path]?.namespace ?? null,
+        attention: attentionMap[path] ?? 'inactive',
+        lastActivityAt: agentActivity[path] ? new Date(agentActivity[path]).getTime() : null,
+      })),
+    [rawPaths, agents, attentionMap, agentActivity]
+  );
+  const smartGroupMemberPaths = useMemo(() => {
+    const map = new Map<string, string[]>();
+    const now = Date.now();
+    for (const g of sidebarPrefs.groups) {
+      if (g.kind === 'smart' && g.rules) {
+        map.set(g.id, evaluateSmartGroup(g.rules, smartGroupCandidates, now));
+      }
+    }
+    return map;
+  }, [sidebarPrefs.groups, smartGroupCandidates]);
+
   const knownGroupMembers = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const g of sidebarPrefs.groups) {
       map.set(
         g.id,
-        g.agentPaths.filter((p) => knownSet.has(p))
+        g.kind === 'smart'
+          ? (smartGroupMemberPaths.get(g.id) ?? [])
+          : g.agentPaths.filter((p) => knownSet.has(p))
       );
     }
     return map;
-  }, [sidebarPrefs.groups, knownSet]);
+  }, [sidebarPrefs.groups, knownSet, smartGroupMemberPaths]);
 
   // Pre-filter/pre-sort — UngroupedSection filters then sorts internally,
   // same order of operations as a group section (spec: sorting applies after
@@ -292,38 +330,47 @@ export function DashboardSidebar() {
   );
 
   // ── Shared agent-row renderer (keeps section components lean; keyPrefix lets a
-  // pinned reference coexist with its home copy) ──
+  // pinned reference coexist with its home copy). `draggable: false` renders
+  // the row without a `Sortable` wrapper at all — smart-group members
+  // (DOR-338) are rule-owned, never a drag source. ──
   const renderAgentRow = useCallback(
-    (path: string, keyPrefix: string): ReactNode => {
+    (path: string, keyPrefix: string, options?: { draggable?: boolean }): ReactNode => {
       const isActive = selectedCwd === path && pathname === '/session';
+      const itemProps = {
+        path,
+        agent: agents?.[path] ?? null,
+        displayName: displayNamesRecord[path],
+        isActive,
+        isExpanded: expandedPath === path,
+        isMuted: effectiveMutedForRender.has(path),
+        onSelect: () => handleSelectAgent(path),
+        onToggleExpand: () => handleToggleExpand(path),
+        onOpenProfile: () => handleOpenProfile(path),
+        onRequestNewGroup: handleRequestNewGroup,
+        sessions: isActive ? previewSessions : [],
+        isLoadingSessions: isActive && sessionsLoading,
+        activeSessionId,
+        onSessionClick: handleSessionClick,
+        onNewSession: () => handleNewSession(path),
+        onForkSession: handleForkSession,
+        onRenameSession: handleRenameSession,
+      };
+      if (options?.draggable === false) {
+        return (
+          <AgentListItem
+            key={`${keyPrefix}-${path}`}
+            {...itemProps}
+            sortable={DISABLED_SORTABLE_BINDINGS}
+          />
+        );
+      }
       return (
         <Sortable
           key={`${keyPrefix}-${path}`}
           id={agentRowDndId(keyPrefix, path)}
           data={agentDndData(keyPrefix, path)}
         >
-          {(bindings) => (
-            <AgentListItem
-              path={path}
-              agent={agents?.[path] ?? null}
-              displayName={displayNamesRecord[path]}
-              isActive={isActive}
-              isExpanded={expandedPath === path}
-              isMuted={effectiveMutedForRender.has(path)}
-              onSelect={() => handleSelectAgent(path)}
-              onToggleExpand={() => handleToggleExpand(path)}
-              onOpenProfile={() => handleOpenProfile(path)}
-              onRequestNewGroup={handleRequestNewGroup}
-              sessions={isActive ? previewSessions : []}
-              isLoadingSessions={isActive && sessionsLoading}
-              activeSessionId={activeSessionId}
-              onSessionClick={handleSessionClick}
-              onNewSession={() => handleNewSession(path)}
-              onForkSession={handleForkSession}
-              onRenameSession={handleRenameSession}
-              sortable={bindings}
-            />
-          )}
+          {(bindings) => <AgentListItem {...itemProps} sortable={bindings} />}
         </Sortable>
       );
     },

@@ -579,3 +579,93 @@ describe('DashboardSidebar attention filters + reveal (DOR-339)', () => {
     expect(screen.getByText('beta')).toBeInTheDocument();
   });
 });
+
+describe('DashboardSidebar smart groups (DOR-338)', () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMeshPaths.mockReset();
+    mockSidebarPrefs.mockReset();
+    mockUpdateSidebar.mockReset();
+    mockRecent.mockReset();
+    mockNavigate.mockReset();
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
+    mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
+    mockSidebarPrefs.mockReturnValue(makePrefs());
+    mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockAttentionMap.mockReset();
+    mockSelectedCwd = null;
+    mockPathname = '/';
+  });
+
+  /** Override the attention map for specific paths; everything else stays 'active'. */
+  function attentionOverride(states: Record<string, string>) {
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, states[p] ?? 'active']))
+    );
+  }
+
+  const smartGroup = (overrides: Partial<SidebarGroup> = {}) =>
+    group({
+      id: 's1',
+      name: 'Attention now',
+      kind: 'smart',
+      sortMode: 'recent',
+      rules: { statuses: ['needs-attention'] },
+      ...overrides,
+    });
+
+  /** A wrapper-based render so `rerender` re-applies the same providers (live re-evaluation test). */
+  function renderRerenderable() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: React.ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <SidebarProvider>{children}</SidebarProvider>
+          </TooltipProvider>
+        </QueryClientProvider>
+      );
+    }
+    return render(<DashboardSidebar />, { wrapper: Wrapper });
+  }
+
+  it('renders derived members matching the rules, keeping the multi-presence copy in the ungrouped list', () => {
+    attentionOverride({ '/projects/alpha': 'needs-attention', '/projects/beta': 'active' });
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [smartGroup()] }));
+    renderWithProviders(<DashboardSidebar />);
+
+    expect(screen.getByText('Attention now')).toBeInTheDocument();
+    // alpha matches the rule: one copy inside the smart group, one in "Agents"
+    // (multi-presence — a smart group never removes an agent from its manual
+    // home / the ungrouped list).
+    expect(screen.getAllByText('alpha')).toHaveLength(2);
+    // beta doesn't match: only its ungrouped copy renders.
+    expect(screen.getAllByText('beta')).toHaveLength(1);
+  });
+
+  it('shows an honest "0 matching" state when nothing matches the rules', () => {
+    attentionOverride({ '/projects/alpha': 'active', '/projects/beta': 'active' });
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [smartGroup()] }));
+    renderWithProviders(<DashboardSidebar />);
+
+    expect(screen.getByText('No agents match these rules')).toBeInTheDocument();
+  });
+
+  it('re-evaluates live: an attention-state flip moves an agent out of the smart group', () => {
+    attentionOverride({ '/projects/alpha': 'needs-attention', '/projects/beta': 'active' });
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [smartGroup()] }));
+    const { rerender } = renderRerenderable();
+
+    expect(screen.getAllByText('alpha')).toHaveLength(2);
+
+    // alpha goes idle — no longer matches `statuses: ['needs-attention']`.
+    attentionOverride({ '/projects/alpha': 'active', '/projects/beta': 'active' });
+    rerender(<DashboardSidebar />);
+
+    expect(screen.getAllByText('alpha')).toHaveLength(1); // only the ungrouped copy survives
+    expect(screen.getByText('No agents match these rules')).toBeInTheDocument();
+  });
+});

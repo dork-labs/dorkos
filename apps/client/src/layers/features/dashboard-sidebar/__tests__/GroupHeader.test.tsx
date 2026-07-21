@@ -274,4 +274,58 @@ describe('GroupHeader', () => {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
+
+  // --- Smart groups (DOR-338) ---
+
+  describe('smart groups', () => {
+    const smartGroup = (overrides: Partial<SidebarGroup> = {}) =>
+      makeGroup({
+        kind: 'smart',
+        sortMode: 'recent',
+        rules: { runtimes: ['codex'], lastActiveWithinMs: 60 * 60 * 1000 },
+        ...overrides,
+      });
+
+    it('shows the rule glyph next to the name for a smart group, not a manual one', () => {
+      renderHeader({ group: smartGroup() });
+      expect(screen.getByLabelText('Smart group — membership is rule-based')).toBeInTheDocument();
+      cleanup();
+      renderHeader({ group: makeGroup() });
+      expect(
+        screen.queryByLabelText('Smart group — membership is rule-based')
+      ).not.toBeInTheDocument();
+    });
+
+    it("renders the plain-language rule summary in the menu (the UI's honesty contract)", () => {
+      renderHeader({ group: smartGroup() });
+      openContextMenu();
+      expect(screen.getByText('Codex · active in the last hour')).toBeInTheDocument();
+    });
+
+    it('hides the "Manual" sort option for a smart group', () => {
+      renderHeader({ group: smartGroup() });
+      openContextMenu();
+      const subTrigger = screen.getByText('Sort by');
+      fireEvent.keyDown(subTrigger, { key: 'ArrowRight' });
+      expect(screen.queryByText('Manual')).not.toBeInTheDocument();
+      expect(screen.getByText('Recent activity')).toBeInTheDocument();
+      expect(screen.getByText('Name')).toBeInTheDocument();
+    });
+
+    it('a manual group still offers "Manual" sort', () => {
+      renderHeader({ group: makeGroup() });
+      openContextMenu();
+      const subTrigger = screen.getByText('Sort by');
+      fireEvent.keyDown(subTrigger, { key: 'ArrowRight' });
+      expect(screen.getByText('Manual')).toBeInTheDocument();
+    });
+
+    it('mute still applies to smart groups unchanged', () => {
+      renderHeader({ group: smartGroup({ muted: false }) });
+      openContextMenu();
+      fireEvent.click(screen.getByText('Mute group'));
+      const calls = applyLatestUpdater();
+      expect(calls).toEqual([{ name: 'setGroupMuted', args: [PREV, 'g1', true] }]);
+    });
+  });
 });
