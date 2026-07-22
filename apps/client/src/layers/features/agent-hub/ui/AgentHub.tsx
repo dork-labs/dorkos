@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
-import { useRouterState } from '@tanstack/react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useSafePathname } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
 import { AgentHubProvider } from '../model/agent-hub-context';
 import { useAgentHubStore } from '../model/agent-hub-store';
@@ -70,7 +69,10 @@ export function AgentHub() {
   // contribution's selection-honest `visibleWhen` gate (see init-extensions.ts).
   const hubAgentPath = useAgentHubStore((s) => s.agentPath);
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const isSessionRoute = useRouterState({ select: (s) => s.location.pathname === '/session' });
+  // In the routed cockpit this is the live pathname; in the Obsidian embed it is
+  // always the session surface ('/session'), so the panel profiles the session's
+  // own agent there just as it does on the web session route.
+  const isSessionRoute = useSafePathname() === '/session';
   const agentPath = hubAgentPath ?? (isSessionRoute ? selectedCwd : null);
 
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);

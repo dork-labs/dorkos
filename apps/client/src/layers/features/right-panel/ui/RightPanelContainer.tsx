@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
-import { useRouterState } from '@tanstack/react-router';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
 import {
   useAppStore,
@@ -17,17 +16,41 @@ const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
 /** CSS transition for the resize handle indicator during open/close. */
 const HANDLE_INDICATOR_TRANSITION = 'opacity 300ms ease-in-out';
 
+/** How the container presents itself within its host shell. */
+export interface RightPanelContainerProps {
+  /**
+   * The current route pathname, threaded into every tab's `visibleWhen`
+   * predicate. The routed web/desktop shell (AppShell) supplies the live
+   * TanStack Router pathname; the router-less Obsidian embed passes a constant
+   * (`'/session'`) — the container never reaches for the router itself, so it
+   * mounts safely in a shell with no `RouterProvider`.
+   */
+  pathname: string;
+  /**
+   * Presentation mode.
+   *
+   * - `'resizable'` (default): the desktop inset — a collapsible
+   *   `react-resizable-panels` `Panel` that must live inside a `PanelGroup`;
+   *   narrow viewports (`useIsMobile`) still fall back to the overlay Sheet.
+   * - `'overlay'`: always the slide-over Sheet, regardless of width. The
+   *   embed uses this — its pane is narrow and has no `PanelGroup`, so a
+   *   side-by-side split would crowd the chat; an overlay degrades gracefully.
+   */
+  variant?: 'resizable' | 'overlay';
+}
+
 /**
  * Shell-level right panel container.
  *
- * Renders inside the AppShell PanelGroup. On desktop the panel is always
- * present in the DOM when contributions exist — collapsed to zero width when
- * closed, expanded with a CSS flex-grow transition (200ms) when opened.
- * Transitions are disabled during manual resize drag and on initial mount to
- * avoid layout flash. On mobile (768px breakpoint), renders as a Sheet with
- * built-in slide animation.
+ * In the routed shell (`variant='resizable'`) the panel is always present in
+ * the DOM when contributions exist — collapsed to zero width when closed,
+ * expanded with a CSS flex-grow transition (300ms) when opened. Transitions are
+ * disabled during manual resize drag and on initial mount to avoid layout
+ * flash. On narrow viewports (768px breakpoint) — and always under
+ * `variant='overlay'` (the Obsidian embed) — it renders as a Sheet with
+ * built-in slide animation instead.
  */
-export function RightPanelContainer() {
+export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPanelContainerProps) {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
@@ -47,8 +70,6 @@ export function RightPanelContainer() {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Subscribe to pathname so visibleWhen predicates re-evaluate on route changes
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
   // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
   const transport = useTransport();
   // The active agent + working directory let tabs scope visibility to a specific
@@ -172,8 +193,10 @@ export function RightPanelContainer() {
     </>
   );
 
-  // Mobile: render as Sheet (built-in slide animation)
-  if (isMobile) {
+  // Overlay: render as a slide-over Sheet instead of an inset split — always
+  // under `variant='overlay'` (the narrow Obsidian embed, which has no
+  // PanelGroup) and on mobile-width viewports in the routed shell.
+  if (variant === 'overlay' || isMobile) {
     if (!shouldShow) return null;
     return (
       <Sheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>

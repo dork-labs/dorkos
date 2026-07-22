@@ -1,4 +1,6 @@
-import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
+import { getPlatform } from '@/layers/shared/lib';
+import { useSafePathname } from '@/layers/shared/model';
 import { Button, Table, TableBody } from '@/layers/shared/ui';
 import { useDashboardActivity } from '@/layers/features/dashboard-activity';
 import { ActivityRow } from '@/layers/features/activity-feed-page';
@@ -17,9 +19,11 @@ const PULSE_ACTIVITY_CAP = 5;
  */
 export function PulseActivitySection() {
   const navigate = useNavigate();
-  // /activity IS the "Open activity" destination — omit the link there rather
-  // than offer a self-navigation no-op (honest omission, no scroll hack).
-  const onActivityPage = useRouterState({ select: (s) => s.location.pathname === '/activity' });
+  // "Open activity" navigates to /activity. Omit the link when it would be a
+  // no-op (already there) and in the router-less Obsidian embed, where there is
+  // no activity route to reach — an honest omission, not a dead-end button.
+  const pathname = useSafePathname();
+  const showOpenActivity = !getPlatform().isEmbedded && pathname !== '/activity';
   const { groups, isLoading } = useDashboardActivity();
 
   // Flatten the time-bucketed groups back into one most-recent-first list and cap
@@ -35,7 +39,7 @@ export function PulseActivitySection() {
       empty={!isLoading && items.length === 0}
       allClear="No recent activity."
       action={
-        onActivityPage ? undefined : (
+        showOpenActivity ? (
           <Button
             variant="ghost"
             size="sm"
@@ -44,7 +48,7 @@ export function PulseActivitySection() {
           >
             Open activity →
           </Button>
-        )
+        ) : undefined
       }
     >
       <Table>

@@ -209,6 +209,11 @@ function useHeaderSlot({
 export function AppShell() {
   const { sidebarOpen, setSidebarOpen } = useAppStore();
   const [activeSessionId] = useSessionId();
+  // Live route pathname threaded into the right panel so its tab `visibleWhen`
+  // predicates re-evaluate on navigation. The container itself is router-free
+  // (it takes pathname as a prop) so the same component mounts in the
+  // router-less Obsidian embed, which passes a constant.
+  const rightPanelPathname = useRouterState({ select: (s) => s.location.pathname });
   useDefaultCwd();
 
   const [selectedCwd] = useDirectoryState();
@@ -444,7 +449,7 @@ export function AppShell() {
                           <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
                             <Outlet />
                           </Panel>
-                          <RightPanelContainer />
+                          <RightPanelContainer pathname={rightPanelPathname} />
                         </PanelGroup>
                       </main>
                     </SidebarInset>

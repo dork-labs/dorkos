@@ -2,6 +2,9 @@ import { lazy } from 'react';
 import { Activity, FolderTree, PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { getPlatform } from '@/layers/shared/lib';
+
+/** The extension registry's `register` action (idempotent per slot + id). */
+type RegisterFn = ReturnType<typeof useExtensionRegistry.getState>['register'];
 import {
   PALETTE_FEATURES,
   PALETTE_QUICK_ACTIONS,
@@ -99,6 +102,21 @@ export function initializeExtensions(): void {
     priority: 70,
   });
 
+  // Right-panel inspector tabs — shared by every shell (the routed cockpit and
+  // the Obsidian embed), so the Inspector is one architecture everywhere.
+  registerRightPanelTabs(register);
+}
+
+/**
+ * Register the built-in right-panel (Inspector) tabs into the extension
+ * registry. Called from both the web entry ({@link initializeExtensions}) and
+ * the Obsidian embed so the Inspector is identical across shells — route- and
+ * transport-gating (not a divergent tab list) decides what shows where. The
+ * registry dedupes by id, so calling this more than once is safe.
+ *
+ * @param register - The extension registry's `register` action.
+ */
+export function registerRightPanelTabs(register: RegisterFn): void {
   // Pulse — the always-present GLOBAL spine tab of the right panel (lazy-loaded).
   //
   // It carries no `visibleWhen`, so it shows on every route, and priority 5 (below
@@ -137,7 +155,8 @@ export function initializeExtensions(): void {
   // server's default cwd, which nobody picked — and often render a misleading
   // "Agent not found" (see AGENTS.md, the "describe what happens for the user"
   // filter). `explicitAgentPath` is the click-driven signal; `cwd`/`agentId` are
-  // ambient and deliberately not used to gate this tab.
+  // ambient and deliberately not used to gate this tab. In the embed the constant
+  // `/session` pathname keeps the panel on the session's own agent.
   register('right-panel', {
     id: 'agent-hub',
     title: 'Agent Profile',
@@ -189,7 +208,8 @@ export function initializeExtensions(): void {
   // Terminal as right-panel contribution (lazy-loaded — @xterm/* lands in its
   // own async chunk). Web-only: shown on /session AND only when the active
   // transport supports a server-side PTY (hidden under the in-process Obsidian
-  // transport, D3).
+  // transport, D3). This is the capability gate the embed relies on to drop the
+  // terminal tab automatically — the tab list is identical across shells.
   register('right-panel', {
     id: 'terminal',
     title: 'Terminal',

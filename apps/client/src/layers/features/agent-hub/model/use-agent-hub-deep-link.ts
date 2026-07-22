@@ -16,7 +16,8 @@
  * @module features/agent-hub/model/use-agent-hub-deep-link
  */
 import { useEffect } from 'react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
+import { useSafeSearch } from '@/layers/shared/model';
 import { useAgentHubStore, type AgentHubTab } from './agent-hub-store';
 
 // ---------------------------------------------------------------------------
@@ -83,7 +84,7 @@ function resolveHubTab(raw: string | undefined): AgentHubTab {
  * It has no return value — the side-effect is store synchronisation.
  */
 export function useAgentHubDeepLink(): void {
-  const search = useSearch({ strict: false }) as {
+  const search = useSafeSearch() as {
     panel?: string;
     hubTab?: string;
     agentPath?: string;
@@ -123,7 +124,7 @@ export function useAgentHubDeepLink(): void {
  * previously handled.
  */
 export function useAgentDialogRedirect(): void {
-  const search = useSearch({ strict: false }) as {
+  const search = useSafeSearch() as {
     agent?: string;
     agentPath?: string;
     dialog?: string;

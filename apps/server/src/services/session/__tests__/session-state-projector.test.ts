@@ -6,6 +6,7 @@ import {
   peekProjector,
   disposeProjector,
   rekeyProjector,
+  onProjectorRekey,
   onProjectorStatusChange,
 } from '../session-state-projector.js';
 import type { RawSessionEvent, ProjectorStatusUpdate } from '../session-state-projector.js';
@@ -640,6 +641,28 @@ describe('SessionStateProjector', () => {
   // Failure mode (C1 guards): rekey must be a no-op when the id is unchanged or
   // when nothing is registered under oldId — so an existing session (whose id
   // never changes) and a missing source are both safe.
+  it('onProjectorRekey notifies subscribers with (oldId, newId) on a real rekey', () => {
+    const seen: Array<[string, string]> = [];
+    const unsubscribe = onProjectorRekey((oldId, newId) => seen.push([oldId, newId]));
+    getOrCreateProjector('rekey-obs-uuid');
+
+    rekeyProjector('rekey-obs-uuid', 'rekey-obs-canonical');
+    expect(seen).toEqual([['rekey-obs-uuid', 'rekey-obs-canonical']]);
+
+    // A no-op rekey (unchanged id) fires nothing.
+    rekeyProjector('rekey-obs-canonical', 'rekey-obs-canonical');
+    expect(seen).toHaveLength(1);
+
+    // After unsubscribe, no further notifications.
+    unsubscribe();
+    getOrCreateProjector('rekey-obs-2');
+    rekeyProjector('rekey-obs-2', 'rekey-obs-2-canonical');
+    expect(seen).toHaveLength(1);
+
+    disposeProjector('rekey-obs-canonical');
+    disposeProjector('rekey-obs-2-canonical');
+  });
+
   it('rekeyProjector is a no-op for an unchanged id or a missing source', () => {
     const SAME = 'same-id';
     const a = getOrCreateProjector(SAME);
