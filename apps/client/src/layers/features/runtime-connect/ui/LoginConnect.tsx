@@ -54,13 +54,20 @@ const LOGIN_COPY: Record<string, LoginCopy> = {
 };
 
 /**
- * The Codex/Claude connect surface: a delegated sign-in and a paste-key path.
+ * The Codex/Claude connect surface: a delegated sign-in, with a paste-key path
+ * one quiet tap away.
+ *
+ * Sign in is the recommended path, so it is the only thing shown at first — the
+ * API-key form stays behind a "Use an API key instead" link to keep the surface
+ * calm. The key path is never removed (some people prefer it, or only have a
+ * key); it is just deferred until asked for.
  *
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
  */
 export function LoginConnect({ type }: { type: string }) {
   const copy = LOGIN_COPY[type] ?? LOGIN_COPY['claude-code'];
   const login = useDelegateRuntimeLogin(type);
+  const [showKey, setShowKey] = useState(false);
 
   return (
     <div className="space-y-4" data-testid={`login-connect-${type}`}>
@@ -84,13 +91,32 @@ export function LoginConnect({ type }: { type: string }) {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <span className="bg-border h-px flex-1" />
-        <span className="text-muted-foreground text-2xs tracking-wide uppercase">or</span>
-        <span className="bg-border h-px flex-1" />
-      </div>
-
-      <PasteKeyForm type={type} copy={copy} />
+      {showKey ? (
+        <div className="space-y-3" data-testid={`login-connect-key-${type}`}>
+          <div className="flex items-center gap-3">
+            <span className="bg-border h-px flex-1" />
+            <span className="text-muted-foreground text-2xs tracking-wide uppercase">or</span>
+            <span className="bg-border h-px flex-1" />
+          </div>
+          <PasteKeyForm type={type} copy={copy} />
+          <button
+            type="button"
+            onClick={() => setShowKey(false)}
+            className="text-muted-foreground hover:text-foreground text-xs underline decoration-dotted underline-offset-2 transition-colors"
+          >
+            Back to sign in
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowKey(true)}
+          className="text-muted-foreground hover:text-foreground text-xs underline decoration-dotted underline-offset-2 transition-colors"
+          data-testid={`login-connect-use-key-${type}`}
+        >
+          Use an API key instead
+        </button>
+      )}
     </div>
   );
 }

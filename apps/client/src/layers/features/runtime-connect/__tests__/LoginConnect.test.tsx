@@ -135,6 +135,8 @@ describe('LoginConnect — Codex (task 2.4)', () => {
       storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:codex' }),
     });
 
+    // The key form is progressive disclosure — reveal it first.
+    await user.click(await screen.findByRole('button', { name: 'Use an API key instead' }));
     const input = await screen.findByLabelText('OpenAI API key');
     expect(input).toHaveAttribute('type', 'password');
     await user.type(input, SECRET);
@@ -236,6 +238,7 @@ describe('LoginConnect — Claude (task 2.5)', () => {
       storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:anthropic' }),
     });
 
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
     const input = screen.getByLabelText('Anthropic API key');
     await user.type(input, SECRET);
     await user.click(screen.getByRole('button', { name: 'Save key' }));
@@ -247,14 +250,36 @@ describe('LoginConnect — Claude (task 2.5)', () => {
     expect(screen.queryByDisplayValue(SECRET)).not.toBeInTheDocument();
   });
 
-  it('exposes only delegate + paste-key affordances (no claude.ai OAuth UI)', () => {
+  it('exposes only delegate + paste-key affordances (no claude.ai OAuth UI)', async () => {
     // Purpose: the Non-Goal — Claude connect never renders a reimplemented
     // claude.ai browser OAuth. Only the delegate sign-in + paste-key exist.
+    const user = userEvent.setup();
     renderFlow(<LoginConnect type="claude-code" />);
     const surface = screen.getByTestId('login-connect-claude-code');
     expect(within(surface).getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    // The key path is one quiet tap away, not gone — reveal it.
+    await user.click(within(surface).getByRole('button', { name: 'Use an API key instead' }));
     expect(within(surface).getByLabelText('Anthropic API key')).toBeInTheDocument();
     expect(within(surface).queryByText(/claude\.ai/i)).not.toBeInTheDocument();
     expect(within(surface).queryByRole('button', { name: /authorize/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps sign in primary and the key form behind a toggle, with a way back', async () => {
+    // Purpose: when a runtime offers both a delegated login and a key, sign in is
+    // the only thing shown at first; the key form is one tap away and reversible.
+    const user = userEvent.setup();
+    renderFlow(<LoginConnect type="claude-code" />);
+    const surface = within(screen.getByTestId('login-connect-claude-code'));
+
+    // Sign in is visible; the key field is not, until asked for.
+    expect(surface.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(surface.queryByLabelText('Anthropic API key')).not.toBeInTheDocument();
+
+    await user.click(surface.getByRole('button', { name: 'Use an API key instead' }));
+    expect(surface.getByLabelText('Anthropic API key')).toBeInTheDocument();
+
+    // And there is a way back that hides the key form again.
+    await user.click(surface.getByRole('button', { name: 'Back to sign in' }));
+    expect(surface.queryByLabelText('Anthropic API key')).not.toBeInTheDocument();
   });
 });
