@@ -1,0 +1,160 @@
+{
+  "spec": "specs/agents-as-operators/02-specification.md",
+  "slug": "agents-as-operators",
+  "generatedAt": "2026-07-22T22:15:00-07:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-07-22",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Register marketplace tools on the in-session MCP server",
+      "description": "The 8 marketplace MCP tools (marketplace_search, marketplace_get, marketplace_list_marketplaces, marketplace_list_installed, marketplace_recommend, marketplace_install, marketplace_create_package, plus the install confirmation-token flow) exist only on the external /mcp server (apps/server/src/services/marketplace-mcp/marketplace-mcp-tools.ts), so an external MCP client can install packages but the user's own agent inside a DorkOS session cannot. Fix: extract the tool handlers into a transport-neutral shared layer consumed by BOTH registerMarketplaceTools (external, @modelcontextprotocol/sdk McpServer) and createDorkOsToolServer (in-session, createSdkMcpServer from @anthropic-ai/claude-agent-sdk, in apps/server/src/services/runtimes/claude-code/mcp-tools/). Do NOT duplicate handler logic; the confirmation-token trust boundary for install/create-package is preserved unchanged. Wire marketplaceDeps into the tool-server factory where claudeRuntime.setMcpServerFactory is called in apps/server/src/index.ts (marketplace services init later in index.ts than the runtime factory today; resolve the ordering, e.g. late-binding getter). Acceptance: a claude-code session's dorkos MCP server lists all 8 tools; existing external /mcp behavior unchanged; unit tests cover one read tool + the install confirmation flow via the in-session registration path; pnpm --filter @dorkos/server test/typecheck/lint green.",
+      "activeForm": "Registering marketplace tools on the in-session MCP server",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.3",
+        "1.4",
+        "1.6"
+      ],
+      "issue": "DOR-429",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Add self-service and observability MCP tools (update_agent, activity_list, config_get/patch, check_update, agents_recent_activity)",
+      "description": "Add five new tool families to BOTH MCP servers (in-session apps/server/src/services/runtimes/claude-code/mcp-tools/ and external apps/server/src/services/core/external-mcp/), as thin wrappers over existing service logic, never duplicating route validation: (1) update_agent — the self-edit semantics of PATCH /api/agents/current in routes/agents.ts (traits, conventions, displayName, SOUL.md/NOPE.md content), immutable name + system-agent identity fields rejected exactly as the route does; tool description directs the agent to confirm with the user before editing another agent's manifest. (2) activity_list — passthrough of ListActivityQuerySchema (actor/category/eventType/resource filters, pagination) over ActivityService. (3) config_get / config_patch — snapshot + deep-merge patch via ConfigManager (services/core/config-manager.ts), same Zod validation path as PATCH /api/config; config_patch description flags it as a user-settings mutation requiring user intent. (4) check_update — current version + latestVersion via services/core/update-checker.ts. (5) agents_recent_activity — the GET /api/sessions/recent per-agent latest-activity map. None of the new mutating tools join READ_ONLY_MCP_TOOL_NAMES (services/core/external-mcp/tool-security.ts). Acceptance: tools present on both servers; unit tests per tool covering happy path + rejection (system-agent protection, invalid config patch); server test/typecheck/lint green.",
+      "activeForm": "Adding self-service and observability MCP tools",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.3",
+        "1.4",
+        "1.6"
+      ],
+      "issue": "DOR-430",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Move status-bar preferences from client localStorage to server config (ui.statusBar)",
+      "description": "Status-bar visibility booleans (showStatusBarCwd, showStatusBarModel, showStatusBarGit, and siblings in apps/client/src/layers/shared/model/app-store/app-store-preferences.ts lines ~40-196) live only in client Zustand + localStorage, so no agent (and no other device) can toggle them. Fix: (1) add a ui.statusBar object to the Zod config schema in packages/shared/src/config-schema.ts with all booleans defaulting to today's client defaults, plus a semver-keyed conf migration per contributing/configuration.md and the adding-config-fields skill; (2) client reads via TanStack Query against GET /api/config (follow the existing ui.sidebar groups pattern; query key ['config']) and writes via PATCH /api/config; (3) one-time client migration: on first load, if legacy localStorage keys exist, PATCH their values up then remove them; (4) remove the Zustand/localStorage code paths for these booleans (no tolerated legacy patterns). Agents then toggle status-bar items via config_patch (task 1.2) with no additional work. Acceptance: toggling in the UI persists to ~/.dork/config.json (dev: .temp/.dork); legacy localStorage values survive the migration; client + shared tests/typecheck/lint green; conf migration test covers fresh + upgraded stores.",
+      "activeForm": "Moving status-bar preferences to server config",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.2",
+        "1.4",
+        "1.6"
+      ],
+      "issue": "DOR-431",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Move evaluateSmartGroup to @dorkos/shared",
+      "description": "Smart-group membership evaluation is client-only: the pure function evaluateSmartGroup in apps/client/src/layers/features/dashboard-sidebar/model/evaluate-smart-group.ts matches SmartGroupRules (packages/shared/src/config-schema.ts) against agent/mesh data, so the server and CLI cannot compute who matches a group. Fix: relocate evaluateSmartGroup and its input types to packages/shared (new subpath export following the existing exports-map pattern in packages/shared/package.json; TSDoc on all exports per the jsdoc lint rule), move its tests alongside, and re-point the client import to the barrel. Behavior must be byte-identical (pure relocation, no logic changes); rebuild @dorkos/shared so dependent dists resolve. No server API is added in this task (that lands with phase 2's registry). Acceptance: client behavior unchanged (existing dashboard-sidebar tests green), function importable from @dorkos/shared subpath in a server/CLI context, shared + client typecheck/lint/test green, pnpm knip clean for the moved file.",
+      "activeForm": "Moving evaluateSmartGroup to shared",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.6"
+      ],
+      "issue": "DOR-432",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Ship the Operating DorkOS skill pack v1 (authored, seeded, projected)",
+      "description": "No first-party skills teach agents to operate DorkOS (verified: the 29 .agents/skills/ in-repo are dev-only; scaffoldInstructions() seeds only AGENTS.md). Build the pack: five canonical skills — operating-dorkos (umbrella: what DorkOS is, the dorkos CLI with --json, when to use MCP tools vs CLI, where live facts come from), managing-agents (create/update agents incl. self-edit etiquette + system-agent limits), scheduling-tasks (Pulse schedules + run history), using-the-marketplace (search/install/confirmation flow/sources), reading-activity (activity feed + recent-agent activity). Each ≤150 lines, SKILL.md format validated by @dorkos/skills schemas, imperative ACI-style prose written for models, content grounded in the tools/verbs landed by tasks 1.1/1.2/1.6 (name real tool + command names; no aspirational references). Location: in-repo, importable without a server by both apps/server (agent-creator.ts) and packages/cli — implementer chooses packages/shared assets vs a new leaf package (follow the leaf-package port pattern from @dorkos/harness if new). Seeding: agent creation (agent-creator.ts scaffoldInstructions path) writes the pack into the new workspace's .agents/skills/; ensureDorkBot() (services/mesh/ensure-dorkbot.ts) upgrades DorkBot's home on boot. Seeding is idempotent + version-stamped: overwrite only when pack version is newer AND the on-disk file matches its stamped content hash; user-modified copies are never clobbered. Harness Sync (packages/harness) then projects .agents/skills/ to all harnesses with zero changes. Acceptance: fresh agent gets the pack; DorkBot upgraded on boot; modified skill untouched on re-seed (test all three); skills validate against @dorkos/skills parser; writing-for-humans register.",
+      "activeForm": "Shipping the Operating DorkOS skill pack",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "1.6"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-433",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Add CLI operator verbs (agent, task, activity, version --check) with --json",
+      "description": "The dorkos CLI (packages/cli/src/cli.ts, node:util.parseArgs with per-subcommand argv interception) has no operator verbs, and the CLI is the only actuation surface reachable from ALL runtimes (Codex/OpenCode cannot receive MCP injection). Add subcommands that call the running server's HTTP API using the existing server-discovery + local-token auth pattern from the marketplace commands: dorkos agent list|show|create|update (GET/POST /api/agents + PATCH /api/agents/current), dorkos task list|create|trigger|runs (GET/POST /api/tasks, POST /api/tasks/:id/trigger, GET /api/tasks/runs), dorkos activity (GET /api/activity with filter flags), dorkos version --check (server version + latestVersion from GET /api/config, falling back to the local update-check cache when no server is running). Every verb accepts --json for machine output (raw JSON, no spinner/prose); human output follows existing CLI conventions. Command names and flags are the stable public contract (phase 2 regenerates internals from the Capability Registry; do not build a framework now). Update the cli.ts help text and README command table. Acceptance: each verb works against a dev server; --json outputs parseable JSON on stdout with exit 0; sensible error + non-zero exit when no server is reachable; CLI tests cover arg parsing + one happy path per verb (booted test server); smoke script additions if the pattern requires.",
+      "activeForm": "Adding CLI operator verbs",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4"
+      ],
+      "issue": "DOR-434",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "1.7",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Add operate-DorkOS eval cases to packages/evals",
+      "description": "Extend the eval harness (packages/evals, spec specs/eval-harness/02-specification.md, DOR-357) with outcome-oracle evals proving an agent can operate DorkOS from natural language, registered in ALL_CASES (src/suite/index.ts) with tag 'core', tier claude-code-cheap (test-mode cannot exercise MCP tools: supportsMcp false). Cases: (1) agent-self-edit — prompt DorkBot to adjust its own persona; oracle asserts SOUL.md/agent.json changed in the sandbox DORK_HOME and immutable fields did not; (2) activity-read — seed activity events, prompt for a summary; oracle asserts the activity tool call occurred (transcript tool-use oracle) and no state mutated; (3) config-toggle — prompt to hide a status-bar item; oracle asserts the ui.statusBar field flipped in the sandbox config.json; (4) marketplace-search-and-install — local marketplace source fixture on disk; prompt to find + install a package; oracle asserts the installed tree + confirmation flow was exercised. All runs use the existing mkdtemp sandbox (src/runner/sandbox.ts); never touch the real ~/.dork; no production services (fixture source, update-checker stubbed at its fetch seam). Follow the existing case patterns (src/suite/agents.ts designYourOwnInterviewCase is the closest model). Depends on tasks 1.1/1.2/1.3 landing (the tools under test must exist). Acceptance: pnpm --filter @dorkos/evals run evals -- --suite core --tier test-mode structural self-checks pass; the four cases run green against claude-code-cheap locally (document invocation + budget in the PR); deterministic Vitest added for any new oracle helpers.",
+      "activeForm": "Adding operate-DorkOS eval cases",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [
+        "1.5"
+      ],
+      "issue": "DOR-435",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "1.8",
+      "phase": 1,
+      "phaseName": "P1 — Coherence",
+      "subject": "[agents-as-operators] [P1] Document the agent-operator surface (contributing guide + site docs)",
+      "description": "Two documentation deliverables: (1) contributing/agent-operator-surface.md — the internal map of the agent-facing capability surface: which MCP tools exist on which server (in-session vs external), which CLI operator verbs exist, where handlers live, how to add a tool/verb today, and the phase-2 note that the Capability Registry will subsume hand-registration (link the spec + research report); add to contributing/INDEX.md. (2) apps/site docs: a user-facing guide 'Your agents can operate DorkOS' describing what users can ask agents to do (create agents, schedule tasks, install packages, toggle settings, read activity) plus CLI reference entries for the new verbs from task 1.6 — writing-for-humans register (plain, 9th-grade, no hype), demo-claim gate respected (no claims about unverified surfaces). Changelog fragment included. Acceptance: docs build green (site), links valid, contributing INDEX updated, fragment present.",
+      "activeForm": "Documenting the agent-operator surface",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.5",
+        "1.6"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-436",
+      "parentIssue": "DOR-428"
+    }
+  ]
+}
