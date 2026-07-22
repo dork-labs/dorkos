@@ -4,7 +4,7 @@ import type { PlaygroundSection } from '../playground-registry';
 export const TOUR_SPOTLIGHT_SECTIONS: PlaygroundSection[] = [
   {
     id: 'tour-spotlight',
-    title: 'TourSpotlight (DOR-419 spike)',
+    title: 'Tour Spotlight',
     page: 'tour-spotlight',
     category: 'Tour Spotlight',
     keywords: ['tour', 'spotlight', 'reactour', 'onboarding', 'walkthrough', 'coach mark', 'a11y'],

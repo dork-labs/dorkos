@@ -67,7 +67,7 @@ export function TourSpotlightShowcases() {
 
   return (
     <PlaygroundSection
-      title="TourSpotlight (DOR-419 spike)"
+      title="Tour Spotlight"
       description="The DorkBot spotlight primitive over @reactour/tour: async anchors, custom caption, full a11y bar, reduced-motion and mobile branches."
     >
       <ShowcaseLabel>Run the three-step tour over real anchors</ShowcaseLabel>

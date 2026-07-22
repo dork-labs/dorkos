@@ -17,6 +17,7 @@ import {
   SETTINGS_SECTIONS,
   MARKETPLACE_SECTIONS,
   GEN_UI_SECTIONS,
+  TOUR_SPOTLIGHT_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
 import { PAGE_CONFIGS, PAGE_ORDER, PAGE_LABELS } from '../playground-config';
@@ -59,6 +60,7 @@ describe('playground-registry', () => {
       ...SETTINGS_SECTIONS,
       ...MARKETPLACE_SECTIONS,
       ...GEN_UI_SECTIONS,
+      ...TOUR_SPOTLIGHT_SECTIONS,
     ];
     expect(PLAYGROUND_REGISTRY).toEqual(combined);
   });
