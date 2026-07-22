@@ -12,6 +12,14 @@ export interface OnboardingCompleteProps {
 const HEADING_WORDS = ["You're", 'all', 'set!'];
 
 /**
+ * How long the finish-screen celebration is allowed to run before it is force-
+ * stopped, even if the screen stays open. A few seconds reads as a payoff; the
+ * confetti engine's own timers otherwise keep scheduling bursts, which looked
+ * like an endless drizzle across later navigations in a real walkthrough.
+ */
+const CELEBRATION_MAX_MS = 4000;
+
+/**
  * Completion screen shown after all onboarding steps.
  *
  * Shows a summary of what was configured, fires confetti, and provides
@@ -25,10 +33,25 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
   const confettiFired = useRef(false);
 
   useEffect(() => {
-    if (!confettiFired.current) {
-      confettiFired.current = true;
-      void fireCelebration();
-    }
+    if (confettiFired.current) return;
+    confettiFired.current = true;
+
+    // Capture the engine's cleanup so navigating away (or the safety timer)
+    // cancels every pending burst and clears the canvas — the discarded promise
+    // used to leave it running.
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    void fireCelebration().then((cleanup) => {
+      if (cancelled) cleanup();
+      else stop = cleanup;
+    });
+    const safetyTimer = setTimeout(() => stop?.(), CELEBRATION_MAX_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(safetyTimer);
+      stop?.();
+    };
   }, []);
 
   // Positive-only: show what the user actually did, never what they skipped.
