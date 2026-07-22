@@ -1166,11 +1166,34 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
       // No git available (e.g. a tarball checkout) — fall back to package.json.
     }
 
+    // A key EQUAL to the latest release is fine iff that migration actually
+    // shipped IN that release (users upgrading to it get the key inside
+    // conf's (storedVersion, projectVersion] window). The dangerous case is
+    // authoring a migration under a version that already shipped WITHOUT it —
+    // users already on that version would silently never run it. Distinguish
+    // the two by checking whether the tagged release commit already contains
+    // this key; `git show <tag>:<path>` resolves from the repo root
+    // regardless of the test's cwd.
+    let shippedInRelease = false;
+    if (newest === latestReleased) {
+      try {
+        const atTag = execSync(
+          `git show v${latestReleased}:apps/server/src/services/core/config-manager.ts`,
+          { encoding: 'utf-8', cwd: process.cwd() }
+        );
+        shippedInRelease = atTag.includes(`'${newest}':`);
+      } catch {
+        // Tag or file unreadable (shallow clone) — leave false and let the
+        // strict comparison below decide.
+      }
+    }
+
     expect(
-      semver.gt(newest, latestReleased),
+      semver.gt(newest, latestReleased) || shippedInRelease,
       `newest migration key "${newest}" must be > the latest released version "${latestReleased}" ` +
-        `(a key <= an already-released version is excluded by conf's (storedVersion, ` +
-        `projectVersion] window and silently never runs for upgrading users)`
+        `(or already present in the v${latestReleased} tag). A key <= an already-released ` +
+        `version that did NOT ship in that release is excluded by conf's (storedVersion, ` +
+        `projectVersion] window and silently never runs for upgrading users`
     ).toBe(true);
   });
 });
