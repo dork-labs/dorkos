@@ -70,7 +70,7 @@ export function custodyDisclosure(
     case 'external':
       // External (raw MCP) — the remote server holds its own credentials.
       return (
-        `This tool connects straight to ${ctx.service}. DorkOS doesn't store or see its keys — ` +
+        `This tool connects straight to ${ctx.service}. DorkOS doesn't store or see its keys, ` +
         'that server manages its own sign-in.'
       );
     default:
