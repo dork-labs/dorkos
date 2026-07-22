@@ -148,7 +148,7 @@ function ThreeModelViewer({ url, format, label }: Model3dViewerProps) {
   if (webglFailed) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-center">
-        <p>This 3D model can&rsquo;t be shown here — your device couldn&rsquo;t open a 3D view.</p>
+        <p>This 3D model can&rsquo;t be shown here. Your device couldn&rsquo;t open a 3D view.</p>
       </div>
     );
   }
