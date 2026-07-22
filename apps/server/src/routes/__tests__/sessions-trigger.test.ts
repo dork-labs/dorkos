@@ -15,6 +15,7 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),

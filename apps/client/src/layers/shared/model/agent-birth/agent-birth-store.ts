@@ -36,6 +36,15 @@ export interface AgentBirthRecord {
   runtime: string;
   /** The fenced kickoff message to trigger the agent's first turn with. */
   kickoffMessage: string;
+  /**
+   * What kind of opening turn this record fires (ADR 260722-111316). Defaults to
+   * `'kickoff'` (undefined reads as `'kickoff'`): the agent-says-hello-first path,
+   * which suppresses the user bubble. `'first-message'` is the opposite — the
+   * onboarding dissolve carries the user's own typed words into a fresh session,
+   * so `useAutoKickoff` submits it through the normal path and the user's bubble
+   * renders as theirs. Optional so every existing kickoff call site is unchanged.
+   */
+  kind?: 'kickoff' | 'first-message';
   /** Set once the first turn has been triggered — the fire-once latch. */
   fired: boolean;
   /**

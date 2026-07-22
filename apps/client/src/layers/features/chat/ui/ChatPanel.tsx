@@ -14,8 +14,9 @@ import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useAgentBirthRecord } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
+import { resolveTransportRetryText } from '../lib/resolve-retry-text';
 import type { MessageListHandle } from './MessageList';
 import type { ChatInputHandle } from './input/ChatInput';
 import { ChatMessageArea } from './ChatMessageArea';
@@ -279,13 +280,17 @@ export function ChatPanel({
     }
   }, [messages, submitContent]);
 
+  // The active session's birth record, so a failed onboarding first-message send
+  // can still be retried — its text lives only in the record, not the transcript.
+  const birthRecord = useAgentBirthRecord(sessionId ?? '');
+
   /** Retry the last user message after a transport-level POST stream failure. */
   const handleTransportRetry = useCallback(() => {
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
-    if (lastUserMsg?.content) {
-      retryMessage(lastUserMsg.content);
+    const text = resolveTransportRetryText(messages, birthRecord);
+    if (text) {
+      retryMessage(text);
     }
-  }, [messages, retryMessage]);
+  }, [messages, birthRecord, retryMessage]);
 
   const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
 

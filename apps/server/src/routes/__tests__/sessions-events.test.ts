@@ -9,6 +9,7 @@ import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-strea
 // sessions-streaming.test.ts.
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -69,6 +70,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 import http from 'node:http';
 import { createApp, finalizeApp } from '../../app.js';
 import { STREAM_EPOCH } from '../session-events-handler.js';
+import { validateBoundary, validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -144,6 +146,25 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
       `${SESSION_ID}-${STREAM_EPOCH}-1`,
       `${SESSION_ID}-${STREAM_EPOCH}-2`,
     ]);
+  });
+
+  it('streams for an agent-home cwd under a narrow boundary (the onboarding landing path)', async () => {
+    // DOR-417: a session whose cwd is DorkBot's home ({dorkHome}/agents/dorkbot)
+    // must stream even under a narrow DORKOS_BOUNDARY — the plain boundary alone
+    // would 403 it. The events route validates the cwd through the DorkHome-aware
+    // seam; here that seam allows the agent-home path, so the stream opens.
+    const agentHome = '/home/node/.dork/agents/dorkbot';
+    fakeRuntime.getSessionSnapshot.mockResolvedValue(baseSnapshot());
+    fakeRuntime.subscribeSession = finiteSubscribe([{ seq: 1, type: 'text_delta', text: 'hi' }]);
+
+    const { frames, status } = await collectDurableEvents(app, SESSION_ID, { cwd: agentHome });
+
+    expect(status).toBe(200); // not 403
+    expect(frames[0]?.event).toBe('snapshot');
+    expect(frames.some((f) => f.event === 'text_delta')).toBe(true);
+    // Wired through the DorkHome-aware seam, never the plain strict validator.
+    expect(validateBoundaryOrDorkHome).toHaveBeenCalledWith(agentHome);
+    expect(validateBoundary).not.toHaveBeenCalledWith(agentHome);
   });
 
   it('cold connect subscribes from the snapshot cursor (closes the capture→subscribe race)', async () => {

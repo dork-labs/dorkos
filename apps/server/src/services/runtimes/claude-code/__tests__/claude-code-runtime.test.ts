@@ -73,6 +73,7 @@ vi.mock('../../../core/config-manager.js', () => ({
 }));
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
+  validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/path'),
   getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
   initBoundary: vi.fn().mockResolvedValue('/mock/boundary'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -360,6 +361,7 @@ describe('ClaudeCodeRuntime', () => {
         if (callCount === 1) {
           // First call: simulate a stale session resume failure
           return wrapSdkQuery(
+            // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
             (async function* () {
               throw new Error('Query closed before response received');
             })()
@@ -390,6 +392,7 @@ describe('ClaudeCodeRuntime', () => {
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
         wrapSdkQuery(
+          // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
           (async function* () {
             throw new Error('Claude Code process exited with code 1');
           })()
@@ -479,6 +482,7 @@ describe('ClaudeCodeRuntime', () => {
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
         wrapSdkQuery(
+          // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
           (async function* () {
             throw new Error('API key not found');
           })()
@@ -569,6 +573,7 @@ describe('ClaudeCodeRuntime', () => {
       // Both calls throw 'session not found' — a genuine resume failure
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
         wrapSdkQuery(
+          // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
           (async function* () {
             throw new Error('session not found');
           })()
@@ -591,11 +596,11 @@ describe('ClaudeCodeRuntime', () => {
 
   describe('sendMessage() boundary enforcement', () => {
     it('yields error event when cwd violates boundary', async () => {
-      const { validateBoundary } = await import('../../../../lib/boundary.js');
+      const { validateBoundaryOrDorkHome } = await import('../../../../lib/boundary.js');
       const { BoundaryError } = await import('../../../../lib/boundary.js');
 
-      // Make validateBoundary reject with BoundaryError
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      // The turn cwd is validated through the DorkHome-aware seam; make it reject.
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -638,7 +643,11 @@ describe('ClaudeCodeRuntime', () => {
       // The intent wraps the shipped /compact mechanism verbatim (DOR-109).
       const sendSpy = spySend();
       await drain(agentManager.executeCommandIntent('s1', 'compact', { cwd: '/mock' }));
-      expect(sendSpy).toHaveBeenCalledWith('s1', '/compact', expect.objectContaining({ cwd: '/mock' }));
+      expect(sendSpy).toHaveBeenCalledWith(
+        's1',
+        '/compact',
+        expect.objectContaining({ cwd: '/mock' })
+      );
     });
 
     it('appends trailing instructions to /compact so they reach the CLI verbatim', async () => {

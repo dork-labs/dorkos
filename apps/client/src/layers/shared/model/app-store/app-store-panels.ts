@@ -78,9 +78,6 @@ export interface PanelsSlice {
    */
   onboardingHiddenForSession: boolean;
   setOnboardingHiddenForSession: (hidden: boolean) => void;
-  /** First message generated during onboarding, used for the magic transition animation. */
-  dorkbotFirstMessage: string | null;
-  setDorkbotFirstMessage: (msg: string | null) => void;
 
   globalPaletteOpen: boolean;
   setGlobalPaletteOpen: (open: boolean) => void;
@@ -143,8 +140,6 @@ export const createPanelsSlice: StateCreator<
 
   onboardingHiddenForSession: false,
   setOnboardingHiddenForSession: (hidden) => set({ onboardingHiddenForSession: hidden }),
-  dorkbotFirstMessage: null,
-  setDorkbotFirstMessage: (msg) => set({ dorkbotFirstMessage: msg }),
 
   globalPaletteOpen: false,
   setGlobalPaletteOpen: (open) => set({ globalPaletteOpen: open }),

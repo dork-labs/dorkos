@@ -22,6 +22,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 // Mock boundary before importing app (same pattern as other route tests)
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),

@@ -76,6 +76,32 @@ describe('MessageItem', () => {
     expect(screen.getByText('# Heading')).toBeDefined();
   });
 
+  it('presentation mode suppresses the timestamp and hover background', () => {
+    const msg = {
+      id: '1',
+      role: 'assistant' as const,
+      content: 'Hey, I live here',
+      parts: [{ type: 'text' as const, text: 'Hey, I live here' }],
+      timestamp: '2026-07-22T08:00:00.000Z',
+    };
+    const { container: normal } = render(
+      <MessageItem message={msg} sessionId="" grouping={onlyGrouping} />
+    );
+    // The timestamp text is in the DOM on a normal render (shown on hover).
+    expect(normal.textContent).toMatch(/\d{1,2}:\d{2}/);
+
+    cleanup();
+
+    const { container: scripted } = render(
+      <MessageItem message={msg} sessionId="" grouping={onlyGrouping} presentation />
+    );
+    // No timestamp, and the hover background is neutralized.
+    expect(scripted.textContent).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(scripted.querySelector('[data-testid="message-item"]')?.className).toContain(
+      'hover:bg-transparent'
+    );
+  });
+
   it('does not render name labels', () => {
     const msg = {
       id: '1',

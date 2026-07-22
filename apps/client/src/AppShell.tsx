@@ -22,7 +22,7 @@ import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
-import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
@@ -326,42 +326,41 @@ export function AppShell() {
   return (
     <TooltipProvider>
       <MotionConfig reducedMotion="user">
-        <LayoutGroup id="onboarding-to-chat">
-          <AnimatePresence mode="wait">
-            {showOnboarding ? (
-              <motion.div
-                key="onboarding"
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="fixed inset-0 z-50"
+        <AnimatePresence mode="wait">
+          {showOnboarding ? (
+            <motion.div
+              key="onboarding"
+              initial={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-50"
+            >
+              <OnboardingFlow
+                onComplete={handleOnboardingComplete}
+                renderRuntimeConnect={renderRuntimeConnect}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="main-app"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="h-dvh"
+            >
+              <div
+                data-testid="app-shell"
+                className="bg-background text-foreground flex h-dvh flex-col"
               >
-                <OnboardingFlow
-                  onComplete={handleOnboardingComplete}
-                  renderRuntimeConnect={renderRuntimeConnect}
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="main-app"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2 }}
-                className="h-dvh"
-              >
-                <div
-                  data-testid="app-shell"
-                  className="bg-background text-foreground flex h-dvh flex-col"
+                <SidebarProvider
+                  open={sidebarOpen}
+                  onOpenChange={setSidebarOpen}
+                  className="flex-1 overflow-hidden"
+                  style={{ '--sidebar-width': '20rem' } as React.CSSProperties}
                 >
-                  <SidebarProvider
-                    open={sidebarOpen}
-                    onOpenChange={setSidebarOpen}
-                    className="flex-1 overflow-hidden"
-                    style={{ '--sidebar-width': '20rem' } as React.CSSProperties}
-                  >
-                    <Sidebar variant="inset">
-                      <TitlebarDragStrip />
-                      {/* ── Dynamic sidebar body with directional slide ──
+                  <Sidebar variant="inset">
+                    <TitlebarDragStrip />
+                    {/* ── Dynamic sidebar body with directional slide ──
                           This wrapper is the clip boundary for the body swap. The
                           slide transform lives on the motion.div below, so the
                           motion.div's own `overflow-hidden` can only clip its
@@ -371,105 +370,104 @@ export function AppShell() {
                           slides within the sidebar shell seam, so mid-flight content
                           can't spill past the sidebar's edge. The footer and rail are
                           siblings of this wrapper, so they stay outside the clip. */}
-                      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                        <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
-                          <motion.div
-                            key={sidebarSlot.key}
-                            data-testid="sidebar-body-swap"
-                            custom={sidebarSlot.direction}
-                            initial="enter"
-                            animate="center"
-                            exit="exit"
-                            variants={{
-                              enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
-                              center: { x: 0, opacity: 1 },
-                              exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
-                            }}
-                            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                            className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                          >
-                            {/* Contributed takeover bodies arrive pre-wrapped in
+                    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                      <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
+                        <motion.div
+                          key={sidebarSlot.key}
+                          data-testid="sidebar-body-swap"
+                          custom={sidebarSlot.direction}
+                          initial="enter"
+                          animate="center"
+                          exit="exit"
+                          variants={{
+                            enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
+                            center: { x: 0, opacity: 1 },
+                            exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
+                          }}
+                          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                        >
+                          {/* Contributed takeover bodies arrive pre-wrapped in
                                 SidebarBodyErrorBoundary + Suspense at the slot
                                 seam (useSidebarSlot); the built-in dashboard/
                                 session bodies are eager and never suspend. */}
-                            {sidebarSlot.body}
-                          </motion.div>
-                        </AnimatePresence>
-                      </div>
+                          {sidebarSlot.body}
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
 
-                      {/* ── Static footer — never animates ── */}
-                      <SidebarFooter className="border-t p-3">
-                        {shouldShowGettingStarted && (
-                          <div className="mb-2">
-                            <ProgressCard onDismiss={dismissOnboarding} />
-                          </div>
-                        )}
-                        <SidebarFooterBar />
-                      </SidebarFooter>
-                      <SidebarRail />
-                    </Sidebar>
-                    <SidebarInset className="overflow-hidden">
-                      <header
-                        className={cn(
-                          'relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300',
-                          // Literal class, not a `desktop-darwin:` variant utility — see
-                          // the `.app-drag-region` comment in index.css. Inert without the
-                          // `.desktop-darwin` ancestor class, so it's safe unconditionally.
-                          'app-drag-region',
-                          // When the sidebar is collapsed, TitlebarDragStrip's
-                          // traffic-light clearance collapses with it — pad the
-                          // header itself so its content doesn't sit under the
-                          // native traffic lights (DOR-253).
-                          !sidebarOpen && 'desktop-darwin:pl-20'
-                        )}
-                        style={headerSlot.borderStyle}
-                      >
-                        <SidebarTrigger className="-ml-0.5" />
-                        <Separator orientation="vertical" className="mr-1 h-4" />
-                        {/* ── Dynamic header content with cross-fade ── */}
-                        <AnimatePresence mode="wait" initial={false}>
-                          <motion.div
-                            key={headerSlot.key}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.1 }}
-                            className="flex min-w-0 flex-1 items-center gap-2"
-                          >
-                            {headerSlot.content}
-                          </motion.div>
-                        </AnimatePresence>
-                        {/* ── Right panel toggle — far right, always present on every route ── */}
-                        <RightPanelToggle />
-                      </header>
-                      {/* ── Global banner slot — one standing banner at a time, ranked
+                    {/* ── Static footer — never animates ── */}
+                    <SidebarFooter className="border-t p-3">
+                      {shouldShowGettingStarted && (
+                        <div className="mb-2">
+                          <ProgressCard onDismiss={dismissOnboarding} />
+                        </div>
+                      )}
+                      <SidebarFooterBar />
+                    </SidebarFooter>
+                    <SidebarRail />
+                  </Sidebar>
+                  <SidebarInset className="overflow-hidden">
+                    <header
+                      className={cn(
+                        'relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300',
+                        // Literal class, not a `desktop-darwin:` variant utility — see
+                        // the `.app-drag-region` comment in index.css. Inert without the
+                        // `.desktop-darwin` ancestor class, so it's safe unconditionally.
+                        'app-drag-region',
+                        // When the sidebar is collapsed, TitlebarDragStrip's
+                        // traffic-light clearance collapses with it — pad the
+                        // header itself so its content doesn't sit under the
+                        // native traffic lights (DOR-253).
+                        !sidebarOpen && 'desktop-darwin:pl-20'
+                      )}
+                      style={headerSlot.borderStyle}
+                    >
+                      <SidebarTrigger className="-ml-0.5" />
+                      <Separator orientation="vertical" className="mr-1 h-4" />
+                      {/* ── Dynamic header content with cross-fade ── */}
+                      <AnimatePresence mode="wait" initial={false}>
+                        <motion.div
+                          key={headerSlot.key}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.1 }}
+                          className="flex min-w-0 flex-1 items-center gap-2"
+                        >
+                          {headerSlot.content}
+                        </motion.div>
+                      </AnimatePresence>
+                      {/* ── Right panel toggle — far right, always present on every route ── */}
+                      <RightPanelToggle />
+                    </header>
+                    {/* ── Global banner slot — one standing banner at a time, ranked
                           by priority. Sits below the header and inside the inset, so the
                           fixed sidebar can't paint over it and it never pushes the shell
                           header down. ── */}
-                      <AppBannerSlot descriptors={appBanners} />
-                      {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
+                    <AppBannerSlot descriptors={appBanners} />
+                    {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
                           routed content above the 64px bar — nothing occluded. */}
-                      <main className="flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">
-                        {/* The explicit id doubles as the DOM hook (data-panel-group-id)
+                    <main className="flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">
+                      {/* The explicit id doubles as the DOM hook (data-panel-group-id)
                             that useRightPanelSizing measures for the pixel floor. */}
-                        <PanelGroup
-                          direction="horizontal"
-                          id={RIGHT_PANEL_GROUP_ID}
-                          autoSaveId={RIGHT_PANEL_GROUP_ID}
-                        >
-                          <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
-                            <Outlet />
-                          </Panel>
-                          <RightPanelContainer pathname={rightPanelPathname} />
-                        </PanelGroup>
-                      </main>
-                    </SidebarInset>
-                  </SidebarProvider>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </LayoutGroup>
+                      <PanelGroup
+                        direction="horizontal"
+                        id={RIGHT_PANEL_GROUP_ID}
+                        autoSaveId={RIGHT_PANEL_GROUP_ID}
+                      >
+                        <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
+                          <Outlet />
+                        </Panel>
+                        <RightPanelContainer pathname={rightPanelPathname} />
+                      </PanelGroup>
+                    </main>
+                  </SidebarInset>
+                </SidebarProvider>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <DialogHost />
         <CommandPaletteDialog />
         <CreateAgentDialog />

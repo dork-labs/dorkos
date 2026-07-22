@@ -6,7 +6,7 @@
 import type { Response } from 'express';
 import type { ZodSchema } from 'zod';
 import { z } from 'zod';
-import { validateBoundary, BoundaryError } from './boundary.js';
+import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from './boundary.js';
 
 const uuidSchema = z.string().uuid();
 
@@ -65,23 +65,46 @@ export function sendError(res: Response, status: number, message: string, code: 
   res.status(status).json({ error: message, code });
 }
 
+/** Options for {@link assertBoundary}. */
+export interface AssertBoundaryOptions {
+  /**
+   * Also accept DorkOS's own `{dorkHome}/agents/*` subtree — the agent-registry
+   * seam (PR #409, `validateBoundaryOrDorkHome`). Set it ONLY for a SESSION-CWD
+   * check: a session whose working directory is a system or marketplace agent's
+   * home (`{dorkHome}/agents/<name>`) must be allowed to stream, list, and read
+   * even under a narrow `DORKOS_BOUNDARY` (e.g. Docker) — otherwise onboarding's
+   * DorkBot session 403s. Never set it for a raw file/terminal/git surface;
+   * those confine to the plain boundary so the encrypted credential store under
+   * `{dorkHome}/extension-secrets/` stays unreachable.
+   */
+  allowDorkHome?: boolean;
+}
+
 /**
  * Validate that a path is within the directory boundary.
  *
  * Sends a 403 response if the path violates the boundary and returns `false`.
- * Returns `true` if the path is valid or not provided.
+ * Returns `true` if the path is valid or not provided. With
+ * `allowDorkHome`, the `{dorkHome}/agents/*` subtree is additionally accepted
+ * for agent-home session cwds (see {@link AssertBoundaryOptions.allowDorkHome}).
  *
  * @param pathToCheck - User-supplied path (skipped if undefined/null)
  * @param res - Express response object (used to send 403 on violation)
+ * @param opts - Boundary options (e.g. `allowDorkHome` for session cwds)
  * @returns `true` if the path is valid, `false` if a 403 was sent
  */
 export async function assertBoundary(
   pathToCheck: string | undefined | null,
-  res: Response
+  res: Response,
+  opts: AssertBoundaryOptions = {}
 ): Promise<boolean> {
   if (!pathToCheck) return true;
   try {
-    await validateBoundary(pathToCheck);
+    if (opts.allowDorkHome) {
+      await validateBoundaryOrDorkHome(pathToCheck);
+    } else {
+      await validateBoundary(pathToCheck);
+    }
     return true;
   } catch (err) {
     if (err instanceof BoundaryError) {

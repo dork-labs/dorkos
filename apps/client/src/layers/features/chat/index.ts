@@ -4,6 +4,13 @@
  * @module features/chat
  */
 export { ChatPanel } from './ui/ChatPanel';
+// Reusable chat primitives — surfaced for off-session composition (e.g. the
+// scripted onboarding conversation renders real message bubbles, the typing
+// indicator, the first-light arrival, and the composer without a live session).
+export { MessageItem } from './ui/message';
+export { TypingDots } from './ui/primitives';
+export { ChatInput, type ChatInputHandle } from './ui/input/ChatInput';
+export { FirstLight } from './ui/FirstLight';
 export { ChatStatusStrip, deriveStripState } from './ui/status/ChatStatusStrip';
 export type { StripState } from './ui/status/ChatStatusStrip';
 export { useChatSession } from './model/use-chat-session';

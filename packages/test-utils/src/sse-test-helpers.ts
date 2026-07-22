@@ -37,6 +37,12 @@ export interface CollectDurableEventsOptions {
   after?: number;
   /** Sent as the `Last-Event-ID` request header (browser-reconnect resume). */
   lastEventId?: string;
+  /**
+   * Sent as the `?cwd=<dir>` query param — the session's working directory. Lets
+   * boundary tests drive the stream with an agent-home cwd (e.g.
+   * `{dorkHome}/agents/dorkbot`) to prove it is not rejected.
+   */
+  cwd?: string;
 }
 
 /** Parse SSE wire text into frames, attaching the most recent `id:` to each. */
@@ -58,10 +64,13 @@ export function parseFrames(raw: string): SseFrame[] {
   return frames;
 }
 
-/** Build the `/events` request path for a session, with the optional resume cursor. */
-function eventsPath(sessionId: string, after: number | undefined): string {
-  const query = after !== undefined ? `?after=${after}` : '';
-  return `/api/sessions/${sessionId}/events${query}`;
+/** Build the `/events` request path for a session, with the optional resume cursor and cwd. */
+function eventsPath(sessionId: string, opts: { after?: number; cwd?: string }): string {
+  const params = new URLSearchParams();
+  if (opts.after !== undefined) params.set('after', String(opts.after));
+  if (opts.cwd !== undefined) params.set('cwd', opts.cwd);
+  const query = params.toString();
+  return `/api/sessions/${sessionId}/events${query ? `?${query}` : ''}`;
 }
 
 /**
@@ -141,7 +150,7 @@ export function collectDurableEvents(
         {
           host: '127.0.0.1',
           port,
-          path: eventsPath(sessionId, opts.after),
+          path: eventsPath(sessionId, opts),
           method: 'GET',
           headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
         },
@@ -183,7 +192,7 @@ export function collectDurableEventsAt(
     {
       host: url.hostname,
       port: Number(url.port),
-      path: eventsPath(sessionId, opts.after),
+      path: eventsPath(sessionId, opts),
       method: 'GET',
       headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
     },

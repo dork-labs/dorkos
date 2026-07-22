@@ -5,6 +5,7 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 // Mock boundary before importing app
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -72,7 +73,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 // Dynamically import after mocks are set up
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
-import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import {
   runtimeRegistry,
   RuntimeNotRegisteredError,
@@ -412,6 +413,7 @@ describe('Sessions Routes', () => {
 
     it('releases the lock even when the detached turn errors', async () => {
       fakeRuntime.withScenarios([
+        // eslint-disable-next-line require-yield -- models a turn that throws before yielding any event
         async function* (): AsyncGenerator<StreamEvent> {
           throw new Error('SDK failure');
         },
@@ -672,7 +674,7 @@ describe('Sessions Routes', () => {
 
   describe('boundary enforcement', () => {
     it('GET /api/sessions rejects cwd outside boundary with 403', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -683,7 +685,7 @@ describe('Sessions Routes', () => {
     });
 
     it('GET /api/sessions/:id rejects cwd outside boundary with 403', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -694,7 +696,7 @@ describe('Sessions Routes', () => {
     });
 
     it('GET /api/sessions/:id/messages rejects cwd outside boundary with 403', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -707,7 +709,7 @@ describe('Sessions Routes', () => {
     });
 
     it('GET /api/sessions/:id/tasks rejects cwd outside boundary with 403', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -718,7 +720,7 @@ describe('Sessions Routes', () => {
     });
 
     it('rejects null byte paths with 403 and NULL_BYTE code', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 

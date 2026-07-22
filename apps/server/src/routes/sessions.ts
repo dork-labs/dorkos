@@ -70,7 +70,7 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   const { limit, cwd, runtime: runtimeFilter } = parsed.data;
-  if (!(await assertBoundary(cwd, res))) return;
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
   if (runtimeFilter !== undefined && !runtimeRegistry.has(runtimeFilter)) {
     return sendError(res, 400, `Unknown runtime: ${runtimeFilter}`, 'UNKNOWN_RUNTIME');
   }
@@ -139,7 +139,7 @@ router.get('/:id', async (req, res) => {
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
   const cwd = (req.query.cwd as string) || undefined;
-  if (!(await assertBoundary(cwd, res))) return;
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
 
   const projectDir = cwd || vaultRoot;
   // Translate client-facing session ID to backend-internal session ID
@@ -166,7 +166,7 @@ router.get('/:id/tasks', async (req, res) => {
 
   const cwdParam = (req.query.cwd as string) || undefined;
 
-  if (!(await assertBoundary(cwdParam, res))) return;
+  if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
 
   const cwd = cwdParam || vaultRoot;
 
@@ -197,7 +197,7 @@ router.get('/:id/messages', async (req, res) => {
 
   const cwdParam = (req.query.cwd as string) || undefined;
 
-  if (!(await assertBoundary(cwdParam, res))) return;
+  if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
 
   const cwd = cwdParam || vaultRoot;
 
@@ -248,7 +248,7 @@ router.patch('/:id', async (req, res) => {
   if (!updated) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
 
   const cwd = (req.query.cwd as string) || vaultRoot;
-  if (!(await assertBoundary(cwd, res))) return;
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
 
   // Persist custom title to JSONL via SDK's renameSession()
   if (title) {
@@ -280,7 +280,7 @@ router.post('/:id/fork', async (req, res) => {
   }
 
   const cwd = (req.query.cwd as string) || vaultRoot;
-  if (!(await assertBoundary(cwd, res))) return;
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;

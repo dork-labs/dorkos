@@ -70,6 +70,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).toHaveBeenCalledTimes(1);
@@ -88,6 +89,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     first.unmount();
@@ -101,6 +103,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).toHaveBeenCalledTimes(1);
@@ -111,7 +114,13 @@ describe('useAutoKickoff', () => {
     const submitKickoff = vi.fn().mockResolvedValue(undefined);
     const { rerender } = renderHook(
       (props: { sessionId: string; status: ChatStatus; messages: ChatMessage[] }) =>
-        useAutoKickoff({ ...props, cwd: null, hydrated: true, submitKickoff }),
+        useAutoKickoff({
+          ...props,
+          cwd: null,
+          hydrated: true,
+          submitKickoff,
+          submitContent: vi.fn().mockResolvedValue(undefined),
+        }),
       { initialProps: { sessionId: 'client-id', status: 'idle' as ChatStatus, messages: [] } }
     );
     expect(submitKickoff).toHaveBeenCalledTimes(1);
@@ -135,6 +144,7 @@ describe('useAutoKickoff', () => {
         messages: textMsgs(3),
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
@@ -151,6 +161,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
@@ -166,6 +177,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
@@ -186,6 +198,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
 
@@ -208,6 +221,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
 
@@ -240,6 +254,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
 
@@ -263,6 +278,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
 
@@ -283,6 +299,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).toHaveBeenCalledTimes(1);
@@ -299,6 +316,7 @@ describe('useAutoKickoff', () => {
         messages: [],
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
@@ -316,6 +334,7 @@ describe('useAutoKickoff', () => {
         messages: textMsgs(5),
         hydrated: true,
         submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
@@ -339,6 +358,7 @@ describe('useAutoKickoff', () => {
             sessionId: 'sess-1',
             cwd: null,
             submitKickoff,
+            submitContent: vi.fn().mockResolvedValue(undefined),
             hydrated: props.hydrated ?? true,
             status: props.status,
             messages: props.messages,
@@ -456,6 +476,7 @@ describe('useAutoKickoff', () => {
             sessionId: 'ordinary',
             cwd: null,
             submitKickoff,
+            submitContent: vi.fn().mockResolvedValue(undefined),
             hydrated: true,
             ...props,
           }),
@@ -463,6 +484,89 @@ describe('useAutoKickoff', () => {
       );
       rerender({ status: 'error', messages: [] });
       expect(useAgentBirthStore.getState().records['ordinary']).toBeUndefined();
+    });
+  });
+
+  // The onboarding-dissolve case (ADR 260722-111316): a `first-message` birth
+  // record carries the USER's typed words, so it fires through the NORMAL
+  // submission path (the user's own bubble renders) rather than the kickoff path.
+  describe('first-message records (onboarding dissolve)', () => {
+    const FIRST_MESSAGE_RECORD = {
+      ...RECORD,
+      kind: 'first-message' as const,
+      kickoffMessage: 'help me set up a project',
+    };
+
+    it('submits via the normal path, never the kickoff path, and latches fired', () => {
+      useAgentBirthStore.getState().register('sess-1', FIRST_MESSAGE_RECORD);
+      const submitKickoff = vi.fn().mockResolvedValue(undefined);
+      const submitContent = vi.fn().mockResolvedValue(undefined);
+      renderHook(() =>
+        useAutoKickoff({
+          sessionId: 'sess-1',
+          cwd: null,
+          status: 'idle',
+          messages: [],
+          hydrated: true,
+          submitKickoff,
+          submitContent,
+        })
+      );
+      expect(submitContent).toHaveBeenCalledTimes(1);
+      expect(submitContent).toHaveBeenCalledWith('help me set up a project');
+      expect(submitKickoff).not.toHaveBeenCalled();
+      expect(useAgentBirthStore.getState().records['sess-1'].fired).toBe(true);
+    });
+
+    it('does not mark the greeting failed when the send keeps failing (standard send-error affordance)', async () => {
+      useAgentBirthStore.getState().register('sess-1', FIRST_MESSAGE_RECORD);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const submitKickoff = vi.fn().mockResolvedValue(undefined);
+      const submitContent = vi.fn().mockRejectedValue(new Error('send down'));
+      renderHook(() =>
+        useAutoKickoff({
+          sessionId: 'sess-1',
+          cwd: null,
+          status: 'idle',
+          messages: [],
+          hydrated: true,
+          submitKickoff,
+          submitContent,
+        })
+      );
+
+      // One retry, same as kickoff — but no greeting-failed line: a failed user
+      // send surfaces the normal path's own error, not the newborn's honest line.
+      await waitFor(() => expect(submitContent).toHaveBeenCalledTimes(2));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(submitContent).toHaveBeenCalledTimes(2);
+      expect(useAgentBirthStore.getState().records['sess-1'].greetingFailed).toBeUndefined();
+      warn.mockRestore();
+    });
+
+    it('does not mark the greeting failed when a first-message turn settles empty', () => {
+      useAgentBirthStore.getState().register('sess-1', FIRST_MESSAGE_RECORD);
+      const submitKickoff = vi.fn().mockResolvedValue(undefined);
+      const submitContent = vi.fn().mockResolvedValue(undefined);
+      const { rerender } = renderHook<void, { status: ChatStatus; messages: ChatMessage[] }>(
+        (props) =>
+          useAutoKickoff({
+            sessionId: 'sess-1',
+            cwd: null,
+            submitKickoff,
+            submitContent,
+            hydrated: true,
+            status: props.status,
+            messages: props.messages,
+          }),
+        { initialProps: { status: 'idle', messages: [] } }
+      );
+
+      // A user turn that starts then produces no assistant text is an ordinary
+      // quiet session, never a failed greeting.
+      rerender({ status: 'streaming', messages: [] });
+      rerender({ status: 'idle', messages: [] });
+      expect(useAgentBirthStore.getState().records['sess-1'].greetingFailed).toBeUndefined();
     });
   });
 });

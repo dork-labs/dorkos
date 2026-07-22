@@ -33,6 +33,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
+  validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/path'),
   getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
   initBoundary: vi.fn().mockResolvedValue('/mock/boundary'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
