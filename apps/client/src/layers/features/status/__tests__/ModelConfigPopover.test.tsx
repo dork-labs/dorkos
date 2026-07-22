@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
@@ -543,6 +543,206 @@ describe('ModelConfigPopover', () => {
       // Anthropic models must NOT leak into a Codex session's picker.
       expect(cardList).not.toHaveTextContent('Opus');
       expect(cardList).not.toHaveTextContent('Sonnet');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tiered, searchable menu (spec §8): grouping, filtering, the local-model
+  // annotation, and the guarantee that small untiered lists render unchanged.
+  // ---------------------------------------------------------------------------
+  describe('tiered menu', () => {
+    /** Builds a minimal model option, filling in the fields the component reads. */
+    function buildModel(
+      overrides: Record<string, unknown> & { value: string; displayName: string }
+    ) {
+      return {
+        description: 'A model',
+        contextWindow: 128_000,
+        supportsEffort: false,
+        supportedEffortLevels: [] as EffortLevel[],
+        supportsFastMode: false,
+        supportsAutoMode: false,
+        ...overrides,
+      };
+    }
+
+    // Distinct display names so substring assertions never collide.
+    const tieredModels = [
+      buildModel({ value: 'model-frontier-a', displayName: 'Nova', tier: 'frontier' }),
+      buildModel({ value: 'model-frontier-b', displayName: 'Atlas', tier: 'frontier' }),
+      buildModel({ value: 'model-solid-a', displayName: 'Cobalt', tier: 'solid-coder' }),
+      buildModel({ value: 'model-quick-a', displayName: 'Ember', tier: 'quick-helper' }),
+      buildModel({
+        value: 'model-quick-local',
+        displayName: 'Pebble',
+        tier: 'quick-helper',
+        local: true,
+      }),
+      // Legacy/unknown tier vocabulary — must land in "More models", not a named group.
+      buildModel({ value: 'model-legacy', displayName: 'Relic', tier: 'legacy' }),
+      // No tier at all — also "More models".
+      buildModel({ value: 'model-untiered', displayName: 'Drifter' }),
+    ];
+
+    function mockTieredModels(models: unknown[]) {
+      mockUseModels.mockImplementation(() => ({
+        data: models,
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+      }));
+    }
+
+    describe('grouping', () => {
+      beforeEach(() => mockTieredModels(tieredModels));
+
+      it('renders the four group headers in fixed order when any option carries a tier', () => {
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        const headers = screen.getAllByText(/^(Frontier|Solid coders|Quick helpers|More models)$/);
+        expect(headers.map((h) => h.textContent)).toEqual([
+          'Frontier',
+          'Solid coders',
+          'Quick helpers',
+          'More models',
+        ]);
+      });
+
+      it('places each model under the correct group header, preserving incoming order', () => {
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        const text = screen.getByTestId('model-card-list').textContent ?? '';
+        const at = (needle: string) => text.indexOf(needle);
+
+        expect(at('Frontier')).toBeGreaterThanOrEqual(0);
+        expect(at('Frontier')).toBeLessThan(at('Nova'));
+        expect(at('Nova')).toBeLessThan(at('Atlas'));
+        expect(at('Atlas')).toBeLessThan(at('Solid coders'));
+        expect(at('Solid coders')).toBeLessThan(at('Cobalt'));
+        expect(at('Cobalt')).toBeLessThan(at('Quick helpers'));
+        expect(at('Quick helpers')).toBeLessThan(at('Ember'));
+        expect(at('Ember')).toBeLessThan(at('Pebble'));
+        expect(at('Pebble')).toBeLessThan(at('More models'));
+        expect(at('More models')).toBeLessThan(at('Relic'));
+        expect(at('Relic')).toBeLessThan(at('Drifter'));
+      });
+
+      it('omits a group header entirely when it has no matching options', () => {
+        // Only frontier + more-models tiers present — solid-coders/quick-helpers must not render.
+        mockTieredModels([
+          buildModel({ value: 'model-frontier-a', displayName: 'Nova', tier: 'frontier' }),
+          buildModel({ value: 'model-untiered', displayName: 'Drifter' }),
+        ]);
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        expect(screen.getByTestId('model-group-frontier')).toBeInTheDocument();
+        expect(screen.getByTestId('model-group-more-models')).toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-solid-coders')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-quick-helpers')).not.toBeInTheDocument();
+      });
+
+      it('switches to the tiered layout past the searchable threshold even without tier metadata', () => {
+        const manyUntiered = Array.from({ length: 11 }, (_, i) =>
+          buildModel({ value: `model-${i}`, displayName: `Model ${i}` })
+        );
+        mockTieredModels(manyUntiered);
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-0' })} />);
+        expect(screen.getByTestId('model-search')).toBeInTheDocument();
+        // Untiered options all land in "More models" — the only group rendered.
+        expect(screen.getByTestId('model-group-more-models')).toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-frontier')).not.toBeInTheDocument();
+      });
+
+      it('stays flat at exactly the searchable threshold with no tier metadata', () => {
+        const tenUntiered = Array.from({ length: 10 }, (_, i) =>
+          buildModel({ value: `model-${i}`, displayName: `Model ${i}` })
+        );
+        mockTieredModels(tenUntiered);
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-0' })} />);
+        expect(screen.queryByTestId('model-search')).not.toBeInTheDocument();
+      });
+    });
+
+    describe('search filtering', () => {
+      beforeEach(() => mockTieredModels(tieredModels));
+
+      it('filters options case-insensitively on display name as the user types', async () => {
+        const user = userEvent.setup();
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        await user.type(screen.getByTestId('model-search'), 'nova');
+
+        const cardList = screen.getByTestId('model-card-list');
+        expect(cardList).toHaveTextContent('Nova');
+        expect(cardList).not.toHaveTextContent('Atlas');
+        expect(cardList).not.toHaveTextContent('Cobalt');
+        // A group with no surviving matches is not rendered.
+        expect(screen.queryByTestId('model-group-solid-coders')).not.toBeInTheDocument();
+      });
+
+      it('filters case-insensitively on the model id/value', async () => {
+        const user = userEvent.setup();
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        await user.type(screen.getByTestId('model-search'), 'MODEL-LEGACY');
+
+        const cardList = screen.getByTestId('model-card-list');
+        expect(cardList).toHaveTextContent('Relic');
+        expect(cardList).not.toHaveTextContent('Nova');
+      });
+
+      it('shows the empty state when no option matches the query', async () => {
+        const user = userEvent.setup();
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        await user.type(screen.getByTestId('model-search'), 'zzz-no-such-model');
+
+        expect(screen.getByTestId('model-search-empty')).toHaveTextContent('No models match');
+        expect(screen.queryByTestId('model-card-list')).not.toBeInTheDocument();
+      });
+    });
+
+    describe('local model annotation', () => {
+      it('shows the local-device suffix on a model with local: true', async () => {
+        mockTieredModels(tieredModels);
+        const { localDeviceNoun } = await import('@/layers/shared/lib');
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        const cardList = screen.getByTestId('model-card-list');
+        expect(cardList).toHaveTextContent(`${localDeviceNoun()} · private`);
+      });
+
+      it('does not show the suffix on a non-local model', () => {
+        mockTieredModels(tieredModels);
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+        const cardList = screen.getByTestId('model-card-list');
+        // "Ember" (quick-helper, not local) must not carry the private suffix.
+        const emberText = Array.from(cardList.querySelectorAll('label')).find((label) =>
+          label.textContent?.includes('Ember')
+        )?.textContent;
+        expect(emberText).not.toContain('private');
+      });
+    });
+
+    describe('unchanged small untiered list', () => {
+      it('renders no search input and no group headers', () => {
+        render(<ModelConfigPopover {...defaultProps()} />);
+        expect(screen.queryByTestId('model-search')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-frontier')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-solid-coders')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-quick-helpers')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-more-models')).not.toBeInTheDocument();
+      });
+
+      it('renders every model as a flat, unfiltered RadioGroup', () => {
+        render(<ModelConfigPopover {...defaultProps()} />);
+        const cardList = screen.getByTestId('model-card-list');
+        expect(cardList).toHaveTextContent('Opus');
+        expect(cardList).toHaveTextContent('Sonnet');
+        expect(cardList).toHaveTextContent('Haiku');
+      });
+
+      it('still calls onChangeModel when a card is clicked', async () => {
+        const user = userEvent.setup();
+        const onChangeModel = vi.fn();
+        render(<ModelConfigPopover {...defaultProps({ onChangeModel })} />);
+        const radioGroup = screen.getByRole('radiogroup', { name: 'Model selection' });
+        await user.click(radioGroup.querySelector('[data-radio-value="claude-haiku-3-5"]')!);
+        expect(onChangeModel).toHaveBeenCalledWith('claude-haiku-3-5');
+      });
     });
   });
 
