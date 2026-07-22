@@ -128,6 +128,32 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
   );
 }
 
+/**
+ * A session's saved model that the current options no longer offer (provider
+ * switched, model deleted, or a local tag removed). Shown so the person knows
+ * their setting is stale and must pick another. The menu never auto-switches.
+ */
+function UnavailableSavedModel({ value }: { value: string }) {
+  return (
+    <div className="space-y-1.5" data-testid="model-unavailable-saved">
+      <div className="border-border flex w-full items-center gap-3 rounded-xl border border-dashed p-3 opacity-80">
+        <AlertCircle className="size-4 shrink-0 text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <div className="text-foreground truncate text-sm font-medium">
+            {value}
+            <span className="text-muted-foreground ml-1.5 text-[11px] font-normal">
+              (not available)
+            </span>
+          </div>
+        </div>
+      </div>
+      <p className="text-muted-foreground text-[11px] leading-snug">
+        This model isn&apos;t available anymore. Pick another.
+      </p>
+    </div>
+  );
+}
+
 /** Non-interactive group header rendered between `ModelCard`s inside the shared `RadioGroup`. */
 function TierGroupHeader({ slug, label }: { slug: TierGroupSlug; label: string }) {
   return (
@@ -157,6 +183,11 @@ function ModelSelectionList({ models, selectedModel, onChangeModel }: ModelSelec
   const [query, setQuery] = React.useState('');
   const useSearchableMenu = shouldUseTieredMenu(models);
 
+  // The saved model can stop existing (provider switched, model deleted). Surface
+  // it as unavailable and let the person pick another, never auto-switch (spec §11).
+  const missingSaved = selectedModel.length > 0 && !models.some((m) => m.value === selectedModel);
+  const banner = missingSaved ? <UnavailableSavedModel value={selectedModel} /> : null;
+
   const filteredModels = React.useMemo(
     () => (useSearchableMenu ? models.filter((m) => matchesQuery(m, query)) : models),
     [models, query, useSearchableMenu]
@@ -169,22 +200,26 @@ function ModelSelectionList({ models, selectedModel, onChangeModel }: ModelSelec
 
   if (!useSearchableMenu) {
     return (
-      <RadioGroup
-        value={selectedModel}
-        onValueChange={onChangeModel}
-        className="grid-cols-1 gap-1.5"
-        aria-label="Model selection"
-        data-testid="model-card-list"
-      >
-        {models.map((m) => (
-          <ModelCard key={m.value} model={m} isSelected={m.value === selectedModel} />
-        ))}
-      </RadioGroup>
+      <div className="space-y-2">
+        {banner}
+        <RadioGroup
+          value={selectedModel}
+          onValueChange={onChangeModel}
+          className="grid-cols-1 gap-1.5"
+          aria-label="Model selection"
+          data-testid="model-card-list"
+        >
+          {models.map((m) => (
+            <ModelCard key={m.value} model={m} isSelected={m.value === selectedModel} />
+          ))}
+        </RadioGroup>
+      </div>
     );
   }
 
   return (
     <div className="space-y-2">
+      {banner}
       <div className="relative">
         <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
         <Input

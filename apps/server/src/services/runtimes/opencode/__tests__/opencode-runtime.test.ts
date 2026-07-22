@@ -6,7 +6,8 @@ import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { SESSIONS } from '../../../../config/constants.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
-import { checkOpenCodeDependencies } from '../check-dependencies.js';
+import { checkOpenCodeDependencies, getConnectedOpenCodeProvider } from '../check-dependencies.js';
+import { detectOllama } from '../ollama.js';
 import { TurnEventQueue } from '../global-event-hub.js';
 import {
   DIRECTORY,
@@ -34,6 +35,15 @@ import {
 vi.mock('../check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(),
   resolveOpenCodeBinaryPath: vi.fn(() => null),
+  getConnectedOpenCodeProvider: vi.fn(() => null),
+}));
+
+// getSupportedModels probes local Ollama to filter the menu to installed tags
+// (spec §10). Mock it so the projection is deterministic and never hits a real
+// Ollama on the test machine; the default `running: false` degrades to the full
+// catalog (no filtering).
+vi.mock('../ollama.js', () => ({
+  detectOllama: vi.fn(async () => ({ running: false, models: [] })),
 }));
 
 const SATISFIED_CHECKS: DependencyCheck[] = [
@@ -997,10 +1007,74 @@ describe('OpenCodeRuntime', () => {
       expect(models[1]!.isDefault).toBeUndefined();
     });
 
+    it('filters ollama models to installed tags when Ollama is running (spec §10)', async () => {
+      vi.mocked(detectOllama).mockResolvedValueOnce({
+        running: true,
+        models: [{ name: 'llama3.3:70b' }],
+      });
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      client.provider.list.mockResolvedValue({
+        data: {
+          all: [
+            {
+              id: 'ollama',
+              name: 'Ollama',
+              env: [],
+              models: {
+                'llama3.3:70b': {
+                  id: 'llama3.3:70b',
+                  name: 'Llama 3.3 70B',
+                  release_date: '2024-12-06',
+                  attachment: false,
+                  reasoning: false,
+                  temperature: true,
+                  tool_call: true,
+                  limit: { context: 128_000, output: 8_192 },
+                  options: {},
+                },
+                'qwen2.5-coder:32b': {
+                  id: 'qwen2.5-coder:32b',
+                  name: 'Qwen 2.5 Coder 32B',
+                  release_date: '2024-11-12',
+                  attachment: false,
+                  reasoning: false,
+                  temperature: true,
+                  tool_call: true,
+                  limit: { context: 128_000, output: 8_192 },
+                  options: {},
+                },
+              },
+            },
+          ],
+          default: {},
+          connected: ['ollama'],
+        },
+      });
+
+      const models = await runtime.getSupportedModels();
+      // Only the installed tag is offered; the uninstalled catalog model is dropped.
+      expect(models.map((m) => m.value)).toEqual(['ollama/llama3.3:70b']);
+    });
+
     it('returns an empty model list when the sidecar is unreachable', async () => {
       const provider = createProvider(null);
       const runtime = new OpenCodeRuntime({ provider });
       await expect(runtime.getSupportedModels()).resolves.toEqual([]);
+    });
+  });
+
+  describe('getConnectedProvider', () => {
+    it('reports the DorkOS-persisted OpenCode provider for the Change affordance', () => {
+      vi.mocked(getConnectedOpenCodeProvider).mockReturnValueOnce('ollama');
+      const { runtime } = makeRuntime();
+      expect(runtime.getConnectedProvider()).toBe('ollama');
+    });
+
+    it('reports null when no DorkOS provider is set (CLI-auth users)', () => {
+      vi.mocked(getConnectedOpenCodeProvider).mockReturnValueOnce(null);
+      const { runtime } = makeRuntime();
+      expect(runtime.getConnectedProvider()).toBeNull();
     });
   });
 

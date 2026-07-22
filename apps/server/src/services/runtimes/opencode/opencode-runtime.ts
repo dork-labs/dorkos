@@ -28,7 +28,7 @@
  *
  * @module services/runtimes/opencode/opencode-runtime
  */
-import type { OpencodeClient } from '@opencode-ai/sdk';
+import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
 import type {
   ApprovalEvent,
   StreamEvent,
@@ -63,7 +63,8 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { checkOpenCodeDependencies } from './check-dependencies.js';
+import { checkOpenCodeDependencies, getConnectedOpenCodeProvider } from './check-dependencies.js';
+import { detectOllama } from './ollama.js';
 import {
   createOpenCodeEventContext,
   mapOpenCodeTurn,
@@ -700,11 +701,43 @@ export class OpenCodeRuntime implements AgentRuntime {
     try {
       const client = await this.provider.getClient(DEFAULT_CWD);
       const listed = unwrap(await client.provider.list(), 'provider.list');
-      return projectModelOptions(listed);
+      const installedOllamaTags = await this.resolveInstalledOllamaTags(listed);
+      return projectModelOptions(listed, { installedOllamaTags });
     } catch (err) {
       logger.warn('[OpenCodeRuntime] provider catalog unavailable', logError(err));
       return [];
     }
+  }
+
+  /**
+   * Installed Ollama tags for the honest-local-availability filter (spec §10),
+   * or `null` to skip filtering. Probes Ollama's `/api/tags` only when the
+   * catalog actually exposes the ollama provider; an unreachable Ollama
+   * (`running: false`) returns `null` so the menu degrades to the full catalog
+   * rather than emptying. A reachable Ollama returns its installed tag names
+   * (possibly empty — honestly no local models installed yet).
+   */
+  private async resolveInstalledOllamaTags(
+    payload: ProviderListResponse
+  ): Promise<string[] | null> {
+    const OLLAMA_PROVIDER_ID = 'ollama';
+    if (!payload.all.some((entry) => entry.id === OLLAMA_PROVIDER_ID)) return null;
+    const status = await detectOllama();
+    if (!status.running) return null;
+    return status.models.map((tag) => tag.name);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * OpenCode's auth is provider-agnostic — the connected source is DorkOS's
+   * persisted `runtimes.opencode.provider`. Surfaced so the client can label a
+   * "Change power source" affordance with the current source. `null` when the
+   * runtime was authenticated outside DorkOS (e.g. the OpenCode CLI logged in
+   * directly), so there is no DorkOS provider to switch.
+   */
+  getConnectedProvider(): string | null {
+    return getConnectedOpenCodeProvider();
   }
 
   /** OpenCode agents are prompt-scoped, not a DorkOS-dispatchable subagent registry. */

@@ -15,6 +15,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui';
 import { cn, localDeviceNoun } from '@/layers/shared/lib';
 import type { RuntimeConnectSuccess } from '@/layers/entities/runtime';
+import { describePowerSource } from '../lib/power-source';
 import { OllamaLocalPath } from './OllamaLocalPath';
 import { OpenRouterGatewayPath } from './OpenRouterGatewayPath';
 import { DirectProviderPath } from './DirectProviderPath';
@@ -24,16 +25,22 @@ type Step = 'choose' | 'cloud' | 'local' | 'direct';
 
 /** Props shared by every connect step so it can report its landing. */
 interface PickerProps {
+  /**
+   * The currently connected provider id, when reopened to CHANGE an already-set
+   * source (spec §9). Drives the "Currently: …" label on the choose list.
+   * Absent on a first connect.
+   */
+  currentProvider?: string;
   /** Reports the connect landing so the dialog can show its success moment. */
   onConnected?: (success: RuntimeConnectSuccess) => void;
 }
 
 /** The OpenCode power-source picker — one column of choices, in-dialog navigation. */
-export function OpenCodeProviderPicker({ onConnected }: PickerProps) {
+export function OpenCodeProviderPicker({ currentProvider, onConnected }: PickerProps) {
   const [step, setStep] = useState<Step>('choose');
 
   if (step === 'choose') {
-    return <PowerSourceList onChoose={setStep} />;
+    return <PowerSourceList onChoose={setStep} currentProvider={currentProvider} />;
   }
 
   const back = () => setStep('choose');
@@ -110,10 +117,21 @@ function powerSources(): SourceCard[] {
   ];
 }
 
-/** The single-column list of power sources. */
-function PowerSourceList({ onChoose }: { onChoose: (step: Exclude<Step, 'choose'>) => void }) {
+/** The single-column list of power sources, with the current source labeled when changing. */
+function PowerSourceList({
+  onChoose,
+  currentProvider,
+}: {
+  onChoose: (step: Exclude<Step, 'choose'>) => void;
+  currentProvider?: string;
+}) {
   return (
     <div className="space-y-2" data-testid="opencode-power-sources">
+      {currentProvider && (
+        <p className="text-muted-foreground text-xs" data-testid="opencode-current-source">
+          Currently: {describePowerSource(currentProvider)}
+        </p>
+      )}
       {powerSources().map((source) => (
         <PowerSourceButton key={source.step} source={source} onChoose={onChoose} />
       ))}

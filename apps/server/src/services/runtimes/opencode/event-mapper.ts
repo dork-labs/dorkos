@@ -92,6 +92,36 @@ export type OpenCodeWireEvent = Event | EventMessagePartDelta;
 /** The error name OpenCode stamps on interrupts — suppressed, not surfaced. */
 const ABORT_ERROR_NAME = 'MessageAbortedError';
 
+/**
+ * Message signals that a turn failed because the chosen model is missing — a
+ * not-installed Ollama tag, or a model a provider does not serve. OpenCode has
+ * NO typed model-not-found error: the failure arrives as a generic
+ * `APIError`/`UnknownError` whose `data.message` carries the provider's reason,
+ * so this matches the message conservatively — only DEFINITIVE "no such model"
+ * shapes, never softer wording. Verified upstream shapes: Ollama replies
+ * `model "<tag>" not found, try pulling it first`; OpenRouter replies `No
+ * endpoints found for <model>`.
+ *
+ * Deliberately excludes phrases like "temporarily not available"/"unavailable":
+ * those read as transient outages a retry could clear, and telling the user to
+ * pick a different model would be wrong. Everything not matched here stays a
+ * generic execution error (spec §11).
+ */
+const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
+  /\bmodel\b[^.]*\bnot\s+found\b/i,
+  /\bno\s+endpoints?\s+found\b/i,
+  /\bunknown\s+model\b/i,
+];
+
+/** Plain-language turn error for an unavailable model — points at the model menu (spec §11). */
+const MODEL_UNAVAILABLE_MESSAGE =
+  "That model isn't available. Pick another one from the model menu.";
+
+/** Whether a provider error message reads as an unavailable/unknown model. */
+function isModelUnavailableMessage(message: string): boolean {
+  return MODEL_UNAVAILABLE_PATTERNS.some((pattern) => pattern.test(message));
+}
+
 /** Session error union member shape (all variants carry `name` + `data`). */
 type OpenCodeSessionError = NonNullable<
   Extract<Event, { type: 'session.error' }>['properties']['error']
@@ -546,6 +576,21 @@ function mapSessionError(error: OpenCodeSessionError | undefined): StreamEvent[]
   const data: Record<string, unknown> = error.data;
   const message =
     typeof data.message === 'string' && data.message.length > 0 ? data.message : error.name;
+  // An unavailable/unknown model is the one provider failure with a plain-language
+  // remedy: pick another model. Map it to friendly copy pointing at the model menu
+  // instead of leaking the raw sidecar/provider string (spec §11).
+  if (isModelUnavailableMessage(message)) {
+    return [
+      {
+        type: 'error',
+        data: {
+          message: MODEL_UNAVAILABLE_MESSAGE,
+          code: 'model_unavailable',
+          category: 'execution_error',
+        },
+      },
+    ];
+  }
   return [
     {
       type: 'error',

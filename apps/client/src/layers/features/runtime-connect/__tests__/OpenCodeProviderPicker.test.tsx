@@ -84,6 +84,48 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
   });
 });
 
+describe('OpenCodeProviderPicker — Change power source label (spec §9)', () => {
+  function renderWithProvider(currentProvider: string) {
+    const transport = createMockTransport();
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <OpenCodeProviderPicker currentProvider={currentProvider} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  it('labels the current source in plain language for the local path', () => {
+    renderWithProvider('ollama');
+    expect(screen.getByTestId('opencode-current-source')).toHaveTextContent(
+      'Currently: On your computer (Ollama)'
+    );
+  });
+
+  it('labels the current source for the cloud path', () => {
+    renderWithProvider('openrouter');
+    expect(screen.getByTestId('opencode-current-source')).toHaveTextContent(
+      'Currently: Cloud via OpenRouter'
+    );
+  });
+
+  it('labels a bring-your-own-key source by provider name', () => {
+    renderWithProvider('openai');
+    expect(screen.getByTestId('opencode-current-source')).toHaveTextContent(
+      'Currently: Your own API key (OpenAI)'
+    );
+  });
+
+  it('omits the current-source line on a first connect (no currentProvider)', () => {
+    renderPicker();
+    expect(screen.queryByTestId('opencode-current-source')).not.toBeInTheDocument();
+  });
+});
+
 describe('OpenCodeProviderPicker — in-dialog step navigation (spec §5)', () => {
   it('opens the cloud step and returns with Back', async () => {
     const user = userEvent.setup();
@@ -269,5 +311,105 @@ describe('OpenCodeProviderPicker — flips OpenCode to Ready (spec §6)', () => 
 
     await user.click(screen.getByTestId('runtime-connected-done'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => {
+  const OPENCODE_READY_OLLAMA: SystemRequirements = {
+    runtimes: {
+      opencode: {
+        state: 'ready',
+        provider: 'ollama',
+        dependencies: [{ name: 'OpenCode CLI', description: 'binary', status: 'satisfied' }],
+      },
+    },
+  };
+
+  function renderReady(
+    requirements: SystemRequirements,
+    overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}
+  ) {
+    const transport = createMockTransport({
+      getCapabilities: vi.fn().mockResolvedValue({
+        capabilities: { opencode: { type: 'opencode' } },
+        defaultRuntime: 'opencode',
+      }),
+      checkRequirements: vi.fn().mockResolvedValue(requirements),
+      ...overrides,
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <RuntimeSetupDialog
+            runtime="opencode"
+            open
+            onOpenChange={vi.fn()}
+            renderConnect={renderRuntimeConnect}
+            showConnectSuccess
+          />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  it('offers Change on a ready, provider-connected OpenCode and reopens the picker with the current source', async () => {
+    const user = userEvent.setup();
+    renderReady(OPENCODE_READY_OLLAMA);
+
+    // Ready, so no Connect CTA — but a Change affordance is present.
+    const change = await screen.findByTestId('runtime-change-opencode');
+    await user.click(change);
+
+    // The picker reopens, prefilled with the current source label.
+    expect(await screen.findByTestId('opencode-power-sources')).toBeInTheDocument();
+    expect(screen.getByTestId('opencode-current-source')).toHaveTextContent(
+      'Currently: On your computer (Ollama)'
+    );
+    // Selecting a new source reaches its connect step (the normal connect flow).
+    await user.click(screen.getByTestId('power-source-cloud'));
+    expect(await screen.findByLabelText('OpenRouter key')).toBeInTheDocument();
+  });
+
+  it('ends an in-place switch in the success panel with Done, cancel gone', async () => {
+    // Purpose (spec §9): switching source on a ready runtime is not a dead end —
+    // a successful switch reaches the same success moment a first connect does,
+    // and the "Keep current source" cancel disappears once switched.
+    const user = userEvent.setup();
+    renderReady(OPENCODE_READY_OLLAMA, {
+      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
+    });
+
+    await user.click(await screen.findByTestId('runtime-change-opencode'));
+    // Switch to a Direct provider and complete the connect.
+    await user.click(await screen.findByTestId('power-source-direct'));
+    await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
+    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
+
+    // The success panel replaces the change UI; the cancel affordance is gone.
+    const panel = await screen.findByTestId('runtime-connected-panel');
+    expect(panel).toHaveTextContent('OpenCode is connected.');
+    expect(screen.queryByTestId('runtime-change-cancel-opencode')).not.toBeInTheDocument();
+    expect(screen.getByTestId('runtime-connected-done')).toBeInTheDocument();
+  });
+
+  it('does not offer Change when the ready runtime reports no connected provider', async () => {
+    const user = userEvent.setup();
+    renderReady({
+      runtimes: {
+        opencode: {
+          state: 'ready',
+          dependencies: [{ name: 'OpenCode CLI', description: 'binary', status: 'satisfied' }],
+        },
+      },
+    });
+
+    // Ready badge appears, but with no provider there is nothing to change.
+    await screen.findByTestId('runtime-ready-opencode');
+    expect(screen.queryByTestId('runtime-change-opencode')).not.toBeInTheDocument();
+    // Guard the assertion isn't vacuous.
+    expect(user).toBeDefined();
   });
 });

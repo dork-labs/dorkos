@@ -17,9 +17,14 @@ import { LoginConnect } from './LoginConnect';
 import { OpenCodeProviderPicker } from './OpenCodeProviderPicker';
 
 /** Render the terminal-free connect flow for a not-ready runtime. */
-export function RuntimeConnectFlow({ type, connect, onConnected }: RuntimeConnectSlotProps) {
+export function RuntimeConnectFlow({
+  type,
+  connect,
+  currentProvider,
+  onConnected,
+}: RuntimeConnectSlotProps) {
   if (connect.kind === 'provider-picker') {
-    return <OpenCodeProviderPicker onConnected={onConnected} />;
+    return <OpenCodeProviderPicker currentProvider={currentProvider} onConnected={onConnected} />;
   }
   if (connect.kind === 'login') {
     return <LoginConnect type={type} onConnected={onConnected} />;

@@ -108,3 +108,92 @@ describe('projectModelOptions', () => {
     expect(options[0].local).toBeUndefined();
   });
 });
+
+describe('projectModelOptions — honest local availability (spec §10)', () => {
+  it('offers only installed ollama tags, intersecting the catalog with /api/tags', () => {
+    const options = projectModelOptions(
+      payload([
+        {
+          id: 'ollama',
+          name: 'Ollama',
+          models: [
+            model('qwen2.5-coder:7b', 'Qwen Coder 7B'),
+            model('qwen2.5-coder:32b', 'Qwen Coder 32B'),
+            model('llama3.3:70b', 'Llama 70B'),
+          ],
+        },
+      ]),
+      // Only the 7b tag is actually on disk.
+      { installedOllamaTags: ['qwen2.5-coder:7b'] }
+    );
+
+    expect(options.map((o) => o.value)).toEqual(['ollama/qwen2.5-coder:7b']);
+    // Catalog metadata wins on a tag match: the human name is kept.
+    expect(options[0].displayName).toBe('Qwen Coder 7B');
+    expect(options[0].local).toBe(true);
+    expect(options[0].tier).toBe('quick-helper');
+  });
+
+  it('appends installed tags missing from the catalog as plain local options (custom pull)', () => {
+    const options = projectModelOptions(
+      payload([
+        {
+          id: 'ollama',
+          name: 'Ollama',
+          models: [model('qwen2.5-coder:7b', 'Qwen Coder 7B')],
+        },
+      ]),
+      { installedOllamaTags: ['qwen2.5-coder:7b', 'my-finetune:latest'] }
+    );
+
+    const byValue = Object.fromEntries(options.map((o) => [o.value, o]));
+    // The uncatalogued tag is offered, displayName is the tag itself, marked local.
+    expect(byValue['ollama/my-finetune:latest'].displayName).toBe('my-finetune:latest');
+    expect(byValue['ollama/my-finetune:latest'].local).toBe(true);
+    // Catalog model keeps its human name.
+    expect(byValue['ollama/qwen2.5-coder:7b'].displayName).toBe('Qwen Coder 7B');
+  });
+
+  it('degrades to the full catalog when the tags probe is unavailable (null)', () => {
+    const catalog = payload([
+      {
+        id: 'ollama',
+        name: 'Ollama',
+        models: [model('qwen2.5-coder:7b', 'Qwen Coder 7B'), model('llama3.3:70b', 'Llama 70B')],
+      },
+    ]);
+
+    // null → do not filter: an optimistic full menu beats an empty one.
+    expect(projectModelOptions(catalog, { installedOllamaTags: null }).map((o) => o.value)).toEqual(
+      ['ollama/llama3.3:70b', 'ollama/qwen2.5-coder:7b']
+    );
+    // Omitting the input entirely is the same as null (backward compatible).
+    expect(projectModelOptions(catalog).map((o) => o.value)).toEqual([
+      'ollama/llama3.3:70b',
+      'ollama/qwen2.5-coder:7b',
+    ]);
+  });
+
+  it('leaves non-ollama providers untouched by the installed-tags filter', () => {
+    const options = projectModelOptions(
+      payload([
+        { id: 'ollama', name: 'Ollama', models: [model('qwen2.5-coder:7b', 'Qwen Coder 7B')] },
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          models: [
+            model('anthropic/claude-opus-4', 'Claude Opus 4'),
+            model('openai/gpt-5', 'GPT-5'),
+          ],
+        },
+      ]),
+      // An empty installed list empties ollama but must not touch OpenRouter.
+      { installedOllamaTags: [] }
+    );
+
+    const values = options.map((o) => o.value);
+    expect(values).toContain('openrouter/anthropic/claude-opus-4');
+    expect(values).toContain('openrouter/openai/gpt-5');
+    expect(values.some((v) => v.startsWith('ollama/'))).toBe(false);
+  });
+});

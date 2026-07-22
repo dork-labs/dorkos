@@ -24,7 +24,13 @@ router.get('/requirements', async (_req, res) => {
     runtimeRegistry.listRuntimes().map(async (runtime) => {
       const dependencies = await runtime.checkDependencies();
       const readiness = deriveRuntimeReadiness(runtime.type, dependencies);
-      return [runtime.type, { dependencies, ...readiness }] as const;
+      // Provider-agnostic runtimes (OpenCode) report their connected source so
+      // the client can label a "Change power source" affordance; others omit it.
+      const provider = runtime.getConnectedProvider?.() ?? undefined;
+      return [
+        runtime.type,
+        { dependencies, ...readiness, ...(provider ? { provider } : {}) },
+      ] as const;
     })
   );
 
