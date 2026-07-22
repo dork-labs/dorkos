@@ -1,86 +1,89 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useResolvedTheme } from '../use-theme';
+import { useTheme, useResolvedTheme, useThemeStore } from '../use-theme';
 
 const STORAGE_KEY = 'dorkos-theme';
-const DARK_MQ = '(prefers-color-scheme: dark)';
-
-/** A controllable matchMedia stub: reports `matches` and lets a test fire a change. */
-function installMatchMedia(initialDark: boolean) {
-  let matches = initialDark;
-  const listeners = new Set<(e: MediaQueryListEvent) => void>();
-  const mql = {
-    get matches() {
-      return matches;
-    },
-    media: DARK_MQ,
-    onchange: null,
-    addEventListener: (_: string, cb: (e: MediaQueryListEvent) => void) => listeners.add(cb),
-    removeEventListener: (_: string, cb: (e: MediaQueryListEvent) => void) => listeners.delete(cb),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  };
-  Object.defineProperty(window, 'matchMedia', {
-    configurable: true,
-    writable: true,
-    value: vi.fn().mockReturnValue(mql),
-  });
-  return {
-    /** Flip the OS preference and notify subscribers, as a real MQ change would. */
-    setDark(next: boolean) {
-      matches = next;
-      for (const cb of listeners) cb({ matches: next } as MediaQueryListEvent);
-    },
-  };
-}
 
 beforeEach(() => {
+  // The store is a module singleton; reset it to a known baseline (system + a
+  // light OS) and clear the root class the wiring keeps in sync.
+  act(() => useThemeStore.setState({ theme: 'system', systemDark: false }));
   localStorage.clear();
+  document.documentElement.classList.remove('dark');
 });
 afterEach(() => {
-  // Drop the stub so a later test falls back to jsdom's default (no matchMedia).
-  Reflect.deleteProperty(window, 'matchMedia');
-  vi.restoreAllMocks();
+  document.documentElement.classList.remove('dark');
 });
 
 describe('useResolvedTheme', () => {
   it('returns the explicit preference for light', () => {
-    localStorage.setItem(STORAGE_KEY, 'light');
+    act(() => useThemeStore.getState().setTheme('light'));
     const { result } = renderHook(() => useResolvedTheme());
     expect(result.current).toBe('light');
   });
 
   it('returns the explicit preference for dark', () => {
-    localStorage.setItem(STORAGE_KEY, 'dark');
+    act(() => useThemeStore.getState().setTheme('dark'));
     const { result } = renderHook(() => useResolvedTheme());
     expect(result.current).toBe('dark');
   });
 
-  it('resolves "system" to dark when the OS prefers dark (the bug: this used to fall to light)', () => {
-    localStorage.setItem(STORAGE_KEY, 'system');
-    installMatchMedia(true);
-    const { result } = renderHook(() => useResolvedTheme());
-    expect(result.current).toBe('dark');
-  });
-
-  it('resolves "system" to light when the OS prefers light', () => {
-    localStorage.setItem(STORAGE_KEY, 'system');
-    installMatchMedia(false);
+  it('resolves "system" to the OS preference and updates on an OS flip', () => {
+    act(() => useThemeStore.getState().setTheme('system'));
     const { result } = renderHook(() => useResolvedTheme());
     expect(result.current).toBe('light');
+    // The single matchMedia listener feeds an OS change through this action.
+    act(() => useThemeStore.getState().setSystemDark(true));
+    expect(result.current).toBe('dark');
+  });
+});
+
+describe('useTheme — shared store (S2)', () => {
+  it('two hook instances see the same value; setTheme in one updates the other', () => {
+    const a = renderHook(() => useTheme());
+    const b = renderHook(() => useResolvedTheme());
+    expect(a.result.current.theme).toBe('system');
+    expect(b.result.current).toBe('light');
+
+    act(() => a.result.current.setTheme('dark'));
+
+    expect(a.result.current.theme).toBe('dark');
+    // The OTHER instance updates too — the whole point of the shared store.
+    expect(b.result.current).toBe('dark');
   });
 
-  it('tracks a live OS change while on "system"', () => {
-    localStorage.setItem(STORAGE_KEY, 'system');
-    const mq = installMatchMedia(false);
-    const { result } = renderHook(() => useResolvedTheme());
-    expect(result.current).toBe('light');
+  it('a system OS flip propagates to every consumer', () => {
+    act(() => useThemeStore.getState().setTheme('system'));
+    const a = renderHook(() => useResolvedTheme());
+    const b = renderHook(() => useResolvedTheme());
+    expect(a.result.current).toBe('light');
+    expect(b.result.current).toBe('light');
 
-    act(() => mq.setDark(true));
-    expect(result.current).toBe('dark');
+    act(() => useThemeStore.getState().setSystemDark(true));
+
+    expect(a.result.current).toBe('dark');
+    expect(b.result.current).toBe('dark');
+  });
+
+  it('keeps the root .dark class in sync with the resolved theme', () => {
+    act(() => useThemeStore.getState().setTheme('dark'));
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    act(() => useThemeStore.getState().setTheme('light'));
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    // Under "system" the resolved OS signal drives the class.
+    act(() => useThemeStore.getState().setTheme('system'));
+    act(() => useThemeStore.getState().setSystemDark(true));
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
+  it('persists the preference to localStorage', () => {
+    const { result } = renderHook(() => useTheme());
+    act(() => result.current.setTheme('dark'));
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('dark');
   });
 });

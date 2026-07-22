@@ -1,27 +1,31 @@
 /**
  * @vitest-environment jsdom
  */
-import type { ResolvedTheme } from '@/layers/shared/model';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
-// Stub the heavy editor — this suite only verifies the data-theme wrapper that
-// makes the app's theme authoritative over Blintz's OS media query.
+// Stub the heavy editor — this suite verifies the data-theme wrapper and that a
+// live theme change reaches an already-mounted editor.
 vi.mock('blintz', () => ({
   MarkdownEditor: ({ value }: { value: string }) => (
     <div data-testid="markdown-editor">{value}</div>
   ),
 }));
 
-// The resolution itself (including system→OS via matchMedia) is unit-tested in
-// shared/model/__tests__/use-theme.test.ts; here we only prove BlintzCanvas
-// forwards whatever it resolves to.
-const themeState: { resolved: ResolvedTheme } = { resolved: 'light' };
-vi.mock('@/layers/shared/model', () => ({
-  useResolvedTheme: () => themeState.resolved,
-}));
+// Use the REAL store-backed hook so a theme change actually propagates. use-theme
+// is a light module (zustand only), so importActual avoids pulling the whole
+// shared/model barrel.
+vi.mock('@/layers/shared/model', async () => {
+  const theme = await vi.importActual<typeof import('@/layers/shared/model/use-theme')>(
+    '@/layers/shared/model/use-theme'
+  );
+  return { useResolvedTheme: theme.useResolvedTheme };
+});
 
+// Import the store from the real module (only the barrel is mocked) — the same
+// singleton the component's useResolvedTheme reads via importActual.
+import { useThemeStore } from '@/layers/shared/model/use-theme';
 import { BlintzCanvas } from '../ui/BlintzCanvas';
 
 /** The wrapper element that carries data-theme (the editor's parent). */
@@ -32,20 +36,32 @@ function themeWrapper(): HTMLElement {
 }
 
 beforeEach(() => {
-  themeState.resolved = 'light';
+  act(() => useThemeStore.getState().setTheme('light'));
 });
 afterEach(cleanup);
 
 describe('BlintzCanvas theme forwarding', () => {
   it('forwards a resolved light theme as data-theme="light"', () => {
-    themeState.resolved = 'light';
     render(<BlintzCanvas value="# hi" editable={false} />);
     expect(themeWrapper()).toHaveAttribute('data-theme', 'light');
   });
 
   it('forwards a resolved dark theme as data-theme="dark"', () => {
-    themeState.resolved = 'dark';
+    act(() => useThemeStore.getState().setTheme('dark'));
     render(<BlintzCanvas value="# hi" editable={false} />);
     expect(themeWrapper()).toHaveAttribute('data-theme', 'dark');
+  });
+
+  it('updates data-theme live when the store theme changes, without remounting the editor', () => {
+    render(<BlintzCanvas value="# hi" editable={false} />);
+    const editorBefore = screen.getByTestId('markdown-editor');
+    expect(themeWrapper()).toHaveAttribute('data-theme', 'light');
+
+    // A theme switch from any surface flows through the shared store (S2).
+    act(() => useThemeStore.getState().setTheme('dark'));
+
+    expect(themeWrapper()).toHaveAttribute('data-theme', 'dark');
+    // Same editor node — the wrapper re-rendered, the editor was not torn down.
+    expect(screen.getByTestId('markdown-editor')).toBe(editorBefore);
   });
 });
