@@ -220,11 +220,15 @@ export function CanvasMarkdownContent({
         <Suspense
           fallback={<div className="text-muted-foreground p-4 text-sm">Loading editor…</div>}
         >
-          {isEditing ? (
-            <BlintzCanvas key="edit" value={draft} editable onChange={handleChange} />
-          ) : (
-            <BlintzCanvas key="view" value={content.content} editable={false} />
-          )}
+          {/* Blintz 0.4.0's `editable` is reactive — the pencil flips it live, no
+              remount — so a single mounted editor toggles between view and edit
+              without losing scroll or selection. In edit mode `value` tracks the
+              draft; in view mode it shows the document. */}
+          <BlintzCanvas
+            value={isEditing ? draft : content.content}
+            editable={isEditing}
+            onChange={isEditing ? handleChange : undefined}
+          />
         </Suspense>
       </div>
     </div>
