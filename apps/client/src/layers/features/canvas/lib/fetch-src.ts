@@ -1,12 +1,16 @@
 /**
- * Resolve a canvas `src` into a URL that can be `fetch`ed (CSV and other
- * text-over-fetch viewers).
+ * Resolve a canvas `src` into a same-origin (or remote) URL the browser can load.
  *
- * Remote (`http(s):`) and `data:` sources are fetched directly; a local
- * filesystem path is routed through the server's cwd-confined raw-file URL.
- * Any other explicit scheme (`javascript:`, `file:`, `blob:`, …) is rejected.
- * Mirrors the classification in `media-src.ts` but without the image/pdf
- * `data:`-prefix gate, since the fetched bytes are parsed as text, not framed.
+ * Used by the viewers that don't gate `data:` URIs by media kind: the CSV viewer
+ * (which fetches the bytes and parses them as text) and the 3D/audio/video viewers
+ * (which point a `<model-viewer>`/`<audio>`/`<video>` element at the URL, streaming
+ * the bytes rather than parsing them as text).
+ *
+ * Remote (`http(s):`) and `data:` sources are returned directly; a local filesystem
+ * path is routed through the server's cwd-confined raw-file URL (which serves Range
+ * requests, so media can seek). Any other explicit scheme (`javascript:`, `file:`,
+ * `blob:`, …) is rejected. Mirrors the classification in `media-src.ts` but without
+ * its image/pdf `data:`-prefix gate.
  *
  * @module features/canvas/lib/fetch-src
  */

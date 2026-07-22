@@ -592,7 +592,10 @@ export const UserConfigSchema = z.object({
        * without a code change (workbench D7). Empty by default.
        */
       defaultViewers: z
-        .record(z.string(), z.enum(['file', 'markdown', 'image', 'pdf', 'model3d', 'csv']))
+        .record(
+          z.string(),
+          z.enum(['file', 'markdown', 'image', 'pdf', 'model3d', 'audio', 'video', 'csv'])
+        )
         .default(() => ({})),
       /**
        * Grace period, in minutes, that a detached embedded-terminal PTY is kept

@@ -72,6 +72,20 @@ describe('CanvasSlice — multi-document reducer', () => {
     expect(useAppStore.getState().openDocuments).toHaveLength(2);
   });
 
+  it('dedups audio and video documents by src, keeping distinct sources apart', () => {
+    const { openCanvasDocument } = useAppStore.getState();
+    const audioDoc = (src: string): UiCanvasContent => ({ type: 'audio', src });
+    openCanvasDocument(audioDoc('sounds/theme.mp3'));
+    openCanvasDocument(audioDoc('sounds/theme.mp3'));
+    openCanvasDocument({ type: 'video', src: 'clips/demo.mp4' });
+
+    const { openDocuments } = useAppStore.getState();
+    // Re-opening the same audio src re-activates the one doc; the video is a
+    // distinct media source and opens its own tab.
+    expect(openDocuments.filter((d) => d.content.type === 'audio')).toHaveLength(1);
+    expect(openDocuments.filter((d) => d.content.type === 'video')).toHaveLength(1);
+  });
+
   it('evicts the least-recently-active document past the cap', () => {
     const { openCanvasDocument } = useAppStore.getState();
     for (let i = 0; i <= MAX_CANVAS_DOCUMENTS; i++) {

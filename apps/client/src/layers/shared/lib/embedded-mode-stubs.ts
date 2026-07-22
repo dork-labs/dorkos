@@ -21,7 +21,6 @@ import type {
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
   OpenRouterOAuthStatus,
-  OpenRouterModel,
   OllamaStatus,
   OllamaModelCatalog,
   OllamaPullProgress,
@@ -494,10 +493,6 @@ export const serverOnlyStubs = {
       status: 'error',
       error: 'OpenRouter sign-in is not supported in Obsidian plugin mode.',
     };
-  },
-
-  async getOpenRouterModels(): Promise<OpenRouterModel[]> {
-    return [];
   },
 
   async detectOllama(): Promise<OllamaStatus> {

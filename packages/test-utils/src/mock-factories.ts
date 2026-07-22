@@ -348,7 +348,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ authorizeUrl: 'https://openrouter.ai/auth', state: 'mock-state' }),
     getOpenRouterOAuthStatus: vi.fn().mockResolvedValue({ status: 'pending' }),
-    getOpenRouterModels: vi.fn().mockResolvedValue([]),
     detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }),
     getOllamaModelCatalog: vi.fn().mockResolvedValue({
       hardware: { totalRamBytes: 0, vramBytes: null, unifiedMemory: false },

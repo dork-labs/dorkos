@@ -9,7 +9,11 @@ import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { RuntimeSetupPanel, RuntimeSetupDialog } from '../ui/RuntimeSetupDialog';
+import {
+  RuntimeSetupPanel,
+  RuntimeSetupDialog,
+  type RuntimeConnectSlotProps,
+} from '../ui/RuntimeSetupDialog';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -494,6 +498,81 @@ describe('RuntimeSetupDialog — onRuntimeReady (connect success)', () => {
       expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
     });
     expect(onRuntimeReady).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// showConnectSuccess — the explicit success moment. A connect path reports its
+// landing via onConnected; the dialog swaps in a success panel with a Done
+// button (spec: opencode-connect-overhaul §6), instead of the path's own inline
+// confirmation, and stays open until Done.
+// ---------------------------------------------------------------------------
+
+/** A connect-slot stub exposing a button that reports a landing via onConnected. */
+function fireConnectedStub({ onConnected }: RuntimeConnectSlotProps) {
+  return (
+    <button
+      data-testid="fire-connected"
+      onClick={() => onConnected?.({ title: 'OpenCode is connected.', body: 'Frontier unlocked.' })}
+    >
+      connect
+    </button>
+  );
+}
+
+describe('RuntimeSetupDialog — showConnectSuccess (explicit success moment)', () => {
+  function renderSuccessDialog(showConnectSuccess: boolean, onOpenChange = vi.fn()) {
+    const transport = createMockTransport({
+      getCapabilities: vi.fn().mockResolvedValue({
+        capabilities: { codex: { type: 'codex' } },
+        defaultRuntime: 'codex',
+      }),
+      checkRequirements: vi.fn().mockResolvedValue(CODEX_CONNECT),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <RuntimeSetupDialog
+        runtime="codex"
+        open
+        onOpenChange={onOpenChange}
+        renderConnect={fireConnectedStub}
+        showConnectSuccess={showConnectSuccess}
+      />,
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>
+            <TransportProvider transport={transport}>{children}</TransportProvider>
+          </QueryClientProvider>
+        ),
+      }
+    );
+    return onOpenChange;
+  }
+
+  it('swaps in the success panel on connect and closes on Done', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = renderSuccessDialog(true);
+
+    await user.click(await screen.findByTestId('fire-connected'));
+
+    const panel = await screen.findByTestId('runtime-connected-panel');
+    expect(panel).toHaveTextContent('OpenCode is connected.');
+    expect(panel).toHaveTextContent('Frontier unlocked.');
+
+    await user.click(screen.getByTestId('runtime-connected-done'));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('does not inject onConnected when showConnectSuccess is off (no success panel)', async () => {
+    const user = userEvent.setup();
+    renderSuccessDialog(false);
+
+    // The path renders, but onConnected is undefined, so firing it is a no-op and
+    // the dialog keeps the setup panel — the path owns its inline confirmation.
+    await user.click(await screen.findByTestId('fire-connected'));
+    expect(screen.queryByTestId('runtime-connected-panel')).not.toBeInTheDocument();
   });
 });
 

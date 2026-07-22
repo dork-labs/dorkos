@@ -364,6 +364,10 @@ function buildOpenFileContent(viewer: CanvasViewerType, sourcePath: string): UiC
       return { type: 'pdf', src: sourcePath };
     case 'model3d':
       return { type: 'model3d', src: sourcePath };
+    case 'audio':
+      return { type: 'audio', src: sourcePath };
+    case 'video':
+      return { type: 'video', src: sourcePath };
     case 'csv':
       return { type: 'csv', src: sourcePath };
     case 'markdown':

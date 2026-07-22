@@ -9,8 +9,6 @@ import {
   validateOpenRouterKey,
   storeOpenRouterKeyReference,
   handleOpenRouterCallback,
-  fetchOpenRouterModels,
-  resetOpenRouterModelCache,
   OpenRouterOAuthStore,
   OpenRouterError,
   type ConfigReadWrite,
@@ -242,35 +240,5 @@ describe('handleOpenRouterCallback', () => {
     expect(store.put).toHaveBeenCalledTimes(1);
     // The original connected status is preserved (the replay never clobbered it).
     expect(flowStore.status(state)).toEqual({ status: 'connected' });
-  });
-});
-
-describe('fetchOpenRouterModels', () => {
-  beforeEach(() => resetOpenRouterModelCache());
-
-  it('maps the catalog and caches it (a second call within TTL does not re-fetch)', async () => {
-    const fetchImpl = vi.fn(async () =>
-      resp(200, {
-        data: [
-          { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', context_length: 200000 },
-        ],
-      })
-    ) as unknown as FetchFn;
-
-    const first = await fetchOpenRouterModels({ fetchImpl });
-    const second = await fetchOpenRouterModels({ fetchImpl });
-
-    expect(first).toEqual([
-      { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', contextLength: 200000 },
-    ]);
-    expect(second).toEqual(first);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
-  it('degrades to an empty list when the catalog fetch fails', async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new Error('network down');
-    }) as unknown as FetchFn;
-    await expect(fetchOpenRouterModels({ fetchImpl })).resolves.toEqual([]);
   });
 });

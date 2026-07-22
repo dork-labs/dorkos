@@ -1,4 +1,5 @@
-import { Bot, AlertCircle, RefreshCw, Zap } from 'lucide-react';
+import * as React from 'react';
+import { Bot, AlertCircle, RefreshCw, Zap, Search } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ResponsivePopover,
@@ -13,14 +14,17 @@ import {
   TooltipContent,
   Badge,
   Separator,
+  Input,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, localDeviceNoun } from '@/layers/shared/lib';
 import { useModels } from '@/layers/entities/session';
 import type { ModelOption, EffortLevel } from '@dorkos/shared/types';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import {
+  shouldUseTieredMenu,
+  matchesQuery,
+  groupByTier,
+  type TierGroupSlug,
+} from '../lib/model-menu-tiers';
 
 const EFFORT_LABELS: Record<EffortLevel, { label: string; description: string }> = {
   none: { label: 'None', description: 'No reasoning' },
@@ -34,10 +38,6 @@ const EFFORT_LABELS: Record<EffortLevel, { label: string; description: string }>
 
 /** Animation transition for section content when switching models. */
 const SECTION_TRANSITION = { duration: 0.15, ease: 'easeOut' } as const;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** Format a context window token count as a compact badge label (e.g. "200K"). */
 function formatContextWindow(tokens: number): string {
@@ -53,10 +53,6 @@ function getModelLabel(model: string, models: ModelOption[]): string {
   const match = model.match(/claude-(\w+)-/);
   return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : model;
 }
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 /** Loading skeleton rendered while models are being fetched. */
 function ModelCardsSkeleton() {
@@ -96,13 +92,8 @@ function ModelLoadError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-interface ModelCardProps {
-  model: ModelOption;
-  isSelected: boolean;
-}
-
 /** Selectable model card with Radix radio indicator and context window badge. */
-function ModelCard({ model, isSelected }: ModelCardProps) {
+function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: boolean }) {
   return (
     <label
       className={cn(
@@ -112,18 +103,22 @@ function ModelCard({ model, isSelected }: ModelCardProps) {
           : 'border-border hover:border-muted-foreground/30 hover:bg-muted/50 opacity-70'
       )}
     >
-      {/* Radix radio indicator — filled circle */}
       <RadioGroupItem value={model.value} className="shrink-0" />
 
-      {/* Model info */}
       <div className="min-w-0 flex-1">
-        <div className="text-foreground truncate text-sm font-medium">{model.displayName}</div>
+        <div className="text-foreground truncate text-sm font-medium">
+          {model.displayName}
+          {model.local && (
+            <span className="text-muted-foreground ml-1.5 text-[10px] font-normal">
+              {localDeviceNoun()} · private
+            </span>
+          )}
+        </div>
         <div className="text-muted-foreground truncate text-[11px] leading-tight">
           {model.description}
         </div>
       </div>
 
-      {/* Context window badge */}
       {model.contextWindow && (
         <Badge variant="secondary" className="shrink-0 text-[10px]">
           {formatContextWindow(model.contextWindow)}
@@ -133,28 +128,130 @@ function ModelCard({ model, isSelected }: ModelCardProps) {
   );
 }
 
-interface EffortSectionProps {
-  effortLevels: EffortLevel[];
-  effort: EffortLevel | null;
-  onChangeEffort: (effort: EffortLevel | null) => void;
+/** Non-interactive group header rendered between `ModelCard`s inside the shared `RadioGroup`. */
+function TierGroupHeader({ slug, label }: { slug: TierGroupSlug; label: string }) {
+  return (
+    <div
+      className="text-muted-foreground mt-2 mb-1 text-[11px] font-medium tracking-wide uppercase first:mt-0"
+      data-testid={`model-group-${slug}`}
+    >
+      {label}
+    </div>
+  );
+}
+
+interface ModelSelectionListProps {
+  models: ModelOption[];
+  selectedModel: string;
+  onChangeModel: (model: string) => void;
+}
+
+/**
+ * Model picker: a flat `RadioGroup` of `ModelCard`s for small, untiered
+ * catalogs (unchanged claude-code/codex behavior), or a searchable,
+ * tier-grouped `RadioGroup` once tiered or past the searchable threshold
+ * (`SEARCHABLE_THRESHOLD` in `../lib/model-menu-tiers`) — one `RadioGroup`
+ * either way, so keyboard nav spans groups.
+ */
+function ModelSelectionList({ models, selectedModel, onChangeModel }: ModelSelectionListProps) {
+  const [query, setQuery] = React.useState('');
+  const useSearchableMenu = shouldUseTieredMenu(models);
+
+  const filteredModels = React.useMemo(
+    () => (useSearchableMenu ? models.filter((m) => matchesQuery(m, query)) : models),
+    [models, query, useSearchableMenu]
+  );
+
+  const groups = React.useMemo(
+    () => (useSearchableMenu ? groupByTier(filteredModels) : []),
+    [filteredModels, useSearchableMenu]
+  );
+
+  if (!useSearchableMenu) {
+    return (
+      <RadioGroup
+        value={selectedModel}
+        onValueChange={onChangeModel}
+        className="grid-cols-1 gap-1.5"
+        aria-label="Model selection"
+        data-testid="model-card-list"
+      >
+        {models.map((m) => (
+          <ModelCard key={m.value} model={m} isSelected={m.value === selectedModel} />
+        ))}
+      </RadioGroup>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+        <Input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search models…"
+          aria-label="Search models"
+          data-testid="model-search"
+          className="h-8 pl-8 text-xs"
+        />
+      </div>
+      {groups.length === 0 ? (
+        <p
+          className="text-muted-foreground py-4 text-center text-xs"
+          data-testid="model-search-empty"
+        >
+          No models match
+        </p>
+      ) : (
+        <RadioGroup
+          value={selectedModel}
+          onValueChange={onChangeModel}
+          className="grid-cols-1 gap-1.5"
+          aria-label="Model selection"
+          data-testid="model-card-list"
+        >
+          {groups.map((group) => (
+            <React.Fragment key={group.slug}>
+              <TierGroupHeader slug={group.slug} label={group.label} />
+              {group.models.map((m) => (
+                <ModelCard key={m.value} model={m} isSelected={m.value === selectedModel} />
+              ))}
+            </React.Fragment>
+          ))}
+        </RadioGroup>
+      )}
+    </div>
+  );
 }
 
 /** Effort level selector rendered as pill/segment buttons. */
-function EffortSection({ effortLevels, effort, onChangeEffort }: EffortSectionProps) {
+function EffortSection({
+  effortLevels,
+  effort,
+  onChangeEffort,
+}: {
+  effortLevels: EffortLevel[];
+  effort: EffortLevel | null;
+  onChangeEffort: (effort: EffortLevel | null) => void;
+}) {
   return (
     <div>
       <div className="text-muted-foreground mb-2 text-[11px] font-medium tracking-wide uppercase">
         Effort
       </div>
       <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Effort level">
-        <EffortPill
+        <TogglePill
+          role="radio"
           label="Default"
           isSelected={effort === null}
           onClick={() => onChangeEffort(null)}
         />
         {effortLevels.map((level) => (
-          <EffortPill
+          <TogglePill
             key={level}
+            role="radio"
             label={EFFORT_LABELS[level].label}
             description={EFFORT_LABELS[level].description}
             isSelected={effort === level}
@@ -166,27 +263,69 @@ function EffortSection({ effortLevels, effort, onChangeEffort }: EffortSectionPr
   );
 }
 
-interface EffortPillProps {
-  label: string;
-  description?: string;
-  isSelected: boolean;
-  onClick: () => void;
+/** Mode toggle pill for Fast mode. */
+function ModeSection({
+  supportsFastMode,
+  fastMode,
+  onChangeFastMode,
+}: {
+  supportsFastMode: boolean;
+  fastMode: boolean;
+  onChangeFastMode: (enabled: boolean) => void;
+}) {
+  if (!supportsFastMode) return null;
+
+  return (
+    <div>
+      <div className="text-muted-foreground mb-2 text-[11px] font-medium tracking-wide uppercase">
+        Mode
+      </div>
+      <div className="flex gap-1.5">
+        <TogglePill
+          role="switch"
+          label="Fast"
+          icon={<Zap className="size-3" />}
+          isSelected={fastMode}
+          onClick={() => onChangeFastMode(!fastMode)}
+        />
+      </div>
+    </div>
+  );
 }
 
-/** Individual effort level pill button. */
-function EffortPill({ label, description, isSelected, onClick }: EffortPillProps) {
+/**
+ * Pill button shared by the effort-level radios and the mode-toggle switch;
+ * `role` picks the ARIA semantics, an optional `description` wraps it in a
+ * tooltip, an optional `icon` prefixes the label.
+ */
+function TogglePill({
+  role,
+  label,
+  description,
+  icon,
+  isSelected,
+  onClick,
+}: {
+  role: 'radio' | 'switch';
+  label: string;
+  description?: string;
+  icon?: React.ReactNode;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
   const pill = (
     <button
-      role="radio"
+      role={role}
       aria-checked={isSelected}
       onClick={onClick}
       className={cn(
-        'rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150',
+        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150',
         isSelected
           ? 'bg-primary text-primary-foreground'
           : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
       )}
     >
+      {icon}
       {label}
     </button>
   );
@@ -203,64 +342,6 @@ function EffortPill({ label, description, isSelected, onClick }: EffortPillProps
   );
 }
 
-interface ModeSectionProps {
-  supportsFastMode: boolean;
-  fastMode: boolean;
-  onChangeFastMode: (enabled: boolean) => void;
-}
-
-/** Mode toggle pill for Fast mode. */
-function ModeSection({ supportsFastMode, fastMode, onChangeFastMode }: ModeSectionProps) {
-  if (!supportsFastMode) return null;
-
-  return (
-    <div>
-      <div className="text-muted-foreground mb-2 text-[11px] font-medium tracking-wide uppercase">
-        Mode
-      </div>
-      <div className="flex gap-1.5">
-        <ModeToggle
-          label="Fast"
-          icon={<Zap className="size-3" />}
-          isActive={fastMode}
-          onToggle={() => onChangeFastMode(!fastMode)}
-        />
-      </div>
-    </div>
-  );
-}
-
-interface ModeToggleProps {
-  label: string;
-  icon: React.ReactNode;
-  isActive: boolean;
-  onToggle: () => void;
-}
-
-/** Individual mode toggle pill. */
-function ModeToggle({ label, icon, isActive, onToggle }: ModeToggleProps) {
-  return (
-    <button
-      role="switch"
-      aria-checked={isActive}
-      onClick={onToggle}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150',
-        isActive
-          ? 'bg-primary text-primary-foreground'
-          : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-
 export interface ModelConfigPopoverProps {
   model: string;
   onChangeModel: (model: string) => void;
@@ -270,26 +351,16 @@ export interface ModelConfigPopoverProps {
   onChangeFastMode: (enabled: boolean) => void;
   /** When true, the trigger is disabled (e.g. no active session). */
   disabled?: boolean;
-  /**
-   * Active session id. When provided, the model list is scoped to the session's
-   * runtime. When omitted, the server falls back to the default runtime.
-   */
+  /** Active session id; scopes the model list to its runtime (omitted = server default). */
   sessionId?: string;
-  /**
-   * Resolved runtime for the session (e.g. `'codex'`), or nullish for the
-   * server default. Scopes the model list by runtime so a not-yet-started
-   * session — with no server-side row to resolve `sessionId` against — still
-   * shows the correct runtime's models.
-   */
+  /** Resolved runtime (e.g. `'codex'`) so a not-yet-started session still shows the right models. */
   runtime?: string | null;
 }
 
 /**
- * Model configuration popover for the status bar.
- *
- * Opens a ~320px-wide panel above the trigger with grouped card selection
- * for models, effort levels, and mode toggles. Stays open until the user
- * clicks outside or presses Escape.
+ * Model configuration popover for the status bar. Opens a ~320px-wide panel
+ * above the trigger with grouped card selection for models, effort levels,
+ * and mode toggles; stays open until the user clicks outside or hits Escape.
  */
 export function ModelConfigPopover({
   model,
@@ -374,26 +445,18 @@ export function ModelConfigPopover({
       >
         <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>
 
-        {/* Model selection */}
         {isLoading && <ModelCardsSkeleton />}
         {isError && <ModelLoadError onRetry={() => refetch()} />}
         {!isLoading && !isError && (
-          <RadioGroup
-            value={model}
-            onValueChange={onChangeModel}
-            className="grid-cols-1 gap-1.5"
-            aria-label="Model selection"
-            data-testid="model-card-list"
-          >
-            {modelList.map((m) => (
-              <ModelCard key={m.value} model={m} isSelected={m.value === model} />
-            ))}
-          </RadioGroup>
+          <ModelSelectionList
+            models={modelList}
+            selectedModel={model}
+            onChangeModel={onChangeModel}
+          />
         )}
 
-        {/* Configuration section — effort + mode grouped under shared header.
-         * Uses a stable key so effort/mode changes within the same model don't
-         * trigger exit→enter re-animation (which causes a visible blank gap). */}
+        {/* Stable key: effort/mode changes within the same model must not re-trigger
+         * exit→enter animation (that causes a visible blank gap). */}
         <AnimatePresence>
           {!isLoading && !isError && (showEffort || showModes) && (
             <motion.div

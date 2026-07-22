@@ -4,11 +4,14 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { CanvasHeader, CANVAS_PANEL_ID, canvasTabDomId } from './CanvasHeader';
+import { CanvasErrorBoundary } from './CanvasErrorBoundary';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
 import { CanvasImageContent } from './CanvasImageContent';
 import { CanvasPdfContent } from './CanvasPdfContent';
+import { CanvasAudioContent } from './CanvasAudioContent';
+import { CanvasVideoContent } from './CanvasVideoContent';
 import { CanvasWidgetContent } from './CanvasWidgetContent';
 import { CanvasMcpAppContent } from './CanvasMcpAppContent';
 import { CanvasSplash } from './CanvasSplash';
@@ -75,6 +78,10 @@ function CanvasRenderer({
       return <CanvasImageContent content={content} />;
     case 'pdf':
       return <CanvasPdfContent content={content} />;
+    case 'audio':
+      return <CanvasAudioContent content={content} />;
+    case 'video':
+      return <CanvasVideoContent content={content} />;
     case 'widget':
       return <CanvasWidgetContent content={content} />;
     case 'mcp_app':
@@ -152,11 +159,18 @@ function CanvasBody() {
         {...(active ? { role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) } : {})}
       >
         {active ? (
-          <CanvasRenderer
-            documentId={active.id}
-            content={active.content}
-            onContentChange={setActiveContent}
-          />
+          // Contain each document's viewer: a render throw (stale lazy chunk,
+          // WebGL failure, a bad file) is caught here, keyed by document id, so
+          // it never reaches the outer PanelErrorBoundary and wipes the tab
+          // strip. Keying by id resets the boundary on a tab switch and
+          // re-attempts render on switch-back.
+          <CanvasErrorBoundary key={active.id} documentId={active.id}>
+            <CanvasRenderer
+              documentId={active.id}
+              content={active.content}
+              onContentChange={setActiveContent}
+            />
+          </CanvasErrorBoundary>
         ) : (
           <CanvasSplash onAction={openDocument} />
         )}

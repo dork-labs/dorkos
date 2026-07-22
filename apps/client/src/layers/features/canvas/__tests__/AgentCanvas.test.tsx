@@ -85,7 +85,9 @@ let mockIsMobile = false;
 type MockContent =
   | { type: 'markdown'; content: string; title?: string }
   | { type: 'json'; data: unknown; title?: string }
-  | { type: 'url'; url: string; title?: string };
+  | { type: 'url'; url: string; title?: string }
+  | { type: 'audio'; src: string; title?: string }
+  | { type: 'video'; src: string; title?: string };
 
 interface MockDoc {
   id: string;
@@ -117,6 +119,8 @@ const FALLBACK_LABELS: Record<string, string> = {
   markdown: 'Document',
   json: 'JSON Data',
   url: 'Web Page',
+  audio: 'Audio',
+  video: 'Video',
 };
 
 /** Open a single active document, deriving its tab label like the real store. */
@@ -210,5 +214,23 @@ describe('AgentCanvas', () => {
     expect(screen.queryByTestId('panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
     expect(screen.getByText('Mobile Doc')).toBeInTheDocument();
+  });
+
+  it('dispatches an audio document to the native audio viewer', () => {
+    mockState.canvasOpen = true;
+    setActiveDoc({ type: 'audio', src: 'https://x/theme.mp3', title: 'Theme' });
+    render(<AgentCanvas />);
+    const audio = document.querySelector('audio');
+    expect(audio).toHaveAttribute('src', 'https://x/theme.mp3');
+    expect(audio).toHaveAttribute('controls');
+  });
+
+  it('dispatches a video document to the native video viewer', () => {
+    mockState.canvasOpen = true;
+    setActiveDoc({ type: 'video', src: 'https://x/demo.mp4', title: 'Demo' });
+    render(<AgentCanvas />);
+    const video = document.querySelector('video');
+    expect(video).toHaveAttribute('src', 'https://x/demo.mp4');
+    expect(video).toHaveAttribute('controls');
   });
 });

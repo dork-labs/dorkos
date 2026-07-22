@@ -38,7 +38,6 @@ import type {
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
   OpenRouterOAuthStatus,
-  OpenRouterModel,
   OllamaStatus,
   OllamaModelCatalog,
   OllamaPullProgress,
@@ -417,13 +416,6 @@ export function createSystemMethods(baseUrl: string) {
         baseUrl,
         `/runtimes/opencode/openrouter/oauth/status${qs}`
       );
-    },
-
-    getOpenRouterModels(): Promise<OpenRouterModel[]> {
-      return fetchJSON<{ models: OpenRouterModel[] }>(
-        baseUrl,
-        '/runtimes/opencode/openrouter/models'
-      ).then((r) => r.models);
     },
 
     detectOllama(): Promise<OllamaStatus> {

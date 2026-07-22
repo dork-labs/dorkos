@@ -105,11 +105,11 @@ describe('RuntimesTab', () => {
     expect(await screen.findByTestId('login-connect-codex')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in with ChatGPT' })).toBeInTheDocument();
 
-    // OpenCode → the real provider picker (Local / Gateway / Direct).
-    expect(screen.getByTestId('opencode-provider-picker')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Local' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Gateway' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Direct' })).toBeInTheDocument();
+    // OpenCode → the real power-source picker (cloud / local / own key).
+    expect(screen.getByTestId('opencode-power-sources')).toBeInTheDocument();
+    expect(screen.getByTestId('power-source-cloud')).toBeInTheDocument();
+    expect(screen.getByTestId('power-source-local')).toBeInTheDocument();
+    expect(screen.getByTestId('power-source-direct')).toBeInTheDocument();
   });
 
   it('offers a recheck after connecting', async () => {

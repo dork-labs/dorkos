@@ -2715,6 +2715,50 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "audio"
+                ]
+              },
+              "src": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "src"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "video"
+                ]
+              },
+              "src": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "src"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
                   "csv"
                 ]
               },
@@ -3130,6 +3174,8 @@
                   "mcp_app",
                   "file",
                   "model3d",
+                  "audio",
+                  "video",
                   "csv",
                   "browser",
                   "diff",
