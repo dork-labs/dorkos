@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -111,7 +111,7 @@ function renderStep(options: {
 }
 
 describe('SystemRequirementsStep', () => {
-  it('one runtime ready: shows Get started and fires onContinue', async () => {
+  it('one runtime ready: shows Meet DorkBot and fires onContinue', async () => {
     const onContinue = vi.fn();
     renderStep({
       requirements: { runtimes: { 'claude-code': CLAUDE_READY, codex: CODEX_LOGIN } },
@@ -119,7 +119,7 @@ describe('SystemRequirementsStep', () => {
     });
 
     const cta = await screen.findByTestId('onboarding-get-started');
-    expect(cta).toHaveTextContent('Get started');
+    expect(cta).toHaveTextContent('Meet DorkBot');
     expect(screen.getByRole('heading')).toHaveTextContent("You're ready");
     expect(screen.getByText('Claude Code is connected.')).toBeInTheDocument();
 
@@ -207,13 +207,19 @@ describe('SystemRequirementsStep', () => {
     await waitFor(() => expect(transport.checkRequirements).toHaveBeenCalledTimes(2));
   });
 
-  it('install card shows transparency fine print naming the exact command', async () => {
+  it('install card leads with reassurance and reveals the exact command on tap', async () => {
     renderStep({
       requirements: { runtimes: { opencode: OPENCODE_INSTALL } },
     });
 
     await screen.findByRole('button', { name: 'Install OpenCode' });
-    expect(screen.getByText('npm i -g opencode-ai')).toBeInTheDocument();
-    expect(screen.getAllByText(/on this machine/).length).toBeGreaterThanOrEqual(1);
+    const section = within(screen.getByTestId('runtime-section-opencode'));
+    // The friendly line is always visible; the raw command is not shown yet.
+    expect(section.getByText(/We'll install OpenCode for you\./)).toBeInTheDocument();
+    expect(section.queryByText('npm i -g opencode-ai')).not.toBeInTheDocument();
+
+    // Transparency is one tap away — reveal the exact command.
+    await userEvent.click(section.getByRole('button', { name: 'What runs?' }));
+    expect(await section.findByText('npm i -g opencode-ai')).toBeInTheDocument();
   });
 });

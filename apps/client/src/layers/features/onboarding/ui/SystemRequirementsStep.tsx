@@ -61,7 +61,8 @@ interface SystemRequirementsStepProps {
  * getting every runtime connected. Three outcomes after the scan:
  *
  * - **Ready** — at least one runtime is connected: a success moment with a
- *   single "Get started" CTA, and a quiet disclosure to add the others.
+ *   single "Meet DorkBot" CTA into the conversation, and a quiet disclosure to
+ *   add the others.
  * - **Connect** — nothing is ready yet: connect cards (Claude first) that do the
  *   setup, flipping to the Ready state the instant one succeeds.
  * - **Error** — the check could not reach the server: an honest, retryable note.
@@ -219,8 +220,8 @@ export function SystemRequirementsStep({
 // ── Ready state ──────────────────────────────────────────────
 
 /**
- * The success moment: one primary CTA, plus a quiet disclosure to connect any
- * remaining runtimes without leaving onboarding.
+ * The success moment: one primary CTA into the DorkBot conversation, plus a
+ * quiet disclosure to connect any remaining runtimes without leaving onboarding.
  */
 function ReadyView({
   onContinue,
@@ -258,7 +259,7 @@ function ReadyView({
         autoFocus
         data-testid="onboarding-get-started"
       >
-        Get started
+        Meet DorkBot
       </HoverBorderGradient>
 
       {moreCount > 0 && (

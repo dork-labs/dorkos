@@ -9,7 +9,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/layers/shared/ui/alert-dialog';
-import { Input } from '@/layers/shared/ui';
+import { InlineCode, Input } from '@/layers/shared/ui';
 import { useDeleteAgentData } from '@/layers/entities/mesh';
 import { toast } from 'sonner';
 
@@ -66,18 +66,18 @@ export function DeleteAgentDialog({
           <AlertDialogDescription asChild>
             <div>
               <p>
-                This will permanently delete the <code>.dork</code> directory at{' '}
-                <code>{projectPath}/.dork/</code>, including:
+                This will permanently delete the <InlineCode>.dork</InlineCode> directory at{' '}
+                <InlineCode>{projectPath}/.dork/</InlineCode>, including:
               </p>
               <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
                 <li>
-                  <code>agent.json</code> &mdash; agent manifest
+                  <InlineCode>agent.json</InlineCode> - agent manifest
                 </li>
                 <li>
-                  <code>SOUL.md</code> &mdash; personality convention
+                  <InlineCode>SOUL.md</InlineCode> - personality convention
                 </li>
                 <li>
-                  <code>NOPE.md</code> &mdash; restriction convention
+                  <InlineCode>NOPE.md</InlineCode> - restriction convention
                 </li>
                 <li>Any other convention files</li>
               </ul>

@@ -46,6 +46,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Buttons',
     keywords: ['keyboard', 'shortcut', 'key', 'hotkey', 'hint'],
   },
+  {
+    id: 'inlinecode',
+    title: 'InlineCode',
+    page: 'components',
+    category: 'Buttons',
+    keywords: ['code', 'command', 'mono', 'monospace', 'snippet', 'path'],
+  },
   // FeedbackShowcases
   {
     id: 'skeleton',

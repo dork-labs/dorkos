@@ -95,6 +95,7 @@ export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
 export { HoverBorderGradient } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
+export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';
 export { PasswordInput } from './password-input';

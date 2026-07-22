@@ -1,10 +1,10 @@
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { Button, Badge, HoverBorderGradient, Kbd } from '@/layers/shared/ui';
+import { Button, Badge, HoverBorderGradient, InlineCode, Kbd } from '@/layers/shared/ui';
 import { Settings } from 'lucide-react';
 
-/** Button, Badge, HoverBorderGradient, and Kbd component showcases. */
+/** Button, Badge, HoverBorderGradient, Kbd, and InlineCode component showcases. */
 export function ButtonShowcases() {
   return (
     <>
@@ -100,6 +100,24 @@ export function ButtonShowcases() {
               </Kbd>{' '}
               + <Kbd>P</Kbd>
             </span>
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="InlineCode"
+        description="A command, path, or field name mentioned mid-sentence."
+      >
+        <ShowcaseDemo>
+          <div className="max-w-sm space-y-2 text-sm">
+            <p>
+              Run <InlineCode>dorkos start</InlineCode> to launch the cockpit.
+            </p>
+            <p>
+              Config lives at <InlineCode>~/.dork/config.json</InlineCode>, and a very long token
+              like <InlineCode>npm i -g some-really-long-package-name-that-must-wrap</InlineCode>{' '}
+              breaks mid-token instead of overflowing.
+            </p>
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>
