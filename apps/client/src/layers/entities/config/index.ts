@@ -10,7 +10,7 @@
 export { configKeys } from './api/query-keys';
 export { useConfig } from './model/use-config';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';
-export type { DefaultAgentSession } from './model/use-default-agent-session';
+export type { DefaultAgentSession, DefaultAgentIdentity } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
 export { TelemetryPayloadBlock } from './ui/TelemetryPayloadBlock';
 export { TelemetryPayloadDisclosure } from './ui/TelemetryPayloadDisclosure';

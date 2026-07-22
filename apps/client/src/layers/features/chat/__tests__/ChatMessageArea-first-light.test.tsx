@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRef } from 'react';
 import { render, screen, cleanup, within } from '@testing-library/react';
 
-import { useAgentBirthStore } from '@/layers/shared/model';
+import { useAgentBirthStore, type AgentBirthRecord } from '@/layers/shared/model';
 import { ChatMessageArea } from '../ui/ChatMessageArea';
 import type { MessageListHandle } from '../ui/MessageList';
 import type { ChatMessage } from '../model/chat-types';
@@ -59,7 +59,7 @@ function props(sessionId: string, overrides?: { messages?: ChatMessage[]; hydrat
 }
 
 /** Register a birth and mark its kickoff fired (the in-flight opening turn). */
-function registerFired(sessionId: string, record = RECORD) {
+function registerFired(sessionId: string, record: Omit<AgentBirthRecord, 'fired'> = RECORD) {
   useAgentBirthStore.getState().register(sessionId, record);
   useAgentBirthStore.getState().markFired(sessionId);
 }
@@ -113,6 +113,15 @@ describe('ChatMessageArea — first light (newborn waking state, M4)', () => {
     render(<ChatMessageArea {...props('ordinary')} />);
     expect(screen.getByText('Start a conversation')).toBeInTheDocument();
     expect(screen.queryByTestId('first-light')).toBeNull();
+  });
+
+  it('never shows first light for a first-message handoff (not a birth)', () => {
+    // A first-message record carries the user's own words into an existing
+    // agent's session — no newborn "waking up" ceremony (ADR 260722-111316).
+    registerFired('s1', { ...RECORD, kind: 'first-message' });
+    render(<ChatMessageArea {...props('s1')} />);
+    expect(screen.queryByTestId('first-light')).toBeNull();
+    expect(screen.getByText('Start a conversation')).toBeInTheDocument();
   });
 
   it('does not claim "waking up" on an unhydrated revisit (empty but snapshot not yet landed)', () => {

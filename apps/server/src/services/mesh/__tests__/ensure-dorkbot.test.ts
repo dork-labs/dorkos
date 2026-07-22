@@ -40,6 +40,7 @@ describe('ensureDorkBot', () => {
     const manifest = await readManifest(dorkbotDir);
     expect(manifest).not.toBeNull();
     expect(manifest!.name).toBe('dorkbot');
+    expect(manifest!.displayName).toBe('DorkBot');
     expect(manifest!.isSystem).toBe(true);
     expect(manifest!.namespace).toBe('system');
     expect(manifest!.capabilities).toEqual(['tasks', 'summaries']);
@@ -98,14 +99,55 @@ describe('ensureDorkBot', () => {
     expect(manifest!.isSystem).toBe(true);
     expect(manifest!.namespace).toBe('system');
     expect(manifest!.capabilities).toEqual(['tasks', 'summaries']);
+    // Backfills the display name during the upgrade
+    expect(manifest!.displayName).toBe('DorkBot');
     // Preserves existing fields
     expect(manifest!.id).toBe('existing-id');
     expect(manifest!.traits.verbosity).toBe(4);
     expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
   });
 
-  it('does not rewrite the manifest but still syncs when DorkBot is already a system agent', async () => {
-    // Pre-create a correctly configured DorkBot
+  it('backfills the display name on an existing system agent that lacks one', async () => {
+    // Pre-create a system-agent DorkBot from before display names existed.
+    const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
+    const dorkDir = path.join(dorkbotDir, '.dork');
+    await fs.mkdir(dorkDir, { recursive: true });
+
+    const manifest: AgentManifest = {
+      id: 'no-name-id',
+      name: 'dorkbot',
+      description: 'System agent without a display name',
+      runtime: 'claude-code',
+      capabilities: ['tasks', 'summaries'],
+      behavior: { responseMode: 'always' },
+      traits: { ...DEFAULT_TRAITS, verbosity: 2 },
+      conventions: { soul: true, nope: true, dorkosKnowledge: true },
+      registeredAt: '2026-01-01T00:00:00.000Z',
+      registeredBy: 'dorkos-system',
+      personaEnabled: true,
+      isSystem: true,
+      namespace: 'system',
+      enabledToolGroups: {},
+    };
+    await fs.writeFile(
+      path.join(dorkDir, 'agent.json'),
+      JSON.stringify(manifest, null, 2),
+      'utf-8'
+    );
+
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const patched = await readManifest(dorkbotDir);
+    expect(patched!.displayName).toBe('DorkBot');
+    // Everything else is preserved.
+    expect(patched!.id).toBe('no-name-id');
+    expect(patched!.traits.verbosity).toBe(2);
+    expect(patched!.capabilities).toEqual(['tasks', 'summaries']);
+    expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
+  });
+
+  it('leaves a custom display name untouched and still syncs', async () => {
+    // Pre-create a correctly configured DorkBot with a user-chosen display name.
     const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
     const dorkDir = path.join(dorkbotDir, '.dork');
     await fs.mkdir(dorkDir, { recursive: true });
@@ -113,6 +155,7 @@ describe('ensureDorkBot', () => {
     const manifest: AgentManifest = {
       id: 'correct-id',
       name: 'dorkbot',
+      displayName: 'My Helper',
       description: 'Already a system agent',
       runtime: 'claude-code',
       capabilities: ['tasks', 'summaries'],
@@ -134,7 +177,7 @@ describe('ensureDorkBot', () => {
 
     await ensureDorkBot(meshCore, tmpDir);
 
-    // Manifest untouched (no upgrade), but sync still runs so RelayBridge
+    // Manifest untouched (no rewrite), but sync still runs so RelayBridge
     // re-asserts default access rules (system-agent cross-namespace allow)
     // on every boot for existing installs.
     const raw = await fs.readFile(path.join(dorkDir, 'agent.json'), 'utf-8');

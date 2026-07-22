@@ -75,8 +75,15 @@ export function ChatMessageArea({
   // genuinely in flight, so this is honest. Gated on `hydrated` so a session
   // revisited before its snapshot lands never falsely claims "waking up" — it
   // falls back to the neutral loading/empty treatment until emptiness is real.
+  // A `first-message` record is not a birth (ADR 260722-111316) — it carries the
+  // user's own words into an existing agent's session, so it never shows the
+  // newborn "waking up" ceremony.
   const firstLightRecord =
-    birthRecord && birthRecord.fired && !birthRecord.greetingFailed && hydrated
+    birthRecord &&
+    birthRecord.kind !== 'first-message' &&
+    birthRecord.fired &&
+    !birthRecord.greetingFailed &&
+    hydrated
       ? birthRecord
       : null;
 

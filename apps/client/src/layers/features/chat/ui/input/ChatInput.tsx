@@ -52,6 +52,15 @@ interface ChatInputProps {
   onQueueNavigateDown?: () => void;
   /** Whether the queue has items (enables arrow key navigation). */
   queueHasItems?: boolean;
+  /**
+   * Whether the message can be sent. When `false`, BOTH submit paths are
+   * disabled — the send button reads disabled and the Enter key does not submit
+   * — while the input stays typeable. Used when the send target is not ready yet
+   * (e.g. the default agent's path has not resolved from the registry). Defaults
+   * to `true`. Streaming still queues and queue-item edits still save; this gates
+   * only the send action.
+   */
+  canSubmit?: boolean;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
@@ -82,6 +91,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onQueueNavigateUp,
     onQueueNavigateDown,
     queueHasItems = false,
+    canSubmit = true,
   },
   ref
 ) {
@@ -111,6 +121,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     isStreaming,
     isMobile,
     sessionBusy,
+    canSubmit,
     editingQueueItem,
     isPaletteOpen,
     queueHasItems,
@@ -246,6 +257,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           isStreaming={isStreaming}
           isUploading={isUploading}
           sessionBusy={sessionBusy}
+          submitDisabled={!canSubmit}
           editingQueueItem={editingQueueItem}
           queueDepth={queueDepth}
           isMobile={isMobile}

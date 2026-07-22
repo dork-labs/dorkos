@@ -9,6 +9,8 @@ interface InputActionButtonProps {
   isStreaming: boolean;
   isUploading: boolean;
   sessionBusy: boolean;
+  /** When true, the send action reads disabled and does nothing (target not ready). */
+  submitDisabled?: boolean;
   editingQueueItem: boolean;
   queueDepth: number;
   isMobile: boolean;
@@ -58,12 +60,37 @@ function resolveButtonState(
   return null;
 }
 
+/** The click handler for the current button state, or `undefined` when none applies. */
+function resolveOnClick(
+  state: ButtonState,
+  handlers: {
+    onSubmit: () => void;
+    onStop?: () => void;
+    onQueue?: () => void;
+    onSaveEdit?: () => void;
+  }
+): (() => void) | undefined {
+  switch (state) {
+    case 'send':
+      return handlers.onSubmit;
+    case 'stop':
+      return handlers.onStop;
+    case 'queue':
+      return handlers.onQueue;
+    case 'update':
+      return handlers.onSaveEdit;
+    default:
+      return undefined;
+  }
+}
+
 /** Action button + dedicated stop button for the chat input. */
 export function InputActionButton({
   hasText,
   isStreaming,
   isUploading,
   sessionBusy,
+  submitDisabled = false,
   editingQueueItem,
   queueDepth,
   isMobile,
@@ -75,16 +102,13 @@ export function InputActionButton({
   const buttonState = resolveButtonState(hasText, isStreaming, isUploading, editingQueueItem);
   const SendIcon = isMobile ? ArrowUp : CornerDownLeft;
 
+  // The send action is blocked while the session is busy or the target is not
+  // ready yet; other actions are never blocked here.
+  const sendBlocked = buttonState === 'send' && (sessionBusy || submitDisabled);
   const onClick =
-    buttonState === 'send'
-      ? onSubmit
-      : buttonState === 'stop'
-        ? onStop
-        : buttonState === 'queue'
-          ? onQueue
-          : buttonState === 'update'
-            ? onSaveEdit
-            : undefined;
+    sendBlocked || buttonState === null
+      ? undefined
+      : resolveOnClick(buttonState, { onSubmit, onStop, onQueue, onSaveEdit });
 
   return (
     <>
@@ -112,14 +136,14 @@ export function InputActionButton({
           <motion.button
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.15 }}
-            whileHover={!sessionBusy ? { scale: 1.1 } : undefined}
-            whileTap={!sessionBusy ? { scale: 0.9 } : undefined}
+            whileHover={!sendBlocked ? { scale: 1.1 } : undefined}
+            whileTap={!sendBlocked ? { scale: 0.9 } : undefined}
             onClick={onClick}
-            disabled={buttonState === 'send' && sessionBusy}
+            disabled={sendBlocked}
             className={cn(
               'shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2',
               BUTTON_CONFIG[buttonState].className,
-              buttonState === 'send' && sessionBusy && 'pointer-events-none opacity-50'
+              sendBlocked && 'pointer-events-none opacity-50'
             )}
             aria-label={BUTTON_CONFIG[buttonState].label}
           >

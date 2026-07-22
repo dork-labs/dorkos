@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { useSubsystemStatus } from '../model/use-subsystem-status';
 import { useSessionActivity } from '../model/use-session-activity';
+import { tasksOutcome, relayOutcome, meshOutcome, activityOutcome } from '../lib/subsystem-copy';
 import { SubsystemCard } from './SubsystemCard';
 import { ActivitySparkline } from './ActivitySparkline';
 import { useNavigate } from '@tanstack/react-router';
@@ -34,9 +35,7 @@ export function SystemStatusRow() {
 
   const total = activityData.reduce((sum, d) => sum + d, 0);
 
-  const tasksSecondary = status.tasks.nextRunIn ? `Next: ${status.tasks.nextRunIn}` : undefined;
-  const relaySecondary =
-    status.relay.connectedNames.length > 0 ? status.relay.connectedNames.join(' · ') : undefined;
+  const tasksDetail = status.tasks.nextRunIn ? `Next run in ${status.tasks.nextRunIn}` : undefined;
 
   return (
     <motion.section {...sectionEntrance}>
@@ -51,9 +50,9 @@ export function SystemStatusRow() {
       >
         <motion.div variants={staggerItem}>
           <SubsystemCard
-            title="Tasks"
-            primaryMetric={`${status.tasks.scheduleCount} schedule${status.tasks.scheduleCount !== 1 ? 's' : ''}`}
-            secondaryInfo={tasksSecondary}
+            caption="Tasks"
+            outcome={tasksOutcome(status.tasks.scheduleCount)}
+            detail={tasksDetail}
             exception={
               status.tasks.failedRunCount > 0
                 ? { count: status.tasks.failedRunCount, label: 'failed today', severity: 'error' }
@@ -65,9 +64,8 @@ export function SystemStatusRow() {
         </motion.div>
         <motion.div variants={staggerItem}>
           <SubsystemCard
-            title="Relay"
-            primaryMetric={`${status.relay.adapterCount} adapter${status.relay.adapterCount !== 1 ? 's' : ''}`}
-            secondaryInfo={relaySecondary}
+            caption="Relay"
+            outcome={relayOutcome(status.relay.connectedNames)}
             exception={
               status.relay.deadLetterCount > 0
                 ? {
@@ -83,8 +81,8 @@ export function SystemStatusRow() {
         </motion.div>
         <motion.div variants={staggerItem}>
           <SubsystemCard
-            title="Mesh"
-            primaryMetric={`${status.mesh.totalAgents} agent${status.mesh.totalAgents !== 1 ? 's' : ''}`}
+            caption="Mesh"
+            outcome={meshOutcome(status.mesh.totalAgents)}
             exception={
               status.mesh.offlineCount > 0
                 ? { count: status.mesh.offlineCount, label: 'offline', severity: 'error' }
@@ -101,8 +99,10 @@ export function SystemStatusRow() {
             onClick={() => {}}
             aria-label="Session activity this week"
           >
-            <p className="text-foreground text-sm font-medium">Activity</p>
-            <p className="text-muted-foreground mt-1 text-xs">{total} this week</p>
+            <p className="text-muted-foreground text-[0.65rem] font-medium tracking-widest uppercase">
+              Activity
+            </p>
+            <p className="text-foreground mt-1 text-sm font-medium">{activityOutcome(total)}</p>
             <ActivitySparkline data={activityData} className="mt-2 h-8 w-full" />
           </button>
         </motion.div>
