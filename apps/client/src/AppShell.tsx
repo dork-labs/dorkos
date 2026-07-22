@@ -285,10 +285,26 @@ export function AppShell() {
     dismiss: dismissOnboarding,
   } = useOnboarding();
 
+  // The session flag hides the overlay immediately on finish/skip, ahead of the
+  // authoritative `completedAt`/`dismissedAt` config write catching up. The
+  // latch keeps the overlay mounted once shown so the `completedAt` write (made
+  // mid-conversation, when the handoff beat is reached) can't unmount it before
+  // the user's first message dissolves it — only the session flag closes it.
+  const showOnboarding = useOnboardingOverlayVisible({
+    shouldShowOnboarding,
+    onboardingHiddenForSession,
+  });
+
   // Keep the `?onboarding=` stage param honest: once onboarding is finished or
-  // dismissed, strip a lingering stage param (left by finishing, or deep-linked
-  // by a returning user) so the URL stays clean and the overlay never re-opens.
-  useClearOnboardingStageWhenDone(isOnboardingComplete || isOnboardingDismissed);
+  // dismissed AND the overlay has actually closed, strip a lingering stage param
+  // (left by finishing, or deep-linked by a returning user) so the URL stays
+  // clean. The overlay gate matters because the conversation writes `completedAt`
+  // mid-flow — stripping while it is still latched open would rewind the derived
+  // stage to `welcome` and destroy the in-progress conversation.
+  useClearOnboardingStageWhenDone({
+    done: isOnboardingComplete || isOnboardingDismissed,
+    overlayVisible: showOnboarding,
+  });
 
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
@@ -298,15 +314,6 @@ export function AppShell() {
     const timer = setTimeout(() => setLoadingTimedOut(true), 3000);
     return () => clearTimeout(timer);
   }, [isOnboardingLoading]);
-  // The session flag hides the overlay immediately on finish/skip, ahead of the
-  // authoritative `completedAt`/`dismissedAt` config write catching up. The
-  // latch keeps the overlay mounted once shown so the `completedAt` write (made
-  // when the finish screen is reached) can't unmount it before the user clicks
-  // the finish CTA — only the session flag closes it.
-  const showOnboarding = useOnboardingOverlayVisible({
-    shouldShowOnboarding,
-    onboardingHiddenForSession,
-  });
   const handleOnboardingComplete = useCallback(
     () => setOnboardingHiddenForSession(true),
     [setOnboardingHiddenForSession]
