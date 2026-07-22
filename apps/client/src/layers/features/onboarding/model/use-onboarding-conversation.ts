@@ -22,7 +22,6 @@ import {
   buildScriptMessage,
   computeGrouping,
   getBeat,
-  voiceSampleFor,
   type BeatId,
 } from './onboarding-script';
 
@@ -57,7 +56,6 @@ interface ConversationState {
   queue: ChatMessage[];
   isTyping: boolean;
   idCounter: number;
-  sampleId: string | null;
   saving: boolean;
   saveError: boolean;
   discoveryPhase: DiscoveryPhase;
@@ -68,7 +66,6 @@ type Action =
   | { type: 'reveal-one' }
   | { type: 'drain' }
   | { type: 'start-typing' }
-  | { type: 'set-sample'; text: string }
   | { type: 'saving' }
   | { type: 'save-error' }
   | { type: 'goto-beat'; beatId: BeatId; extraLines: readonly string[] }
@@ -82,7 +79,6 @@ const INITIAL_STATE: ConversationState = {
   queue: [],
   isTyping: false,
   idCounter: 0,
-  sampleId: null,
   saving: false,
   saveError: false,
   discoveryPhase: 'unasked',
@@ -128,23 +124,6 @@ export function conversationReducer(state: ConversationState, action: Action): C
       if (state.queue.length === 0) return state;
       return { ...state, isTyping: true };
     }
-    case 'set-sample': {
-      if (state.sampleId) {
-        return {
-          ...state,
-          revealed: state.revealed.map((m) =>
-            m.id === state.sampleId ? buildScriptMessage(m.id, 'assistant', action.text) : m
-          ),
-        };
-      }
-      const id = `ob-sample-${state.idCounter}`;
-      return {
-        ...state,
-        revealed: [...state.revealed, buildScriptMessage(id, 'assistant', action.text)],
-        sampleId: id,
-        idCounter: state.idCounter + 1,
-      };
-    }
     case 'saving':
       return { ...state, saving: true, saveError: false };
     case 'save-error':
@@ -186,8 +165,6 @@ export interface OnboardingConversation {
   beginConversation: () => void;
   /** Reveal every pending line at once (tap-to-skip). */
   fastForward: () => void;
-  /** Post a fresh voice sample in the newly chosen personality (by preset id, or a Custom blend). */
-  selectPersonality: (traits: Traits, presetId?: string) => void;
   /** Save the chosen traits and advance; surfaces `saveError` on failure. */
   confirmPersonality: (traits: Traits) => void;
   /** Consent to the discovery scan (the caller starts the actual scan). */
@@ -260,10 +237,6 @@ export function useOnboardingConversation(
   const beginConversation = useCallback(() => dispatch({ type: 'begin' }), []);
   const fastForward = useCallback(() => dispatch({ type: 'drain' }), []);
 
-  const selectPersonality = useCallback((traits: Traits, presetId?: string) => {
-    dispatch({ type: 'set-sample', text: voiceSampleFor(traits, presetId) });
-  }, []);
-
   const confirmPersonality = useCallback((traits: Traits) => {
     dispatch({ type: 'saving' });
     portsRef.current
@@ -335,7 +308,6 @@ export function useOnboardingConversation(
     saveError: state.saveError,
     beginConversation,
     fastForward,
-    selectPersonality,
     confirmPersonality,
     consentDiscovery,
     declineDiscovery,

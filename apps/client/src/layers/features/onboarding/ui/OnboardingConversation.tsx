@@ -20,7 +20,7 @@ import { useAgentBirthStore, useAppStore, type AgentBirthRecord } from '@/layers
 import { fireCelebration } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { MessageItem, TypingDots, ChatInput, FirstLight } from '@/layers/features/chat';
-import { PersonalityPicker, findMatchingPreset } from '@/layers/features/agent-hub';
+import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { useUpdateAgent } from '@/layers/entities/agent';
 import { useOnboarding } from '../model/use-onboarding';
@@ -29,6 +29,7 @@ import {
   type OnboardingConversationPorts,
 } from '../model/use-onboarding-conversation';
 import { ConversationDiscoveryBeat } from './ConversationDiscoveryBeat';
+import { OnboardingWidgetCard } from './OnboardingWidgetCard';
 
 /** How long the first-light arrival lingers before DorkBot speaks (ms). */
 const FIRST_LIGHT_MS = 1500;
@@ -107,16 +108,6 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth' });
   }, [convo.messages.length, convo.isTyping, convo.activeWidget, reducedMotion]);
-
-  const handlePersonalityChange = useCallback(
-    (next: Traits) => {
-      setTraits(next);
-      // Pass the selected preset's id so each named preset posts its own sample
-      // line (adjacent presets never collide); a Custom blend has no id.
-      convo.selectPersonality(next, findMatchingPreset(next)?.id);
-    },
-    [convo]
-  );
 
   const handleSubmitFirstMessage = useCallback(() => {
     const text = composerValue.trim();
@@ -219,48 +210,55 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
           )}
         </div>
 
-        {/* Inline widgets, revealed once the beat's lines have landed. */}
+        {/* Inline widgets, revealed once the beat's lines have landed. Each sits
+            in a card so it reads as an interactive control, not more chat text. */}
         {convo.activeWidget === 'personality' && (
-          <div className="mt-3 flex flex-col items-stretch gap-3 px-1">
-            <PersonalityPicker
-              traits={traits}
-              onTraitsChange={handlePersonalityChange}
-              compact
-              sampleLabel="How DorkBot will talk"
-            />
-            {convo.saveError && (
-              <p
-                className="text-destructive text-sm"
-                role="alert"
-                data-testid="personality-save-error"
-              >
-                {DORKBOT_ONBOARDING_LINES.saveError}
-              </p>
-            )}
-            <div className="flex justify-start">
-              <Button
-                size="sm"
-                onClick={() => convo.confirmPersonality(traits)}
-                disabled={convo.saving}
-                data-testid="confirm-personality"
-              >
-                {confirmLabel}
-              </Button>
-            </div>
+          <div className="mt-3 px-1">
+            <OnboardingWidgetCard>
+              <div className="flex flex-col items-stretch gap-3">
+                <PersonalityPicker
+                  traits={traits}
+                  onTraitsChange={setTraits}
+                  layout="stacked"
+                  sampleLabel="How DorkBot talks"
+                />
+                {convo.saveError && (
+                  <p
+                    className="text-destructive text-sm"
+                    role="alert"
+                    data-testid="personality-save-error"
+                  >
+                    {DORKBOT_ONBOARDING_LINES.saveError}
+                  </p>
+                )}
+                <div className="flex justify-center">
+                  <Button
+                    size="sm"
+                    onClick={() => convo.confirmPersonality(traits)}
+                    disabled={convo.saving}
+                    data-testid="confirm-personality"
+                  >
+                    {confirmLabel}
+                  </Button>
+                </div>
+              </div>
+            </OnboardingWidgetCard>
           </div>
         )}
 
         {convo.activeWidget === 'discovery' && (
           <div className="mt-3 px-1">
-            <ConversationDiscoveryBeat
-              phase={convo.discoveryPhase}
-              onConsent={convo.consentDiscovery}
-              onDecline={convo.declineDiscovery}
-              onResults={convo.reportDiscoveryResults}
-              onZero={convo.reportDiscoveryZero}
-              onTimeout={convo.reportDiscoveryTimeout}
-              onDone={convo.finishDiscovery}
-            />
+            <OnboardingWidgetCard>
+              <ConversationDiscoveryBeat
+                phase={convo.discoveryPhase}
+                onConsent={convo.consentDiscovery}
+                onDecline={convo.declineDiscovery}
+                onResults={convo.reportDiscoveryResults}
+                onZero={convo.reportDiscoveryZero}
+                onTimeout={convo.reportDiscoveryTimeout}
+                onDone={convo.finishDiscovery}
+              />
+            </OnboardingWidgetCard>
           </div>
         )}
 

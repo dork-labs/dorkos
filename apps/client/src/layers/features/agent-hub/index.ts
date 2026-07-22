@@ -22,7 +22,7 @@ export {
 
 // UI — shared personality picker
 export { PersonalityPicker } from './ui/PersonalityPicker';
-export type { PersonalityPickerProps } from './ui/PersonalityPicker';
+export type { PersonalityPickerProps, PersonalityPickerLayout } from './ui/PersonalityPicker';
 
 // UI — shell components (three-zone layout)
 export { AgentHub } from './ui/AgentHub';

@@ -7,7 +7,6 @@ import {
   useOnboardingConversation,
   type OnboardingConversationPorts,
 } from '../model/use-onboarding-conversation';
-import { voiceSampleFor } from '../model/onboarding-script';
 
 const TRAITS: Traits = {
   verbosity: 3,
@@ -53,27 +52,6 @@ describe('useOnboardingConversation', () => {
       DORKBOT_ONBOARDING_LINES.personalityPrompt,
     ]);
     expect(result.current.composerEnabled).toBe(false);
-  });
-
-  it('swaps the voice-sample bubble in place as personality changes', async () => {
-    const { result } = renderHook(() => useOnboardingConversation(makePorts()));
-    act(() => result.current.beginConversation());
-    await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
-
-    const balanced = voiceSampleFor(TRAITS);
-    const spicy = voiceSampleFor({ ...TRAITS, spice: 5 });
-
-    act(() => result.current.selectPersonality(TRAITS));
-    await waitFor(() =>
-      expect(result.current.messages.some((m) => m.content === balanced)).toBe(true)
-    );
-
-    act(() => result.current.selectPersonality({ ...TRAITS, spice: 5 }));
-    await waitFor(() =>
-      expect(result.current.messages.some((m) => m.content === spicy)).toBe(true)
-    );
-    // The previous sample was replaced, not appended.
-    expect(result.current.messages.filter((m) => m.content === balanced)).toHaveLength(0);
   });
 
   it('confirming personality saves traits, completes the step, and advances to discovery', async () => {

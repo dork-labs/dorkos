@@ -9,8 +9,7 @@
  *
  * @module features/onboarding/model/onboarding-script
  */
-import { DORKBOT_ONBOARDING_LINES, generateVoiceSample } from '@dorkos/shared/dorkbot-templates';
-import type { Traits } from '@dorkos/shared/mesh-schemas';
+import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import type { ChatMessage, GroupPosition, MessageGrouping } from '@/layers/shared/model';
 
 /** The ordered beats of the onboarding conversation. */
@@ -65,17 +64,6 @@ export function getBeat(id: BeatId): OnboardingBeat {
   const beat = ONBOARDING_BEATS.find((b) => b.id === id);
   if (!beat) throw new Error(`Unknown onboarding beat: ${id}`);
   return beat;
-}
-
-/**
- * DorkBot's one-sentence sample line in the voice of the chosen personality.
- * Delegates to the shared template so the copy lives in one place.
- *
- * @param traits - The personality traits currently selected in the picker.
- * @param presetId - The selected preset's id, when a named preset (not Custom) is picked.
- */
-export function voiceSampleFor(traits: Traits, presetId?: string): string {
-  return generateVoiceSample(traits, presetId);
 }
 
 /**

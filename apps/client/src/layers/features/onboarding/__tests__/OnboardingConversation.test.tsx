@@ -97,7 +97,6 @@ vi.mock('@/layers/features/agent-hub', () => ({
       pick
     </button>
   ),
-  findMatchingPreset: () => ({ id: 'hotshot' }),
 }));
 
 vi.mock('@/layers/shared/lib', async (importActual) => ({
@@ -135,14 +134,11 @@ describe('OnboardingConversation', () => {
     expect(screen.getByText(DORKBOT_ONBOARDING_LINES.composerSetupPlaceholder)).toBeTruthy();
   });
 
-  it('posts a voice sample on personality change and PATCHes traits to the DorkBot manifest', async () => {
+  it('PATCHes the chosen traits to the DorkBot manifest and completes the step', async () => {
     render(<OnboardingConversation onComplete={vi.fn()} />);
     await screen.findByTestId('pick-personality');
 
     fireEvent.click(screen.getByTestId('pick-personality'));
-    // A sample bubble appears (more than just the three scripted lines).
-    await waitFor(() => expect(screen.getAllByTestId('msg').length).toBeGreaterThan(3));
-
     fireEvent.click(screen.getByTestId('confirm-personality'));
     await waitFor(() =>
       expect(mockMutateAsync).toHaveBeenCalledWith({

@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import type { Traits } from '@dorkos/shared/mesh-schemas';
 import type { ChatMessage } from '@/layers/shared/model';
 import {
   BEAT_ORDER,
@@ -7,12 +6,7 @@ import {
   buildScriptMessage,
   computeGrouping,
   getBeat,
-  voiceSampleFor,
 } from '../model/onboarding-script';
-
-function traits(overrides: Partial<Traits> = {}): Traits {
-  return { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3, ...overrides };
-}
 
 function msg(id: string, role: 'user' | 'assistant'): ChatMessage {
   return buildScriptMessage(id, role, 'x');
@@ -51,13 +45,6 @@ describe('onboarding-script', () => {
       parts: [{ type: 'text', text: 'Hello' }],
     });
     expect(typeof m.timestamp).toBe('string');
-  });
-
-  it('produces a non-empty voice sample that varies with traits', () => {
-    const balanced = voiceSampleFor(traits());
-    const spicy = voiceSampleFor(traits({ spice: 5 }));
-    expect(balanced.length).toBeGreaterThan(0);
-    expect(spicy).not.toBe(balanced);
   });
 
   describe('computeGrouping', () => {
