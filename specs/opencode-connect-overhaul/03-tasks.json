@@ -121,6 +121,58 @@
       "dependencies": ["1.4", "2.1"],
       "parallelWith": ["2.3"],
       "issue": "DOR-423"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "PR3 — post-dogfood polish",
+      "subject": "[opencode-connect-overhaul] [P3] Change affordance for a connected OpenCode",
+      "description": "Per spec §9: ready-state setup surface gains a Change affordance reopening the power-source picker with the current source labeled (read from runtimes.opencode.provider via requirements/connect payload — extend the connect payload if the provider id is not yet surfaced). Switching runs the normal connect flow; server is already last-write-wins + sidecar recycle. RTL tests: Change visible when ready, picker reopens with current-source label, switching path reaches connect step.",
+      "activeForm": "Adding the Change affordance",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["3.2"],
+      "issue": "DOR-427"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "PR3 — post-dogfood polish",
+      "subject": "[opencode-connect-overhaul] [P3] Ollama model menu offers only installed tags",
+      "description": "Per spec §10: in projectModelOptions (or a seam above it), intersect the ollama provider catalog with installed tags from Ollama /api/tags; catalog metadata wins on match, installed-but-unknown tags appended as plain options; tags probe failure degrades to current behavior with a comment. Unit tests: intersection, custom-pull passthrough, unreachable fallback, non-ollama providers untouched.",
+      "activeForm": "Filtering ollama options to installed tags",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["3.1"],
+      "issue": "DOR-427"
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "PR3 — post-dogfood polish",
+      "subject": "[opencode-connect-overhaul] [P3] Model menu handles a vanished saved model",
+      "description": "Per spec §11: when the session saved model is absent from options, ModelConfigPopover shows it marked not-available with plain hint copy; never auto-switch. RTL tests incl. small-list and tiered variants.",
+      "activeForm": "Handling vanished saved models",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["3.2"],
+      "parallelWith": [],
+      "issue": "DOR-427"
+    },
+    {
+      "id": "3.4",
+      "phase": 3,
+      "phaseName": "PR3 — post-dogfood polish",
+      "subject": "[opencode-connect-overhaul] [P3] Friendly turn error for unavailable models",
+      "description": "Per spec §11: map the sidecar unknown/unavailable-model turn failure onto the typed turn-error path with plain copy pointing at the model menu; never a raw sidecar error string. Verify the actual error shape OpenCode returns for a missing model (reproduce against the SDK types or sidecar behavior) before mapping. Tests at the event-mapper/turn-error seam.",
+      "activeForm": "Mapping the unavailable-model turn error",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["3.2"],
+      "parallelWith": [],
+      "issue": "DOR-427"
     }
   ]
 }

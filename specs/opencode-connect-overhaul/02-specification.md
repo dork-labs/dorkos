@@ -90,6 +90,22 @@ Per the approved mockup: Ollama status line ("● Ollama is running · N models 
 6. No dead code: gateway ModelPicker, `useOpenRouterModels`, and the openrouter/models route are gone.
 7. `pnpm verify` green; changelog fragment per PR; conformance suite untouched/passing.
 
+## v1.1 addendum — post-dogfood findings (DOR-427, 2026-07-22)
+
+Operator verification confirmed the flow works end-to-end with Ollama, and surfaced two gaps:
+
+### 9. Reconfigure a connected runtime (PR3)
+
+A ready OpenCode has no way to change its power source. Fix: the ready-state setup surface gains a **Change** affordance that reopens the power-source picker with the current source labeled ("Currently: On your computer (Ollama)"). Switching runs the normal connect flow for the new source; the server side already supports it (`persistProviderCredential` is last-write-wins on `runtimes.opencode.provider` and recycles the sidecar). No disconnect/revoke management — switching is selection, stored keys stay.
+
+### 10. Honest local-model availability (PR3)
+
+`projectModelOptions` projects OpenCode's ollama _catalog_ (models.dev), so the menu offers models that aren't installed and a turn against one fails raw. Fix, server-side: for the ollama provider, offer only **installed** tags — intersect the provider's catalog with Ollama `/api/tags` (catalog metadata wins when the tag is known; installed tags missing from the catalog appended as plain options). If the tags probe fails, degrade to today's behavior rather than emptying the menu (comment why). No inline "Get" in the model menu — adding models stays in the local panel (scope B holds).
+
+### 11. Vanished-model edge cases (PR3)
+
+A session's saved model can stop existing (provider switched, model deleted). Client: when the saved model is absent from options, the model menu shows it marked "(not available)" with plain hint copy to pick another; never auto-switch. Server/client: a turn failure caused by an unknown/unavailable model maps to a friendly message pointing at the model menu (ride the typed turn-error path from the runtime-hardening batch), never a raw sidecar error.
+
 ## Risks / notes for implementers
 
 - `deriveRuntimeReadiness` name-matching contract (see §1 constraint).
