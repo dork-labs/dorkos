@@ -37,32 +37,12 @@ export interface PreferencesSlice {
   setAutoHideToolCalls: (v: boolean) => void;
   showShortcutChips: boolean;
   setShowShortcutChips: (v: boolean) => void;
-  showStatusBarCwd: boolean;
-  setShowStatusBarCwd: (v: boolean) => void;
-  showStatusBarPermission: boolean;
-  setShowStatusBarPermission: (v: boolean) => void;
-  showStatusBarRuntime: boolean;
-  setShowStatusBarRuntime: (v: boolean) => void;
-  showStatusBarModel: boolean;
-  setShowStatusBarModel: (v: boolean) => void;
-  showStatusBarContext: boolean;
-  setShowStatusBarContext: (v: boolean) => void;
-  showStatusBarCache: boolean;
-  setShowStatusBarCache: (v: boolean) => void;
-  showStatusBarUsage: boolean;
-  setShowStatusBarUsage: (v: boolean) => void;
-  showStatusBarGit: boolean;
-  setShowStatusBarGit: (v: boolean) => void;
   showTaskCelebrations: boolean;
   setShowTaskCelebrations: (v: boolean) => void;
   enableNotificationSound: boolean;
   setEnableNotificationSound: (v: boolean) => void;
   enableTasksNotifications: boolean;
   setEnableTasksNotifications: (v: boolean) => void;
-  showStatusBarSound: boolean;
-  setShowStatusBarSound: (v: boolean) => void;
-  showStatusBarPolling: boolean;
-  setShowStatusBarPolling: (v: boolean) => void;
   enableMessagePolling: boolean;
   setEnableMessagePolling: (v: boolean) => void;
 
@@ -108,55 +88,6 @@ export const createPreferencesSlice: StateCreator<
     writeBool(BOOL_KEYS.showShortcutChips, v);
     set({ showShortcutChips: v });
   },
-  showStatusBarCwd: readBool(BOOL_KEYS.showStatusBarCwd, BOOL_DEFAULTS.showStatusBarCwd),
-  setShowStatusBarCwd: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarCwd, v);
-    set({ showStatusBarCwd: v });
-  },
-  showStatusBarPermission: readBool(
-    BOOL_KEYS.showStatusBarPermission,
-    BOOL_DEFAULTS.showStatusBarPermission
-  ),
-  setShowStatusBarPermission: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarPermission, v);
-    set({ showStatusBarPermission: v });
-  },
-  showStatusBarRuntime: readBool(
-    BOOL_KEYS.showStatusBarRuntime,
-    BOOL_DEFAULTS.showStatusBarRuntime
-  ),
-  setShowStatusBarRuntime: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarRuntime, v);
-    set({ showStatusBarRuntime: v });
-  },
-  showStatusBarModel: readBool(BOOL_KEYS.showStatusBarModel, BOOL_DEFAULTS.showStatusBarModel),
-  setShowStatusBarModel: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarModel, v);
-    set({ showStatusBarModel: v });
-  },
-  showStatusBarContext: readBool(
-    BOOL_KEYS.showStatusBarContext,
-    BOOL_DEFAULTS.showStatusBarContext
-  ),
-  setShowStatusBarContext: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarContext, v);
-    set({ showStatusBarContext: v });
-  },
-  showStatusBarCache: readBool(BOOL_KEYS.showStatusBarCache, BOOL_DEFAULTS.showStatusBarCache),
-  setShowStatusBarCache: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarCache, v);
-    set({ showStatusBarCache: v });
-  },
-  showStatusBarUsage: readBool(BOOL_KEYS.showStatusBarUsage, BOOL_DEFAULTS.showStatusBarUsage),
-  setShowStatusBarUsage: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarUsage, v);
-    set({ showStatusBarUsage: v });
-  },
-  showStatusBarGit: readBool(BOOL_KEYS.showStatusBarGit, BOOL_DEFAULTS.showStatusBarGit),
-  setShowStatusBarGit: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarGit, v);
-    set({ showStatusBarGit: v });
-  },
   showTaskCelebrations: readBool(
     BOOL_KEYS.showTaskCelebrations,
     BOOL_DEFAULTS.showTaskCelebrations
@@ -180,19 +111,6 @@ export const createPreferencesSlice: StateCreator<
   setEnableTasksNotifications: (v) => {
     writeBool(BOOL_KEYS.enableTasksNotifications, v);
     set({ enableTasksNotifications: v });
-  },
-  showStatusBarSound: readBool(BOOL_KEYS.showStatusBarSound, BOOL_DEFAULTS.showStatusBarSound),
-  setShowStatusBarSound: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarSound, v);
-    set({ showStatusBarSound: v });
-  },
-  showStatusBarPolling: readBool(
-    BOOL_KEYS.showStatusBarPolling,
-    BOOL_DEFAULTS.showStatusBarPolling
-  ),
-  setShowStatusBarPolling: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarPolling, v);
-    set({ showStatusBarPolling: v });
   },
   enableMessagePolling: readBool(
     BOOL_KEYS.enableMessagePolling,

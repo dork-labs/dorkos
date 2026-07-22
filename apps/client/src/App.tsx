@@ -8,6 +8,7 @@ import {
 } from '@/layers/shared/model';
 import { getAgentDisplayName, isMac } from '@/layers/shared/lib';
 import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
+import { useStatusBarLegacyMigration } from '@/layers/entities/config';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
@@ -81,6 +82,10 @@ export function App({ transformContent }: AppProps) {
   });
 
   useShortcutsPanel();
+  // One-time lift of the status-bar visibility toggles from this device's legacy
+  // localStorage into server config (`ui.statusBar`, DOR-431), then delete the
+  // old keys. A no-op once migrated or when nothing was ever toggled.
+  useStatusBarLegacyMigration();
   // The embed now mounts the right-panel Inspector, so its shortcut hooks earn
   // their keep: Cmd+. toggles the panel and Cmd+Shift+A opens Agent Profile.
   useRightPanelShortcut();

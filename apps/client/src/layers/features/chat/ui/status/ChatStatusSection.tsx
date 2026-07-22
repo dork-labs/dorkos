@@ -45,7 +45,8 @@ import {
   useGitStatus,
   StatusBarConfigurePopover,
   STATUS_BAR_REGISTRY,
-  resetStatusBarPreferences,
+  useStatusBarPrefs,
+  useUpdateStatusBarPrefs,
 } from '@/layers/features/status';
 import {
   ContextMenu,
@@ -83,10 +84,18 @@ interface ItemContextMenuProps {
   onHide: (() => void) | null;
   /** Callback to open the configure popover. */
   onConfigure: () => void;
+  /** Callback to reset all status-bar items to their defaults. */
+  onReset: () => void;
   children: React.ReactNode;
 }
 
-function ItemContextMenu({ itemLabel, onHide, onConfigure, children }: ItemContextMenuProps) {
+function ItemContextMenu({
+  itemLabel,
+  onHide,
+  onConfigure,
+  onReset,
+  children,
+}: ItemContextMenuProps) {
   return (
     <ContextMenu>
       <ContextMenuTrigger className="inline-flex items-center">{children}</ContextMenuTrigger>
@@ -98,7 +107,7 @@ function ItemContextMenu({ itemLabel, onHide, onConfigure, children }: ItemConte
           </>
         )}
         <ContextMenuItem onClick={onConfigure}>Configure status bar...</ContextMenuItem>
-        <ContextMenuItem onClick={resetStatusBarPreferences}>Reset to defaults</ContextMenuItem>
+        <ContextMenuItem onClick={onReset}>Reset to defaults</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -143,31 +152,16 @@ export function ChatStatusSection({
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming, runtimeChip.runtime);
   const {
     showShortcutChips,
-    showStatusBarCwd,
-    setShowStatusBarCwd,
-    showStatusBarPermission,
-    setShowStatusBarPermission,
-    showStatusBarRuntime,
-    setShowStatusBarRuntime,
-    showStatusBarModel,
-    setShowStatusBarModel,
-    showStatusBarContext,
-    setShowStatusBarContext,
-    showStatusBarCache,
-    setShowStatusBarCache,
-    showStatusBarUsage,
-    setShowStatusBarUsage,
-    showStatusBarGit,
-    setShowStatusBarGit,
-    showStatusBarSound,
-    setShowStatusBarSound,
-    showStatusBarPolling,
-    setShowStatusBarPolling,
     enableNotificationSound,
     setEnableNotificationSound,
     enableMessagePolling,
     setEnableMessagePolling,
   } = useAppStore();
+  // Status-bar item visibility lives in server config (`ui.statusBar`, DOR-431)
+  // so it syncs across devices and agents can flip it via `config_patch`.
+  const statusBar = useStatusBarPrefs();
+  const { setVisibility: setStatusBarVisibility, reset: resetStatusBarPreferences } =
+    useUpdateStatusBarPrefs();
   // Snapshot-backed status (spec chat-stream-reconnection): populated immediately
   // on cold mount / refresh from the `/events` snapshot, so the server-derived
   // items (context %, cost, model, cache) no longer wait for the first live event.
@@ -334,29 +328,32 @@ export function ChatStatusSection({
         <ContextMenu>
           <ContextMenuTrigger className="min-w-0 flex-1">
             <StatusLine sessionId={sessionId} isStreaming={isStreaming}>
-              <StatusLine.Item itemKey="cwd" visible={showStatusBarCwd && !!status.cwd}>
+              <StatusLine.Item itemKey="cwd" visible={statusBar.cwd && !!status.cwd}>
                 <ItemContextMenu
                   itemLabel={getItemLabel('cwd')}
-                  onHide={() => setShowStatusBarCwd(false)}
+                  onHide={() => setStatusBarVisibility('cwd', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   {status.cwd && <CwdItem cwd={status.cwd} />}
                 </ItemContextMenu>
               </StatusLine.Item>
-              <StatusLine.Item itemKey="git" visible={showStatusBarGit}>
+              <StatusLine.Item itemKey="git" visible={statusBar.git}>
                 <ItemContextMenu
                   itemLabel={getItemLabel('git')}
-                  onHide={() => setShowStatusBarGit(false)}
+                  onHide={() => setStatusBarVisibility('git', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   <GitStatusItem data={gitStatus} workspace={workspace} />
                 </ItemContextMenu>
               </StatusLine.Item>
-              <StatusLine.Item itemKey="permission" visible={showStatusBarPermission}>
+              <StatusLine.Item itemKey="permission" visible={statusBar.permission}>
                 <ItemContextMenu
                   itemLabel={getItemLabel('permission')}
-                  onHide={() => setShowStatusBarPermission(false)}
+                  onHide={() => setStatusBarVisibility('permission', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   <PermissionModeItem
                     mode={status.permissionMode}
@@ -369,12 +366,13 @@ export function ChatStatusSection({
               </StatusLine.Item>
               <StatusLine.Item
                 itemKey="runtime"
-                visible={showStatusBarRuntime && runtimeChip.runtime !== null}
+                visible={statusBar.runtime && runtimeChip.runtime !== null}
               >
                 <ItemContextMenu
                   itemLabel={getItemLabel('runtime')}
-                  onHide={() => setShowStatusBarRuntime(false)}
+                  onHide={() => setStatusBarVisibility('runtime', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   {runtimeChip.runtime !== null && (
                     <RuntimeItem
@@ -386,11 +384,12 @@ export function ChatStatusSection({
                   )}
                 </ItemContextMenu>
               </StatusLine.Item>
-              <StatusLine.Item itemKey="model" visible={showStatusBarModel}>
+              <StatusLine.Item itemKey="model" visible={statusBar.model}>
                 <ItemContextMenu
                   itemLabel={getItemLabel('model')}
-                  onHide={() => setShowStatusBarModel(false)}
+                  onHide={() => setStatusBarVisibility('model', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   <ModelConfigPopover
                     model={status.model}
@@ -407,11 +406,12 @@ export function ChatStatusSection({
                   />
                 </ItemContextMenu>
               </StatusLine.Item>
-              <StatusLine.Item itemKey="cache" visible={showStatusBarCache && cacheStatus !== null}>
+              <StatusLine.Item itemKey="cache" visible={statusBar.cache && cacheStatus !== null}>
                 <ItemContextMenu
                   itemLabel={getItemLabel('cache')}
-                  onHide={() => setShowStatusBarCache(false)}
+                  onHide={() => setStatusBarVisibility('cache', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   {cacheStatus && (
                     <CacheItem
@@ -424,12 +424,13 @@ export function ChatStatusSection({
               </StatusLine.Item>
               <StatusLine.Item
                 itemKey="context"
-                visible={showStatusBarContext && contextPercent !== null}
+                visible={statusBar.context && contextPercent !== null}
               >
                 <ItemContextMenu
                   itemLabel={getItemLabel('context')}
-                  onHide={() => setShowStatusBarContext(false)}
+                  onHide={() => setStatusBarVisibility('context', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   {contextPercent !== null && (
                     <ContextItem percent={contextPercent} contextUsage={contextUsage} />
@@ -444,7 +445,7 @@ export function ChatStatusSection({
                 // reports usage reports cost. If a future runtime ever exposes
                 // utilization without dollar cost, widen this to a dedicated capability.
                 visible={
-                  showStatusBarUsage &&
+                  statusBar.usage &&
                   usage !== null &&
                   hasRenderableUsage(usage) &&
                   supportsCostTracking
@@ -452,17 +453,19 @@ export function ChatStatusSection({
               >
                 <ItemContextMenu
                   itemLabel={getItemLabel('usage')}
-                  onHide={() => setShowStatusBarUsage(false)}
+                  onHide={() => setStatusBarVisibility('usage', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   {usage && hasRenderableUsage(usage) && <UsageStatusItem usage={usage} />}
                 </ItemContextMenu>
               </StatusLine.Item>
-              <StatusLine.Item itemKey="sound" visible={showStatusBarSound}>
+              <StatusLine.Item itemKey="sound" visible={statusBar.sound}>
                 <ItemContextMenu
                   itemLabel={getItemLabel('sound')}
-                  onHide={() => setShowStatusBarSound(false)}
+                  onHide={() => setStatusBarVisibility('sound', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   <NotificationSoundItem
                     enabled={enableNotificationSound}
@@ -470,11 +473,12 @@ export function ChatStatusSection({
                   />
                 </ItemContextMenu>
               </StatusLine.Item>
-              <StatusLine.Item itemKey="polling" visible={showStatusBarPolling}>
+              <StatusLine.Item itemKey="polling" visible={statusBar.polling}>
                 <ItemContextMenu
                   itemLabel={getItemLabel('polling')}
-                  onHide={() => setShowStatusBarPolling(false)}
+                  onHide={() => setStatusBarVisibility('polling', false)}
                   onConfigure={() => setConfigureOpen(true)}
+                  onReset={resetStatusBarPreferences}
                 >
                   <PollingItem
                     enabled={enableMessagePolling}

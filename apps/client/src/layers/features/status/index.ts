@@ -29,10 +29,15 @@ export {
   GROUP_LABELS,
   getGroupedRegistryItems,
   useStatusBarVisibility,
-  resetStatusBarPreferences,
+  useResetStatusBarPreferences,
 } from './model/status-bar-registry';
 export type {
   StatusBarItemKey,
   StatusBarItemGroup,
   StatusBarItemConfig,
 } from './model/status-bar-registry';
+// Status-bar visibility prefs live in server config (`ui.statusBar`, DOR-431).
+// Re-exported here so status-bar consumers (e.g. the chat status section) read
+// and mutate them through the status feature's public surface.
+export { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
+export type { StatusBarPrefKey } from '@/layers/entities/config';

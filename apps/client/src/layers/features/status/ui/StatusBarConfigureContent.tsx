@@ -4,7 +4,7 @@ import {
   STATUS_BAR_REGISTRY,
   getGroupedRegistryItems,
   useStatusBarVisibility,
-  resetStatusBarPreferences,
+  useResetStatusBarPreferences,
   type StatusBarItemKey,
 } from '../model/status-bar-registry';
 
@@ -44,6 +44,7 @@ function RegistryItemRow({ itemKey }: { itemKey: StatusBarItemKey }) {
  */
 function StatusBarConfigureContent() {
   const groups = getGroupedRegistryItems();
+  const resetStatusBarPreferences = useResetStatusBarPreferences();
 
   return (
     <div className="flex flex-col gap-4" aria-label="Status bar configuration">

@@ -66,17 +66,11 @@ vi.mock('@/layers/shared/model/TransportContext', () => ({
   })),
 }));
 
-const mockSetters: Record<string, ReturnType<typeof vi.fn>> = {
-  setShowStatusBarCwd: vi.fn(),
-  setShowStatusBarGit: vi.fn(),
-  setShowStatusBarPermission: vi.fn(),
-  setShowStatusBarRuntime: vi.fn(),
-  setShowStatusBarModel: vi.fn(),
-  setShowStatusBarUsage: vi.fn(),
-  setShowStatusBarContext: vi.fn(),
-  setShowStatusBarSound: vi.fn(),
-  setShowStatusBarPolling: vi.fn(),
-};
+// Status-bar visibility now lives in server config (`ui.statusBar`, DOR-431);
+// the chat status section reads it via useStatusBarPrefs and mutates via
+// useUpdateStatusBarPrefs (both mocked in the features/status mock below).
+const mockSetStatusBarVisibility = vi.fn();
+const mockResetStatusBar = vi.fn();
 
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
@@ -85,20 +79,10 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
       showShortcutChips: false,
-      showStatusBarCwd: true,
-      showStatusBarPermission: true,
-      showStatusBarRuntime: true,
-      showStatusBarModel: true,
-      showStatusBarUsage: true,
-      showStatusBarContext: true,
-      showStatusBarGit: true,
-      showStatusBarSound: true,
-      showStatusBarPolling: true,
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
-      ...mockSetters,
     };
     return selector ? selector(state) : state;
   },
@@ -216,7 +200,23 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     },
     useGitStatus: vi.fn(() => ({ data: undefined })),
     STATUS_BAR_REGISTRY: actual.STATUS_BAR_REGISTRY,
-    resetStatusBarPreferences: vi.fn(),
+    useStatusBarPrefs: () => ({
+      cwd: true,
+      git: true,
+      runtime: true,
+      model: true,
+      cache: true,
+      context: true,
+      usage: true,
+      permission: true,
+      sound: true,
+      polling: true,
+    }),
+    useUpdateStatusBarPrefs: () => ({
+      setVisibility: mockSetStatusBarVisibility,
+      reset: mockResetStatusBar,
+      isPending: false,
+    }),
   };
 });
 
@@ -225,7 +225,6 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { ChatStatusSection } from '../ui/status/ChatStatusSection';
-import { resetStatusBarPreferences } from '@/layers/features/status';
 import { useSessionStreamStore } from '@/layers/entities/session';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
@@ -355,7 +354,7 @@ describe('ChatStatusSection — item context menus (registry items)', () => {
     );
     expect(hideItem).toBeDefined();
     fireEvent.click(hideItem!);
-    expect(mockSetters.setShowStatusBarCwd).toHaveBeenCalledWith(false);
+    expect(mockSetStatusBarVisibility).toHaveBeenCalledWith('cwd', false);
   });
 
   it('each registry item has "Configure status bar..." in its context menu', () => {
@@ -388,7 +387,7 @@ describe('ChatStatusSection — item context menus (registry items)', () => {
     const resetItem = menuItems.find((el) => el.textContent === 'Reset to defaults');
     expect(resetItem).toBeDefined();
     fireEvent.click(resetItem!);
-    expect(resetStatusBarPreferences).toHaveBeenCalled();
+    expect(mockResetStatusBar).toHaveBeenCalled();
   });
 
   it('context menu for git item contains "Hide \\"Git Status\\""', () => {
@@ -408,7 +407,7 @@ describe('ChatStatusSection — item context menus (registry items)', () => {
     );
     expect(hideItem).toBeDefined();
     fireEvent.click(hideItem!);
-    expect(mockSetters.setShowStatusBarGit).toHaveBeenCalledWith(false);
+    expect(mockSetStatusBarVisibility).toHaveBeenCalledWith('git', false);
   });
 });
 

@@ -1,29 +1,18 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Transport } from '@dorkos/shared/transport';
+import type { ServerConfig } from '@dorkos/shared/types';
+import type { StatusBarPrefs } from '@dorkos/shared/config-schema';
+import { STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 import { StatusBarConfigureContent } from '../ui/StatusBarConfigureContent';
 import { STATUS_BAR_REGISTRY } from '../model/status-bar-registry';
-import { useAppStore } from '@/layers/shared/model';
-
-// localStorage mock required for the Zustand store's persist middleware.
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-  };
-})();
-Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
 // Mock Radix Switch as a simple button with role="switch" to avoid the void-element
 // constraint on <input> when Radix passes children (Thumb) into the Root.
@@ -54,18 +43,29 @@ vi.mock('@radix-ui/react-switch', () => ({
   Thumb: () => null,
 }));
 
-beforeEach(() => {
-  localStorageMock.clear();
-  useAppStore.setState({
-    showStatusBarCwd: true,
-    showStatusBarGit: true,
-    showStatusBarModel: true,
-    showStatusBarContext: true,
-    showStatusBarPermission: true,
-    showStatusBarSound: true,
-    showStatusBarPolling: true,
+function makeServerConfig(statusBar: StatusBarPrefs): ServerConfig {
+  return { ui: { statusBar } } as unknown as ServerConfig;
+}
+
+function renderContent(overrides: Partial<StatusBarPrefs> = {}, transport?: Transport) {
+  const t =
+    transport ?? createMockTransport({ updateConfig: vi.fn().mockResolvedValue(undefined) });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-});
+  queryClient.setQueryData(
+    configKeys.current(),
+    makeServerConfig({ ...STATUS_BAR_PREFS_DEFAULTS, ...overrides })
+  );
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={t}>
+        <StatusBarConfigureContent />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+  return { transport: t, queryClient };
+}
 
 afterEach(() => {
   cleanup();
@@ -74,95 +74,84 @@ afterEach(() => {
 
 describe('StatusBarConfigureContent', () => {
   it('renders all registry item labels', () => {
-    render(<StatusBarConfigureContent />);
+    renderContent();
     for (const item of STATUS_BAR_REGISTRY) {
       expect(screen.getByText(item.label)).toBeInTheDocument();
     }
   });
 
   it('renders all item descriptions', () => {
-    render(<StatusBarConfigureContent />);
+    renderContent();
     for (const item of STATUS_BAR_REGISTRY) {
       expect(screen.getByText(item.description)).toBeInTheDocument();
     }
   });
 
   it('renders a switch for every registry item', () => {
-    render(<StatusBarConfigureContent />);
+    renderContent();
     const switches = screen.getAllByRole('switch');
     expect(switches).toHaveLength(STATUS_BAR_REGISTRY.length);
   });
 
   it('renders the two group headers: Session Info, Controls', () => {
-    render(<StatusBarConfigureContent />);
+    renderContent();
     expect(screen.getByText('Session Info')).toBeInTheDocument();
     expect(screen.getByText('Controls')).toBeInTheDocument();
   });
 
   it('renders a "Reset to defaults" button', () => {
-    render(<StatusBarConfigureContent />);
+    renderContent();
     expect(screen.getByRole('button', { name: 'Reset to defaults' })).toBeInTheDocument();
   });
 
   it('shows switches as checked when items are visible', () => {
-    render(<StatusBarConfigureContent />);
+    renderContent();
     const cwdSwitch = screen.getByRole('switch', { name: 'Toggle Directory' });
     expect(cwdSwitch).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('shows switch as unchecked when item is hidden', () => {
-    useAppStore.setState({ showStatusBarGit: false });
-    render(<StatusBarConfigureContent />);
+  it('shows switch as unchecked when the config hides the item', () => {
+    renderContent({ git: false });
     const gitSwitch = screen.getByRole('switch', { name: 'Toggle Git Status' });
     expect(gitSwitch).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('toggling a switch updates the Zustand store', () => {
-    render(<StatusBarConfigureContent />);
+  it('toggling a switch PATCHes the config with the single key', async () => {
+    const { transport } = renderContent();
     const modelSwitch = screen.getByRole('switch', { name: 'Toggle Model' });
-    expect(useAppStore.getState().showStatusBarModel).toBe(true);
 
     fireEvent.click(modelSwitch);
 
-    expect(useAppStore.getState().showStatusBarModel).toBe(false);
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { statusBar: { model: false } } })
+    );
   });
 
-  it('toggling a switch back to on updates the store', () => {
-    useAppStore.setState({ showStatusBarUsage: false });
-    render(<StatusBarConfigureContent />);
+  it('toggling a hidden item back on PATCHes it true', async () => {
+    const { transport } = renderContent({ usage: false });
     const usageSwitch = screen.getByRole('switch', { name: 'Toggle Usage & cost' });
 
     fireEvent.click(usageSwitch);
 
-    expect(useAppStore.getState().showStatusBarUsage).toBe(true);
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { statusBar: { usage: true } } })
+    );
   });
 
-  it('clicking "Reset to defaults" resets all status bar visibility to defaultVisible', () => {
-    // Hide several items
-    useAppStore.setState({ showStatusBarCwd: false, showStatusBarGit: false });
-    render(<StatusBarConfigureContent />);
+  it('clicking "Reset to defaults" PATCHes the full defaults section', async () => {
+    const { transport } = renderContent({ cwd: false, git: false });
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }));
 
-    for (const item of STATUS_BAR_REGISTRY) {
-      const capitalizedKey = item.key.charAt(0).toUpperCase() + item.key.slice(1);
-      const showProp = `showStatusBar${capitalizedKey}` as keyof ReturnType<
-        typeof useAppStore.getState
-      >;
-      expect(useAppStore.getState()[showProp]).toBe(item.defaultVisible);
-    }
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        ui: { statusBar: STATUS_BAR_PREFS_DEFAULTS },
+      })
+    );
   });
 
   it('has aria-label="Status bar configuration" on the root container', () => {
-    render(<StatusBarConfigureContent />);
+    renderContent();
     expect(screen.getByRole('generic', { name: 'Status bar configuration' })).toBeInTheDocument();
-  });
-
-  it('icons render alongside each label (no accessible text, aria-hidden)', () => {
-    render(<StatusBarConfigureContent />);
-    // Each icon should be aria-hidden. Confirm all labels still appear.
-    // If icons weren't aria-hidden, they could duplicate text — this test ensures
-    // exact label matches still work with icon siblings present.
-    expect(screen.getByText('Directory')).toBeInTheDocument();
   });
 });
