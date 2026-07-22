@@ -12,13 +12,19 @@ import { scaffoldInstructions } from '@dorkos/harness';
 import type { MeshCore } from '@dorkos/mesh';
 import { logger } from '../../lib/logger.js';
 
+/** DorkBot's branded display name — the label every roster surface renders. */
+const DORKBOT_DISPLAY_NAME = 'DorkBot';
+
 /**
  * Ensure DorkBot exists as the system agent.
  *
- * Three paths:
+ * Four paths:
  * 1. **Fresh install** — scaffold workspace at `<dorkHome>/agents/dorkbot/` with full manifest
- * 2. **Upgrade** — existing DorkBot missing `isSystem: true` gets patched
- * 3. **Already correct** — no-op
+ * 2. **Upgrade** — existing DorkBot missing `isSystem: true` gets patched (and its
+ *    display name backfilled)
+ * 3. **Backfill** — an existing system-agent DorkBot with no `displayName` gets one,
+ *    so the roster and dashboard composer show "DorkBot" rather than the bare slug
+ * 4. **Already correct** — no manifest rewrite, just a re-sync
  *
  * Must run before task file watchers start (DorkBot is the background task agent).
  *
@@ -30,26 +36,40 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   const existing = await readManifest(dorkbotDir);
 
   if (existing) {
-    // Path 2 or 3: DorkBot exists — check if upgrade needed
-    if (existing.isSystem && existing.namespace === 'system') {
-      // Still sync: registerAgent re-asserts default access rules on every
-      // boot, so existing installs pick up newly-introduced rules (e.g. the
-      // system-agent cross-namespace allow) without a manifest change.
+    const isSystemAgent = existing.isSystem && existing.namespace === 'system';
+
+    // Path 2: not yet a system agent — upgrade it, backfilling the display name
+    // (a display name the user already set is preserved).
+    if (!isSystemAgent) {
+      const upgraded: AgentManifest = {
+        ...existing,
+        isSystem: true,
+        namespace: 'system',
+        capabilities: ['tasks', 'summaries'],
+        displayName: existing.displayName ?? DORKBOT_DISPLAY_NAME,
+      };
+      await writeManifest(dorkbotDir, upgraded);
       await meshCore.syncFromDisk(dorkbotDir);
-      logger.debug('[Mesh] DorkBot already registered as system agent');
+      logger.info('[Mesh] Upgraded existing DorkBot to system agent');
       return;
     }
 
-    // Upgrade: patch to system agent
-    const upgraded: AgentManifest = {
-      ...existing,
-      isSystem: true,
-      namespace: 'system',
-      capabilities: ['tasks', 'summaries'],
-    };
-    await writeManifest(dorkbotDir, upgraded);
+    // Path 3: already a system agent but missing its display name — backfill it
+    // so every roster surface renders "DorkBot", not "dorkbot". Idempotent: runs
+    // once, then Path 4 takes over on subsequent boots.
+    if (!existing.displayName) {
+      const named: AgentManifest = { ...existing, displayName: DORKBOT_DISPLAY_NAME };
+      await writeManifest(dorkbotDir, named);
+      await meshCore.syncFromDisk(dorkbotDir);
+      logger.info('[Mesh] Backfilled DorkBot display name');
+      return;
+    }
+
+    // Path 4: already correct. Still sync: registerAgent re-asserts default access
+    // rules on every boot, so existing installs pick up newly-introduced rules
+    // (e.g. the system-agent cross-namespace allow) without a manifest change.
     await meshCore.syncFromDisk(dorkbotDir);
-    logger.info('[Mesh] Upgraded existing DorkBot to system agent');
+    logger.debug('[Mesh] DorkBot already registered as system agent');
     return;
   }
 
@@ -59,6 +79,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   const manifest: AgentManifest = {
     id: ulid(),
     name: 'dorkbot',
+    displayName: DORKBOT_DISPLAY_NAME,
     description: 'Your guide to DorkOS — helps you learn the platform and handles background jobs',
     runtime: 'claude-code',
     capabilities: ['tasks', 'summaries'],

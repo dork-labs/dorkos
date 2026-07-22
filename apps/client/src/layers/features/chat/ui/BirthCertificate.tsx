@@ -4,9 +4,12 @@
  * {path} · runs on {runtime}". It is a session header adornment, NOT a message,
  * so it never masquerades as something the agent or the person said.
  *
- * It renders only while the active session carries a birth record (ephemeral,
- * one page session, keyed by session id), so it appears at the birth and never
- * again on the agent's later conversations.
+ * It renders only while the active session carries a `kickoff` birth record
+ * (ephemeral, one page session, keyed by session id), so it appears at the
+ * birth and never again on the agent's later conversations. A `first-message`
+ * record is NOT a birth — it carries the user's own first words into a session
+ * with an existing agent (the dashboard composer, the onboarding dissolve), so
+ * it never shows a "born today" certificate.
  *
  * @module features/chat/ui/BirthCertificate
  */
@@ -32,6 +35,9 @@ export function BirthCertificate({ sessionId }: { sessionId: string | null }) {
   const record = useAgentBirthRecord(sessionId);
   const reducedMotion = useReducedMotion();
   if (!record) return null;
+  // A first-message handoff is not a birth — no "born today" line for an
+  // existing agent (ADR 260722-111316).
+  if (record.kind === 'first-message') return null;
 
   const bornDate = formatBornDate(record.bornAt);
   const runtimeLabel = getRuntimeDescriptor(record.runtime).label;

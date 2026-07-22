@@ -46,4 +46,16 @@ describe('BirthCertificate', () => {
     render(<BirthCertificate sessionId={null} />);
     expect(screen.queryByTestId('birth-certificate')).toBeNull();
   });
+
+  it('still renders for an explicit kickoff record (agent-says-hello-first)', () => {
+    useAgentBirthStore.getState().register('sess-1', { ...RECORD, kind: 'kickoff' });
+    render(<BirthCertificate sessionId="sess-1" />);
+    expect(screen.getByTestId('birth-certificate')).toBeInTheDocument();
+  });
+
+  it('renders nothing for a first-message record (a handoff is not a birth)', () => {
+    useAgentBirthStore.getState().register('sess-1', { ...RECORD, kind: 'first-message' });
+    render(<BirthCertificate sessionId="sess-1" />);
+    expect(screen.queryByTestId('birth-certificate')).toBeNull();
+  });
 });

@@ -19,13 +19,16 @@ import { useDefaultAgentSession } from '@/layers/entities/config';
 /** The composer section rendered first in the dashboard body. */
 export function DashboardComposerSection() {
   const navigate = useNavigate();
-  const { defaultAgentDir, defaultAgentDisplayName, defaultAgentIdentity } =
+  const { defaultAgentDir, defaultAgentDisplayName, defaultAgentIdentity, isDefaultAgentResolved } =
     useDefaultAgentSession();
   const [value, setValue] = useState('');
 
   const handleSubmit = useCallback(() => {
     const text = value.trim();
     if (!text) return;
+    // Never start a session with the config-composed fallback path — the events
+    // stream 403s on the unresolved tilde. Wait for the registry-resolved dir.
+    if (!isDefaultAgentResolved) return;
 
     const sessionId = crypto.randomUUID();
     const record: Omit<AgentBirthRecord, 'fired'> = {
@@ -43,7 +46,7 @@ export function DashboardComposerSection() {
     useAgentBirthStore.getState().register(sessionId, record);
     setValue('');
     navigate({ to: '/session', search: { dir: defaultAgentDir, session: sessionId } });
-  }, [value, defaultAgentDir, defaultAgentIdentity, navigate]);
+  }, [value, isDefaultAgentResolved, defaultAgentDir, defaultAgentIdentity, navigate]);
 
   return (
     <section>
@@ -55,6 +58,7 @@ export function DashboardComposerSection() {
         onChange={setValue}
         onSubmit={handleSubmit}
         isStreaming={false}
+        canSubmit={isDefaultAgentResolved}
         placeholder={`Message ${defaultAgentDisplayName}…`}
       />
     </section>

@@ -52,6 +52,13 @@ interface ChatInputProps {
   onQueueNavigateDown?: () => void;
   /** Whether the queue has items (enables arrow key navigation). */
   queueHasItems?: boolean;
+  /**
+   * Whether the message can be sent. When `false`, the send button reads
+   * disabled and does nothing while the input stays typeable — used when the
+   * send target is not ready yet (e.g. the default agent's path has not resolved
+   * from the registry). Defaults to `true`.
+   */
+  canSubmit?: boolean;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
@@ -82,6 +89,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onQueueNavigateUp,
     onQueueNavigateDown,
     queueHasItems = false,
+    canSubmit = true,
   },
   ref
 ) {
@@ -246,6 +254,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           isStreaming={isStreaming}
           isUploading={isUploading}
           sessionBusy={sessionBusy}
+          submitDisabled={!canSubmit}
           editingQueueItem={editingQueueItem}
           queueDepth={queueDepth}
           isMobile={isMobile}

@@ -457,6 +457,41 @@ describe('ChatInput', () => {
     });
   });
 
+  describe('canSubmit state', () => {
+    it('disables the send button when canSubmit is false (target not ready)', () => {
+      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} />);
+      const btn = screen.getByLabelText('Send message');
+      expect(btn).toHaveProperty('disabled', true);
+      expect(btn.className).toContain('pointer-events-none');
+    });
+
+    it('keeps the input typeable when canSubmit is false', () => {
+      render(<ChatInput {...defaultProps} canSubmit={false} />);
+      expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
+    });
+
+    it('does not show a busy message when canSubmit is false', () => {
+      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} />);
+      expect(screen.queryByText(/Session is busy/)).toBeNull();
+    });
+
+    it('does not call onSubmit when the disabled send button is clicked', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} onSubmit={onSubmit} />);
+      fireEvent.click(screen.getByLabelText('Send message'));
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('enables the send button by default (canSubmit defaults to true)', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
+      const btn = screen.getByLabelText('Send message');
+      expect(btn).toHaveProperty('disabled', false);
+      fireEvent.click(btn);
+      expect(onSubmit).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('queue button states', () => {
     it('send button shows Queue icon during streaming with text', () => {
       render(<ChatInput {...defaultProps} isStreaming={true} value="text" onQueue={vi.fn()} />);

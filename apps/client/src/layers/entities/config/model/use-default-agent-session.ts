@@ -70,6 +70,13 @@ export interface DefaultAgentSession {
   defaultAgentDisplayName: string;
   /** The default agent's identity for building a `first-message` birth record. */
   defaultAgentIdentity: DefaultAgentIdentity;
+  /**
+   * Whether {@link defaultAgentDir} is the agent's REGISTRY-resolved absolute
+   * path (not the config-string fallback). Only a registry-resolved path can be
+   * streamed — starting a session with a message must wait for this to be `true`,
+   * or the events stream 403s on the unresolved tilde.
+   */
+  isDefaultAgentResolved: boolean;
 }
 
 /**
@@ -138,5 +145,6 @@ export function useDefaultAgentSession(): DefaultAgentSession {
     defaultAgentDir,
     defaultAgentDisplayName: defaultAgentIdentity.displayName,
     defaultAgentIdentity,
+    isDefaultAgentResolved: registeredEntry !== undefined,
   };
 }

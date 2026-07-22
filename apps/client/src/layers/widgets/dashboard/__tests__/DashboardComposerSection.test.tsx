@@ -11,6 +11,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
 
 // The registered ABSOLUTE path (never the literal tilde) — the client can stream it.
 const REGISTERED_DIR = '/home/kai/.dork/agents/dorkbot';
+let mockResolved = true;
 vi.mock('@/layers/entities/config', () => ({
   useDefaultAgentSession: () => ({
     startSession: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('@/layers/entities/config', () => ({
       agentId: 'agent-ulid-1',
       runtime: 'claude-code',
     },
+    isDefaultAgentResolved: mockResolved,
   }),
 }));
 
@@ -55,6 +57,7 @@ describe('DashboardComposerSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAgentBirthStore.setState({ records: {} });
+    mockResolved = true;
   });
 
   afterEach(() => {
@@ -118,6 +121,18 @@ describe('DashboardComposerSection', () => {
     fireEvent.change(screen.getByTestId('composer'), { target: { value: '   ' } });
     fireEvent.click(screen.getByTestId('send'));
 
+    expect(Object.keys(useAgentBirthStore.getState().records)).toHaveLength(0);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('does not register or navigate before the default agent path resolves', () => {
+    mockResolved = false;
+    render(<DashboardComposerSection />);
+
+    fireEvent.change(screen.getByTestId('composer'), { target: { value: 'Build me a blog' } });
+    fireEvent.click(screen.getByTestId('send'));
+
+    // Never start a session with the config-composed fallback path.
     expect(Object.keys(useAgentBirthStore.getState().records)).toHaveLength(0);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
