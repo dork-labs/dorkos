@@ -354,4 +354,28 @@ describe('TourSpotlight — S6 smooth movement between steps', () => {
     // torn down, so the CSS geometry transition can glide it to the new element.
     expect(popover()).toBe(firstPopover);
   });
+
+  it('ignores a keyboard advance during the resolve gap (only advances a visible step)', async () => {
+    // Only the first step's anchor is present; the second never mounts, so the
+    // shown step trails at 0 while step 1 resolves.
+    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    const onAdvance = vi.fn();
+    const onEnd = vi.fn();
+    const { rerender } = render(
+      <TourSpotlight steps={TWO_STEPS} activeIndex={0} onAdvance={onAdvance} onEnd={onEnd} />
+    );
+    await waitForSpotlight();
+
+    // Engine advances to step 1, whose anchor is absent: a fast ArrowRight must be
+    // a no-op so it can never skip a step that never painted.
+    rerender(
+      <TourSpotlight steps={TWO_STEPS} activeIndex={1} onAdvance={onAdvance} onEnd={onEnd} />
+    );
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+    // The first step's caption is still the one on screen.
+    expect(within(popover()).getByText(CAPTION)).toBeInTheDocument();
+  });
 });

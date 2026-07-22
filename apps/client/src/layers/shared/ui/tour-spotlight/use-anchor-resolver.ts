@@ -17,6 +17,13 @@ export interface AnchorResolution {
   element: HTMLElement | null;
   /** Where this resolution is in its lifecycle. */
   status: AnchorStatus;
+  /**
+   * The anchor this resolution describes. During the single render where the
+   * target anchor changes, the returned resolution still carries the previous
+   * anchor (the reset is one render behind), so callers can tell a stale
+   * `found` from a fresh one by comparing this to the anchor they asked for.
+   */
+  anchor: TourAnchorId | null;
 }
 
 /**
@@ -44,6 +51,7 @@ export function useAnchorResolver(anchor: TourAnchorId | null): AnchorResolution
   const [resolution, setResolution] = useState<AnchorResolution>({
     element: null,
     status: 'resolving',
+    anchor,
   });
   const [trackedAnchor, setTrackedAnchor] = useState<TourAnchorId | null>(anchor);
 
@@ -51,7 +59,7 @@ export function useAnchorResolver(anchor: TourAnchorId | null): AnchorResolution
   // state during render" pattern, so the reset never rides an effect.
   if (anchor !== trackedAnchor) {
     setTrackedAnchor(anchor);
-    setResolution({ element: null, status: 'resolving' });
+    setResolution({ element: null, status: 'resolving', anchor });
   }
 
   useEffect(() => {
@@ -77,7 +85,7 @@ export function useAnchorResolver(anchor: TourAnchorId | null): AnchorResolution
           found.scrollIntoView({ block: 'center', inline: 'center' });
           current = found;
           everFound = true;
-          setResolution({ element: found, status: 'found' });
+          setResolution({ element: found, status: 'found', anchor });
         }
         return false;
       }
@@ -95,7 +103,7 @@ export function useAnchorResolver(anchor: TourAnchorId | null): AnchorResolution
 
       // The anchor never resolved — enforce the wait budget, then skip honestly.
       if (Date.now() >= deadline) {
-        setResolution({ element: null, status: 'timeout' });
+        setResolution({ element: null, status: 'timeout', anchor });
         return true;
       }
       return false;

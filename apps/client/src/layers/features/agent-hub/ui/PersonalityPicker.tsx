@@ -66,7 +66,8 @@ export function PersonalityPicker({
 
   const activePreset = findMatchingPreset(traits);
   const presetColors = activePreset?.colors ?? DEFAULT_PRESET_COLORS;
-  const sampleText = generateVoiceSample(traits, activePreset?.id);
+  // Only the stacked layout renders the sample voice, so skip the lookup inline.
+  const sampleText = stacked ? generateVoiceSample(traits, activePreset?.id) : '';
 
   const handlePresetSelect = useCallback(
     (preset: (typeof PERSONALITY_PRESETS)[number]) => {

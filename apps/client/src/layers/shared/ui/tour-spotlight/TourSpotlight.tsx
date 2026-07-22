@@ -71,7 +71,16 @@ export function TourSpotlight({ steps, activeIndex, onAdvance, onEnd }: TourSpot
   // transitions use React's "adjust state during render" pattern (mirroring the
   // anchor resolver) so they never ride an effect, and each converges in one pass.
   const [shownIndex, setShownIndex] = useState<number | null>(null);
-  if (resolution.status === 'found' && resolution.element !== null && shownIndex !== activeIndex) {
+  if (
+    resolution.status === 'found' &&
+    resolution.element !== null &&
+    // Only a resolution for the CURRENT step's anchor promotes it. During the
+    // render where activeIndex advances, the resolver still returns the previous
+    // step's `found` (its reset is one render behind), so this guard keeps the
+    // shown step trailing until the new anchor genuinely resolves.
+    resolution.anchor === currentStep?.anchor &&
+    shownIndex !== activeIndex
+  ) {
     setShownIndex(activeIndex);
   } else if (!currentStep && shownIndex !== null) {
     // The tour ended (no current step): drop the spotlight so a relaunch is fresh.
@@ -106,6 +115,16 @@ export function TourSpotlight({ steps, activeIndex, onAdvance, onEnd }: TourSpot
     onAdvanceRef.current = onAdvance;
     onEndRef.current = onEnd;
   }, [onAdvance, onEnd]);
+
+  // Whether a keyboard advance is allowed right now — true only when the shown
+  // step has caught up to `activeIndex`. reactour re-registers its keydown
+  // listener only when its `currentStep` prop changes, but we hold that during
+  // the resolve gap, so its captured handler is stale; reading a ref keeps the
+  // gate (and the advance) current regardless of when reactour last bound it.
+  const canAdvanceRef = useRef(false);
+  useEffect(() => {
+    canAdvanceRef.current = shownIndex === activeIndex;
+  }, [shownIndex, activeIndex]);
 
   // Enable the cutout glide only after the first step has painted, so the first
   // spotlight appears in place instead of sweeping in from the top-left corner.
@@ -233,9 +252,14 @@ export function TourSpotlight({ steps, activeIndex, onAdvance, onEnd }: TourSpot
           keyboardHandler={(e) => {
             if (e.key === 'Escape') {
               e.preventDefault();
-              onEnd();
-            } else if (e.key === 'ArrowRight') {
-              handleAdvance();
+              onEndRef.current();
+            } else if (e.key === 'ArrowRight' && canAdvanceRef.current) {
+              // Only advance a step the operator can actually see: during the
+              // resolve gap the shown step trails `activeIndex`, and a fast
+              // ArrowRight would otherwise skip a step that never painted. Refs,
+              // not the captured closure, because reactour's listener is stale
+              // while we hold its currentStep during the gap.
+              advanceRef.current();
             }
           }}
         >
