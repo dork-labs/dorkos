@@ -8,6 +8,7 @@ import {
   Kbd,
 } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { cn, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
 
 /**
@@ -41,12 +42,14 @@ export function SidebarNavHeader() {
           label="Agents"
           isActive={pathname === '/agents'}
           onClick={() => navigate({ to: '/agents' })}
+          testId={TOUR_ANCHORS.navAgents}
         />
         <NavButton
           icon={Zap}
           label="Tasks"
           isActive={pathname === '/tasks'}
           onClick={() => navigate({ to: '/tasks' })}
+          testId={TOUR_ANCHORS.navTasks}
         />
         <NavButton
           icon={FolderGit2}
@@ -84,17 +87,21 @@ function NavButton({
   label,
   isActive,
   onClick,
+  testId,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   isActive: boolean;
   onClick: () => void;
+  /** Stable tour/e2e anchor stamped on the button (see TOUR_ANCHORS). */
+  testId?: string;
 }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         isActive={isActive}
         onClick={onClick}
+        data-testid={testId}
         className={cn(
           'relative flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium',
           isActive &&
