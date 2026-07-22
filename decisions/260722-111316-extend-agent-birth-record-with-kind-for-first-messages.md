@@ -1,7 +1,7 @@
 ---
 id: 260722-111316
 title: Extend the agent-birth record with a kind field for user first messages
-status: proposed
+status: accepted
 created: 2026-07-22
 spec: dorkbot-is-the-onboarding
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
