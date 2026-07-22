@@ -1,11 +1,10 @@
 /**
  * OpenRouter (OpenCode Gateway) connect hooks (ADR-0318, T1 task 2.8).
  *
- * Three surfaces: the always-available paste-key path, the OAuth-PKCE path (a
- * browser-only, ToS-clean native flow), and the model catalog that populates
- * the picker's dropdown. Every success invalidates `['requirements']` so
- * OpenCode flips to Ready. Keys are never returned or cached — only references
- * are persisted server-side.
+ * Two surfaces: the always-available paste-key path and the OAuth-PKCE path (a
+ * browser-only, ToS-clean native flow). Every success invalidates
+ * `['requirements']` so OpenCode flips to Ready. Keys are never returned or
+ * cached — only references are persisted server-side.
  *
  * @module features/runtime-connect/model/use-openrouter-connect
  */
@@ -33,7 +32,7 @@ export interface UseStoreOpenRouterKey {
  *
  * The transport resolves `{ ok: false, error }` for an invalid key (not a
  * throw), so both are folded into one honest error path. Only a validated key
- * invalidates `['requirements']` and the model catalog.
+ * invalidates `['requirements']`.
  */
 export function useStoreOpenRouterKey(): UseStoreOpenRouterKey {
   const transport = useTransport();
@@ -84,7 +83,7 @@ export interface UseOpenRouterOAuth {
  *
  * `begin()` asks the server to mint a verifier + state, opens the returned
  * authorize URL in a new tab, and polls the flow status until it flips to
- * `connected` (invalidating requirements + catalog) or `error`. The
+ * `connected` (invalidating `['requirements']`) or `error`. The
  * `code_verifier` never leaves the server.
  *
  * Browser-only: callers gate this behind `!getPlatform().isEmbedded` and offer

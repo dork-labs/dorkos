@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import { Button, Input, Label, PasswordInput } from '@/layers/shared/ui';
 import type { RuntimeConnectSuccess } from '@/layers/entities/runtime';
 import { useConnectDirectProvider } from '../model/use-opencode-provider';
-import { CLOUD_CONNECT_SUCCESS } from '../lib/connect-success';
+import { DIRECT_CONNECT_SUCCESS } from '../lib/connect-success';
 import { ConnectProgressRow, ConnectedRow } from './connect-feedback';
 
 /** The Direct-provider connect path: provider id + key + optional base URL. */
@@ -27,7 +27,7 @@ export function DirectProviderPath({
   const connect = useConnectDirectProvider();
 
   useEffect(() => {
-    if (connect.isSuccess) onConnected?.(CLOUD_CONNECT_SUCCESS);
+    if (connect.isSuccess) onConnected?.(DIRECT_CONNECT_SUCCESS);
   }, [connect.isSuccess, onConnected]);
 
   if (connect.isPending) {

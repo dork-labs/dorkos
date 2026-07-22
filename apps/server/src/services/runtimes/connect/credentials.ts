@@ -198,11 +198,17 @@ export async function persistProviderCredential(
     opencode.baseURL = input.baseURL;
   }
   config.set('runtimes', { ...runtimes, opencode });
-  // A running sidecar spawned before this key was stored still holds the old
-  // (keyless) env — recycle it so the next use reboots with the new provider env
-  // (ADR-0315). Fire-and-forget: recycle flips the manager's state synchronously,
-  // so the next getClient() reboots even before the teardown settles, and a
-  // stored key never fails on a teardown hiccup.
+  // Recycle the sidecar so it re-reads the stored credential env on next use
+  // (ADR-0315). This fires on EVERY provider-credential persist: on a first-ever
+  // connect it is a no-op (no sidecar running yet, so the next boot already picks
+  // the key up); when one is already running it reboots to apply the new env.
+  // Deliberate trade-off: if a key is stored while a turn is in flight, that turn
+  // is aborted by the restart. We accept it — a person storing a credential is a
+  // deliberate connect action, and fresh credentials winning over a rare in-flight
+  // turn is the honest behavior (no fragile skip-when-serving logic). Fire-and-
+  // forget: recycle flips the manager's state synchronously, so the next
+  // getClient() reboots even before the teardown settles, and a stored key never
+  // fails on a teardown hiccup.
   const recycle = deps.recycleSidecar ?? (() => openCodeServerManager.recycle());
   void Promise.resolve(recycle()).catch(() => {});
   return { ref };

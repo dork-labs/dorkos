@@ -2,9 +2,11 @@
  * Success-moment copy for the connect flows (spec: opencode-connect-overhaul §6).
  *
  * Each connect path reports its landing to the dialog with a
- * {@link RuntimeConnectSuccess}. The cloud copy is the approved verbatim line; the
- * local copy words the unlock honestly (no frontier claim — frontier stays
- * cloud-only); the login copy is a generic per-runtime confirmation.
+ * {@link RuntimeConnectSuccess}. The cloud (OpenRouter) copy is the approved
+ * verbatim frontier-unlock line; the Direct copy is provider-honest (a Direct key
+ * can point at a local LM Studio / vLLM server via the escape hatch, so it never
+ * claims frontier); the local copy words the unlock honestly too; the login copy
+ * is a generic per-runtime confirmation.
  *
  * @module features/runtime-connect/lib/connect-success
  */
@@ -17,10 +19,20 @@ const OPENCODE_CONNECTED_TITLE = 'OpenCode is connected.';
 const OPENCODE_HANDOFF_LINE =
   'This session will use OpenCode — pick any model from the model menu, anytime.';
 
-/** Cloud (OpenRouter / Direct) success: the approved verbatim frontier-unlock copy. */
+/** Cloud (OpenRouter) success: the approved verbatim frontier-unlock copy. */
 export const CLOUD_CONNECT_SUCCESS: RuntimeConnectSuccess = {
   title: OPENCODE_CONNECTED_TITLE,
   body: `Frontier models are unlocked. ${OPENCODE_HANDOFF_LINE}`,
+};
+
+/**
+ * Direct-provider success: provider-honest and generic. A Direct key can point at
+ * a frontier cloud provider OR a local OpenAI-compatible server (LM Studio, vLLM),
+ * so this never claims frontier — it just confirms the connection and the handoff.
+ */
+export const DIRECT_CONNECT_SUCCESS: RuntimeConnectSuccess = {
+  title: OPENCODE_CONNECTED_TITLE,
+  body: OPENCODE_HANDOFF_LINE,
 };
 
 /** Local (Ollama) success: honest wording — a local model is never sold as frontier. */
