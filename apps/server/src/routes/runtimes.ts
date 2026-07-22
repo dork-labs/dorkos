@@ -35,6 +35,10 @@ import {
 import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
 import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/ollama.js';
 import {
+  provisionOllama,
+  detectOllamaInstallMethod,
+} from '../services/runtimes/opencode/ollama-provision.js';
+import {
   assessInstalledModels,
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
@@ -229,8 +233,11 @@ router.get('/opencode/openrouter/oauth/status', (req, res) => {
 router.get('/opencode/ollama', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
   const status = await detectOllama();
-  const installed = await assessInstalledModels(status.models);
-  res.json({ ...status, installed });
+  const [installed, installMethod] = await Promise.all([
+    assessInstalledModels(status.models),
+    detectOllamaInstallMethod(),
+  ]);
+  res.json({ ...status, installed, installMethod });
 });
 
 /**
@@ -281,6 +288,43 @@ router.post('/opencode/ollama/pull', async (req, res) => {
       ok: false,
       model,
       error: 'Could not pull the model. Please try again.',
+    });
+  } finally {
+    if (!res.writableEnded) res.end();
+  }
+});
+
+/**
+ * POST /api/runtimes/opencode/ollama/provision — guided, password-free Ollama
+ * install (spec §13). STREAMS install progress (mirrors the provision endpoint's
+ * SSE shape: `progress` frames then a terminal `result`); the terminal result
+ * carries the resolved install method and a fresh detection re-probe. macOS via
+ * Homebrew, Windows via winget; `manual` platforms resolve to an honest
+ * `ok: false` (the client shows the copyable command). Loopback-only, no sudo.
+ */
+router.post('/opencode/ollama/provision', async (req, res) => {
+  if (!isLoopbackRequest(req)) {
+    res.status(403).json({ error: 'Runtime provisioning is only available locally' });
+    return;
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  try {
+    const result = await provisionOllama((progress) => sendEvent(res, 'progress', progress));
+    sendEvent(res, 'result', result);
+  } catch (err) {
+    // provisionOllama returns failures rather than throwing; guard defensively.
+    logger.error('[Runtimes] Ollama install failed unexpectedly', err);
+    sendEvent(res, 'result', {
+      ok: false,
+      installMethod: 'manual',
+      error: 'Could not install Ollama. Please try again.',
     });
   } finally {
     if (!res.writableEnded) res.end();

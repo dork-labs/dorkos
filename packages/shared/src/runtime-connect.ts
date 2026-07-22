@@ -96,6 +96,15 @@ export interface OllamaInstalledModel {
 }
 
 /**
+ * How DorkOS can install Ollama on this machine without asking for a password
+ * (spec §13). `brew` on macOS or `winget` on Windows means a one-click guided
+ * install is possible; `manual` means there is no password-free path (Linux, or a
+ * machine without a supported package manager), so the client shows the official
+ * command to copy instead. DorkOS never runs an install with elevated privileges.
+ */
+export type OllamaInstallMethod = 'brew' | 'winget' | 'manual';
+
+/**
  * Result of zero-auth local Ollama detection. `running` reflects whether the
  * local Ollama HTTP API answered within the bounded probe; `models` lists the
  * pulled models (empty when none or when Ollama is absent).
@@ -111,6 +120,35 @@ export interface OllamaStatus {
    * and the route assesses the raw `models` against this machine's hardware.
    */
   installed?: OllamaInstalledModel[];
+  /**
+   * How Ollama can be installed on this machine (spec §13). Present only on the
+   * detection endpoint's response so the client can offer a one-click guided
+   * install (`brew`/`winget`) or a copyable command (`manual`); the raw probe
+   * (`detectOllama`) omits it.
+   */
+  installMethod?: OllamaInstallMethod;
+}
+
+/**
+ * Terminal result of a guided Ollama install (spec §13). Mirrors
+ * `RuntimeProvisionResult` but carries the resolved {@link OllamaInstallMethod}
+ * and a fresh {@link OllamaStatus} re-probe so the client knows, without a second
+ * round-trip, whether Ollama is installed AND already running. On failure `error`
+ * is an honest, condensed message (never a raw stack) for the Connect surface.
+ */
+export interface OllamaProvisionResult {
+  /** True when the installer completed and Ollama's binary is present. */
+  ok: boolean;
+  /** The install method that was used (or `manual` when no one-click path exists). */
+  installMethod: OllamaInstallMethod;
+  /** Honest failure message when not `ok`. */
+  error?: string;
+  /**
+   * A fresh detection re-probe taken after a successful install (and best-effort
+   * start). Lets the client distinguish installed-and-running from
+   * installed-but-not-running without a second request. Omitted on failure.
+   */
+  status?: OllamaStatus;
 }
 
 /**

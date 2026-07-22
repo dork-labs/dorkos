@@ -10,6 +10,11 @@ vi.mock('../../services/runtimes/codex/provision.js', () => ({
   provisionCodex: vi.fn(),
 }));
 
+vi.mock('../../services/runtimes/opencode/ollama-provision.js', () => ({
+  provisionOllama: vi.fn(),
+  detectOllamaInstallMethod: vi.fn().mockResolvedValue('manual'),
+}));
+
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));
@@ -22,6 +27,7 @@ import request from 'supertest';
 import { createApp } from '../../app.js';
 import { provisionOpenCode } from '../../services/runtimes/opencode/provision.js';
 import { provisionCodex } from '../../services/runtimes/codex/provision.js';
+import { provisionOllama } from '../../services/runtimes/opencode/ollama-provision.js';
 
 const app = createApp();
 
@@ -126,5 +132,58 @@ describe('POST /api/runtimes/codex/provision', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
     expect(provisionCodex).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/runtimes/opencode/ollama/provision', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('streams progress frames and a terminal result carrying the install method + status (loopback)', async () => {
+    vi.mocked(provisionOllama).mockImplementation(async (onProgress) => {
+      onProgress?.({ stage: 'starting', message: 'Installing Ollama…' });
+      onProgress?.({ stage: 'done', message: 'Ollama installed.' });
+      return { ok: true, installMethod: 'brew', status: { running: true, models: [] } };
+    });
+
+    const res = await request(app).post('/api/runtimes/opencode/ollama/provision');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    // Mirrors the provision endpoint's SSE contract: progress frames then a result.
+    expect(res.text).toContain('event: progress');
+    expect(res.text).toContain('event: result');
+    expect(res.text).toContain('"ok":true');
+    expect(res.text).toContain('"installMethod":"brew"');
+    expect(res.text).toContain('"running":true');
+    expect(provisionOllama).toHaveBeenCalledOnce();
+    expect(typeof vi.mocked(provisionOllama).mock.calls[0][0]).toBe('function');
+  });
+
+  it('streams the honest error result when there is no one-click path', async () => {
+    vi.mocked(provisionOllama).mockResolvedValue({
+      ok: false,
+      installMethod: 'manual',
+      error:
+        'One-click install is not available on this computer. Copy the command to install Ollama yourself.',
+    });
+
+    const res = await request(app).post('/api/runtimes/opencode/ollama/provision');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('event: result');
+    expect(res.text).toContain('"ok":false');
+    expect(res.text).toContain('One-click install is not available');
+  });
+
+  it('rejects a non-loopback origin with 403 and never installs', async () => {
+    const res = await request(app)
+      .post('/api/runtimes/opencode/ollama/provision')
+      .set('Host', 'evil.example.com');
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/locally/i);
+    expect(provisionOllama).not.toHaveBeenCalled();
   });
 });
