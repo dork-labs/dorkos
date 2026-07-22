@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
 import { MarkdownEditor } from 'blintz';
 import './blintz.css';
 import { cn } from '@/layers/shared/lib';
-import { useTheme } from '@/layers/shared/model';
+import { useResolvedTheme } from '@/layers/shared/model';
 
 /** Props for {@link BlintzCanvas}. */
 export interface BlintzCanvasProps {
@@ -14,42 +13,6 @@ export interface BlintzCanvasProps {
   onChange?: (markdown: string) => void;
   /** Extra class on the editor host element. */
   className?: string;
-}
-
-const DARK_MEDIA_QUERY = '(prefers-color-scheme: dark)';
-
-/** Whether the OS currently prefers a dark color scheme (false when unavailable). */
-function systemPrefersDark(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia(DARK_MEDIA_QUERY).matches
-  );
-}
-
-/**
- * Resolve the app's theme preference to a concrete `light`/`dark`, following the
- * OS live when the preference is `system` — the same resolution the app applies
- * to the root `.dark` class. Forwarded to Blintz as `data-theme` so DorkOS's
- * explicit choice wins over Blintz's own OS media query in both directions.
- */
-function useResolvedTheme(): 'light' | 'dark' {
-  const { theme } = useTheme();
-  const [systemDark, setSystemDark] = useState(systemPrefersDark);
-
-  // Track the OS preference regardless of the current setting, so switching to
-  // `system` (or the OS flipping while on `system`) is reflected live. Only the
-  // change handler sets state — never the effect body — so no cascading render.
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia(DARK_MEDIA_QUERY);
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  if (theme === 'light' || theme === 'dark') return theme;
-  return systemDark ? 'dark' : 'light';
 }
 
 /**

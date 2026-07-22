@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import type { Theme } from '@/layers/shared/model';
+import type { ResolvedTheme } from '@/layers/shared/model';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -14,9 +14,12 @@ vi.mock('blintz', () => ({
   ),
 }));
 
-const themeState: { theme: Theme } = { theme: 'light' };
+// The resolution itself (including system→OS via matchMedia) is unit-tested in
+// shared/model/__tests__/use-theme.test.ts; here we only prove BlintzCanvas
+// forwards whatever it resolves to.
+const themeState: { resolved: ResolvedTheme } = { resolved: 'light' };
 vi.mock('@/layers/shared/model', () => ({
-  useTheme: () => ({ theme: themeState.theme, setTheme: vi.fn() }),
+  useResolvedTheme: () => themeState.resolved,
 }));
 
 import { BlintzCanvas } from '../ui/BlintzCanvas';
@@ -28,53 +31,21 @@ function themeWrapper(): HTMLElement {
   return wrapper;
 }
 
-/** Point window.matchMedia at a fixed dark-preference answer. */
-function stubMatchMedia(prefersDark: boolean): void {
-  Object.defineProperty(window, 'matchMedia', {
-    configurable: true,
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: prefersDark,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  });
-}
-
 beforeEach(() => {
-  themeState.theme = 'light';
+  themeState.resolved = 'light';
 });
 afterEach(cleanup);
 
 describe('BlintzCanvas theme forwarding', () => {
-  it('forwards an explicit light preference as data-theme="light"', () => {
-    themeState.theme = 'light';
+  it('forwards a resolved light theme as data-theme="light"', () => {
+    themeState.resolved = 'light';
     render(<BlintzCanvas value="# hi" editable={false} />);
     expect(themeWrapper()).toHaveAttribute('data-theme', 'light');
   });
 
-  it('forwards an explicit dark preference as data-theme="dark"', () => {
-    themeState.theme = 'dark';
+  it('forwards a resolved dark theme as data-theme="dark"', () => {
+    themeState.resolved = 'dark';
     render(<BlintzCanvas value="# hi" editable={false} />);
     expect(themeWrapper()).toHaveAttribute('data-theme', 'dark');
-  });
-
-  it('resolves "system" to the OS preference (dark when the OS is dark)', () => {
-    themeState.theme = 'system';
-    stubMatchMedia(true);
-    render(<BlintzCanvas value="# hi" editable={false} />);
-    expect(themeWrapper()).toHaveAttribute('data-theme', 'dark');
-  });
-
-  it('resolves "system" to the OS preference (light when the OS is light)', () => {
-    themeState.theme = 'system';
-    stubMatchMedia(false);
-    render(<BlintzCanvas value="# hi" editable={false} />);
-    expect(themeWrapper()).toHaveAttribute('data-theme', 'light');
   });
 });
