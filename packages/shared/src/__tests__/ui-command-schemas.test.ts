@@ -345,6 +345,24 @@ describe('UiCanvasContentSchema', () => {
     expect(UiCanvasContentSchema.parse(content)).toEqual(content);
   });
 
+  it('round-trips audio content with an optional title', () => {
+    const content = { type: 'audio' as const, src: 'sounds/theme.mp3', title: 'Theme' };
+    expect(UiCanvasContentSchema.parse(content)).toEqual(content);
+  });
+
+  it('rejects audio content missing src', () => {
+    expect(() => UiCanvasContentSchema.parse({ type: 'audio' })).toThrow();
+  });
+
+  it('round-trips video content with an optional title', () => {
+    const content = { type: 'video' as const, src: 'clips/demo.mp4', title: 'Demo' };
+    expect(UiCanvasContentSchema.parse(content)).toEqual(content);
+  });
+
+  it('rejects video content missing src', () => {
+    expect(() => UiCanvasContentSchema.parse({ type: 'video' })).toThrow();
+  });
+
   it('round-trips csv content', () => {
     const content = { type: 'csv' as const, src: 'data/rows.csv' };
     expect(UiCanvasContentSchema.parse(content)).toEqual(content);
@@ -389,6 +407,16 @@ describe('UiStateSchema', () => {
 
   it('rejects missing fields', () => {
     expect(() => UiStateSchema.parse({ canvas: { open: false } })).toThrow();
+  });
+
+  it.each(['audio', 'video'] as const)('accepts %s as a canvas contentType', (contentType) => {
+    const state = {
+      canvas: { open: true, contentType },
+      panels: { settings: false, tasks: false, relay: false, picker: false },
+      sidebar: { open: true, activeTab: 'sessions' },
+      agent: { id: null, cwd: '/home/user/project' },
+    };
+    expect(UiStateSchema.parse(state).canvas.contentType).toBe(contentType);
   });
 });
 

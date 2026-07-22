@@ -2711,6 +2711,8 @@ const CanvasMediaSrcSchema = z.string().min(1);
  * - `{ type: 'json', data: unknown, title? }`
  * - `{ type: 'image', src: string, title?, alt? }` — `src` is an https URL, a `data:` URI, or a local file path
  * - `{ type: 'pdf', src: string, title? }` — `src` follows the same rules as `image`
+ * - `{ type: 'audio', src: string, title? }` — HTML5 `<audio>`; `src` follows the same rules as `image`
+ * - `{ type: 'video', src: string, title? }` — HTML5 `<video>`; `src` follows the same rules as `image`
  * - `{ type: 'widget', definition: WidgetDocument, title? }` — a Tier-1 generative-UI widget
  */
 export const UiCanvasContentSchema = z
@@ -2795,7 +2797,19 @@ export const UiCanvasContentSchema = z
     }),
     z.object({
       type: z.literal('model3d'),
-      /** 3D model source: https URL, `data:` URI, or a local (cwd-confined) file path (glTF/GLB/STL/OBJ). */
+      /** 3D model source: https URL, `data:` URI, or a local (cwd-confined) file path (glTF/GLB/STL/OBJ/3MF/PLY/FBX/DAE). */
+      src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('audio'),
+      /** Audio source: https URL, `data:` URI, or a local (cwd-confined) file path. Streamed via the raw route with HTTP Range for seeking. */
+      src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('video'),
+      /** Video source: https URL, `data:` URI, or a local (cwd-confined) file path. Streamed via the raw route with HTTP Range for seeking. */
       src: CanvasMediaSrcSchema,
       title: z.string().optional(),
     }),
@@ -3138,6 +3152,8 @@ export const UiStateSchema = z
           'mcp_app',
           'file',
           'model3d',
+          'audio',
+          'video',
           'csv',
           'browser',
           'diff',
