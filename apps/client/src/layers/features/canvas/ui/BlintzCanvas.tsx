@@ -1,6 +1,7 @@
 import { MarkdownEditor } from 'blintz';
 import './blintz.css';
 import { cn } from '@/layers/shared/lib';
+import { useResolvedTheme } from '@/layers/shared/model';
 
 /** Props for {@link BlintzCanvas}. */
 export interface BlintzCanvasProps {
@@ -21,19 +22,28 @@ export interface BlintzCanvasProps {
  * KaTeX) and its stylesheet to a single module, so the canvas can lazy-load it
  * only when a markdown document renders — never for the `url` / `json` canvas
  * variants or the main bundle — and tests have one module to mock.
+ *
+ * Forwards the app's resolved theme as `data-theme` on the wrapper so the host's
+ * explicit light/dark choice beats the OS preference in Blintz's own CSS (fixes
+ * black-on-black markdown when the OS is dark but the app is light).
  */
 export function BlintzCanvas({ value, editable, onChange, className }: BlintzCanvasProps) {
+  const resolvedTheme = useResolvedTheme();
   return (
-    // desktop-darwin:select-text — the desktop shell defaults chrome to
-    // non-selectable (index.css). Canvas documents are content, and in view
-    // mode (`editable={false}`) the ProseMirror surface is NOT contenteditable,
-    // so without this the body-level user-select:none would make the document
-    // unselectable (DOR-253).
-    <MarkdownEditor
-      value={value}
-      editable={editable}
-      onChange={onChange}
-      className={cn('desktop-darwin:select-text', className)}
-    />
+    // `display: contents` — the wrapper exists only to carry `data-theme` as an
+    // ancestor of Blintz's `.milkdown`; it adds no box, so layout is unchanged.
+    <div data-theme={resolvedTheme} className="contents">
+      {/* desktop-darwin:select-text — the desktop shell defaults chrome to
+          non-selectable (index.css). Canvas documents are content, and in view
+          mode (`editable={false}`) the ProseMirror surface is NOT contenteditable,
+          so without this the body-level user-select:none would make the document
+          unselectable (DOR-253). */}
+      <MarkdownEditor
+        value={value}
+        editable={editable}
+        onChange={onChange}
+        className={cn('desktop-darwin:select-text', className)}
+      />
+    </div>
   );
 }

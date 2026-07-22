@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef } from 'react';
+import { createElement, useEffect, useRef, useState } from 'react';
 import '@google/model-viewer';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -36,20 +36,39 @@ export function Model3dViewer({ url, format, label }: Model3dViewerProps) {
       style: { width: '100%', height: '100%' },
     });
   }
-  return <ThreeModelViewer url={url} format={format} label={label} />;
+  // Key by the model identity so a new url/format mounts a fresh viewer — this
+  // resets the WebGL-failure state, so a model that failed to open never poisons
+  // the next one loaded into the same tab.
+  return <ThreeModelViewer key={`${url}:${format}`} url={url} format={format} label={label} />;
 }
 
 /** three.js STL/OBJ viewer: loads the geometry, frames it, and orbits on drag. */
 function ThreeModelViewer({ url, format, label }: Model3dViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // WebGL context creation can fail (GPU off, too many live contexts — terminal
+  // tabs hold them too). That is a normal runtime condition, not a crash: we
+  // render an in-tab message rather than letting the throw escape the effect.
+  const [webglFailed, setWebglFailed] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    // Construct the renderer FIRST and guard it, so a failure returns before any
+    // resource (scene, controls, observer, appended canvas) is created — the
+    // cleanup below then only ever runs when every referenced object exists.
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch (error) {
+      console.error('[Canvas] WebGL renderer unavailable:', error);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: WebGL availability is only knowable by attempting construction, which needs the effect-only DOM container; surfacing the failure as state is the correct fallback
+      setWebglFailed(true);
+      return;
+    }
+
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 5000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
 
@@ -128,6 +147,14 @@ function ThreeModelViewer({ url, format, label }: Model3dViewerProps) {
       renderer.domElement.remove();
     };
   }, [url, format]);
+
+  if (webglFailed) {
+    return (
+      <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-center">
+        <p>This 3D model can&rsquo;t be shown here. Your device couldn&rsquo;t open a 3D view.</p>
+      </div>
+    );
+  }
 
   return <div ref={containerRef} className="h-full w-full" aria-label={label} role="img" />;
 }
