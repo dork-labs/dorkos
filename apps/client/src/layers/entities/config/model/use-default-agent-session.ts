@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { getAgentDisplayName } from '@dorkos/shared/validation';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { useConfig } from './use-config';
 
@@ -11,7 +11,13 @@ import { useConfig } from './use-config';
 const DEFAULT_AGENT = 'dorkbot';
 /** Fallback agents directory matching the server-side default. */
 const DEFAULT_AGENTS_DIR = '~/.dork/agents';
-/** Runtime assumed for a default agent whose entry carries no runtime. */
+/**
+ * Runtime assumed for the default agent. `AgentPathEntry` carries no runtime, so
+ * this is a fixed assumption rather than a resolved value. It only ever feeds a
+ * `first-message` birth record's `runtime` field, which drives the birth
+ * certificate's "runs on" label — and that certificate is suppressed for
+ * `first-message` records (ADR 260722-111316), so this value is never rendered.
+ */
 const DEFAULT_RUNTIME = 'claude-code';
 
 /**

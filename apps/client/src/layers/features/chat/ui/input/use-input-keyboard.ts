@@ -9,6 +9,8 @@ interface UseInputKeyboardOptions {
   isStreaming: boolean;
   isMobile: boolean;
   sessionBusy: boolean;
+  /** When false, the Enter key does not submit (the send target is not ready). Defaults to true. */
+  canSubmit?: boolean;
   editingQueueItem: boolean;
   isPaletteOpen?: boolean;
   queueHasItems: boolean;
@@ -33,6 +35,7 @@ export function useInputKeyboard({
   isStreaming,
   isMobile,
   sessionBusy,
+  canSubmit = true,
   editingQueueItem,
   isPaletteOpen,
   queueHasItems,
@@ -130,7 +133,7 @@ export function useInputKeyboard({
           onSaveEdit?.();
         } else if (isStreaming && value.trim()) {
           onQueue?.();
-        } else if (!isStreaming && !sessionBusy && value.trim()) {
+        } else if (!isStreaming && !sessionBusy && canSubmit && value.trim()) {
           onSubmit();
         }
       }
@@ -155,6 +158,7 @@ export function useInputKeyboard({
       onQueueNavigateUp,
       onQueueNavigateDown,
       sessionBusy,
+      canSubmit,
       textareaRef,
     ]
   );

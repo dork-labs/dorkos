@@ -482,6 +482,20 @@ describe('ChatInput', () => {
       expect(onSubmit).not.toHaveBeenCalled();
     });
 
+    it('does not submit on Enter when canSubmit is false', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} onSubmit={onSubmit} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('submits on Enter when canSubmit is true (default)', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSubmit).toHaveBeenCalledOnce();
+    });
+
     it('enables the send button by default (canSubmit defaults to true)', () => {
       const onSubmit = vi.fn();
       render(<ChatInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
