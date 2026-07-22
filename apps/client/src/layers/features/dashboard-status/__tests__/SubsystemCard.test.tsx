@@ -16,31 +16,31 @@ describe('SubsystemCard', () => {
     cleanup();
   });
 
-  it('renders title and primary metric', () => {
-    render(<SubsystemCard title="Tasks" primaryMetric="3 schedules" onClick={mockOnClick} />);
+  it('leads with the outcome and keeps the subsystem name as a caption', () => {
+    render(<SubsystemCard caption="Relay" outcome="Connected to Telegram" onClick={mockOnClick} />);
 
-    expect(screen.getByText('Tasks')).toBeInTheDocument();
-    expect(screen.getByText('3 schedules')).toBeInTheDocument();
+    expect(screen.getByText('Relay')).toBeInTheDocument();
+    expect(screen.getByText('Connected to Telegram')).toBeInTheDocument();
   });
 
-  it('renders secondary info when provided', () => {
+  it('renders a detail line when provided', () => {
     render(
       <SubsystemCard
-        title="Tasks"
-        primaryMetric="3 schedules"
-        secondaryInfo="Next: 47m"
+        caption="Tasks"
+        outcome="3 scheduled"
+        detail="Next run in 47m"
         onClick={mockOnClick}
       />
     );
 
-    expect(screen.getByText('Next: 47m')).toBeInTheDocument();
+    expect(screen.getByText('Next run in 47m')).toBeInTheDocument();
   });
 
   it('does not render exception text when count is 0', () => {
     render(
       <SubsystemCard
-        title="Tasks"
-        primaryMetric="3 schedules"
+        caption="Tasks"
+        outcome="3 scheduled"
         exception={{ count: 0, label: 'failed today', severity: 'error' }}
         onClick={mockOnClick}
       />
@@ -52,8 +52,8 @@ describe('SubsystemCard', () => {
   it('renders exception text when count is greater than 0', () => {
     render(
       <SubsystemCard
-        title="Relay"
-        primaryMetric="2 adapters"
+        caption="Relay"
+        outcome="Connected to Slack"
         exception={{ count: 5, label: 'dead letters', severity: 'warning' }}
         onClick={mockOnClick}
       />
@@ -62,33 +62,35 @@ describe('SubsystemCard', () => {
     expect(screen.getByText('5 dead letters')).toBeInTheDocument();
   });
 
-  it('shows "Disabled" label and muted title when disabled prop is true', () => {
-    render(
-      <SubsystemCard title="Tasks" primaryMetric="3 schedules" disabled onClick={mockOnClick} />
-    );
+  it('shows "Disabled" instead of the outcome when disabled', () => {
+    render(<SubsystemCard caption="Tasks" outcome="3 scheduled" disabled onClick={mockOnClick} />);
 
     expect(screen.getByText('Disabled')).toBeInTheDocument();
-    // Primary metric should not be rendered
-    expect(screen.queryByText('3 schedules')).not.toBeInTheDocument();
+    expect(screen.queryByText('3 scheduled')).not.toBeInTheDocument();
+    // The caption still names the subsystem even when disabled.
+    expect(screen.getByText('Tasks')).toBeInTheDocument();
   });
 
   it('calls onClick when clicked', () => {
     const { container } = render(
-      <SubsystemCard title="Tasks" primaryMetric="0 schedules" onClick={mockOnClick} />
+      <SubsystemCard caption="Tasks" outcome="Nothing scheduled yet" onClick={mockOnClick} />
     );
 
-    const button = container.querySelector('button')!;
-    fireEvent.click(button);
+    fireEvent.click(container.querySelector('button')!);
     expect(mockOnClick).toHaveBeenCalledTimes(1);
   });
 
   it('calls onClick even when disabled', () => {
     const { container } = render(
-      <SubsystemCard title="Tasks" primaryMetric="0 schedules" disabled onClick={mockOnClick} />
+      <SubsystemCard
+        caption="Tasks"
+        outcome="Nothing scheduled yet"
+        disabled
+        onClick={mockOnClick}
+      />
     );
 
-    const button = container.querySelector('button')!;
-    fireEvent.click(button);
+    fireEvent.click(container.querySelector('button')!);
     expect(mockOnClick).toHaveBeenCalledTimes(1);
   });
 });

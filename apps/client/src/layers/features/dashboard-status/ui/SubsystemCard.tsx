@@ -9,26 +9,27 @@ const EXCEPTION_COLORS: Record<ExceptionSeverity, string> = {
 } as const;
 
 interface SubsystemCardProps {
-  title: string;
-  /** Primary metric line, e.g. "3 schedules". */
-  primaryMetric: string;
-  /** Secondary info line, e.g. "Next: 47m" or "Tg · Slack". */
-  secondaryInfo?: string;
+  /** Outcome headline — the primary line, e.g. "Connected to Telegram". */
+  outcome: string;
+  /** Small caption naming the subsystem for operators, e.g. "Relay". */
+  caption?: string;
+  /** Optional extra detail line, e.g. "Next run in 47m". */
+  detail?: string;
   /** Exception indicator shown only when count > 0. */
   exception?: { count: number; label: string; severity: ExceptionSeverity };
-  /** When true, shows a muted "Disabled" label instead of metric data. */
+  /** When true, shows a muted "Disabled" label instead of the outcome. */
   disabled?: boolean;
   onClick: () => void;
 }
 
 /**
- * Clickable subsystem health card used in the System Status row.
- * Shows primary metric, optional secondary info, and conditional exception count.
+ * Clickable subsystem health card used in the System Status row. Leads with an
+ * operator outcome, with the internal subsystem name kept as a small caption.
  */
 export function SubsystemCard({
-  title,
-  primaryMetric,
-  secondaryInfo,
+  outcome,
+  caption,
+  detail,
   exception,
   disabled = false,
   onClick,
@@ -39,20 +40,22 @@ export function SubsystemCard({
       className="bg-card shadow-soft card-interactive flex h-full w-full cursor-pointer flex-col items-start rounded-xl border p-4 text-left"
       onClick={onClick}
     >
-      <p
-        className={cn(
-          'text-sm font-medium',
-          disabled ? 'text-muted-foreground/50' : 'text-foreground'
-        )}
-      >
-        {title}
-      </p>
+      {caption && (
+        <p
+          className={cn(
+            'text-[0.65rem] font-medium tracking-widest uppercase',
+            disabled ? 'text-muted-foreground/50' : 'text-muted-foreground'
+          )}
+        >
+          {caption}
+        </p>
+      )}
       {disabled ? (
-        <p className="text-muted-foreground/50 mt-1 text-xs">Disabled</p>
+        <p className="text-muted-foreground/50 mt-1 text-sm font-medium">Disabled</p>
       ) : (
         <>
-          <p className="text-muted-foreground mt-1 text-xs">{primaryMetric}</p>
-          {secondaryInfo && <p className="text-muted-foreground mt-0.5 text-xs">{secondaryInfo}</p>}
+          <p className="text-foreground mt-1 text-sm font-medium">{outcome}</p>
+          {detail && <p className="text-muted-foreground mt-0.5 text-xs">{detail}</p>}
           {exception && exception.count > 0 && (
             <p className={cn('mt-1 text-xs', EXCEPTION_COLORS[exception.severity])}>
               {exception.count} {exception.label}
