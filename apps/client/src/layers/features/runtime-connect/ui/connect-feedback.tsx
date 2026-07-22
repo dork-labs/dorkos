@@ -8,6 +8,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Check, Loader2 } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 
 /** Inline progress row: a spinner plus the latest status line. */
 export function ConnectProgressRow({ message }: { message: string }) {
@@ -19,13 +20,11 @@ export function ConnectProgressRow({ message }: { message: string }) {
       animate={{ opacity: 1 }}
       data-testid="connect-progress"
     >
-      <motion.span
-        className="text-muted-foreground inline-flex"
-        animate={reducedMotion ? {} : { rotate: 360 }}
-        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-      >
-        <Loader2 className="size-3.5" />
-      </motion.span>
+      {/* CSS spin (not motion rotate): a repeated animate-to-360 stalls after the
+          first turn on re-render, so the spinner looked frozen (DOR-439). */}
+      <Loader2
+        className={cn('text-muted-foreground size-3.5 shrink-0', !reducedMotion && 'animate-spin')}
+      />
       <AnimatePresence mode="wait">
         <motion.span
           key={message}

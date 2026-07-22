@@ -82,6 +82,7 @@ import type {
   OllamaModelCatalog,
   OllamaPullProgress,
   OllamaPullResult,
+  OllamaProvisionResult,
 } from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type {
@@ -1008,6 +1009,20 @@ export interface Transport {
     model: string,
     onProgress?: (progress: OllamaPullProgress) => void
   ): Promise<OllamaPullResult>;
+  /**
+   * Install Ollama on demand and stream install progress (spec §13). A guided,
+   * password-free install: macOS via Homebrew, Windows via winget. Resolves to the
+   * terminal {@link OllamaProvisionResult}, whose `installMethod` reports which
+   * path ran and whose `status` re-probe tells the caller whether Ollama is
+   * already running. When no one-click path exists (`installMethod: 'manual'`) the
+   * result carries `ok: false` and the client shows the copyable command instead —
+   * DorkOS never installs with elevated privileges. Loopback-only server action.
+   *
+   * @param onProgress - Optional callback for streamed install progress frames.
+   */
+  provisionOllama(
+    onProgress?: (progress: RuntimeProvisionProgress) => void
+  ): Promise<OllamaProvisionResult>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */

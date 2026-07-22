@@ -320,9 +320,10 @@ describe('RuntimeSetupDialog — OpenCode provisioning', () => {
 
     // Progress row appears while the install is in flight.
     expect(transport.provisionRuntime).toHaveBeenCalledTimes(1);
-    expect(await screen.findByTestId('provision-progress')).toHaveTextContent(
-      'Downloading OpenCode…'
-    );
+    const progressRow = await screen.findByTestId('provision-progress');
+    expect(progressRow).toHaveTextContent('Downloading OpenCode…');
+    // The install spinner must actually spin (DOR-439).
+    expect(progressRow.querySelector('.animate-spin')).toBeInTheDocument();
 
     // Complete the install → invalidation → refetch → Ready, no manual refresh.
     await act(async () => {
