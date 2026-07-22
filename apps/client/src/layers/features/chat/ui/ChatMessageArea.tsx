@@ -1,7 +1,7 @@
 import type { RefObject } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowDown } from 'lucide-react';
-import { useAppStore, useAgentBirthRecord } from '@/layers/shared/model';
+import { useAgentBirthRecord } from '@/layers/shared/model';
 import { MessageList } from './MessageList';
 import type { MessageListHandle, ScrollState } from './MessageList';
 import { ChatEmptyState } from './ChatEmptyState';
@@ -46,8 +46,8 @@ interface ChatMessageAreaProps {
 }
 
 /**
- * Message display region: loading state, empty state, dorkbot welcome,
- * the virtualized message list, and scroll-to-bottom overlays.
+ * Message display region: loading state, empty state, the virtualized message
+ * list, and scroll-to-bottom overlays.
  */
 export function ChatMessageArea({
   messages,
@@ -67,8 +67,6 @@ export function ChatMessageArea({
   inputZoneToolCallId,
   messageListRef,
 }: ChatMessageAreaProps) {
-  const dorkbotFirstMessage = useAppStore((s) => s.dorkbotFirstMessage);
-  const setDorkbotFirstMessage = useAppStore((s) => s.setDorkbotFirstMessage);
   const birthRecord = useAgentBirthRecord(sessionId);
   // First light (M4): between the opening turn firing and the first greetable
   // content landing, a newborn session shows the agent waking up — its face,
@@ -93,12 +91,7 @@ export function ChatMessageArea({
         </div>
       ) : messages.length === 0 ? (
         <div className="flex h-full items-center justify-center">
-          <ChatEmptyState
-            birthRecord={birthRecord}
-            firstLightRecord={firstLightRecord}
-            dorkbotFirstMessage={dorkbotFirstMessage}
-            onDorkbotWelcomeShown={() => setDorkbotFirstMessage(null)}
-          />
+          <ChatEmptyState birthRecord={birthRecord} firstLightRecord={firstLightRecord} />
         </div>
       ) : (
         <MessageList

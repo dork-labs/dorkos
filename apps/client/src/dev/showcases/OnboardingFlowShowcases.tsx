@@ -7,69 +7,13 @@ import {
   OnboardingFlow,
   SystemRequirementsStep,
   WelcomeStep,
-  MeetDorkBotStep,
-  AgentDiscoveryStep,
-  OnboardingComplete,
   OnboardingNavBar,
   ProgressCard,
 } from '@/layers/features/onboarding';
-import { CandidateCard, BulkAddBar, CollapsibleImportedSection } from '@/layers/entities/discovery';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
-import type { DiscoveryCandidate, ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 
 // ── Mock data ────────────────────────────────────────────────
-
-const MOCK_CANDIDATES: DiscoveryCandidate[] = [
-  {
-    path: '/Users/kai/projects/webapp/.claude',
-    strategy: 'filesystem',
-    hints: {
-      suggestedName: 'webapp-agent',
-      detectedRuntime: 'claude-code',
-      inferredCapabilities: ['code-review', 'testing'],
-      description: 'Web application development agent',
-    },
-    discoveredAt: '2026-03-17T10:30:00Z',
-  },
-  {
-    path: '/Users/kai/projects/api-server/.cursor',
-    strategy: 'filesystem',
-    hints: {
-      suggestedName: 'api-agent',
-      detectedRuntime: 'cursor',
-      inferredCapabilities: ['deployment'],
-      description: 'API server maintenance agent',
-    },
-    discoveredAt: '2026-03-17T10:30:01Z',
-  },
-  {
-    path: '/Users/kai/projects/ml-pipeline/.claude',
-    strategy: 'filesystem',
-    hints: {
-      suggestedName: 'ml-agent',
-      detectedRuntime: 'claude-code',
-      inferredCapabilities: ['data-processing', 'monitoring'],
-      description: 'ML pipeline orchestration agent',
-    },
-    discoveredAt: '2026-03-17T10:30:02Z',
-  },
-];
-
-const MOCK_EXISTING_AGENTS: ExistingAgent[] = [
-  {
-    path: '/Users/kai/projects/dorkbot',
-    name: 'dorkbot',
-    runtime: 'claude-code',
-    description: 'System agent',
-  },
-  {
-    path: '/Users/kai/projects/blog',
-    name: 'blog',
-    runtime: 'cursor',
-    description: 'Blog site project',
-  },
-];
 
 const noop = () => {};
 
@@ -139,9 +83,6 @@ export function OnboardingFlowShowcases() {
       <InteractiveFlowShowcase />
       <SystemRequirementsStepShowcase />
       <WelcomeStepShowcase />
-      <MeetDorkBotStepShowcase />
-      <AgentDiscoveryStepShowcase />
-      <OnboardingCompleteShowcase />
       <OnboardingNavBarShowcase />
       <ProgressCardShowcase />
     </>
@@ -156,7 +97,7 @@ function InteractiveFlowShowcase() {
   return (
     <PlaygroundSection
       title="OnboardingFlow"
-      description="Full interactive onboarding flow. Click through each step: Welcome, setup check (ready-first), Meet DorkBot, Project Import, Tasks, and Complete. Rendered in a contained viewport."
+      description="Full interactive onboarding: Welcome, the ready-first setup check, then the scripted DorkBot conversation (personality, discovery, and the handoff composer). Rendered in a contained viewport."
     >
       <div className="mb-3 flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => setFlowKey((k) => k + 1)}>
@@ -256,161 +197,16 @@ function WelcomeStepShowcase() {
   );
 }
 
-function MeetDorkBotStepShowcase() {
-  return (
-    <PlaygroundSection
-      title="MeetDorkBotStep"
-      description="DorkBot personality customization with trait sliders, avatar breathing animation, and live preview text. Sliders are fully interactive."
-    >
-      <ShowcaseDemo responsive>
-        <div className="mx-auto max-w-2xl px-4 py-4">
-          <MeetDorkBotStep onStepComplete={noop} />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-function AgentDiscoveryStepShowcase() {
-  return (
-    <PlaygroundSection
-      title="AgentDiscoveryStep"
-      description="Project import step with auto-scan. The live component shows the scanning state (mock transport has no real scan results). Static showcases below demonstrate all visual states."
-    >
-      <ShowcaseLabel>Live — scanning state (auto-scan, mock transport)</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="flex min-h-[300px] flex-col px-4 py-4">
-          <AgentDiscoveryStep onStepComplete={noop} />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>State: existing + new projects (Option A layout)</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="flex min-h-[300px] flex-col items-center px-4 py-4">
-          <div className="w-full shrink-0 text-center">
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Projects Found</h2>
-            <p className="text-muted-foreground mt-3 shrink-0 text-center text-sm">
-              Add projects you want to manage from DorkOS. You can assign agents, schedule tasks,
-              connect to Slack, Telegram, and more.
-            </p>
-          </div>
-          <div className="mt-4 w-full space-y-3">
-            <BulkAddBar count={MOCK_CANDIDATES.length} onAddAll={noop} />
-            {MOCK_CANDIDATES.map((candidate) => (
-              <CandidateCard
-                key={candidate.path}
-                candidate={candidate}
-                onApprove={noop}
-                onSkip={noop}
-              />
-            ))}
-            <CollapsibleImportedSection agents={MOCK_EXISTING_AGENTS} />
-          </div>
-          <div className="mt-4 flex shrink-0 flex-col items-center gap-2 border-t pt-4">
-            <Button size="lg">Continue</Button>
-          </div>
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>State: all projects already imported</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="flex min-h-[200px] flex-col items-center px-4 py-4">
-          <div className="w-full shrink-0 text-center">
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Projects Found</h2>
-            <p className="text-muted-foreground mt-3 shrink-0 text-center text-sm">
-              Adding a project lets you manage it from DorkOS — assign agents, schedule tasks, and
-              connect to Slack, Telegram, and more.
-            </p>
-          </div>
-          <div className="mt-4 w-full">
-            <CollapsibleImportedSection agents={MOCK_EXISTING_AGENTS} />
-          </div>
-          <div className="mt-4 flex shrink-0 flex-col items-center gap-2 border-t pt-4">
-            <Button size="lg">Continue</Button>
-          </div>
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>State: error</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="flex min-h-[150px] flex-col items-center px-4 py-4">
-          <div className="w-full shrink-0 text-center">
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Searching your machine...
-            </h2>
-          </div>
-          <div className="border-destructive/30 bg-destructive/5 text-destructive mt-6 shrink-0 rounded-lg border px-4 py-3 text-sm">
-            Failed to scan directories: EACCES permission denied
-          </div>
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-function OnboardingCompleteShowcase() {
-  return (
-    <PlaygroundSection
-      title="OnboardingComplete"
-      description="Completion screen with word-by-word heading animation, step summary cards, and confetti. Fires confetti on mount."
-    >
-      <OnboardingCompleteInner />
-    </PlaygroundSection>
-  );
-}
-
-function OnboardingCompleteInner() {
-  const [remountKey, setRemountKey] = useState(0);
-
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setRemountKey((k) => k + 1)}
-        className="mb-3"
-      >
-        Replay animation
-      </Button>
-      <ShowcaseDemo>
-        <div className="flex min-h-[400px] items-center justify-center">
-          <OnboardingComplete key={remountKey} onComplete={noop} />
-        </div>
-      </ShowcaseDemo>
-    </>
-  );
-}
-
 // ── Supporting components ────────────────────────────────────
 
 function OnboardingNavBarShowcase() {
-  const [step, setStep] = useState(1);
-
   return (
     <PlaygroundSection
       title="OnboardingNavBar"
-      description="Step navigation bar with Back, animated step indicator dots, and Skip / Skip all controls. Click Back/Skip to cycle through steps."
+      description="The conversation's slim nav bar — Back to the ready gate and Skip setup. No step dots (a conversation is not a dotted wizard)."
     >
-      <ShowcaseLabel>{`3 steps, current: ${step}`}</ShowcaseLabel>
       <ShowcaseDemo>
-        <OnboardingNavBar
-          totalSteps={3}
-          currentStep={step}
-          onBack={() => setStep((s) => Math.max(0, s - 1))}
-          onSkip={() => setStep((s) => Math.min(2, s + 1))}
-          onSkipAll={noop}
-        />
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>5 steps, current: 0</ShowcaseLabel>
-      <ShowcaseDemo>
-        <OnboardingNavBar
-          totalSteps={5}
-          currentStep={0}
-          onBack={noop}
-          onSkip={noop}
-          onSkipAll={noop}
-        />
+        <OnboardingNavBar onBack={noop} onSkip={noop} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

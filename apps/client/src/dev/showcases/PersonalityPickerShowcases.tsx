@@ -21,7 +21,7 @@ export function PersonalityPickerShowcases() {
   return (
     <PlaygroundSection
       title="PersonalityPicker"
-      description="Shared personality picker body — radar, archetype label, preset pills, custom sliders, sample response. Used by MeetDorkBotStep (onboarding) and PersonalityPickerPanel (agent hub)."
+      description="Shared personality picker body — radar, archetype label, preset pills, custom sliders, sample response. Used by the onboarding conversation and PersonalityPickerPanel (agent hub)."
     >
       <ShowcaseLabel>Default</ShowcaseLabel>
       <ShowcaseDemo responsive>

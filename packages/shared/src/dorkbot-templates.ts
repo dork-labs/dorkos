@@ -35,34 +35,6 @@ export function dorkbotClaudeMdTemplate(): string {
 }
 
 /**
- * Generate DorkBot's first chat message, tailored to personality verbosity.
- *
- * @param traits - Agent personality traits (uses `verbosity` to select message style)
- */
-export function generateFirstMessage(traits: Traits): string {
-  const { verbosity } = traits;
-  if (verbosity >= 4) {
-    return (
-      "Hey! I'm DorkBot — your personal agent running on DorkOS. " +
-      'I can help with scheduling (Tasks), messaging (Relay), and discovering other agents (Mesh). ' +
-      'What are we building today?'
-    );
-  }
-  if (verbosity <= 2) {
-    return (
-      "DorkBot online. I'm your default DorkOS agent. " +
-      'Tools available: Tasks (scheduling), Relay (messaging), Mesh (discovery). ' +
-      'Ready for instructions.'
-    );
-  }
-  return (
-    "Hi, I'm DorkBot — your default agent in DorkOS. " +
-    'I have access to Tasks for scheduling, Relay for messaging, and Mesh for agent discovery. ' +
-    'How can I help?'
-  );
-}
-
-/**
  * DorkBot's spoken lines for the scripted, token-free onboarding conversation.
  *
  * Every line here is client-generated (no inference) and forms DorkBot's side of
