@@ -86,4 +86,25 @@ describe('useTheme — shared store (S2)', () => {
     act(() => result.current.setTheme('dark'));
     expect(localStorage.getItem(STORAGE_KEY)).toBe('dark');
   });
+
+  it('an imperative setTheme (the agent set_theme path) updates mounted consumers and survives an OS flip', () => {
+    // A mounted viewer following the OS, which is light.
+    const { result } = renderHook(() => useResolvedTheme());
+    expect(result.current).toBe('light');
+
+    // The dispatcher calls the store's setTheme from outside React.
+    act(() => useThemeStore.getState().setTheme('dark'));
+    expect(result.current).toBe('dark');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    // A later OS change must NOT silently revert the explicit choice — the old
+    // direct-classList override was reverted here by the matchMedia subscription.
+    act(() => useThemeStore.getState().setSystemDark(true));
+    act(() => useThemeStore.getState().setSystemDark(false));
+    expect(result.current).toBe('dark');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    // And it persisted like a user pick (the old direct toggle did not).
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('dark');
+  });
 });

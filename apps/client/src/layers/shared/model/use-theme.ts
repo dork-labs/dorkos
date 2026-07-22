@@ -45,13 +45,14 @@ interface ThemeStore {
  * Shared theme store — the single source of truth for the light/dark/system
  * preference and the OS signal.
  *
- * A change from any surface (settings, command palette, sidebar) reaches every
- * consumer at once, including already-mounted canvas viewers that used to hold a
- * stale per-instance copy (so a newly-dark app no longer left an open markdown
- * document painted light). Prefer the {@link useTheme} / {@link useResolvedTheme}
- * hooks; the store is exported for the one-time wiring below and for tests.
+ * A change from any surface (settings, command palette, sidebar, or the agent's
+ * `control_ui set_theme` command) reaches every consumer at once, including
+ * already-mounted canvas viewers that used to hold a stale per-instance copy (so
+ * a newly-dark app no longer leaves an open markdown document painted light).
  *
- * @internal
+ * Inside React, prefer the {@link useTheme} / {@link useResolvedTheme} hooks.
+ * Non-React callers (the app-shell command dispatcher) set the theme
+ * imperatively via `useThemeStore.getState().setTheme(...)`.
  */
 export const useThemeStore = create<ThemeStore>((set) => ({
   theme: getStored(),
