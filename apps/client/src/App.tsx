@@ -1,12 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useFavicon,
+  useDocumentTitle,
+  useExtensionRegistry,
+  EMBED_PATHNAME,
+} from '@/layers/shared/model';
 import { getAgentDisplayName, isMac } from '@/layers/shared/lib';
 import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
 import { PermissionBanner } from '@/layers/widgets/app-banner';
-import { SessionSidebar } from '@/layers/features/session-list';
+import { EmbedSidebar } from '@/layers/features/session-list';
 import { ChatPanel } from '@/layers/features/chat';
 import {
   Toaster,
@@ -14,11 +20,18 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  Kbd,
 } from '@/layers/shared/ui';
-import { Kbd } from '@/layers/shared/ui/kbd';
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
 import { PipHost } from '@/layers/features/pip-panel';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
+import {
+  RightPanelContainer,
+  RightPanelToggle,
+  useRightPanelShortcut,
+  useAgentProfileShortcut,
+} from '@/layers/features/right-panel';
+import { registerRightPanelTabs } from './app/init-extensions';
 
 interface AppProps {
   /** Optional transform applied to message content before sending to server */
@@ -28,9 +41,13 @@ interface AppProps {
 /**
  * Embedded application shell for the Obsidian plugin.
  *
- * Renders an overlay sidebar, floating toggle, and ChatPanel within
- * a container-relative layout. No router — session state is managed
- * entirely via Zustand. The standalone web app uses {@link AppShell} instead.
+ * Renders the conversations roster ({@link EmbedSidebar}) and the right-panel
+ * Inspector ({@link RightPanelContainer}) — the same Inspector architecture the
+ * standalone cockpit uses — both as overlays over the ChatPanel, since the embed
+ * pane is too narrow for a side-by-side split. No router: session state is
+ * managed entirely via Zustand, and shared hooks reach route state through the
+ * router-safe {@link useSafeSearch}/{@link useSafePathname} wrappers. The
+ * standalone web app uses {@link AppShell} instead.
  */
 export function App({ transformContent }: AppProps) {
   const { sidebarOpen, setSidebarOpen, toggleSidebar } = useAppStore();
@@ -63,11 +80,21 @@ export function App({ transformContent }: AppProps) {
     tasksBadgeCount,
   });
 
-  // The embed never renders the right panel, so its shortcut hooks
-  // (useRightPanelShortcut / useAgentProfileShortcut) stay in AppShell only —
-  // mounting them here would preventDefault Cmd+. / Cmd+Shift+A at the document
-  // level and steal those chords from the Obsidian host for no effect.
   useShortcutsPanel();
+  // The embed now mounts the right-panel Inspector, so its shortcut hooks earn
+  // their keep: Cmd+. toggles the panel and Cmd+Shift+A opens Agent Profile.
+  useRightPanelShortcut();
+  useAgentProfileShortcut();
+
+  // Register the Inspector tabs into the extension registry. The embed has its
+  // own React root (no web `main.tsx`), so it registers the same tab set the
+  // cockpit does — route + transport gating (e.g. the terminal's
+  // `supportsTerminal` check) drops what does not apply under the in-process
+  // transport. `register` dedupes by id, so re-running on re-render is harmless.
+  const registerContribution = useExtensionRegistry((s) => s.register);
+  useEffect(() => {
+    registerRightPanelTabs(registerContribution);
+  }, [registerContribution]);
 
   // Escape key closes overlay sidebar (scoped to container)
   useEffect(() => {
@@ -125,7 +152,7 @@ export function App({ transformContent }: AppProps) {
                     transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
                     className="bg-background absolute top-0 left-0 z-50 h-full w-80 overflow-y-auto border-r"
                   >
-                    <SessionSidebar />
+                    <EmbedSidebar />
                   </motion.div>
                 </>
               )}
@@ -155,11 +182,25 @@ export function App({ transformContent }: AppProps) {
               )}
             </AnimatePresence>
 
+            {/* Floating right-panel (Inspector) toggle — mirrors the sidebar
+                toggle. The panel opens as an overlay Sheet (below), so the
+                narrow embed pane is never split side-by-side. */}
+            <div className="bg-background/80 absolute top-3 right-3 z-30 rounded-md border p-0.5 shadow-sm backdrop-blur">
+              <RightPanelToggle />
+            </div>
+
             {/* --pip-dock (set by the mobile PIP mini-bar) lifts the chat —
                 including the composer — above the 64px bar. */}
             <main className="h-full flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">
               <ChatPanel sessionId={activeSessionId} transformContent={transformContent} />
             </main>
+
+            {/* Right-panel Inspector — overlay Sheet in the embed (no PanelGroup,
+                narrow pane). Pulse + Agent Profile + Files render under the
+                in-process transport; the terminal tab hides via its
+                `supportsTerminal` gate. Fixed `/session` pathname: the embed is
+                always a single session surface. */}
+            <RightPanelContainer pathname={EMBED_PATHNAME} variant="overlay" />
           </div>
         </div>
         <CommandPaletteDialog />

@@ -186,7 +186,8 @@ function ToolGroupRow({
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// MCP status indicator colors — matches ConnectionsView in session sidebar.
+// MCP status indicator colors for the tool/MCP roster (formerly mirrored by the
+// retired session-sidebar ConnectionsView; this is now the canonical home).
 // ---------------------------------------------------------------------------
 
 const MCP_STATUS_COLORS: Partial<Record<string, string>> = {

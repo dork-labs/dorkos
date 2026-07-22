@@ -33,12 +33,11 @@ export interface CoreSlice {
   setSidebarOpen: (open: boolean) => void;
 
   /**
-   * Active tab of the embedded shell's legacy sidebar strip (`SessionSidebar`,
-   * Obsidian only — the web cockpit has no sidebar tab strip). One of the four
-   * built-ins (`overview` | `sessions` | `schedules` | `connections`); stored
-   * as-is so an embedded `switch_sidebar_tab` command or a Shape's pinned
-   * `sidebarTab` can drive it, and `SessionSidebar` resolves any other id back
-   * to `overview` on read.
+   * Target of the embedded `switch_sidebar_tab` UI command — set by a Shape's
+   * pinned `sidebarTab` and `control_ui`, and reported in the embedded
+   * `get_ui_state` snapshot. No surface renders from it since the legacy embed
+   * tab strip (`SessionSidebar`) was retired for the roster + right-panel
+   * Inspector (DOR-401); kept as write-and-report state for those channels.
    */
   sidebarActiveTab: string;
   setSidebarActiveTab: (tab: string) => void;

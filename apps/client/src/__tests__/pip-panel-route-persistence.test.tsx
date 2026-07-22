@@ -30,7 +30,6 @@ vi.mock('@/layers/features/dashboard-sidebar', () => ({
 }));
 
 vi.mock('@/layers/features/session-list', () => ({
-  SessionSidebar: () => <div data-testid="session-sidebar">New session</div>,
   SidebarFooterBar: () => <div data-testid="sidebar-footer-bar">SidebarFooterBar</div>,
 }));
 

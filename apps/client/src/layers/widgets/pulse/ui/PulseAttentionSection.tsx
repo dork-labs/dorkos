@@ -1,5 +1,7 @@
-import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { motion } from 'motion/react';
+import { getPlatform } from '@/layers/shared/lib';
+import { useSafePathname } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useAttentionItems, AttentionItemRow } from '@/layers/features/dashboard-attention';
 import { PulseSection } from './PulseSection';
@@ -28,9 +30,12 @@ const staggerContainer = {
  */
 export function PulseAttentionSection() {
   const navigate = useNavigate();
-  // The dashboard IS the "View all" destination — omit the link there rather than
-  // offer a self-navigation no-op (honest omission, no scroll hack).
-  const onDashboard = useRouterState({ select: (s) => s.location.pathname === '/' });
+  // "View all" navigates to the dashboard. Omit the link when it would be a
+  // no-op (already on the dashboard) and in the router-less Obsidian embed,
+  // where there is no dashboard route to reach — an honest omission, not a
+  // dead-end button.
+  const pathname = useSafePathname();
+  const showViewAll = !getPlatform().isEmbedded && pathname !== '/';
   const { items, isLoading } = useAttentionItems();
   const shown = items.slice(0, PULSE_ATTENTION_CAP);
 
@@ -43,7 +48,7 @@ export function PulseAttentionSection() {
       empty={!isLoading && items.length === 0}
       allClear="All quiet — nothing needs you."
       action={
-        onDashboard ? undefined : (
+        showViewAll ? (
           <Button
             variant="ghost"
             size="sm"
@@ -52,7 +57,7 @@ export function PulseAttentionSection() {
           >
             View all →
           </Button>
-        )
+        ) : undefined
       }
     >
       <motion.div variants={staggerContainer} initial="initial" animate="animate">

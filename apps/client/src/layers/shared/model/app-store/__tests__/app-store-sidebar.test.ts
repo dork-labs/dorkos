@@ -20,8 +20,8 @@ describe('CoreSlice — sidebarActiveTab', () => {
   });
 
   it('tolerates and persists an arbitrary (legacy namespaced) tab id', () => {
-    // The store keeps whatever it is given; SessionSidebar resolves a non-built-in
-    // id back to overview on read, so a leftover namespaced id survives storage.
+    // The store keeps whatever the switch_sidebar_tab command / a Shape's pinned
+    // sidebarTab writes, so a leftover namespaced id survives storage unchanged.
     const legacyId = 'linear-issues:linear-loop-sidebar';
     useAppStore.getState().setSidebarActiveTab(legacyId);
     expect(useAppStore.getState().sidebarActiveTab).toBe(legacyId);
