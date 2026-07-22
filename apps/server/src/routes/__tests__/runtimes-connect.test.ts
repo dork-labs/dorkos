@@ -316,14 +316,25 @@ describe('runtime connect endpoints', () => {
   });
 
   describe('GET /api/runtimes/opencode/ollama', () => {
-    it('returns detected running state + models', async () => {
+    it('returns detected running state + models with per-model fit verdicts', async () => {
       vi.mocked(detectOllama).mockResolvedValue({
         running: true,
-        models: [{ name: 'qwen2.5-coder:7b' }],
+        models: [{ name: 'qwen2.5-coder:7b', size: 4_700_000_000 }, { name: 'no-size-model' }],
       });
       const res = await request(app).get('/api/runtimes/opencode/ollama');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ running: true, models: [{ name: 'qwen2.5-coder:7b' }] });
+      expect(res.body.running).toBe(true);
+      expect(res.body.models).toEqual([
+        { name: 'qwen2.5-coder:7b', size: 4_700_000_000 },
+        { name: 'no-size-model' },
+      ]);
+      // Installed list carries an honest verdict per sized model; unsized ones are skipped.
+      expect(res.body.installed).toHaveLength(1);
+      expect(res.body.installed[0].id).toBe('qwen2.5-coder:7b');
+      expect(res.body.installed[0].sizeBytes).toBe(4_700_000_000);
+      expect(['runs-well', 'may-be-slow', 'too-large']).toContain(
+        res.body.installed[0].assessment.verdict
+      );
     });
 
     it('rejects a non-loopback origin with 403', async () => {
@@ -404,13 +415,27 @@ describe('runtime connect endpoints', () => {
       expect(res.text).toContain('Could not pull');
     });
 
-    it('rejects an uncurated model with 400 and never triggers a pull', async () => {
+    it('accepts any syntactically valid tag, curated or not (pull-by-name)', async () => {
+      vi.mocked(pullOllamaModel).mockResolvedValue({ ok: true, model: 'totally/uncurated:latest' });
       const res = await request(app)
         .post('/api/runtimes/opencode/ollama/pull')
         .send({ model: 'totally/uncurated:latest' });
 
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/event-stream');
+      expect(pullOllamaModel).toHaveBeenCalledWith(
+        'totally/uncurated:latest',
+        expect.any(Function)
+      );
+    });
+
+    it('rejects a malformed tag with 400 and never triggers a pull', async () => {
+      const res = await request(app)
+        .post('/api/runtimes/opencode/ollama/pull')
+        .send({ model: 'not a valid tag!' });
+
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/curated/i);
+      expect(res.body.error).toMatch(/valid ollama model name/i);
       expect(pullOllamaModel).not.toHaveBeenCalled();
     });
 

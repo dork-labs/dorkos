@@ -33,10 +33,11 @@ import {
   storeOpenRouterKeyReference,
   OpenRouterError,
 } from '../services/runtimes/opencode/openrouter.js';
+import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
 import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/ollama.js';
 import {
+  assessInstalledModels,
   assessOllamaModels,
-  resolveCuratedModel,
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/ollama-catalog.js';
 import { logger } from '../lib/logger.js';
@@ -73,7 +74,11 @@ const ProviderCredentialBodySchema = z.object({
   secret: z.string().min(1),
   baseURL: z.string().nullable().optional(),
 });
-const OllamaPullBodySchema = z.object({ model: z.string().min(1).optional() });
+const OllamaPullBodySchema = z.object({
+  // Any syntactically valid Ollama tag — DorkOS pulls what you name, curated or
+  // not (spec §3). The regex only rejects malformed input, never uncurated tags.
+  model: z.string().min(1).regex(OLLAMA_TAG_PATTERN).optional(),
+});
 
 /** A runtime's on-demand provisioning function (streams progress, resolves to a result). */
 type ProvisionFn = (
@@ -229,11 +234,14 @@ router.get('/opencode/openrouter/models', async (req, res) => {
 
 /**
  * GET /api/runtimes/opencode/ollama — zero-auth local Ollama detection: running
- * state + pulled models, bounded so an absent/hung Ollama degrades fast.
+ * state + pulled models, bounded so an absent/hung Ollama degrades fast. Also
+ * returns the installed models with an honest fit verdict per model (spec §3).
  */
 router.get('/opencode/ollama', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
-  res.json(await detectOllama());
+  const status = await detectOllama();
+  const installed = await assessInstalledModels(status.models);
+  res.json({ ...status, installed });
 });
 
 /**
@@ -242,34 +250,30 @@ router.get('/opencode/ollama', async (req, res) => {
  * honest `runs-well | may-be-slow | too-large` verdict. Static heuristic, not a
  * benchmark; never claims certainty.
  */
-router.get('/opencode/ollama/models', (req, res) => {
+router.get('/opencode/ollama/models', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
-  res.json(assessOllamaModels());
+  res.json(await assessOllamaModels());
 });
 
 /**
- * POST /api/runtimes/opencode/ollama/pull — trigger a single guided pull of a
- * curated coding model and STREAM download progress (mirrors the provision
- * endpoint's SSE shape: `progress` frames then a terminal `result`). Loopback-only.
+ * POST /api/runtimes/opencode/ollama/pull — trigger a single Ollama pull and
+ * STREAM download progress (mirrors the provision endpoint's SSE shape: `progress`
+ * frames then a terminal `result`). Loopback-only.
  *
- * The model is restricted to the curated catalog — DorkOS guides one pull, it is
- * not an open model browser. An uncurated id is rejected up front (before the
- * stream opens); DorkOS never owns or manages Ollama's library.
+ * Any syntactically valid Ollama tag is accepted, curated or not (spec §3) — a
+ * non-curated pull skips the curated pre-gate; a malformed tag is rejected up
+ * front (before the stream opens). Post-pull fit verdicts are delivered by the
+ * detection endpoint's installed list, not this stream. DorkOS never owns or
+ * manages Ollama's library.
  */
 router.post('/opencode/ollama/pull', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
 
   const parsed = OllamaPullBodySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid pull request.' });
+    return res.status(400).json({ error: 'That is not a valid Ollama model name.' });
   }
-  const requestedId = parsed.data.model ?? DEFAULT_OLLAMA_MODEL_ID;
-  const curated = resolveCuratedModel(requestedId);
-  if (!curated) {
-    return res.status(400).json({
-      error: 'Only curated coding models can be pulled here. Use Ollama directly for others.',
-    });
-  }
+  const model = parsed.data.model ?? DEFAULT_OLLAMA_MODEL_ID;
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -279,16 +283,14 @@ router.post('/opencode/ollama/pull', async (req, res) => {
   });
 
   try {
-    const result = await pullOllamaModel(curated.id, (progress) =>
-      sendEvent(res, 'progress', progress)
-    );
+    const result = await pullOllamaModel(model, (progress) => sendEvent(res, 'progress', progress));
     sendEvent(res, 'result', result);
   } catch (err) {
     // pullOllamaModel returns failures rather than throwing; guard defensively.
     logger.error('[Runtimes] Ollama pull failed unexpectedly', err);
     sendEvent(res, 'result', {
       ok: false,
-      model: curated.id,
+      model,
       error: 'Could not pull the model. Please try again.',
     });
   } finally {

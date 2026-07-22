@@ -273,3 +273,102 @@ describe('checkOpenCodeDependencies', () => {
     expect(auth.status).toBe('missing');
   });
 });
+
+describe('checkOpenCodeDependencies — DorkOS-persisted provider (root-cause fix)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Binary probes are irrelevant to the auth-state tests below — resolve none.
+    mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
+    vi.mocked(existsSync).mockReturnValue(false);
+    onExecFile(() => ({ error: new Error('binary irrelevant to auth tests') }));
+  });
+
+  /** A config reader that reports a selected OpenCode provider + a providers registry. */
+  function stubConfig(provider: string | null, providers: Record<string, string> = {}) {
+    return {
+      get: (key: string) => {
+        if (key === 'runtimes') return { opencode: { provider } };
+        if (key === 'providers') return providers;
+        return undefined;
+      },
+    } as never;
+  }
+
+  /** A credential provider whose `resolve` reports the given outcome. */
+  function stubCredentialProvider(outcome: 'ok' | 'unresolved') {
+    return {
+      resolve: vi.fn(async () =>
+        outcome === 'ok'
+          ? { ok: true as const, secret: 'sk-secret' }
+          : {
+              ok: false as const,
+              reason: 'unresolved' as const,
+              ref: 'file:openrouter',
+              message: 'No stored credential named "openrouter".',
+            }
+      ),
+    };
+  }
+
+  it('is satisfied via a set OpenRouter provider whose reference resolves — no CLI login needed', async () => {
+    const credentialProvider = stubCredentialProvider('ok');
+    const [, auth] = await checkOpenCodeDependencies({
+      config: stubConfig('openrouter', { openrouter: 'file:openrouter' }),
+      credentialProvider,
+    });
+
+    expect(auth.status).toBe('satisfied');
+    // Plain-language copy names what satisfied it.
+    expect(auth.description).toMatch(/connected via openrouter/i);
+    expect(credentialProvider.resolve).toHaveBeenCalledWith('file:openrouter');
+  });
+
+  it('is satisfied for a set Ollama provider without resolving any credential (local, no key)', async () => {
+    const credentialProvider = stubCredentialProvider('ok');
+    const [, auth] = await checkOpenCodeDependencies({
+      config: stubConfig('ollama'),
+      credentialProvider,
+    });
+
+    expect(auth.status).toBe('satisfied');
+    expect(auth.description).toMatch(/on this computer|ollama/i);
+    // Ollama needs no credential — the provider is never asked to resolve one.
+    expect(credentialProvider.resolve).not.toHaveBeenCalled();
+  });
+
+  it('reports missing (reconnect copy) when a set provider reference no longer resolves', async () => {
+    const credentialProvider = stubCredentialProvider('unresolved');
+    const [, auth] = await checkOpenCodeDependencies({
+      config: stubConfig('openrouter', { openrouter: 'file:openrouter' }),
+      credentialProvider,
+    });
+
+    expect(auth.status).toBe('missing');
+    expect(auth.description).toMatch(/connect again|didn't work/i);
+    // A dangling DorkOS connection does NOT fall back to the CLI probe.
+    expect(execFile).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining(['auth']),
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it('falls back to the CLI auth probe when no DorkOS provider is set', async () => {
+    // No provider set + a PATH binary that reports credentials → CLI-auth satisfied.
+    vi.mocked(existsSync).mockImplementation((p) => p === PATH_OPENCODE);
+    pathProbes();
+    const credentialProvider = stubCredentialProvider('ok');
+
+    const [cli, auth] = await checkOpenCodeDependencies({
+      config: stubConfig(null),
+      credentialProvider,
+    });
+
+    expect(cli.status).toBe('satisfied');
+    expect(auth.status).toBe('satisfied');
+    expect(auth.description).toMatch(/opencode cli/i);
+    // With no provider set, DorkOS never resolves a credential — the CLI decides.
+    expect(credentialProvider.resolve).not.toHaveBeenCalled();
+  });
+});
