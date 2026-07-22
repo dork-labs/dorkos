@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   expandTilde: vi.fn((p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
@@ -112,7 +113,7 @@ import request from 'supertest';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
-import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 
 const mockSyncFromDisk = vi.fn().mockResolvedValue(true);
 const mockMeshCore = { syncFromDisk: mockSyncFromDisk };
@@ -468,7 +469,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('validates boundary and returns 403 for out-of-bounds path', async () => {
-    vi.mocked(validateBoundary).mockRejectedValueOnce(
+    vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
       new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
     );
 

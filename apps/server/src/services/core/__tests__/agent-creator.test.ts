@@ -36,6 +36,7 @@ vi.mock('@dorkos/harness', () => ({
 
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(),
+  validateBoundaryOrDorkHome: vi.fn(),
   expandTilde: vi.fn((p: string) => p.replace(/^~/, '/home/test')),
   BoundaryError: class BoundaryError extends Error {
     code = 'BOUNDARY_VIOLATION';

@@ -22,11 +22,19 @@ vi.mock('../../../lib/boundary.js', async () => {
   const actual = await vi.importActual<typeof import('../../../lib/boundary.js')>(
     '../../../lib/boundary.js'
   );
-  return { ...actual, validateBoundary: vi.fn(async (p: string) => p) };
+  return {
+    ...actual,
+    validateBoundary: vi.fn(async (p: string) => p),
+    validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
+  };
 });
 
 import { readManifest } from '@dorkos/shared/manifest';
-import { validateBoundary, BoundaryError } from '../../../lib/boundary.js';
+import {
+  validateBoundary,
+  validateBoundaryOrDorkHome,
+  BoundaryError,
+} from '../../../lib/boundary.js';
 
 function createMockDeps(meshEnabled = true): McpToolDeps {
   const mockMeshCore = {
@@ -172,7 +180,8 @@ describe('Mesh MCP Tools', () => {
     it('mesh_register rejects a path outside the boundary', async () => {
       const deps = createMockDeps(true);
       const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      // Register uses the dork-home seam (mirrors the HTTP mesh register route).
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 

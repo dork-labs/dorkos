@@ -5,6 +5,7 @@ import request from 'supertest';
 // Mock boundary validation — default to passthrough (returns path as-is)
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -31,7 +32,7 @@ vi.mock('../../services/mesh/orphaned-installs.js', () => ({
 
 import { createMeshRouter } from '../mesh.js';
 import type { MeshCore } from '@dorkos/mesh';
-import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { logOrphanedInstalls } from '../../services/mesh/orphaned-installs.js';
 
@@ -277,8 +278,9 @@ describe('Mesh routes', () => {
     });
 
     it('returns 403 when the scan root is outside the boundary', async () => {
-      // Agent-path validation passes; the scan-root validation (second call) rejects.
-      vi.mocked(validateBoundary)
+      // Register uses the dork-home seam for both the agent path (first call) and
+      // the scan root (second call). Agent-path validation passes; scan-root rejects.
+      vi.mocked(validateBoundaryOrDorkHome)
         .mockImplementationOnce(async (p: string) => p)
         .mockRejectedValueOnce(
           new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
@@ -347,7 +349,8 @@ describe('Mesh routes', () => {
     });
 
     it('returns 403 when projectPath is outside the boundary', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      // Register uses the dork-home seam for the agent path.
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 

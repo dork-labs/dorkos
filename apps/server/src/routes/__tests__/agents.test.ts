@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -73,7 +74,7 @@ import request from 'supertest';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
-import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // Build a minimal Express app with just the agents router
@@ -132,7 +133,7 @@ describe('Agents Routes', () => {
     });
 
     it('validates boundary and returns 403 for out-of-bounds path', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -172,7 +173,7 @@ describe('Agents Routes', () => {
     });
 
     it('sets null for paths that fail boundary validation', async () => {
-      vi.mocked(validateBoundary)
+      vi.mocked(validateBoundaryOrDorkHome)
         .mockResolvedValueOnce('/home/user/good-path')
         .mockRejectedValueOnce(
           new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
@@ -241,7 +242,7 @@ describe('Agents Routes', () => {
     });
 
     it('validates boundary and returns 403 for out-of-bounds path', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -353,7 +354,7 @@ describe('Agents Routes', () => {
     });
 
     it('validates boundary and returns 403 for out-of-bounds path', async () => {
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
+      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -457,6 +458,66 @@ describe('Agents Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('displayName');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Regression: system agents live under dork-home, which sits OUTSIDE a
+  // project-scoped boundary (the Docker deployment: DORKOS_BOUNDARY=/workspace,
+  // DorkBot at /home/node/.dork/agents/dorkbot). Agent routes must go through
+  // the dork-home seam so onboarding's "Meet DorkBot" step (PATCH /current) and
+  // the initial fetch (GET /current) succeed instead of 403-ing.
+  // ---------------------------------------------------------------------------
+  describe('system agents under dork-home (boundary-scoped deployment)', () => {
+    const DORKBOT_PATH = '/home/node/.dork/agents/dorkbot';
+    const systemManifest: AgentManifest = {
+      ...mockManifest,
+      name: 'dorkbot',
+      isSystem: true,
+    };
+
+    beforeEach(() => {
+      // Simulate a boundary that excludes dork-home: the plain check would 403
+      // any dork-home path, while the seam accepts it. Proves the routes use
+      // the seam, not the plain boundary.
+      vi.mocked(validateBoundary).mockImplementation(async (p: string) => {
+        if (p.startsWith('/home/node/.dork')) {
+          throw new BoundaryError(
+            'Access denied: path outside directory boundary',
+            'OUTSIDE_BOUNDARY'
+          );
+        }
+        return p;
+      });
+      vi.mocked(validateBoundaryOrDorkHome).mockImplementation(async (p: string) => p);
+    });
+
+    it('GET /current on the system agent succeeds (seam allows dork-home)', async () => {
+      mockReadManifest.mockResolvedValue(systemManifest);
+
+      const res = await request(app).get('/api/agents/current').query({ path: DORKBOT_PATH });
+
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe('dorkbot');
+      expect(res.body.isSystem).toBe(true);
+      expect(vi.mocked(validateBoundaryOrDorkHome)).toHaveBeenCalledWith(DORKBOT_PATH);
+    });
+
+    it('PATCH /current applies DorkBot persona under a workspace boundary (the bug)', async () => {
+      mockReadManifest.mockResolvedValue(systemManifest);
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: DORKBOT_PATH })
+        .send({ persona: 'You are DorkBot', personaEnabled: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.persona).toBe('You are DorkBot');
+      expect(mockWriteManifest).toHaveBeenCalledWith(
+        DORKBOT_PATH,
+        expect.objectContaining({ persona: 'You are DorkBot' })
+      );
+      expect(vi.mocked(validateBoundaryOrDorkHome)).toHaveBeenCalledWith(DORKBOT_PATH);
     });
   });
 });

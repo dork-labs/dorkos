@@ -19,7 +19,7 @@ import {
   UpdateAccessRuleRequestSchema,
 } from '@dorkos/shared/mesh-schemas';
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
-import { validateBoundary } from '../lib/boundary.js';
+import { validateBoundary, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -252,22 +252,25 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
 
     const { path: projectPath, overrides, approver, scanRoot } = result.data;
 
-    // Validate projectPath against boundary
+    // Validate projectPath against boundary. Agent-registry seam: system and
+    // marketplace-installed agents live under `{dorkHome}/agents/*`, so registering
+    // an agent there is in-bounds even under a user-project boundary.
     let validatedPath: string;
     try {
-      validatedPath = await validateBoundary(projectPath);
+      validatedPath = await validateBoundaryOrDorkHome(projectPath);
     } catch {
       return res.status(403).json({ error: `Path outside boundary: ${projectPath}` });
     }
 
-    // Validate the scan root (ADR-0032): it must sit inside the boundary AND be
-    // an ancestor of the agent path — otherwise namespace derivation
+    // Validate the scan root (ADR-0032): it must sit inside the boundary (or
+    // dork-home, matching the agent path allowance above) AND be an ancestor of
+    // the agent path — otherwise namespace derivation
     // (`path.relative(scanRoot, path)`) would climb outside the scanned tree.
     // Omitted scanRoot falls back to the server default (homedir-relative).
     let validatedScanRoot: string | undefined;
     if (scanRoot !== undefined) {
       try {
-        validatedScanRoot = await validateBoundary(scanRoot);
+        validatedScanRoot = await validateBoundaryOrDorkHome(scanRoot);
       } catch {
         return res.status(403).json({ error: `Scan root outside boundary: ${scanRoot}` });
       }

@@ -31,6 +31,7 @@ vi.mock('@dorkos/shared/dorkbot-templates', () => ({
 
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(),
+  validateBoundaryOrDorkHome: vi.fn(),
   expandTilde: vi.fn((p: string) => p),
   BoundaryError: class BoundaryError extends Error {
     code = 'BOUNDARY_VIOLATION';
