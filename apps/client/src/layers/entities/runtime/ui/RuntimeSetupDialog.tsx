@@ -49,6 +49,13 @@ export interface RuntimeConnectSlotProps {
   /** The server's honest connect projection (kind + label) for this runtime. */
   connect: NonNullable<RuntimeConnectState['connect']>;
   /**
+   * The currently connected provider id, when the flow is reopened to CHANGE an
+   * already-connected runtime (OpenCode's "Change power source"). Lets the
+   * provider-agnostic picker label the current source ("Currently: On your
+   * computer (Ollama)"). Absent on a first connect.
+   */
+  currentProvider?: string;
+  /**
    * Called by a connect path the instant it succeeds, with the success-moment
    * copy. Injected only when the opener asked for the explicit success panel
    * (`showConnectSuccess`); otherwise omitted, and the path shows its own inline
@@ -184,6 +191,15 @@ function RuntimeSection({
   const readiness = selectRuntimeReadiness(requirements, type, registered);
   const isReady = readiness.state === 'ready';
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [changing, setChanging] = useState(false);
+
+  // A ready, provider-agnostic runtime (OpenCode reports its connected
+  // `provider`) can switch power source: the Change affordance reopens the same
+  // picker, prefilled with the current source, and runs the normal connect flow
+  // (the server is last-write-wins on the provider). Only offered when a connect
+  // renderer is wired — the picker lives in the feature layer (spec §9).
+  const currentProvider = entry?.provider;
+  const canChange = isReady && !!currentProvider && !!renderConnect;
 
   // The command a one-click install would run — sourced from the live install
   // dependency's hint, falling back to the descriptor's static setup command.
@@ -209,14 +225,44 @@ function RuntimeSection({
           <span className="text-sm font-medium">{descriptor.label}</span>
         </div>
         {isReady && (
-          <span
-            className="inline-flex items-center gap-1 text-xs text-emerald-500"
-            data-testid={`runtime-ready-${type}`}
-          >
-            <Check className="size-3.5" /> Ready
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1 text-xs text-emerald-500"
+              data-testid={`runtime-ready-${type}`}
+            >
+              <Check className="size-3.5" /> Ready
+            </span>
+            {canChange && !changing && (
+              <button
+                type="button"
+                onClick={() => setChanging(true)}
+                className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 transition-colors hover:underline"
+                data-testid={`runtime-change-${type}`}
+              >
+                Change
+              </button>
+            )}
+          </div>
         )}
       </div>
+
+      {canChange && changing && (
+        <div className="mt-3 space-y-2" data-testid={`runtime-change-panel-${type}`}>
+          {renderConnect?.({
+            type,
+            connect: { kind: 'provider-picker', label: 'Change power source' },
+            ...(currentProvider ? { currentProvider } : {}),
+          })}
+          <button
+            type="button"
+            onClick={() => setChanging(false)}
+            className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+            data-testid={`runtime-change-cancel-${type}`}
+          >
+            Keep current source
+          </button>
+        </div>
+      )}
 
       {!isReady && readiness.connect && (
         <div className="mt-3">

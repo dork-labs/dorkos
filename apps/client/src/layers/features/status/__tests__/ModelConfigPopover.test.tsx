@@ -266,7 +266,9 @@ describe('ModelConfigPopover', () => {
 
     it('uses raw model id when no pattern match is found', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'gpt-4o' })} />);
-      expect(screen.getByText('gpt-4o')).toBeInTheDocument();
+      // The id shows on the trigger (it also appears in the unavailable banner
+      // since gpt-4o is not in the mock catalog — scope to the trigger).
+      expect(screen.getByTestId('model-config-trigger')).toHaveTextContent('gpt-4o');
     });
   });
 
@@ -743,6 +745,62 @@ describe('ModelConfigPopover', () => {
         await user.click(radioGroup.querySelector('[data-radio-value="claude-haiku-3-5"]')!);
         expect(onChangeModel).toHaveBeenCalledWith('claude-haiku-3-5');
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Vanished saved model (spec §11): a saved value absent from the options is
+  // shown marked "(not available)" with a plain hint, and never auto-switched.
+  // ---------------------------------------------------------------------------
+  describe('vanished saved model', () => {
+    it('marks a vanished saved model unavailable with a plain hint (small list)', () => {
+      const onChangeModel = vi.fn();
+      render(<ModelConfigPopover {...defaultProps({ model: 'ollama/gone:7b', onChangeModel })} />);
+      const banner = screen.getByTestId('model-unavailable-saved');
+      expect(banner).toHaveTextContent('ollama/gone:7b');
+      expect(banner).toHaveTextContent('(not available)');
+      expect(
+        screen.getByText("This model isn't available anymore — pick another.")
+      ).toBeInTheDocument();
+      // Never auto-switch: the component only reflects the prop.
+      expect(onChangeModel).not.toHaveBeenCalled();
+    });
+
+    it('does not show the unavailable banner when the saved model is present', () => {
+      render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
+      expect(screen.queryByTestId('model-unavailable-saved')).not.toBeInTheDocument();
+    });
+
+    it('shows the unavailable banner in the tiered menu while still rendering the groups', () => {
+      mockUseModels.mockImplementation(() => ({
+        data: [
+          {
+            value: 'model-frontier-a',
+            displayName: 'Nova',
+            description: 'A model',
+            contextWindow: 128_000,
+            supportsEffort: false,
+            supportedEffortLevels: [] as EffortLevel[],
+            supportsFastMode: false,
+            supportsAutoMode: false,
+            tier: 'frontier',
+          },
+        ] as unknown[],
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+      }));
+      const onChangeModel = vi.fn();
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'openrouter/vanished', onChangeModel })} />
+      );
+      expect(screen.getByTestId('model-unavailable-saved')).toHaveTextContent(
+        'openrouter/vanished'
+      );
+      // The available options still render for the user to pick from.
+      expect(screen.getByTestId('model-group-frontier')).toBeInTheDocument();
+      expect(screen.getByTestId('model-card-list')).toHaveTextContent('Nova');
+      expect(onChangeModel).not.toHaveBeenCalled();
     });
   });
 
