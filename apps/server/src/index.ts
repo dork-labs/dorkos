@@ -25,7 +25,7 @@ import {
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
-import { initCredentialProvider } from './services/core/credential-provider.js';
+import { credentialProvider, initCredentialProvider } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
@@ -52,6 +52,7 @@ import { createRelayRouter } from './routes/relay.js';
 import { createConnectorsRouter } from './routes/connectors.js';
 import { createSessionConnectorsRouter } from './routes/session-connectors.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
+import { maybeCreateComposioProvider } from './services/connectors/providers/composio.js';
 import { SessionConnectorService } from './services/connectors/session-exposure.js';
 import { toSdkMcpServers } from './services/runtimes/claude-code/mcp-server-config.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
@@ -885,6 +886,15 @@ async function start() {
   // The `/api/connectors` and attach/detach routes are mounted later, once the
   // relay adapter catalog is available.
   const connectorRegistry = new ConnectorRegistry({ db });
+  // Register the Composio managed-custody backend ONLY when its API key is
+  // configured (resolved through the credential machinery). An install without a
+  // Composio key keeps the registry as-is — no `composio` provider, no crash
+  // (connector-gateway spec §Detailed Design 1, DOR-371 P5).
+  const composioProvider = await maybeCreateComposioProvider({ credentials: credentialProvider });
+  if (composioProvider) {
+    connectorRegistry.register(composioProvider);
+    logger.info('[Connectors] Composio managed backend registered');
+  }
   const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
