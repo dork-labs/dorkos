@@ -1,4 +1,4 @@
-import { Component, Fragment, type ErrorInfo, type ReactNode } from 'react';
+import { Component, Fragment, type ErrorInfo, type ReactElement, type ReactNode } from 'react';
 import { RotateCw } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 
@@ -16,27 +16,36 @@ function isDynamicImportError(error: Error): boolean {
 }
 
 /** The in-tab message shown when a document's viewer fails to render. */
-function CanvasErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }): ReactNode {
+function CanvasErrorFallback({
+  error,
+  onRetry,
+}: {
+  error: Error;
+  onRetry: () => void;
+}): ReactElement {
+  // A stale dynamic-import chunk can't be recovered by remounting: React caches
+  // the rejected module payload, so Retry would re-throw instantly. Offer only a
+  // full app reload, which re-fetches the current chunk hashes. Every other
+  // failure is worth retrying in place.
   const staleChunk = isDynamicImportError(error);
   return (
     <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
       <p>This tab hit a problem.</p>
-      {staleChunk && (
-        <p className="text-sm">
-          The app may have updated since you opened this tab. Reloading usually fixes it.
-        </p>
-      )}
-      <div className="flex items-center gap-2">
+      {staleChunk ? (
+        <>
+          <p className="text-sm">
+            The app may have updated since you opened this tab. Reloading usually fixes it.
+          </p>
+          <Button type="button" size="sm" onClick={() => window.location.reload()}>
+            Reload app
+          </Button>
+        </>
+      ) : (
         <Button type="button" variant="outline" size="sm" onClick={onRetry}>
           <RotateCw className="size-4" />
           Retry
         </Button>
-        {staleChunk && (
-          <Button type="button" size="sm" onClick={() => window.location.reload()}>
-            Reload app
-          </Button>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -63,9 +72,9 @@ interface CanvasErrorBoundaryState {
  * Wraps only the active document's renderer, so a viewer that throws — a failed
  * `React.lazy` chunk import after a rebuild, a WebGL failure, a bad file — is
  * contained to that one tab. The tab strip, tab switching, and every other open
- * document keep working. The fallback offers Retry (remounts the viewer) and,
- * for a stale-chunk import failure, a Reload app affordance. The outer
- * `PanelErrorBoundary` stays as the last-resort net.
+ * document keep working. The fallback offers Retry (remounts the viewer) for an
+ * ordinary failure, or Reload app for a stale-chunk import failure a remount
+ * can't recover. The outer `PanelErrorBoundary` stays as the last-resort net.
  */
 export class CanvasErrorBoundary extends Component<
   CanvasErrorBoundaryProps,
@@ -91,7 +100,7 @@ export class CanvasErrorBoundary extends Component<
       return <CanvasErrorFallback error={error} onRetry={this.handleRetry} />;
     }
     // Keyed so Retry unmounts and remounts the renderer fresh, re-attempting the
-    // viewer (and any lazy chunk) instead of re-rendering the failed instance.
+    // viewer instead of re-rendering the failed instance.
     return <Fragment key={retryKey}>{this.props.children}</Fragment>;
   }
 }

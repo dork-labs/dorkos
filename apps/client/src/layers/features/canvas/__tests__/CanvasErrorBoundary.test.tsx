@@ -106,6 +106,9 @@ describe('CanvasErrorBoundary', () => {
     expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
     // The chunk-specific hint + reload button appear only for import failures.
     expect(screen.getByText(/app may have updated/i)).toBeInTheDocument();
+    // Retry is NOT offered for a stale chunk — React caches the rejected import,
+    // so a remount would re-throw instantly; a full reload is the only remedy.
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /reload app/i }));
     expect(reload).toHaveBeenCalledTimes(1);

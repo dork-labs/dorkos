@@ -36,7 +36,10 @@ export function Model3dViewer({ url, format, label }: Model3dViewerProps) {
       style: { width: '100%', height: '100%' },
     });
   }
-  return <ThreeModelViewer url={url} format={format} label={label} />;
+  // Key by the model identity so a new url/format mounts a fresh viewer — this
+  // resets the WebGL-failure state, so a model that failed to open never poisons
+  // the next one loaded into the same tab.
+  return <ThreeModelViewer key={`${url}:${format}`} url={url} format={format} label={label} />;
 }
 
 /** three.js STL/OBJ viewer: loads the geometry, frames it, and orbits on drag. */
