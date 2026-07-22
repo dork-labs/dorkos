@@ -79,10 +79,12 @@ export interface ClaudeDependencyDeps {
 }
 
 /**
- * Resolve the `claude` executable to probe. Mirrors the SDK's own resolution
- * (bundled native binary first, then `PATH`) so we probe exactly the binary the
- * SDK would spawn. The bundled lookup is a synchronous `require.resolve` (no
- * spawn); the PATH locate is bounded.
+ * Resolve the `claude` executable to probe: bundled native binary first, then
+ * `PATH`. This approximates (not exactly mirrors) the SDK's spawn resolution,
+ * which also honors a CLAUDE_CLI_PATH env override before these steps; in the
+ * packaged desktop app that env path may resolve where this probe cannot. The
+ * bundled lookup is a synchronous `require.resolve` (no spawn); the PATH
+ * locate is bounded.
  *
  * @returns Absolute path to the binary, or `null` when unresolvable.
  */
