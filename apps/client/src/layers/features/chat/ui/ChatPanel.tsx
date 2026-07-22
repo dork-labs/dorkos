@@ -14,7 +14,7 @@ import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { useAppStore, useAgentBirthRecord } from '@/layers/shared/model';
+import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
 import { resolveTransportRetryText } from '../lib/resolve-retry-text';
 import type { MessageListHandle } from './MessageList';
@@ -294,6 +294,10 @@ export function ChatPanel({
 
   const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
 
+  // In-session suggestion-chip slot (DOR-419). Contributions self-gate (they
+  // render null when they have nothing to offer), so this stays mounted.
+  const suggestionChips = useSlotContributions('chat.suggestion-chips');
+
   // Turn-failed retry affordance: `status === 'error'` (settled from
   // turn_end{terminalReason:'error'}) fires for every runtime. A typed error
   // event usually also folds an inline error part into the turn, which
@@ -354,6 +358,10 @@ export function ChatPanel({
           />
         )}
       </AnimatePresence>
+
+      {suggestionChips.map((chip) => (
+        <chip.component key={chip.id} />
+      ))}
 
       <CelebrationOverlay
         celebration={celebrations.activeCelebration}

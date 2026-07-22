@@ -18,10 +18,11 @@ vi.mock('@tanstack/react-router', () => ({
 
 const mockAgentCreationOpen = vi.fn();
 const mockOpenSettingsToTab = vi.fn();
+const mockRequestTour = vi.fn();
 vi.mock('@/layers/shared/model', () => ({
   useAgentCreationStore: { getState: () => ({ open: mockAgentCreationOpen }) },
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ openSettingsToTab: mockOpenSettingsToTab }),
+    selector({ openSettingsToTab: mockOpenSettingsToTab, requestTour: mockRequestTour }),
 }));
 
 const mockStartSession = vi.fn();
@@ -82,6 +83,14 @@ describe('ProgressCard', () => {
     fireEvent.click(screen.getByText('Schedule a task'));
 
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/tasks' });
+  });
+
+  it('"Show me around" requests the general tour', () => {
+    render(<ProgressCard onDismiss={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Show me around'));
+
+    expect(mockRequestTour).toHaveBeenCalledWith('general');
   });
 
   it('"Add more agents" opens Settings on the runtimes tab', () => {

@@ -15,6 +15,7 @@ export const SLOT_IDS = {
   DIALOG: 'dialog',
   SETTINGS_TABS: 'settings.tabs',
   RIGHT_PANEL: 'right-panel',
+  SUGGESTION_CHIPS: 'chat.suggestion-chips',
 } as const;
 
 export type SlotId = (typeof SLOT_IDS)[keyof typeof SLOT_IDS];
@@ -93,6 +94,16 @@ export interface DialogContribution extends BaseContribution {
 export interface SettingsTabContribution extends BaseContribution {
   label: string;
   icon: LucideIcon;
+  component: ComponentType;
+}
+
+/**
+ * A client-rendered suggestion chip shown under the latest assistant message on
+ * the session surface. A general in-session nudge slot — the living tour's offer
+ * chips are its first customer. The component self-gates (renders null when it
+ * has nothing to say), so contributing one costs nothing when idle.
+ */
+export interface SuggestionChipContribution extends BaseContribution {
   component: ComponentType;
 }
 
@@ -179,6 +190,7 @@ export interface SlotContributionMap {
   dialog: DialogContribution;
   'settings.tabs': SettingsTabContribution;
   'right-panel': RightPanelContribution;
+  'chat.suggestion-chips': SuggestionChipContribution;
 }
 
 // --- Store ---

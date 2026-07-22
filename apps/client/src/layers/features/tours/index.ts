@@ -7,6 +7,8 @@
  * @module features/tours
  */
 
+export { TourHost } from './ui/TourHost';
+export { TourOfferChips } from './ui/TourOfferChips';
 export { useTours, type UseToursResult } from './model/use-tours';
 export { useTourOccasions } from './model/use-tour-occasions';
 export {

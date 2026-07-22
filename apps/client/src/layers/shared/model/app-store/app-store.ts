@@ -143,6 +143,10 @@ export const useAppStore = create<AppState>()(
         pendingRuntime: null,
         setPendingRuntime: (runtime) => set({ pendingRuntime: runtime }),
 
+        requestedTour: null,
+        requestTour: (id) => set({ requestedTour: id }),
+        clearRequestedTour: () => set({ requestedTour: null }),
+
         devtoolsOpen: false,
         toggleDevtools: () => set((s) => ({ devtoolsOpen: !s.devtoolsOpen })),
 

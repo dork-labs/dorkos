@@ -42,6 +42,10 @@ vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,
 }));
 
+vi.mock('@/layers/features/tours', () => ({
+  TourHost: () => null,
+}));
+
 vi.mock('@/layers/widgets/app-banner', () => ({
   AppBannerSlot: () => null,
   useAppBanners: () => [],
