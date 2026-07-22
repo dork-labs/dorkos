@@ -192,7 +192,7 @@ export function collectDurableEventsAt(
     {
       host: url.hostname,
       port: Number(url.port),
-      path: eventsPath(sessionId, opts.after),
+      path: eventsPath(sessionId, opts),
       method: 'GET',
       headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
     },
