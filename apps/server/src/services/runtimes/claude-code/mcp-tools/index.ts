@@ -18,6 +18,8 @@ import { getAgentTools } from './agent-tools.js';
 import { getUiTools } from './ui-tools.js';
 import { getDevtoolsTools } from './devtools-tools.js';
 import { getExtensionTools } from './extension-tools.js';
+import { getMarketplaceTools } from './marketplace-tools.js';
+import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
 // Re-export types and handlers for external consumers
 export type { McpToolDeps } from './types.js';
@@ -87,6 +89,7 @@ export {
   createReloadExtensionsHandler,
   createTestExtensionHandler,
 } from './extension-tools.js';
+export { getMarketplaceTools } from './marketplace-tools.js';
 
 /**
  * Create the DorkOS MCP tool server with all registered tools.
@@ -101,14 +104,22 @@ export {
  * additionally rides the session's event queue (the `ui_command` seam) to
  * reach the attached client with its capture request.
  *
+ * The `marketplaceDeps` bundle is resolved lazily at the call site in
+ * `index.ts` (the per-query factory closure reads a captured binding populated
+ * later in server boot), so passing `undefined` simply omits the marketplace
+ * tools — the same eight that back the external `/mcp` server.
+ *
  * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.)
  * @param session - Per-query session for UI tool event emission and state access
  * @param sessionId - Per-query trigger session id (DevTools read fallback)
+ * @param marketplaceDeps - Marketplace dependency bundle, or `undefined` when
+ *   the marketplace surface is unavailable (relay disabled / not yet wired)
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
   session?: import('./ui-tools.js').UiToolSession,
-  sessionId?: string
+  sessionId?: string,
+  marketplaceDeps?: MarketplaceMcpDeps
 ) {
   // Resolve the caller's trusted Relay identity from the session's working
   // directory (its agent manifest), not from tool arguments — this is what
@@ -136,6 +147,7 @@ export function createDorkOsToolServer(
       ...getUiTools(deps, session),
       ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
       ...getExtensionTools(deps),
+      ...getMarketplaceTools(marketplaceDeps),
     ],
   });
 }

@@ -941,7 +941,12 @@ async function start() {
       ...(meshCore && { meshCore }),
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) => ({
-      dorkos: createDorkOsToolServer(mcpToolDeps!, session, sessionId),
+      // `marketplaceMcpDeps` is populated later in boot (the relay-enabled
+      // marketplace-wiring block). This factory closure runs per query, so it
+      // reads the captured binding lazily — by the time any session dispatches
+      // a turn, it is either populated or intentionally undefined (marketplace
+      // disabled), in which case the in-session marketplace tools are omitted.
+      dorkos: createDorkOsToolServer(mcpToolDeps!, session, sessionId, marketplaceMcpDeps),
       // Connected accounts explicitly attached to this session become named MCP
       // tool servers (`gmail-personal`, `gmail-work`). The connection details
       // are provider-neutral; the SDK-shape conversion is confined to the
