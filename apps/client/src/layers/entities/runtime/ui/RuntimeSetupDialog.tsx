@@ -8,6 +8,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  InlineCode,
   ResponsiveDialog,
   ResponsiveDialogContent,
   ResponsiveDialogHeader,
@@ -224,7 +225,7 @@ function RuntimeSection({
               <>
                 <p className="text-muted-foreground text-xs">
                   Not registered with this server. Install it, then enable{' '}
-                  <code className="text-2xs">runtimes.{type}</code> in your DorkOS config.
+                  <InlineCode>runtimes.{type}</InlineCode> in your DorkOS config.
                 </p>
                 {descriptor.setup && (
                   <DependencyInstallHint
@@ -354,7 +355,9 @@ function RuntimeProvisionButton({
       <Button size="sm" onClick={provision}>
         {label}
       </Button>
-      {installCommand && <CommandTransparencyNote command={installCommand} />}
+      {installCommand && (
+        <CommandTransparencyNote command={installCommand} runtimeLabel={descriptor.label} />
+      )}
     </div>
   );
 }
@@ -401,16 +404,21 @@ function DependencyRow({ dep }: { dep: DependencyCheck }) {
   const satisfied = dep.status === 'satisfied';
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        {satisfied ? (
-          <Check className="size-3.5 shrink-0 text-emerald-500" />
-        ) : (
-          <CircleAlert className="size-3.5 shrink-0 text-amber-500" />
-        )}
-        <span className="text-sm">{dep.name}</span>
-        <span className="text-muted-foreground truncate text-xs">
+      {/* Stacked, not inline: the name owns its own line so a long label never
+          wraps beside a truncating description. The detail sits below at full
+          width and wraps naturally — nothing is clipped out of view. */}
+      <div>
+        <div className="flex items-center gap-2">
+          {satisfied ? (
+            <Check className="size-3.5 shrink-0 text-emerald-500" />
+          ) : (
+            <CircleAlert className="size-3.5 shrink-0 text-amber-500" />
+          )}
+          <span className="text-sm">{dep.name}</span>
+        </div>
+        <p className="text-muted-foreground mt-1 pl-[1.375rem] text-xs">
           {satisfied && dep.version ? `v${dep.version}` : dep.description}
-        </span>
+        </p>
       </div>
       {!satisfied && (dep.installHint || dep.infoUrl) && (
         <DependencyInstallHint
