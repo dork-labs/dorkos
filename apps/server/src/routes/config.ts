@@ -3,12 +3,8 @@ import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
-import {
-  UserConfigSchema,
-  SENSITIVE_CONFIG_KEYS,
-  SIDEBAR_PREFS_DEFAULTS,
-  SHAPE_USER_PREFS_DEFAULTS,
-} from '@dorkos/shared/config-schema';
+import { SIDEBAR_PREFS_DEFAULTS, SHAPE_USER_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isTasksEnabled, getTasksInitError } from '../services/tasks/task-state.js';
 import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
@@ -22,62 +18,10 @@ import { resolveDorkHome } from '../lib/dork-home.js';
 
 const router = Router();
 
-/** Keys that must be filtered during deep merge to prevent prototype pollution. */
-const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-
-/**
- * Recursively merge source object into target.
- * Arrays are replaced (not merged). Null values from source override target.
- */
-export function deepMerge(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>
-): Record<string, unknown> {
-  const result = { ...target };
-
-  for (const [key, sourceValue] of Object.entries(source)) {
-    if (DANGEROUS_KEYS.has(key)) continue;
-    const targetValue = result[key];
-
-    if (
-      sourceValue !== null &&
-      typeof sourceValue === 'object' &&
-      !Array.isArray(sourceValue) &&
-      targetValue !== null &&
-      typeof targetValue === 'object' &&
-      !Array.isArray(targetValue)
-    ) {
-      result[key] = deepMerge(
-        targetValue as Record<string, unknown>,
-        sourceValue as Record<string, unknown>
-      );
-    } else {
-      result[key] = sourceValue;
-    }
-  }
-
-  return result;
-}
-
-/**
- * Extract all dot-path keys from a nested object.
- * Example: { server: { port: 4242 } } -> ['server.port']
- */
-function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
-  const keys: string[] = [];
-
-  for (const [key, value] of Object.entries(obj)) {
-    const fullKey = prefix ? `${prefix}.${key}` : key;
-
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      keys.push(...flattenKeys(value as Record<string, unknown>, fullKey));
-    } else {
-      keys.push(fullKey);
-    }
-  }
-
-  return keys;
-}
+// Re-exported from the shared config-patch service (the SSOT for merge + patch
+// semantics) so existing importers — and the `deepMerge` unit test — keep their
+// `routes/config.js` import path.
+export { deepMerge };
 
 /**
  * List the agent runtimes configured on this host.
@@ -236,48 +180,25 @@ router.get('/', async (_req, res) => {
 
 router.patch('/', (req, res) => {
   try {
-    const patch = req.body;
-    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
-      return res.status(400).json({ error: 'Request body must be a JSON object' });
-    }
-
-    const current = configManager.getAll();
-    const merged = deepMerge(current as unknown as Record<string, unknown>, patch);
-    const parseResult = UserConfigSchema.safeParse(merged);
-
-    if (!parseResult.success) {
+    const result = applyConfigPatch(req.body);
+    if (!result.ok) {
       return res.status(400).json({
-        error: 'Validation failed',
-        details: parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+        error: result.error,
+        ...(result.details && { details: result.details }),
       });
     }
 
-    // Check for sensitive keys in patch
-    const warnings: string[] = [];
-    const patchKeys = flattenKeys(patch);
-    logger.debug(`[Config] Patched: ${Object.keys(patch).join(', ')}`);
-    for (const key of patchKeys) {
-      if (SENSITIVE_CONFIG_KEYS.includes(key as (typeof SENSITIVE_CONFIG_KEYS)[number])) {
-        const warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
-        warnings.push(warning);
-        logger.warn(`[Config] ${warning}`);
-      }
+    if (req.body && typeof req.body === 'object') {
+      logger.debug(`[Config] Patched: ${Object.keys(req.body).join(', ')}`);
     }
-
-    // Apply each top-level key from the validated result
-    const validated = parseResult.data;
-    for (const [key] of Object.entries(patch)) {
-      if (key in validated) {
-        type ConfigKey = keyof typeof validated;
-        const configKey = key as ConfigKey;
-        configManager.set(configKey, validated[configKey]);
-      }
+    for (const warning of result.warnings) {
+      logger.warn(`[Config] ${warning}`);
     }
 
     return res.json({
       success: true,
-      config: configManager.getAll(),
-      ...(warnings.length > 0 && { warnings }),
+      config: result.config,
+      ...(result.warnings.length > 0 && { warnings: result.warnings }),
     });
   } catch (err) {
     logger.error('[Config] PATCH failed', logError(err));

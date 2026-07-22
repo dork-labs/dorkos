@@ -7,6 +7,7 @@ import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
 import { registerMeshTools } from './external-mcp/mesh-tools.js';
 import { registerAgentAndExtensionTools } from './external-mcp/agent-extension-tools.js';
+import { registerOperatorTools } from './external-mcp/operator-tools.js';
 import { registerSessionResources } from './external-mcp/session-resources.js';
 import { registerAgentResources } from './external-mcp/agent-resources.js';
 import { registerSkillResources } from './external-mcp/skill-resources.js';
@@ -83,6 +84,7 @@ export function createExternalMcpServer(
   registerBindingTools(server, deps);
   registerMeshTools(server, deps);
   registerAgentAndExtensionTools(server, deps);
+  registerOperatorTools(server, deps);
 
   // ── Marketplace tools (conditional on marketplace deps being available) ─
   if (marketplaceDeps) {
