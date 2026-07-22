@@ -334,6 +334,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
               status: 'satisfied',
               version: '1.0.0',
             },
+            {
+              name: 'Claude Code authentication',
+              description: 'Signed in to Claude.',
+              status: 'satisfied',
+            },
           ],
         },
       },

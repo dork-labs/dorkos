@@ -112,15 +112,36 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
     });
   });
 
-  it('treats a runtime with no auth check (Claude) as Ready when the CLI is satisfied', async () => {
+  it('treats a runtime that declares no auth check as Ready when the CLI is satisfied (legacy shape)', async () => {
+    // Backward-compat for a single-dependency runtime shape: no auth check reads
+    // as "auth not required". (Real Claude now ships an authentication check —
+    // covered by the claude-code adapter tests — so a signed-out CLI no longer
+    // slips through this default.)
     vi.mocked(runtimeRegistry.listRuntimes).mockReturnValue([
-      fakeRuntime('claude-code', [dep('Claude Code CLI', 'satisfied')]),
+      fakeRuntime('aider', [dep('Aider CLI', 'satisfied')]),
     ]);
 
     const res = await request(app).get('/api/system/requirements');
 
-    expect(res.body.runtimes['claude-code'].state).toBe('ready');
-    expect(res.body.runtimes['claude-code'].connect).toBeUndefined();
+    expect(res.body.runtimes['aider'].state).toBe('ready');
+    expect(res.body.runtimes['aider'].connect).toBeUndefined();
+  });
+
+  it('projects a signed-out Claude (CLI satisfied, auth missing) to Connect with kind "login"', async () => {
+    vi.mocked(runtimeRegistry.listRuntimes).mockReturnValue([
+      fakeRuntime('claude-code', [
+        dep('Claude Code CLI', 'satisfied'),
+        dep('Claude Code authentication', 'missing'),
+      ]),
+    ]);
+
+    const res = await request(app).get('/api/system/requirements');
+
+    expect(res.body.runtimes['claude-code'].state).toBe('connect');
+    expect(res.body.runtimes['claude-code'].connect).toEqual({
+      kind: 'login',
+      label: 'Connect Claude',
+    });
   });
 
   it('keeps the raw dependencies[] in the payload for every runtime', async () => {

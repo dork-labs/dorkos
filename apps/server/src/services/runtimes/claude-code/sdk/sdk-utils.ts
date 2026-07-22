@@ -209,7 +209,7 @@ function findClaudeOnPath(): string | null {
  * 2. A `claude` on PATH — the SDK throws rather than falling back to PATH when
  *    its bundled binary is missing, so we supply this for resilience.
  * 3. `undefined` — the SDK self-resolves and raises a clear "install Claude Code"
- *    error; {@link checkClaudeDependency} surfaces the same via the dependency check.
+ *    error; {@link checkClaudeDependencies} surfaces the same via the dependency check.
  *
  * The pre-0.2.113 `cli.js` resolution is gone: the SDK no longer ships `cli.js`,
  * so resolving it always failed.
