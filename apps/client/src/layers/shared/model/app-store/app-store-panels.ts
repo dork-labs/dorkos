@@ -69,8 +69,15 @@ export interface PanelsSlice {
   /** Open the switcher with a specific Shape's card highlighted (an Apply affordance). */
   openShapeSwitcherToShape: (name: string) => void;
 
-  onboardingStep: number | null;
-  setOnboardingStep: (step: number | null) => void;
+  /**
+   * Session-local suppression of the full-screen onboarding overlay. Set true
+   * when the user finishes or skips the flow so the overlay hides immediately
+   * (optimistic, ahead of the server config round-trip); reset to false by the
+   * "Replay setup" affordance so the flow reopens in the same session. Never
+   * persisted — a refresh reverts to the authoritative config signal.
+   */
+  onboardingHiddenForSession: boolean;
+  setOnboardingHiddenForSession: (hidden: boolean) => void;
   /** First message generated during onboarding, used for the magic transition animation. */
   dorkbotFirstMessage: string | null;
   setDorkbotFirstMessage: (msg: string | null) => void;
@@ -134,8 +141,8 @@ export const createPanelsSlice: StateCreator<
   shapeSwitcherFocus: null,
   openShapeSwitcherToShape: (name) => set({ shapeSwitcherOpen: true, shapeSwitcherFocus: name }),
 
-  onboardingStep: null,
-  setOnboardingStep: (step) => set({ onboardingStep: step }),
+  onboardingHiddenForSession: false,
+  setOnboardingHiddenForSession: (hidden) => set({ onboardingHiddenForSession: hidden }),
   dorkbotFirstMessage: null,
   setDorkbotFirstMessage: (msg) => set({ dorkbotFirstMessage: msg }),
 

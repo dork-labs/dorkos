@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Conf, { type Schema } from 'conf';
 import { z } from 'zod';
 import * as semver from 'semver';
-import { UserConfigSchema } from '@dorkos/shared/config-schema';
+import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   initConfigManager,
   backfillExtensionsDisabled,
@@ -25,6 +26,7 @@ import {
   backfillTelemetryUsageChannel,
   backfillTelemetryLinkAnalyticsToAccount,
   backfillTelemetryAiMetadataChannel,
+  scrubRetiredOnboardingSteps,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -1236,5 +1238,158 @@ describe('backfillExtensionsDisabled migration', () => {
     const store = createMockStore({ extensions: { enabled: [], disabled: 'oops' } });
     backfillExtensionsDisabled(store);
     expect(store.data.extensions).toEqual({ enabled: [], disabled: [] });
+  });
+});
+
+describe('scrubRetiredOnboardingSteps migration (shorter first-run flow)', () => {
+  it('removes retired step ids from completedSteps and skippedSteps, keeping valid ones', () => {
+    const store = createMockStore({
+      onboarding: {
+        completedSteps: ['meet-dorkbot', 'adapters'],
+        skippedSteps: ['tasks', 'discovery'],
+        startedAt: '2026-07-20T00:00:00Z',
+        dismissedAt: null,
+      },
+    });
+    scrubRetiredOnboardingSteps(store);
+    expect(store.data.onboarding).toEqual({
+      completedSteps: ['meet-dorkbot'],
+      skippedSteps: ['discovery'],
+      startedAt: '2026-07-20T00:00:00Z',
+      dismissedAt: null,
+      // 'adapters' in completedSteps marks an old-flow finish — backfilled.
+      completedAt: '2026-07-20T00:00:00Z',
+    });
+  });
+
+  it('does not backfill completedAt for a user who never finished the old flow', () => {
+    const store = createMockStore({
+      onboarding: {
+        completedSteps: ['meet-dorkbot'],
+        skippedSteps: ['tasks'],
+        startedAt: '2026-07-20T00:00:00Z',
+        dismissedAt: null,
+      },
+    });
+    scrubRetiredOnboardingSteps(store);
+    expect(store.data.onboarding).toEqual({
+      completedSteps: ['meet-dorkbot'],
+      skippedSteps: [],
+      startedAt: '2026-07-20T00:00:00Z',
+      dismissedAt: null,
+    });
+  });
+
+  it('is idempotent — a config with only valid steps is left untouched (same reference fields)', () => {
+    const clean = {
+      completedSteps: ['meet-dorkbot', 'discovery'],
+      skippedSteps: [],
+      startedAt: null,
+      dismissedAt: null,
+      completedAt: '2026-07-21T00:00:00Z',
+    };
+    const store = createMockStore({ onboarding: structuredClone(clean) });
+    scrubRetiredOnboardingSteps(store);
+    expect(store.data.onboarding).toEqual(clean);
+  });
+
+  it('is a no-op when the onboarding section is absent (schema default owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    scrubRetiredOnboardingSteps(store);
+    expect(store.data.onboarding).toBeUndefined();
+  });
+
+  it('preserves other onboarding fields (completedAt) while scrubbing', () => {
+    const store = createMockStore({
+      onboarding: {
+        completedSteps: ['adapters'],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+        completedAt: '2026-07-21T00:00:00Z',
+      },
+    });
+    scrubRetiredOnboardingSteps(store);
+    expect(store.data.onboarding).toEqual({
+      completedSteps: [],
+      skippedSteps: [],
+      startedAt: null,
+      dismissedAt: null,
+      completedAt: '2026-07-21T00:00:00Z',
+    });
+  });
+
+  it('the narrowed schema rejects a stale onboarding block until the scrub runs', () => {
+    const staleOnboarding = {
+      completedSteps: ['meet-dorkbot', 'adapters'],
+      skippedSteps: ['tasks'],
+      startedAt: null,
+      dismissedAt: null,
+      completedAt: null,
+    };
+    // Proves the migration is load-bearing: without it, the narrowed enum fails.
+    const before = UserConfigSchema.safeParse({ version: 1, onboarding: staleOnboarding });
+    expect(before.success).toBe(false);
+
+    const store = createMockStore({ onboarding: structuredClone(staleOnboarding) });
+    scrubRetiredOnboardingSteps(store);
+    const after = UserConfigSchema.safeParse({ version: 1, onboarding: store.data.onboarding });
+    expect(after.success).toBe(true);
+  });
+
+  it('an upgrading config carrying retired steps loads without wiping (full conf path)', () => {
+    // Faithful reproduction of the ConfigManager conf wiring, but with an
+    // explicit projectVersion of 0.55.0 so the migration actually fires in the
+    // test env (SERVER_VERSION lags the unreleased key). conf skips validation
+    // during migrations, so the stale 'adapters'/'tasks' survive every earlier
+    // migration's writes; the scrub then cleans them before the single
+    // post-migration validate — proving no corrupt-recovery wipe on upgrade.
+    const dir = path.join(os.tmpdir(), 'test-dork-onboarding-scrub-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 5000, cwd: null, boundary: null, open: true },
+        onboarding: {
+          completedSteps: ['meet-dorkbot', 'discovery', 'adapters'],
+          skippedSteps: ['tasks'],
+          startedAt: '2026-07-01T00:00:00Z',
+          dismissedAt: null,
+        },
+        __internal__: { migrations: { version: '0.54.0' } },
+      }),
+      'utf-8'
+    );
+
+    const jsonSchema = z.toJSONSchema(UserConfigSchema, { target: 'jsonSchema2019-09' }) as {
+      properties?: Record<string, unknown>;
+    };
+    const store = new Conf({
+      configName: 'config',
+      cwd: dir,
+      // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+      schema: (jsonSchema.properties ?? {}) as unknown as Schema<Record<string, unknown>>,
+      defaults: USER_CONFIG_DEFAULTS,
+      clearInvalidConfig: false,
+      projectVersion: '0.55.0',
+      migrations: CONFIG_MIGRATIONS,
+    });
+
+    const onboarding = store.get('onboarding') as {
+      completedSteps: string[];
+      skippedSteps: string[];
+      completedAt: string | null;
+    };
+    expect(onboarding.completedSteps).toEqual(['meet-dorkbot', 'discovery']);
+    expect(onboarding.skippedSteps).toEqual([]);
+    // The retired synthetic 'adapters' completion marked the old flow's finish,
+    // so the upgrade backfills the new authoritative signal — an
+    // already-onboarded user is never re-onboarded.
+    expect(onboarding.completedAt).toBe('2026-07-01T00:00:00Z');
+    // Unrelated user data survives the upgrade untouched.
+    expect((store.get('server') as { port: number }).port).toBe(5000);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

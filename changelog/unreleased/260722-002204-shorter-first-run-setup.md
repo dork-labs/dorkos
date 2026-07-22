@@ -1,0 +1,3 @@
+### Changed
+
+- First-run setup is shorter and more honest. It only shows the "import your projects" step when there is actually something on your machine to import, and it drops the separate task-scheduling step (you can still set up scheduled tasks any time from the Tasks page). Once you finish, DorkOS remembers, so setup never pops back up after a refresh. The finish screen now celebrates only what you actually did, with no list of skipped steps. A new "Getting started" card in the sidebar links straight to creating an agent, scheduling a task, or adding more agents. Changed your mind? "Replay setup" in Settings walks you through it again.

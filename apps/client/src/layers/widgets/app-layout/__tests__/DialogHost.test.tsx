@@ -67,11 +67,6 @@ const mockDialogContributions: Array<{
   },
 ];
 
-// Mock onboarding (still hardcoded in DialogHost)
-vi.mock('@/layers/features/onboarding', () => ({
-  OnboardingFlow: () => <div data-testid="onboarding-flow">OnboardingFlow</div>,
-}));
-
 // --- Mock store state ---
 
 const mockStoreState: Record<string, unknown> = {
@@ -83,8 +78,6 @@ const mockStoreState: Record<string, unknown> = {
   setRelayOpen: vi.fn(),
   pickerOpen: false,
   setPickerOpen: vi.fn(),
-  onboardingStep: null as number | null,
-  setOnboardingStep: vi.fn(),
 };
 
 // Inert URL deep-link hooks — test contributions don't declare `urlParam`, so
@@ -124,7 +117,6 @@ beforeEach(() => {
   mockStoreState.tasksOpen = false;
   mockStoreState.relayOpen = false;
   mockStoreState.pickerOpen = false;
-  mockStoreState.onboardingStep = null;
   mockSelectedCwd = '/test/path';
 
   // Reset deep-link hook mocks to inert defaults. Individual tests override
@@ -148,7 +140,6 @@ describe('DialogHost', () => {
     expect(screen.queryByTestId('directory-picker')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tasks-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('relay-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('onboarding-flow')).not.toBeInTheDocument();
   });
 
   it('renders SettingsDialog when settingsOpen is true', () => {
@@ -181,22 +172,6 @@ describe('DialogHost', () => {
     render(<DialogHost />);
 
     expect(screen.getByTestId('relay-panel')).toBeInTheDocument();
-  });
-
-  it('renders OnboardingFlow when onboardingStep is non-null', () => {
-    mockStoreState.onboardingStep = 0;
-
-    render(<DialogHost />);
-
-    expect(screen.getByTestId('onboarding-flow')).toBeInTheDocument();
-  });
-
-  it('does not render OnboardingFlow when onboardingStep is null', () => {
-    mockStoreState.onboardingStep = null;
-
-    render(<DialogHost />);
-
-    expect(screen.queryByTestId('onboarding-flow')).not.toBeInTheDocument();
   });
 
   it('renders multiple dialogs simultaneously', () => {

@@ -208,7 +208,7 @@ The top-level `providers` block is a registry of per-provider credential **refer
 
 A dangling reference (env var unset, file/keychain entry missing) resolves to a typed failure, not an empty string — the connect UX surfaces it honestly rather than silently sending an empty key. Claude reads `providers.anthropic` (injected as `ANTHROPIC_API_KEY`); OpenCode reads `providers[<runtimes.opencode.provider>]` (injected as the provider's key). Codex never receives its key via a subprocess env var — it never sets `CodexOptions.env` — so `runtimes.codex.credentialRef` feeds the delegated `codex login` path instead.
 
-The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
+The `onboarding` section tracks first-time setup state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`, `completedAt`). `completedAt` is the authoritative "finished" signal — once set, the full-screen flow never reappears. It is managed automatically by the server and should not be edited manually.
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:
 

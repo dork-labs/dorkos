@@ -150,12 +150,21 @@ router.get('/', async (_req, res) => {
       scanRoots: configManager.get('mesh')?.scanRoots ?? [],
       ...(getMeshInitError() && { initError: getMeshInitError() }),
     },
-    onboarding: configManager.get('onboarding') ?? {
-      completedSteps: [],
-      skippedSteps: [],
-      startedAt: null,
-      dismissedAt: null,
-    },
+    // Normalize completedAt: an on-disk block written before the field existed
+    // omits it (conf's nested defaults-merge is shallow), but the wire contract
+    // promises string | null.
+    onboarding: (() => {
+      const onboarding = configManager.get('onboarding');
+      return onboarding
+        ? { ...onboarding, completedAt: onboarding.completedAt ?? null }
+        : {
+            completedSteps: [],
+            skippedSteps: [],
+            startedAt: null,
+            dismissedAt: null,
+            completedAt: null,
+          };
+    })(),
     agentContext: configManager.get('agentContext') ?? {
       relayTools: true,
       meshTools: true,

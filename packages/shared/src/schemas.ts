@@ -2219,6 +2219,9 @@ export const ServerConfigSchema = z
           .string()
           .nullable()
           .openapi({ description: 'ISO timestamp when onboarding was dismissed' }),
+        completedAt: z.string().nullable().openapi({
+          description: 'ISO timestamp when onboarding was completed (finish line reached)',
+        }),
       })
       .optional()
       .openapi({ description: 'First-time user onboarding state' }),

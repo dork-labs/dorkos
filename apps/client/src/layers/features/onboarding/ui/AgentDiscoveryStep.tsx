@@ -1,9 +1,8 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { Search, ChevronDown, Sparkles } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { useAgentCreationStore } from '@/layers/shared/model';
-import { useRegisterAgent, useMeshScanRoots } from '@/layers/entities/mesh';
+import { useRegisterAgent } from '@/layers/entities/mesh';
 import {
   useDiscoveryScan,
   useDiscoveryStore,
@@ -13,7 +12,6 @@ import {
   CandidateCard,
   BulkAddBar,
   CollapsibleImportedSection,
-  ScanRootInput,
 } from '@/layers/entities/discovery';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 
@@ -22,38 +20,36 @@ interface AgentDiscoveryStepProps {
 }
 
 /**
- * Step 1 of onboarding — discovers AI agent projects on the user's machine.
+ * Import-your-projects onboarding step — surfaces AI agent projects discovered
+ * on the user's machine so they can register the ones they want to manage.
  *
- * Auto-starts scanning on mount. Shows progressive results as they arrive.
- * Existing agents (with `.dork/agent.json`) are shown as already registered.
- * New candidates require the user to approve or skip individually.
+ * The scan is normally prefetched by the flow while the user meets DorkBot, so
+ * this step usually mounts with results already in the shared discovery store
+ * (and the flow only mounts it when the scan found something). It still
+ * self-starts a scan when mounted standalone (dev playground) — guarded on
+ * `lastScanAt` so it never wipes a prefetched result set.
  *
  * @param onStepComplete - Called when the user advances past this step
  */
 export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) {
   const { startScan } = useDiscoveryScan();
-  const { candidates, existingAgents, isScanning, progress, error } = useDiscoveryStore();
+  const { candidates, existingAgents, isScanning, progress, error, lastScanAt } =
+    useDiscoveryStore();
   const registerAgent = useRegisterAgent();
   // Tracks paths the user has explicitly approved or skipped
-  const { actedPaths, markActed, resetActed } = useActedPaths();
-  const [hasStarted, setHasStarted] = useState(false);
-  const [showScanOptions, setShowScanOptions] = useState(false);
-  const [depth, setDepth] = useState(3);
-  const { roots, setScanRoots } = useMeshScanRoots();
-  const [localRoots, setLocalRoots] = useState<string[] | null>(null);
-  const displayRoots = localRoots ?? roots;
+  const { actedPaths, markActed } = useActedPaths();
   const reducedMotion = useReducedMotion();
   const autoStarted = useRef(false);
 
-  // Auto-start scan on mount
+  // Self-start a scan only when no scan has ever run (standalone mount). When
+  // the flow prefetched, `lastScanAt` is already set and we render its results
+  // rather than kicking a second scan that would clear them.
   useEffect(() => {
-    if (!autoStarted.current) {
+    if (!autoStarted.current && !lastScanAt && !isScanning) {
       autoStarted.current = true;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing scan state on first mount
-      setHasStarted(true);
       startScan();
     }
-  }, [startScan]);
+  }, [startScan, lastScanAt, isScanning]);
 
   // Sort candidates after scan completes for stable display
   const displayCandidates = useMemo(
@@ -91,32 +87,10 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
     }
   }, [displayCandidates, actedPaths, registerAgent, markActed]);
 
-  const handleRootsChange = useCallback(
-    (newRoots: string[]) => {
-      setLocalRoots(newRoots);
-      setScanRoots(newRoots);
-    },
-    [setScanRoots]
-  );
-
-  const handleRescan = useCallback(() => {
-    resetActed();
-    setHasStarted(true);
-    startScan(displayRoots.length > 0 ? { roots: displayRoots, maxDepth: depth } : { roots: [] });
-  }, [startScan, resetActed, displayRoots, depth]);
-
-  // Zero candidates found: open the real creation dialog (the gallery, M2). A
-  // successful create advances onboarding; closing it returns here cleanly (the
-  // dialog is a modal over the onboarding overlay, which stays mounted).
-  const handleCreateFirstAgent = useCallback(() => {
-    useAgentCreationStore.getState().open('new', { onCreated: onStepComplete });
-  }, [onStepComplete]);
-
   const hasExisting = existingAgents.length > 0;
   const hasCandidates = candidates.length > 0;
   const hasResults = hasExisting || hasCandidates;
-  const scanComplete = hasStarted && !isScanning;
-  const showNoResults = scanComplete && !hasResults;
+  const scanComplete = !isScanning && lastScanAt !== null;
   // "Continue" is primary when every visible candidate has been approved or skipped,
   // or when there are only existing agents (no candidates needing action)
   const allActed = !hasCandidates || candidates.every((c) => actedPaths.has(c.path));
@@ -128,11 +102,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
       {/* Header — adapts to scan state */}
       <div className="w-full shrink-0 text-center">
         <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {isScanning && !hasResults
-            ? 'Searching your machine...'
-            : showNoResults
-              ? 'Create Your First Agent'
-              : 'Projects Found'}
+          {isScanning && !hasResults ? 'Searching your machine...' : 'Import your projects'}
         </h2>
         {isScanning && !hasResults && (
           <div className="mt-2 space-y-1">
@@ -144,11 +114,6 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
               Telegram, and more.
             </p>
           </div>
-        )}
-        {showNoResults && (
-          <p className="text-muted-foreground mt-2 text-sm">
-            No projects were found on your machine.
-          </p>
         )}
       </div>
 
@@ -217,68 +182,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
         </div>
       )}
 
-      {/* No results — hand off to the real creation flow */}
-      {showNoResults && (
-        <div className="mt-6 w-full">
-          <div className="flex flex-col items-center gap-2">
-            <Button size="lg" onClick={handleCreateFirstAgent} data-testid="create-first-agent">
-              <Sparkles className="size-4" />
-              Create your first agent
-            </Button>
-            <p className="text-muted-foreground text-xs">
-              Pick a ready-made agent or design your own.
-            </p>
-          </div>
-
-          {/* Scan options — collapsible section for adjusting scan parameters */}
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => setShowScanOptions(!showScanOptions)}
-              className="text-muted-foreground hover:text-foreground mx-auto flex items-center gap-1 text-xs"
-            >
-              <ChevronDown
-                className={`size-3 transition-transform ${showScanOptions ? '' : '-rotate-90'}`}
-              />
-              Scan options
-            </button>
-            {showScanOptions && (
-              <div className="bg-muted/30 mt-2 space-y-3 rounded-lg border p-3">
-                <ScanRootInput roots={displayRoots} onChange={handleRootsChange} />
-                <div className="flex items-center gap-3">
-                  <label htmlFor="onboarding-scan-depth" className="text-muted-foreground text-xs">
-                    Scan depth
-                  </label>
-                  <input
-                    id="onboarding-scan-depth"
-                    type="range"
-                    min={1}
-                    max={5}
-                    value={depth}
-                    onChange={(e) => setDepth(Number(e.target.value))}
-                    className="flex-1"
-                  />
-                  <span className="min-w-[1.5rem] text-center text-xs font-medium">{depth}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 flex flex-col items-center gap-3">
-            <Button variant="outline" size="sm" onClick={handleRescan}>
-              Scan Again
-            </Button>
-            <button
-              onClick={onStepComplete}
-              className="text-muted-foreground hover:text-foreground text-sm transition-colors"
-            >
-              Continue without adding
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Continue button — always visible once scan completes with results */}
+      {/* Continue button — visible once scan completes with results */}
       {scanComplete && hasResults && (
         <div className="mt-4 flex shrink-0 flex-col items-center gap-2 border-t pt-4">
           <Button size="lg" onClick={onStepComplete} variant={allActed ? 'default' : 'outline'}>

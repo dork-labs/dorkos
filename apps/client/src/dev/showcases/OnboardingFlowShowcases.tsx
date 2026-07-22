@@ -9,19 +9,13 @@ import {
   WelcomeStep,
   MeetDorkBotStep,
   AgentDiscoveryStep,
-  TaskTemplatesStep,
-  AdapterSetupStep,
   OnboardingComplete,
   OnboardingNavBar,
   ProgressCard,
 } from '@/layers/features/onboarding';
 import { CandidateCard, BulkAddBar, CollapsibleImportedSection } from '@/layers/entities/discovery';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
-import type {
-  DiscoveryCandidate,
-  ExistingAgent,
-  AgentPathEntry,
-} from '@dorkos/shared/mesh-schemas';
+import type { DiscoveryCandidate, ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 
 // ── Mock data ────────────────────────────────────────────────
@@ -74,19 +68,6 @@ const MOCK_EXISTING_AGENTS: ExistingAgent[] = [
     name: 'blog',
     runtime: 'cursor',
     description: 'Blog site project',
-  },
-];
-
-const MOCK_AGENTS: AgentPathEntry[] = [
-  {
-    id: 'webapp-agent',
-    name: 'webapp-agent',
-    projectPath: '/Users/kai/projects/webapp',
-  },
-  {
-    id: 'api-agent',
-    name: 'api-agent',
-    projectPath: '/Users/kai/projects/api-server',
   },
 ];
 
@@ -160,8 +141,6 @@ export function OnboardingFlowShowcases() {
       <WelcomeStepShowcase />
       <MeetDorkBotStepShowcase />
       <AgentDiscoveryStepShowcase />
-      <TaskTemplatesStepShowcase />
-      <AdapterSetupStepShowcase />
       <OnboardingCompleteShowcase />
       <OnboardingNavBarShowcase />
       <ProgressCardShowcase />
@@ -369,44 +348,6 @@ function AgentDiscoveryStepShowcase() {
   );
 }
 
-function TaskTemplatesStepShowcase() {
-  return (
-    <PlaygroundSection
-      title="TaskTemplatesStep"
-      description="Task schedule template selection. Shown with mock agents — the template list loads from the mock transport."
-    >
-      <ShowcaseLabel>With 2 agents</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="min-h-[300px] py-4">
-          <TaskTemplatesStep onStepComplete={noop} agents={MOCK_AGENTS} />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>With 1 agent (auto-resolved)</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="min-h-[200px] py-4">
-          <TaskTemplatesStep onStepComplete={noop} agents={[MOCK_AGENTS[0]]} />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-function AdapterSetupStepShowcase() {
-  return (
-    <PlaygroundSection
-      title="AdapterSetupStep"
-      description="Adapter connection step showing available communication channels (Telegram, Slack, Webhook). Currently not in the active flow but fully implemented."
-    >
-      <ShowcaseDemo responsive>
-        <div className="py-4">
-          <AdapterSetupStep onStepComplete={noop} />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
 function OnboardingCompleteShowcase() {
   return (
     <PlaygroundSection
@@ -479,11 +420,11 @@ function ProgressCardShowcase() {
   return (
     <PlaygroundSection
       title="ProgressCard"
-      description="Compact sidebar card showing remaining onboarding steps. Renders with the current onboarding state from the mock transport."
+      description="Compact sidebar 'Getting started' card. Each row deep-links into a real surface (create an agent, schedule a task, add more agents)."
     >
       <ShowcaseDemo>
         <div className="mx-auto max-w-xs">
-          <ProgressCard onStepClick={noop} onDismiss={noop} />
+          <ProgressCard onDismiss={noop} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

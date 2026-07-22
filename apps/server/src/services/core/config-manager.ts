@@ -62,6 +62,7 @@ import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
   SENSITIVE_CONFIG_KEYS,
+  ONBOARDING_STEPS,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../lib/logger.js';
@@ -734,6 +735,54 @@ export function backfillSmartGroupKindDefaults(store: {
 }
 
 /**
+ * Migration body: scrub retired onboarding step ids from a persisted
+ * `onboarding` block. The first-run flow was shortened, narrowing
+ * `ONBOARDING_STEPS` from four values to two — `'tasks'` and `'adapters'` no
+ * longer exist. A config carrying either in `completedSteps`/`skippedSteps`
+ * (most upgraders do: the old finish path recorded a synthetic `'adapters'`
+ * completion) would fail the narrowed enum's final validation, so this filters
+ * both arrays down to the still-valid set.
+ *
+ * Additive-safe + idempotent: only rewrites an array when it actually contains a
+ * retired value, so re-running is a no-op. conf skips validation during
+ * migrations, so the stale values pass through every earlier migration's writes
+ * unharmed; this body just has to run before the single post-migration validate.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function scrubRetiredOnboardingSteps(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const onboarding = store.get('onboarding');
+  if (onboarding == null || typeof onboarding !== 'object') return;
+  const valid = new Set<string>(ONBOARDING_STEPS);
+  const o = onboarding as Record<string, unknown>;
+  let changed = false;
+  const next = { ...o };
+  // The old flow's finish path recorded a synthetic 'adapters' completion, so
+  // its presence means this user already finished onboarding. Backfill the new
+  // authoritative signal BEFORE scrubbing it away, or every already-onboarded
+  // user would be re-onboarded on upgrade.
+  const completed = Array.isArray(o.completedSteps) ? o.completedSteps : [];
+  if (completed.includes('adapters') && typeof o.completedAt !== 'string') {
+    next.completedAt = typeof o.startedAt === 'string' ? o.startedAt : new Date().toISOString();
+    changed = true;
+  }
+  for (const field of ['completedSteps', 'skippedSteps'] as const) {
+    const arr = o[field];
+    if (!Array.isArray(arr)) continue;
+    const filtered = arr.filter((step) => typeof step === 'string' && valid.has(step));
+    if (filtered.length !== arr.length) {
+      next[field] = filtered;
+      changed = true;
+    }
+  }
+  if (changed) store.set('onboarding', next);
+}
+
+/**
  * @internal Exported for testing only — lets the migration-key invariant test
  * assert the newest key is always ahead of the current release (the DOR-339
  * "0.54.0 shipped mid-flight" class of bug: a key equal to or behind an
@@ -865,6 +914,11 @@ export const CONFIG_MIGRATIONS = {
     // immaterial here since the two bodies touch disjoint fields, but
     // matches the "append yours after it" sequencing).
     backfillSmartGroupKindDefaults(store);
+    // Scrub retired onboarding step ids (`'tasks'`, `'adapters'`) from
+    // `onboarding.completedSteps`/`skippedSteps` so the narrowed
+    // `ONBOARDING_STEPS` enum's final validation never rejects an upgraded
+    // config (shorter first-run flow). Additive-safe + idempotent.
+    scrubRetiredOnboardingSteps(store);
   },
 } as const;
 

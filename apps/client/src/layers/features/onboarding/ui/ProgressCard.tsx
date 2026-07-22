@@ -1,29 +1,47 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
-import { useOnboarding } from '../model/use-onboarding';
-import { Check, Circle, Minus, X } from 'lucide-react';
-import type { OnboardingStep } from '@dorkos/shared/config-schema';
-
-const STEP_LABELS: Record<OnboardingStep, string> = {
-  'meet-dorkbot': 'Meet DorkBot',
-  discovery: 'Create agents',
-  tasks: 'Set up Tasks schedules',
-  adapters: 'Connect adapters',
-};
-
-const VISIBLE_STEPS: OnboardingStep[] = ['discovery', 'tasks'];
+import { useNavigate } from '@tanstack/react-router';
+import { ChevronRight, Plus, Clock, Server, X, type LucideIcon } from 'lucide-react';
+import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 
 interface ProgressCardProps {
-  /** Called when a user clicks an incomplete step to re-enter onboarding at that index. */
-  onStepClick: (stepIndex: number) => void;
-  /** Called when the user dismisses the progress card permanently. */
+  /** Called when the user dismisses the getting-started card permanently. */
   onDismiss: () => void;
 }
 
-/** Compact sidebar card showing remaining onboarding steps with completion indicators. */
-export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
-  const { state } = useOnboarding();
+interface GettingStartedItem {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}
+
+/**
+ * Compact sidebar "Getting started" card. Each row is a deep link into the real
+ * surface for that task — creating an agent, scheduling a task, connecting more
+ * runtimes — rather than a replay of onboarding steps. Shown after the first-run
+ * flow finishes, until the user dismisses it.
+ */
+export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
+  const navigate = useNavigate();
+  const openSettingsToTab = useAppStore((s) => s.openSettingsToTab);
+
+  const items: GettingStartedItem[] = [
+    {
+      icon: Plus,
+      label: 'Create an agent',
+      onClick: () => useAgentCreationStore.getState().open('new'),
+    },
+    {
+      icon: Clock,
+      label: 'Schedule a task',
+      onClick: () => navigate({ to: '/tasks' }),
+    },
+    {
+      icon: Server,
+      label: 'Add more agents',
+      onClick: () => openSettingsToTab('runtimes'),
+    },
+  ];
 
   return (
     <motion.div
@@ -40,51 +58,21 @@ export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
         <X className="size-3.5" />
       </button>
 
-      <h3 className="mb-2 text-xs font-medium">Getting Started</h3>
+      <h3 className="mb-2 text-xs font-medium">Getting started</h3>
 
-      <ul className="space-y-1">
-        {VISIBLE_STEPS.map((step, index) => {
-          const isCompleted = state.completedSteps.includes(step);
-          const isSkipped = state.skippedSteps.includes(step);
-
-          if (isCompleted) {
-            return (
-              <li key={step} className="flex items-center gap-2 py-0.5">
-                <Check className="text-primary size-3.5 shrink-0" />
-                <span className="text-muted-foreground text-xs">{STEP_LABELS[step]}</span>
-              </li>
-            );
-          }
-
-          if (isSkipped) {
-            return (
-              <li key={step} className="flex items-center gap-2 py-0.5">
-                <Minus className="text-muted-foreground/40 size-3.5 shrink-0" />
-                <button
-                  onClick={() => onStepClick(index)}
-                  className={cn(
-                    'text-muted-foreground/40 text-left text-xs transition-colors duration-150',
-                    'hover:text-muted-foreground'
-                  )}
-                >
-                  {STEP_LABELS[step]}
-                </button>
-              </li>
-            );
-          }
-
-          return (
-            <li key={step} className="flex items-center gap-2 py-0.5">
-              <Circle className="text-muted-foreground size-3.5 shrink-0" />
-              <button
-                onClick={() => onStepClick(index)}
-                className="text-foreground text-left text-xs transition-colors duration-150 hover:underline"
-              >
-                {STEP_LABELS[step]}
-              </button>
-            </li>
-          );
-        })}
+      <ul className="space-y-0.5">
+        {items.map(({ icon: Icon, label, onClick }) => (
+          <li key={label}>
+            <button
+              onClick={onClick}
+              className="hover:bg-accent group flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-150"
+            >
+              <Icon className="text-muted-foreground size-3.5 shrink-0" />
+              <span className="text-foreground flex-1 text-xs">{label}</span>
+              <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+            </button>
+          </li>
+        ))}
       </ul>
     </motion.div>
   );

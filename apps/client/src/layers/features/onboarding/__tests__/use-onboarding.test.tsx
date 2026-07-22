@@ -28,6 +28,15 @@ function createWrapper(transport = createMockTransport()) {
   };
 }
 
+/** A fresh onboarding block (nothing done yet). */
+const FRESH_ONBOARDING = {
+  completedSteps: [],
+  skippedSteps: [],
+  startedAt: null,
+  dismissedAt: null,
+  completedAt: null,
+};
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -37,15 +46,10 @@ describe('useOnboarding', () => {
     vi.clearAllMocks();
   });
 
-  it('shouldShowOnboarding returns true when no completedSteps and not dismissed', async () => {
+  it('shouldShowOnboarding returns true for a fresh install (no completedAt, not dismissed)', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
 
     const { result } = renderHook(() => useOnboarding(), {
@@ -54,16 +58,42 @@ describe('useOnboarding', () => {
 
     await waitFor(() => {
       expect(result.current.shouldShowOnboarding).toBe(true);
+      expect(result.current.shouldShowGettingStarted).toBe(false);
     });
   });
 
-  it('shouldShowOnboarding returns false when all steps completed', async () => {
+  it('completedAt is authoritative: a finished install never re-shows the flow, even with skipped steps', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
       onboarding: {
-        completedSteps: ['meet-dorkbot', 'discovery', 'tasks', 'adapters'],
+        completedSteps: ['meet-dorkbot'],
+        skippedSteps: ['discovery'],
+        startedAt: '2026-07-20T00:00:00.000Z',
+        dismissedAt: null,
+        completedAt: '2026-07-21T00:00:00.000Z',
+      },
+    } as never);
+
+    const { result } = renderHook(() => useOnboarding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isOnboardingComplete).toBe(true);
+      expect(result.current.shouldShowOnboarding).toBe(false);
+      // The getting-started helper takes over once the flow is finished.
+      expect(result.current.shouldShowGettingStarted).toBe(true);
+    });
+  });
+
+  it('normalizes an absent completedAt to null (upgrade window) — not read as complete', async () => {
+    const transport = createMockTransport();
+    // A pre-completedAt config block: the field is simply missing.
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      onboarding: {
+        completedSteps: ['meet-dorkbot', 'discovery'],
         skippedSteps: [],
-        startedAt: null,
+        startedAt: '2026-07-20T00:00:00.000Z',
         dismissedAt: null,
       },
     } as never);
@@ -73,8 +103,9 @@ describe('useOnboarding', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.shouldShowOnboarding).toBe(false);
-      expect(result.current.isOnboardingComplete).toBe(true);
+      expect(result.current.state.completedAt).toBeNull();
+      expect(result.current.isOnboardingComplete).toBe(false);
+      expect(result.current.shouldShowOnboarding).toBe(true);
     });
   });
 
@@ -82,9 +113,7 @@ describe('useOnboarding', () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
       onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
+        ...FRESH_ONBOARDING,
         dismissedAt: '2026-01-01T00:00:00.000Z',
       },
     } as never);
@@ -95,6 +124,7 @@ describe('useOnboarding', () => {
 
     await waitFor(() => {
       expect(result.current.shouldShowOnboarding).toBe(false);
+      expect(result.current.shouldShowGettingStarted).toBe(false);
       expect(result.current.isOnboardingDismissed).toBe(true);
     });
   });
@@ -102,12 +132,7 @@ describe('useOnboarding', () => {
   it('completeStep calls updateConfig with the step added', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
 
@@ -130,15 +155,10 @@ describe('useOnboarding', () => {
     });
   });
 
-  it('skipStep calls updateConfig with the step added to skippedSteps', async () => {
+  it('completeOnboarding persists completedAt (the authoritative finish signal)', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
 
@@ -151,12 +171,38 @@ describe('useOnboarding', () => {
     });
 
     act(() => {
-      result.current.skipStep('tasks');
+      result.current.completeOnboarding();
     });
 
     await waitFor(() => {
       expect(transport.updateConfig).toHaveBeenCalledWith({
-        onboarding: { skippedSteps: ['tasks'] },
+        onboarding: { completedAt: expect.any(String) },
+      });
+    });
+  });
+
+  it('skipStep calls updateConfig with the step added to skippedSteps', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      onboarding: { ...FRESH_ONBOARDING },
+    } as never);
+    vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
+
+    const { result } = renderHook(() => useOnboarding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => {
+      expect(result.current.shouldShowOnboarding).toBe(true);
+    });
+
+    act(() => {
+      result.current.skipStep('discovery');
+    });
+
+    await waitFor(() => {
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        onboarding: { skippedSteps: ['discovery'] },
       });
     });
   });
@@ -164,12 +210,7 @@ describe('useOnboarding', () => {
   it('dismiss calls updateConfig with only dismissedAt (partial patch)', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
 
@@ -193,12 +234,7 @@ describe('useOnboarding', () => {
   it('startOnboarding sends only startedAt as partial patch', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
 
@@ -235,6 +271,7 @@ describe('useOnboarding', () => {
         skippedSteps: [],
         startedAt: null,
         dismissedAt: null,
+        completedAt: null,
       });
       expect(result.current.shouldShowOnboarding).toBe(true);
     });
@@ -247,12 +284,7 @@ describe('useOnboarding', () => {
   it('rapid completeStep calls send superset arrays (no race condition)', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
     // Resolve immediately — the cache won't refresh within a synchronous act() block,
     // so this simulates the race where all calls read stale cache state.
@@ -267,37 +299,26 @@ describe('useOnboarding', () => {
     });
 
     act(() => {
+      result.current.completeStep('meet-dorkbot');
       result.current.completeStep('discovery');
-      result.current.completeStep('tasks');
-      result.current.completeStep('adapters');
     });
 
     await waitFor(() => {
-      expect(transport.updateConfig).toHaveBeenCalledTimes(3);
+      expect(transport.updateConfig).toHaveBeenCalledTimes(2);
     });
 
     expect(transport.updateConfig).toHaveBeenNthCalledWith(1, {
-      onboarding: { completedSteps: ['discovery'] },
+      onboarding: { completedSteps: ['meet-dorkbot'] },
     });
     expect(transport.updateConfig).toHaveBeenNthCalledWith(2, {
-      onboarding: { completedSteps: expect.arrayContaining(['discovery', 'tasks']) },
-    });
-    expect(transport.updateConfig).toHaveBeenNthCalledWith(3, {
-      onboarding: {
-        completedSteps: expect.arrayContaining(['discovery', 'tasks', 'adapters']),
-      },
+      onboarding: { completedSteps: expect.arrayContaining(['meet-dorkbot', 'discovery']) },
     });
   });
 
   it('duplicate completeStep calls are deduplicated', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
 
@@ -323,12 +344,7 @@ describe('useOnboarding', () => {
   it('rapid skipStep calls send superset arrays', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConfig).mockResolvedValue({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-      },
+      onboarding: { ...FRESH_ONBOARDING },
     } as never);
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined as never);
 
@@ -341,8 +357,8 @@ describe('useOnboarding', () => {
     });
 
     act(() => {
-      result.current.skipStep('tasks');
-      result.current.skipStep('adapters');
+      result.current.skipStep('meet-dorkbot');
+      result.current.skipStep('discovery');
     });
 
     await waitFor(() => {
@@ -350,10 +366,10 @@ describe('useOnboarding', () => {
     });
 
     expect(transport.updateConfig).toHaveBeenNthCalledWith(1, {
-      onboarding: { skippedSteps: ['tasks'] },
+      onboarding: { skippedSteps: ['meet-dorkbot'] },
     });
     expect(transport.updateConfig).toHaveBeenNthCalledWith(2, {
-      onboarding: { skippedSteps: expect.arrayContaining(['tasks', 'adapters']) },
+      onboarding: { skippedSteps: expect.arrayContaining(['meet-dorkbot', 'discovery']) },
     });
   });
 });
