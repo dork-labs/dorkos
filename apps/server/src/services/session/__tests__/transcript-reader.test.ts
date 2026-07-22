@@ -8,6 +8,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
+  validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/path'),
   getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
   initBoundary: vi.fn().mockResolvedValue('/mock/boundary'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -36,8 +37,9 @@ describe('TranscriptReader', () => {
 
   describe('boundary enforcement', () => {
     it('listSessions rejects vaultRoot outside boundary', async () => {
-      const { validateBoundary, BoundaryError } = await import('../../../lib/boundary.js');
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      const { validateBoundaryOrDorkHome, BoundaryError } =
+        await import('../../../lib/boundary.js');
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -47,8 +49,9 @@ describe('TranscriptReader', () => {
     });
 
     it('getSession rejects vaultRoot outside boundary', async () => {
-      const { validateBoundary, BoundaryError } = await import('../../../lib/boundary.js');
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      const { validateBoundaryOrDorkHome, BoundaryError } =
+        await import('../../../lib/boundary.js');
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -58,8 +61,9 @@ describe('TranscriptReader', () => {
     });
 
     it('readTranscript rejects vaultRoot outside boundary', async () => {
-      const { validateBoundary, BoundaryError } = await import('../../../lib/boundary.js');
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      const { validateBoundaryOrDorkHome, BoundaryError } =
+        await import('../../../lib/boundary.js');
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -69,8 +73,9 @@ describe('TranscriptReader', () => {
     });
 
     it('listTranscripts rejects vaultRoot outside boundary', async () => {
-      const { validateBoundary, BoundaryError } = await import('../../../lib/boundary.js');
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      const { validateBoundaryOrDorkHome, BoundaryError } =
+        await import('../../../lib/boundary.js');
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -80,8 +85,9 @@ describe('TranscriptReader', () => {
     });
 
     it('readTasks rejects vaultRoot outside boundary', async () => {
-      const { validateBoundary, BoundaryError } = await import('../../../lib/boundary.js');
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      const { validateBoundaryOrDorkHome, BoundaryError } =
+        await import('../../../lib/boundary.js');
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -91,8 +97,9 @@ describe('TranscriptReader', () => {
     });
 
     it('readFromOffset rejects vaultRoot outside boundary', async () => {
-      const { validateBoundary, BoundaryError } = await import('../../../lib/boundary.js');
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      const { validateBoundaryOrDorkHome, BoundaryError } =
+        await import('../../../lib/boundary.js');
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -102,8 +109,9 @@ describe('TranscriptReader', () => {
     });
 
     it('getTranscriptETag rejects vaultRoot outside boundary', async () => {
-      const { validateBoundary, BoundaryError } = await import('../../../lib/boundary.js');
-      (validateBoundary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      const { validateBoundaryOrDorkHome, BoundaryError } =
+        await import('../../../lib/boundary.js');
+      (validateBoundaryOrDorkHome as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 

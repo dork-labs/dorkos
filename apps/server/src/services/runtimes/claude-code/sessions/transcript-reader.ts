@@ -15,7 +15,13 @@ import { parseTasks } from './task-reader.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
 import { resolveClaudeConfigDir } from '../claude-config-dir.js';
 import { TRANSCRIPT } from '../../../../config/constants.js';
-import { validateBoundary } from '../../../../lib/boundary.js';
+// The DorkHome-aware seam: a session's transcript is keyed off its working
+// directory, which for the system agent (DorkBot) and marketplace agents is
+// {dorkHome}/agents/* — legitimately outside a narrow DORKOS_BOUNDARY. Reading
+// those transcripts (snapshot/hydration/live-follow) must not 403, so this
+// session-transcript surface uses the agents-subtree seam. It still rejects
+// dork-home siblings like the encrypted credential store and boundary-external paths.
+import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
 import { logger } from '../../../../lib/logger.js';
 
 export type { HistoryMessage, HistoryToolCall };
@@ -87,7 +93,7 @@ export class TranscriptReader {
    * which has no vaultRoot to attribute with.
    */
   async listSessions(vaultRoot: string): Promise<Session[]> {
-    await validateBoundary(vaultRoot);
+    await validateBoundaryOrDorkHome(vaultRoot);
     const sessions = await this.listSessionsInDir(this.getTranscriptsDir(vaultRoot));
     return sessions.map((s) => (s.cwd === undefined ? { ...s, cwd: vaultRoot } : s));
   }
@@ -154,7 +160,7 @@ export class TranscriptReader {
    * are list-noise, not invalid sessions.
    */
   async getSession(vaultRoot: string, sessionId: string): Promise<Session | null> {
-    await validateBoundary(vaultRoot);
+    await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     try {
       const { session } = await this.extractSessionMeta(filePath, sessionId);
@@ -463,7 +469,7 @@ export class TranscriptReader {
    * Read messages from an SDK session transcript.
    */
   async readTranscript(vaultRoot: string, sessionId: string): Promise<HistoryMessage[]> {
-    await validateBoundary(vaultRoot);
+    await validateBoundaryOrDorkHome(vaultRoot);
     const transcriptsDir = this.getTranscriptsDir(vaultRoot);
     const filePath = path.join(transcriptsDir, `${sessionId}.jsonl`);
 
@@ -482,7 +488,7 @@ export class TranscriptReader {
    * List available SDK session transcript IDs.
    */
   async listTranscripts(vaultRoot: string): Promise<string[]> {
-    await validateBoundary(vaultRoot);
+    await validateBoundaryOrDorkHome(vaultRoot);
     const transcriptsDir = this.getTranscriptsDir(vaultRoot);
     try {
       const files = await fs.readdir(transcriptsDir);
@@ -494,7 +500,7 @@ export class TranscriptReader {
 
   /** Get an ETag for a session transcript (mtime + size) for HTTP caching. */
   async getTranscriptETag(vaultRoot: string, sessionId: string): Promise<string | null> {
-    await validateBoundary(vaultRoot);
+    await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     try {
       const stat = await fs.stat(filePath);
@@ -562,7 +568,7 @@ export class TranscriptReader {
     if (fileTasks !== null) return fileTasks;
 
     // Fallback: parse TaskCreate/TaskUpdate tool_use blocks from JSONL transcript
-    await validateBoundary(vaultRoot);
+    await validateBoundaryOrDorkHome(vaultRoot);
     const transcriptsDir = this.getTranscriptsDir(vaultRoot);
     const filePath = path.join(transcriptsDir, `${sessionId}.jsonl`);
 
@@ -586,7 +592,7 @@ export class TranscriptReader {
     sessionId: string,
     fromOffset: number
   ): Promise<{ content: string; newOffset: number }> {
-    await validateBoundary(vaultRoot);
+    await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     const stat = await fs.stat(filePath);
 

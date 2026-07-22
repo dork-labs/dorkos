@@ -17,6 +17,7 @@ vi.mock('../../claude-config-dir.js', () => ({
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue(undefined),
+  validateBoundaryOrDorkHome: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { TranscriptReader } from '../transcript-reader.js';

@@ -31,6 +31,7 @@ vi.mock('../../tooling/tool-filter.js', () => ({
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/project'),
+  validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/project'),
 }));
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: {

@@ -58,6 +58,7 @@ vi.mock('../../../core/config-manager.js', () => ({
 }));
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/projects/conformance'),
+  validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/projects/conformance'),
   getBoundary: vi.fn().mockReturnValue('/projects'),
   initBoundary: vi.fn().mockResolvedValue('/projects'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
