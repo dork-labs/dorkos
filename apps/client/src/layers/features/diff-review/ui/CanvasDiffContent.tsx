@@ -3,7 +3,7 @@ import { AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, Columns2, GitCommitHorizontal, Info, RotateCcw, Rows2, Undo2 } from 'lucide-react';
 import type { DiffBaselineOrigin, UiCanvasContent } from '@dorkos/shared/types';
 import { diffMediaKindForPath } from '@dorkos/shared/viewer-registry';
-import { useAppStore, useIsMobile, useTheme } from '@/layers/shared/model';
+import { useAppStore, useIsMobile, useResolvedTheme } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useDiffReview } from '../model/use-diff-review';
 import { useAgentEditRefresh } from '../model/use-agent-edit-refresh';
@@ -87,7 +87,7 @@ export function CanvasDiffContent({ content, documentId }: CanvasDiffContentProp
 function TextDiffReview({ content }: CanvasDiffContentProps) {
   const cwd = useAppStore((s) => s.selectedCwd);
   const sessionId = useAppStore((s) => s.sessionId);
-  const { theme } = useTheme();
+  const resolvedTheme = useResolvedTheme();
   const isMobile = useIsMobile();
   const reduceMotion = useReducedMotion();
 
@@ -172,7 +172,7 @@ function TextDiffReview({ content }: CanvasDiffContentProps) {
             key={`${review.data.baselineHash}:${review.data.currentHash}:${showSideBySide ? 'split' : 'unified'}`}
             baseline={baseline}
             current={current}
-            theme={theme === 'dark' ? 'dark' : 'light'}
+            theme={resolvedTheme}
             filename={content.sourcePath}
             sideBySide={showSideBySide}
             onRejectHunk={(reverted) => void review.rejectHunk(reverted)}

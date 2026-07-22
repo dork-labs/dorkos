@@ -25,7 +25,8 @@ vi.mock('@/layers/shared/model', () => {
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
-    useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
+    // The real BlintzCanvas (unmocked here) resolves its theme via this hook.
+    useResolvedTheme: () => 'light' as const,
     useTransport: () => ({ readFileContent }),
   };
 });
