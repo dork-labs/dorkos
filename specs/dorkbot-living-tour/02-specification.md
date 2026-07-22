@@ -30,7 +30,7 @@ Controlled wrapper: `{ steps: TourStep[], activeIndex, onAdvance, onEnd }` where
 
 ### Tour engine (`features/tours`)
 
-- `model/tour-definitions.ts` — tours as data: `{ id: 'tasks' | 'relay' | 'mesh' | 'general', steps, occasion? }`. Captions from `@dorkos/shared/dorkbot-templates` (authored, personality-inflected via the same trait templates as onboarding; plain language, no em dashes).
+- `model/tour-definitions.ts` — tours as data: `{ id: 'tasks' | 'relay' | 'mesh' | 'general', steps, occasion? }`. Captions from `@dorkos/shared/dorkbot-templates` (authored constants in v1 — plain language, no em dashes; personality inflection via the trait templates is deliberately deferred to a follow-up, reconciled at review 2026-07-22).
 - `model/use-tour-occasions.ts` — occasion detection, client-side, observed 0→1 transitions while the app is open: tasks count 0→1 (tasks query cache), relay channels 0→1, mesh agents 1→2. Never fires during an active streaming turn; never fires when `tours.seen`/`declined` contains the id; at most one offer per session view at a time.
 - `model/use-tours.ts` — the engine: offer → accept (run tour, mark seen) / decline (mark declined, never re-offer). State persists via the config `tours` block.
 - `ui/TourOfferChips.tsx` — the **suggestion-chip slot**: client-rendered chips ("Show me" / "Later") that appear under the latest assistant message on the session surface when an occasion fires. Built as a general slot (the tour is its first customer): the chat feature exposes a mount point; the tours feature contributes into it (follow the existing slot/contribution patterns, e.g. dashboard sections; mind FSD: chat may render the slot, tours contributes via the app layer or an extension-registry-style seam — no feature→feature model import).
@@ -48,7 +48,7 @@ Controlled wrapper: `{ steps: TourStep[], activeIndex, onAdvance, onEnd }` where
 
 - `TourSpotlight`: anchor found → spotlight; anchor timeout → skip; Esc/click-outside → onEnd; focus trap + inert + aria-live (jsdom-level assertions); reduced-motion branch.
 - Engine: occasion fires only on observed 0→1 (not on initially-nonzero, not during streaming); seen/declined suppress offers; accept marks seen + runs; decline marks declined; config PATCH shapes.
-- Templates: captions per tour exist, personality-inflected, no em dashes.
+- Templates: captions per tour exist, no em dashes (inflection deferred, see Architecture).
 - Anchor registry: every `TOUR_ANCHORS` value appears in the DOM of its owning component's test (each owning component's test asserts its own anchor).
 - Regression canaries: onboarding conversation tests (the "Show me around" chip rewire), Getting Started card tests.
 
