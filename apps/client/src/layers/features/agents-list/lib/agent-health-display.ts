@@ -9,6 +9,7 @@
  * @module features/agents-list/lib/agent-health-display
  */
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
+import { formatRelativeTime } from '@/layers/shared/lib';
 
 /** How one fleet row's status pill renders: its label and status-dot color. */
 export interface AgentStatusDisplay {
@@ -53,4 +54,18 @@ export function agentStatusDisplay(
   lastSeenAt: string | null
 ): AgentStatusDisplay {
   return isNeverActive(healthStatus, lastSeenAt) ? NEW_DISPLAY : STATUS_DISPLAY[healthStatus];
+}
+
+/**
+ * Resolve the "last seen" cell text for a fleet row: a relative time when the
+ * agent has been active, "New" for a never-active agent, and "Never" only for
+ * an agent that is truly out of contact (e.g. unreachable with no history).
+ *
+ * @param healthStatus - Server-computed health status for the agent.
+ * @param lastSeenAt - ISO timestamp of last activity, or `null` if never active.
+ */
+export function lastSeenLabel(healthStatus: AgentHealthStatus, lastSeenAt: string | null): string {
+  if (lastSeenAt) return formatRelativeTime(lastSeenAt);
+  if (isNeverActive(healthStatus, lastSeenAt)) return 'New';
+  return 'Never';
 }

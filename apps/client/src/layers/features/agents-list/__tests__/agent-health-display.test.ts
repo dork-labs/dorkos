@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNeverActive, agentStatusDisplay } from '../lib/agent-health-display';
+import { isNeverActive, agentStatusDisplay, lastSeenLabel } from '../lib/agent-health-display';
 
 describe('isNeverActive', () => {
   it('is true for a stale agent that has never been seen', () => {
@@ -31,5 +31,23 @@ describe('agentStatusDisplay', () => {
 
   it('passes through the health-derived label for active agents', () => {
     expect(agentStatusDisplay('active', '2026-07-20T00:00:00.000Z').label).toBe('Active');
+  });
+});
+
+describe('lastSeenLabel', () => {
+  it('returns "New" for a never-active agent instead of "Never"', () => {
+    expect(lastSeenLabel('stale', null)).toBe('New');
+  });
+
+  it('returns "Never" for an out-of-contact agent with no history', () => {
+    expect(lastSeenLabel('unreachable', null)).toBe('Never');
+  });
+
+  it('returns a relative time when the agent has been seen', () => {
+    // formatRelativeTime output varies; assert it is neither of the sentinels.
+    const label = lastSeenLabel('active', '2026-07-20T00:00:00.000Z');
+    expect(label).not.toBe('New');
+    expect(label).not.toBe('Never');
+    expect(label.length).toBeGreaterThan(0);
   });
 });

@@ -10,9 +10,9 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { MessageSquare, Settings, Star } from 'lucide-react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { Badge, Button } from '@/layers/shared/ui';
-import { cn, getAgentDisplayName, formatRelativeTime } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
-import { agentStatusDisplay, isNeverActive } from './agent-health-display';
+import { agentStatusDisplay, lastSeenLabel } from './agent-health-display';
 
 // ---------------------------------------------------------------------------
 // Extended row type — enriched in AgentsList before passing to DataTable
@@ -153,12 +153,11 @@ export function createAgentColumns(
       cell: ({ row }) => {
         const { lastSeenAt, healthStatus } = row.original;
         // A never-active agent reads as "New", not the alarming "Never".
-        const label = lastSeenAt
-          ? formatRelativeTime(lastSeenAt)
-          : isNeverActive(healthStatus, lastSeenAt)
-            ? 'New'
-            : 'Never';
-        return <span className="text-muted-foreground text-xs tabular-nums">{label}</span>;
+        return (
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {lastSeenLabel(healthStatus, lastSeenAt)}
+          </span>
+        );
       },
     },
 

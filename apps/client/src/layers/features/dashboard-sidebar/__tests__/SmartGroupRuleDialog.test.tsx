@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { SmartGroupRuleDialog } from '../ui/SmartGroupRuleDialog';
+import { STATUS_LABELS } from '../model/evaluate-smart-group';
 
 beforeAll(() => {
   if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
@@ -61,6 +62,48 @@ describe('SmartGroupRuleDialog', () => {
         rules: { runtimes: ['codex'] },
       });
       expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    it('offers a status checkbox for every AttentionState (incl. "new"/fresh)', () => {
+      render(
+        <SmartGroupRuleDialog
+          open
+          onOpenChange={() => {}}
+          mode="create"
+          runtimeOptions={RUNTIME_OPTIONS}
+          namespaceOptions={[]}
+          onSubmit={() => {}}
+        />
+      );
+      // Exhaustive against the type: STATUS_LABELS is a Record<AttentionState, …>,
+      // so every state must render a checkbox — a future widening that forgets
+      // the picker fails here (and the dialog's compile-time guard).
+      for (const label of Object.values(STATUS_LABELS)) {
+        expect(screen.getByRole('checkbox', { name: label })).toBeInTheDocument();
+      }
+      expect(screen.getByRole('checkbox', { name: 'new' })).toBeInTheDocument();
+    });
+
+    it('lets you build a smart group from the "new" (fresh) status', () => {
+      const onSubmit = vi.fn();
+      render(
+        <SmartGroupRuleDialog
+          open
+          onOpenChange={() => {}}
+          mode="create"
+          runtimeOptions={RUNTIME_OPTIONS}
+          namespaceOptions={[]}
+          onSubmit={onSubmit}
+        />
+      );
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New agents' } });
+      fireEvent.click(screen.getByRole('checkbox', { name: 'new' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+      expect(onSubmit).toHaveBeenCalledWith({
+        name: 'New agents',
+        rules: { statuses: ['fresh'] },
+      });
     });
 
     it('combines multiple field types into one rules object', () => {

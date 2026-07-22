@@ -73,6 +73,7 @@ vi.mock('@/layers/features/onboarding', () => ({
     isLoading: false,
     dismiss: vi.fn(),
   }),
+  useOnboardingOverlayVisible: () => false,
   OnboardingFlow: () => null,
   ProgressCard: () => null,
 }));
