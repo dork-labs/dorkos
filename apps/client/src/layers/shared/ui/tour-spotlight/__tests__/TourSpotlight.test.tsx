@@ -297,4 +297,85 @@ describe('TourSpotlight — S5 reduced motion', () => {
 
     expect(document.querySelector('.dork-tour-mask--reduced-motion')).toBeNull();
   });
+
+  it('applies the eased geometry transition to the cutout once it appears', async () => {
+    mockMatchMedia({ reduced: false });
+    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    render(
+      <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
+    );
+    await waitForSpotlight();
+
+    // The visible cutout rect carries the eased geometry transition, so a step
+    // change slides it instead of popping in.
+    await waitFor(() => {
+      const rect = Array.from(document.querySelectorAll('rect')).find((r) =>
+        r.style.transition?.includes('280ms')
+      );
+      expect(rect).toBeTruthy();
+    });
+  });
+});
+
+describe('TourSpotlight — S6 smooth movement between steps', () => {
+  const SECOND_CAPTION = 'And these are your agents.';
+  const TWO_STEPS: TourStep[] = [
+    GENERAL_STEP,
+    { anchor: TOUR_ANCHORS.yourAgents, caption: SECOND_CAPTION, chipLabel: 'Done' },
+  ];
+
+  /** Mount a #root that carries both step anchors. */
+  function mountRootWithTwoAnchors() {
+    const root = document.createElement('div');
+    root.id = 'root';
+    for (const id of [TOUR_ANCHORS.dashboardComposer, TOUR_ANCHORS.yourAgents]) {
+      const el = document.createElement('button');
+      el.setAttribute('data-testid', id);
+      el.textContent = id;
+      root.appendChild(el);
+    }
+    document.body.appendChild(root);
+  }
+
+  it('advances to the next step without remounting the provider (the cutout persists)', async () => {
+    mountRootWithTwoAnchors();
+    const { rerender } = render(
+      <TourSpotlight steps={TWO_STEPS} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
+    );
+    await waitForSpotlight();
+    const firstPopover = popover();
+
+    rerender(
+      <TourSpotlight steps={TWO_STEPS} activeIndex={1} onAdvance={vi.fn()} onEnd={vi.fn()} />
+    );
+    await waitFor(() => expect(within(popover()).getByText(SECOND_CAPTION)).toBeInTheDocument());
+
+    // Same DOM node across the advance: the provider (and its cutout rect) was not
+    // torn down, so the CSS geometry transition can glide it to the new element.
+    expect(popover()).toBe(firstPopover);
+  });
+
+  it('ignores a keyboard advance during the resolve gap (only advances a visible step)', async () => {
+    // Only the first step's anchor is present; the second never mounts, so the
+    // shown step trails at 0 while step 1 resolves.
+    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    const onAdvance = vi.fn();
+    const onEnd = vi.fn();
+    const { rerender } = render(
+      <TourSpotlight steps={TWO_STEPS} activeIndex={0} onAdvance={onAdvance} onEnd={onEnd} />
+    );
+    await waitForSpotlight();
+
+    // Engine advances to step 1, whose anchor is absent: a fast ArrowRight must be
+    // a no-op so it can never skip a step that never painted.
+    rerender(
+      <TourSpotlight steps={TWO_STEPS} activeIndex={1} onAdvance={onAdvance} onEnd={onEnd} />
+    );
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+    // The first step's caption is still the one on screen.
+    expect(within(popover()).getByText(CAPTION)).toBeInTheDocument();
+  });
 });

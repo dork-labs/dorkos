@@ -16,14 +16,26 @@ function CompactPickerDemo() {
   return <PersonalityPicker traits={traits} onTraitsChange={setTraits} compact />;
 }
 
-/** Personality picker showcases: default and compact variants. */
+function StackedPickerDemo() {
+  const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
+  return (
+    <PersonalityPicker
+      traits={traits}
+      onTraitsChange={setTraits}
+      layout="stacked"
+      sampleLabel="How DorkBot talks"
+    />
+  );
+}
+
+/** Personality picker showcases: inline (default/compact) and stacked variants. */
 export function PersonalityPickerShowcases() {
   return (
     <PlaygroundSection
       title="PersonalityPicker"
-      description="Shared personality picker body — radar, archetype label, preset pills, custom sliders, sample response. Used by the onboarding conversation and PersonalityPickerPanel (agent hub)."
+      description="Shared personality picker body — radar, archetype label, preset pills, custom sliders, sample voice. The inline layout is used by PersonalityPickerPanel (agent hub); the stacked layout (large centered radar + a distinct sample-voice block) is used by the onboarding conversation."
     >
-      <ShowcaseLabel>Default</ShowcaseLabel>
+      <ShowcaseLabel>Default (inline)</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="mx-auto max-w-2xl px-4 py-4">
           <DefaultPickerDemo />
@@ -34,6 +46,15 @@ export function PersonalityPickerShowcases() {
       <ShowcaseDemo responsive>
         <div className="mx-auto max-w-sm px-4 py-4">
           <CompactPickerDemo />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Stacked (onboarding card)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <div className="mx-auto max-w-sm px-4 py-4">
+          <div className="bg-card/50 shadow-soft rounded-lg border p-4">
+            <StackedPickerDemo />
+          </div>
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
