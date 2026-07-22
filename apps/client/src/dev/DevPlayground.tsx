@@ -43,6 +43,7 @@ import { TablesPage } from './pages/TablesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { MarketplacePage } from './pages/MarketplacePage';
 import { GenUiPage } from './pages/GenUiPage';
+import { TourSpotlightPage } from './pages/TourSpotlightPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import {
   DESIGN_SYSTEM_NAV,
@@ -99,6 +100,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   settings: SettingsPage,
   marketplace: MarketplacePage,
   'gen-ui': GenUiPage,
+  'tour-spotlight': TourSpotlightPage,
 };
 
 /**

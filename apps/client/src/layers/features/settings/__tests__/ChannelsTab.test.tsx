@@ -6,6 +6,7 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { CatalogEntry, AdapterBinding } from '@dorkos/shared/relay-schemas';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 
 let mockRelayEnabled = true;
 let mockCatalogData: CatalogEntry[] = [];
@@ -185,6 +186,30 @@ describe('ChannelsTab', () => {
     render(<ChannelsTab />);
 
     expect(screen.getByText('Bot Alpha')).toBeInTheDocument();
+  });
+
+  it('stamps the relay-channels tour anchor on the active-channels list', () => {
+    mockCatalogData = [
+      makeCatalogEntry('telegram', 'Telegram', [
+        {
+          id: 'tg-1',
+          enabled: true,
+          label: 'Bot Alpha',
+          status: {
+            id: 'tg-1',
+            type: 'telegram',
+            displayName: 'Telegram',
+            state: 'connected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          },
+        },
+      ]),
+    ];
+
+    render(<ChannelsTab />);
+
+    expect(screen.getByTestId(TOUR_ANCHORS.relayChannels)).toBeInTheDocument();
   });
 
   it('renders multiple instances from different adapter types', () => {

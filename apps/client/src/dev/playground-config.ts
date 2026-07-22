@@ -15,6 +15,7 @@ import {
   Settings as SettingsIcon,
   ShoppingBag,
   WandSparkles,
+  MapPin,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -34,6 +35,7 @@ import {
   SETTINGS_SECTIONS,
   MARKETPLACE_SECTIONS,
   GEN_UI_SECTIONS,
+  TOUR_SPOTLIGHT_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -105,6 +107,15 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'gen-ui',
     sections: GEN_UI_SECTIONS,
     path: 'gen-ui',
+  },
+  {
+    id: 'tour-spotlight',
+    label: 'Tour Spotlight',
+    description: 'The DorkBot living-tour spotlight primitive over @reactour/tour (DOR-419 spike).',
+    icon: MapPin,
+    group: 'app-shell',
+    sections: TOUR_SPOTLIGHT_SECTIONS,
+    path: 'tour-spotlight',
   },
   // ── Session ──
   {

@@ -6,6 +6,7 @@
  */
 import { useNavigate, Link } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { useDashboardAgents } from '../model/use-dashboard-agents';
 import { MAX_AGENT_CARDS } from '../lib/order-agent-cards';
 import { AgentCard } from './AgentCard';
@@ -21,7 +22,7 @@ export function YourAgentsSection() {
   const hasOverflow = cards.length > MAX_AGENT_CARDS;
 
   return (
-    <section>
+    <section data-testid={TOUR_ANCHORS.yourAgents}>
       <h2 className="text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase">
         Your agents
       </h2>

@@ -13,6 +13,7 @@
 import { useCallback, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAgentBirthStore, type AgentBirthRecord } from '@/layers/shared/model';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { ChatInput } from '@/layers/features/chat';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 
@@ -49,7 +50,7 @@ export function DashboardComposerSection() {
   }, [value, isDefaultAgentResolved, defaultAgentDir, defaultAgentIdentity, navigate]);
 
   return (
-    <section>
+    <section data-testid={TOUR_ANCHORS.dashboardComposer}>
       <h2 className="text-foreground mb-3 text-lg font-semibold tracking-tight">
         What are we building today?
       </h2>

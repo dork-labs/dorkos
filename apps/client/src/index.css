@@ -769,6 +769,14 @@ body {
   }
 }
 
+/* DorkBot living tour: still the spotlight cutout morph when the operator
+   prefers reduced motion. TourSpotlight applies this class to the mask so the
+   cutout jumps between steps instead of animating, even on a mid-session toggle. */
+.dork-tour-mask--reduced-motion,
+.dork-tour-mask--reduced-motion * {
+  transition: none !important;
+}
+
 /* iOS input zoom prevention (fallback for low --mobile-scale values) */
 @media (max-width: 767px) {
   textarea,

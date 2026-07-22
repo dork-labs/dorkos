@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
-import { useAgentBirthStore } from '@/layers/shared/model';
+import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 
 // Instant reveals so the scripted lines land synchronously.
 vi.mock('motion/react', () => ({ useReducedMotion: () => true }));
@@ -118,6 +118,7 @@ describe('OnboardingConversation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAgentBirthStore.setState({ records: {} });
+    useAppStore.setState({ requestedTour: null });
   });
 
   afterEach(() => cleanup());
@@ -176,6 +177,21 @@ describe('OnboardingConversation', () => {
     const composer = await screen.findByTestId('composer');
     expect(composer).toBeTruthy();
     expect(mockCompleteOnboarding).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Show me around" ends onboarding and hands off to the general tour', async () => {
+    const onComplete = vi.fn();
+    render(<OnboardingConversation onComplete={onComplete} />);
+    await reachDiscovery();
+    fireEvent.click(screen.getByText('Not now'));
+    await screen.findByText('Show me around');
+
+    fireEvent.click(screen.getByText('Show me around'));
+
+    // No session is created; the flow closes and the tour is requested instead.
+    expect(useAgentBirthStore.getState().records).toEqual({});
+    expect(useAppStore.getState().requestedTour).toBe('general');
+    expect(onComplete).toHaveBeenCalled();
   });
 
   it('the first message registers a first-message birth record and navigates into a session', async () => {

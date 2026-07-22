@@ -210,6 +210,8 @@ A dangling reference (env var unset, file/keychain entry missing) resolves to a 
 
 The `onboarding` section tracks first-time setup state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`, `completedAt`). `completedAt` is the authoritative "finished" signal — once set, the full-screen flow never reappears. It is managed automatically by the server and should not be edited manually.
 
+The `tours` section tracks the DorkBot living tour (`seen`, `declined`) so a subsystem tour never re-offers itself once the user has run or declined it. It is managed automatically by the client and should not be edited manually.
+
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:
 
 | Environment Variable      | Default                            | Description                                                                                                                                                                                                                                                         |

@@ -165,6 +165,7 @@ router.get('/', async (_req, res) => {
             completedAt: null,
           };
     })(),
+    tours: configManager.get('tours') ?? { seen: [], declined: [] },
     agentContext: configManager.get('agentContext') ?? {
       relayTools: true,
       meshTools: true,

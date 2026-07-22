@@ -72,6 +72,7 @@ export {
   type DialogContribution,
   type SettingsTabContribution,
   type RightPanelContribution,
+  type SuggestionChipContribution,
 } from './extension-registry';
 export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
 export {

@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { useAgentBirthStore } from '@/layers/shared/model';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { DashboardComposerSection } from '../ui/DashboardComposerSection';
 
 const mockNavigate = vi.fn();
@@ -68,6 +69,11 @@ describe('DashboardComposerSection', () => {
     render(<DashboardComposerSection />);
     expect(screen.getByText('What are we building today?')).toBeInTheDocument();
     expect(screen.getByLabelText('Message DorkBot…')).toBeInTheDocument();
+  });
+
+  it('stamps the tour anchor so the living tour can spotlight it', () => {
+    render(<DashboardComposerSection />);
+    expect(screen.getByTestId(TOUR_ANCHORS.dashboardComposer)).toBeInTheDocument();
   });
 
   it('registers a first-message birth record with the typed text and navigates', () => {

@@ -4,6 +4,7 @@ import { SearchX } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { applySortAndFilter } from '@/layers/shared/lib';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { useFilterState } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
@@ -93,7 +94,7 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
         <FilterBar.ResultCount count={filteredTasks.length} total={baseTasks.length} noun="task" />
         <FilterBar.ActiveFilters />
       </FilterBar>
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1" data-testid={TOUR_ANCHORS.tasksList}>
         <div className="space-y-2 p-4 pt-0">
           {filteredTasks.length === 0 && baseTasks.length > 0 ? (
             <motion.div
