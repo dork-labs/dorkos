@@ -95,6 +95,7 @@ export type {
   MessageDeliveredEvent,
   RelayMessageEvent,
   ModelOption,
+  ModelTier,
   SubagentInfo,
   UploadResult,
   UploadProgress,

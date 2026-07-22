@@ -2350,6 +2350,21 @@ export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 
 // === Model Options ===
 
+/**
+ * Coarse capability tier for grouping a long model list in the picker. Used by
+ * OpenCode, whose catalog can run to hundreds of models, so the menu can group
+ * them into `Frontier` / `Solid coders` / `Quick helpers` instead of one raw
+ * list (spec: opencode-connect-overhaul §2). Deliberately small and honest —
+ * `frontier` is reserved for known headliner models; a small local model is a
+ * `solid-coder` or `quick-helper`, never a `frontier`.
+ */
+export const ModelTierSchema = z
+  .enum(['frontier', 'solid-coder', 'quick-helper'])
+  .openapi('ModelTier');
+
+/** Coarse capability tier for grouping a long model list. See {@link ModelTierSchema}. */
+export type ModelTier = z.infer<typeof ModelTierSchema>;
+
 export const ModelOptionSchema = z
   .object({
     value: z.string().openapi({ description: 'Model identifier (e.g. claude-opus-4-6)' }),
@@ -2388,9 +2403,28 @@ export const ModelOptionSchema = z
       .openapi({ description: 'Provider identifier (e.g. anthropic, openai)' }),
     family: z.string().optional().openapi({ description: 'Model family (e.g. claude-4, gpt-5)' }),
     tier: z
-      .enum(['flagship', 'balanced', 'fast', 'specialized', 'legacy'])
+      // Two vocabularies share this one field (additive, no consumer breaks): the
+      // legacy claude/codex UI tiers (flagship/balanced/fast/specialized/legacy)
+      // and the coarse OpenCode grouping tiers ({@link ModelTierSchema}). Consumers
+      // that group by ModelTier match only the latter three; the rest read as
+      // "untiered". See spec opencode-connect-overhaul §2 (the ModelTier field was
+      // specified onto a `tier` that already existed).
+      .enum([
+        'flagship',
+        'balanced',
+        'fast',
+        'specialized',
+        'legacy',
+        'frontier',
+        'solid-coder',
+        'quick-helper',
+      ])
       .optional()
       .openapi({ description: 'Model tier for UI grouping' }),
+    local: z.boolean().optional().openapi({
+      description:
+        'True when the model runs locally on this machine (e.g. Ollama), so nothing typed leaves the computer',
+    }),
     supportsVision: z.boolean().optional(),
     supportsToolUse: z.boolean().optional(),
     supportsStreaming: z.boolean().optional(),

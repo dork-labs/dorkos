@@ -7,6 +7,7 @@
  *
  * @module shared/runtime-connect
  */
+import type { ModelTier } from './schemas.js';
 
 /**
  * Result of storing a runtime credential (native paste-key path). Carries only
@@ -90,6 +91,21 @@ export interface OllamaModel {
 }
 
 /**
+ * An installed Ollama model paired with its honest fit verdict for this machine
+ * (spec: opencode-connect-overhaul §3). Derived from Ollama's `/api/tags` list:
+ * the tag's on-disk `sizeBytes` is used as the model's resident footprint, run
+ * through the same static fit heuristic as the curated catalog.
+ */
+export interface OllamaInstalledModel {
+  /** Ollama model tag (e.g. `qwen2.5-coder:7b`). */
+  id: string;
+  /** On-disk size in bytes, from Ollama's tag listing. */
+  sizeBytes: number;
+  /** Static fit verdict for this machine (footprint taken as the on-disk size). */
+  assessment: OllamaModelAssessment;
+}
+
+/**
  * Result of zero-auth local Ollama detection. `running` reflects whether the
  * local Ollama HTTP API answered within the bounded probe; `models` lists the
  * pulled models (empty when none or when Ollama is absent).
@@ -99,7 +115,21 @@ export interface OllamaStatus {
   running: boolean;
   /** Pulled models reported by Ollama; empty when absent or none pulled. */
   models: OllamaModel[];
+  /**
+   * Installed models with an honest fit verdict per model (spec §3). Present only
+   * on the detection endpoint's response — the raw probe (`detectOllama`) omits it,
+   * and the route assesses the raw `models` against this machine's hardware.
+   */
+  installed?: OllamaInstalledModel[];
 }
+
+/**
+ * Syntactic shape of a valid Ollama model tag (`name[:version]`, optionally
+ * namespaced like `library/qwen2.5-coder`). Used to validate a pull-by-name
+ * request: DorkOS pulls any syntactically valid tag, not just curated ones
+ * (spec §3), so this guards against malformed input without gating on the catalog.
+ */
+export const OLLAMA_TAG_PATTERN = /^[a-z0-9][a-z0-9._\-/]*(:[a-z0-9._-]+)?$/i;
 
 /**
  * One curated coding model DorkOS can guide a one-click Ollama pull for
@@ -129,6 +159,12 @@ export interface OllamaCatalogModel {
    * model equals a frontier cloud model; tool-calling below ~14B is unreliable.
    */
   note: string;
+  /**
+   * Coarse capability tier for grouping in the picker. A local model is at most a
+   * `solid-coder` or `quick-helper` — never `frontier` (which stays cloud-only).
+   * Optional so a synthesized entry for an installed (uncurated) model can omit it.
+   */
+  tier?: ModelTier;
 }
 
 /**
