@@ -2694,7 +2694,7 @@
       "id": "260722-111314",
       "slug": "onboarding-is-a-scripted-dorkbot-conversation",
       "title": "Onboarding is a scripted, token-free DorkBot conversation",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-22",
       "extractedFrom": "dorkbot-is-the-onboarding",
       "specSlug": "dorkbot-is-the-onboarding"
@@ -2703,7 +2703,7 @@
       "id": "260722-111315",
       "slug": "discovery-scan-runs-only-after-explicit-consent",
       "title": "Discovery scans run only after explicit user consent",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-22",
       "extractedFrom": "dorkbot-is-the-onboarding",
       "specSlug": "dorkbot-is-the-onboarding"
@@ -2712,7 +2712,7 @@
       "id": "260722-111316",
       "slug": "extend-agent-birth-record-with-kind-for-first-messages",
       "title": "Extend the agent-birth record with a kind field for user first messages",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-22",
       "extractedFrom": "dorkbot-is-the-onboarding",
       "specSlug": "dorkbot-is-the-onboarding"
