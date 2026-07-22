@@ -1,7 +1,15 @@
-# Changelog archive: v0.1.0 – v0.45.0
+# Changelog archive: v0.1.0 – v0.45.1
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.45.1] - 2026-07-09
+
+> A same-day fix for widget interactions: clicks and form submits with bigger payloads no longer lose their data.
+
+### Fixed
+
+- Fixed widget clicks and form submits losing their data when the payload spanned multiple lines, both live and when a session reloads. A protocol change in 0.45.0 left the payload parser behind. (#185)
 
 ## [0.45.0] - 2026-07-09
 

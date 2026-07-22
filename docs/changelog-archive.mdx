@@ -1,9 +1,17 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.45.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.45.1), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.45.1] - 2026-07-09
+
+> A same-day fix for widget interactions: clicks and form submits with bigger payloads no longer lose their data.
+
+### Fixed
+
+- Fixed widget clicks and form submits losing their data when the payload spanned multiple lines, both live and when a session reloads. A protocol change in 0.45.0 left the payload parser behind. (#185)
 
 ## [0.45.0] - 2026-07-09
 

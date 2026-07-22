@@ -5,6 +5,53 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.0] - 2026-07-22
+
+> First-run setup becomes a real conversation with DorkBot, the dashboard grows hands so you can start work straight from it, and connecting OpenCode begins with one plain choice about where your models run.
+
+### Added
+
+- A conversation entry point after setup: the sidebar "Getting started" card leads with a "Talk to DorkBot" row that opens DorkBot (DOR-416).
+- Hear each personality before you choose it: as you pick how DorkBot should sound during setup, DorkBot posts a short line back in that exact voice (DOR-417).
+- Open a chat that already carries your first message, so it sends the moment the session opens and your words show up as your own (DOR-417).
+- Start a session right from the dashboard. The top of the page now asks "What are we building today?" with a message box; send a message and it opens a session with your default agent, with your words already sent as your first turn (DOR-418).
+- See and message your agents from the dashboard. A "Your agents" row shows your agents as cards, each with a plain-language status like "Working now" or "Idle since yesterday". Click a card to open a session with that agent (DOR-418).
+- DorkBot now shows you around the app at the moments it matters. Ask "Show me around" any time to walk the dashboard, and the first time you schedule a task, connect a channel, or add a second agent, DorkBot offers to point out where that lives. Tours run on your real screen, never a mockup, and you can leave any time by pressing Escape or clicking outside. Say "Later" once and it will not ask again (DOR-419).
+- Open 3D models, audio, and video files right in the canvas, plus every text file a project contains. New audio/video viewers play inline, and the 3D viewer now loads 3MF/PLY/FBX/DAE models alongside glTF/GLB, STL, and OBJ (DOR-420).
+- Audio and video are new media types that stream from the server, so playback can seek to any point mid-file without downloading the whole clip (this uses HTTP Range requests). An unsupported binary shows a friendly in-canvas message instead of breaking the canvas (DOR-420).
+- OpenCode's model list now comes back grouped into Frontier, Solid coders, and Quick helpers, and sorted for you. Models that run on your own computer are marked as local, and frontier models stay cloud-only (DOR-422).
+- You can now pull any Ollama model by name, not just a short preset list. For each model DorkOS gives an honest read on whether it will run well, may be slow, or is too large for your hardware (DOR-422).
+- On Windows and Linux machines with an NVIDIA graphics card, those hardware reads now count your GPU memory, not just your system memory (DOR-422).
+- Start a new agent right from the dashboard: the Your agents section now has a New agent button next to its heading.
+
+### Changed
+
+- First-run setup is now a conversation with DorkBot instead of a stack of forms. DorkBot introduces itself, helps you pick how it sounds, offers to look around for projects you already have, and then hands you a real chat box. Your first message drops you straight into a live session, so setup ends by getting to work rather than on a "you're all set" screen (DOR-417).
+- The dashboard status cards now say what they mean for you. Instead of "1 adapter" or "0 schedules", they read "Connected to Telegram", "Nothing scheduled yet", "2 agents ready", and "Quiet this week" (DOR-418).
+- Connecting OpenCode now starts with one clear choice: where your models come from. Instead of Local, Gateway, and Direct tabs, you pick a power source in plain language: best models with zero setup (in the cloud, via OpenRouter), private and free on your own computer, or your own API key for Anthropic, OpenAI, or any OpenAI-compatible server. Each option says its one honest trade-off up front, and connecting ends on a clear "you're connected" moment with a Done button. Your session switches to OpenCode automatically, so you can send your first message right away (DOR-423).
+- The model menu is now searchable and grouped by what a model is good for: Frontier, Solid coders, Quick helpers, and More models. Models that run on your own machine are marked "private" so it's obvious what never leaves your computer. Short lists (like Claude Code and Codex) look exactly as before (DOR-423).
+- The private, on-your-computer option is now a small manager: it shows the models you already have with an honest read on how well each fits your hardware, a short shelf of good coding models you can add in one click with a live download bar, and a box to pull any model by name. Prefer LM Studio or another local server? A link takes you straight to connecting it directly (DOR-423).
+- Commands and file paths shown in the app now use one consistent inline style, so code you can copy is easy to spot.
+- The setup screen now shows a friendly "We'll install it for you" note with the exact command one tap away, instead of a raw terminal line, and the button to start chatting reads "Meet DorkBot".
+- Setup details now list each coding agent's name on its own line, so long names and their descriptions are both fully readable.
+- When you connect Codex or Claude, signing in is now the first thing you see. Prefer a key? "Use an API key instead" reveals the key field, and you can switch back anytime.
+- The first-run setup screens now work with your browser's back and forward buttons, and a refresh keeps you on the same screen instead of starting over.
+- The personality step in onboarding now sits in its own card with a bigger, centered radar, and DorkBot previews its voice in a quote right inside the card instead of as a stray chat message.
+
+### Fixed
+
+- The setup finish screen keeps the completion screen up until you act. It used to close on its own a second or two after appearing, dropping you on the dashboard before you could click "Start your first session" (DOR-416).
+- Never-active agents show as new, not dead. A DorkBot you just set up reads "New" instead of "Stale" or "Never active", and it stays visible in the sidebar instead of hiding under "inactive agents" (DOR-416).
+- The finish-screen confetti stops on exit: it clears after a few seconds and when you move on, instead of drifting across the screen long after setup (DOR-416).
+- One broken file can no longer take down the whole canvas. When a document fails to open, only that tab shows a short "This tab hit a problem" message with a Retry button. Your other tabs and the tab strip keep working. If the app updated while the tab was open, the message offers a one-click reload (DOR-420).
+- 3D models degrade gracefully. If your device can't open a 3D view, the tab shows a plain message instead of breaking the canvas (DOR-420).
+- Opening and closing 3D files over and over no longer piles up graphics memory. When you close a model, the viewer now frees its geometry, material, and texture resources, and an unused material fallback was removed (DOR-420).
+- Markdown files open ready to edit again. Click the pencil on a Markdown file in the canvas and it turns editable right away, keeping your place. Your typing autosaves as before (DOR-420).
+- The canvas now matches the theme you picked in DorkOS. Markdown, code files, and change diffs all follow your light or dark choice, so a light app stays light and a dark app stays dark even when your computer's own setting disagrees. And if you leave DorkOS set to follow your computer, it now reads that setting correctly too. Switching themes updates every open document instantly, no reload needed (DOR-420).
+- DorkOS now remembers your OpenCode connection. Once you connect OpenCode (through OpenRouter, your own API key, or local models on your computer), it stays ready across page reloads and restarts. You are no longer asked to sign in again when you already had (DOR-422).
+- Dialogs now open in place instead of flying in from the top-left corner.
+- The guided tour's highlight now glides smoothly from one spot to the next instead of jumping in from the corner.
+
 ## [0.55.0] - 2026-07-22
 
 > Smart groups keep a fleet of agents organized, a new connectors foundation brings outside services into your agents, and first-run setup gets shorter and more honest.
@@ -439,14 +486,6 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Sign-in and sign-up now slow down after too many tries from the same place, so no one can sit there guessing your password. A few mistyped tries still work fine (DOR-281)
 - Cleared the last critical security warning in our test tooling; `npm audit` on the DorkOS source no longer reports any critical findings (DOR-168)
 
-## [0.45.1] - 2026-07-09
-
-> A same-day fix for widget interactions: clicks and form submits with bigger payloads no longer lose their data.
-
-### Fixed
-
-- Fixed widget clicks and form submits losing their data when the payload spanned multiple lines, both live and when a session reloads. A protocol change in 0.45.0 left the payload parser behind. (#185)
-
 ---
 
-Older releases (v0.1.0 – v0.45.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.45.1) live in the [Changelog archive](/changelog-archive).
