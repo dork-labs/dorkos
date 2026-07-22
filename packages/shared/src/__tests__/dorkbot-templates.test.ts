@@ -100,5 +100,26 @@ describe('dorkbot-templates', () => {
       const playful = generateVoiceSample(makeTraits({ spice: 2, humor: 5 }));
       expect(bold).not.toBe(playful);
     });
+
+    it('returns a distinct line for every named preset (no adjacent collisions)', () => {
+      const presetIds = [
+        'balanced',
+        'hotshot',
+        'sage',
+        'sentinel',
+        'phantom',
+        'mad-scientist',
+        'the-bro',
+        'drill-sergeant',
+      ];
+      // Same traits, different preset id — the id drives the line, so all 8 differ.
+      const samples = presetIds.map((id) => generateVoiceSample(makeTraits(), id));
+      expect(new Set(samples).size).toBe(presetIds.length);
+    });
+
+    it('falls back to the trait classifier for a Custom blend (no preset id)', () => {
+      const custom = generateVoiceSample(makeTraits({ spice: 5 }));
+      expect(custom).toBe(generateVoiceSample(makeTraits({ spice: 5 }), undefined));
+    });
   });
 });

@@ -118,14 +118,39 @@ const VOICE_SAMPLES: Record<VoiceKey, string> = {
 };
 
 /**
- * Generate a one-sentence sample line in the voice implied by the given traits.
+ * One distinct authored sample line per named personality preset, keyed by the
+ * preset id used in the picker (`features/agent-hub/model/personality-presets`).
+ * A preset selection posts its own line, so switching presets audibly changes
+ * DorkBot's voice even between adjacent archetypes; the trait-space classifier
+ * ({@link VOICE_SAMPLES}) is only the fallback for Custom slider blends.
+ */
+const PRESET_VOICE_SAMPLES: Record<string, string> = {
+  balanced: "Sounds good. Point me at something and I'll get to work, and I'll flag the big calls.",
+  hotshot: "Say the word and it's shipped before you look up.",
+  sage: "Happy to help, and I'll explain the why as we go so it sticks.",
+  sentinel: "I'll check with you before anything risky, then move carefully.",
+  phantom: "On it. You'll barely hear from me.",
+  'mad-scientist': "Ooh, I already have three weird ideas. Let's try the fun one first.",
+  'the-bro': 'Bet. Point me at the mess and I sort it out, no stress.',
+  'drill-sergeant': 'Give me the target. I hit it. Next.',
+};
+
+/**
+ * Generate a one-sentence sample line in DorkBot's voice for the chosen
+ * personality.
  *
  * Used in the onboarding personality beat: each preset (or slider settle) posts
- * a fresh sample so the user hears the personality change. Deterministic and
- * personality-true; keyed off the same six-dimension trait space as the picker.
+ * a fresh sample so the user hears the personality change. When a named preset
+ * is selected, its authored line is returned so adjacent presets never collide;
+ * a Custom trait blend (no preset id) falls back to the trait-space classifier.
+ * Deterministic and personality-true.
  *
  * @param traits - Agent personality traits selected in the picker.
+ * @param presetId - The selected preset's id, when a preset (not Custom) is picked.
  */
-export function generateVoiceSample(traits: Traits): string {
+export function generateVoiceSample(traits: Traits, presetId?: string): string {
+  if (presetId && PRESET_VOICE_SAMPLES[presetId]) {
+    return PRESET_VOICE_SAMPLES[presetId];
+  }
   return VOICE_SAMPLES[classifyVoice(traits)];
 }

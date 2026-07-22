@@ -186,6 +186,19 @@ describe('useOnboardingConversation', () => {
     expect(ports.onDissolve).toHaveBeenCalledWith('help me set up a project');
   });
 
+  it('reports isRevealing while lines are pending, and false once drained', async () => {
+    // No reduced motion: the arrival lines sit queued (staged reveal) => revealing.
+    const staged = renderHook(() => useOnboardingConversation(makePorts({ reducedMotion: false })));
+    act(() => staged.result.current.beginConversation());
+    expect(staged.result.current.isRevealing).toBe(true);
+
+    // Reduced motion drains instantly; once the widget shows nothing is revealing.
+    const instant = renderHook(() => useOnboardingConversation(makePorts()));
+    act(() => instant.result.current.beginConversation());
+    await waitFor(() => expect(instant.result.current.activeWidget).toBe('personality'));
+    expect(instant.result.current.isRevealing).toBe(false);
+  });
+
   it('fast-forward reveals every queued line at once (no reduced motion)', async () => {
     const { result } = renderHook(() =>
       useOnboardingConversation(makePorts({ reducedMotion: false }))

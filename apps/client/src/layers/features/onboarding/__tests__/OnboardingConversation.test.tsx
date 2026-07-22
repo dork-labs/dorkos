@@ -17,8 +17,10 @@ vi.mock('@/layers/entities/agent', () => ({
   useUpdateAgent: () => ({ mutateAsync: mockMutateAsync }),
 }));
 
+// The registered ABSOLUTE path (never the literal tilde) — the client can stream it.
+const REGISTERED_DIR = '/home/kai/.dork/agents/dorkbot';
 vi.mock('@/layers/entities/config', () => ({
-  resolveDefaultAgentDir: () => '~/.dork/agents/dorkbot',
+  useDefaultAgentSession: () => ({ defaultAgentDir: REGISTERED_DIR, startSession: vi.fn() }),
 }));
 
 const mockCompleteStep = vi.fn();
@@ -95,6 +97,7 @@ vi.mock('@/layers/features/agent-hub', () => ({
       pick
     </button>
   ),
+  findMatchingPreset: () => ({ id: 'hotshot' }),
 }));
 
 vi.mock('@/layers/shared/lib', async (importActual) => ({
@@ -192,14 +195,18 @@ describe('OnboardingConversation', () => {
     expect(records[0]).toMatchObject({
       kind: 'first-message',
       kickoffMessage: 'help me set up a project',
-      path: '~/.dork/agents/dorkbot',
+      // The REGISTERED absolute path, never the unstreamable literal tilde.
+      path: REGISTERED_DIR,
     });
+    expect(records[0].path).not.toContain('~');
 
     const sessionId = Object.keys(useAgentBirthStore.getState().records)[0];
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { dir: '~/.dork/agents/dorkbot', session: sessionId },
+      search: { dir: REGISTERED_DIR, session: sessionId },
     });
+    const navDir = mockNavigate.mock.calls[0][0].search.dir as string;
+    expect(navDir).not.toContain('~');
     expect(onComplete).toHaveBeenCalled();
   });
 });

@@ -68,13 +68,14 @@ export function getBeat(id: BeatId): OnboardingBeat {
 }
 
 /**
- * DorkBot's one-sentence sample line in the voice implied by the given traits.
+ * DorkBot's one-sentence sample line in the voice of the chosen personality.
  * Delegates to the shared template so the copy lives in one place.
  *
  * @param traits - The personality traits currently selected in the picker.
+ * @param presetId - The selected preset's id, when a named preset (not Custom) is picked.
  */
-export function voiceSampleFor(traits: Traits): string {
-  return generateVoiceSample(traits);
+export function voiceSampleFor(traits: Traits, presetId?: string): string {
+  return generateVoiceSample(traits, presetId);
 }
 
 /**
