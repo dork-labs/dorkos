@@ -191,6 +191,17 @@
       ]
     },
     {
+      "guide": "adding-a-connector.md",
+      "description": "Connector backend authoring: ConnectorProvider port, connectorConformance null branch, custody disclosure, credential-ref hygiene, adapter packaging",
+      "patterns": [
+        "connector-provider",
+        "apps/server/src/services/connectors/",
+        "connector-conformance",
+        "fake-connector-provider",
+        "packages/db/src/schema/connected-accounts"
+      ]
+    },
+    {
       "guide": "authentication.md",
       "description": "Local Better Auth: session-gate, exposure-guard, per-user API keys + MCP, config + migrations",
       "patterns": [
@@ -269,6 +280,26 @@
       "doc": "docs/concepts/mesh.mdx",
       "description": "Mesh agent discovery concepts",
       "patterns": ["packages/mesh/", "apps/server/src/services/mesh/"]
+    },
+    {
+      "doc": "docs/connectors/index.mdx",
+      "description": "Connectors overview: multi-account, custody, routing",
+      "patterns": ["apps/server/src/services/connectors/", "connector-provider"]
+    },
+    {
+      "doc": "docs/connectors/composio.mdx",
+      "description": "Composio managed connector setup + custody disclosure",
+      "patterns": ["apps/server/src/services/connectors/providers/composio", "custody-disclosure"]
+    },
+    {
+      "doc": "docs/connectors/raw-mcp.mdx",
+      "description": "Raw MCP connector setup (external custody)",
+      "patterns": ["apps/server/src/services/connectors/providers/raw-mcp"]
+    },
+    {
+      "doc": "docs/connectors/nango.mdx",
+      "description": "Nango self-host connector stub (mandatory NANGO_ENCRYPTION_KEY)",
+      "patterns": ["apps/server/src/services/connectors/providers/nango", "NANGO_ENCRYPTION_KEY"]
     },
     {
       "doc": "docs/integrations/sse-protocol.mdx",

@@ -181,11 +181,31 @@ const SkillPackManifestSchema = BasePackageManifestSchema.extend({
 });
 
 /**
+ * The `adapterType` value that marks an adapter package as a **connector** — a
+ * `ConnectorProvider` backend (Composio managed, Nango self-host, a raw-MCP
+ * baseline) that connects an agent to real third-party services and acts for the
+ * user (connector-gateway spec §Detailed Design 6).
+ *
+ * `adapterType` stays a free-form string (relay adapters use their service slug,
+ * e.g. `'slack'`); this is a well-known value on that same axis, not a new
+ * discriminator — no `PackageTypeSchema` migration. A connector package sets
+ * `type: 'adapter'` + `adapterType: 'connector'`; connecting an account is a
+ * runtime step (`startConnect`), never an install step, so install behavior does
+ * not diverge from any other adapter. Depend on one with
+ * `adapter:connector-composio@^1.0.0` via the existing dependency grammar.
+ */
+export const CONNECTOR_ADAPTER_TYPE = 'connector';
+
+/**
  * Adapter-specific manifest fields.
  */
 const AdapterManifestSchema = BasePackageManifestSchema.extend({
   type: z.literal('adapter'),
-  /** Adapter type identifier (e.g., "discord", "slack"). */
+  /**
+   * Adapter type identifier (e.g. `'discord'`, `'slack'`). Free-form; the
+   * well-known {@link CONNECTOR_ADAPTER_TYPE} (`'connector'`) marks a
+   * `ConnectorProvider` gateway package.
+   */
   adapterType: z.string().min(1).max(64),
 });
 
