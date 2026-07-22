@@ -139,7 +139,9 @@ export function TourSpotlight({ steps, activeIndex, onAdvance, onEnd }: TourSpot
           key={activeIndex}
           steps={reactourSteps}
           defaultOpen
-          scrollSmooth
+          // No scrollSmooth: the resolver already scrolls the target into view
+          // before opening, so reactour's own smooth-scroll (and the transition
+          // state it drives) never runs on first open — one less first-mount race.
           showNavigation={false}
           showPrevNextButtons={false}
           showCloseButton={false}

@@ -119,7 +119,7 @@ describe('TourSpotlight — S1 anchor resolution', () => {
     await waitForSpotlight();
   });
 
-  it('re-resolves when a found anchor is removed and re-stamped, without ending or advancing', async () => {
+  it('keeps the caption up when a found anchor is removed and re-stamped (sticky, no end/advance)', async () => {
     const anchor = mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
     const root = anchor.parentElement as HTMLElement;
     const onAdvance = vi.fn();
@@ -129,22 +129,56 @@ describe('TourSpotlight — S1 anchor resolution', () => {
     );
     await waitForSpotlight();
 
-    // A query-driven section re-render unmounts the found node.
+    // A query-driven section re-render unmounts the found node. A reached step is
+    // sticky: the caption stays up (it is NOT torn down), so it can never blink
+    // out — the production "caption never renders" signature.
     act(() => anchor.remove());
-    await waitFor(() => expect(document.querySelector('.reactour__popover')).toBeNull());
+    expect(within(popover()).getByText(CAPTION)).toBeInTheDocument();
 
-    // The same data-testid is re-stamped on a fresh node within budget.
+    // The same data-testid is re-stamped on a fresh node; the spotlight swaps in.
     act(() => {
       const fresh = document.createElement('button');
       fresh.setAttribute('data-testid', TOUR_ANCHORS.dashboardComposer);
       fresh.textContent = 'real target';
       root.appendChild(fresh);
     });
-
-    // The spotlight re-attaches; the tour neither ends nor advances.
     await waitForSpotlight();
+
     expect(onEnd).not.toHaveBeenCalled();
     expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it('never self-advances a reached step whose anchor is permanently lost (no cascade)', async () => {
+    vi.useFakeTimers();
+    const anchor = mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    const onAdvance = vi.fn();
+    const onEnd = vi.fn();
+    // Two steps, so a self-advancing bug would visibly walk the tour.
+    render(
+      <TourSpotlight
+        steps={[GENERAL_STEP, GENERAL_STEP]}
+        activeIndex={0}
+        onAdvance={onAdvance}
+        onEnd={onEnd}
+      />
+    );
+    // Resolve the first step (found).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(document.querySelector('.reactour__popover')).not.toBeNull();
+
+    // The anchor is permanently removed and never re-stamped.
+    act(() => anchor.remove());
+    // Advance far past the timeout budget and a full 3-step cascade window.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+
+    // A step that was genuinely reached never times out, so it never
+    // auto-advances or self-ends (the 8-12s cascade is gone).
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
   });
 });
 

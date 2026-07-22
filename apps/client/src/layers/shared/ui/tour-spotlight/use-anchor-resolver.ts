@@ -30,12 +30,13 @@ export interface AnchorResolution {
  * into view, on timeout it reports `'timeout'` so the caller skips the step
  * honestly rather than spotlighting nothing.
  *
- * The poll keeps watching after a hit: a query-driven section re-render can
- * unmount and re-stamp the same `data-testid` on a fresh node mid-tour, so a
- * found element disappearing must RE-RESOLVE (drop back to `resolving` with a
- * fresh budget and re-attach to the new node) rather than end or advance the
- * step. Only a genuine absence that outlasts the budget becomes a `timeout`.
- * Passing `null` disables resolution (used while no step is active).
+ * The poll keeps watching after a hit and a step, once reached, is sticky: a
+ * query-driven section re-render can unmount and re-stamp the same `data-testid`
+ * on a fresh node mid-tour, so a resolved step keeps its spotlight up (on the
+ * last element) and swaps in the new node when it re-appears — it is never torn
+ * down or auto-advanced on a transient disappearance. The `'timeout'` skip
+ * applies ONLY to a step whose anchor never resolved at all (so a truly missing
+ * surface still skips honestly). Passing `null` disables resolution.
  *
  * @param anchor - The anchor to resolve, or null to stay idle.
  */
@@ -57,38 +58,42 @@ export function useAnchorResolver(anchor: TourAnchorId | null): AnchorResolution
     if (anchor === null) return;
 
     const selector = tourAnchorSelector(anchor);
-    // The element currently spotlighted, and the deadline for (re)finding one.
+    // The element currently spotlighted, whether the step was ever reached, and
+    // the wait budget that applies ONLY while the step has never resolved.
     let current: HTMLElement | null = null;
-    let deadline = Date.now() + ANCHOR_TIMEOUT_MS;
+    let everFound = false;
+    const deadline = Date.now() + ANCHOR_TIMEOUT_MS;
 
     // Runs on every interval tick (never synchronously in the effect body, so no
-    // setState rides the effect body). Keeps watching after a hit so a lost node
-    // re-resolves instead of leaving a detached element under the spotlight.
-    // Returns true only to give up (a genuine timeout), so the caller can stop.
+    // setState rides the effect body). Returns true only to give up (a genuine
+    // never-resolved timeout), so the caller can stop polling.
     const tick = (): boolean => {
-      // Still spotlighting a live node — keep watching for its removal only.
-      if (current && current.isConnected) return false;
-
       const found = document.querySelector<HTMLElement>(selector);
       if (found) {
-        found.scrollIntoView({ block: 'center', inline: 'center' });
-        current = found;
-        deadline = Date.now() + ANCHOR_TIMEOUT_MS; // fresh budget on every (re)attach
-        setResolution({ element: found, status: 'found' });
+        // First hit, or a re-render re-stamped the anchor on a fresh node: attach
+        // (or swap) and scroll it into view. The `found !== current` guard means a
+        // stable node never re-renders the spotlight.
+        if (found !== current) {
+          found.scrollIntoView({ block: 'center', inline: 'center' });
+          current = found;
+          everFound = true;
+          setResolution({ element: found, status: 'found' });
+        }
         return false;
       }
 
-      if (current) {
-        // Had one, lost it (unmounted or replaced): re-resolve with a fresh
-        // budget so a re-render that re-stamps the anchor re-attaches rather than
-        // ending the tour.
-        current = null;
-        deadline = Date.now() + ANCHOR_TIMEOUT_MS;
-        setResolution({ element: null, status: 'resolving' });
+      // The anchor is not in the DOM right now.
+      if (everFound) {
+        // A step that was genuinely reached stays put: keep the spotlight on the
+        // last element and keep polling to swap the anchor back in when a
+        // query-driven re-render re-stamps it. A reached step is NEVER torn down
+        // or auto-advanced on a transient disappearance — doing so was the
+        // first-launch self-advance cascade (a lost found-step timing out, then
+        // skipping through every step in ~4s increments).
         return false;
       }
 
-      // Never found it — enforce the wait budget, then skip honestly and stop.
+      // The anchor never resolved — enforce the wait budget, then skip honestly.
       if (Date.now() >= deadline) {
         setResolution({ element: null, status: 'timeout' });
         return true;
