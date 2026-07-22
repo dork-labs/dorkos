@@ -29,7 +29,7 @@ import {
 } from '@dorkos/shared/convention-files';
 import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { logger } from '../lib/logger.js';
@@ -57,7 +57,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       if (!rawPath) {
         return res.status(400).json({ error: 'path query parameter required' });
       }
-      const agentPath = await validateBoundary(rawPath);
+      const agentPath = await validateBoundaryOrDorkHome(rawPath);
       const manifest = await readManifest(agentPath);
       if (!manifest) {
         return res.json(null);
@@ -91,7 +91,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       await Promise.all(
         result.data.paths.map(async (p) => {
           try {
-            const resolvedP = await validateBoundary(p);
+            const resolvedP = await validateBoundaryOrDorkHome(p);
             agents[p] = await readManifest(resolvedP);
           } catch {
             agents[p] = null;
@@ -116,7 +116,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
           .json({ error: 'Validation failed', details: z.flattenError(result.error) });
       }
       const { path: rawAgentPath, name, description, runtime } = result.data;
-      const agentPath = await validateBoundary(rawAgentPath);
+      const agentPath = await validateBoundaryOrDorkHome(rawAgentPath);
 
       // Check if agent already exists
       const existing = await readManifest(agentPath);
@@ -245,7 +245,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       if (!rawPath) {
         return res.status(400).json({ error: 'path query parameter required' });
       }
-      const agentPath = await validateBoundary(rawPath);
+      const agentPath = await validateBoundaryOrDorkHome(rawPath);
 
       const result = UpdateAgentRequestSchema.safeParse(req.body);
       if (!result.success) {
@@ -328,7 +328,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       if (!rawPath) {
         return res.status(400).json({ error: 'path query parameter required' });
       }
-      const agentPath = await validateBoundary(rawPath);
+      const agentPath = await validateBoundaryOrDorkHome(rawPath);
 
       const manifest = await readManifest(agentPath);
       if (!manifest) {

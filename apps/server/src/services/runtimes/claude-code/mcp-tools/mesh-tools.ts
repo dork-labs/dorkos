@@ -2,7 +2,11 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { readManifest } from '@dorkos/shared/manifest';
 import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
-import { validateBoundary, BoundaryError } from '../../../../lib/boundary.js';
+import {
+  validateBoundary,
+  validateBoundaryOrDorkHome,
+  BoundaryError,
+} from '../../../../lib/boundary.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 
@@ -21,12 +25,19 @@ function requireMesh(deps: McpToolDeps) {
  * HTTP mesh routes' `validateBoundary` guard would otherwise be bypassed. On
  * success returns the resolved canonical path; on violation returns the MCP
  * error response to send back to the caller.
+ *
+ * @param path - Caller-supplied path to validate
+ * @param allowDorkHome - When true, also accept paths under DorkOS's data
+ *   directory (the agent-registry seam — mirrors the HTTP mesh register route).
+ *   Only `mesh_register` sets this; discovery and denial stay boundary-confined.
  */
 async function resolveBoundedPath(
-  path: string
+  path: string,
+  allowDorkHome = false
 ): Promise<{ resolved: string } | { error: ReturnType<typeof jsonContent> }> {
+  const validate = allowDorkHome ? validateBoundaryOrDorkHome : validateBoundary;
   try {
-    return { resolved: await validateBoundary(path) };
+    return { resolved: await validate(path) };
   } catch (e) {
     if (e instanceof BoundaryError) {
       return { error: jsonContent({ error: e.message, code: e.code }, true) };
@@ -91,7 +102,9 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
     if (err) return err;
 
     // Boundary-validate the path (external /mcp callers bypass the HTTP guard).
-    const bounded = await resolveBoundedPath(args.path);
+    // Agent-registry seam: allow dork-home so system/marketplace agents under
+    // `{dorkHome}/agents/*` are registerable (mirrors the HTTP mesh register route).
+    const bounded = await resolveBoundedPath(args.path, true);
     if ('error' in bounded) return bounded.error;
     const resolvedPath = bounded.resolved;
 

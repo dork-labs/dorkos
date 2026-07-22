@@ -25,7 +25,7 @@ import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { scaffoldInstructions } from '@dorkos/harness';
-import { validateBoundary, expandTilde, BoundaryError } from '../../lib/boundary.js';
+import { validateBoundaryOrDorkHome, expandTilde, BoundaryError } from '../../lib/boundary.js';
 import { configManager } from './config-manager.js';
 import { notifyAgentCreated } from './agent-created-hook.js';
 import { logger } from '../../lib/logger.js';
@@ -173,9 +173,10 @@ export async function createAgentWorkspace(
     ? path.resolve(opts.directory)
     : path.resolve(expandTilde(agentsConfig.defaultDirectory), opts.name);
 
-  // Boundary validation
+  // Boundary validation — agent-registry seam: marketplace-installed and system
+  // agents live under `{dorkHome}/agents/*` by design, so dork-home is in-bounds.
   try {
-    await validateBoundary(resolvedPath);
+    await validateBoundaryOrDorkHome(resolvedPath);
   } catch (err) {
     if (err instanceof BoundaryError) {
       throw new AgentCreationError(err.message, 'BOUNDARY', 403);

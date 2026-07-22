@@ -212,6 +212,118 @@ describe('boundary module', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // validateBoundaryOrDorkHome — the agent-registry seam
+  // ---------------------------------------------------------------------------
+  describe('validateBoundaryOrDorkHome', () => {
+    // A boundary that does NOT contain dork-home — the Docker deployment shape
+    // (DORKOS_BOUNDARY=/workspace, dork-home at /home/node/.dork).
+    const BOUNDARY = '/workspace';
+    const DORK_HOME = '/home/node/.dork';
+    const originalDorkHome = process.env.DORK_HOME;
+
+    beforeEach(() => {
+      process.env.DORK_HOME = DORK_HOME;
+    });
+
+    afterEach(() => {
+      if (originalDorkHome === undefined) delete process.env.DORK_HOME;
+      else process.env.DORK_HOME = originalDorkHome;
+    });
+
+    it('accepts a dork-home path that the plain boundary rejects (the onboarding bug)', async () => {
+      const agentPath = '/home/node/.dork/agents/dorkbot';
+
+      // Plain boundary confines to /workspace → the system agent path is a 403.
+      vi.mocked(fs.realpath).mockResolvedValueOnce(agentPath);
+      await expect(boundary.validateBoundary(agentPath, BOUNDARY)).rejects.toMatchObject({
+        code: 'OUTSIDE_BOUNDARY',
+      });
+
+      // The seam accepts it: realpath(userPath), then realpath(dork-home).
+      vi.mocked(fs.realpath).mockResolvedValueOnce(agentPath);
+      vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME);
+      const result = await boundary.validateBoundaryOrDorkHome(agentPath, BOUNDARY);
+      expect(result).toBe(agentPath);
+    });
+
+    it('rejects the dork-home root itself (only the agents subtree is allowed)', async () => {
+      vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // userPath
+      vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // dork-home resolve
+
+      await expect(boundary.validateBoundaryOrDorkHome(DORK_HOME, BOUNDARY)).rejects.toThrow(
+        'outside directory boundary'
+      );
+    });
+
+    it('rejects dork-home siblings of agents/ such as the credential store', async () => {
+      const secrets = `${DORK_HOME}/extension-secrets`;
+      vi.mocked(fs.realpath).mockResolvedValueOnce(secrets); // userPath
+      vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // dork-home resolve
+
+      await expect(boundary.validateBoundaryOrDorkHome(secrets, BOUNDARY)).rejects.toThrow(
+        'outside directory boundary'
+      );
+    });
+
+    it('accepts a boundary-internal path without consulting dork-home', async () => {
+      const projectPath = '/workspace/project/app';
+      vi.mocked(fs.realpath).mockResolvedValueOnce(projectPath);
+
+      const result = await boundary.validateBoundaryOrDorkHome(projectPath, BOUNDARY);
+
+      expect(result).toBe(projectPath);
+      // Boundary containment short-circuits — dork-home is never realpath'd.
+      expect(vi.mocked(fs.realpath)).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a path outside both boundary and dork-home (rejected by both validators)', async () => {
+      // Plain boundary rejects /etc/passwd.
+      vi.mocked(fs.realpath).mockResolvedValueOnce('/etc/passwd');
+      await expect(boundary.validateBoundary('/etc/passwd', BOUNDARY)).rejects.toMatchObject({
+        code: 'OUTSIDE_BOUNDARY',
+      });
+
+      // The seam rejects it too — it is in neither root.
+      vi.mocked(fs.realpath).mockResolvedValueOnce('/etc/passwd'); // userPath
+      vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // dork-home
+      await expect(
+        boundary.validateBoundaryOrDorkHome('/etc/passwd', BOUNDARY)
+      ).rejects.toMatchObject({ code: 'OUTSIDE_BOUNDARY' });
+    });
+
+    it('rejects a dork-home sibling via the path.sep suffix (prefix-collision fix)', async () => {
+      // /home/node/.dork-evil must not pass just because it prefixes /home/node/.dork.
+      const evil = '/home/node/.dork-evil/agents';
+      vi.mocked(fs.realpath).mockResolvedValueOnce(evil); // userPath
+      vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // dork-home
+
+      await expect(boundary.validateBoundaryOrDorkHome(evil, BOUNDARY)).rejects.toMatchObject({
+        code: 'OUTSIDE_BOUNDARY',
+      });
+    });
+
+    it('realpath-resolves a symlinked dork-home before the containment check', async () => {
+      process.env.DORK_HOME = '/sym/dork';
+      const realAgent = '/real/dork/agents/dorkbot';
+      vi.mocked(fs.realpath).mockResolvedValueOnce(realAgent); // userPath
+      vi.mocked(fs.realpath).mockResolvedValueOnce('/real/dork'); // realpath('/sym/dork')
+
+      const result = await boundary.validateBoundaryOrDorkHome(realAgent, BOUNDARY);
+
+      expect(result).toBe(realAgent);
+      // dork-home is resolved through its symlink, not trusted raw.
+      expect(vi.mocked(fs.realpath)).toHaveBeenLastCalledWith('/sym/dork');
+    });
+
+    it('rejects null bytes before any filesystem access', async () => {
+      await expect(
+        boundary.validateBoundaryOrDorkHome('/home/node/.dork/x\0.json', BOUNDARY)
+      ).rejects.toMatchObject({ name: 'BoundaryError', code: 'NULL_BYTE' });
+      expect(vi.mocked(fs.realpath)).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // expandTilde
   // ---------------------------------------------------------------------------
   describe('expandTilde', () => {
