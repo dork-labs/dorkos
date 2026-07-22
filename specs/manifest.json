@@ -13,7 +13,7 @@
       "slug": "canvas-file-viewing-overhaul",
       "title": "Canvas file viewing overhaul — per-tab error isolation, markdown editing, light-theme fix, expanded file/3D formats",
       "created": "2026-07-22",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260722-120926",
