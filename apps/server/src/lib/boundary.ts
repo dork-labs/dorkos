@@ -199,7 +199,7 @@ export async function validateBoundary(userPath: string, boundary?: string): Pro
  * user project paths, but DorkOS's system agent (DorkBot) and every
  * marketplace-installed agent live under `{dorkHome}/agents/*` by design.
  * Agent-registry operations that key off an agent manifest path must therefore
- * treat dork-home as always in-bounds — otherwise a boundary-scoped deployment
+ * treat the `{dorkHome}/agents` subtree as always in-bounds — otherwise a boundary-scoped deployment
  * (e.g. Docker with `DORKOS_BOUNDARY=/workspace`) 403s legitimate work like
  * applying DorkBot's persona during onboarding.
  *
@@ -226,8 +226,11 @@ export async function validateBoundaryOrDorkHome(
     return resolved;
   }
 
+  // Narrowed to the agents subtree (not all of dork-home): every legitimate
+  // agent lives under {dorkHome}/agents/*, and this keeps sibling dirs like
+  // the encrypted credential store out of reach even for manifest writes.
   const dorkHome = await resolveDorkHomeReal();
-  if (isContained(resolved, dorkHome)) {
+  if (isContained(resolved, path.join(dorkHome, 'agents'))) {
     return resolved;
   }
 

@@ -496,6 +496,10 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
 
     let validatedPath: string;
     try {
+      // Deliberately the PLAIN boundary (not the dork-home agents seam):
+      // this deletes the agent's .dork directory from disk, and destructive
+      // filesystem writes stay confined to the boundary even though
+      // registering the same path is allowed via the seam.
       validatedPath = await validateBoundary(projectPath);
     } catch {
       return res.status(403).json({ error: `Path outside boundary: ${projectPath}` });

@@ -246,13 +246,23 @@ describe('boundary module', () => {
       expect(result).toBe(agentPath);
     });
 
-    it('accepts the dork-home root itself', async () => {
+    it('rejects the dork-home root itself (only the agents subtree is allowed)', async () => {
       vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // userPath
       vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // dork-home resolve
 
-      const result = await boundary.validateBoundaryOrDorkHome(DORK_HOME, BOUNDARY);
+      await expect(boundary.validateBoundaryOrDorkHome(DORK_HOME, BOUNDARY)).rejects.toThrow(
+        'outside directory boundary'
+      );
+    });
 
-      expect(result).toBe(DORK_HOME);
+    it('rejects dork-home siblings of agents/ such as the credential store', async () => {
+      const secrets = `${DORK_HOME}/extension-secrets`;
+      vi.mocked(fs.realpath).mockResolvedValueOnce(secrets); // userPath
+      vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME); // dork-home resolve
+
+      await expect(boundary.validateBoundaryOrDorkHome(secrets, BOUNDARY)).rejects.toThrow(
+        'outside directory boundary'
+      );
     });
 
     it('accepts a boundary-internal path without consulting dork-home', async () => {
