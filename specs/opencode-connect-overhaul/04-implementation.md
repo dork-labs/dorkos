@@ -31,3 +31,7 @@ Shipped 2026-07-22 in two squash-merged PRs, both on `main`:
 - `services/runtimes/opencode` is at 18 source files (soft cap 15) — future tidy.
 - Direct-provider readiness parity: a custom Direct provider id reads ready once its ref resolves, but `OPENCODE_PROVIDER_ENV_VARS` maps only openrouter/openai/anthropic — extend when the provider picker grows.
 - Consider a runtime-agnostic post-credential hook registry if more runtimes gain provider credentials (today `connect/credentials.ts` names the opencode sidecar's recycle seam directly).
+
+## v1.1 (PR3, DOR-427) — shipped 2026-07-22
+
+Post-dogfood polish, merged as PR #423: Change affordance on a ready OpenCode (power-source switching with the current source labeled and the same success moment, riding the new optional `RuntimeRequirements.provider`); Ollama model menu offers only installed tags (catalog metadata wins, custom pulls listed plainly, installed always wins over `deprecated`, unreadable-vs-empty Ollama distinguished); vanished saved models render "(not available)" with a hint; unavailable-model turn failures map to plain copy pointing at the model menu (pattern-matched on verified upstream shapes only — the SDK has no typed model-not-found error). Two review rounds (pre-PR + CI), all seven nits fixed pre-merge.
