@@ -5,8 +5,10 @@
  * @module widgets/dashboard/ui/YourAgentsSection
  */
 import { useNavigate, Link } from '@tanstack/react-router';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Plus } from 'lucide-react';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
+import { Button } from '@/layers/shared/ui';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { useDashboardAgents } from '../model/use-dashboard-agents';
 import { MAX_AGENT_CARDS } from '../lib/order-agent-cards';
 import { AgentCard } from './AgentCard';
@@ -15,6 +17,7 @@ import { AgentCard } from './AgentCard';
 export function YourAgentsSection() {
   const navigate = useNavigate();
   const { cards } = useDashboardAgents();
+  const openCreateDialog = useAgentCreationStore((s) => s.open);
 
   if (cards.length === 0) return null;
 
@@ -23,9 +26,20 @@ export function YourAgentsSection() {
 
   return (
     <section data-testid={TOUR_ANCHORS.yourAgents}>
-      <h2 className="text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase">
-        Your agents
-      </h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-muted-foreground text-xs font-medium tracking-widest uppercase">
+          Your agents
+        </h2>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="text-muted-foreground hover:text-foreground -my-1"
+          onClick={() => openCreateDialog()}
+        >
+          <Plus />
+          New agent
+        </Button>
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((card) => (
           <AgentCard
