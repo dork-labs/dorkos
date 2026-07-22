@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260722-172319",
+      "slug": "canvas-file-viewing-overhaul",
+      "title": "Canvas file viewing overhaul — per-tab error isolation, markdown editing, light-theme fix, expanded file/3D formats",
+      "created": "2026-07-22",
+      "status": "specified"
+    },
+    {
       "id": "260722-120926",
       "slug": "dorkbot-living-tour",
       "title": "DorkBot living tour — guided first-run walkthrough of real surfaces",
