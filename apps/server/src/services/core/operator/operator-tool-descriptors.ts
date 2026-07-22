@@ -120,8 +120,9 @@ export const OPERATOR_TOOL_DESCRIPTORS: readonly OperatorToolDescriptor[] = [
   defineOperatorTool({
     name: 'config_get',
     description:
-      'Get the full DorkOS user configuration snapshot (the stored config.json object): ' +
-      'sidebar/status-bar prefs, scheduler, logging, mesh, telemetry, agents, and more.',
+      'Get the DorkOS user configuration snapshot (the stored config.json object): ' +
+      'sidebar/status-bar prefs, scheduler, logging, mesh, telemetry, agents, and more. ' +
+      'Secret values (auth tokens, API keys) are redacted.',
     annotations: A.readOnlyLocal,
     inputSchema: {},
     createHandler: () => createConfigGetHandler(),

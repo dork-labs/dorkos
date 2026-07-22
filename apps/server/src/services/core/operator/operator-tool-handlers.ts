@@ -19,8 +19,7 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { updateAgentManifest, AgentUpdateError } from './agent-updater.js';
-import { applyConfigPatch } from './config-patch.js';
-import { configManager } from '../config-manager.js';
+import { applyConfigPatch, sanitizedConfigSnapshot } from './config-patch.js';
 import { getLatestVersion } from '../update-checker.js';
 import { listRecentSessions } from '../../session/index.js';
 
@@ -160,15 +159,17 @@ export function createActivityListHandler(deps: McpToolDeps) {
 }
 
 /**
- * `config_get` — return the full user config snapshot (`ConfigManager.getAll()`),
- * the same stored object `PATCH /api/config` writes to.
+ * `config_get` — return the user config snapshot with sensitive keys redacted
+ * (via {@link sanitizedConfigSnapshot}). Secrets like `mcp.apiKey` must never
+ * reach the tokenless external `/mcp` surface or the model's context, mirroring
+ * what `GET /api/config` omits.
  *
  * @returns The bound handler (no deps; reads the config singleton).
  */
 export function createConfigGetHandler() {
   return async (): Promise<OperatorToolResult> => {
     try {
-      return jsonResult(configManager.getAll());
+      return jsonResult(sanitizedConfigSnapshot());
     } catch (err) {
       return jsonResult(
         { error: err instanceof Error ? err.message : 'Failed to read config' },
@@ -195,9 +196,11 @@ export function createConfigPatchHandler() {
         true
       );
     }
+    // Echo the redacted post-write snapshot — never the raw config, which
+    // would leak secrets into the model context and the persisted transcript.
     return jsonResult({
       success: true,
-      config: result.config,
+      config: sanitizedConfigSnapshot(),
       ...(result.warnings.length > 0 && { warnings: result.warnings }),
     });
   };

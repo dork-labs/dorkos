@@ -158,15 +158,46 @@ describe('activity_list', () => {
   });
 });
 
+/** A schema-valid config store that also carries every SENSITIVE_CONFIG_KEYS value. */
+function secretBearingStore(): Record<string, unknown> {
+  return {
+    version: 1,
+    tunnel: { authtoken: 'ngrok-secret', auth: 'basic-secret', domain: 'my.example.com' },
+    mcp: { apiKey: 'mcp-secret-key', enabled: true },
+    cloud: { instanceToken: 'cloud-secret-token', instanceName: 'my-box' },
+    ui: { theme: 'dark' },
+  };
+}
+
 describe('config_get', () => {
-  it('returns the full config snapshot', async () => {
-    mocks.configStore = { version: 1, ui: { theme: 'dark' } };
+  it('returns the config snapshot with sensitive keys redacted', async () => {
+    mocks.configStore = secretBearingStore();
     const handler = createConfigGetHandler();
     const result = await handler();
+
     expect(result.isError).toBeUndefined();
-    const payload = parsePayload<{ version: number; ui: { theme: string } }>(result);
+    const payload = parsePayload<{
+      version: number;
+      ui: { theme: string };
+      tunnel: { authtoken?: string; auth?: string; domain?: string };
+      mcp: { apiKey?: string; enabled?: boolean };
+      cloud: { instanceToken?: string; instanceName?: string };
+    }>(result);
+
+    // Non-sensitive values survive.
     expect(payload.version).toBe(1);
     expect(payload.ui.theme).toBe('dark');
+    expect(payload.tunnel.domain).toBe('my.example.com');
+    expect(payload.mcp.enabled).toBe(true);
+    expect(payload.cloud.instanceName).toBe('my-box');
+
+    // Every SENSITIVE_CONFIG_KEYS value is stripped.
+    expect(payload.tunnel.authtoken).toBeUndefined();
+    expect(payload.tunnel.auth).toBeUndefined();
+    expect(payload.mcp.apiKey).toBeUndefined();
+    expect(payload.cloud.instanceToken).toBeUndefined();
+    // The raw secret string appears nowhere in the serialized payload.
+    expect(result.content[0].text).not.toMatch(/secret/);
   });
 });
 
@@ -179,6 +210,31 @@ describe('config_patch', () => {
     const payload = parsePayload<{ success: boolean }>(result);
     expect(payload.success).toBe(true);
     expect((mocks.configStore.ui as { theme: string }).theme).toBe('dark');
+  });
+
+  it('redacts sensitive keys from the success echo (both servers)', async () => {
+    mocks.configStore = secretBearingStore();
+    const handler = createConfigPatchHandler();
+    const result = await handler({ patch: { ui: { theme: 'light' } } });
+
+    expect(result.isError).toBeUndefined();
+    const payload = parsePayload<{
+      success: boolean;
+      config: {
+        ui: { theme: string };
+        tunnel: { authtoken?: string; auth?: string };
+        mcp: { apiKey?: string };
+        cloud: { instanceToken?: string };
+      };
+    }>(result);
+
+    expect(payload.success).toBe(true);
+    expect(payload.config.ui.theme).toBe('light');
+    expect(payload.config.tunnel.authtoken).toBeUndefined();
+    expect(payload.config.tunnel.auth).toBeUndefined();
+    expect(payload.config.mcp.apiKey).toBeUndefined();
+    expect(payload.config.cloud.instanceToken).toBeUndefined();
+    expect(result.content[0].text).not.toMatch(/secret/);
   });
 
   it('rejects an invalid patch (Zod validation)', async () => {
