@@ -2225,6 +2225,13 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'First-time user onboarding state' }),
+    tours: z
+      .object({
+        seen: z.array(z.string()).openapi({ description: 'Tours the user has run' }),
+        declined: z.array(z.string()).openapi({ description: 'Occasion tours the user declined' }),
+      })
+      .optional()
+      .openapi({ description: 'DorkBot living-tour state (DOR-419)' }),
     agentContext: z
       .object({
         relayTools: z

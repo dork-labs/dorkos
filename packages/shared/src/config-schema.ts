@@ -88,6 +88,24 @@ export const OnboardingStateSchema = z.object({
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
 
 /**
+ * Persisted state for the DorkBot living tour (DOR-419). Tracks which tours the
+ * user has already run (`seen`) and which they declined (`declined`) so an
+ * occasion never re-offers a tour the user has finished or waved off. Ids are the
+ * tour definition ids (`'tasks' | 'relay' | 'mesh' | 'general'`), stored as free
+ * strings so adding a tour never needs a schema migration. Managed automatically
+ * by the client; not user-editable.
+ */
+export const ToursStateSchema = z.object({
+  seen: z.array(z.string()).default(() => []),
+  declined: z.array(z.string()).default(() => []),
+});
+
+export type ToursState = z.infer<typeof ToursStateSchema>;
+
+/** Frozen defaults for the {@link ToursStateSchema} block (empty on a fresh install). */
+export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
+
+/**
  * A section's per-agent display filter (agent-list-settings, DOR-339): `all`
  * shows every member (inactive ones collapse behind a reveal row), `active`
  * keeps only agents that need attention or are active, `attention` narrows to
@@ -357,6 +375,7 @@ export const UserConfigSchema = z.object({
     dismissedAt: null,
     completedAt: null,
   })),
+  tours: ToursStateSchema.default(() => ({ seen: [], declined: [] })),
   agentContext: z
     .object({
       relayTools: z.boolean().default(true),
