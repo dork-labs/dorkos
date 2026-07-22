@@ -325,13 +325,17 @@ describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => 
     },
   };
 
-  function renderReady(requirements: SystemRequirements) {
+  function renderReady(
+    requirements: SystemRequirements,
+    overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}
+  ) {
     const transport = createMockTransport({
       getCapabilities: vi.fn().mockResolvedValue({
         capabilities: { opencode: { type: 'opencode' } },
         defaultRuntime: 'opencode',
       }),
       checkRequirements: vi.fn().mockResolvedValue(requirements),
+      ...overrides,
     });
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -367,6 +371,28 @@ describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => 
     // Selecting a new source reaches its connect step (the normal connect flow).
     await user.click(screen.getByTestId('power-source-cloud'));
     expect(await screen.findByLabelText('OpenRouter key')).toBeInTheDocument();
+  });
+
+  it('ends an in-place switch in the success panel with Done, cancel gone', async () => {
+    // Purpose (spec §9): switching source on a ready runtime is not a dead end —
+    // a successful switch reaches the same success moment a first connect does,
+    // and the "Keep current source" cancel disappears once switched.
+    const user = userEvent.setup();
+    renderReady(OPENCODE_READY_OLLAMA, {
+      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
+    });
+
+    await user.click(await screen.findByTestId('runtime-change-opencode'));
+    // Switch to a Direct provider and complete the connect.
+    await user.click(await screen.findByTestId('power-source-direct'));
+    await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
+    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
+
+    // The success panel replaces the change UI; the cancel affordance is gone.
+    const panel = await screen.findByTestId('runtime-connected-panel');
+    expect(panel).toHaveTextContent('OpenCode is connected.');
+    expect(screen.queryByTestId('runtime-change-cancel-opencode')).not.toBeInTheDocument();
+    expect(screen.getByTestId('runtime-connected-done')).toBeInTheDocument();
   });
 
   it('does not offer Change when the ready runtime reports no connected provider', async () => {

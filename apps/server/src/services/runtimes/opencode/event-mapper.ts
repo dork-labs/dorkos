@@ -93,21 +93,24 @@ export type OpenCodeWireEvent = Event | EventMessagePartDelta;
 const ABORT_ERROR_NAME = 'MessageAbortedError';
 
 /**
- * Message signals that a turn failed because the chosen model is missing or
- * unavailable — a not-installed Ollama tag, a deleted model, or a provider that
- * no longer serves it. OpenCode has NO typed model-not-found error: the failure
- * arrives as a generic `APIError`/`UnknownError` whose `data.message` carries the
- * provider's reason, so this matches the message conservatively. Verified upstream
- * shapes: Ollama replies `model "<tag>" not found, try pulling it first`;
- * OpenRouter replies `No endpoints found for <model>`. Everything else stays a
+ * Message signals that a turn failed because the chosen model is missing — a
+ * not-installed Ollama tag, or a model a provider does not serve. OpenCode has
+ * NO typed model-not-found error: the failure arrives as a generic
+ * `APIError`/`UnknownError` whose `data.message` carries the provider's reason,
+ * so this matches the message conservatively — only DEFINITIVE "no such model"
+ * shapes, never softer wording. Verified upstream shapes: Ollama replies
+ * `model "<tag>" not found, try pulling it first`; OpenRouter replies `No
+ * endpoints found for <model>`.
+ *
+ * Deliberately excludes phrases like "temporarily not available"/"unavailable":
+ * those read as transient outages a retry could clear, and telling the user to
+ * pick a different model would be wrong. Everything not matched here stays a
  * generic execution error (spec §11).
  */
 const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
   /\bmodel\b[^.]*\bnot\s+found\b/i,
   /\bno\s+endpoints?\s+found\b/i,
   /\bunknown\s+model\b/i,
-  /\btry\s+pulling\s+it\s+first\b/i,
-  /\bmodel\b[^.]*\b(?:does\s+not\s+exist|not\s+available|unavailable|is\s+not\s+supported)\b/i,
 ];
 
 /** Plain-language turn error for an unavailable model — points at the model menu (spec §11). */

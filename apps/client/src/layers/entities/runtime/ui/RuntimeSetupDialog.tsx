@@ -252,6 +252,11 @@ function RuntimeSection({
             type,
             connect: { kind: 'provider-picker', label: 'Change power source' },
             ...(currentProvider ? { currentProvider } : {}),
+            // Collapse the change UI the instant the switch lands: the cancel
+            // affordance disappears, and the dialog's own success handling
+            // (composed onto this slot) takes over — an in-place switch ends in
+            // the success panel with Done, exactly like a first connect.
+            onConnected: () => setChanging(false),
           })}
           <button
             type="button"
@@ -595,10 +600,21 @@ export function RuntimeSetupDialog({
   useEffect(() => {
     if (!open) setSuccess(null);
   }, [open]);
+  // Compose, never clobber: a slot caller may pass its own `onConnected` (the
+  // ready-state Change flow uses it to collapse its UI). When the opener asked
+  // for the success panel we run BOTH — the caller's handler and `setSuccess` —
+  // so an in-place switch ends in the success panel just like a first connect.
   const wrappedRenderConnect: RuntimeConnectSlot | undefined =
     renderConnect &&
     (showConnectSuccess
-      ? (props) => renderConnect({ ...props, onConnected: setSuccess })
+      ? (props) =>
+          renderConnect({
+            ...props,
+            onConnected: (success) => {
+              props.onConnected?.(success);
+              setSuccess(success);
+            },
+          })
       : renderConnect);
 
   return (

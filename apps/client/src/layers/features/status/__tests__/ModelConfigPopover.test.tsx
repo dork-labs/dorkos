@@ -760,7 +760,7 @@ describe('ModelConfigPopover', () => {
       expect(banner).toHaveTextContent('ollama/gone:7b');
       expect(banner).toHaveTextContent('(not available)');
       expect(
-        screen.getByText("This model isn't available anymore — pick another.")
+        screen.getByText("This model isn't available anymore. Pick another.")
       ).toBeInTheDocument();
       // Never auto-switch: the component only reflects the prop.
       expect(onChangeModel).not.toHaveBeenCalled();

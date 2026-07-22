@@ -131,7 +131,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
 /**
  * A session's saved model that the current options no longer offer (provider
  * switched, model deleted, or a local tag removed). Shown so the person knows
- * their setting is stale and must pick another — the menu never auto-switches.
+ * their setting is stale and must pick another. The menu never auto-switches.
  */
 function UnavailableSavedModel({ value }: { value: string }) {
   return (
@@ -148,7 +148,7 @@ function UnavailableSavedModel({ value }: { value: string }) {
         </div>
       </div>
       <p className="text-muted-foreground text-[11px] leading-snug">
-        This model isn&apos;t available anymore — pick another.
+        This model isn&apos;t available anymore. Pick another.
       </p>
     </div>
   );
@@ -184,7 +184,7 @@ function ModelSelectionList({ models, selectedModel, onChangeModel }: ModelSelec
   const useSearchableMenu = shouldUseTieredMenu(models);
 
   // The saved model can stop existing (provider switched, model deleted). Surface
-  // it as unavailable and let the person pick another — never auto-switch (spec §11).
+  // it as unavailable and let the person pick another, never auto-switch (spec §11).
   const missingSaved = selectedModel.length > 0 && !models.some((m) => m.value === selectedModel);
   const banner = missingSaved ? <UnavailableSavedModel value={selectedModel} /> : null;
 

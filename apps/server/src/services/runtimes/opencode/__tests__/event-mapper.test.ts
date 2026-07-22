@@ -419,6 +419,19 @@ describe('mapOpenCodeEvent', () => {
       expect(events[0]!.data).toMatchObject({ message: 'disk full', code: 'UnknownError' });
     });
 
+    it('does not treat a transient-outage message as an unavailable model', () => {
+      // "temporarily not available" reads as an outage a retry could clear —
+      // telling the user to pick another model would be wrong (spec §11).
+      const events = mapOpenCodeEvent(
+        sessionError(OC, unknownError('The model is temporarily not available, please retry')),
+        makeContext()
+      );
+      expect(events[0]!.data).toMatchObject({ code: 'UnknownError' });
+      expect((events[0]!.data as { message: string }).message).toContain(
+        'temporarily not available'
+      );
+    });
+
     it('carries provider auth failures with their error name as the code', () => {
       const events = mapOpenCodeEvent(
         sessionError(OC, providerAuthError('anthropic', 'invalid api key')),
