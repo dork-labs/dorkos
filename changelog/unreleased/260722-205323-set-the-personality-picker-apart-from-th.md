@@ -1,3 +1,3 @@
-### Added
+### Changed
 
-- Set the personality picker apart from the chat and speak the sample voice inside it
+- The personality step in onboarding now sits in its own card with a bigger, centered radar, and DorkBot previews its voice in a quote right inside the card instead of as a stray chat message.
