@@ -1,7 +1,7 @@
 ---
 id: 260722-154340
 title: Adopt @reactour/tour behind a TourSpotlight wrapper, gated by a spike
-status: proposed
+status: accepted
 created: 2026-07-22
 spec: dorkbot-living-tour
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 id: 260722-154339
 title: Tours are occasion-driven walkthroughs of real surfaces
-status: proposed
+status: accepted
 created: 2026-07-22
 spec: dorkbot-living-tour
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
