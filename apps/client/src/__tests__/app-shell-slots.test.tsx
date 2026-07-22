@@ -26,12 +26,10 @@ vi.mock('@/layers/features/dashboard-sidebar', () => ({
   DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
 }));
 
-// AppShell no longer imports SessionSidebar (the web session drill-in was
-// retired). This mock still exports it with a test marker so the tests below can
-// assert it is NEVER rendered on the web shell — a regression guard that would
-// fire if the drill-in were ever re-added to AppShell.
+// AppShell imports only SidebarFooterBar from session-list — the web session
+// drill-in (SessionSidebar) was retired for the persistent roster + right-panel
+// inspector and has since been deleted (DOR-401).
 vi.mock('@/layers/features/session-list', () => ({
-  SessionSidebar: () => <div data-testid="session-sidebar">New session</div>,
   SidebarFooterBar: () => <div data-testid="sidebar-footer-bar">SidebarFooterBar</div>,
 }));
 
@@ -250,16 +248,14 @@ describe('AppShell slot integration', () => {
       mockPathname = '/';
       renderAppShell();
       expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
     });
 
     it('renders the DashboardSidebar roster at /session — no session drill-in', () => {
-      // The web shell keeps the roster on /session; the session drill-in
-      // (SessionSidebar) was retired in favor of the right-panel inspector.
+      // The web shell keeps the roster on /session; the session drill-in was
+      // retired in favor of the right-panel inspector.
       mockPathname = '/session';
       renderAppShell();
       expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
     });
   });
 
@@ -284,7 +280,6 @@ describe('AppShell slot integration', () => {
       renderAppShell();
       expect(screen.getByTestId('marketplace-sidebar-fake')).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
     });
 
     it('takes over on a nested marketplace route too', () => {
@@ -302,12 +297,11 @@ describe('AppShell slot integration', () => {
 
     it('does not hijack the session route roster', () => {
       // The marketplace body only matches /marketplace*, so /session keeps its
-      // built-in roster (DashboardSidebar) and never the SessionSidebar drill-in.
+      // built-in roster (DashboardSidebar).
       mockPathname = '/session';
       renderAppShell();
       expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
       expect(screen.queryByTestId('marketplace-sidebar-fake')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
     });
 
     it('a throwing contributed body degrades to an inline fallback, not a dead shell', () => {

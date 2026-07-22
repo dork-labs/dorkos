@@ -8,8 +8,9 @@
  * @module shared/model/use-dialog-deep-link
  */
 import { useCallback } from 'react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import type { SettingsTab } from './app-store/app-store-panels';
+import { useSafeSearch } from './use-safe-router';
 
 // Route-agnostic search updater type used internally. We cast to this when
 // calling navigate without a `to:` — these hooks are intentionally generic
@@ -39,7 +40,7 @@ export interface DialogDeepLink<T extends string> {
 
 /** Settings dialog deep-link state and actions. */
 export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
-  const search = useSearch({ strict: false }) as { settings?: string; settingsSection?: string };
+  const search = useSafeSearch() as { settings?: string; settingsSection?: string };
   const navigate = useNavigate();
 
   const isOpen = !!search.settings;
@@ -105,7 +106,7 @@ export function useRelayDeepLink(): DialogDeepLink<never> {
 
 /** Internal helper for parameterless (no-tab) dialogs. */
 function useSimpleDialogDeepLink(paramName: 'tasks' | 'relay'): DialogDeepLink<never> {
-  const search = useSearch({ strict: false }) as Record<string, string | undefined>;
+  const search = useSafeSearch() as Record<string, string | undefined>;
   const navigate = useNavigate();
   const isOpen = !!search[paramName];
 

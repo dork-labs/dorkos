@@ -73,12 +73,12 @@ export const useAppStore = create<AppState>()(
           set({ sidebarOpen: open });
         },
 
-        // The active tab of the embedded shell's legacy sidebar strip
-        // (`SessionSidebar`, Obsidian only). Persisted so the choice survives a
-        // reload and so an embedded `switch_sidebar_tab` command / a Shape's
-        // pinned `sidebarTab` can still drive it. The web cockpit has no sidebar
-        // tab strip, so it never reads this. `SessionSidebar` resolves any id
-        // that isn't one of its four built-ins back to 'overview' on read.
+        // Persisted target of the embedded `switch_sidebar_tab` UI command (a
+        // Shape's pinned `sidebarTab` and `control_ui` drive it) and mirror for
+        // the embedded `get_ui_state` snapshot. No surface renders from it today
+        // — the legacy embed tab strip that once did (`SessionSidebar`) was
+        // retired for the roster + right-panel Inspector (DOR-401) — so it is
+        // write-and-report state kept for those command/snapshot channels.
         sidebarActiveTab: (() => {
           try {
             return localStorage.getItem('dorkos-sidebar-active-tab') ?? 'overview';

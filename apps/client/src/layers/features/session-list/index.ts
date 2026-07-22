@@ -3,7 +3,7 @@
  *
  * @module features/session-list
  */
-export { SessionSidebar } from './ui/SessionSidebar';
+export { EmbedSidebar } from './ui/EmbedSidebar';
 export { SessionsView } from './ui/SessionsView';
 export { TasksView } from './ui/TasksView';
 export { SidebarFooterBar } from './ui/SidebarFooterBar';

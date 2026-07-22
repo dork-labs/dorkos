@@ -1,15 +1,16 @@
-import { useSearch } from '@tanstack/react-router';
+import { useSafeSearch } from '@/layers/shared/model';
 import type { SessionSearch } from '@/router';
 
 /**
- * Read session search params safely from any route.
+ * Read session search params safely from any route — and any platform.
  *
  * Returns `{ session, dir, runtime, prompt }` when on `/_shell/session`, empty
- * object otherwise. Uses `strict: false` so it never throws — safe to call from
- * any route.
+ * object otherwise. Routes through {@link useSafeSearch}, so it never throws on
+ * a route mismatch (`strict: false`) and degrades to an empty object in the
+ * router-less Obsidian embed instead of crashing.
  */
 export function useSessionSearch(): Partial<SessionSearch> {
-  const search = useSearch({ strict: false });
+  const search = useSafeSearch();
   return {
     session: typeof search.session === 'string' ? search.session : undefined,
     dir: typeof search.dir === 'string' ? search.dir : undefined,
