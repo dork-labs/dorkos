@@ -19,6 +19,8 @@ vi.mock('@/layers/shared/model', () => {
 
 import { CanvasImageContent } from '../ui/CanvasImageContent';
 import { CanvasPdfContent } from '../ui/CanvasPdfContent';
+import { CanvasAudioContent } from '../ui/CanvasAudioContent';
+import { CanvasVideoContent } from '../ui/CanvasVideoContent';
 
 beforeEach(() => {
   mockState.selectedCwd = '/work';
@@ -128,5 +130,76 @@ describe('CanvasPdfContent', () => {
     render(<CanvasPdfContent content={{ type: 'pdf', src: 'data:text/html,<h1>x</h1>' }} />);
     expect(screen.getByText(/isn.t a valid pdf source/i)).toBeInTheDocument();
     expect(document.querySelector('object')).not.toBeInTheDocument();
+  });
+});
+
+describe('CanvasAudioContent', () => {
+  it('renders a native audio player with controls and a label', () => {
+    render(
+      <CanvasAudioContent content={{ type: 'audio', src: 'https://x/theme.mp3', title: 'Theme' }} />
+    );
+    const audio = document.querySelector('audio');
+    expect(audio).toHaveAttribute('src', 'https://x/theme.mp3');
+    expect(audio).toHaveAttribute('controls');
+    expect(audio).toHaveAttribute('aria-label', 'Theme');
+  });
+
+  it('resolves a local audio path through the transport media URL', () => {
+    render(<CanvasAudioContent content={{ type: 'audio', src: 'sounds/beep.wav' }} />);
+    expect(mediaUrl).toHaveBeenCalledWith('/work', 'sounds/beep.wav');
+    expect(document.querySelector('audio')).toHaveAttribute(
+      'src',
+      '/api/files/raw?cwd=/work&path=sounds/beep.wav'
+    );
+  });
+
+  it('falls back to a default label when no title', () => {
+    render(<CanvasAudioContent content={{ type: 'audio', src: 'https://x/a.mp3' }} />);
+    expect(document.querySelector('audio')).toHaveAttribute('aria-label', 'Canvas audio');
+  });
+
+  it('shows a graceful message for a blocked source', () => {
+    render(<CanvasAudioContent content={{ type: 'audio', src: 'javascript:alert(1)' }} />);
+    expect(screen.getByText(/can.t be played here/i)).toBeInTheDocument();
+    expect(document.querySelector('audio')).not.toBeInTheDocument();
+  });
+
+  it('shows a graceful message when the transport cannot serve a local file', () => {
+    mediaUrl.mockReturnValueOnce(null);
+    render(<CanvasAudioContent content={{ type: 'audio', src: 'sounds/beep.wav' }} />);
+    expect(screen.getByText(/can.t be played here/i)).toBeInTheDocument();
+    expect(document.querySelector('audio')).not.toBeInTheDocument();
+  });
+});
+
+describe('CanvasVideoContent', () => {
+  it('renders a native video player with controls and a label', () => {
+    render(
+      <CanvasVideoContent content={{ type: 'video', src: 'https://x/demo.mp4', title: 'Demo' }} />
+    );
+    const video = document.querySelector('video');
+    expect(video).toHaveAttribute('src', 'https://x/demo.mp4');
+    expect(video).toHaveAttribute('controls');
+    expect(video).toHaveAttribute('aria-label', 'Demo');
+  });
+
+  it('resolves a local video path through the transport media URL', () => {
+    render(<CanvasVideoContent content={{ type: 'video', src: 'clips/demo.webm' }} />);
+    expect(mediaUrl).toHaveBeenCalledWith('/work', 'clips/demo.webm');
+    expect(document.querySelector('video')).toHaveAttribute(
+      'src',
+      '/api/files/raw?cwd=/work&path=clips/demo.webm'
+    );
+  });
+
+  it('falls back to a default label when no title', () => {
+    render(<CanvasVideoContent content={{ type: 'video', src: 'https://x/v.mp4' }} />);
+    expect(document.querySelector('video')).toHaveAttribute('aria-label', 'Canvas video');
+  });
+
+  it('shows a graceful message for a blocked source', () => {
+    render(<CanvasVideoContent content={{ type: 'video', src: 'file:///etc/passwd' }} />);
+    expect(screen.getByText(/can.t be played here/i)).toBeInTheDocument();
+    expect(document.querySelector('video')).not.toBeInTheDocument();
   });
 });
