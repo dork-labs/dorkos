@@ -72,16 +72,6 @@ export interface OpenRouterOAuthStatus {
   error?: string;
 }
 
-/** A single model from the OpenRouter catalog, mapped for the client model picker. */
-export interface OpenRouterModel {
-  /** Provider-qualified model id (e.g. `anthropic/claude-3.5-sonnet`). */
-  id: string;
-  /** Human-readable model name. */
-  name: string;
-  /** Optional context window in tokens, when the catalog reports it. */
-  contextLength?: number;
-}
-
 /** A single pulled Ollama model reported by local detection. */
 export interface OllamaModel {
   /** Model tag (e.g. `qwen2.5-coder:7b`). */

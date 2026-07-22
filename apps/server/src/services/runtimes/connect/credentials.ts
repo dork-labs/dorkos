@@ -29,6 +29,7 @@ import type { StoreCredentialResult, DelegatedLoginResult } from '@dorkos/shared
 import { credentialStore, type CredentialStore } from '../../core/credential-provider.js';
 import { configManager } from '../../core/config-manager.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
+import { openCodeServerManager } from '../opencode/server-manager.js';
 import { pipeSecretToChild, type SpawnFn } from './delegated-login.js';
 
 /** Runtime types the native paste-key endpoint accepts. */
@@ -147,7 +148,14 @@ export async function applyCodexApiKey(
 }
 
 /** Store/config seams for the OpenCode provider-credential path (production defaults resolve singletons). */
-export type ProviderCredentialDeps = Pick<StoreCredentialDeps, 'store' | 'config'>;
+export type ProviderCredentialDeps = Pick<StoreCredentialDeps, 'store' | 'config'> & {
+  /**
+   * Recycle the OpenCode sidecar so a first-ever credential reaches it (defaults
+   * to the sidecar manager's `recycle`). Injected in tests to assert the reboot
+   * without spawning a process.
+   */
+  recycleSidecar?: () => Promise<void> | void;
+};
 
 /** A provider id + secret (+ optional base URL) to persist for OpenCode. */
 export interface ProviderCredentialInput {
@@ -190,6 +198,19 @@ export async function persistProviderCredential(
     opencode.baseURL = input.baseURL;
   }
   config.set('runtimes', { ...runtimes, opencode });
+  // Recycle the sidecar so it re-reads the stored credential env on next use
+  // (ADR-0315). This fires on EVERY provider-credential persist: on a first-ever
+  // connect it is a no-op (no sidecar running yet, so the next boot already picks
+  // the key up); when one is already running it reboots to apply the new env.
+  // Deliberate trade-off: if a key is stored while a turn is in flight, that turn
+  // is aborted by the restart. We accept it — a person storing a credential is a
+  // deliberate connect action, and fresh credentials winning over a rare in-flight
+  // turn is the honest behavior (no fragile skip-when-serving logic). Fire-and-
+  // forget: recycle flips the manager's state synchronously, so the next
+  // getClient() reboots even before the teardown settles, and a stored key never
+  // fails on a teardown hiccup.
+  const recycle = deps.recycleSidecar ?? (() => openCodeServerManager.recycle());
+  void Promise.resolve(recycle()).catch(() => {});
   return { ref };
 }
 

@@ -9,13 +9,15 @@
  *
  * @module features/runtime-connect/ui/LoginConnect
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
+import { getRuntimeDescriptor, type RuntimeConnectSuccess } from '@/layers/entities/runtime';
 import {
   useDelegateRuntimeLogin,
   useStoreRuntimeCredential,
 } from '../model/use-credential-connect';
+import { loginConnectSuccess } from '../lib/connect-success';
 import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-feedback';
 
 /** Per-runtime copy for the login flow — honest, provider-specific wording. */
@@ -57,10 +59,22 @@ const LOGIN_COPY: Record<string, LoginCopy> = {
  * The Codex/Claude connect surface: a delegated sign-in and a paste-key path.
  *
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
+ * @param onConnected - Reports the connect landing so the dialog can show its
+ *   success moment (omitted where the opener keeps the inline confirmation).
  */
-export function LoginConnect({ type }: { type: string }) {
+export function LoginConnect({
+  type,
+  onConnected,
+}: {
+  type: string;
+  onConnected?: (success: RuntimeConnectSuccess) => void;
+}) {
   const copy = LOGIN_COPY[type] ?? LOGIN_COPY['claude-code'];
   const login = useDelegateRuntimeLogin(type);
+
+  useEffect(() => {
+    if (login.isSuccess) onConnected?.(loginConnectSuccess(getRuntimeDescriptor(type).label));
+  }, [login.isSuccess, onConnected, type]);
 
   return (
     <div className="space-y-4" data-testid={`login-connect-${type}`}>
@@ -90,15 +104,27 @@ export function LoginConnect({ type }: { type: string }) {
         <span className="bg-border h-px flex-1" />
       </div>
 
-      <PasteKeyForm type={type} copy={copy} />
+      <PasteKeyForm type={type} copy={copy} onConnected={onConnected} />
     </div>
   );
 }
 
 /** The paste-key half of the login flow — a password field that never echoes the key. */
-function PasteKeyForm({ type, copy }: { type: string; copy: LoginCopy }) {
+function PasteKeyForm({
+  type,
+  copy,
+  onConnected,
+}: {
+  type: string;
+  copy: LoginCopy;
+  onConnected?: (success: RuntimeConnectSuccess) => void;
+}) {
   const [key, setKey] = useState('');
   const store = useStoreRuntimeCredential(type);
+
+  useEffect(() => {
+    if (store.isSuccess) onConnected?.(loginConnectSuccess(getRuntimeDescriptor(type).label));
+  }, [store.isSuccess, onConnected, type]);
 
   if (store.isPending) {
     return <ConnectProgressRow message="Saving your API key…" />;

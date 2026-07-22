@@ -170,6 +170,21 @@ describe('storeProviderCredential', () => {
     expect(config.state.runtimes?.opencode.baseURL).toBeNull();
   });
 
+  it('recycles the OpenCode sidecar so a first-ever credential reaches it', async () => {
+    // A sidecar already running when the key is stored holds the old (keyless)
+    // env; storing must trigger a reboot so the next use picks up the new key.
+    const store = fakeStore();
+    const config = fakeConfig();
+    const recycleSidecar = vi.fn(async () => {});
+
+    await storeProviderCredential(
+      { providerId: 'openrouter', secret: SECRET },
+      { store, config, recycleSidecar }
+    );
+
+    expect(recycleSidecar).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects an empty provider id or empty secret without storing', async () => {
     const store = fakeStore();
     await expect(

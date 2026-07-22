@@ -1,40 +1,17 @@
 /**
  * OpenRouter (OpenCode Gateway) connect hooks (ADR-0318, T1 task 2.8).
  *
- * Three surfaces: the always-available paste-key path, the OAuth-PKCE path (a
- * browser-only, ToS-clean native flow), and the model catalog that populates
- * the picker's dropdown. Every success invalidates `['requirements']` so
- * OpenCode flips to Ready. Keys are never returned or cached — only references
- * are persisted server-side.
+ * Two surfaces: the always-available paste-key path and the OAuth-PKCE path (a
+ * browser-only, ToS-clean native flow). Every success invalidates
+ * `['requirements']` so OpenCode flips to Ready. Keys are never returned or
+ * cached — only references are persisted server-side.
  *
  * @module features/runtime-connect/model/use-openrouter-connect
  */
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { OpenRouterModel } from '@dorkos/shared/runtime-connect';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
 import { useTransport } from '@/layers/shared/model';
-
-/** Query key for the OpenRouter model catalog (short-TTL cached server-side too). */
-const OPENROUTER_MODELS_KEY = ['runtime-connect', 'openrouter', 'models'] as const;
-
-/**
- * Fetch the OpenRouter model catalog for the Gateway model dropdown.
- *
- * Gated by `enabled` so it only fetches once a key/OAuth connection has
- * populated the picker — never on an unauthenticated cold render.
- *
- * @param enabled - Whether to fetch (true once OpenRouter is connected).
- */
-export function useOpenRouterModels(enabled: boolean) {
-  const transport = useTransport();
-  return useQuery<OpenRouterModel[]>({
-    queryKey: [...OPENROUTER_MODELS_KEY],
-    queryFn: () => transport.getOpenRouterModels(),
-    enabled,
-    staleTime: 5 * 60_000,
-  });
-}
 
 /** The paste-key Gateway connect: validate + store an OpenRouter key. */
 export interface UseStoreOpenRouterKey {
@@ -55,7 +32,7 @@ export interface UseStoreOpenRouterKey {
  *
  * The transport resolves `{ ok: false, error }` for an invalid key (not a
  * throw), so both are folded into one honest error path. Only a validated key
- * invalidates `['requirements']` and the model catalog.
+ * invalidates `['requirements']`.
  */
 export function useStoreOpenRouterKey(): UseStoreOpenRouterKey {
   const transport = useTransport();
@@ -66,7 +43,6 @@ export function useStoreOpenRouterKey(): UseStoreOpenRouterKey {
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
-        void queryClient.invalidateQueries({ queryKey: [...OPENROUTER_MODELS_KEY] });
       }
     },
   });
@@ -107,7 +83,7 @@ export interface UseOpenRouterOAuth {
  *
  * `begin()` asks the server to mint a verifier + state, opens the returned
  * authorize URL in a new tab, and polls the flow status until it flips to
- * `connected` (invalidating requirements + catalog) or `error`. The
+ * `connected` (invalidating `['requirements']`) or `error`. The
  * `code_verifier` never leaves the server.
  *
  * Browser-only: callers gate this behind `!getPlatform().isEmbedded` and offer
@@ -143,7 +119,6 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
   useEffect(() => {
     if (status === 'connected') {
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
-      void queryClient.invalidateQueries({ queryKey: [...OPENROUTER_MODELS_KEY] });
     }
   }, [status, queryClient]);
 

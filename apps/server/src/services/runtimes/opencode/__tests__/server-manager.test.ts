@@ -611,4 +611,52 @@ describe('OpenCodeServerManager', () => {
       expect(spawn).not.toHaveBeenCalled();
     });
   });
+
+  describe('recycle (first-ever-credential reboot)', () => {
+    it('is a no-op when the sidecar never booted', async () => {
+      const manager = new OpenCodeServerManager();
+      await manager.recycle();
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it('SIGTERMs the running sidecar, drops the client synchronously, and reboots fresh on next use', async () => {
+      const manager = new OpenCodeServerManager();
+      const { child } = await bootReady(manager);
+      expect(manager.peekClient()).not.toBeNull();
+
+      const recycling = manager.recycle();
+      // State flips before the kill is awaited: a getClient racing the teardown
+      // must never receive the stale client.
+      expect(manager.peekClient()).toBeNull();
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      child.emitExit(0, 'SIGTERM');
+      await recycling;
+
+      // Next use boots a brand-new sidecar (with whatever env now resolves).
+      const { client } = await bootReady(manager);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(manager.peekClient()).toBe(client);
+    });
+
+    it('does not schedule a crash-restart for the recycled child', async () => {
+      const manager = new OpenCodeServerManager();
+      const { child } = await bootReady(manager);
+
+      const recycling = manager.recycle();
+      child.emitExit(0, 'SIGTERM');
+      await recycling;
+
+      // The detached exit must not enter the backoff ladder — no eager respawn.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays a no-op (and stopped) after shutdown', async () => {
+      const manager = new OpenCodeServerManager();
+      await manager.shutdown();
+      await manager.recycle();
+      await expect(manager.getClient('/repo')).rejects.toThrow(/shut down/);
+      expect(spawn).not.toHaveBeenCalled();
+    });
+  });
 });

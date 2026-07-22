@@ -27,6 +27,16 @@ export function getPlatform(): PlatformAdapter {
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /**
+ * The noun for "the computer this runs on", adapted to the platform: `this Mac`
+ * on macOS, `this computer` everywhere else. Used by the connect surfaces and the
+ * model menu so the local-privacy copy ("nothing you type leaves …") reads
+ * naturally on each OS.
+ */
+export function localDeviceNoun(): string {
+  return isMac ? 'this Mac' : 'this computer';
+}
+
+/**
  * Whether the app is running inside the macOS desktop shell (Electron).
  *
  * Reflects the `desktop-darwin` class the bootstrap script in `index.html`

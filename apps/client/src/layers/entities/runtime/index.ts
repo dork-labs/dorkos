@@ -33,10 +33,11 @@ export { RuntimeMark } from './ui/RuntimeMark';
 export { RuntimeIdentity } from './ui/RuntimeIdentity';
 export { formatRuntimeIdentity, formatModelLabel } from './lib/runtime-identity';
 export type { RuntimeIdentityText } from './lib/runtime-identity';
-export { ModelNatureBadge } from './ui/ModelNatureBadge';
-export { deriveModelNature, parseParamsB } from './lib/model-nature';
-export type { ModelNature, ModelLocality } from './lib/model-nature';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { CommandTransparencyNote } from './ui/CommandTransparencyNote';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
-export type { RuntimeConnectSlot, RuntimeConnectSlotProps } from './ui/RuntimeSetupDialog';
+export type {
+  RuntimeConnectSlot,
+  RuntimeConnectSlotProps,
+  RuntimeConnectSuccess,
+} from './ui/RuntimeSetupDialog';

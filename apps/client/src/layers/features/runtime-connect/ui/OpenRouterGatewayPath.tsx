@@ -1,29 +1,33 @@
 /**
- * OpenCode Gateway (OpenRouter) path (ADR-0318, T1 task 2.8).
+ * OpenCode cloud (OpenRouter) connect path (ADR-0318; spec opencode-connect §5).
  *
- * One key, every model: paste an OpenRouter key or run the ToS-clean OAuth-PKCE
- * flow, then pick from the OpenRouter catalog. OAuth is browser-only — in the
- * Obsidian embedding (`getPlatform().isEmbedded`) it degrades to the
- * always-available paste-key path rather than crashing on the stubbed transport.
+ * The recommended "best models, zero setup" path: paste an OpenRouter key or run
+ * the ToS-clean OAuth-PKCE flow. OAuth is browser-only — in the Obsidian embedding
+ * (`getPlatform().isEmbedded`) it degrades to the always-available paste-key path
+ * rather than crashing on the stubbed transport. Model choice is no longer picked
+ * here — it moved to the toolbar model menu; on success this path reports the
+ * connect so the dialog shows its success moment.
  *
  * @module features/runtime-connect/ui/OpenRouterGatewayPath
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
-import { ModelNatureBadge } from '@/layers/entities/runtime';
+import type { RuntimeConnectSuccess } from '@/layers/entities/runtime';
 import { getPlatform } from '@/layers/shared/lib';
-import {
-  useOpenRouterModels,
-  useOpenRouterOAuth,
-  useStoreOpenRouterKey,
-} from '../model/use-openrouter-connect';
-import { ConnectErrorRow, ConnectProgressRow } from './connect-feedback';
+import { useOpenRouterOAuth, useStoreOpenRouterKey } from '../model/use-openrouter-connect';
+import { CLOUD_CONNECT_SUCCESS } from '../lib/connect-success';
+import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-feedback';
 
 const OPENROUTER_KEYS_URL = 'https://openrouter.ai/keys';
 
-/** The Gateway (OpenRouter) connect path: paste-key + (browser-only) OAuth-PKCE. */
-export function OpenRouterGatewayPath() {
+/** The cloud (OpenRouter) connect path: paste-key + (browser-only) OAuth-PKCE. */
+export function OpenRouterGatewayPath({
+  onConnected,
+}: {
+  /** Reports the connect landing so the dialog can show its success moment. */
+  onConnected?: (success: RuntimeConnectSuccess) => void;
+}) {
   const [key, setKey] = useState('');
   const store = useStoreOpenRouterKey();
   const oauth = useOpenRouterOAuth();
@@ -33,8 +37,14 @@ export function OpenRouterGatewayPath() {
 
   const connected = store.isSuccess || oauth.isSuccess;
 
+  useEffect(() => {
+    if (connected) onConnected?.(CLOUD_CONNECT_SUCCESS);
+  }, [connected, onConnected]);
+
   if (connected) {
-    return <ModelPicker />;
+    // Standalone (no success panel wired): a brief inline confirmation before the
+    // surface flips to Ready. In the dialog's success flow this unmounts at once.
+    return <ConnectedRow message="Connected to OpenRouter" />;
   }
 
   return (
@@ -110,40 +120,6 @@ export function OpenRouterGatewayPath() {
           </div>
         </form>
       )}
-    </div>
-  );
-}
-
-/**
- * The model dropdown, populated from the OpenRouter catalog once connected.
- * OpenCode is already Ready at this point (the key/OAuth invalidated
- * requirements); choosing a model is the follow-on selection.
- */
-function ModelPicker() {
-  const models = useOpenRouterModels(true);
-
-  return (
-    <div className="space-y-2" data-testid="openrouter-models">
-      <div className="flex items-center gap-2 text-xs text-emerald-500">
-        Connected to OpenRouter
-      </div>
-      {/* OpenRouter is a cloud gateway — every model here is per-token. */}
-      <ModelNatureBadge provider="openrouter" modelId="openrouter" />
-      <Label htmlFor="openrouter-model" className="text-xs">
-        Model
-      </Label>
-      <select
-        id="openrouter-model"
-        className="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-1 focus-visible:outline-none"
-        disabled={models.isPending || (models.data?.length ?? 0) === 0}
-      >
-        {models.isPending && <option>Loading models…</option>}
-        {models.data?.map((model) => (
-          <option key={model.id} value={model.id}>
-            {model.name}
-          </option>
-        ))}
-      </select>
     </div>
   );
 }

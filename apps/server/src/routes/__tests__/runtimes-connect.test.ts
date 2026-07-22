@@ -34,7 +34,6 @@ vi.mock('../../services/runtimes/opencode/openrouter.js', async (orig) => {
     ...actual,
     storeOpenRouterKeyReference: vi.fn(),
     handleOpenRouterCallback: vi.fn(),
-    fetchOpenRouterModels: vi.fn(),
   };
 });
 
@@ -55,7 +54,6 @@ import { delegateRuntimeLogin } from '../../services/runtimes/connect/delegated-
 import {
   storeOpenRouterKeyReference,
   handleOpenRouterCallback,
-  fetchOpenRouterModels,
   OpenRouterError,
 } from '../../services/runtimes/opencode/openrouter.js';
 import { detectOllama, pullOllamaModel } from '../../services/runtimes/opencode/ollama.js';
@@ -301,17 +299,6 @@ describe('runtime connect endpoints', () => {
       // The raw tag never reaches the page; only its escaped form does.
       expect(res.text).not.toContain('<script>alert(1)</script>');
       expect(res.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-    });
-  });
-
-  describe('GET /api/runtimes/opencode/openrouter/models', () => {
-    it('returns the catalog', async () => {
-      vi.mocked(fetchOpenRouterModels).mockResolvedValue([
-        { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet' },
-      ]);
-      const res = await request(app).get('/api/runtimes/opencode/openrouter/models');
-      expect(res.status).toBe(200);
-      expect(res.body.models).toHaveLength(1);
     });
   });
 
