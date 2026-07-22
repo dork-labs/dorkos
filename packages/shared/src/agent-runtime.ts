@@ -153,6 +153,15 @@ export interface RuntimeReadiness {
 export interface RuntimeRequirements extends Partial<RuntimeReadiness> {
   /** Raw dependency results — consumed by the client's Advanced disclosure. */
   dependencies: DependencyCheck[];
+  /**
+   * For a runtime whose auth is provider-agnostic (OpenCode), the id of the
+   * currently connected provider — e.g. `'ollama'`, `'openrouter'`, `'openai'` —
+   * when one is persisted in DorkOS. Lets the client label a "Change power
+   * source" affordance with the current source ("Currently: On your computer
+   * (Ollama)"). Absent for runtimes with no provider concept, and for a runtime
+   * connected outside DorkOS (e.g. the OpenCode CLI logged in directly).
+   */
+  provider?: string;
 }
 
 /**
@@ -678,6 +687,16 @@ export interface AgentRuntime {
 
   /** Check whether this runtime's external dependencies are satisfied. */
   checkDependencies(): Promise<DependencyCheck[]>;
+
+  /**
+   * The currently connected provider id for a runtime whose auth is
+   * provider-agnostic (OpenCode reads `runtimes.opencode.provider`). Surfaced on
+   * `GET /api/system/requirements` so the client can label a "Change power
+   * source" affordance with the current source. Returns `null` when no DorkOS
+   * provider is set (e.g. the runtime was authenticated outside DorkOS). Runtimes
+   * with no provider concept omit this method entirely.
+   */
+  getConnectedProvider?(): string | null;
 
   // --- Commands ---
 

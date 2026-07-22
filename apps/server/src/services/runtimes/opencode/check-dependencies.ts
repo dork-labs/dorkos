@@ -75,6 +75,26 @@ function providerDisplayName(id: string): string {
 /** Minimal read surface of the config manager (injectable for tests). */
 type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
 
+/**
+ * The provider the user connected OpenCode through in DorkOS
+ * (`runtimes.opencode.provider`), or `null` when none is set — the CLI-auth
+ * users the readiness check falls back to. Read the same config seam the
+ * readiness check consults, so the client's "Change power source" affordance and
+ * the readiness projection stay in agreement.
+ *
+ * @param deps - Injectable config seam (defaults to the module singleton).
+ */
+export function getConnectedOpenCodeProvider(deps: { config?: ConfigReader } = {}): string | null {
+  const config = deps.config ?? configManager;
+  try {
+    return config.get('runtimes').opencode.provider ?? null;
+  } catch {
+    // Config unavailable — no provider to report (the readiness check will fall
+    // back to the CLI probe rather than guess).
+    return null;
+  }
+}
+
 /** Injectable seams for the credential-aware auth check (production defaults resolve the singletons). */
 export interface OpenCodeDependencyDeps {
   /** Config reader (defaults to the module singleton). */
@@ -156,13 +176,7 @@ async function checkPersistedProvider(
 ): Promise<DependencyCheck | null> {
   const config = deps.config ?? configManager;
   const provider = deps.credentialProvider ?? credentialProvider;
-  let providerId: string | null;
-  try {
-    providerId = config.get('runtimes').opencode.provider;
-  } catch {
-    // Config unavailable — let the CLI probe decide rather than guess.
-    return null;
-  }
+  const providerId = getConnectedOpenCodeProvider(deps);
   if (!providerId) return null;
 
   const name = providerDisplayName(providerId);

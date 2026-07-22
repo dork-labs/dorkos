@@ -388,6 +388,37 @@ describe('mapOpenCodeEvent', () => {
       ]);
     });
 
+    it('maps an unavailable-model failure to friendly copy pointing at the model menu', () => {
+      // The honest Ollama shape for a tag that is not installed (spec §11).
+      const events = mapOpenCodeEvent(
+        sessionError(OC, unknownError('model "deepseek-r1:32b" not found, try pulling it first')),
+        makeContext()
+      );
+      expect(events).toEqual([
+        {
+          type: 'error',
+          data: {
+            message: "That model isn't available. Pick another one from the model menu.",
+            code: 'model_unavailable',
+            category: 'execution_error',
+          },
+        },
+      ]);
+    });
+
+    it('maps the OpenRouter no-endpoints shape to the same friendly model-menu error', () => {
+      const events = mapOpenCodeEvent(
+        sessionError(OC, unknownError('No endpoints found for deepseek/deepseek-r1')),
+        makeContext()
+      );
+      expect(events[0]!.data).toMatchObject({ code: 'model_unavailable' });
+    });
+
+    it('leaves an unrelated failure as a generic execution error', () => {
+      const events = mapOpenCodeEvent(sessionError(OC, unknownError('disk full')), makeContext());
+      expect(events[0]!.data).toMatchObject({ message: 'disk full', code: 'UnknownError' });
+    });
+
     it('carries provider auth failures with their error name as the code', () => {
       const events = mapOpenCodeEvent(
         sessionError(OC, providerAuthError('anthropic', 'invalid api key')),
