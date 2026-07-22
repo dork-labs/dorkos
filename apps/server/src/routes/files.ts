@@ -21,6 +21,7 @@ import {
   sha256,
   resolveWithinCwd,
   sendPathError,
+  parseByteRange,
 } from '../lib/file-route-guards.js';
 import { FILE_LIMITS } from '../config/constants.js';
 import { logger } from '../lib/logger.js';
@@ -28,9 +29,10 @@ import { logger } from '../lib/logger.js';
 const router = Router();
 
 /**
- * Stream a local image or PDF, confined to the session's working directory.
- * Backs the image/pdf canvas variants when the agent points them at a local
- * file path (vs. an https URL or data: URI, which the client loads directly).
+ * Stream a local media file (image, PDF, 3D model, audio, or video), confined to
+ * the session's working directory. Backs the media canvas variants when the agent
+ * points them at a local file path (vs. an https URL or data: URI, which the
+ * client loads directly).
  *
  * Safety mirrors `PUT /content`: the target is resolved against `cwd` and
  * re-validated with `cwd` as the boundary, so `..` or symlinks that escape the
@@ -39,6 +41,10 @@ const router = Router();
  * turns into an arbitrary-file reader. SVGs are served under a script-neutering
  * CSP sandbox so an SVG opened as a top-level document can't execute embedded
  * script (`<img>` loading is unaffected by the sandbox directive).
+ *
+ * Advertises `Accept-Ranges: bytes` and honors a single-range `Range` request
+ * (206 + `Content-Range`; 416 when unsatisfiable) so audio/video can seek without
+ * downloading the whole file; a request with no `Range` gets the full body (200).
  */
 router.get('/raw', async (req, res) => {
   const parsed = RawFileQuerySchema.safeParse(req.query);
@@ -59,7 +65,7 @@ router.get('/raw', async (req, res) => {
   const contentType = MEDIA_CONTENT_TYPES[path.extname(resolved).toLowerCase()];
   if (!contentType) {
     return res.status(415).json({
-      error: 'Only image, PDF, and 3D-model files can be served',
+      error: 'Only image, PDF, 3D-model, audio, and video files can be served',
       code: 'UNSUPPORTED_TYPE',
     });
   }
@@ -83,11 +89,23 @@ router.get('/raw', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 
+  // Resolve the requested byte range (if any) before writing media headers, so an
+  // unsatisfiable range answers as JSON without a media Content-Type getting stuck
+  // to the 416.
+  const range = parseByteRange(req.headers.range, size);
+  if (range.kind === 'unsatisfiable') {
+    res.setHeader('Content-Range', `bytes */${size}`);
+    return res
+      .status(416)
+      .json({ error: 'Requested range not satisfiable', code: 'RANGE_NOT_SATISFIABLE' });
+  }
+
   res.setHeader('Content-Type', contentType);
-  res.setHeader('Content-Length', size);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Disposition', 'inline');
   res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+  // Advertise Range support so browsers know they can seek audio/video.
+  res.setHeader('Accept-Ranges', 'bytes');
   if (contentType === 'image/svg+xml') {
     // Neutralize scripts in a hostile SVG even if it's opened as a top-level
     // document (the "open full size" affordance navigates to this URL).
@@ -97,7 +115,17 @@ router.get('/raw', async (req, res) => {
     );
   }
 
-  const stream = createReadStream(resolved);
+  // `end` is inclusive in both HTTP Content-Range and Node's createReadStream.
+  const streamOptions = range.kind === 'range' ? { start: range.start, end: range.end } : undefined;
+  if (range.kind === 'range') {
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${size}`);
+    res.setHeader('Content-Length', range.end - range.start + 1);
+  } else {
+    res.setHeader('Content-Length', size);
+  }
+
+  const stream = createReadStream(resolved, streamOptions);
   stream.on('error', (err) => {
     logger.error('[files] GET /raw stream failed', { err, resolved });
     if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });

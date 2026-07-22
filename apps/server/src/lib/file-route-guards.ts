@@ -19,8 +19,9 @@ import { validateBoundary, BoundaryError } from './boundary.js';
 
 /**
  * File extensions the raw media routes will stream, mapped to their content
- * type. Kept deliberately narrow (images, PDF, and 3D models) so a raw route can
- * never become a general-purpose file-download endpoint — anything else is 415.
+ * type. Kept deliberately narrow (images, PDF, 3D models, audio, and video) so a
+ * raw route can never become a general-purpose file-download endpoint — anything
+ * else is 415.
  */
 export const MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.png': 'image/png',
@@ -34,12 +35,85 @@ export const MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.svg': 'image/svg+xml',
   '.pdf': 'application/pdf',
   // 3D models for the workbench model viewer (glTF/GLB via <model-viewer>,
-  // STL/OBJ via three.js loaders). `.obj` is plain-text geometry.
+  // STL/OBJ/PLY/3MF/FBX/DAE via three.js loaders). `.obj`/`.ply` may be plain-text
+  // geometry; `.ply`/`.fbx` have no registered media type, so octet-stream.
   '.glb': 'model/gltf-binary',
   '.gltf': 'model/gltf+json',
   '.stl': 'model/stl',
   '.obj': 'model/obj',
+  '.3mf': 'model/3mf',
+  '.ply': 'application/octet-stream',
+  '.fbx': 'application/octet-stream',
+  '.dae': 'model/vnd.collada+xml',
+  // Audio for the HTML5 <audio> viewer (streamed with Range so seeking works).
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.opus': 'audio/opus',
+  // Video for the HTML5 <video> viewer (streamed with Range so seeking works).
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.ogv': 'video/ogg',
 };
+
+/**
+ * Result of parsing an HTTP `Range` request header against a known resource size:
+ * serve the whole body (`full`), a single byte slice (`range`), or reject as
+ * unsatisfiable (`unsatisfiable`, → 416).
+ */
+export type RangeParseResult =
+  | { kind: 'full' }
+  | { kind: 'range'; start: number; end: number }
+  | { kind: 'unsatisfiable' };
+
+/**
+ * Parse a single-range HTTP `Range` header (`bytes=start-end`, `bytes=start-`, or
+ * `bytes=-suffix`) against a resource `size`.
+ *
+ * Only the `bytes` unit and a single range are supported: an absent header, a
+ * non-`bytes` unit, a syntactically invalid range, or a multi-range request all
+ * resolve to `full` (serve the entire body as 200), which is a spec-compliant
+ * response to a Range a server chooses not to honor. A range whose start is at or
+ * past the end of the resource is `unsatisfiable` (→ 416). `end` is clamped to the
+ * last byte and is inclusive, matching both HTTP `Content-Range` and Node's
+ * `fs.createReadStream({ start, end })`.
+ *
+ * @param header - The raw `Range` request header value, if any.
+ * @param size - The resource's total size in bytes.
+ */
+export function parseByteRange(header: string | undefined, size: number): RangeParseResult {
+  if (!header) return { kind: 'full' };
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  // No `bytes=` prefix, a multi-range list (contains a comma), or malformed
+  // syntax: ignore the header and serve the full body (a valid 200 response).
+  if (!match) return { kind: 'full' };
+
+  const [, startRaw, endRaw] = match;
+  if (startRaw === '' && endRaw === '') return { kind: 'full' };
+
+  let start: number;
+  let end: number;
+  if (startRaw === '') {
+    // Suffix form `bytes=-N`: the final N bytes. N === 0 requests nothing → 416.
+    const suffix = Number(endRaw);
+    if (suffix === 0) return { kind: 'unsatisfiable' };
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(startRaw);
+    end = endRaw === '' ? size - 1 : Math.min(Number(endRaw), size - 1);
+  }
+
+  if (start > end || start >= size) return { kind: 'unsatisfiable' };
+  return { kind: 'range', start, end };
+}
 
 /** SHA-256 hex of a UTF-8 string — the optimistic-concurrency fingerprint. */
 export function sha256(content: string): string {

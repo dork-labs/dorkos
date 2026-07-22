@@ -194,6 +194,8 @@ describe('Files Routes', () => {
     // the real temp files and the extension/stat/stream logic runs for real.
     const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
     const pdfBytes = Buffer.from('%PDF-1.4\n%%EOF\n');
+    // Deterministic ASCII bytes so Range slices are trivial to assert.
+    const mp4Bytes = Buffer.from('0123456789ABCDEFGHIJ');
     let dir: string;
 
     beforeEach(async () => {
@@ -202,6 +204,9 @@ describe('Files Routes', () => {
       await fs.writeFile(path.join(dir, 'doc.pdf'), pdfBytes);
       await fs.writeFile(path.join(dir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
       await fs.writeFile(path.join(dir, 'notes.txt'), 'secret');
+      await fs.writeFile(path.join(dir, 'clip.mp4'), mp4Bytes);
+      await fs.writeFile(path.join(dir, 'song.mp3'), Buffer.from('ID3'));
+      await fs.writeFile(path.join(dir, 'part.3mf'), Buffer.from('3MF'));
     });
     afterEach(async () => {
       await fs.rm(dir, { recursive: true, force: true });
@@ -280,6 +285,90 @@ describe('Files Routes', () => {
       const res = await request(app).get('/api/files/raw').query({ cwd: dir });
 
       expect(res.status).toBe(400);
+    });
+
+    it.each([
+      ['song.mp3', 'audio/mpeg'],
+      ['part.3mf', 'model/3mf'],
+      ['clip.mp4', 'video/mp4'],
+    ])('serves %s as %s with Accept-Ranges', async (name, type) => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: name })
+        .buffer(true);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe(type);
+      expect(res.headers['accept-ranges']).toBe('bytes');
+    });
+
+    it('advertises Accept-Ranges and serves the full body when no Range header is sent', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'clip.mp4' })
+        .buffer(true);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['accept-ranges']).toBe('bytes');
+      expect(Number(res.headers['content-length'])).toBe(mp4Bytes.length);
+    });
+
+    it('serves a 206 partial response with the correct slice for a Range request', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'clip.mp4' })
+        .set('Range', 'bytes=4-9')
+        .buffer(true);
+
+      expect(res.status).toBe(206);
+      expect(res.headers['content-range']).toBe(`bytes 4-9/${mp4Bytes.length}`);
+      expect(res.headers['accept-ranges']).toBe('bytes');
+      expect(Number(res.headers['content-length'])).toBe(6);
+      expect(res.body.toString()).toBe('456789');
+    });
+
+    it('serves an open-ended suffix Range (last N bytes) as 206', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'clip.mp4' })
+        .set('Range', 'bytes=-5')
+        .buffer(true);
+
+      expect(res.status).toBe(206);
+      expect(res.headers['content-range']).toBe(`bytes 15-19/${mp4Bytes.length}`);
+      expect(res.body.toString()).toBe('FGHIJ');
+    });
+
+    it('returns 416 with a Content-Range header for an unsatisfiable Range', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'clip.mp4' })
+        .set('Range', `bytes=${mp4Bytes.length}-`);
+
+      expect(res.status).toBe(416);
+      expect(res.headers['content-range']).toBe(`bytes */${mp4Bytes.length}`);
+      expect(res.body.code).toBe('RANGE_NOT_SATISFIABLE');
+    });
+
+    it('ignores a malformed Range header and serves the full body (200)', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'clip.mp4' })
+        .set('Range', 'rows=1-2')
+        .buffer(true);
+
+      expect(res.status).toBe(200);
+      expect(Number(res.headers['content-length'])).toBe(mp4Bytes.length);
+    });
+
+    it('still rejects an unknown extension with 415 even with a Range header', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'notes.txt' })
+        .set('Range', 'bytes=0-1');
+
+      expect(res.status).toBe(415);
+      expect(res.body.code).toBe('UNSUPPORTED_TYPE');
     });
   });
 });
