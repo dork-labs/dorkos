@@ -1,13 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { RuntimeConnectSlot } from '@/layers/entities/runtime';
 import { useOnboarding } from '../model/use-onboarding';
+import { useOnboardingStage } from '../model/use-onboarding-stage';
 import { OnboardingNavBar } from './OnboardingNavBar';
 import { SystemRequirementsStep } from './SystemRequirementsStep';
 import { WelcomeStep } from './WelcomeStep';
 import { OnboardingConversation } from './OnboardingConversation';
-
-/** The three surfaces of first-run onboarding. */
-type Stage = 'welcome' | 'requirements' | 'conversation';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -32,7 +30,7 @@ interface OnboardingFlowProps {
  * @param renderRuntimeConnect - App-shell slot for the terminal-free connect flow.
  */
 export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingFlowProps) {
-  const [stage, setStage] = useState<Stage>('welcome');
+  const { stage, goToStage } = useOnboardingStage();
   const { dismiss, startOnboarding } = useOnboarding();
 
   // Record onboarding start timestamp once on mount. `startOnboarding` is itself
@@ -50,9 +48,11 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
     onComplete();
   }, [dismiss, onComplete]);
 
-  const goToRequirements = useCallback(() => setStage('requirements'), []);
-  const goToConversation = useCallback(() => setStage('conversation'), []);
-  const backToRequirements = useCallback(() => setStage('requirements'), []);
+  // All stage moves go through the history-integrated navigator so browser
+  // back/forward and the in-UI Back button walk the same path.
+  const goToRequirements = useCallback(() => goToStage('requirements'), [goToStage]);
+  const goToConversation = useCallback(() => goToStage('conversation'), [goToStage]);
+  const backToRequirements = useCallback(() => goToStage('requirements'), [goToStage]);
 
   if (stage === 'welcome') {
     return (

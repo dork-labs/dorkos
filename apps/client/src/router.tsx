@@ -18,6 +18,7 @@ import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { agentFilterSchema } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
+import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import type { Session } from '@dorkos/shared/types';
@@ -28,7 +29,12 @@ interface RouterContext {
 }
 
 // ── Root route (minimal — just Outlet) ──────────────────────
+// Validates the optional `?onboarding=` stage param here (not on a leaf route)
+// so the first-run overlay, which renders above whatever route is active, can
+// read and write it from anywhere. Root search params are inherited by every
+// child route, so this never strips a leaf route's own params.
 const rootRoute = createRootRouteWithContext<RouterContext>()({
+  validateSearch: zodValidator(onboardingStageSearchSchema),
   component: () => <Outlet />,
   notFoundComponent: NotFoundFallback,
 });

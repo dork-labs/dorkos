@@ -31,6 +31,7 @@ import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
 import {
   useOnboarding,
   useOnboardingOverlayVisible,
+  useClearOnboardingStageWhenDone,
   OnboardingFlow,
   ProgressCard,
 } from '@/layers/features/onboarding';
@@ -279,8 +280,15 @@ export function AppShell() {
     shouldShowOnboarding,
     shouldShowGettingStarted,
     isLoading: isOnboardingLoading,
+    isOnboardingComplete,
+    isOnboardingDismissed,
     dismiss: dismissOnboarding,
   } = useOnboarding();
+
+  // Keep the `?onboarding=` stage param honest: once onboarding is finished or
+  // dismissed, strip a lingering stage param (left by finishing, or deep-linked
+  // by a returning user) so the URL stays clean and the overlay never re-opens.
+  useClearOnboardingStageWhenDone(isOnboardingComplete || isOnboardingDismissed);
 
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
