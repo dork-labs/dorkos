@@ -3,7 +3,11 @@ import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
-import { SIDEBAR_PREFS_DEFAULTS, SHAPE_USER_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  SIDEBAR_PREFS_DEFAULTS,
+  SHAPE_USER_PREFS_DEFAULTS,
+  STATUS_BAR_PREFS_DEFAULTS,
+} from '@dorkos/shared/config-schema';
 import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isTasksEnabled, getTasksInitError } from '../services/tasks/task-state.js';
@@ -167,13 +171,14 @@ router.get('/', async (_req, res) => {
     },
     auth: configManager.get('auth') ?? { enabled: false },
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },
-    // Surface the sidebar organization + Shape prefs so the client can read them
-    // via useConfig() (DOR-329, DOR-355). Schema defaults + the backfill
-    // migrations guarantee `ui.sidebar`/`ui.shapes` are present; the fallbacks
-    // cover the pre-migration read window.
+    // Surface the sidebar organization + Shape + status-bar prefs so the client
+    // can read them via useConfig() (DOR-329, DOR-355, DOR-431). Schema defaults
+    // + the backfill migrations guarantee `ui.sidebar`/`ui.shapes`/`ui.statusBar`
+    // are present; the fallbacks cover the pre-migration read window.
     ui: {
       sidebar: configManager.get('ui')?.sidebar ?? SIDEBAR_PREFS_DEFAULTS,
       shapes: configManager.get('ui')?.shapes ?? SHAPE_USER_PREFS_DEFAULTS,
+      statusBar: configManager.get('ui')?.statusBar ?? STATUS_BAR_PREFS_DEFAULTS,
     },
   });
 });

@@ -9,6 +9,7 @@ import {
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
+  backfillStatusBarDefaults,
   backfillSidebarSettingsDefaults,
   backfillSmartGroupKindDefaults,
   CONFIG_MIGRATIONS,
@@ -946,6 +947,69 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillShapesDefaults(store);
     expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillStatusBarDefaults migration (DOR-431)', () => {
+  const STATUS_BAR_DEFAULTS = {
+    cwd: true,
+    git: true,
+    runtime: true,
+    model: true,
+    cache: true,
+    context: true,
+    usage: true,
+    permission: true,
+    sound: true,
+    polling: true,
+  };
+
+  it('fresh install: the schema default seeds ui.statusBar with every item visible', () => {
+    // A brand-new config comes from the schema, not a migration — assert the
+    // fresh-store shape carries the full status-bar section.
+    expect(USER_CONFIG_DEFAULTS.ui.statusBar).toEqual(STATUS_BAR_DEFAULTS);
+  });
+
+  it('upgraded install: adds ui.statusBar to an existing ui block, preserving other ui fields', () => {
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        dismissedUpgradeVersions: ['1.0.0'],
+        sidebar: { pinned: [], groups: [] },
+        shapes: { active: null, agentDefaults: {}, autoFollowAgent: false },
+      },
+    });
+    backfillStatusBarDefaults(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      dismissedUpgradeVersions: ['1.0.0'],
+      sidebar: { pinned: [], groups: [] },
+      shapes: { active: null, agentDefaults: {}, autoFollowAgent: false },
+      statusBar: STATUS_BAR_DEFAULTS,
+    });
+  });
+
+  it('is idempotent — does not overwrite an existing ui.statusBar (a migrated device keeps its choices)', () => {
+    const existing = {
+      theme: 'system',
+      dismissedUpgradeVersions: [],
+      statusBar: { ...STATUS_BAR_DEFAULTS, git: false, model: false },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillStatusBarDefaults(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when the ui section is absent (schema default owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillStatusBarDefaults(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+
+  it('is registered in CONFIG_MIGRATIONS at the newest key', () => {
+    const keys = Object.keys(CONFIG_MIGRATIONS);
+    expect(keys[keys.length - 1]).toBe('0.57.0');
+    expect(CONFIG_MIGRATIONS['0.57.0']).toBe(backfillStatusBarDefaults);
   });
 });
 

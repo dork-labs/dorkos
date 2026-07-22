@@ -13,7 +13,7 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
 import { ClientContextSchema } from './additional-context.js';
-import { SidebarPrefsSchema, ShapeUserPrefsSchema } from './config-schema.js';
+import { SidebarPrefsSchema, ShapeUserPrefsSchema, StatusBarPrefsSchema } from './config-schema.js';
 // Type-only import: `ui-widget.ts` value-imports `UiCommandSchema` from this
 // module, so a value import of `WidgetDocumentSchema` here would form a
 // load-time cycle. The canvas `widget` content carries the document typed but
@@ -2347,6 +2347,10 @@ export const ServerConfigSchema = z
         // Person-scoped Shape state: active Shape, reverse affinity hints, and
         // the offer-vs-follow toggle (DOR-355). Also defined in config-schema.ts.
         shapes: ShapeUserPrefsSchema,
+        // Person-scoped status-bar visibility toggles (DOR-431). Also defined in
+        // config-schema.ts; promoted from client localStorage so agents/devices
+        // can read and flip status-bar item visibility.
+        statusBar: StatusBarPrefsSchema,
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
