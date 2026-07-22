@@ -10,6 +10,8 @@ import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
 import { CanvasImageContent } from './CanvasImageContent';
 import { CanvasPdfContent } from './CanvasPdfContent';
+import { CanvasAudioContent } from './CanvasAudioContent';
+import { CanvasVideoContent } from './CanvasVideoContent';
 import { CanvasWidgetContent } from './CanvasWidgetContent';
 import { CanvasMcpAppContent } from './CanvasMcpAppContent';
 import { CanvasSplash } from './CanvasSplash';
@@ -76,6 +78,10 @@ function CanvasRenderer({
       return <CanvasImageContent content={content} />;
     case 'pdf':
       return <CanvasPdfContent content={content} />;
+    case 'audio':
+      return <CanvasAudioContent content={content} />;
+    case 'video':
+      return <CanvasVideoContent content={content} />;
     case 'widget':
       return <CanvasWidgetContent content={content} />;
     case 'mcp_app':

@@ -17,9 +17,18 @@
 /**
  * A canvas viewer a file can resolve to. These map onto `UiCanvasContent`
  * variants: `file` (CodeMirror text/code), `markdown` (Blintz rich editor),
- * `image`, `pdf`, `model3d` (glTF/GLB/STL/OBJ), and `csv`.
+ * `image`, `pdf`, `model3d` (glTF/GLB/STL/OBJ/3MF/PLY/FBX/DAE), `csv`,
+ * `audio` (HTML5 `<audio>`), and `video` (HTML5 `<video>`).
  */
-export type CanvasViewerType = 'file' | 'markdown' | 'image' | 'pdf' | 'model3d' | 'csv';
+export type CanvasViewerType =
+  | 'file'
+  | 'markdown'
+  | 'image'
+  | 'pdf'
+  | 'model3d'
+  | 'csv'
+  | 'audio'
+  | 'video';
 
 /** The set of valid viewer ids, for validating config-supplied override values. */
 export const CANVAS_VIEWER_TYPES: readonly CanvasViewerType[] = [
@@ -29,6 +38,8 @@ export const CANVAS_VIEWER_TYPES: readonly CanvasViewerType[] = [
   'pdf',
   'model3d',
   'csv',
+  'audio',
+  'video',
 ] as const;
 
 /**
@@ -59,9 +70,28 @@ const DEFAULT_EXTENSION_VIEWERS: Readonly<Record<string, CanvasViewerType>> = {
   gltf: 'model3d',
   stl: 'model3d',
   obj: 'model3d',
+  '3mf': 'model3d',
+  ply: 'model3d',
+  fbx: 'model3d',
+  dae: 'model3d',
   // Tabular.
   csv: 'csv',
   tsv: 'csv',
+  // Audio (streamed as bytes; rendered by the HTML5 `<audio>` element).
+  mp3: 'audio',
+  wav: 'audio',
+  m4a: 'audio',
+  aac: 'audio',
+  flac: 'audio',
+  ogg: 'audio',
+  oga: 'audio',
+  opus: 'audio',
+  // Video (streamed as bytes; rendered by the HTML5 `<video>` element).
+  mp4: 'video',
+  webm: 'video',
+  mov: 'video',
+  m4v: 'video',
+  ogv: 'video',
 };
 
 /**
@@ -119,9 +149,9 @@ export function isCanvasViewerType(value: string): value is CanvasViewerType {
 /**
  * Which diff surface a file resolves to — the text (CodeMirror merge) view or the
  * image (2-up/swipe/onion-skin) view (DOR-212). A file whose viewer is `image`
- * gets the image diff; everything else (code, markdown, csv, and — for v1 — pdf
- * and 3D models, which have no diff surface) gets the text diff, which degrades
- * gracefully for content it can't render as text.
+ * gets the image diff; everything else (code, markdown, csv, and — for v1 — pdf,
+ * 3D models, audio, and video, which have no diff surface) gets the text diff,
+ * which degrades gracefully for content it can't render as text.
  *
  * @param filePath - Workspace-relative or absolute file path.
  * @param overrides - Optional extension → viewer overrides (config-provided),

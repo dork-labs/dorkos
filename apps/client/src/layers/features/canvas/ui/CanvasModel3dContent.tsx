@@ -14,19 +14,28 @@ interface CanvasModel3dContentProps {
   content: Extract<UiCanvasContent, { type: 'model3d' }>;
 }
 
-/** Map a model file extension to its renderer format, or null when unsupported. */
-function formatOf(src: string): Model3dFormat | null {
+/**
+ * Map a model file extension to its renderer format, or null when unsupported.
+ *
+ * @param src - The model source URL or path.
+ * @internal Exported for testing only.
+ */
+export function formatOf(src: string): Model3dFormat | null {
   const ext = src.split('.').pop()?.toLowerCase();
   if (ext === 'glb' || ext === 'gltf') return 'gltf';
   if (ext === 'stl') return 'stl';
   if (ext === 'obj') return 'obj';
+  if (ext === '3mf') return '3mf';
+  if (ext === 'ply') return 'ply';
+  if (ext === 'fbx') return 'fbx';
+  if (ext === 'dae') return 'dae';
   return null;
 }
 
 /**
  * 3D model canvas renderer: resolves the model bytes to a cwd-confined URL and
  * lazy-loads the heavy {@link Model3dViewer} (three.js / model-viewer). glTF/GLB
- * orbit in `<model-viewer>`; STL/OBJ render in a three.js scene.
+ * orbit in `<model-viewer>`; STL/OBJ/PLY/3MF/FBX/DAE render in a three.js scene.
  */
 export function CanvasModel3dContent({ content }: CanvasModel3dContentProps) {
   const transport = useTransport();

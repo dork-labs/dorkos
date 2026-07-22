@@ -293,10 +293,13 @@ describe('executeUiCommand — open_file', () => {
     expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
-  it('resolves media/3D/csv extensions to their viewers', () => {
+  it('resolves media/3D/audio/video/csv extensions to their viewers', () => {
     const cases: Array<[string, Record<string, unknown>]> = [
       ['logo.png', { type: 'image', src: 'logo.png' }],
       ['model.glb', { type: 'model3d', src: 'model.glb' }],
+      ['scene.fbx', { type: 'model3d', src: 'scene.fbx' }],
+      ['theme.mp3', { type: 'audio', src: 'theme.mp3' }],
+      ['demo.mp4', { type: 'video', src: 'demo.mp4' }],
       ['data.csv', { type: 'csv', src: 'data.csv' }],
       ['report.pdf', { type: 'pdf', src: 'report.pdf' }],
       ['notes.md', { type: 'file', sourcePath: 'notes.md', language: 'markdown' }],

@@ -43,14 +43,16 @@ If a create, rename, or delete fails (a name collision, a permission problem), a
 
 Click a file and DorkOS picks the viewer that fits it:
 
-| File type                       | What you get                                             |
-| ------------------------------- | -------------------------------------------------------- |
-| Code and text                   | A real code editor (CodeMirror) with syntax highlighting |
-| Markdown                        | The same rich editor used for agent-authored documents   |
-| Images                          | Click to zoom and pan                                    |
-| PDF                             | Your browser's native PDF reader                         |
-| 3D models (glTF, GLB, STL, OBJ) | Orbit and zoom around the model                          |
-| CSV                             | A scrollable table                                       |
+| File type                                               | What you get                                             |
+| ------------------------------------------------------- | -------------------------------------------------------- |
+| Code and text                                           | A real code editor (CodeMirror) with syntax highlighting |
+| Markdown                                                | The same rich editor used for agent-authored documents   |
+| Images                                                  | Click to zoom and pan                                    |
+| PDF                                                     | Your browser's native PDF reader                         |
+| 3D models (glTF, GLB, STL, OBJ, 3MF, PLY, FBX, Collada) | Orbit and zoom around the model                          |
+| Audio (MP3, WAV, FLAC, and more)                        | A player with a scrubber you can seek                    |
+| Video (MP4, WebM, MOV, and more)                        | A player with a scrubber you can seek                    |
+| CSV                                                     | A scrollable table                                       |
 
 Code and markdown files open read-only by default. Click the pencil icon to start editing; it turns into a checkmark you click to stop and save. While you're editing, DorkOS holds back any agent update to that specific file, so your keystrokes and the agent's writes never collide. Every other open file keeps updating live.
 

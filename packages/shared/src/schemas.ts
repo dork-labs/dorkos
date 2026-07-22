@@ -2736,11 +2736,12 @@ export type UploadProgress = z.infer<typeof UploadProgressSchema>;
 // === UI Control Schemas ===
 
 /**
- * A media source for the image/pdf canvas variants: an `https://` (or `http://`)
- * URL, a `data:` URI, or a local file path (absolute or session-relative). Local
- * paths are resolved within and confined to the session's working directory and
- * streamed by the server's raw-file route — only image and PDF content types are
- * ever served.
+ * A media source for the byte-backed canvas variants — `image`, `pdf`, `model3d`,
+ * `audio`, `video`, and `csv`: an `https://` (or `http://`) URL, a `data:` URI, or
+ * a local file path (absolute or session-relative). Local paths are resolved within
+ * and confined to the session's working directory and streamed by the server's
+ * raw-file route, which serves only the extensions in its media allowlist (images,
+ * PDF, 3D models, audio, and video; CSV loads over the text-content route).
  */
 const CanvasMediaSrcSchema = z.string().min(1);
 
@@ -2752,6 +2753,8 @@ const CanvasMediaSrcSchema = z.string().min(1);
  * - `{ type: 'json', data: unknown, title? }`
  * - `{ type: 'image', src: string, title?, alt? }` — `src` is an https URL, a `data:` URI, or a local file path
  * - `{ type: 'pdf', src: string, title? }` — `src` follows the same rules as `image`
+ * - `{ type: 'audio', src: string, title? }` — HTML5 `<audio>`; `src` follows the same rules as `image`
+ * - `{ type: 'video', src: string, title? }` — HTML5 `<video>`; `src` follows the same rules as `image`
  * - `{ type: 'widget', definition: WidgetDocument, title? }` — a Tier-1 generative-UI widget
  */
 export const UiCanvasContentSchema = z
@@ -2836,7 +2839,19 @@ export const UiCanvasContentSchema = z
     }),
     z.object({
       type: z.literal('model3d'),
-      /** 3D model source: https URL, `data:` URI, or a local (cwd-confined) file path (glTF/GLB/STL/OBJ). */
+      /** 3D model source: https URL, `data:` URI, or a local (cwd-confined) file path (glTF/GLB/STL/OBJ/3MF/PLY/FBX/DAE). */
+      src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('audio'),
+      /** Audio source: https URL, `data:` URI, or a local (cwd-confined) file path. Streamed via the raw route with HTTP Range for seeking. */
+      src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('video'),
+      /** Video source: https URL, `data:` URI, or a local (cwd-confined) file path. Streamed via the raw route with HTTP Range for seeking. */
       src: CanvasMediaSrcSchema,
       title: z.string().optional(),
     }),
@@ -3179,6 +3194,8 @@ export const UiStateSchema = z
           'mcp_app',
           'file',
           'model3d',
+          'audio',
+          'video',
           'csv',
           'browser',
           'diff',

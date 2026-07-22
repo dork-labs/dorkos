@@ -162,6 +162,8 @@ function sourceKey(content: UiCanvasContent): string | null {
     case 'image':
     case 'pdf':
     case 'model3d':
+    case 'audio':
+    case 'video':
     case 'csv':
       return `src:${content.src}`;
     case 'mcp_app':
@@ -189,6 +191,8 @@ const CONTENT_TYPE_FALLBACK_LABELS: Record<UiCanvasContent['type'], string> = {
   mcp_app: 'App',
   file: 'File',
   model3d: '3D Model',
+  audio: 'Audio',
+  video: 'Video',
   csv: 'CSV',
   browser: 'Browser',
   diff: 'Diff',
@@ -209,6 +213,8 @@ function sourceLabel(content: UiCanvasContent): string {
     case 'image':
     case 'pdf':
     case 'model3d':
+    case 'audio':
+    case 'video':
     case 'csv':
       return /^(https?:|data:)/.test(content.src)
         ? CONTENT_TYPE_FALLBACK_LABELS[content.type]
