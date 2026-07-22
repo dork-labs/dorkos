@@ -95,10 +95,6 @@ export function useTours(): UseToursResult {
     return seen.includes(id) || declined.includes(id);
   }
 
-  function runTour(id: TourId) {
-    startTour(id);
-  }
-
   function acceptOffer(id: TourOccasion) {
     markSeen(id);
     startTour(id);
@@ -117,7 +113,10 @@ export function useTours(): UseToursResult {
     activeIndex,
     pendingOffer: pendingOfferId ? TOUR_DEFINITIONS[pendingOfferId] : null,
     pendingOfferId,
-    runTour,
+    // `runTour` is the store's stable `startTour` action (not a per-render
+    // wrapper) so the TourHost effect that consumes a requested tour has stable
+    // deps and never re-runs on settling-query re-renders.
+    runTour: startTour,
     acceptOffer,
     declineOffer,
     setPendingOffer,
