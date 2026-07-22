@@ -1,23 +1,23 @@
 /**
- * Marketplace MCP tools — central dispatch table.
+ * Marketplace MCP tools — external `/mcp` registration.
  *
- * This module is the single coordination point that wires every marketplace
- * tool handler (`marketplace_search`, `marketplace_get`,
- * `marketplace_list_marketplaces`, `marketplace_list_installed`,
- * `marketplace_recommend`, `marketplace_install`, `marketplace_uninstall`,
- * `marketplace_create_package`) into the existing external MCP server
- * (`services/core/mcp-server.ts`).
+ * This module registers every marketplace tool (`marketplace_search`,
+ * `marketplace_get`, `marketplace_list_marketplaces`,
+ * `marketplace_list_installed`, `marketplace_recommend`, `marketplace_install`,
+ * `marketplace_uninstall`, `marketplace_create_package`) against the external
+ * MCP server (`services/core/mcp-server.ts`).
+ *
+ * The tool catalog itself — names, descriptions, annotations, input schemas,
+ * and handler factories — lives in the transport-neutral
+ * `marketplace-tool-descriptors.ts` so it can be shared with the in-session
+ * `dorkos` server (`services/runtimes/claude-code/mcp-tools/marketplace-tools.ts`).
+ * This file owns only the `@modelcontextprotocol/sdk`-specific registration
+ * glue: it walks the shared descriptor table and calls `server.registerTool()`
+ * for each entry.
  *
  * The shared {@link MarketplaceMcpDeps} bundle is constructed once at server
  * startup in `apps/server/src/index.ts` and threaded through every handler so
- * tool implementations stay decoupled from the rest of the server. Each
- * handler lives in its own sibling file (`tool-search.ts`, etc.) and exports
- * a `create*Handler(deps)` factory plus its Zod input shape — this file
- * imports both and registers every tool against the supplied `McpServer`.
- *
- * Concentrating registration in one helper keeps the dispatch table in a
- * single, reviewable place and means downstream batches that add or remove
- * tools only ever touch this file plus the new handler module.
+ * tool implementations stay decoupled from the rest of the server.
  *
  * @module services/marketplace-mcp/marketplace-mcp-tools
  */
@@ -32,17 +32,7 @@ import type { UninstallFlow } from '../marketplace/flows/uninstall.js';
 import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
 
 import type { ConfirmationProvider } from './confirmation-provider.js';
-import { createSearchHandler, SearchInputSchema } from './tool-search.js';
-import { createGetHandler, GetInputSchema } from './tool-get.js';
-import { createListMarketplacesHandler } from './tool-list-marketplaces.js';
-import { createListInstalledHandler, ListInstalledInputSchema } from './tool-list-installed.js';
-import { createRecommendHandler, RecommendInputSchema } from './tool-recommend.js';
-import { createInstallHandler, InstallInputSchema } from './tool-install.js';
-import { createUninstallHandler, UninstallInputSchema } from './tool-uninstall.js';
-import { createCreatePackageHandler, CreatePackageInputSchema } from './tool-create-package.js';
-import { ToolAnnotationPresets } from '../core/mcp-tool-metadata.js';
-
-const A = ToolAnnotationPresets;
+import { MARKETPLACE_TOOL_DESCRIPTORS } from './marketplace-tool-descriptors.js';
 
 /**
  * Dependency bundle for the marketplace MCP tools. Mirrors the existing
@@ -84,10 +74,11 @@ export interface MarketplaceMcpDeps {
  * Called from `createExternalMcpServer()` in `services/core/mcp-server.ts`
  * after the existing tool registrations.
  *
- * This is the dispatch table for the marketplace MCP surface — every tool
- * registration lives here so the catalog of exposed tools is reviewable in a
- * single place. Adding a new tool means adding one `server.registerTool(...)`
- * call here plus a sibling handler file.
+ * Walks the shared {@link MARKETPLACE_TOOL_DESCRIPTORS} table — the same
+ * catalog the in-session `dorkos` server registers — and adds each entry to
+ * the external server, wiring in the external server's `annotations`
+ * (read/write/destructive/open-world hints) which the in-session SDK helper
+ * has no slot for.
  *
  * Read-only tools (search, get, list_marketplaces, list_installed, recommend)
  * never mutate disk and require no confirmation. Mutation tools (install,
@@ -101,104 +92,15 @@ export interface MarketplaceMcpDeps {
  * @param deps - Marketplace dependency bundle shared by all tool handlers.
  */
 export function registerMarketplaceTools(server: McpServer, deps: MarketplaceMcpDeps): void {
-  // ── Read-only tools ─────────────────────────────────────────────────────
-  server.registerTool(
-    'marketplace_search',
-    {
-      description:
-        'Search the DorkOS marketplace for installable packages (agents, plugins, skill packs, adapters). ' +
-        'Returns matching entries from every enabled marketplace source. ' +
-        'Filters: type (agent/plugin/skill-pack/adapter), category, tags, marketplace, query (free-text).',
-      inputSchema: SearchInputSchema,
-      annotations: A.readOnlyOpenWorld,
-    },
-    createSearchHandler(deps)
-  );
-
-  server.registerTool(
-    'marketplace_get',
-    {
-      description:
-        'Get full details for a marketplace package by name. Returns the package manifest, README, marketplace metadata, and any DorkOS-specific fields (type, category, tags).',
-      inputSchema: GetInputSchema,
-      annotations: A.readOnlyOpenWorld,
-    },
-    createGetHandler(deps)
-  );
-
-  server.registerTool(
-    'marketplace_list_marketplaces',
-    {
-      description:
-        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, and total package count.',
-      inputSchema: {},
-      annotations: A.readOnlyLocal,
-    },
-    createListMarketplacesHandler(deps)
-  );
-
-  server.registerTool(
-    'marketplace_list_installed',
-    {
-      description:
-        'List packages currently installed in this DorkOS instance, one entry per installation across scopes. ' +
-        'A package installed globally and on two agents returns three entries, each tagged with scope ' +
-        '(global | agent-local | override) and, for agent installs, the owning agent id and name. ' +
-        'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance.',
-      inputSchema: ListInstalledInputSchema,
-      annotations: A.readOnlyLocal,
-    },
-    createListInstalledHandler(deps)
-  );
-
-  server.registerTool(
-    'marketplace_recommend',
-    {
-      description:
-        'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons.',
-      inputSchema: RecommendInputSchema,
-      annotations: A.readOnlyOpenWorld,
-    },
-    createRecommendHandler(deps)
-  );
-
-  // ── Mutation tools (gated by confirmation provider) ─────────────────────
-  server.registerTool(
-    'marketplace_install',
-    {
-      description:
-        'Install a package from a configured marketplace. Requires user confirmation. ' +
-        'For external AI agents: the first call returns status:requires_confirmation with a token. ' +
-        'After the user approves in DorkOS, re-call with confirmationToken to complete the install.',
-      inputSchema: InstallInputSchema,
-      // Fetches the package from its configured (possibly remote) marketplace source.
-      annotations: A.mutateCreateOpenWorld,
-    },
-    createInstallHandler(deps)
-  );
-
-  server.registerTool(
-    'marketplace_uninstall',
-    {
-      description:
-        'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
-        'By default, preserves .dork/data/ and .dork/secrets.json. Pass purge:true to remove them.',
-      inputSchema: UninstallInputSchema,
-      annotations: A.mutateDeleteLocal,
-    },
-    createUninstallHandler(deps)
-  );
-
-  server.registerTool(
-    'marketplace_create_package',
-    {
-      description:
-        "Scaffold a new package in the user's personal marketplace. Creates files on disk under " +
-        '~/.dork/personal-marketplace/packages/<name>/ and registers the package in personal marketplace.json. ' +
-        'Requires user confirmation. Publishing to a public marketplace is a separate step.',
-      inputSchema: CreatePackageInputSchema,
-      annotations: A.mutateCreateLocal,
-    },
-    createCreatePackageHandler(deps)
-  );
+  for (const descriptor of MARKETPLACE_TOOL_DESCRIPTORS) {
+    server.registerTool(
+      descriptor.name,
+      {
+        description: descriptor.description,
+        inputSchema: descriptor.inputSchema,
+        annotations: descriptor.annotations,
+      },
+      descriptor.createHandler(deps)
+    );
+  }
 }
