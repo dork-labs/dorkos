@@ -3397,9 +3397,16 @@
               "balanced",
               "fast",
               "specialized",
-              "legacy"
+              "legacy",
+              "frontier",
+              "solid-coder",
+              "quick-helper"
             ],
             "description": "Model tier for UI grouping"
+          },
+          "local": {
+            "type": "boolean",
+            "description": "True when the model runs locally on this machine (e.g. Ollama), so nothing typed leaves the computer"
           },
           "supportsVision": {
             "type": "boolean"
