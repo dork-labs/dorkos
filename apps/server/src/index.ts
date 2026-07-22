@@ -53,6 +53,10 @@ import { createConnectorsRouter } from './routes/connectors.js';
 import { createSessionConnectorsRouter } from './routes/session-connectors.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { maybeCreateComposioProvider } from './services/connectors/providers/composio.js';
+import {
+  maybeCreateNangoProvider,
+  NangoEncryptionKeyError,
+} from './services/connectors/providers/nango.js';
 import { SessionConnectorService } from './services/connectors/session-exposure.js';
 import { toSdkMcpServers } from './services/runtimes/claude-code/mcp-server-config.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
@@ -894,6 +898,28 @@ async function start() {
   if (composioProvider) {
     connectorRegistry.register(composioProvider);
     logger.info('[Connectors] Composio managed backend registered');
+  }
+  // Register the Nango self-host backend ONLY when it is configured (secret key +
+  // base URL). When configured but NANGO_ENCRYPTION_KEY is unset/invalid, the
+  // adapter refuses loudly (spec §Detailed Design 4, DOR-371 P7): log the refusal
+  // and skip registration so the connector will not run unencrypted while the
+  // server still boots.
+  try {
+    const nangoProvider = await maybeCreateNangoProvider({
+      credentials: credentialProvider,
+      ...(env.NANGO_BASE_URL !== undefined && { baseUrl: env.NANGO_BASE_URL }),
+      ...(env.NANGO_ENCRYPTION_KEY !== undefined && { encryptionKey: env.NANGO_ENCRYPTION_KEY }),
+    });
+    if (nangoProvider) {
+      connectorRegistry.register(nangoProvider);
+      logger.info('[Connectors] Nango self-host backend registered');
+    }
+  } catch (err) {
+    if (err instanceof NangoEncryptionKeyError) {
+      logger.error(`[Connectors] Nango self-host backend refused: ${err.message}`);
+    } else {
+      throw err;
+    }
   }
   const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any

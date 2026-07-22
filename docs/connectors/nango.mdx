@@ -7,26 +7,76 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Nango (self-host)
 
-The self-host path lets you keep every login on your own server. You run Nango, and your logins stay in your database, on infrastructure you control. Nothing about a connection leaves your systems.
+The self-host path keeps every login on your own server. You run Nango, and your logins stay in your database, on infrastructure you control. Nothing about a connection leaves your systems. This is the private option, for when you would rather hold your own keys than hand them to a managed vault.
 
 <Callout type="warn">
-  The self-host connector is not built yet. This page is a placeholder so you know one setup rule up
-  front. Full steps arrive with the Nango connector.
+  The Nango connector is an early alpha. It has been built and code-reviewed against a mock Nango
+  server. It has not been confirmed against a real self-hosted Nango yet. Treat it as a preview: set
+  it up and try it, but do not rely on it for anything you cannot afford to redo.
 </Callout>
 
 ## Where your login lives
 
-When it ships, DorkOS will show you this before you connect:
+Before you connect, DorkOS shows you this:
 
 > You're connecting through your own Nango server. The keys to this connection are stored in your
 > database, on infrastructure you control. Nothing about this connection leaves your systems.
 
-## The one rule to know now: set an encryption key
+DorkOS never stores the login tokens for a self-host connection. It holds only two things: a
+reference to your Nango secret key, kept encrypted, and the address of your Nango server. The tokens
+themselves live in your Nango database.
 
-Nango only keeps your logins safe if you give it an encryption key. You must set `NANGO_ENCRYPTION_KEY` (a 256-bit key, written in base64) on your Nango server. Without it, Nango stores your logins in plain text, and the "your infrastructure, your keys" promise is not true.
+## Before you start
 
-The DorkOS setup will refuse to run the self-host connector until this key is set. That refusal is on purpose: it protects you from a silent, unsafe setup.
+You need a running, self-hosted Nango. The free version (the Docker Compose setup) gives you what
+this connector uses: OAuth sign-in and a secure proxy. That is all DorkOS needs. DorkOS never uses
+Nango's paid features.
 
-## Coming soon
+## The one rule you cannot skip: set an encryption key
 
-The full self-host guide, including how to point DorkOS at your Nango server, arrives with the Nango connector. Until then, use [Composio](/docs/connectors/composio) for a managed setup or a [raw MCP server](/docs/connectors/raw-mcp) if you run your own.
+Nango only keeps your logins safe if you give it an encryption key. You must set
+`NANGO_ENCRYPTION_KEY` on your Nango server. It is a 256-bit key, written in base64. Without it,
+Nango stores your logins in plain text, and the "your keys stay yours" promise is not true.
+
+Make a key like this:
+
+```bash
+openssl rand -base64 32
+```
+
+Set that same value in two places:
+
+1. On your **Nango server**, as `NANGO_ENCRYPTION_KEY`, so Nango encrypts what it stores.
+2. In **DorkOS**, as `NANGO_ENCRYPTION_KEY`, so DorkOS can confirm you set one.
+
+DorkOS checks the key you give it. It must decode from base64 to exactly 32 bytes. If the key is
+missing or the wrong size, DorkOS refuses to start the self-host connector and tells you why. That
+refusal is on purpose. It stops a silent, unsafe setup where your logins would sit unencrypted.
+
+## Point DorkOS at your Nango
+
+Set two more values in DorkOS:
+
+- `NANGO_BASE_URL`: the address of your Nango server, for example `http://localhost:3003`.
+- Your Nango **secret key**, kept in DorkOS's encrypted store so it never sits in a plain config
+  file.
+
+When both of these and a valid `NANGO_ENCRYPTION_KEY` are set, DorkOS turns on the self-host
+connector at startup. When any of them is missing, DorkOS leaves the connector off. Nothing breaks.
+You just do not see it until it is fully set up.
+
+## What works today, and what does not yet
+
+Connecting an account works. You sign in through your own Nango, and the account shows up with its
+custody marked as self-host. You can hold more than one account for the same service, and disconnect
+any of them.
+
+One piece is not wired up yet: letting an agent use those accounts as tools. The free Nango does not
+include a tool server, and DorkOS does not use Nango's paid one. The part that turns your Nango proxy
+into agent tools is a separate step that is not built yet. So for now, a self-host account is
+connected and safely held, but an agent cannot act through it. That part is coming.
+
+## Other ways to connect
+
+If you want a managed setup instead, use [Composio](/docs/connectors/composio). If you already run
+your own tool server, point DorkOS at a [raw MCP server](/docs/connectors/raw-mcp).
