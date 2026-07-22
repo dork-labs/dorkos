@@ -1,7 +1,7 @@
 ---
 id: 260722-120728
 title: The dashboard is an action surface, not an observability report
-status: proposed
+status: accepted
 created: 2026-07-22
 spec: dashboard-with-hands
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
