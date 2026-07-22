@@ -113,7 +113,7 @@ export const SmartGroupRulesSchema = z.object({
   /** Match any of these mesh namespaces (OR). */
   namespaces: z.array(z.string()).optional(),
   /** Match any of these attention states (OR). Mirrors `AttentionState`. */
-  statuses: z.array(z.enum(['needs-attention', 'active', 'idle', 'inactive'])).optional(),
+  statuses: z.array(z.enum(['needs-attention', 'active', 'idle', 'fresh', 'inactive'])).optional(),
   /** Activity within this window (ms), inclusive at the boundary. */
   lastActiveWithinMs: z.number().int().positive().optional(),
   /** `projectPath` starts-with match. */

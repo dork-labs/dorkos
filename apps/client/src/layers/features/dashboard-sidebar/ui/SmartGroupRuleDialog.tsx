@@ -28,7 +28,19 @@ const ACTIVITY_WINDOW_OPTIONS = [
   { value: String(7 * 24 * 60 * 60 * 1000), label: 'Last week' },
 ] as const;
 
-const STATUS_ORDER: AttentionState[] = ['needs-attention', 'active', 'idle', 'inactive'];
+const STATUS_ORDER = [
+  'needs-attention',
+  'active',
+  'idle',
+  'fresh',
+  'inactive',
+] as const satisfies readonly AttentionState[];
+
+// Compile-time exhaustiveness guard: if a new AttentionState is added and not
+// listed above, `UnlistedStatus` stops being `never` and this fails to build —
+// so the smart-group status picker can never silently omit a state again.
+type UnlistedStatus = Exclude<AttentionState, (typeof STATUS_ORDER)[number]>;
+const _statusOrderIsExhaustive: UnlistedStatus extends never ? true : never = true;
 
 /** One runtime checkbox option. */
 export interface RuntimeOption {

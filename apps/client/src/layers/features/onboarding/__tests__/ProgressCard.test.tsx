@@ -24,6 +24,14 @@ vi.mock('@/layers/shared/model', () => ({
     selector({ openSettingsToTab: mockOpenSettingsToTab }),
 }));
 
+const mockStartSession = vi.fn();
+vi.mock('@/layers/entities/config', () => ({
+  useDefaultAgentSession: () => ({
+    startSession: mockStartSession,
+    defaultAgentDir: '~/.dork/agents/dorkbot',
+  }),
+}));
+
 import { ProgressCard } from '../ui/ProgressCard';
 
 // ---------------------------------------------------------------------------
@@ -39,13 +47,24 @@ describe('ProgressCard', () => {
     cleanup();
   });
 
-  it('shows the Getting started heading and three deep-link rows', () => {
+  it('shows the Getting started heading and its rows, led by Talk to DorkBot', () => {
     render(<ProgressCard onDismiss={vi.fn()} />);
 
     expect(screen.getByText('Getting started')).toBeTruthy();
+    expect(screen.getByText('Talk to DorkBot')).toBeTruthy();
     expect(screen.getByText('Create an agent')).toBeTruthy();
     expect(screen.getByText('Schedule a task')).toBeTruthy();
     expect(screen.getByText('Add more agents')).toBeTruthy();
+  });
+
+  it('"Talk to DorkBot" is the first row and starts a session with the default agent', () => {
+    render(<ProgressCard onDismiss={vi.fn()} />);
+
+    const rows = screen.getAllByRole('button').map((b) => b.textContent);
+    expect(rows[1]).toContain('Talk to DorkBot');
+
+    fireEvent.click(screen.getByText('Talk to DorkBot'));
+    expect(mockStartSession).toHaveBeenCalledTimes(1);
   });
 
   it('"Create an agent" opens the agent creation dialog', () => {

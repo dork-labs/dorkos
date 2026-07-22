@@ -5,6 +5,7 @@ import { Search } from 'lucide-react';
 import { useIsMobile } from '@/layers/shared/model';
 import { OnboardingNavBar } from './OnboardingNavBar';
 import { useDiscoveryScan, useDiscoveryStore } from '@/layers/entities/discovery';
+import { resolveDefaultAgentDir } from '@/layers/entities/config';
 import type { RuntimeConnectSlot } from '@/layers/entities/runtime';
 import { useOnboarding } from '../model/use-onboarding';
 import { SystemRequirementsStep } from './SystemRequirementsStep';
@@ -200,10 +201,7 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
 
   /** Navigate to a chat session with the configured default agent. */
   const navigateToDefaultAgent = useCallback(() => {
-    const defaultAgent = config?.agents?.defaultAgent || 'dorkbot';
-    const defaultDir = config?.agents?.defaultDirectory || '~/.dork/agents';
-    const agentPath = `${defaultDir}/${defaultAgent}`;
-    navigate({ to: '/session', search: { dir: agentPath } });
+    navigate({ to: '/session', search: { dir: resolveDefaultAgentDir(config) } });
     onComplete();
   }, [config, navigate, onComplete]);
 

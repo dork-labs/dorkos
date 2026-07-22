@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { DashboardHeader } from '../ui/DashboardHeader';
 import { TooltipProvider } from '@/layers/shared/ui';
 
@@ -17,6 +17,14 @@ vi.mock('@/layers/shared/model', () => ({
     return selector ? selector(state) : state;
   },
   useNow: () => Date.now(),
+}));
+
+const mockStartSession = vi.fn();
+vi.mock('@/layers/entities/config', () => ({
+  useDefaultAgentSession: () => ({
+    startSession: mockStartSession,
+    defaultAgentDir: '~/.dork/agents/dorkbot',
+  }),
 }));
 
 vi.mock('@/layers/entities/tasks', () => ({
@@ -70,6 +78,10 @@ describe('DashboardHeader', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    cleanup();
+  });
+
   it('renders "Dashboard" text', () => {
     renderWithTooltip(<DashboardHeader />);
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
@@ -87,9 +99,17 @@ describe('DashboardHeader', () => {
     expect(dots.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('does not render quick-action buttons', () => {
+  it('renders a "New conversation" button that starts a session with the default agent', () => {
     renderWithTooltip(<DashboardHeader />);
-    expect(screen.queryByRole('button', { name: /new session/i })).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: /new conversation/i });
+    expect(button).toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(mockStartSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render other quick-action buttons', () => {
+    renderWithTooltip(<DashboardHeader />);
     expect(screen.queryByRole('button', { name: /schedule/i })).not.toBeInTheDocument();
   });
 });

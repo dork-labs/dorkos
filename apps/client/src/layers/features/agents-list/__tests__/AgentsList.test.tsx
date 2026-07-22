@@ -279,8 +279,19 @@ describe('AgentsList', () => {
     render(
       <AgentsList
         agents={[
-          makeAgent({ id: '1', name: 'Active Agent', healthStatus: 'active' }),
-          makeAgent({ id: '2', name: 'Stale Agent', healthStatus: 'stale' }),
+          makeAgent({
+            id: '1',
+            name: 'Active Agent',
+            healthStatus: 'active',
+            lastSeenAt: '2026-07-20T00:00:00.000Z',
+          }),
+          // A genuinely dormant agent carries an old last-seen timestamp.
+          makeAgent({
+            id: '2',
+            name: 'Stale Agent',
+            healthStatus: 'stale',
+            lastSeenAt: '2026-01-01T00:00:00.000Z',
+          }),
         ]}
         isLoading={false}
       />,
@@ -289,6 +300,22 @@ describe('AgentsList', () => {
 
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Stale')).toBeInTheDocument();
+  });
+
+  it('shows a never-active agent as "New", not "Stale"/"Never"', () => {
+    render(
+      <AgentsList
+        // A brand-new agent: server health is stale, last-seen is null.
+        agents={[makeAgent({ id: '1', name: 'DorkBot', healthStatus: 'stale', lastSeenAt: null })]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    // "New" appears in both the Status column and the Last Seen column.
+    expect(screen.getAllByText('New').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    expect(screen.queryByText('Never')).not.toBeInTheDocument();
   });
 
   it('shows "No agents registered." when data is empty', () => {

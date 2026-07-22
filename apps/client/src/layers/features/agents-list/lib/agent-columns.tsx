@@ -8,10 +8,11 @@
  */
 import type { ColumnDef } from '@tanstack/react-table';
 import { MessageSquare, Settings, Star } from 'lucide-react';
-import type { TopologyAgent, AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
+import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { Badge, Button } from '@/layers/shared/ui';
-import { cn, getAgentDisplayName, formatRelativeTime } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
+import { agentStatusDisplay, lastSeenLabel } from './agent-health-display';
 
 // ---------------------------------------------------------------------------
 // Extended row type — enriched in AgentsList before passing to DataTable
@@ -28,16 +29,9 @@ export interface AgentTableRow extends TopologyAgent {
 // Status helpers
 // ---------------------------------------------------------------------------
 
-const STATUS_CONFIG: Record<AgentHealthStatus, { label: string; dotClass: string }> = {
-  active: { label: 'Active', dotClass: 'bg-emerald-500' },
-  inactive: { label: 'Inactive', dotClass: 'bg-amber-500' },
-  stale: { label: 'Stale', dotClass: 'bg-muted-foreground/50' },
-  unreachable: { label: 'Unreachable', dotClass: 'bg-red-500' },
-};
-
 /** Compact health status indicator with colored dot and label. */
-function HealthStatus({ status }: { status: AgentHealthStatus }) {
-  const cfg = STATUS_CONFIG[status];
+function HealthStatus({ row }: { row: AgentTableRow }) {
+  const cfg = agentStatusDisplay(row.healthStatus, row.lastSeenAt);
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={cn('size-2 rounded-full', cfg.dotClass)} />
@@ -103,7 +97,7 @@ export function createAgentColumns(
     {
       accessorKey: 'healthStatus',
       header: 'Status',
-      cell: ({ row }) => <HealthStatus status={row.original.healthStatus} />,
+      cell: ({ row }) => <HealthStatus row={row.original} />,
     },
 
     // ── Runtime ── (hidden on mobile) ───────────────────────
@@ -156,11 +150,15 @@ export function createAgentColumns(
     {
       accessorKey: 'lastSeenAt',
       header: 'Last Seen',
-      cell: ({ row }) => (
-        <span className="text-muted-foreground text-xs tabular-nums">
-          {row.original.lastSeenAt ? formatRelativeTime(row.original.lastSeenAt) : 'Never'}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const { lastSeenAt, healthStatus } = row.original;
+        // A never-active agent reads as "New", not the alarming "Never".
+        return (
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {lastSeenLabel(healthStatus, lastSeenAt)}
+          </span>
+        );
+      },
     },
 
     // ── Actions ─────────────────────────────────────────────

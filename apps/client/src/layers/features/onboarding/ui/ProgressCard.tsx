@@ -1,7 +1,8 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronRight, Plus, Clock, Server, X, type LucideIcon } from 'lucide-react';
+import { ChevronRight, MessageSquare, Plus, Clock, Server, X, type LucideIcon } from 'lucide-react';
 import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
+import { useDefaultAgentSession } from '@/layers/entities/config';
 
 interface ProgressCardProps {
   /** Called when the user dismisses the getting-started card permanently. */
@@ -15,17 +16,24 @@ interface GettingStartedItem {
 }
 
 /**
- * Compact sidebar "Getting started" card. Each row is a deep link into the real
- * surface for that task — creating an agent, scheduling a task, connecting more
- * runtimes — rather than a replay of onboarding steps. Shown after the first-run
- * flow finishes, until the user dismisses it.
+ * Compact sidebar "Getting started" card. The first row starts a conversation
+ * with the default agent (DorkBot on a fresh install); the rest are deep links
+ * into the real surface for each task — creating an agent, scheduling a task,
+ * connecting more runtimes — rather than a replay of onboarding steps. Shown
+ * after the first-run flow finishes, until the user dismisses it.
  */
 export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const openSettingsToTab = useAppStore((s) => s.openSettingsToTab);
+  const { startSession } = useDefaultAgentSession();
 
   const items: GettingStartedItem[] = [
+    {
+      icon: MessageSquare,
+      label: 'Talk to DorkBot',
+      onClick: startSession,
+    },
     {
       icon: Plus,
       label: 'Create an agent',
