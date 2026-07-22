@@ -144,7 +144,7 @@ describe('MeetDorkBotStep', () => {
     expect(screen.getByTestId('continue-dorkbot')).toHaveTextContent('Saving...');
   });
 
-  it('calls onStepComplete and playCelebration on update success', () => {
+  it('advances onboarding on update success without an early celebration', () => {
     render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
     fireEvent.click(screen.getByTestId('continue-dorkbot'));
@@ -153,7 +153,9 @@ describe('MeetDorkBotStep', () => {
     const [, callbacks] = mockMutate.mock.calls[0];
     callbacks.onSuccess();
 
-    expect(mockPlayCelebration).toHaveBeenCalledTimes(1);
+    // The single confetti moment is reserved for the finish screen — this step
+    // must not fire it, so the payoff lands once.
+    expect(mockPlayCelebration).not.toHaveBeenCalled();
     expect(onStepComplete).toHaveBeenCalledTimes(1);
   });
 

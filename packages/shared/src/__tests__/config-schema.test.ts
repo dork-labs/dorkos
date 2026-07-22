@@ -48,7 +48,13 @@ describe('UserConfigSchema', () => {
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
-      onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+        completedAt: null,
+      },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -308,7 +314,13 @@ describe('USER_CONFIG_DEFAULTS', () => {
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
-      onboarding: { completedSteps: [], skippedSteps: [], startedAt: null, dismissedAt: null },
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+        completedAt: null,
+      },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -471,7 +483,7 @@ describe('ONBOARDING_STEPS', () => {
   });
 
   it('contains all expected steps', () => {
-    expect(ONBOARDING_STEPS).toEqual(['meet-dorkbot', 'discovery', 'tasks', 'adapters']);
+    expect(ONBOARDING_STEPS).toEqual(['meet-dorkbot', 'discovery']);
   });
 });
 

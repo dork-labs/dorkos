@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Bot, Users, Clock } from 'lucide-react';
+import { Bot, FolderOpen, type LucideIcon } from 'lucide-react';
 import { HoverBorderGradient } from '@/layers/shared/ui';
 import { fireCelebration } from '@/layers/shared/lib';
 import { useOnboarding } from '../model/use-onboarding';
@@ -31,27 +31,15 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
     }
   }, []);
 
-  const meetDorkbotDone = state.completedSteps.includes('meet-dorkbot');
-  const discoveryDone = state.completedSteps.includes('discovery');
-  const tasksDone = state.completedSteps.includes('tasks');
-
-  const summaryItems = [
-    {
-      icon: Bot,
-      label: meetDorkbotDone ? 'Met DorkBot' : 'DorkBot skipped',
-      done: meetDorkbotDone,
-    },
-    {
-      icon: Users,
-      label: discoveryDone ? 'Agents discovered' : 'Agents skipped',
-      done: discoveryDone,
-    },
-    {
-      icon: Clock,
-      label: tasksDone ? 'Schedules created' : 'Schedules skipped',
-      done: tasksDone,
-    },
-  ];
+  // Positive-only: show what the user actually did, never what they skipped.
+  // A summary of non-events under confetti reads as a scolding, not a payoff.
+  const summaryItems: { icon: LucideIcon; label: string }[] = [];
+  if (state.completedSteps.includes('meet-dorkbot')) {
+    summaryItems.push({ icon: Bot, label: 'Met DorkBot' });
+  }
+  if (state.completedSteps.includes('discovery')) {
+    summaryItems.push({ icon: FolderOpen, label: 'Imported your projects' });
+  }
 
   return (
     <motion.div
@@ -93,36 +81,38 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
         <p className="text-muted-foreground">Your workspace is configured and ready.</p>
       </div>
 
-      {/* Summary cards */}
-      <motion.div
-        className="w-full space-y-3"
-        initial="hidden"
-        animate="visible"
-        variants={
-          reducedMotion
-            ? {}
-            : { visible: { transition: { staggerChildren: 0.12, delayChildren: 0.3 } } }
-        }
-      >
-        {summaryItems.map(({ icon: Icon, label, done }) => (
-          <motion.div
-            key={label}
-            variants={
-              reducedMotion
-                ? {}
-                : {
-                    hidden: { opacity: 0, y: 12 },
-                    visible: { opacity: 1, y: 0 },
-                  }
-            }
-            transition={{ duration: 0.3 }}
-            className="flex items-center gap-3 rounded-lg border p-4"
-          >
-            <Icon className={`size-5 ${done ? 'text-primary' : 'text-muted-foreground/50'}`} />
-            <span className={done ? 'text-sm' : 'text-muted-foreground text-sm'}>{label}</span>
-          </motion.div>
-        ))}
-      </motion.div>
+      {/* Summary cards — only what the user actually completed */}
+      {summaryItems.length > 0 && (
+        <motion.div
+          className="w-full space-y-3"
+          initial="hidden"
+          animate="visible"
+          variants={
+            reducedMotion
+              ? {}
+              : { visible: { transition: { staggerChildren: 0.12, delayChildren: 0.3 } } }
+          }
+        >
+          {summaryItems.map(({ icon: Icon, label }) => (
+            <motion.div
+              key={label}
+              variants={
+                reducedMotion
+                  ? {}
+                  : {
+                      hidden: { opacity: 0, y: 12 },
+                      visible: { opacity: 1, y: 0 },
+                    }
+              }
+              transition={{ duration: 0.3 }}
+              className="flex items-center gap-3 rounded-lg border p-4"
+            >
+              <Icon className="text-primary size-5" />
+              <span className="text-sm">{label}</span>
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
 
       {/* CTA */}
       <motion.div

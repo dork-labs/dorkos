@@ -7,7 +7,6 @@ import {
   useRelayDeepLink,
   type DialogContribution,
 } from '@/layers/shared/model';
-import { OnboardingFlow } from '@/layers/features/onboarding';
 
 /**
  * Derive the setter name from an `openStateKey` by capitalizing its first letter
@@ -84,24 +83,17 @@ function RegistryDialog({ contribution }: { contribution: DialogContribution }) 
  * the SidebarProvider. This ensures dialogs survive sidebar open/close
  * cycles and mobile Sheet unmounts.
  *
- * Dialogs are rendered from the extension registry's `dialog` slot.
- * OnboardingFlow is hardcoded because it is not a standard open/close dialog.
+ * Dialogs are rendered from the extension registry's `dialog` slot. The
+ * first-run onboarding overlay is owned by the app shell, not this host.
  */
 export function DialogHost() {
   const dialogContributions = useSlotContributions('dialog');
-  const onboardingStep = useAppStore((s) => s.onboardingStep);
-  const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
 
   return (
     <>
       {dialogContributions.map((contribution) => (
         <RegistryDialog key={contribution.id} contribution={contribution} />
       ))}
-      {onboardingStep !== null && (
-        <div className="bg-background fixed inset-0 z-50">
-          <OnboardingFlow initialStep={onboardingStep} onComplete={() => setOnboardingStep(null)} />
-        </div>
-      )}
     </>
   );
 }

@@ -1,32 +1,46 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { Search } from 'lucide-react';
 import { useIsMobile } from '@/layers/shared/model';
 import { OnboardingNavBar } from './OnboardingNavBar';
-import { useMeshAgentPaths } from '@/layers/entities/mesh';
+import { useDiscoveryScan, useDiscoveryStore } from '@/layers/entities/discovery';
 import type { RuntimeConnectSlot } from '@/layers/entities/runtime';
 import { useOnboarding } from '../model/use-onboarding';
 import { SystemRequirementsStep } from './SystemRequirementsStep';
 import { WelcomeStep } from './WelcomeStep';
 import { MeetDorkBotStep } from './MeetDorkBotStep';
 import { AgentDiscoveryStep } from './AgentDiscoveryStep';
-import { TaskTemplatesStep } from './TaskTemplatesStep';
-import { OnboardingConsentStep } from './OnboardingConsentStep';
 import { OnboardingComplete } from './OnboardingComplete';
 
-const STEPS = ['meet-dorkbot', 'discovery', 'tasks'] as const;
+const STEPS = ['meet-dorkbot', 'discovery'] as const;
 
-/** Index of the Tasks step within STEPS — used for auto-skip logic. */
-const TASKS_STEP_INDEX = STEPS.indexOf('tasks');
+/** Zero-based index of the Meet DorkBot step. */
+const MEET_DORKBOT_STEP = 0;
+/** Zero-based index of the Import-projects (discovery) step. */
+const DISCOVERY_STEP = 1;
 
 /** Step index for the welcome screen (first thing the user sees). */
 const WELCOME_STEP = -2;
 /** Step index for the system requirements check (after welcome, before numbered steps). */
 const REQUIREMENTS_STEP = -1;
 
+/**
+ * How long to wait for the background project scan to finish before giving up
+ * and skipping the import step. The scan is prefetched while the user meets
+ * DorkBot, so it has almost always resolved by the time they continue.
+ */
+const DISCOVERY_RESOLVE_TIMEOUT_MS = 8000;
+
+/**
+ * Whether the import step gets shown after Meet DorkBot. `pending` = the scan
+ * has not resolved yet; `show` = it found projects worth importing; `skip` = it
+ * found nothing, so the step is recorded skipped and never rendered.
+ */
+type DiscoveryDecision = 'pending' | 'show' | 'skip';
+
 interface OnboardingFlowProps {
   onComplete: () => void;
-  initialStep?: number;
   /**
    * Terminal-free connect-flow renderer, injected by the app shell and threaded
    * into the requirements step's connect cards. The onboarding feature may not
@@ -40,25 +54,32 @@ interface OnboardingFlowProps {
  * Full-screen onboarding container managing step navigation, skip controls,
  * and animated transitions between onboarding steps.
  *
- * Flow: Welcome -> Requirements -> Meet DorkBot -> Discovery -> Tasks -> Complete
+ * Flow: Welcome -> Requirements -> Meet DorkBot -> (Import projects?) -> Complete
+ *
+ * The import step is conditional: the project scan is kicked off in the
+ * background when the user reaches Meet DorkBot, and the step is shown only if
+ * that scan found candidates. A fresh machine with nothing to import skips it
+ * silently instead of landing on a dead end.
  *
  * @param onComplete - Called when onboarding finishes (last step or skip all)
- * @param initialStep - Step index to start at (default: -2 for welcome)
  */
-export function OnboardingFlow({
-  onComplete,
-  initialStep = WELCOME_STEP,
-  renderRuntimeConnect,
-}: OnboardingFlowProps) {
-  const [currentStep, setCurrentStep] = useState(initialStep);
+export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingFlowProps) {
+  const [currentStep, setCurrentStep] = useState(WELCOME_STEP);
   const [direction, setDirection] = useState(1);
   const [showComplete, setShowComplete] = useState(false);
-  const [showConsent, setShowConsent] = useState(false);
-  const { completeStep, skipStep, dismiss, startOnboarding, config } = useOnboarding();
+  const [resolvingDiscovery, setResolvingDiscovery] = useState(false);
+  const [discoveryDecision, setDiscoveryDecision] = useState<DiscoveryDecision>('pending');
+  const { completeStep, skipStep, dismiss, startOnboarding, completeOnboarding, config } =
+    useOnboarding();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const reducedMotion = useReducedMotion();
-  const agentPaths = useMeshAgentPaths();
+
+  const { startScan } = useDiscoveryScan();
+  const { candidates, existingAgents, isScanning, lastScanAt } = useDiscoveryStore();
+  const hasScanResults = candidates.length > 0 || existingAgents.length > 0;
+  const prefetchStartedRef = useRef(false);
+  const [prefetchStarted, setPrefetchStarted] = useState(false);
 
   // Record onboarding start timestamp on mount
   useEffect(() => {
@@ -66,53 +87,106 @@ export function OnboardingFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Prefetch the project scan the moment the user reaches Meet DorkBot, so the
+  // import decision is usually ready by the time they continue. A warm store
+  // (lastScanAt already set) is reused rather than rescanned.
+  useEffect(() => {
+    if (currentStep === MEET_DORKBOT_STEP && !prefetchStartedRef.current) {
+      prefetchStartedRef.current = true;
+      setPrefetchStarted(true);
+      if (!lastScanAt && !isScanning) {
+        startScan();
+      }
+    }
+  }, [currentStep, lastScanAt, isScanning, startScan]);
+
+  // Resolve the import decision once the prefetched scan settles (or was already
+  // warm). `lastScanAt !== null` means a scan has completed at least once.
+  useEffect(() => {
+    if (!prefetchStarted || discoveryDecision !== 'pending') return;
+    if (isScanning || lastScanAt === null) return;
+    setDiscoveryDecision(hasScanResults ? 'show' : 'skip');
+  }, [prefetchStarted, isScanning, lastScanAt, hasScanResults, discoveryDecision]);
+
+  // Safety valve: never trap the user behind a hung scan — fall back to skip.
+  useEffect(() => {
+    if (!prefetchStarted) return;
+    const timer = setTimeout(() => {
+      setDiscoveryDecision((d) => (d === 'pending' ? 'skip' : d));
+    }, DISCOVERY_RESOLVE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [prefetchStarted]);
+
   /** Mark onboarding finished and show the completion screen. */
   const finishOnboarding = useCallback(() => {
-    // Mark adapters as completed since we removed that step from the visible flow
-    completeStep('adapters');
+    completeOnboarding();
     setShowComplete(true);
-  }, [completeStep]);
+  }, [completeOnboarding]);
 
-  const goNext = useCallback(() => {
-    if (currentStep < STEPS.length - 1) {
-      setDirection(1);
-      setCurrentStep((prev) => prev + 1);
-    } else if (!config?.telemetry?.userHasDecided) {
-      // Past the last numbered step: ask the telemetry consent question once,
-      // just before Complete. If the user already answered (via the standalone
-      // banner or a prior run), skip straight to finishing.
-      setDirection(1);
-      setShowConsent(true);
+  const advanceToDiscovery = useCallback(() => {
+    setDirection(1);
+    setCurrentStep(DISCOVERY_STEP);
+  }, []);
+
+  /**
+   * After Meet DorkBot, branch on the import decision: show the step, skip it
+   * silently, or wait on a checking screen until the scan resolves.
+   */
+  const routeAfterMeetDorkbot = useCallback(() => {
+    if (discoveryDecision === 'show') {
+      advanceToDiscovery();
+    } else if (discoveryDecision === 'skip') {
+      skipStep('discovery');
+      finishOnboarding();
     } else {
+      setResolvingDiscovery(true);
+    }
+  }, [discoveryDecision, advanceToDiscovery, skipStep, finishOnboarding]);
+
+  // While showing the checking screen, route as soon as the decision resolves.
+  useEffect(() => {
+    if (!resolvingDiscovery || discoveryDecision === 'pending') return;
+    setResolvingDiscovery(false);
+    if (discoveryDecision === 'show') {
+      advanceToDiscovery();
+    } else {
+      skipStep('discovery');
       finishOnboarding();
     }
-  }, [currentStep, config, finishOnboarding]);
-
-  const goBack = useCallback(() => {
-    if (currentStep > 0) {
-      setDirection(-1);
-      setCurrentStep((prev) => prev - 1);
-    } else if (currentStep === 0) {
-      // Go back to welcome
-      setDirection(-1);
-      setCurrentStep(WELCOME_STEP);
-    }
-  }, [currentStep]);
+  }, [resolvingDiscovery, discoveryDecision, advanceToDiscovery, skipStep, finishOnboarding]);
 
   const handleStepComplete = useCallback(() => {
     completeStep(STEPS[currentStep]);
-    goNext();
-  }, [currentStep, completeStep, goNext]);
+    if (currentStep === MEET_DORKBOT_STEP) {
+      routeAfterMeetDorkbot();
+    } else {
+      finishOnboarding();
+    }
+  }, [currentStep, completeStep, routeAfterMeetDorkbot, finishOnboarding]);
 
   const handleSkip = useCallback(() => {
     skipStep(STEPS[currentStep]);
-    goNext();
-  }, [currentStep, skipStep, goNext]);
+    if (currentStep === MEET_DORKBOT_STEP) {
+      routeAfterMeetDorkbot();
+    } else {
+      finishOnboarding();
+    }
+  }, [currentStep, skipStep, routeAfterMeetDorkbot, finishOnboarding]);
 
   const handleSkipAll = useCallback(async () => {
     await dismiss();
     onComplete();
   }, [dismiss, onComplete]);
+
+  const goBack = useCallback(() => {
+    if (currentStep > MEET_DORKBOT_STEP) {
+      setDirection(-1);
+      setCurrentStep((prev) => prev - 1);
+    } else if (currentStep === MEET_DORKBOT_STEP) {
+      setDirection(-1);
+      setCurrentStep(WELCOME_STEP);
+    }
+  }, [currentStep]);
 
   const handleWelcomeStart = useCallback(() => {
     setDirection(1);
@@ -121,7 +195,7 @@ export function OnboardingFlow({
 
   const handleRequirementsContinue = useCallback(() => {
     setDirection(1);
-    setCurrentStep(0);
+    setCurrentStep(MEET_DORKBOT_STEP);
   }, []);
 
   /** Navigate to a chat session with the configured default agent. */
@@ -132,18 +206,6 @@ export function OnboardingFlow({
     navigate({ to: '/session', search: { dir: agentPath } });
     onComplete();
   }, [config, navigate, onComplete]);
-
-  // Auto-skip Tasks step when no agents are registered
-  useEffect(() => {
-    if (
-      currentStep === TASKS_STEP_INDEX &&
-      !agentPaths.isLoading &&
-      agentPaths.data?.agents.length === 0
-    ) {
-      completeStep('tasks');
-      goNext();
-    }
-  }, [currentStep, agentPaths.isLoading, agentPaths.data, completeStep, goNext]);
 
   // Show the completion screen
   if (showComplete) {
@@ -156,12 +218,18 @@ export function OnboardingFlow({
     );
   }
 
-  // Telemetry consent — shown once, just before the completion screen
-  if (showConsent) {
+  // Brief checking screen while the prefetched scan settles after Meet DorkBot.
+  if (resolvingDiscovery) {
     return (
       <div className="bg-background h-full w-full overflow-y-auto">
-        <div className="flex min-h-full w-full items-center justify-center p-4">
-          <OnboardingConsentStep onComplete={finishOnboarding} />
+        <div className="flex min-h-full w-full flex-col items-center justify-center gap-4 p-4">
+          <motion.div
+            animate={reducedMotion ? {} : { scale: [1, 1.15, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Search className="text-muted-foreground size-8" />
+          </motion.div>
+          <p className="text-muted-foreground text-sm">Checking your machine...</p>
         </div>
       </div>
     );
@@ -217,10 +285,13 @@ export function OnboardingFlow({
         }),
       };
 
+  // Honest step count: only advertise the import step when it will actually run.
+  const totalSteps = discoveryDecision === 'skip' ? 1 : STEPS.length;
+
   return (
     <div className="bg-background flex h-full w-full flex-col">
       <OnboardingNavBar
-        totalSteps={STEPS.length}
+        totalSteps={totalSteps}
         currentStep={currentStep}
         onBack={goBack}
         onSkip={handleSkip}
@@ -246,13 +317,11 @@ export function OnboardingFlow({
             className="absolute inset-0 flex flex-col"
           >
             <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-4 py-4 sm:px-6">
-              {currentStep === 0 && <MeetDorkBotStep onStepComplete={handleStepComplete} />}
-              {currentStep === 1 && <AgentDiscoveryStep onStepComplete={handleStepComplete} />}
-              {currentStep === 2 && (
-                <TaskTemplatesStep
-                  onStepComplete={handleStepComplete}
-                  agents={agentPaths.data?.agents ?? []}
-                />
+              {currentStep === MEET_DORKBOT_STEP && (
+                <MeetDorkBotStep onStepComplete={handleStepComplete} />
+              )}
+              {currentStep === DISCOVERY_STEP && (
+                <AgentDiscoveryStep onStepComplete={handleStepComplete} />
               )}
             </div>
           </motion.div>

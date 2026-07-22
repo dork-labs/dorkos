@@ -1,6 +1,9 @@
 import { useAppStore } from '@/layers/shared/model';
+import { useUpdateConfig } from '@/layers/entities/config';
 import {
+  Button,
   SwitchSettingRow,
+  SettingRow,
   FieldCard,
   FieldCardContent,
   NavigationLayoutPanelHeader,
@@ -33,7 +36,29 @@ export function PreferencesTab() {
     setEnableTasksNotifications,
     promoEnabled,
     setPromoEnabled,
+    setSettingsOpen,
+    setOnboardingHiddenForSession,
   } = useAppStore();
+  const updateConfig = useUpdateConfig();
+
+  /**
+   * Reopen the first-run setup flow: clear the authoritative completion signals
+   * (`completedAt`/`dismissedAt`) and step history, drop the session-local
+   * suppression flag, and close Settings so the overlay is visible.
+   */
+  const replaySetup = () => {
+    updateConfig.mutate({
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+        completedAt: null,
+      },
+    });
+    setOnboardingHiddenForSession(false);
+    setSettingsOpen(false);
+  };
 
   return (
     <div className="space-y-4">
@@ -103,6 +128,24 @@ export function PreferencesTab() {
             checked={devtoolsOpen}
             onCheckedChange={() => toggleDevtools()}
           />
+        </FieldCardContent>
+      </FieldCard>
+
+      <FieldCard>
+        <FieldCardContent>
+          <SettingRow
+            label="Replay setup"
+            description="Walk through the first-run setup again from the beginning"
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={replaySetup}
+              disabled={updateConfig.isPending}
+            >
+              Replay setup
+            </Button>
+          </SettingRow>
         </FieldCardContent>
       </FieldCard>
     </div>

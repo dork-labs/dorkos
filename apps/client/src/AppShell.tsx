@@ -259,16 +259,17 @@ export function AppShell() {
   // event and stay poll-based — see the hook's doc for the honest topology.
   usePulseFreshness();
 
-  const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
+  const onboardingHiddenForSession = useAppStore((s) => s.onboardingHiddenForSession);
+  const setOnboardingHiddenForSession = useAppStore((s) => s.setOnboardingHiddenForSession);
 
   // First-run onboarding — gate rendering until config is loaded to prevent
   // a flash of the chat UI before the onboarding screen appears.
   const {
     shouldShowOnboarding,
+    shouldShowGettingStarted,
     isLoading: isOnboardingLoading,
     dismiss: dismissOnboarding,
   } = useOnboarding();
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
 
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
@@ -278,8 +279,13 @@ export function AppShell() {
     const timer = setTimeout(() => setLoadingTimedOut(true), 3000);
     return () => clearTimeout(timer);
   }, [isOnboardingLoading]);
-  const showOnboarding = shouldShowOnboarding && !onboardingDismissed;
-  const handleOnboardingComplete = useCallback(() => setOnboardingDismissed(true), []);
+  // The session flag hides the overlay immediately on finish/skip, ahead of the
+  // authoritative `completedAt`/`dismissedAt` config write catching up.
+  const showOnboarding = shouldShowOnboarding && !onboardingHiddenForSession;
+  const handleOnboardingComplete = useCallback(
+    () => setOnboardingHiddenForSession(true),
+    [setOnboardingHiddenForSession]
+  );
 
   // Route-aware sidebar and header slots — cross-fade on route change
   const sidebarSlot = useSidebarSlot();
@@ -377,12 +383,9 @@ export function AppShell() {
 
                       {/* ── Static footer — never animates ── */}
                       <SidebarFooter className="border-t p-3">
-                        {shouldShowOnboarding && (
+                        {shouldShowGettingStarted && (
                           <div className="mb-2">
-                            <ProgressCard
-                              onStepClick={(stepIndex) => setOnboardingStep(stepIndex)}
-                              onDismiss={dismissOnboarding}
-                            />
+                            <ProgressCard onDismiss={dismissOnboarding} />
                           </div>
                         )}
                         <SidebarFooterBar />

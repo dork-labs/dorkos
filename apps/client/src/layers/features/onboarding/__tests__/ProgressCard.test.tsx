@@ -11,30 +11,20 @@ vi.mock('motion/react', () => ({
   useReducedMotion: () => false,
 }));
 
-const mockUseOnboarding = vi.fn();
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
 
-vi.mock('../model/use-onboarding', () => ({
-  useOnboarding: () => mockUseOnboarding(),
+const mockAgentCreationOpen = vi.fn();
+const mockOpenSettingsToTab = vi.fn();
+vi.mock('@/layers/shared/model', () => ({
+  useAgentCreationStore: { getState: () => ({ open: mockAgentCreationOpen }) },
+  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({ openSettingsToTab: mockOpenSettingsToTab }),
 }));
 
 import { ProgressCard } from '../ui/ProgressCard';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function defaultOnboardingState(overrides: Record<string, unknown> = {}) {
-  return {
-    state: {
-      completedSteps: [] as string[],
-      skippedSteps: [] as string[],
-      startedAt: null,
-      dismissedAt: null,
-    },
-    shouldShowOnboarding: true,
-    ...overrides,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -43,112 +33,53 @@ function defaultOnboardingState(overrides: Record<string, unknown> = {}) {
 describe('ProgressCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseOnboarding.mockReturnValue(defaultOnboardingState());
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('shows both step names', () => {
-    render(<ProgressCard onStepClick={vi.fn()} onDismiss={vi.fn()} />);
+  it('shows the Getting started heading and three deep-link rows', () => {
+    render(<ProgressCard onDismiss={vi.fn()} />);
 
-    expect(screen.getByText('Create agents')).toBeTruthy();
-    expect(screen.getByText('Set up Tasks schedules')).toBeTruthy();
+    expect(screen.getByText('Getting started')).toBeTruthy();
+    expect(screen.getByText('Create an agent')).toBeTruthy();
+    expect(screen.getByText('Schedule a task')).toBeTruthy();
+    expect(screen.getByText('Add more agents')).toBeTruthy();
   });
 
-  it('shows Getting Started heading', () => {
-    render(<ProgressCard onStepClick={vi.fn()} onDismiss={vi.fn()} />);
+  it('"Create an agent" opens the agent creation dialog', () => {
+    render(<ProgressCard onDismiss={vi.fn()} />);
 
-    expect(screen.getByText('Getting Started')).toBeTruthy();
+    fireEvent.click(screen.getByText('Create an agent'));
+
+    expect(mockAgentCreationOpen).toHaveBeenCalledWith('new');
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('completed steps show muted text without strikethrough', () => {
-    mockUseOnboarding.mockReturnValue(
-      defaultOnboardingState({
-        state: {
-          completedSteps: ['discovery'],
-          skippedSteps: [],
-          startedAt: null,
-          dismissedAt: null,
-        },
-      })
-    );
+  it('"Schedule a task" navigates to /tasks', () => {
+    render(<ProgressCard onDismiss={vi.fn()} />);
 
-    render(<ProgressCard onStepClick={vi.fn()} onDismiss={vi.fn()} />);
+    fireEvent.click(screen.getByText('Schedule a task'));
 
-    const completedItem = screen.getByText('Create agents');
-    expect(completedItem.className).not.toContain('line-through');
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/tasks' });
+  });
+
+  it('"Add more agents" opens Settings on the runtimes tab', () => {
+    render(<ProgressCard onDismiss={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Add more agents'));
+
+    expect(mockOpenSettingsToTab).toHaveBeenCalledWith('runtimes');
   });
 
   it('dismiss button calls onDismiss', () => {
     const onDismiss = vi.fn();
 
-    render(<ProgressCard onStepClick={vi.fn()} onDismiss={onDismiss} />);
+    render(<ProgressCard onDismiss={onDismiss} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss getting started' }));
 
     expect(onDismiss).toHaveBeenCalledTimes(1);
-  });
-
-  it('incomplete step links call onStepClick with correct index', () => {
-    const onStepClick = vi.fn();
-
-    render(<ProgressCard onStepClick={onStepClick} onDismiss={vi.fn()} />);
-
-    // Click the second step (index 1)
-    fireEvent.click(screen.getByText('Set up Tasks schedules'));
-
-    expect(onStepClick).toHaveBeenCalledWith(1);
-  });
-
-  it('first step link calls onStepClick with index 0', () => {
-    const onStepClick = vi.fn();
-
-    render(<ProgressCard onStepClick={onStepClick} onDismiss={vi.fn()} />);
-
-    fireEvent.click(screen.getByText('Create agents'));
-
-    expect(onStepClick).toHaveBeenCalledWith(0);
-  });
-
-  it('skipped steps are still clickable', () => {
-    const onStepClick = vi.fn();
-
-    mockUseOnboarding.mockReturnValue(
-      defaultOnboardingState({
-        state: {
-          completedSteps: [],
-          skippedSteps: ['tasks'],
-          startedAt: null,
-          dismissedAt: null,
-        },
-      })
-    );
-
-    render(<ProgressCard onStepClick={onStepClick} onDismiss={vi.fn()} />);
-
-    fireEvent.click(screen.getByText('Set up Tasks schedules'));
-
-    expect(onStepClick).toHaveBeenCalledWith(1);
-  });
-
-  it('completed steps are not clickable buttons', () => {
-    mockUseOnboarding.mockReturnValue(
-      defaultOnboardingState({
-        state: {
-          completedSteps: ['discovery'],
-          skippedSteps: [],
-          startedAt: null,
-          dismissedAt: null,
-        },
-      })
-    );
-
-    render(<ProgressCard onStepClick={vi.fn()} onDismiss={vi.fn()} />);
-
-    // The completed step text is a span, not a button
-    const completedText = screen.getByText('Create agents');
-    expect(completedText.tagName).toBe('SPAN');
   });
 });

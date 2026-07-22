@@ -82,7 +82,6 @@ const mockSetSidebarOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
 const mockSetPickerOpen = vi.fn();
 const mockSetAgentDialogOpen = vi.fn();
-const mockSetOnboardingStep = vi.fn();
 const mockSetRelayOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
 let mockSidebarActiveTab: string = 'overview';
@@ -96,7 +95,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setTasksOpen: mockSetTasksOpen,
       setPickerOpen: mockSetPickerOpen,
       setAgentDialogOpen: mockSetAgentDialogOpen,
-      setOnboardingStep: mockSetOnboardingStep,
       setRelayOpen: mockSetRelayOpen,
       setSettingsOpen: mockSetSettingsOpen,
       setGlobalPaletteOpen: vi.fn(),

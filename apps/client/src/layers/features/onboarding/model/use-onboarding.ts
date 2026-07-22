@@ -5,7 +5,6 @@ import { useTransport } from '@/layers/shared/model';
 import type { OnboardingState, OnboardingStep } from '@dorkos/shared/config-schema';
 
 const CONFIG_KEY = ['config'] as const;
-const ALL_STEPS: OnboardingStep[] = ['meet-dorkbot', 'discovery', 'tasks', 'adapters'];
 
 /**
  * Manage first-time user onboarding state stored server-side in `~/.dork/config.json`.
@@ -33,6 +32,7 @@ export function useOnboarding() {
     skippedSteps: [],
     startedAt: null,
     dismissedAt: null,
+    completedAt: null,
   };
 
   const state: OnboardingState = config?.onboarding
@@ -41,12 +41,24 @@ export function useOnboarding() {
         skippedSteps: config.onboarding.skippedSteps as OnboardingStep[],
         startedAt: config.onboarding.startedAt,
         dismissedAt: config.onboarding.dismissedAt,
+        // `?? null` guards the upgrade window: an on-disk onboarding block
+        // written before `completedAt` existed arrives without the field (conf's
+        // top-level defaults-merge is shallow and never adds a nested default),
+        // so normalize it rather than let `undefined` read as "complete".
+        completedAt: config.onboarding.completedAt ?? null,
       }
     : DEFAULT_STATE;
 
-  const isOnboardingComplete = ALL_STEPS.every((step) => state.completedSteps.includes(step));
+  // `completedAt` is the single authoritative "onboarding is done" signal
+  // (set when the user reaches the finish screen). Per-step completion no
+  // longer gates this — a user who skips individual steps and finishes is done.
+  const isOnboardingComplete = state.completedAt !== null;
   const isOnboardingDismissed = state.dismissedAt !== null;
+  // The full-screen flow: brand-new installs only (neither finished nor dismissed).
   const shouldShowOnboarding = !isLoading && !isOnboardingComplete && !isOnboardingDismissed;
+  // The sidebar getting-started helper: after the flow is finished, until the
+  // user dismisses the card. A deliberate skip-all (dismissedAt) hides both.
+  const shouldShowGettingStarted = !isLoading && isOnboardingComplete && !isOnboardingDismissed;
 
   const patchOnboarding = useMutation({
     mutationFn: (patch: Partial<OnboardingState>) => transport.updateConfig({ onboarding: patch }),
@@ -84,10 +96,22 @@ export function useOnboarding() {
     });
   }
 
-  /** Dismiss onboarding entirely. */
+  /** Dismiss onboarding entirely (skip-all, or dismiss the getting-started card). */
   function dismiss() {
     return patchOnboarding.mutateAsync({
       dismissedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Mark onboarding finished — the authoritative completion signal. Persists
+   * `completedAt` so the full-screen flow never reappears on refresh, and the
+   * sidebar getting-started helper takes over.
+   */
+  function completeOnboarding() {
+    if (state.completedAt) return;
+    patchOnboarding.mutate({
+      completedAt: new Date().toISOString(),
     });
   }
 
@@ -106,9 +130,11 @@ export function useOnboarding() {
     isOnboardingComplete,
     isOnboardingDismissed,
     shouldShowOnboarding,
+    shouldShowGettingStarted,
     completeStep,
     skipStep,
     dismiss,
+    completeOnboarding,
     startOnboarding,
   };
 }

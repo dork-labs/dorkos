@@ -57,8 +57,15 @@ export function parseCredentialReference(
   return { scheme: scheme as CredentialScheme, value };
 }
 
-/** The guided onboarding steps a first-time user walks through. */
-export const ONBOARDING_STEPS = ['meet-dorkbot', 'discovery', 'tasks', 'adapters'] as const;
+/**
+ * The guided onboarding steps a first-time user walks through. Trimmed to the
+ * two that survive the shorter first-run flow: meeting DorkBot and importing
+ * projects. The former `'tasks'` and `'adapters'` values were retired (task
+ * scheduling moved out of onboarding; the adapters step never shipped) — a
+ * config migration scrubs them from any persisted `completedSteps`/`skippedSteps`
+ * so a narrowed enum never fails to parse an upgraded config.
+ */
+export const ONBOARDING_STEPS = ['meet-dorkbot', 'discovery'] as const;
 
 export const OnboardingStepSchema = z.enum(ONBOARDING_STEPS);
 export type OnboardingStep = z.infer<typeof OnboardingStepSchema>;
@@ -68,6 +75,14 @@ export const OnboardingStateSchema = z.object({
   skippedSteps: z.array(OnboardingStepSchema).default(() => []),
   startedAt: z.string().nullable().default(null),
   dismissedAt: z.string().nullable().default(null),
+  /**
+   * ISO timestamp when the user reached the finish line of the first-run flow
+   * (the completion screen). The single authoritative "onboarding is done"
+   * signal: once set, the full-screen flow never reappears on refresh. Distinct
+   * from `dismissedAt`, which records a deliberate skip/hide of the getting-started
+   * helper. Both null means a brand-new install that has not onboarded yet.
+   */
+  completedAt: z.string().nullable().default(null),
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
@@ -340,6 +355,7 @@ export const UserConfigSchema = z.object({
     skippedSteps: [],
     startedAt: null,
     dismissedAt: null,
+    completedAt: null,
   })),
   agentContext: z
     .object({

@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { generateFirstMessage } from '@dorkos/shared/dorkbot-templates';
-import { playCelebration } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useUpdateAgent } from '@/layers/entities/agent';
@@ -37,7 +36,8 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
       {
         onSuccess: () => {
           setDorkbotFirstMessage(generateFirstMessage(traits));
-          playCelebration();
+          // No celebration here — the single confetti moment is saved for the
+          // finish screen so the payoff lands once, undiluted.
           onStepComplete();
         },
         onError: (error) => {

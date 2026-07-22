@@ -155,6 +155,7 @@ router.get('/', async (_req, res) => {
       skippedSteps: [],
       startedAt: null,
       dismissedAt: null,
+      completedAt: null,
     },
     agentContext: configManager.get('agentContext') ?? {
       relayTools: true,
