@@ -28,7 +28,12 @@ import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
 import { SidebarFooterBar } from '@/layers/features/session-list';
 import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
-import { useOnboarding, OnboardingFlow, ProgressCard } from '@/layers/features/onboarding';
+import {
+  useOnboarding,
+  useOnboardingOverlayVisible,
+  OnboardingFlow,
+  ProgressCard,
+} from '@/layers/features/onboarding';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
   SessionHeader,
@@ -285,8 +290,14 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [isOnboardingLoading]);
   // The session flag hides the overlay immediately on finish/skip, ahead of the
-  // authoritative `completedAt`/`dismissedAt` config write catching up.
-  const showOnboarding = shouldShowOnboarding && !onboardingHiddenForSession;
+  // authoritative `completedAt`/`dismissedAt` config write catching up. The
+  // latch keeps the overlay mounted once shown so the `completedAt` write (made
+  // when the finish screen is reached) can't unmount it before the user clicks
+  // the finish CTA — only the session flag closes it.
+  const showOnboarding = useOnboardingOverlayVisible({
+    shouldShowOnboarding,
+    onboardingHiddenForSession,
+  });
   const handleOnboardingComplete = useCallback(
     () => setOnboardingHiddenForSession(true),
     [setOnboardingHiddenForSession]
