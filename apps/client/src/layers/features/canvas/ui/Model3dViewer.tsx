@@ -49,37 +49,20 @@ export function Model3dViewer({ url, format, label }: Model3dViewerProps) {
 }
 
 /**
- * Give any mesh that arrived WITHOUT its own material the shared calm-gray
- * surface, leaving embedded materials untouched.
- *
- * FBX, Collada (DAE) and 3MF carry their own materials/colors (that is the whole
- * point of using those richer formats over bare geometry), so their loaders set
- * `child.material` — we respect it. The fallback only paints a mesh that a loader
- * left material-less, so a bare object is never invisible. Geometry-only formats
- * (STL, PLY) never reach here: {@link loadThreeModel} builds their mesh with the
- * shared material directly. OBJ is the deliberate exception — its `.mtl` sidecar
- * is not fetched here, so its meshes carry only a default white material worth
- * replacing with the calm gray.
- *
- * @param object - The loaded scene/group to traverse.
- * @param material - The shared fallback material.
- */
-function applyFallbackMaterial(object: THREE.Object3D, material: THREE.Material): void {
-  object.traverse((child) => {
-    if (child instanceof THREE.Mesh && !child.material) {
-      child.material = material;
-    }
-  });
-}
-
-/**
  * Load a model with the three.js example loader for its format and hand the
  * framed-ready object back. Isolated from the render effect so the format→loader
  * dispatch is unit-testable without a WebGL context.
  *
+ * Material handling differs by format. STL and PLY are pure geometry (no material
+ * at all), so their mesh is built with the shared calm-gray `material`. OBJ meshes
+ * are reassigned that material too — its `.mtl` sidecar is not fetched here, so the
+ * loader leaves only a default white material. FBX, Collada (DAE) and 3MF embed
+ * their own materials/colors (the reason to use those richer formats), so their
+ * loaded scene is passed through untouched.
+ *
  * @param format - The three.js render format (never `gltf`, which model-viewer owns).
  * @param url - The model bytes URL.
- * @param material - Shared fallback material for geometry-only / material-less meshes.
+ * @param material - Shared material applied to geometry-only (STL/PLY) and OBJ meshes.
  * @param onLoad - Called with the loaded `Object3D` once parsing resolves.
  * @internal Exported for testing only.
  */
@@ -111,22 +94,17 @@ export function loadThreeModel(
       });
       break;
     case '3mf':
-      new ThreeMFLoader().load(url, (object) => {
-        applyFallbackMaterial(object, material);
-        onLoad(object);
-      });
+      // Materials/colors are embedded in the 3MF — pass the scene through as-is.
+      new ThreeMFLoader().load(url, (object) => onLoad(object));
       break;
     case 'fbx':
-      new FBXLoader().load(url, (object) => {
-        applyFallbackMaterial(object, material);
-        onLoad(object);
-      });
+      // FBX carries its own materials — pass the loaded group through as-is.
+      new FBXLoader().load(url, (object) => onLoad(object));
       break;
     case 'dae':
+      // Collada carries its own materials — pass its scene through as-is.
       new ColladaLoader().load(url, (collada) => {
-        if (!collada) return;
-        applyFallbackMaterial(collada.scene, material);
-        onLoad(collada.scene);
+        if (collada) onLoad(collada.scene);
       });
       break;
     case 'gltf':
@@ -134,6 +112,33 @@ export function loadThreeModel(
       // in Model3dViewer before ThreeModelViewer mounts. Guarded for exhaustiveness.
       break;
   }
+}
+
+/** Dispose a material and any textures it references, releasing their GPU memory. */
+function disposeMaterial(material: THREE.Material): void {
+  // Textures hang off material properties (map, normalMap, aoMap, …) as Texture
+  // values; dispose each before the material itself.
+  for (const value of Object.values(material)) {
+    if (value instanceof THREE.Texture) value.dispose();
+  }
+  material.dispose();
+}
+
+/**
+ * Release the GPU resources (geometries, materials, textures) a loaded scene holds.
+ * Called on unmount so repeatedly opening and closing 3D documents — FBX/DAE/3MF
+ * can carry textures — never leaks GPU memory.
+ *
+ * @param root - The scene root to traverse.
+ */
+function disposeSceneResources(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.geometry?.dispose();
+    const material = child.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(material)) material.forEach(disposeMaterial);
+    else if (material) disposeMaterial(material);
+  });
 }
 
 /**
@@ -213,6 +218,13 @@ function ThreeModelViewer({ url, format, label }: Model3dViewerProps) {
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.dispose();
+      // Release the loaded model's GPU resources before tearing down the renderer,
+      // so reopening 3D documents doesn't leak geometries/materials/textures.
+      disposeSceneResources(scene);
+      // The shared material is unused by formats that embed their own (FBX/DAE/3MF),
+      // so the scene traversal above won't reach it — dispose it directly. For
+      // STL/PLY/OBJ it was already disposed above; Material.dispose() is idempotent.
+      meshMaterial.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
