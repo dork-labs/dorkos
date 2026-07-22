@@ -31,6 +31,7 @@ export {
   peekProjector,
   disposeProjector,
   rekeyProjector,
+  onProjectorRekey,
   onProjectorStatusChange,
   setSessionEventStore,
   getSessionEventStore,

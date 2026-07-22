@@ -20,6 +20,8 @@ import { connectedAccounts, eq, type Db } from '@dorkos/db';
 import type {
   ConnectedAccount,
   ConnectedAccountId,
+  ConnectedAccountStatus,
+  ConnectorCustody,
   ConnectorProvider,
   ConnectorToolkit,
 } from '@dorkos/shared/connector-provider';
@@ -49,6 +51,27 @@ export interface AggregatedToolkits {
   toolkits: ConnectorToolkit[];
   /** One entry per provider that failed or timed out (never a hard failure). */
   warnings: ConnectorWarning[];
+}
+
+/**
+ * One `connected_accounts` routing-cache row — the provider-neutral metadata
+ * that binds an opaque `ConnectedAccountId` to its owning backend and carries
+ * the naming/disclosure fields the session tool surface reads (toolkit, label,
+ * custody) without ever exposing which vendor is behind the connection.
+ */
+export interface ConnectedAccountBinding {
+  /** The opaque account handle this row routes. */
+  accountId: ConnectedAccountId;
+  /** Owning backend type — SERVER-ONLY, used to route, never in a tool-server name. */
+  provider: string;
+  /** Service slug, e.g. `'gmail'` — half of the injected tool-server name. */
+  toolkit: string;
+  /** User-facing disambiguator, e.g. `'work'` — the other half of the name. */
+  label: string;
+  /** Custody stance, echoed so a per-account disclosure line can be rendered. */
+  custody: ConnectorCustody;
+  /** Last-known lifecycle status, used to explain an unexposable account. */
+  status: ConnectedAccountStatus;
 }
 
 /** Construction options for {@link ConnectorRegistry}. */
@@ -133,13 +156,34 @@ export class ConnectorRegistry {
    * @param accountId - The opaque account handle to route.
    */
   providerForAccount(accountId: ConnectedAccountId): ConnectorProvider | undefined {
+    const binding = this.accountBinding(accountId);
+    if (!binding) return undefined;
+    return this.resolveProvider(binding.provider);
+  }
+
+  /**
+   * Read the full routing-cache row for an account id — the provider-neutral
+   * metadata (owning provider, toolkit, label, custody, status) the session
+   * tool surface needs to name and disclose an attached account. Returns
+   * `undefined` when the id is unknown.
+   *
+   * @param accountId - The opaque account handle to look up.
+   */
+  accountBinding(accountId: ConnectedAccountId): ConnectedAccountBinding | undefined {
     const row = this._db
-      .select({ provider: connectedAccounts.provider })
+      .select()
       .from(connectedAccounts)
       .where(eq(connectedAccounts.accountId, accountId))
       .get();
     if (!row) return undefined;
-    return this.resolveProvider(row.provider);
+    return {
+      accountId: row.accountId as ConnectedAccountId,
+      provider: row.provider,
+      toolkit: row.toolkit,
+      label: row.label,
+      custody: row.custody,
+      status: row.status,
+    };
   }
 
   /**

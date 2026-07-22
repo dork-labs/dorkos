@@ -64,6 +64,7 @@ import {
   ConnectStartSchema,
   ConnectPollSchema,
   ConnectedAccountSchema,
+  ConnectedAccountStatusSchema,
 } from '@dorkos/shared/connector-provider';
 import { z } from 'zod';
 
@@ -2358,6 +2359,102 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Account disconnected (or already absent)' },
+  },
+});
+
+// --- Session ↔ connector attach/detach (the consent binding) ---
+
+/** A per-account notice that an attached account could not be exposed right now. */
+const SessionConnectorWarningSchema = z.object({
+  accountId: z.string(),
+  label: z.string(),
+  reason: z.enum(['expired', 'revoked', 'unavailable']),
+});
+
+/** One attached account's status in a session's connector surface. */
+const SessionConnectorAccountSchema = z.object({
+  accountId: z.string(),
+  toolkit: z.string(),
+  label: z.string(),
+  status: ConnectedAccountStatusSchema,
+  serverName: z.string().optional(),
+  exposed: z.boolean(),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/connectors',
+  tags: ['Connectors'],
+  summary: "A session's connector surface (attached accounts + warnings)",
+  description:
+    'Lists the connected accounts explicitly attached to a session, each with its exposure state, ' +
+    'plus per-account warnings for attached accounts that cannot be exposed right now (the ' +
+    '`toolServerForAccount` null branch: expired / revoked / unavailable).',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Attached accounts and per-account degradation warnings',
+      content: {
+        'application/json': {
+          schema: z.object({
+            accounts: z.array(SessionConnectorAccountSchema),
+            warnings: z.array(SessionConnectorWarningSchema),
+          }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/connectors/{accountId}',
+  tags: ['Connectors'],
+  summary: 'Attach a connected account to a session (the consent point)',
+  description:
+    'Attaches an account to a session so its tools are exposed as an MCP tool server, and ' +
+    're-shows the custody disclosure (spec §Detailed Design 3). A known account whose connection ' +
+    'resolves null still attaches (consent recorded) but is reported unexposed via a warning; no ' +
+    'connection detail ever crosses to the client.',
+  request: {
+    params: z.object({ id: z.string(), accountId: z.string() }),
+  },
+  responses: {
+    200: {
+      description:
+        'The account attached; carries its status, the custody disclosure, and any warning',
+      content: {
+        'application/json': {
+          schema: z.object({
+            account: SessionConnectorAccountSchema,
+            disclosure: z.string(),
+            warning: SessionConnectorWarningSchema.optional(),
+          }),
+        },
+      },
+    },
+    404: {
+      description: 'Unknown connected account',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/sessions/{id}/connectors/{accountId}',
+  tags: ['Connectors'],
+  summary: 'Detach a connected account from a session (idempotent)',
+  description:
+    'Removes the consent binding so the account is no longer exposed to the session. Idempotent — ' +
+    'detaching an unattached account still resolves 204.',
+  request: {
+    params: z.object({ id: z.string(), accountId: z.string() }),
+  },
+  responses: {
+    204: { description: 'Account detached (or already absent)' },
   },
 });
 
