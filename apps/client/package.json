@@ -54,7 +54,7 @@
     "@xyflow/react": "^12.11.1",
     "ansi-regex": "^6.2.2",
     "ansi-to-react": "^6.2.6",
-    "blintz": "^0.3.0",
+    "blintz": "^0.4.0",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
