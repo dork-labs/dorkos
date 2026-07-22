@@ -1,7 +1,7 @@
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { ModelNatureBadge, RuntimeSetupPanel } from '@/layers/entities/runtime';
+import { RuntimeSetupPanel } from '@/layers/entities/runtime';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 
 const noop = () => {};
@@ -63,7 +63,6 @@ export function RuntimeSetupShowcases() {
   return (
     <>
       <RuntimeSetupPanelShowcase />
-      <ModelNatureBadgeShowcase />
     </>
   );
 }
@@ -119,50 +118,6 @@ function RuntimeSetupPanelShowcase() {
             registeredTypes={['claude-code', 'codex']}
             onRecheck={noop}
           />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-/**
- * Per-model nature badges — the honest privacy/cost + capability read at the
- * point of model choice. Derived from provider/locality, never a per-model
- * table; a local model is never oversold as frontier.
- */
-function ModelNatureBadgeShowcase() {
-  return (
-    <PlaygroundSection
-      title="ModelNatureBadge"
-      description="An honest per-model read at the point of choice: 🔒 local · private · free vs $ cloud · per-token, plus a capability line that never sells a local model as frontier-equivalent (spec decision 11; DOR-180 honesty rule)."
-    >
-      <ShowcaseLabel>Compact badges (inline, at the point of choice)</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="flex flex-wrap items-center gap-3">
-          <ModelNatureBadge provider="ollama" modelId="qwen2.5-coder:7b" />
-          <ModelNatureBadge provider="ollama" modelId="qwen2.5-coder:32b" />
-          <ModelNatureBadge provider="openrouter" modelId="anthropic/claude-3.5-sonnet" />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Detail — small local model (honest sub-14B caveat)</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="max-w-md">
-          <ModelNatureBadge provider="ollama" modelId="qwen2.5-coder:7b" detail />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Detail — capable local model (14B+)</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="max-w-md">
-          <ModelNatureBadge provider="ollama" modelId="qwen2.5-coder:32b" detail />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Detail — cloud model (per-token, frontier available)</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="max-w-md">
-          <ModelNatureBadge provider="openrouter" modelId="anthropic/claude-3.5-sonnet" detail />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
