@@ -1,0 +1,70 @@
+---
+title: Composio (managed)
+description: Connect a service like Gmail through Composio's secure vault
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Composio (managed)
+
+Composio is the simple default for connecting a service. It handles the sign-in for you and holds your login in its own secure vault. You give DorkOS one Composio key, and it will let you connect services like Gmail, Slack, and Notion.
+
+<Callout type="warn">
+  This path is built but not yet confirmed end to end. It is in alpha. Try it in a safe account
+  first.
+</Callout>
+
+## Before you connect: where your login lives
+
+DorkOS shows you this before you connect, and again on each connected account. Read it once so there are no surprises:
+
+> Connecting Gmail takes you to Google to sign in. Composio stores your connected accounts' login access in its own secure vault, not on your computer. Your agents can then act for you; your password is never shared, and you can disconnect anytime.
+
+In short: your password never touches DorkOS or Composio. Composio holds a token that lets your agents act, and you can disconnect at any time.
+
+## What DorkOS stores
+
+DorkOS keeps only your Composio key, saved as a safe reference (not plain text on disk). It does not store the logins for Gmail, Slack, or any other service you connect. Those live in Composio's vault. That is the whole point of the managed path.
+
+## Set it up
+
+<Steps>
+
+<Step>
+
+### Get a Composio API key
+
+Create an account at Composio and copy your API key. This one key lets DorkOS reach every service you connect through Composio.
+
+</Step>
+
+<Step>
+
+### Give the key to DorkOS
+
+Save the key in DorkOS settings. DorkOS stores it as a secure reference, the same way it stores every other secret.
+
+</Step>
+
+<Step>
+
+### Connect a service
+
+Ask to connect a service (for example, "Connect to my Gmail"). DorkOS opens the sign-in page for that service. You sign in there, not in DorkOS. When you come back, the account shows up with its label.
+
+</Step>
+
+<Step>
+
+### Connect a second account (optional)
+
+Connect another account of the same service and give it a label, like "work". Both accounts show up in your list, each with its own label and its own custody line.
+
+</Step>
+
+</Steps>
+
+## Use it in a session
+
+Attach a connected account to a session to let that session's agent use it. Only accounts you attach are available. If an account's login has expired, DorkOS shows a "reconnect" note instead of quietly dropping it.

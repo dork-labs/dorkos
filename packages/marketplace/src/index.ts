@@ -16,6 +16,7 @@
 export {
   MarketplacePackageManifestSchema,
   PackageNameSchema,
+  CONNECTOR_ADAPTER_TYPE,
   shapeCrossFieldChecks,
   type MarketplacePackageManifest,
   type PluginPackageManifest,

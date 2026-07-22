@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   MarketplacePackageManifestSchema,
+  CONNECTOR_ADAPTER_TYPE,
   type MarketplacePackageManifest,
   type PluginPackageManifest,
   type AgentPackageManifest,
@@ -106,6 +107,38 @@ describe('MarketplacePackageManifestSchema — valid manifests', () => {
     } else {
       throw new Error('expected adapter variant');
     }
+  });
+
+  it('accepts a connector adapter manifest (adapterType: connector) and lets another package depend on it', () => {
+    // The connector distribution convention (connector-gateway spec §Detailed
+    // Design 6): a ConnectorProvider gateway ships as a normal adapter package
+    // with the well-known `adapterType: 'connector'` — no PackageTypeSchema
+    // change — and is depended on via the existing adapter dependency grammar.
+    const result = MarketplacePackageManifestSchema.parse({
+      ...baseFields,
+      name: 'connector-composio',
+      type: 'adapter',
+      adapterType: CONNECTOR_ADAPTER_TYPE,
+      displayName: 'Composio Connector',
+      requires: ['skill-pack:some-tools@^1.0.0'],
+    });
+
+    expect(result.type).toBe('adapter');
+    if (result.type === 'adapter') {
+      expect(result.adapterType).toBe('connector');
+      const narrowed = result satisfies AdapterPackageManifest;
+      expect(narrowed.adapterType).toBe(CONNECTOR_ADAPTER_TYPE);
+    } else {
+      throw new Error('expected adapter variant');
+    }
+
+    // A consumer declares the dependency on the connector adapter by name.
+    const consumer = MarketplacePackageManifestSchema.parse({
+      ...baseFields,
+      type: 'plugin',
+      requires: ['adapter:connector-composio@^1.0.0'],
+    });
+    expect(consumer.requires).toEqual(['adapter:connector-composio@^1.0.0']);
   });
 
   it('accepts all common optional fields', () => {

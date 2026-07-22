@@ -1,0 +1,60 @@
+---
+title: Connectors
+description: Let your agents act in the apps you already use, like Gmail and Slack
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Connectors
+
+A connector lets your agents act for you in a real service, like reading your Gmail or posting to Slack. You connect an account once. After that, the agent can use that account's tools inside a session.
+
+<Callout type="warn">
+  Connectors are new and still in alpha. They are built and tested against the code, but not yet
+  confirmed end to end with a real account. Treat them as preview, not finished.
+</Callout>
+
+## Connect more than one account
+
+You can connect two accounts of the same service and keep them apart. A personal Gmail and a work Gmail show up as two separate connections. Each one gets its own label, and an agent uses whichever you attach to the session. Neither one leaks into the other.
+
+## Where your login lives (custody)
+
+Every connector moves your login somewhere. DorkOS tells you where, in plain words, before you connect and again on each connected account. This is the honest part: you always know who holds the keys.
+
+There are three custody types:
+
+- **Managed**: a trusted company (Composio) holds your login in its own secure vault, not on your computer. This is the easiest path.
+- **Self-host**: your own server (Nango) holds the login, on infrastructure you control. Nothing leaves your systems.
+- **External**: the service's own server holds its login. DorkOS never sees or stores it.
+
+You pick the path per service. You can hold a managed Gmail and a self-host Slack at the same time.
+
+## Which path to pick
+
+When you ask to connect a service, DorkOS suggests the best way to do it:
+
+- If the service has a purpose-built two-way adapter in DorkOS (like Slack), that comes first. It is richer than a generic connection.
+- If not, the managed connector (Composio) is the simple default.
+- If you already run your own remote tool server for the service, you can point straight at it.
+
+## Set up a connector
+
+<Cards>
+  <Card
+    title="Composio (managed)"
+    href="/docs/connectors/composio"
+    description="The simple default. Connect a service through Composio's secure vault."
+  />
+  <Card
+    title="Raw MCP server"
+    href="/docs/connectors/raw-mcp"
+    description="Point DorkOS at a remote tool server that manages its own sign-in."
+  />
+  <Card
+    title="Nango (self-host)"
+    href="/docs/connectors/nango"
+    description="Keep every login on infrastructure you control. Coming soon."
+  />
+</Cards>

@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./harness-boot": "./src/harness-boot.ts",
     "./services/runtimes/claude-code": "./src/services/runtimes/claude-code/index.ts",
-    "./services/session": "./src/services/session/index.ts"
+    "./services/session": "./src/services/session/index.ts",
+    "./services/connectors": "./src/services/connectors/index.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

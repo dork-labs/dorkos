@@ -1,0 +1,53 @@
+---
+title: Raw MCP server
+description: Point DorkOS at a remote tool server that manages its own sign-in
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Raw MCP server
+
+Some services run their own remote tool server that speaks MCP (the standard that lets AI tools talk to each other). If you already have one, you can point DorkOS straight at it. No middleman holds your login.
+
+<Callout type="warn">This path is built but not yet confirmed end to end. It is in alpha.</Callout>
+
+## Where your login lives
+
+The remote server holds its own sign-in. DorkOS never sees or stores its keys. DorkOS shows you this before you connect:
+
+> This tool connects straight to that server. DorkOS doesn't store or see its keys, that server manages its own sign-in.
+
+## What you get
+
+This path connects one account per server. It does not manage several accounts of the same service. If you need two accounts of one service, use the [Composio](/docs/connectors/composio) path instead.
+
+## Set it up
+
+<Steps>
+
+<Step>
+
+### Have a remote MCP server ready
+
+You need a server you can reach over the web, with its own sign-in already set up. This is usually a server the service itself runs, or one you host.
+
+</Step>
+
+<Step>
+
+### Connect DorkOS to it
+
+Point DorkOS at the server's address. DorkOS signs in using the standard web sign-in flow. Your keys stay on the server, never on your computer.
+
+</Step>
+
+<Step>
+
+### Use it in a session
+
+Attach the connection to a session to let that session's agent use the server's tools.
+
+</Step>
+
+</Steps>

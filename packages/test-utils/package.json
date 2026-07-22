@@ -10,7 +10,8 @@
     "./mock-factories": "./src/mock-factories.ts",
     "./react-helpers": "./src/react-helpers.tsx",
     "./sse-helpers": "./src/sse-helpers.ts",
-    "./sse-test-helpers": "./src/sse-test-helpers.ts"
+    "./sse-test-helpers": "./src/sse-test-helpers.ts",
+    "./fake-connector-provider": "./src/fake-connector-provider.ts"
   },
   "scripts": {
     "lint": "eslint .",

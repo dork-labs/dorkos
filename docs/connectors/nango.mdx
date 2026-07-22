@@ -1,0 +1,32 @@
+---
+title: Nango (self-host)
+description: Keep every login on infrastructure you control
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Nango (self-host)
+
+The self-host path lets you keep every login on your own server. You run Nango, and your logins stay in your database, on infrastructure you control. Nothing about a connection leaves your systems.
+
+<Callout type="warn">
+  The self-host connector is not built yet. This page is a placeholder so you know one setup rule up
+  front. Full steps arrive with the Nango connector.
+</Callout>
+
+## Where your login lives
+
+When it ships, DorkOS will show you this before you connect:
+
+> You're connecting through your own Nango server. The keys to this connection are stored in your
+> database, on infrastructure you control. Nothing about this connection leaves your systems.
+
+## The one rule to know now: set an encryption key
+
+Nango only keeps your logins safe if you give it an encryption key. You must set `NANGO_ENCRYPTION_KEY` (a 256-bit key, written in base64) on your Nango server. Without it, Nango stores your logins in plain text, and the "your infrastructure, your keys" promise is not true.
+
+The DorkOS setup will refuse to run the self-host connector until this key is set. That refusal is on purpose: it protects you from a silent, unsafe setup.
+
+## Coming soon
+
+The full self-host guide, including how to point DorkOS at your Nango server, arrives with the Nango connector. Until then, use [Composio](/docs/connectors/composio) for a managed setup or a [raw MCP server](/docs/connectors/raw-mcp) if you run your own.
