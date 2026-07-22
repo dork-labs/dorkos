@@ -38,7 +38,10 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
     summaryItems.push({ icon: Bot, label: 'Met DorkBot' });
   }
   if (state.completedSteps.includes('discovery')) {
-    summaryItems.push({ icon: FolderOpen, label: 'Imported your projects' });
+    // "Reviewed", not "Imported" — the step completes even when the user
+    // looks at the found projects and imports none; never claim what may
+    // not have happened.
+    summaryItems.push({ icon: FolderOpen, label: 'Reviewed your projects' });
   }
 
   return (

@@ -1257,6 +1257,26 @@ describe('scrubRetiredOnboardingSteps migration (shorter first-run flow)', () =>
       skippedSteps: ['discovery'],
       startedAt: '2026-07-20T00:00:00Z',
       dismissedAt: null,
+      // 'adapters' in completedSteps marks an old-flow finish — backfilled.
+      completedAt: '2026-07-20T00:00:00Z',
+    });
+  });
+
+  it('does not backfill completedAt for a user who never finished the old flow', () => {
+    const store = createMockStore({
+      onboarding: {
+        completedSteps: ['meet-dorkbot'],
+        skippedSteps: ['tasks'],
+        startedAt: '2026-07-20T00:00:00Z',
+        dismissedAt: null,
+      },
+    });
+    scrubRetiredOnboardingSteps(store);
+    expect(store.data.onboarding).toEqual({
+      completedSteps: ['meet-dorkbot'],
+      skippedSteps: [],
+      startedAt: '2026-07-20T00:00:00Z',
+      dismissedAt: null,
     });
   });
 
@@ -1360,9 +1380,14 @@ describe('scrubRetiredOnboardingSteps migration (shorter first-run flow)', () =>
     const onboarding = store.get('onboarding') as {
       completedSteps: string[];
       skippedSteps: string[];
+      completedAt: string | null;
     };
     expect(onboarding.completedSteps).toEqual(['meet-dorkbot', 'discovery']);
     expect(onboarding.skippedSteps).toEqual([]);
+    // The retired synthetic 'adapters' completion marked the old flow's finish,
+    // so the upgrade backfills the new authoritative signal — an
+    // already-onboarded user is never re-onboarded.
+    expect(onboarding.completedAt).toBe('2026-07-01T00:00:00Z');
     // Unrelated user data survives the upgrade untouched.
     expect((store.get('server') as { port: number }).port).toBe(5000);
     fs.rmSync(dir, { recursive: true, force: true });

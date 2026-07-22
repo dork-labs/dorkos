@@ -75,6 +75,7 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     skippedSteps: [],
     startedAt: null,
     dismissedAt: null,
+    completedAt: null,
   },
   agentContext: {
     relayTools: true,

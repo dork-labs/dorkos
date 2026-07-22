@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/layers/shared/model';
 import { useUpdateConfig } from '@/layers/entities/config';
 import {
@@ -40,6 +41,7 @@ export function PreferencesTab() {
     setOnboardingHiddenForSession,
   } = useAppStore();
   const updateConfig = useUpdateConfig();
+  const queryClient = useQueryClient();
 
   /**
    * Reopen the first-run setup flow: clear the authoritative completion signals
@@ -47,15 +49,25 @@ export function PreferencesTab() {
    * suppression flag, and close Settings so the overlay is visible.
    */
   const replaySetup = () => {
-    updateConfig.mutate({
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-        completedAt: null,
+    updateConfig.mutate(
+      {
+        onboarding: {
+          completedSteps: [],
+          skippedSteps: [],
+          startedAt: null,
+          dismissedAt: null,
+          completedAt: null,
+        },
       },
-    });
+      {
+        onSuccess: () => {
+          // useUpdateConfig only invalidates ['config','current']; the
+          // onboarding gate reads the bare ['config'] entry. Invalidate the
+          // prefix so both caches refresh and the overlay reopens immediately.
+          void queryClient.invalidateQueries({ queryKey: ['config'] });
+        },
+      }
+    );
     setOnboardingHiddenForSession(false);
     setSettingsOpen(false);
   };

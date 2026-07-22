@@ -761,6 +761,15 @@ export function scrubRetiredOnboardingSteps(store: {
   const o = onboarding as Record<string, unknown>;
   let changed = false;
   const next = { ...o };
+  // The old flow's finish path recorded a synthetic 'adapters' completion, so
+  // its presence means this user already finished onboarding. Backfill the new
+  // authoritative signal BEFORE scrubbing it away, or every already-onboarded
+  // user would be re-onboarded on upgrade.
+  const completed = Array.isArray(o.completedSteps) ? o.completedSteps : [];
+  if (completed.includes('adapters') && typeof o.completedAt !== 'string') {
+    next.completedAt = typeof o.startedAt === 'string' ? o.startedAt : new Date().toISOString();
+    changed = true;
+  }
   for (const field of ['completedSteps', 'skippedSteps'] as const) {
     const arr = o[field];
     if (!Array.isArray(arr)) continue;
