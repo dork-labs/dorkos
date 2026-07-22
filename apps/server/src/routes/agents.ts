@@ -15,12 +15,7 @@ import { z } from 'zod';
 import path from 'path';
 import { ulid } from 'ulidx';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
-import {
-  ResolveAgentsRequestSchema,
-  CreateAgentRequestSchema,
-  UpdateAgentRequestSchema,
-  UpdateAgentConventionsSchema,
-} from '@dorkos/shared/mesh-schemas';
+import { ResolveAgentsRequestSchema, CreateAgentRequestSchema } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
   buildSoulContent,
@@ -31,6 +26,7 @@ import { readConventionFile, writeConventionFile } from '@dorkos/shared/conventi
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
+import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -247,73 +243,26 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       }
       const agentPath = await validateBoundaryOrDorkHome(rawPath);
 
-      const result = UpdateAgentRequestSchema.safeParse(req.body);
-      if (!result.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
-      }
-
-      const existing = await readManifest(agentPath);
-      if (!existing) {
-        return res.status(404).json({ error: 'No agent registered at this path' });
-      }
-
-      // Guard: name (slug) is immutable after creation — use displayName instead
-      if ('name' in req.body) {
-        return res.status(400).json({
-          error: 'Agent slug (name) cannot be changed after creation. Use displayName instead.',
-        });
-      }
-
-      // Guard: system agents cannot have identity fields changed
-      const SYSTEM_PROTECTED_FIELDS = [
-        'name',
-        'displayName',
-        'description',
-        'namespace',
-        'isSystem',
-      ] as const;
-      if (existing.isSystem) {
-        const blockedFields = SYSTEM_PROTECTED_FIELDS.filter((f) => f in req.body);
-        if (blockedFields.length > 0) {
-          return res.status(403).json({
-            error: `Cannot modify ${blockedFields.join(', ')} on system agents`,
-          });
-        }
-      }
-
-      // Write convention files if provided alongside manifest fields
-      const conventionsResult = UpdateAgentConventionsSchema.safeParse(req.body);
-      const conventionUpdates = conventionsResult.success ? conventionsResult.data : {};
-
-      if (conventionUpdates.soulContent !== undefined) {
-        await writeConventionFile(agentPath, 'SOUL.md', conventionUpdates.soulContent);
-      }
-      if (conventionUpdates.nopeContent !== undefined) {
-        await writeConventionFile(agentPath, 'NOPE.md', conventionUpdates.nopeContent);
-      }
-
-      // traits and conventions go into agent.json via the manifest update
-      // Null values signal "clear this field" (undefined can't travel over JSON)
-      const merged: Record<string, unknown> = { ...existing, ...result.data };
-      for (const key of Object.keys(merged)) {
-        if (merged[key] === null) delete merged[key];
-      }
-      const updated = merged as AgentManifest;
-      await writeManifest(agentPath, updated);
-
-      // ADR-0043: sync to Mesh DB cache (best-effort)
-      try {
-        await meshCore?.syncFromDisk(agentPath);
-      } catch {
-        /* non-fatal */
-      }
-
+      // Manifest guards + write live in the shared agent-updater service so the
+      // `update_agent` MCP tool enforces the exact same rules (ADR-0043 sync
+      // included) without re-implementing them.
+      const updated = await updateAgentManifest({ agentPath, body: req.body, meshCore });
       return res.json(updated);
     } catch (err) {
       if (err instanceof BoundaryError) {
         return res.status(403).json({ error: err.message, code: err.code });
+      }
+      if (err instanceof AgentUpdateError) {
+        switch (err.code) {
+          case 'VALIDATION':
+            return res.status(400).json({ error: 'Validation failed', details: err.details });
+          case 'NOT_FOUND':
+            return res.status(404).json({ error: err.message });
+          case 'IMMUTABLE_NAME':
+            return res.status(400).json({ error: err.message });
+          case 'SYSTEM_PROTECTED':
+            return res.status(403).json({ error: err.message });
+        }
       }
       logger.error('[agents] PATCH /current failed', { err });
       return res.status(500).json({ error: 'Internal server error' });

@@ -8,6 +8,7 @@ import type { TraceStore } from '../../../relay/trace-store.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExtensionManager } from '../../../extensions/extension-manager.js';
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import type { ActivityService } from '../../../activity/activity-service.js';
 
 /**
  * Explicit dependency interface for MCP tool handlers.
@@ -42,6 +43,13 @@ export interface McpToolDeps {
    * need to stub it.
    */
   runtimeRegistry?: RuntimeRegistry;
+  /**
+   * Optional {@link ActivityService} — powers the `activity_list` MCP tool
+   * (the same append-only feed `GET /api/activity` reads). Always populated in
+   * production (the service is core infra, constructed at boot); optional here
+   * so hermetic tool-deps fixtures that don't exercise activity need not stub it.
+   */
+  activityService?: ActivityService;
 }
 
 /** Helper to return a JSON content block for MCP tool responses. */

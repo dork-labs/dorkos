@@ -21,10 +21,10 @@
  * The exact set of externally-registered MCP tools annotated `readOnlyHint:
  * true` — the tokenless read-only carve-out for the login-off `/mcp` surface.
  *
- * Mirrors the `readOnlyHint` audit in `specs/mcp-local-auth-posture`: 23 tools
- * (core, tasks, binding, agent-extension, mesh, relay, marketplace). Kept in
- * lock-step with the live server by the drift-guard test. Any tool NOT listed
- * here is guarded (token required).
+ * Mirrors the `readOnlyHint` audit in `specs/mcp-local-auth-posture`: 27 tools
+ * (core, tasks, binding, agent-extension, mesh, relay, marketplace, and the
+ * DOR-430 operator observability tools). Kept in lock-step with the live server
+ * by the drift-guard test. Any tool NOT listed here is guarded (token required).
  */
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   // core
@@ -57,4 +57,9 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   'marketplace_recommend',
   'marketplace_list_marketplaces',
   'marketplace_list_installed',
+  // operator observability (DOR-430)
+  'activity_list',
+  'config_get',
+  'check_update',
+  'agents_recent_activity',
 ]);

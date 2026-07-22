@@ -3,7 +3,7 @@
  *
  * READ_ONLY_MCP_TOOL_NAMES must stay in exact lock-step with the tools the live
  * server advertises as `readOnlyHint: true`. This test stands up the real
- * `createExternalMcpServer` (with marketplace deps so all 23 read-only tools
+ * `createExternalMcpServer` (with marketplace deps so all 27 read-only tools
  * register), issues a `tools/list`, and asserts the constant equals the live set
  * in BOTH directions — so the carve-out can never silently drift from the
  * annotations it mirrors.
@@ -121,9 +121,9 @@ async function fetchLiveTools(): Promise<ToolListEntry[]> {
 }
 
 describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
-  it('has exactly 23 members (the audited read-only set)', () => {
+  it('has exactly 27 members (the audited read-only set)', () => {
     // A hard count anchors the constant against silent additions/removals.
-    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(23);
+    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(27);
   });
 
   it('every live tool with readOnlyHint === true is in the constant', async () => {

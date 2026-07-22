@@ -19,6 +19,7 @@ import { getUiTools } from './ui-tools.js';
 import { getDevtoolsTools } from './devtools-tools.js';
 import { getExtensionTools } from './extension-tools.js';
 import { getMarketplaceTools } from './marketplace-tools.js';
+import { getOperatorTools } from './operator-tools.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
 // Re-export types and handlers for external consumers
@@ -90,6 +91,7 @@ export {
   createTestExtensionHandler,
 } from './extension-tools.js';
 export { getMarketplaceTools } from './marketplace-tools.js';
+export { getOperatorTools } from './operator-tools.js';
 
 /**
  * Create the DorkOS MCP tool server with all registered tools.
@@ -148,6 +150,7 @@ export function createDorkOsToolServer(
       ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
       ...getExtensionTools(deps),
       ...getMarketplaceTools(marketplaceDeps),
+      ...getOperatorTools(deps),
     ],
   });
 }
