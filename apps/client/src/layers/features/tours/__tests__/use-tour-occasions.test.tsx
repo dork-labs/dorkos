@@ -123,4 +123,46 @@ describe('useTourOccasions', () => {
     rerender();
     expect(setPendingOffer).toHaveBeenCalledWith('relay');
   });
+
+  it('defers a crossing while another offer stands, then offers it once that resolves', () => {
+    // Offer A (tasks) already stands, so the detector is blocked.
+    mockPendingOfferId = 'tasks';
+    mockCatalog = [];
+    const { rerender } = renderHook(() => useTourOccasions());
+
+    // B (relay) crosses 0 -> 1 while blocked: deferred, NOT consumed.
+    mockCatalog = [{ instances: [{ id: 'tg-1' }] }];
+    rerender();
+    expect(setPendingOffer).not.toHaveBeenCalled();
+
+    // A resolves (declined) — the block clears and the deferred crossing fires,
+    // because its baseline was never silently advanced past the threshold.
+    mockPendingOfferId = null;
+    rerender();
+    expect(setPendingOffer).toHaveBeenCalledWith('relay');
+  });
+
+  it('two crossings in one commit: one fires, the other defers then fires', () => {
+    mockTasks = [];
+    mockCatalog = [];
+    const { rerender } = renderHook(() => useTourOccasions());
+
+    // Both cross in the same render: only the first (tasks) fires; relay is
+    // blocked by it and deferred (baseline stays stale).
+    mockTasks = tasks(1);
+    mockCatalog = [{ instances: [{ id: 'tg-1' }] }];
+    rerender();
+    expect(setPendingOffer).toHaveBeenCalledTimes(1);
+    expect(setPendingOffer).toHaveBeenCalledWith('tasks');
+
+    // The tasks offer stands, then resolves; the deferred relay crossing fires.
+    setPendingOffer.mockClear();
+    mockPendingOfferId = 'tasks';
+    rerender();
+    expect(setPendingOffer).not.toHaveBeenCalled();
+
+    mockPendingOfferId = null;
+    rerender();
+    expect(setPendingOffer).toHaveBeenCalledWith('relay');
+  });
 });

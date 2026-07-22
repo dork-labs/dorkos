@@ -118,6 +118,34 @@ describe('TourSpotlight — S1 anchor resolution', () => {
 
     await waitForSpotlight();
   });
+
+  it('re-resolves when a found anchor is removed and re-stamped, without ending or advancing', async () => {
+    const anchor = mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    const root = anchor.parentElement as HTMLElement;
+    const onAdvance = vi.fn();
+    const onEnd = vi.fn();
+    render(
+      <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={onAdvance} onEnd={onEnd} />
+    );
+    await waitForSpotlight();
+
+    // A query-driven section re-render unmounts the found node.
+    act(() => anchor.remove());
+    await waitFor(() => expect(document.querySelector('.reactour__popover')).toBeNull());
+
+    // The same data-testid is re-stamped on a fresh node within budget.
+    act(() => {
+      const fresh = document.createElement('button');
+      fresh.setAttribute('data-testid', TOUR_ANCHORS.dashboardComposer);
+      fresh.textContent = 'real target';
+      root.appendChild(fresh);
+    });
+
+    // The spotlight re-attaches; the tour neither ends nor advances.
+    await waitForSpotlight();
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
 });
 
 describe('TourSpotlight — S2 fully custom popover', () => {

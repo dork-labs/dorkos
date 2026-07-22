@@ -82,6 +82,12 @@ export const DORKBOT_ONBOARDING_LINES = {
  * itself at first use; the per-tour blocks are the spotlight captions, each
  * naming its target in plain language so the caption doubles as the screen-reader
  * announcement. Plain language, no em dashes.
+ *
+ * v1 note: these are fixed constants, NOT inflected by the user's chosen
+ * personality traits (unlike the onboarding voice sample). Per-trait inflection
+ * of tour captions is deliberately deferred — the copy stays consistent and
+ * plainly readable for now; revisit if tours ever want DorkBot's voice to shift
+ * with the selected personality.
  */
 export const DORKBOT_TOUR_LINES = {
   /** The offer line for each occasion tour, shown as a chip in the session. */

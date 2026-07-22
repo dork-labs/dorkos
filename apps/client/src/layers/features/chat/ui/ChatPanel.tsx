@@ -359,9 +359,9 @@ export function ChatPanel({
         )}
       </AnimatePresence>
 
-      {suggestionChips.map((chip) => (
-        <chip.component key={chip.id} />
-      ))}
+      {/* Suggestion chips (e.g. the living tour's offer) only appear when the
+          session is idle — never interrupt an in-flight turn. */}
+      {status === 'idle' && suggestionChips.map((chip) => <chip.component key={chip.id} />)}
 
       <CelebrationOverlay
         celebration={celebrations.activeCelebration}

@@ -20,15 +20,22 @@ export interface AnchorResolution {
 }
 
 /**
- * Resolve a tour anchor to a live DOM element, polling until it mounts.
+ * Resolve a tour anchor to a live DOM element, polling until it mounts and
+ * re-resolving if it later leaves the DOM.
  *
  * A tour deep-links to a route and then waits for the target to appear — a list
  * or a nav item may mount a beat after navigation. This polls
  * `[data-testid="<anchor>"]` every {@link ANCHOR_POLL_INTERVAL_MS} up to
  * {@link ANCHOR_TIMEOUT_MS}; on success it returns the element and scrolls it
  * into view, on timeout it reports `'timeout'` so the caller skips the step
- * honestly rather than spotlighting nothing. Passing `null` disables resolution
- * (used while no step is active).
+ * honestly rather than spotlighting nothing.
+ *
+ * The poll keeps watching after a hit: a query-driven section re-render can
+ * unmount and re-stamp the same `data-testid` on a fresh node mid-tour, so a
+ * found element disappearing must RE-RESOLVE (drop back to `resolving` with a
+ * fresh budget and re-attach to the new node) rather than end or advance the
+ * step. Only a genuine absence that outlasts the budget becomes a `timeout`.
+ * Passing `null` disables resolution (used while no step is active).
  *
  * @param anchor - The anchor to resolve, or null to stay idle.
  */
@@ -50,17 +57,38 @@ export function useAnchorResolver(anchor: TourAnchorId | null): AnchorResolution
     if (anchor === null) return;
 
     const selector = tourAnchorSelector(anchor);
-    const deadline = Date.now() + ANCHOR_TIMEOUT_MS;
+    // The element currently spotlighted, and the deadline for (re)finding one.
+    let current: HTMLElement | null = null;
+    let deadline = Date.now() + ANCHOR_TIMEOUT_MS;
 
-    // Returns true once the anchor resolves or times out, so the caller stops
-    // polling. setState here rides the interval callback, never the effect body.
-    const check = (): boolean => {
+    // Runs on every interval tick (never synchronously in the effect body, so no
+    // setState rides the effect body). Keeps watching after a hit so a lost node
+    // re-resolves instead of leaving a detached element under the spotlight.
+    // Returns true only to give up (a genuine timeout), so the caller can stop.
+    const tick = (): boolean => {
+      // Still spotlighting a live node — keep watching for its removal only.
+      if (current && current.isConnected) return false;
+
       const found = document.querySelector<HTMLElement>(selector);
       if (found) {
         found.scrollIntoView({ block: 'center', inline: 'center' });
+        current = found;
+        deadline = Date.now() + ANCHOR_TIMEOUT_MS; // fresh budget on every (re)attach
         setResolution({ element: found, status: 'found' });
-        return true;
+        return false;
       }
+
+      if (current) {
+        // Had one, lost it (unmounted or replaced): re-resolve with a fresh
+        // budget so a re-render that re-stamps the anchor re-attaches rather than
+        // ending the tour.
+        current = null;
+        deadline = Date.now() + ANCHOR_TIMEOUT_MS;
+        setResolution({ element: null, status: 'resolving' });
+        return false;
+      }
+
+      // Never found it — enforce the wait budget, then skip honestly and stop.
       if (Date.now() >= deadline) {
         setResolution({ element: null, status: 'timeout' });
         return true;
@@ -69,7 +97,7 @@ export function useAnchorResolver(anchor: TourAnchorId | null): AnchorResolution
     };
 
     const intervalId = setInterval(() => {
-      if (check()) clearInterval(intervalId);
+      if (tick()) clearInterval(intervalId);
     }, ANCHOR_POLL_INTERVAL_MS);
     return () => clearInterval(intervalId);
   }, [anchor]);

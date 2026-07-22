@@ -68,11 +68,16 @@ export function useTourOccasions(): void {
         ref.current = count;
         return blocked;
       }
-      // Defer across a streaming turn: leave the baseline stale so the crossing
-      // re-fires once the turn ends instead of interrupting it.
-      if (isStreaming) return blocked;
+      // A crossing that cannot be offered right now is DEFERRED, not consumed:
+      // leave the baseline stale (below the threshold) so the same crossing
+      // re-fires once the block clears. This covers both an active streaming turn
+      // and another offer already standing — e.g. the first channel connecting
+      // while the tasks chip is still pending must still offer the relay tour once
+      // the tasks chip resolves. The baseline is only advanced when we actually
+      // act on the crossing (fire it, or drop it because it is suppressed).
+      if (isStreaming || blocked) return blocked;
       ref.current = count;
-      if (blocked || isSuppressed(id)) return blocked;
+      if (isSuppressed(id)) return blocked;
       setPendingOffer(id);
       return true;
     };
