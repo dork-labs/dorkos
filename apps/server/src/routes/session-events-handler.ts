@@ -99,7 +99,9 @@ export const sessionEventsHandler = async (
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
   const cwd = (req.query.cwd as string) || vaultRoot;
-  if (!(await assertBoundary(cwd, res))) return;
+  // Agent-home session cwds ({dorkHome}/agents/*) must stream under a narrow
+  // boundary — this is the landing path for onboarding's DorkBot session.
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
 
   // Resolve the runtime that owns this session. Unlike GET /:id, we deliberately
   // do NOT 404 an "unknown" session: the durable event stream must be openable
