@@ -2725,6 +2725,33 @@
       "created": "2026-07-22",
       "extractedFrom": "dashboard-with-hands",
       "specSlug": "dashboard-with-hands"
+    },
+    {
+      "id": "260722-154339",
+      "slug": "tours-are-occasion-driven-walkthroughs-of-real-surfaces",
+      "title": "Tours are occasion-driven walkthroughs of real surfaces",
+      "status": "proposed",
+      "created": "2026-07-22",
+      "extractedFrom": "dorkbot-living-tour",
+      "specSlug": "dorkbot-living-tour"
+    },
+    {
+      "id": "260722-154340",
+      "slug": "adopt-reactour-behind-a-tourspotlight-wrapper-with-a-spike-gate",
+      "title": "Adopt @reactour/tour behind a TourSpotlight wrapper, gated by a spike",
+      "status": "proposed",
+      "created": "2026-07-22",
+      "extractedFrom": "dorkbot-living-tour",
+      "specSlug": "dorkbot-living-tour"
+    },
+    {
+      "id": "260722-154341",
+      "slug": "one-anchor-convention-data-testid-plus-a-typed-registry",
+      "title": "One stable-anchor convention \u2014 data-testid plus a typed registry",
+      "status": "proposed",
+      "created": "2026-07-22",
+      "extractedFrom": "dorkbot-living-tour",
+      "specSlug": "dorkbot-living-tour"
     }
   ]
 }
