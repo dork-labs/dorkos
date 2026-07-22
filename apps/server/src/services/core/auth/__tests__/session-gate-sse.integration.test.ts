@@ -21,6 +21,7 @@ import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-strea
 // sessions-events.test.ts).
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
