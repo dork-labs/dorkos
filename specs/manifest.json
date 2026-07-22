@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260722-120505",
+      "slug": "dashboard-with-hands",
+      "title": "Dashboard with hands — composer, messageable agents, human status language",
+      "created": "2026-07-22",
+      "status": "specified",
+      "project": "DorkBot Is the Onboarding"
+    },
+    {
       "id": "260722-110751",
       "slug": "dorkbot-is-the-onboarding",
       "title": "DorkBot is the onboarding — conversation-first first-run experience",

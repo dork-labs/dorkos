@@ -2716,6 +2716,15 @@
       "created": "2026-07-22",
       "extractedFrom": "dorkbot-is-the-onboarding",
       "specSlug": "dorkbot-is-the-onboarding"
+    },
+    {
+      "id": "260722-120728",
+      "slug": "the-dashboard-is-an-action-surface",
+      "title": "The dashboard is an action surface, not an observability report",
+      "status": "proposed",
+      "created": "2026-07-22",
+      "extractedFrom": "dashboard-with-hands",
+      "specSlug": "dashboard-with-hands"
     }
   ]
 }
