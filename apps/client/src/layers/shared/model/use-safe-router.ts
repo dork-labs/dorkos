@@ -40,7 +40,7 @@ export const EMBED_PATHNAME = '/session';
  */
 export function useSafeSearch(): Record<string, unknown> {
   if (getPlatform().isEmbedded) return EMPTY_SEARCH;
-  // eslint-disable-next-line -- conditional hook is safe: `isEmbedded` is fixed at bootstrap, so the hook order is stable for the app's lifetime (the dual-mode shape as useSessionId/useDirectoryState).
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- conditional hook is safe: `isEmbedded` is fixed at bootstrap, so the hook order is stable for the app's lifetime (the dual-mode shape as useSessionId/useDirectoryState).
   return useSearch({ strict: false });
 }
 
@@ -54,6 +54,6 @@ export function useSafeSearch(): Record<string, unknown> {
  */
 export function useSafePathname(): string {
   if (getPlatform().isEmbedded) return EMBED_PATHNAME;
-  // eslint-disable-next-line -- conditional hook is safe: `isEmbedded` is fixed at bootstrap, so the hook order is stable for the app's lifetime (the dual-mode shape as useSessionId/useDirectoryState).
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- conditional hook is safe: `isEmbedded` is fixed at bootstrap, so the hook order is stable for the app's lifetime (the dual-mode shape as useSessionId/useDirectoryState).
   return useRouterState({ select: (s) => s.location.pathname });
 }
