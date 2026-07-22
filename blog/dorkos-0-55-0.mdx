@@ -1,0 +1,84 @@
+---
+title: DorkOS 0.55.0
+description: Smart groups keep a fleet of agents organized, a new connectors foundation brings outside services into your agents, and first-run setup gets shorter and more honest.
+date: 2026-07-22
+author: DorkOS Team
+category: release
+tags: [release, agents, connectors, onboarding]
+---
+
+Running a lot of agents used to mean scrolling a long sidebar and losing track of which ones needed you. This release fixes that: smart groups keep your fleet organized on their own, a new connectors foundation brings outside services into your agents, and first-run setup gets shorter and tells you the truth about what it did.
+
+## Highlights
+
+**Smart groups for a growing fleet**
+
+Build a sidebar group that fills itself in from a rule (by runtime, status, how recently an agent worked, or folder), and DorkOS keeps its members current as agents start, go idle, or switch projects. Give each group its own filter, mute the noisy ones, and a fleet of dozens collapses to just the agents waiting on you.
+
+**Connectors, in alpha**
+
+A new foundation for bringing outside services into your agents. Read a plain-English setup guide first, connect something like Gmail through Composio or point at your own tool server, and always see in plain words where your login is kept. It is still alpha, so we label it that way.
+
+**A shorter, more honest first run**
+
+Setup now lets you get started the moment one agent is ready, instead of waiting until every runtime is connected. It installs the Codex CLI with one click, only asks to import projects when there is something to import, and remembers when you are done so it never pops back up after a refresh.
+
+**Marketplace sorting that works**
+
+Popular shows real community install counts and puts the most-installed first. Recent orders packages by the registry's actual change history. Both gray out cleanly when you are offline, instead of quietly doing nothing.
+
+## All Changes
+
+### Added
+
+- The file tree now remembers where you were. Open a file, switch panel tabs, or reload the page, and the Files panel comes back exactly as you left it — the same folders open, the same file highlighted, scrolled to the same place. Each working directory keeps its own spot, so moving between projects picks up right where each one was (DOR-404).
+- Give each agent group its own "Show" filter (All, Active, or Needs attention), so a busy fleet collapses to just the agents actually waiting on you. Agents that have been quiet for a week tuck themselves behind an honest "N inactive agents" count instead of cluttering the list; click it to see them. (DOR-339)
+- Mute a noisy agent or an entire group from its right-click menu. A muted agent dims, drops its activity badge, and never lights up a group's activity dot, but it always stays in place and clickable. Unmuting a group restores each member's own mute setting. (DOR-339)
+- Sessions that were not you talking to the agent directly (an automated scheduled run, another agent messaging in, or a message that came through Slack or Telegram) now show a small, quiet icon so you can tell them apart from your own conversations.
+- Your own recent conversations show first in the sidebar. A quiet "+ N automated" line lets you reveal the rest when you want to see them.
+- Opening a session shows the same information at the top of the chat, so you always know where it came from.
+- Build a sidebar group that fills itself in: pick "Active now" or "By runtime · Codex" from the "+" menu, or write your own rule (runtime, namespace, status, how recently active, folder path), and DorkOS keeps the group's members current on its own as agents start work, go idle, or switch projects. Only shows up once you're running 8+ agents or 2+ runtimes, so a small fleet's sidebar looks exactly like it did before. (DOR-338)
+- A smart group always tells you what it's showing: a plain-English rule summary in its menu, and an honest "No agents match these rules" instead of vanishing when nothing qualifies. You can't drag an agent into one, dropping on it shows a reminder to edit the rule instead, and matching agents still show up in their usual group too. (DOR-338)
+- Change your mind any time: "Edit rules" reopens the same rule form, and "Convert to manual group" freezes today's members into a regular group you manage by hand. (DOR-338)
+- Agents now know who they're talking to on Telegram and Slack: the sender's name and the chat title ride along with each incoming message. Session lists and headers show it too — "Telegram · Dorian" or "Slack · #incidents" instead of just the platform name.
+- `dorkos package init` now takes `--categories`, so new packages start with the right marketplace categories instead of an empty list. (DOR-373)
+- Sort the Marketplace by Popular again: packages now show real community install counts, and the sort orders the most-installed first. When you are offline, the Popular option grays out instead of quietly doing nothing.
+- Install the Codex CLI for you with one click. When Codex is set up but not yet on your machine, DorkOS can download it for you and turn the check green, the same way it already handles OpenCode.
+- Sort the Marketplace by Recent again: the sort now orders packages by when they were last updated, read from the registry's real change history, so the most recently touched packages come first. When you are offline, the Recent option grays out instead of quietly doing nothing.
+- New connector setup guides you can read before you turn anything on. They show how to connect a service like Gmail through Composio, or point at your own tool server, and each one says in plain words where your login is kept. Connectors are still in alpha (DOR-371).
+
+### Changed
+
+- Reading an agent's Relay inbox now shows only its real, deliverable messages by default. Before, a message the budget gate rejected could show up right next to real ones, with nothing telling a script apart. Pass `?status=failed` to see rejected messages, or `?status=all` to see everything. (DOR-337)
+- Coming back to the Files panel is now instant: folders you've already opened reappear straight away instead of loading again.
+- Refresh now reloads every folder you have open, not just the top level — so a file added deep in the tree shows up the moment you hit Refresh (DOR-404).
+- The show-hidden-files choice now sticks across a page reload, not only a tab switch.
+- The Shape switcher tidies up after itself: when it takes you to a new agent, it steps aside instead of leaving a dead panel over the view, and it drops the extra "Open" button for the place you're already standing in. "Set up agent" now starts pre-filled from the Shape's own template. (DOR-378)
+- The attention badge now updates the moment a run fails or a message bounces, instead of waiting up to 30 seconds for the next check. When the system notices an agent has gone offline, the badge reflects that right away too.
+- Setup during onboarding now lets you get started the moment one coding agent is ready, instead of waiting until every runtime is connected. If Claude Code is set up, you'll see "You're ready" and a single "Get started" button, with the other agents tucked into a quiet "more agents available" section you can open anytime (or skip and add later from the status bar).
+- Connecting an agent now does the work for you. Instead of copying terminal commands, you sign in right in the app or install an agent with one click. A small line under each button always tells you exactly what runs on your machine, so nothing happens behind your back.
+- If no agent is set up yet, onboarding leads with a warm "Connect your first agent" step instead of a wall of red errors. The moment you connect one, it flips straight to the ready screen.
+- The setup screen now scrolls on short windows and phones, so the connect cards and buttons are always reachable.
+- The Obsidian panel now opens the same Inspector side panel as the web app. It holds Pulse, your agent's profile, and the file tree in one place, and slides in as an overlay so it fits the narrow panel. The terminal tab shows only where it's supported, so it stays hidden in Obsidian.
+- First-run setup is shorter and more honest. It only shows the "import your projects" step when there is actually something on your machine to import, and it drops the separate task-scheduling step (you can still set up scheduled tasks any time from the Tasks page). Once you finish, DorkOS remembers, so setup never pops back up after a refresh. The finish screen now celebrates only what you actually did, with no list of skipped steps. A new "Getting started" card in the sidebar links straight to creating an agent, scheduling a task, or adding more agents. Changed your mind? "Replay setup" in Settings walks you through it again.
+
+### Fixed
+
+- Relay pulses in the mesh topology view no longer pile up when you're zoomed out or have reduced motion on, then burst out all at once the moment you zoom back in. Pulses that can't be shown are dropped right away instead of queuing up for a later flurry. (DOR-342)
+- The mesh network map no longer lists an agent's teammates as if they were external connections (Slack, webhooks, and so on). With two or more agents in the same project, the map used to show each agent's siblings as "adapters" by mistake.
+- The network map now shows the access rules that actually protect your projects from each other, not just the ones you added by hand. Before, the map said there were no rules at all, even though agents in different projects were already blocked from talking to each other by default.
+- Session lists no longer show noise rows: sessions with no conversation in them (like "Session 3f2a…") and agents' internal helper transcripts are now hidden. Opening one directly by its link still works.
+- Selection reveal no longer fights scroll restore on remount (DOR-404).
+- Local folder marketplace sources now work with the standard Claude Code layout, where marketplace.json lives in a .claude-plugin folder.
+- Installing a Shape through the API or an agent tool now tells you when your project choice was ignored: Shapes always install for all projects.
+- Agents checking their relay inbox now see only messages waiting for them by default, even when they poll through the built-in `relay_inbox` tool instead of the HTTP endpoint. Before, that tool showed everything, so a message the budget gate rejected could sit right next to real ones with nothing telling them apart. Pass `status: "failed"` to see rejected messages, or `status: "all"` to see everything. (DOR-406)
+- The setup screen no longer shows the same command twice. Each check now gives its own step: one line to install the CLI, a separate line to sign in. Before, a machine that had the CLI but wasn't signed in showed the full "install and sign in" command in both places for Codex and OpenCode.
+- The connector recommendation flow no longer hangs when a provider is unresponsive: it bounds the wait and surfaces a warning instead of stalling silently. (DOR-371)
+- In first-run setup, pressing Enter while typing in a connect field no longer skips you ahead to the next step before you're done.
+- DorkBot setup works when DorkOS is limited to a workspace folder. When you run DorkOS with agents scoped to a single folder (for example the Docker setup that pins agents to `/workspace`), the "Meet DorkBot" step no longer fails with an access-denied error. DorkOS's own agents — DorkBot and anything you install from the Marketplace — live in DorkOS's data folder, and agent actions now treat that folder as always allowed. Reading and writing your own project files stays limited to the folder you chose.
+
+## Install / Update
+
+```
+npm install -g dorkos@0.55.0
+```

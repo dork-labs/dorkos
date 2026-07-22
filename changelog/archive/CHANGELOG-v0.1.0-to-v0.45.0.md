@@ -1,7 +1,115 @@
-# Changelog archive: v0.1.0 – v0.44.0
+# Changelog archive: v0.1.0 – v0.45.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.45.0] - 2026-07-09
+
+> The right panel grows into a real workbench (terminal, file explorer, embedded browser), agents can answer with interactive widgets you can click, Codex and OpenCode join Claude Code in one cockpit, and DorkOS accounts replace tunnel passcodes with real login.
+
+### Added
+
+**Run Claude Code, Codex, and OpenCode side by side**
+
+- Run Codex and OpenCode agents next to Claude Code, all in one cockpit. Every session shows which runtime it belongs to, and the session list keeps working even when one runtime is down.
+- Switch runtimes right from the chat composer: pick Claude Code, Codex, or OpenCode for a new session, and DorkOS remembers the choice per session.
+- Connect a runtime account without leaving DorkOS: guided connect flows check what's installed, walk you through login, and store credentials as secure references (never plaintext).
+- DorkOS detects which runtimes are installed on your machine and offers the ones that are ready, so getting a second runtime running takes one click instead of a config file.
+- See what a session is costing you while it runs: token usage and cost now show in the status strip for every runtime that reports them.
+- Give each agent its own isolated workspace: DorkOS can create and manage git worktrees (or clones) with their own ports, so parallel agents never trample each other's checkout. Browse and manage them on the new Workspaces page.
+
+**Generative UI: widgets in chat and canvas**
+
+- Agents can render real, interactive widgets in chat instead of walls of text: stat cards, tables, lists, charts, progress bars, images, and forms. A malformed widget degrades to a small error card instead of breaking the chat.
+- Click a widget's button, pick from a list, or submit a form, and the agent picks up exactly where you left off: it sees what you did and answers in its next turn.
+- Four more widgets: a timeline for sequenced events, a checklist that reports back what you checked, a compare table that highlights the best option, and a star rating.
+- Three playful widgets: a mood face that blinks and emotes, a board for turn-based games like tic-tac-toe you can play right in chat, and a reveal that flips a coin, rolls a die, or shakes a magic 8-ball. Agents can also fire confetti on their own.
+- Widgets feel alive: they rise into place, numbers count up, progress bars fill, and charts draw themselves in. Turn on reduced motion and every widget appears instantly instead.
+- Skills can ship reusable widget templates with fill-in-the-blank placeholders, so agents don't hand-build the same widget JSON every time.
+- MCP servers can ship full interactive apps that render right in chat or pop out to the canvas (the MCP Apps standard, SEP-1865). The first app from a server always asks permission before it renders, and apps can never reach your files, cookies, or credentials.
+- View images and PDFs right in the agent canvas, with click-to-zoom on images.
+
+**The workbench (right panel)**
+
+- Run a real shell in the cockpit: open a Terminal tab in your session's working directory without leaving DorkOS (web only).
+- Open more than one terminal at once, with tabs to switch between them; your open terminals survive a page refresh.
+- Browse, open, and edit your project's files without leaving DorkOS: a file explorer with create, rename, delete, and drag-to-move, a code editor, a 3D model viewer, a CSV viewer, and image zoom, all in one multi-document canvas.
+- Open an embedded browser in the canvas with back, forward, reload, and an address bar, for any URL, local HTML file, or dev server.
+- Agents can drive the workbench for you: open a file, reveal the terminal, or navigate the embedded browser, on both Claude Code and Codex.
+- The right panel remembers which tab was open, per agent, so it's where you left it next time.
+
+**Your DorkOS account and cloud**
+
+- Create a DorkOS account at dorkos.ai with email and password, GitHub, or Google. It's your identity, separate from any one DorkOS install.
+- Link a self-hosted DorkOS to your account from Settings > DorkOS account (or `dorkos cloud login`): approve a short code at dorkos.ai/activate, then see and revoke linked instances anytime.
+- Turn on owner login for a self-hosted instance from Settings > Security. It's off by default; once on, DorkOS requires an owner account before anyone can reach it, with no email server needed.
+- Give MCP clients, scripts, and agents their own scoped API keys instead of one shared key (Settings > Security). Existing global keys migrate automatically.
+- Recover a lost password or create the owner account from the command line with `dorkos auth enable` and `dorkos auth reset-password`, no running server or email required.
+- Manage cloud accounts from a new admin console: view accounts, and let people self-serve delete or export their data, with every admin action logged.
+- Sign up for the DorkOS newsletter right from the site, with double opt-in confirmation.
+
+**Desktop app**
+
+- Open the desktop app straight to a page with `dorkos://` links.
+- A real Mac menu: Cmd+comma opens Settings, and there's a proper About window and Help links.
+- The desktop app checks for updates on its own, or you can check anytime; you choose when to restart.
+
+**Extensibility and platform**
+
+- Extensions can subscribe to live session, turn, tool, and relay events instead of polling, declared right in their manifest. Events never carry your conversation content.
+- The external MCP server (`/mcp`) now lists browsable resources for sessions, agents, and skills, and every tool says whether it's read-only, destructive, or reaches the network, so MCP clients can be careful without asking you first.
+- See and manage everything installed from the Marketplace, across global and per-agent installs, in one Manage Installed view; get a warning before an extension-bearing package affects every agent; and share a Marketplace search or filter as a URL.
+- Installed plugins now project their commands, skills, and hooks to Cursor and GitHub Copilot too (Gemini support isn't there yet), and re-sync automatically whenever you install or uninstall one.
+- Scheduled tasks now have real safety rails: they only fire in production, one leader owns dispatch, and a task can't fire twice for the same run.
+
+**Docs and legal**
+
+- Documentation guides now show the same real product screenshots and video clips as the marketing site.
+- Plain-English privacy, terms, and cookie pages.
+
+### Changed
+
+- Rewrote the npm README, root README, Mesh concepts guide, Generative UI guide, and MCP feature page in plain language, so you can tell what DorkOS does before you dig into the reference details.
+- Rewrote the dorkos.ai feature catalog and FAQ in plain language, and reframed the homepage around "You, multiplied": one thesis section, plainer problem cards, and a real origin story in the closing section.
+- Renamed the in-app marketplace from "Dork Hub" to "Marketplace."
+- The right panel's tab strip can no longer disappear out from under a panel.
+- Product-media recordings can now run in parallel (`capture:record --shards N`) instead of one long serial pass.
+- You can edit one canvas document while agents keep updating the others.
+- Relay (the message bus between agents) now cleans up after itself: expired messages, stuck deliveries, and abandoned mailboxes are swept on a schedule instead of piling up forever.
+
+### Removed
+
+- **Breaking:** Tunnel passcode protection is gone. Better Auth login is now the only way to protect DorkOS. If you expose DorkOS (start a tunnel or bind to a non-loopback address), you must turn on login and create an owner account first. Old passcode settings are dropped automatically on upgrade, not migrated.
+- `/flow` no longer ships inside the DorkOS repo. Install it from the Marketplace instead; it works the same way.
+
+### Fixed
+
+- Agent-to-agent messages and A2A tasks now report a real failure instead of a fake success when an agent's turn crashes or times out.
+- Fixed several ways relay messages could go missing: adapter start-up races, silent delivery failures, and Slack/Telegram formatting and reconnect issues.
+- Recover agents that go unreachable, and clean up properly when one is unregistered.
+- Ghost Codex sessions no longer show up under every agent; sessions without a working directory now belong to no project, and untitled sessions show "Untitled session" instead of a blank row.
+- `get_ui_state` and `control_ui` now tell agents the truth: current state instead of stale data, and a clear error instead of a fake success when no client is attached.
+- Generative UI widgets now tolerate the natural, slightly-off-spec values agents actually write (pixel numbers, percentages over 100, alternate wording) instead of failing outright.
+- Fixed widgets flickering between their loading skeleton and final content while a reply streams in, fixed gaps in chart lines on certain slopes, and fixed images not refreshing when their source changes.
+- Clicking a widget (like a tic-tac-toe square) now always gets a response from the agent, the board can't drift out of sync, and a widget locks the moment you play so a stray double-tap or a stale reload can't corrupt it.
+- Fixed the Terminal tab sometimes failing to reopen, and hardened the terminal's WebSocket connection with an origin allowlist.
+- Closing a terminal tab the instant it was created no longer leaks a hidden shell process: a terminal that finishes starting after its tab is gone is cleaned up (or kept for re-attach when grace applies).
+- Renaming or moving a file in the workbench no longer conflicts when two names collide, and file/folder deletes can no longer escape the project through a symlink.
+- The canvas file viewer now shows your latest edits right away, and a refresh button reloads the newest version from disk.
+- Every embedded webpage in the canvas now has real browser controls (back, forward, reload, address bar); before, agent-opened pages had none.
+- Fixed the desktop app opening a second window when launched twice, and fixed it forgetting its window position after a monitor change.
+- Fixed the desktop app showing a black window in development: its pages were blocked from talking to its own server.
+- Fixed CORS so the browser correctly sends credentials to allowed origins.
+- Marketplace pages (browse, package detail, install privacy) now show the site header and footer instead of dead-ending.
+- Fixed several marketplace install bugs: replaced an unsafe git-branch rollback with a safer file-scoped transaction, made package downloads concurrency-safe, and added toast feedback when an install or update fails.
+- Site fixes: no more stale claims or dead links, PostHog analytics only run after you consent, the feature-card layout no longer has gaps or cropped screenshots, and pages render correctly on first paint.
+- Connecting a runtime now selects and launches it right away, and Codex sessions now match Claude Code for models, MCP tools, and slash commands.
+- Linking a self-hosted instance to your DorkOS account no longer fails on device-link.
+
+### Security
+
+- Agent-to-agent messages now carry a verified sender identity, and DorkOS enforces that agents in different namespaces can't message each other unless you allow it.
+- The external MCP server's mesh tools now enforce the same directory boundaries as the HTTP API, so a caller can't register agents outside the allowed folders.
 
 ## [0.44.0] - 2026-06-16
 
