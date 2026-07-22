@@ -199,6 +199,14 @@ describe('assessInstalledModels', () => {
     expect(result[1].assessment.model.tier).toBe('solid-coder');
   });
 
+  it('caps an installed frontier-family model below frontier (local is never frontier)', async () => {
+    // A local deepseek-r1:14b matches the frontier pattern but must be demoted.
+    const [entry] = await assessInstalledModels([{ name: 'deepseek-r1:14b', size: 9 * GB }], {
+      hardware: hw({ totalRamBytes: 64 * GB, vramBytes: 24 * GB, unifiedMemory: false }),
+    });
+    expect(entry.assessment.model.tier).toBe('solid-coder');
+  });
+
   it('calls a too-large verdict when the model dwarfs available memory', async () => {
     const [entry] = await assessInstalledModels([{ name: 'huge:70b', size: 40 * GB }], {
       hardware: hw({ totalRamBytes: 8 * GB, unifiedMemory: false }),

@@ -87,6 +87,25 @@ export function classifyTier(text: string): ModelTier | undefined {
   return undefined;
 }
 
+/**
+ * Cap a LOCAL model's tier below `frontier`. Frontier is cloud-only — the picker
+ * promises "Frontier models stay cloud-only" and `runtime-connect.ts` documents
+ * that a local model is at most a `solid-coder`. A local model whose id happens to
+ * match a frontier family (e.g. a local `deepseek-r1`) is demoted to its
+ * parameter-based tier, falling back to `solid-coder` when no parameter count is
+ * available. Non-frontier tiers pass through unchanged. Apply this at every LOCAL
+ * tagging site; never call it for cloud models (a cloud DeepSeek-R1 stays frontier).
+ *
+ * @param text - The model id and/or name.
+ * @param tier - The tier {@link classifyTier} produced for this model.
+ */
+export function capLocalTier(text: string, tier: ModelTier | undefined): ModelTier | undefined {
+  if (tier !== 'frontier') return tier;
+  const params = parseParamsB(text);
+  if (params !== undefined && params < QUICK_HELPER_MAX_PARAMS_B) return 'quick-helper';
+  return 'solid-coder';
+}
+
 /** Sort priority per group: Frontier first, then Solid coders, Quick helpers, and untiered last. */
 const TIER_GROUP_ORDER: Record<ModelTier, number> = {
   frontier: 0,

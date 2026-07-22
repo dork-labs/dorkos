@@ -36,7 +36,7 @@ import type {
   OllamaModelAssessment,
   OllamaModelCatalog,
 } from '@dorkos/shared/runtime-connect';
-import { classifyTier, parseParamsB } from './model-tiers.js';
+import { capLocalTier, classifyTier, parseParamsB } from './model-tiers.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -316,7 +316,9 @@ export async function assessOllamaModels(deps: AssessDeps = {}): Promise<OllamaM
  * @param sizeBytes - The tag's on-disk size in bytes.
  */
 function syntheticCatalogModel(id: string, sizeBytes: number): OllamaCatalogModel {
-  const tier = classifyTier(id);
+  // Installed Ollama models are always local — cap the tier below frontier
+  // (a local model whose id matches a frontier family is not a frontier model).
+  const tier = capLocalTier(id, classifyTier(id));
   return {
     id,
     label: id,

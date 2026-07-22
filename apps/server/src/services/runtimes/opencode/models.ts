@@ -12,7 +12,7 @@
  */
 import type { ProviderListResponse } from '@opencode-ai/sdk';
 import type { ModelOption } from '@dorkos/shared/types';
-import { classifyTier, sortModelOptions } from './model-tiers.js';
+import { capLocalTier, classifyTier, sortModelOptions } from './model-tiers.js';
 
 /** Provider id whose models run locally on this machine (Ollama), so nothing typed leaves it. */
 const LOCAL_PROVIDER_ID = 'ollama';
@@ -45,7 +45,10 @@ export function projectModelOptions(payload: ProviderListResponse): ModelOption[
       if (model.status === 'deprecated') continue;
       const isDefault =
         provider.id === defaultProvider?.id && payload.default[provider.id] === model.id;
-      const tier = classifyTier(`${provider.id}/${model.id} ${model.name}`);
+      const text = `${provider.id}/${model.id} ${model.name}`;
+      // Local models are capped below frontier (cloud-only) — a local model whose
+      // id matches a frontier family must not be badged frontier.
+      const tier = isLocal ? capLocalTier(text, classifyTier(text)) : classifyTier(text);
       options.push({
         value: `${provider.id}/${model.id}`,
         displayName: model.name,

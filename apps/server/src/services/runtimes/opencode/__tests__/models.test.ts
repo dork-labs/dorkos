@@ -70,6 +70,27 @@ describe('projectModelOptions', () => {
     expect(byValue['anthropic/claude-opus-4'].local).toBeUndefined();
   });
 
+  it('caps local frontier-family models below frontier while cloud ones stay frontier', () => {
+    const options = projectModelOptions(
+      payload([
+        { id: 'ollama', name: 'Ollama', models: [model('deepseek-r1:14b', 'DeepSeek-R1 14B')] },
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          models: [model('deepseek/deepseek-r1', 'DeepSeek R1')],
+        },
+      ])
+    );
+
+    const byValue = Object.fromEntries(options.map((o) => [o.value, o]));
+    // Local DeepSeek-R1 is demoted (14B → solid-coder) and marked local — frontier stays cloud-only.
+    expect(byValue['ollama/deepseek-r1:14b'].tier).toBe('solid-coder');
+    expect(byValue['ollama/deepseek-r1:14b'].local).toBe(true);
+    // The same family via a cloud gateway keeps its frontier badge.
+    expect(byValue['openrouter/deepseek/deepseek-r1'].tier).toBe('frontier');
+    expect(byValue['openrouter/deepseek/deepseek-r1'].local).toBeUndefined();
+  });
+
   it('drops deprecated models and leaves untiered models untagged', () => {
     const options = projectModelOptions(
       payload([

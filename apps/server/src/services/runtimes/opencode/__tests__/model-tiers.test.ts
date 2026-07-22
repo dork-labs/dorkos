@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ModelOption } from '@dorkos/shared/types';
-import { classifyTier, parseParamsB, sortModelOptions } from '../model-tiers.js';
+import { capLocalTier, classifyTier, parseParamsB, sortModelOptions } from '../model-tiers.js';
 
 /** Build a minimal model option for a sort/classify row. */
 function opt(value: string, displayName = value, tier?: ModelOption['tier']): ModelOption {
@@ -54,6 +54,27 @@ describe('classifyTier', () => {
     expect(classifyTier('some-lab/unknown')).toBeUndefined();
     // A huge open model is not silently promoted to frontier.
     expect(classifyTier('meta/llama:405b')).toBeUndefined();
+  });
+});
+
+describe('capLocalTier (frontier is cloud-only)', () => {
+  it('demotes a local frontier-family model to its parameter-based tier', () => {
+    // A local deepseek-r1:14b matches the frontier pattern but must not be badged frontier.
+    expect(capLocalTier('ollama/deepseek-r1:14b', classifyTier('ollama/deepseek-r1:14b'))).toBe(
+      'solid-coder'
+    );
+    // Under 10B → quick-helper.
+    expect(capLocalTier('ollama/deepseek-r1:7b', 'frontier')).toBe('quick-helper');
+  });
+
+  it('falls back to solid-coder when a demoted model has no parameter count', () => {
+    expect(capLocalTier('ollama/deepseek-r1:latest', 'frontier')).toBe('solid-coder');
+  });
+
+  it('passes non-frontier tiers through unchanged', () => {
+    expect(capLocalTier('ollama/qwen2.5-coder:7b', 'quick-helper')).toBe('quick-helper');
+    expect(capLocalTier('ollama/coder:14b', 'solid-coder')).toBe('solid-coder');
+    expect(capLocalTier('ollama/mystery', undefined)).toBeUndefined();
   });
 });
 
