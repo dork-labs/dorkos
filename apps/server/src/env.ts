@@ -110,6 +110,18 @@ const serverEnvSchema = z.object({
   // http://localhost:$SITE_PORT). Trailing slashes are normalized by the
   // cloud-link client.
   DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
+  // Connector gateway — self-hosted Nango backend (connector-gateway spec P7,
+  // DOR-371). The base URL DorkOS points its self-host connector at, e.g.
+  // http://localhost:3003. Absent = the Nango connector is not configured, and
+  // the registry is left unchanged (no `nango` provider, no crash).
+  NANGO_BASE_URL: z.string().optional(),
+  // The 256-bit encryption key (written in base64) your self-hosted Nango uses
+  // at rest. DorkOS gates on it: when the Nango connector is otherwise configured
+  // (base URL + secret key), it refuses to register unless this is set to a valid
+  // 32-byte base64 key — without it Nango stores logins unencrypted and the "your
+  // infrastructure, your keys" promise is false (spec §Detailed Design 4). Set the
+  // SAME value here and on your Nango server. See docs/connectors/nango.mdx.
+  NANGO_ENCRYPTION_KEY: z.string().optional(),
 });
 
 const result = serverEnvSchema.safeParse(process.env);

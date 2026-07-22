@@ -69,6 +69,30 @@ export {
   type RawMcpServerDescriptor,
   type RemoteMcpConnection,
 } from './providers/raw-mcp.js';
+export {
+  NangoConnectorProvider,
+  NangoEncryptionKeyError,
+  maybeCreateNangoProvider,
+  assertNangoEncryptionKey,
+  toConnectedAccountId as toNangoConnectedAccountId,
+  toNangoConnectionId,
+  NANGO_PROVIDER_TYPE,
+  NANGO_CREDENTIAL_NAME,
+  NANGO_SECRET_KEY_REF,
+  type NangoConnectorProviderOpts,
+  type MaybeCreateNangoProviderDeps,
+} from './providers/nango.js';
+export {
+  NangoApiError,
+  FetchNangoHttpClient,
+  type NangoHttpClient,
+  type NangoIntegration,
+  type NangoConnectionRequest,
+  type NangoConnectionState,
+  type NangoConnection,
+  type NangoConnectionStatus,
+  type FetchNangoHttpClientOpts,
+} from './providers/nango-client.js';
 // The credential port the managed provider funnels its vendor key through — the
 // dependency surface of `maybeCreateComposioProvider`, re-exported so the W4
 // Gmail eval can assert the refined eval-13 oracle (only the vendor API-key ref
