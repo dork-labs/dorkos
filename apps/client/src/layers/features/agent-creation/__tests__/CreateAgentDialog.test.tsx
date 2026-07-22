@@ -531,6 +531,7 @@ describe('CreateAgentDialog', () => {
           messages: [],
           hydrated: true,
           submitKickoff,
+          submitContent: vi.fn().mockResolvedValue(undefined),
         }),
       { initialProps: { sessionId: 'first-real-session' } }
     );

@@ -113,6 +113,13 @@ export interface UseAutoKickoffParams {
   hydrated: boolean;
   /** Trigger the agent's first turn (from `useSessionSubmit`). Rejects when the trigger POST fails. */
   submitKickoff: (content: string) => Promise<void>;
+  /**
+   * Send a message through the NORMAL submission path (from `useSessionSubmit`),
+   * which renders the user's own bubble. Used for `kind: 'first-message'` birth
+   * records — the onboarding dissolve, where the opening turn is the user's typed
+   * words, not the agent saying hello first (ADR 260722-111316).
+   */
+  submitContent: (content: string) => Promise<void>;
 }
 
 /**
@@ -128,6 +135,7 @@ export function useAutoKickoff({
   messages,
   hydrated,
   submitKickoff,
+  submitContent,
 }: UseAutoKickoffParams): void {
   const record = useAgentBirthRecord(sessionId);
   const messageCount = messages.length;
@@ -152,8 +160,13 @@ export function useAutoKickoff({
 
     firedKickoffs.add(sessionId);
     useAgentBirthStore.getState().markFired(sessionId);
-    submitKickoff(record.kickoffMessage).catch((err: unknown) => {
-      console.warn('[chat] kickoff trigger failed for newborn session', sessionId, err);
+    // A `first-message` record carries the user's own typed words (onboarding
+    // dissolve): send it through the normal path so the user's bubble renders as
+    // theirs. Every other record is the agent-says-hello-first kickoff.
+    const isFirstMessage = record.kind === 'first-message';
+    const submit = isFirstMessage ? submitContent : submitKickoff;
+    submit(record.kickoffMessage).catch((err: unknown) => {
+      console.warn('[chat] first-turn trigger failed for newborn session', sessionId, err);
       // A rejected trigger started no turn — safe to un-latch. Bounded to ONE
       // retry: the first failure re-arms the guards (the store update re-runs
       // this effect); a repeat failure stays latched so a persistent outage
@@ -163,15 +176,18 @@ export function useAutoKickoff({
         failedKickoffs.add(sessionId);
         firedKickoffs.delete(sessionId);
         useAgentBirthStore.getState().resetFired(sessionId);
-      } else {
+      } else if (!isFirstMessage) {
         // The retry is spent — the agent never got to say hello. Mark it so the
         // session shows an honest, actionable line instead of a blank screen or
         // a dead Retry button (the trigger path deliberately raises no error
-        // banner for a kickoff — the person typed nothing to retry).
+        // banner for a kickoff — the person typed nothing to retry). A
+        // `first-message` failure is a normal failed user send: the standard
+        // submission path already surfaces its own error affordance, so it never
+        // shows the greeting-failed line.
         useAgentBirthStore.getState().markGreetingFailed(sessionId);
       }
     });
-  }, [sessionId, cwd, record, status, messageCount, submitKickoff]);
+  }, [sessionId, cwd, record, status, messageCount, submitKickoff, submitContent]);
 
   // Honest mid-stream failure: a kickoff whose trigger was ACCEPTED (202) can
   // still die — the turn starts, then ends or errors before any assistant text.
@@ -181,6 +197,10 @@ export function useAutoKickoff({
   // the birth moment never falls back to the generic "Start a conversation" copy.
   useEffect(() => {
     if (!sessionId || !record) return;
+    // A `first-message` record is a real user turn, not the agent's greeting: a
+    // turn that produces no assistant text is an ordinary (if quiet) session, not
+    // a failed hello, so the mid-stream greeting-failed detector never applies.
+    if (record.kind === 'first-message') return;
     // Only a session whose kickoff was actually triggered — never an ordinary
     // one, and never before the fire effect above has run.
     if (!record.fired && !firedKickoffs.has(sessionId)) return;

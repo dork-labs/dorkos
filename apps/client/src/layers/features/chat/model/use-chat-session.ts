@@ -247,6 +247,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     messages,
     hydrated,
     submitKickoff,
+    submitContent,
   });
 
   // Turn-end reconciliation: when the active session settles, reload canonical
