@@ -51,140 +51,131 @@ function renderPicker(overrides: Partial<Parameters<typeof createMockTransport>[
   return transport;
 }
 
-describe('OpenCodeProviderPicker — structure', () => {
-  it('renders all three provider paths (Local / Gateway / Direct)', () => {
-    // Purpose: OpenCode's connect is "choose where the model comes from" — all
-    // three paths must be reachable, Local featured first.
-    renderPicker({ detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }) });
-    expect(screen.getByRole('tab', { name: 'Local' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Gateway' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Direct' })).toBeInTheDocument();
-  });
-});
-
-describe('OpenCodeProviderPicker — Local (Ollama, task 2.7/2.8)', () => {
-  it('with a detected model, connects with NO auth input (zero-auth)', async () => {
-    // Purpose: the hero path — a running Ollama with a pulled model connects
-    // with no account and persists the provider selection (no key).
-    const user = userEvent.setup();
-    const transport = renderPicker({
-      detectOllama: vi
-        .fn()
-        .mockResolvedValue({ running: true, models: [{ name: 'qwen2.5-coder:7b' }] }),
-    });
-
-    await user.click(await screen.findByRole('button', { name: 'Use this' }));
-
-    expect(transport.updateConfig).toHaveBeenCalledWith({
-      runtimes: { opencode: { provider: 'ollama' } },
-    });
-    // No secret was ever asked for on this path.
-    expect(screen.queryByLabelText(/api key/i)).not.toBeInTheDocument();
-    expect(await screen.findByText('Connected to Ollama')).toBeInTheDocument();
+describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
+  it('presents three power sources with cloud recommended and first', () => {
+    // Purpose: a single-column choice list, not tabs — cloud (recommended), local,
+    // and the quiet bring-your-own-key row, each reachable.
+    renderPicker();
+    const list = screen.getByTestId('opencode-power-sources');
+    const cards = list.querySelectorAll('[data-testid^="power-source-"]');
+    expect(cards).toHaveLength(3);
+    // Cloud is first and carries the Recommended emphasis.
+    expect(cards[0]).toHaveAttribute('data-testid', 'power-source-cloud');
+    expect(cards[0]).toHaveTextContent('Recommended');
   });
 
-  it('when Ollama is absent, shows the installer link, not an error', async () => {
-    // Purpose: DorkOS detects, never manages — an absent Ollama routes to its
-    // installer, honestly, without a raw error.
-    renderPicker({ detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }) });
-
-    const link = await screen.findByRole('link', { name: /install ollama/i });
-    expect(link).toHaveAttribute('href', 'https://ollama.com/download');
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-  });
-});
-
-describe('OpenCodeProviderPicker — Gateway (OpenRouter, task 2.6/2.8)', () => {
-  it('paste-key stores a reference and populates the model dropdown', async () => {
-    // Purpose: the easiest Gateway path — a validated key stores a reference and
-    // the catalog populates the model dropdown.
-    const user = userEvent.setup();
-    const transport = renderPicker({
-      storeOpenRouterKey: vi.fn().mockResolvedValue({ ok: true }),
-      getOpenRouterModels: vi
-        .fn()
-        .mockResolvedValue([{ id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet' }]),
-    });
-
-    await user.click(screen.getByRole('tab', { name: 'Gateway' }));
-    await user.type(await screen.findByLabelText('OpenRouter key'), 'sk-or-abc123');
-    await user.click(screen.getByRole('button', { name: 'Save key' }));
-
-    expect(transport.storeOpenRouterKey).toHaveBeenCalledWith('sk-or-abc123');
-    expect(await screen.findByRole('option', { name: 'Claude 3.5 Sonnet' })).toBeInTheDocument();
-  });
-
-  it('"Connect OpenRouter" starts the OAuth-PKCE flow and opens the authorize URL', async () => {
-    // Purpose: the slickest Gateway path — OAuth-PKCE opens the authorize URL
-    // and resolves to connected once the loopback callback exchanges the key.
-    const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
-    renderPicker({
-      startOpenRouterOAuth: vi
-        .fn()
-        .mockResolvedValue({ authorizeUrl: 'https://openrouter.ai/auth?x=1', state: 'st-1' }),
-      getOpenRouterOAuthStatus: vi.fn().mockResolvedValue({ status: 'connected' }),
-    });
-
-    await user.click(screen.getByRole('tab', { name: 'Gateway' }));
-    await user.click(await screen.findByRole('button', { name: 'Connect OpenRouter' }));
-
-    await waitFor(() =>
-      expect(openSpy).toHaveBeenCalledWith(
-        'https://openrouter.ai/auth?x=1',
-        '_blank',
-        'noopener,noreferrer'
+  it('renders the approved copy for each source verbatim', () => {
+    renderPicker();
+    expect(screen.getByText('Best models, zero setup')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Claude, GPT, Gemini and 300+ more, running in the cloud — your hardware doesn't matter."
       )
-    );
-    expect(await screen.findByText('Connected to OpenRouter')).toBeInTheDocument();
+    ).toBeInTheDocument();
+    expect(screen.getByText('Private and free, on your computer')).toBeInTheDocument();
+    // Platform-adaptive noun (jsdom navigator.platform is not Mac → "this computer").
+    expect(
+      screen.getByText(/Models run on this computer — nothing you type ever leaves it\./)
+    ).toBeInTheDocument();
+    expect(screen.getByText('I have my own API key')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Connect straight to Anthropic, OpenAI, or any OpenAI-compatible server/)
+    ).toBeInTheDocument();
   });
+});
 
-  it('degrades to paste-key only in the Obsidian embedding (OAuth is browser-only)', async () => {
-    // Purpose: DirectTransport stubs OAuth honestly — in embedded mode the
-    // "Connect OpenRouter" button is absent; the always-available paste-key
-    // path remains. Detected via the platform adapter, not window sniffing.
-    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+describe('OpenCodeProviderPicker — in-dialog step navigation (spec §5)', () => {
+  it('opens the cloud step and returns with Back', async () => {
     const user = userEvent.setup();
     renderPicker();
 
-    await user.click(screen.getByRole('tab', { name: 'Gateway' }));
-    expect(screen.queryByRole('button', { name: 'Connect OpenRouter' })).not.toBeInTheDocument();
-    expect(await screen.findByLabelText('OpenRouter key')).toBeInTheDocument();
+    await user.click(screen.getByTestId('power-source-cloud'));
+    // The OpenRouter connect step (OAuth button + paste-key), no model dropdown.
+    expect(await screen.findByRole('button', { name: 'Connect OpenRouter' })).toBeInTheDocument();
+    expect(screen.getByLabelText('OpenRouter key')).toBeInTheDocument();
+    expect(screen.queryByTestId('opencode-power-sources')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('connect-step-back'));
+    expect(screen.getByTestId('opencode-power-sources')).toBeInTheDocument();
+  });
+
+  it('opens the Direct step and returns with Back', async () => {
+    const user = userEvent.setup();
+    renderPicker();
+
+    await user.click(screen.getByTestId('power-source-direct'));
+    expect(await screen.findByLabelText('API key')).toBeInTheDocument();
+    expect(screen.getByLabelText(/base url/i)).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('connect-step-back'));
+    expect(screen.getByTestId('power-source-local')).toBeInTheDocument();
+  });
+
+  it('opens the local step under its own header', async () => {
+    const user = userEvent.setup();
+    renderPicker({ detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }) });
+
+    await user.click(screen.getByTestId('power-source-local'));
+    const step = await screen.findByTestId('opencode-connect-step');
+    expect(step).toHaveTextContent('Private and free, on your computer');
+    expect(screen.getByTestId('connect-step-back')).toBeInTheDocument();
   });
 });
 
-describe('OpenCodeProviderPicker — Direct provider (task 2.8)', () => {
-  it('stores the key + base URL through the single Direct endpoint that backs it, never echoing the secret', async () => {
-    // Purpose: bring-your-own-key. The Direct path calls ONE server method that
-    // stores the key by reference AND records the provider + base URL — the real
-    // Transport method the server now backs (not the runtime-credential store the
-    // server rejects for a provider id). The secret is never echoed to the DOM.
+describe('OpenCodeProviderPicker — Direct provider (spec §5)', () => {
+  it('stores the key + base URL through the single Direct endpoint, never echoing the secret', async () => {
     const user = userEvent.setup();
     const SECRET = 'sk-direct-secret-555';
     const transport = renderPicker({
       storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
     });
 
-    await user.click(screen.getByRole('tab', { name: 'Direct' }));
+    await user.click(screen.getByTestId('power-source-direct'));
     await user.type(await screen.findByLabelText('API key'), SECRET);
     await user.type(screen.getByLabelText(/base url/i), 'https://api.example.com/v1');
     await user.click(screen.getByRole('button', { name: 'Connect provider' }));
 
-    // One call carries the key + provider selection + base URL (server owns config).
     expect(transport.storeProviderCredential).toHaveBeenCalledWith(
       'openai',
       SECRET,
       'https://api.example.com/v1'
     );
-    // The dead two-write path (raw runtime credential + a separate config write) is gone.
     expect(transport.storeRuntimeCredential).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId('connect-connected')).toBeInTheDocument());
     expect(screen.queryByDisplayValue(SECRET)).not.toBeInTheDocument();
   });
 });
 
-// The provider-picker connect flips OpenCode to Ready through the T0 dialog
-// shell — proving the single entry point (the existing Connect CTA) drives it.
+describe('OpenCodeProviderPicker — Gateway (OpenRouter, spec §5)', () => {
+  it('paste-key stores a reference and reports connected (no model dropdown)', async () => {
+    const user = userEvent.setup();
+    const transport = renderPicker({
+      storeOpenRouterKey: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    await user.click(screen.getByTestId('power-source-cloud'));
+    await user.type(await screen.findByLabelText('OpenRouter key'), 'sk-or-abc123');
+    await user.click(screen.getByRole('button', { name: 'Save key' }));
+
+    expect(transport.storeOpenRouterKey).toHaveBeenCalledWith('sk-or-abc123');
+    expect(await screen.findByText('Connected to OpenRouter')).toBeInTheDocument();
+    // The dead model dropdown is gone — no runtime-side model discovery here.
+    expect(screen.queryByLabelText('Model')).not.toBeInTheDocument();
+  });
+
+  it('degrades to paste-key only in the Obsidian embedding (OAuth is browser-only)', async () => {
+    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+    const user = userEvent.setup();
+    renderPicker();
+
+    await user.click(screen.getByTestId('power-source-cloud'));
+    expect(screen.queryByRole('button', { name: 'Connect OpenRouter' })).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('OpenRouter key')).toBeInTheDocument();
+  });
+});
+
+// The provider-picker connect flips OpenCode to Ready through the T0 dialog shell,
+// proving the single entry point (the existing Connect CTA) drives it.
 const OPENCODE_CONNECT: SystemRequirements = {
   runtimes: {
     opencode: {
@@ -203,93 +194,77 @@ const OPENCODE_READY: SystemRequirements = {
   },
 };
 
-describe('OpenCodeProviderPicker — flips OpenCode to Ready (task 2.8)', () => {
-  it('the Ollama zero-auth connect flips OpenCode to Ready with no manual refresh', async () => {
-    // Purpose: end-to-end through the existing Connect CTA — picking a local
-    // Ollama model connects and (via ['requirements'] invalidation) refetches
-    // OpenCode to Ready, no "Check again".
-    const user = userEvent.setup();
-    let call = 0;
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue({
-        capabilities: { opencode: { type: 'opencode' } },
-        defaultRuntime: 'opencode',
-      }),
-      checkRequirements: vi.fn(() => {
-        call += 1;
-        return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
-      }),
-      detectOllama: vi
-        .fn()
-        .mockResolvedValue({ running: true, models: [{ name: 'qwen2.5-coder' }] }),
-    });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
-    });
-    render(
-      <RuntimeSetupDialog
-        runtime="opencode"
-        open
-        onOpenChange={vi.fn()}
-        renderConnect={renderRuntimeConnect}
-      />,
-      {
-        wrapper: ({ children }: { children: ReactNode }) => (
-          <QueryClientProvider client={queryClient}>
-            <TransportProvider transport={transport}>{children}</TransportProvider>
-          </QueryClientProvider>
-        ),
-      }
-    );
-
-    await user.click(await screen.findByRole('button', { name: 'Use this' }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
-    });
+function renderInDialog(
+  overrides: Partial<Parameters<typeof createMockTransport>[0]>,
+  dialogProps: { showConnectSuccess?: boolean; onOpenChange?: (open: boolean) => void } = {}
+) {
+  let call = 0;
+  const transport = createMockTransport({
+    getCapabilities: vi.fn().mockResolvedValue({
+      capabilities: { opencode: { type: 'opencode' } },
+      defaultRuntime: 'opencode',
+    }),
+    checkRequirements: vi.fn(() => {
+      call += 1;
+      return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
+    }),
+    ...overrides,
   });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  });
+  render(
+    <RuntimeSetupDialog
+      runtime="opencode"
+      open
+      onOpenChange={dialogProps.onOpenChange ?? vi.fn()}
+      renderConnect={renderRuntimeConnect}
+      showConnectSuccess={dialogProps.showConnectSuccess}
+    />,
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      ),
+    }
+  );
+  return transport;
+}
 
+describe('OpenCodeProviderPicker — flips OpenCode to Ready (spec §6)', () => {
   it('the Direct-provider connect flips OpenCode to Ready (requirements invalidated)', async () => {
-    // Purpose: prove the Direct path invalidates ['requirements'] end-to-end —
-    // a stored provider key refetches OpenCode to Ready with no manual "Check again".
     const user = userEvent.setup();
-    let call = 0;
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue({
-        capabilities: { opencode: { type: 'opencode' } },
-        defaultRuntime: 'opencode',
-      }),
-      checkRequirements: vi.fn(() => {
-        call += 1;
-        return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
-      }),
-      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
-    });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
-    });
-    render(
-      <RuntimeSetupDialog
-        runtime="opencode"
-        open
-        onOpenChange={vi.fn()}
-        renderConnect={renderRuntimeConnect}
-      />,
-      {
-        wrapper: ({ children }: { children: ReactNode }) => (
-          <QueryClientProvider client={queryClient}>
-            <TransportProvider transport={transport}>{children}</TransportProvider>
-          </QueryClientProvider>
-        ),
-      }
-    );
+    renderInDialog({ storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }) });
 
-    await user.click(await screen.findByRole('tab', { name: 'Direct' }));
+    await user.click(await screen.findByTestId('power-source-direct'));
     await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
     await user.click(screen.getByRole('button', { name: 'Connect provider' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
     });
+  });
+
+  it('shows the explicit success moment + Done when showConnectSuccess is set', async () => {
+    // Purpose (spec §6): the toolbar flow ends on an explicit success panel with a
+    // Done button that closes the dialog — not a silent auto-close.
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    renderInDialog(
+      { storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }) },
+      { showConnectSuccess: true, onOpenChange }
+    );
+
+    await user.click(await screen.findByTestId('power-source-direct'));
+    await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
+    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
+
+    const panel = await screen.findByTestId('runtime-connected-panel');
+    expect(panel).toHaveTextContent('OpenCode is connected.');
+    expect(panel).toHaveTextContent('Frontier models are unlocked.');
+
+    await user.click(screen.getByTestId('runtime-connected-done'));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

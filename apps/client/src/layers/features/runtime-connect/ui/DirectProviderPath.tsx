@@ -7,17 +7,28 @@
  *
  * @module features/runtime-connect/ui/DirectProviderPath
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Input, Label, PasswordInput } from '@/layers/shared/ui';
+import type { RuntimeConnectSuccess } from '@/layers/entities/runtime';
 import { useConnectDirectProvider } from '../model/use-opencode-provider';
+import { CLOUD_CONNECT_SUCCESS } from '../lib/connect-success';
 import { ConnectProgressRow, ConnectedRow } from './connect-feedback';
 
 /** The Direct-provider connect path: provider id + key + optional base URL. */
-export function DirectProviderPath() {
+export function DirectProviderPath({
+  onConnected,
+}: {
+  /** Reports the connect landing so the dialog can show its success moment. */
+  onConnected?: (success: RuntimeConnectSuccess) => void;
+}) {
   const [providerId, setProviderId] = useState('openai');
   const [key, setKey] = useState('');
   const [baseURL, setBaseURL] = useState('');
   const connect = useConnectDirectProvider();
+
+  useEffect(() => {
+    if (connect.isSuccess) onConnected?.(CLOUD_CONNECT_SUCCESS);
+  }, [connect.isSuccess, onConnected]);
 
   if (connect.isPending) {
     return <ConnectProgressRow message="Saving your provider key…" />;

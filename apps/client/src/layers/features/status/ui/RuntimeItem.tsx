@@ -179,12 +179,13 @@ export function RuntimeItem({ runtime, model, onChangeRuntime, canSelect }: Runt
         open={setupDialog.open}
         onOpenChange={(open) => setSetupDialog((s) => ({ ...s, open }))}
         renderConnect={renderRuntimeConnect}
+        showConnectSuccess
         onRuntimeReady={(type) => {
-          // Connect just succeeded — select the runtime it was opened for (sets
-          // pendingRuntime + ?runtime=) and close, so the chip reflects it and
-          // the first send binds to it. No second trip through the picker.
+          // Connect just succeeded — hand off the runtime: select the one it was
+          // opened for (sets pendingRuntime + ?runtime=) so the chip reflects it
+          // and the first send binds to it. The dialog now stays open on its
+          // success panel; the person closes it with Done (no silent auto-close).
           onChangeRuntime?.(type);
-          setSetupDialog({ open: false });
         }}
       />
     </>

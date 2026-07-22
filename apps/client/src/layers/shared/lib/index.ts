@@ -20,6 +20,7 @@ export {
   setPlatformAdapter,
   isMac,
   isDesktopDarwin,
+  localDeviceNoun,
   type PlatformAdapter,
 } from './platform';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';

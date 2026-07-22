@@ -210,6 +210,61 @@ describe('useSessionSubmit.submitContent — cross-session defense-in-depth (DOR
   });
 });
 
+describe('useChatSession — launch-runtime handoff (opencode connect → first send)', () => {
+  // The tail of the connect handoff chain: connect success → requirements
+  // invalidated → OpenCode ready → the toolbar chip's onChangeRuntime sets
+  // pendingRuntime, which reaches useChatSession as `launchRuntime`. This proves
+  // the final link — a new session's FIRST message binds the session to OpenCode.
+  it("a new session's first message posts runtime: 'opencode'", async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(
+      () => useChatSession('new-session', { launchRuntime: 'opencode' }),
+      { wrapper: createWrapper(transport) }
+    );
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => result.current.setInput('First message'));
+    await waitFor(() => expect(result.current.input).toBe('First message'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage).toHaveBeenCalledWith(
+      'new-session',
+      'First message',
+      '/test/cwd',
+      expect.objectContaining({ runtime: 'opencode' })
+    );
+  });
+
+  it('omits the runtime hint entirely when no launch runtime is selected', async () => {
+    // The negative of the handoff: with no pending selection, the send carries no
+    // runtime hint, leaving the server's own resolution in charge.
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('plain-session'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => result.current.setInput('First message'));
+    await waitFor(() => expect(result.current.input).toBe('First message'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    const postOptions = postMessage.mock.calls[0]?.[3] as Record<string, unknown> | undefined;
+    expect(postOptions).not.toHaveProperty('runtime');
+  });
+});
+
 describe('useChatSession — queued message survives the canonical-id rekey (DOR-81 / DOR-74)', () => {
   it('a message queued under the client UUID is moved to the canonical id, not lost', async () => {
     const postMessage = vi.fn().mockResolvedValue({ sessionId: 'sdk-canonical' });

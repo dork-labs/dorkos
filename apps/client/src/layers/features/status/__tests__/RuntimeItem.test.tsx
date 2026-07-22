@@ -427,9 +427,11 @@ describe('RuntimeItem', () => {
       expect(onChangeRuntime).not.toHaveBeenCalled();
     });
 
-    it('selects the runtime and closes the dialog once connect succeeds', async () => {
+    it('hands off the runtime once connect succeeds, leaving the dialog on its success moment', async () => {
       // The two-step trap fix: connecting a not-ready runtime from the picker
-      // must select it (and close), not drop the user back to re-pick it.
+      // selects it (the handoff — sets pendingRuntime) so the first send binds to
+      // it. The dialog now stays open on its explicit success panel (Done closes
+      // it), so onRuntimeReady no longer silently auto-closes (spec §6).
       mockRuntimeCapabilities.mockReturnValue({
         data: capsMap('claude-code', 'claude-code', 'codex'),
       });
@@ -449,10 +451,11 @@ describe('RuntimeItem', () => {
       await user.click(codexItem);
       expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'codex');
 
-      // Connect succeeds → the dialog reports ready → select codex and close.
+      // Connect succeeds → the dialog reports ready → the runtime is handed off,
+      // and the dialog remains open (its success panel's Done owns closing).
       await user.click(screen.getByTestId('simulate-runtime-ready'));
       expect(onChangeRuntime).toHaveBeenCalledWith('codex');
-      expect(screen.queryByTestId('runtime-setup-dialog')).not.toBeInTheDocument();
+      expect(screen.getByTestId('runtime-setup-dialog')).toBeInTheDocument();
     });
 
     it('keeps every registered runtime selectable while requirements are still loading', () => {

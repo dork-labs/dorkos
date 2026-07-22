@@ -39,4 +39,8 @@ export type { ModelNature, ModelLocality } from './lib/model-nature';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { CommandTransparencyNote } from './ui/CommandTransparencyNote';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
-export type { RuntimeConnectSlot, RuntimeConnectSlotProps } from './ui/RuntimeSetupDialog';
+export type {
+  RuntimeConnectSlot,
+  RuntimeConnectSlotProps,
+  RuntimeConnectSuccess,
+} from './ui/RuntimeSetupDialog';

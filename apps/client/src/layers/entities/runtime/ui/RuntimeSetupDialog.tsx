@@ -24,6 +24,19 @@ import { DependencyInstallHint } from './DependencyInstallHint';
 import { CommandTransparencyNote } from './CommandTransparencyNote';
 
 /**
+ * The success moment a connect path reports when it lands. The entity renders it
+ * as an explicit panel with a Done button; the copy is supplied by the feature so
+ * it can be path-aware (a cloud "frontier unlocked" vs a local "models ready"
+ * line), keeping OpenCode-specific wording out of the entity.
+ */
+export interface RuntimeConnectSuccess {
+  /** Headline, rendered with a ✓ (e.g. `"OpenCode is connected."`). */
+  title: string;
+  /** Supporting line beneath the headline; honest and path-aware. */
+  body: string;
+}
+
+/**
  * Context handed to a feature-supplied connect renderer for a not-ready runtime.
  * The entity owns the two-state shell; the actual terminal-free connect flow
  * (paste-key, delegated login, the OpenCode provider picker) is injected by the
@@ -34,6 +47,14 @@ export interface RuntimeConnectSlotProps {
   type: string;
   /** The server's honest connect projection (kind + label) for this runtime. */
   connect: NonNullable<RuntimeConnectState['connect']>;
+  /**
+   * Called by a connect path the instant it succeeds, with the success-moment
+   * copy. Injected only when the opener asked for the explicit success panel
+   * (`showConnectSuccess`); otherwise omitted, and the path shows its own inline
+   * "Connected" confirmation as before. Independent of the requirements
+   * ready-flip, so the success moment can render immediately.
+   */
+  onConnected?: (success: RuntimeConnectSuccess) => void;
 }
 
 /**
@@ -444,6 +465,15 @@ interface RuntimeSetupDialogProps {
    * @param type - The runtime type that just became ready, e.g. `'opencode'`.
    */
   onRuntimeReady?: (type: string) => void;
+  /**
+   * Show an explicit success panel (with a Done button) when an in-dialog connect
+   * path reports success, in place of the path's own inline "Connected"
+   * confirmation. When set, the dialog stays open on success so the person sees
+   * the success moment and dismisses it with Done — the opener's `onRuntimeReady`
+   * must therefore NOT auto-close (it keeps only the runtime handoff). Used by the
+   * toolbar runtime chip's connect flow (spec: opencode-connect-overhaul §6).
+   */
+  showConnectSuccess?: boolean;
 }
 
 /**
@@ -461,6 +491,7 @@ export function RuntimeSetupDialog({
   onOpenChange,
   renderConnect,
   onRuntimeReady,
+  showConnectSuccess = false,
 }: RuntimeSetupDialogProps) {
   const requirementsQuery = useRuntimeRequirements();
   const { data: capabilityMap } = useRuntimeCapabilities();
@@ -501,6 +532,21 @@ export function RuntimeSetupDialog({
     }
   }, [open, readinessLoaded, isScopedReady, runtime, onRuntimeReady]);
 
+  // The success moment: a connect path reports its landing via `onConnected`, and
+  // the dialog swaps the setup panel for an explicit success panel with a Done
+  // button. Independent of the ready-flip above (which drives the runtime
+  // handoff), so it renders the instant the connect succeeds. Only wired when the
+  // opener asked for it (`showConnectSuccess`); reset whenever the dialog closes.
+  const [success, setSuccess] = useState<RuntimeConnectSuccess | null>(null);
+  useEffect(() => {
+    if (!open) setSuccess(null);
+  }, [open]);
+  const wrappedRenderConnect: RuntimeConnectSlot | undefined =
+    renderConnect &&
+    (showConnectSuccess
+      ? (props) => renderConnect({ ...props, onConnected: setSuccess })
+      : renderConnect);
+
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent className="sm:max-w-md">
@@ -509,24 +555,60 @@ export function RuntimeSetupDialog({
             {descriptor ? descriptor.label : 'Your runtimes'}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            {descriptor
-              ? isScopedReady
-                ? 'This runtime is ready to use.'
-                : 'Connect it to start a session.'
-              : 'Connect any runtime to start a session with it.'}
+            {success
+              ? 'Connected.'
+              : descriptor
+                ? isScopedReady
+                  ? 'This runtime is ready to use.'
+                  : 'Connect it to start a session.'
+                : 'Connect any runtime to start a session with it.'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody>
-          <RuntimeSetupPanel
-            runtime={runtime}
-            requirements={requirementsQuery.data}
-            registeredTypes={capabilityMap ? Object.keys(capabilityMap.capabilities) : undefined}
-            onRecheck={() => void requirementsQuery.refetch()}
-            isRechecking={requirementsQuery.isFetching}
-            renderConnect={renderConnect}
-          />
+          {success ? (
+            <RuntimeConnectedPanel success={success} onDone={() => onOpenChange(false)} />
+          ) : (
+            <RuntimeSetupPanel
+              runtime={runtime}
+              requirements={requirementsQuery.data}
+              registeredTypes={capabilityMap ? Object.keys(capabilityMap.capabilities) : undefined}
+              onRecheck={() => void requirementsQuery.refetch()}
+              isRechecking={requirementsQuery.isFetching}
+              renderConnect={wrappedRenderConnect}
+            />
+          )}
         </ResponsiveDialogBody>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+/**
+ * The explicit success moment shown after an in-dialog connect lands: a check, the
+ * feature-supplied headline + body, and a single Done button that closes the
+ * dialog. The runtime handoff (selecting the just-connected runtime for the
+ * pending session) rides the opener's `onRuntimeReady` in the background — this
+ * panel's only job is to make success legible and let the person dismiss it.
+ */
+function RuntimeConnectedPanel({
+  success,
+  onDone,
+}: {
+  success: RuntimeConnectSuccess;
+  onDone: () => void;
+}) {
+  return (
+    <div className="space-y-4" data-testid="runtime-connected-panel">
+      <div className="flex items-start gap-2.5">
+        <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{success.title}</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">{success.body}</p>
+        </div>
+      </div>
+      <Button size="sm" className="w-full" onClick={onDone} data-testid="runtime-connected-done">
+        Done
+      </Button>
+    </div>
   );
 }
