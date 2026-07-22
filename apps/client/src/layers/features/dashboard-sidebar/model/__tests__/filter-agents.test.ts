@@ -35,6 +35,16 @@ describe('filterSectionAgents', () => {
       expect(result.inactive).toEqual([D]);
     });
 
+    it('keeps a fresh (never-active) agent visible, not collapsed under the inactive row', () => {
+      const F = '/f'; // fresh — a brand-new agent
+      const result = filterSectionAgents([F, D], {
+        ...opts({ filter: 'all' }),
+        attention: { [F]: 'fresh', [D]: 'inactive' },
+      });
+      expect(result.visible).toEqual([F]);
+      expect(result.inactive).toEqual([D]);
+    });
+
     it('the inactive row is empty when nothing is inactive', () => {
       const result = filterSectionAgents([A, B, C], opts({ filter: 'all' }));
       expect(result.inactive).toEqual([]);

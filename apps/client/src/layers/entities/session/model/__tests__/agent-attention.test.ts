@@ -94,8 +94,8 @@ describe('deriveAttention', () => {
     ).toBe('active');
   });
 
-  it('returns inactive when there is no live kind and no activity at all', () => {
-    expect(deriveAttention({ liveKinds: [], lastActivityAt: null, now })).toBe('inactive');
+  it('returns fresh when there is no live kind and no activity ever (a brand-new agent)', () => {
+    expect(deriveAttention({ liveKinds: [], lastActivityAt: null, now })).toBe('fresh');
   });
 
   it('returns active exactly at the active-within boundary (inclusive)', () => {
@@ -113,7 +113,7 @@ describe('deriveAttention', () => {
     expect(deriveAttention({ liveKinds: [], lastActivityAt, now })).toBe('idle');
   });
 
-  it('returns inactive just past the inactive-after boundary', () => {
+  it('returns inactive just past the inactive-after boundary (dormant, had activity once)', () => {
     const lastActivityAt = now - ATTENTION_THRESHOLDS.inactiveAfterMs - 1;
     expect(deriveAttention({ liveKinds: [], lastActivityAt, now })).toBe('inactive');
   });
@@ -156,11 +156,11 @@ describe('useAgentAttentionMap', () => {
     vi.mocked(useSessionListStore).mockClear();
   });
 
-  it('is needs-attention for a path with a live pendingApproval session, inactive for one with none', () => {
+  it('is needs-attention for a path with a live pendingApproval session, fresh for a never-active one', () => {
     work('s1', 'blocked', A);
     const { result } = renderHook(() => useAgentAttentionMap([A, B]));
     expect(result.current[A]).toBe('needs-attention');
-    expect(result.current[B]).toBe('inactive');
+    expect(result.current[B]).toBe('fresh');
   });
 
   it('is active for a path with a live streaming session', () => {
@@ -182,9 +182,9 @@ describe('useAgentAttentionMap', () => {
     expect(result.current[A]).toBe('active');
   });
 
-  it('is inactive for a path with no live session and no recorded activity', () => {
+  it('is fresh for a path with no live session and no recorded activity ever', () => {
     const { result } = renderHook(() => useAgentAttentionMap([A]));
-    expect(result.current[A]).toBe('inactive');
+    expect(result.current[A]).toBe('fresh');
   });
 
   it('uses one aggregated subscription independent of path count', () => {

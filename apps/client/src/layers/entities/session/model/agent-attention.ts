@@ -23,10 +23,14 @@ import { useRecentSessions } from './use-recent-sessions';
  *   {@link ATTENTION_THRESHOLDS.activeWithinMs}.
  * - `idle` — activity exists, but older than the active window and not yet
  *   past the inactive threshold.
- * - `inactive` — no activity within {@link ATTENTION_THRESHOLDS.inactiveAfterMs}
- *   (or no activity at all).
+ * - `fresh` — a brand-new agent that has never had any session activity. Kept
+ *   distinct from `inactive` so a newly-created agent (e.g. the DorkBot a user
+ *   just set up in onboarding) reads as new rather than dormant, and stays
+ *   visible in the roster instead of collapsing behind the inactive reveal row.
+ * - `inactive` — had activity once, but none within
+ *   {@link ATTENTION_THRESHOLDS.inactiveAfterMs}.
  */
-export type AttentionState = 'needs-attention' | 'active' | 'idle' | 'inactive';
+export type AttentionState = 'needs-attention' | 'active' | 'idle' | 'fresh' | 'inactive';
 
 /** Recency thresholds bounding the `active` / `idle` / `inactive` boundaries. */
 export const ATTENTION_THRESHOLDS = {
@@ -77,7 +81,7 @@ export function deriveAttention(input: DeriveAttentionInput): AttentionState {
     return 'active';
   }
   if (input.lastActivityAt === null) {
-    return 'inactive';
+    return 'fresh';
   }
   const elapsed = input.now - input.lastActivityAt;
   if (elapsed <= ATTENTION_THRESHOLDS.activeWithinMs) return 'active';

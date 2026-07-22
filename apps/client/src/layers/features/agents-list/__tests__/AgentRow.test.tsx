@@ -358,6 +358,22 @@ describe('AgentRow', () => {
     expect(screen.getByText('Never')).toBeInTheDocument();
   });
 
+  it('displays "New" for a never-active agent (stale health, no last-seen)', () => {
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="stale"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('New')).toBeInTheDocument();
+    expect(screen.queryByText('Never')).not.toBeInTheDocument();
+  });
+
   it('shows active tasks indicator inside AgentAvatar when healthStatus is active', () => {
     const { container } = render(
       <AgentRow

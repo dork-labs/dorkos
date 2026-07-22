@@ -84,6 +84,7 @@ export const STATUS_LABELS: Record<AttentionState, string> = {
   'needs-attention': 'needs attention',
   active: 'active',
   idle: 'idle',
+  fresh: 'new',
   inactive: 'inactive',
 };
 

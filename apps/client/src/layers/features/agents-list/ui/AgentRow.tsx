@@ -12,6 +12,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { useBindings } from '@/layers/entities/binding';
 import { useAdapterCatalog } from '@/layers/entities/relay';
+import { isNeverActive } from '../lib/agent-health-display';
 import { SessionLaunchPopover } from './SessionLaunchPopover';
 import { UnregisterAgentDialog } from './UnregisterAgentDialog';
 
@@ -128,7 +129,11 @@ export function AgentRow({
             <Badge variant="secondary">{agent.runtime}</Badge>
 
             <span className="text-muted-foreground ml-auto text-xs">
-              {lastActive ? formatRelativeTime(lastActive) : 'Never'}
+              {lastActive
+                ? formatRelativeTime(lastActive)
+                : isNeverActive(healthStatus, lastActive)
+                  ? 'New'
+                  : 'Never'}
             </span>
 
             <ChevronDown
