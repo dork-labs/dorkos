@@ -26,11 +26,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import type {
-  OpenRouterModel,
-  OpenRouterOAuthStatus,
-  StoreCredentialResult,
-} from '@dorkos/shared/runtime-connect';
+import type { OpenRouterOAuthStatus, StoreCredentialResult } from '@dorkos/shared/runtime-connect';
 import { type CredentialStore } from '../../core/credential-provider.js';
 import { persistProviderCredential } from '../connect/credentials.js';
 import { logger } from '../../../lib/logger.js';
@@ -39,7 +35,6 @@ import { logger } from '../../../lib/logger.js';
 const OPENROUTER_AUTH_URL = 'https://openrouter.ai/auth';
 const OPENROUTER_KEYS_EXCHANGE_URL = 'https://openrouter.ai/api/v1/auth/keys';
 const OPENROUTER_KEY_INFO_URL = 'https://openrouter.ai/api/v1/key';
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
 /** Provider id under which OpenRouter's key + selection are recorded. */
 const OPENROUTER_PROVIDER_ID = 'openrouter';
@@ -49,9 +44,6 @@ const OPENROUTER_FETCH_TIMEOUT_MS = 10_000;
 
 /** How long a started OAuth flow stays claimable before it is pruned. */
 const OAUTH_FLOW_TTL_MS = 10 * 60_000;
-
-/** How long the model catalog is served from cache before a re-fetch. */
-const MODELS_CACHE_TTL_MS = 5 * 60_000;
 
 /** Injectable `fetch` seam (defaults to global `fetch`); tests pass a mock. */
 export type FetchFn = typeof fetch;
@@ -354,52 +346,5 @@ export async function handleOpenRouterCallback(
     });
     flowStore.markError(state, message);
     return { status: 'error', error: message };
-  }
-}
-
-// --- Model catalog ---------------------------------------------------------
-
-interface ModelsCache {
-  models: OpenRouterModel[];
-  fetchedAt: number;
-}
-let modelsCache: ModelsCache | null = null;
-
-/** Reset the model catalog cache — test-only seam. */
-export function resetOpenRouterModelCache(): void {
-  modelsCache = null;
-}
-
-/**
- * Fetch the OpenRouter model catalog, served from a short-TTL cache. A second
- * call within {@link MODELS_CACHE_TTL_MS} returns the cached list without a
- * network round-trip. Degrades to the last cache (or an empty list) if a refresh
- * fails, so the picker is never blocked by a slow provider.
- *
- * @param deps - Injectable `fetch` seam.
- */
-export async function fetchOpenRouterModels(
-  deps: OpenRouterFetchDeps = {}
-): Promise<OpenRouterModel[]> {
-  if (modelsCache && Date.now() - modelsCache.fetchedAt < MODELS_CACHE_TTL_MS) {
-    return modelsCache.models;
-  }
-  const fetchImpl = deps.fetchImpl ?? fetch;
-  try {
-    const res = await boundedFetch(fetchImpl, OPENROUTER_MODELS_URL);
-    if (!res.ok) throw new OpenRouterError('catalog fetch failed');
-    const body = (await res.json()) as { data?: Array<Record<string, unknown>> };
-    const models: OpenRouterModel[] = (body.data ?? []).map((m) => ({
-      id: String(m.id ?? ''),
-      name: String(m.name ?? m.id ?? ''),
-      ...(typeof m.context_length === 'number' ? { contextLength: m.context_length } : {}),
-    }));
-    modelsCache = { models, fetchedAt: Date.now() };
-    return models;
-  } catch (err) {
-    logger.warn('[OpenRouter] model catalog fetch failed', {
-      reason: err instanceof Error ? err.message : 'unknown',
-    });
-    return modelsCache?.models ?? [];
   }
 }

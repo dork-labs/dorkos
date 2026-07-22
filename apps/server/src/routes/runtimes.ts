@@ -27,7 +27,6 @@ import {
 } from '../services/runtimes/connect/delegated-login.js';
 import {
   buildAuthorizeUrl,
-  fetchOpenRouterModels,
   handleOpenRouterCallback,
   openRouterOAuthStore,
   storeOpenRouterKeyReference,
@@ -218,16 +217,6 @@ router.get('/opencode/openrouter/oauth/status', (req, res) => {
   if (rejectNonLoopback(req, res)) return;
   const state = typeof req.query.state === 'string' ? req.query.state : '';
   res.json(openRouterOAuthStore.status(state));
-});
-
-/**
- * GET /api/runtimes/opencode/openrouter/models — the OpenRouter model catalog for
- * the picker (short-TTL cached server-side).
- */
-router.get('/opencode/openrouter/models', async (req, res) => {
-  if (rejectNonLoopback(req, res)) return;
-  const models = await fetchOpenRouterModels();
-  res.json({ models });
 });
 
 // --- Ollama (OpenCode Local) -----------------------------------------------

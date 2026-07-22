@@ -78,7 +78,6 @@ import type {
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
   OpenRouterOAuthStatus,
-  OpenRouterModel,
   OllamaStatus,
   OllamaModelCatalog,
   OllamaPullProgress,
@@ -982,27 +981,27 @@ export interface Transport {
    * @param state - The flow id returned by {@link startOpenRouterOAuth}.
    */
   getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus>;
-  /** Fetch the OpenRouter model catalog for the model picker (short-TTL cached server-side). */
-  getOpenRouterModels(): Promise<OpenRouterModel[]>;
   /**
    * Detect a local Ollama with zero auth: whether it is running and which coding
    * models are pulled. Bounded probe — an absent/hung Ollama degrades fast.
    */
   detectOllama(): Promise<OllamaStatus>;
   /**
-   * Fetch the curated coding-model catalog for the guided pull, each entry
+   * Fetch the curated coding-model catalog for the local model shelf, each entry
    * assessed against this machine's hardware with an honest fit verdict
    * (`runs-well | may-be-slow | too-large`). A static estimate, never a benchmark.
    * Loopback-only server action.
    */
   getOllamaModelCatalog(): Promise<OllamaModelCatalog>;
   /**
-   * Trigger a single guided Ollama pull of a curated coding model and stream
-   * download progress. Resolves to the terminal result; when `onProgress` is
-   * supplied, streamed progress frames are delivered to it. DorkOS only triggers
-   * the pull — it never owns or manages Ollama. Loopback-only server action.
+   * Trigger a single Ollama pull and stream download progress. Accepts any
+   * syntactically valid Ollama tag — curated or not — so a person can pull any
+   * model by name, not only the curated shelf. Resolves to the terminal result;
+   * when `onProgress` is supplied, streamed progress frames are delivered to it.
+   * DorkOS only triggers the pull — it never owns or manages Ollama. Loopback-only
+   * server action.
    *
-   * @param model - The curated model id to pull (e.g. `qwen2.5-coder:7b`).
+   * @param model - Any valid Ollama model tag to pull (e.g. `qwen2.5-coder:32b`).
    * @param onProgress - Optional callback for streamed download-progress frames.
    */
   pullOllamaModel(

@@ -11,30 +11,8 @@
  */
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { OpenRouterModel } from '@dorkos/shared/runtime-connect';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
 import { useTransport } from '@/layers/shared/model';
-
-/** Query key for the OpenRouter model catalog (short-TTL cached server-side too). */
-const OPENROUTER_MODELS_KEY = ['runtime-connect', 'openrouter', 'models'] as const;
-
-/**
- * Fetch the OpenRouter model catalog for the Gateway model dropdown.
- *
- * Gated by `enabled` so it only fetches once a key/OAuth connection has
- * populated the picker — never on an unauthenticated cold render.
- *
- * @param enabled - Whether to fetch (true once OpenRouter is connected).
- */
-export function useOpenRouterModels(enabled: boolean) {
-  const transport = useTransport();
-  return useQuery<OpenRouterModel[]>({
-    queryKey: [...OPENROUTER_MODELS_KEY],
-    queryFn: () => transport.getOpenRouterModels(),
-    enabled,
-    staleTime: 5 * 60_000,
-  });
-}
 
 /** The paste-key Gateway connect: validate + store an OpenRouter key. */
 export interface UseStoreOpenRouterKey {
@@ -66,7 +44,6 @@ export function useStoreOpenRouterKey(): UseStoreOpenRouterKey {
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
-        void queryClient.invalidateQueries({ queryKey: [...OPENROUTER_MODELS_KEY] });
       }
     },
   });
@@ -143,7 +120,6 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
   useEffect(() => {
     if (status === 'connected') {
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
-      void queryClient.invalidateQueries({ queryKey: [...OPENROUTER_MODELS_KEY] });
     }
   }, [status, queryClient]);
 
