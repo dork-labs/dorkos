@@ -21,6 +21,7 @@ import {
   TransportProvider,
   useAppStore,
   useExtensionRegistry,
+  useThemeStore,
   EventStreamProvider,
 } from '@/layers/shared/model';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
@@ -253,11 +254,12 @@ const extensionDeps: ExtensionAPIDeps = {
     // AppState.setSidebarActiveTab accepts a union of literals; DispatcherStore
     // widens it to `string`. Cast to satisfy the structural interface.
     store: useAppStore.getState() as ExtensionAPIDeps['dispatcherContext']['store'],
-    // Theme changes from extensions apply the class directly. A full integration
-    // with useTheme requires a React ref; this covers the 'light'/'dark' subset.
-    setTheme: (theme: 'light' | 'dark') => {
-      document.documentElement.classList.toggle('dark', theme === 'dark');
-    },
+    // Route the agent's `control_ui set_theme` through the shared theme store, so
+    // every consumer — mounted canvas viewers (useResolvedTheme) included —
+    // updates at once and the choice persists like a user pick. A direct classList
+    // toggle here would miss those viewers AND get reverted by the store's own
+    // matchMedia subscription on the next OS change.
+    setTheme: (theme: 'light' | 'dark') => useThemeStore.getState().setTheme(theme),
     // Gates the agent's `open_terminal` command: HttpTransport supports a
     // server-side PTY, so the Terminal tab exists and can be focused.
     supportsTerminal: transport.supportsTerminal,

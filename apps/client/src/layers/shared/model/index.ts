@@ -9,7 +9,13 @@ export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
 export type { PipContent } from './app-store/app-store-pip';
 export { useDialogTabState } from './use-dialog-tab-state';
-export { useTheme, type Theme } from './use-theme';
+export {
+  useTheme,
+  useResolvedTheme,
+  useThemeStore,
+  type Theme,
+  type ResolvedTheme,
+} from './use-theme';
 export { useReportIssue } from './report-issue/use-report-issue';
 export { useIsMobile } from './use-is-mobile';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
@@ -72,6 +78,7 @@ export {
   type DialogContribution,
   type SettingsTabContribution,
   type RightPanelContribution,
+  type SuggestionChipContribution,
 } from './extension-registry';
 export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
 export {

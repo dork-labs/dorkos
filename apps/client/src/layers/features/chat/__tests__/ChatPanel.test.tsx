@@ -3,6 +3,7 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
+import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
 
 // Mock useIsMobile — default to mobile
 const mockUseIsMobile = vi.fn(() => true);
@@ -10,7 +11,9 @@ vi.mock('@/layers/shared/model/use-is-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }));
 
-// Mock useChatSession
+// Mock useChatSession — status is controllable so the suggestion-chip idle gate
+// can be exercised.
+let mockChatStatus = 'idle';
 vi.mock('../model/use-chat-session', () => ({
   useChatSession: () => ({
     messages: [],
@@ -18,7 +21,7 @@ vi.mock('../model/use-chat-session', () => ({
     setInput: vi.fn(),
     handleSubmit: vi.fn(),
     submitContent: vi.fn(),
-    status: 'idle',
+    status: mockChatStatus,
     error: null,
     sessionBusy: false,
     stop: vi.fn(),
@@ -227,6 +230,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUseIsMobile.mockReturnValue(true);
   mockShowShortcutChips.mockReturnValue(true);
+  mockChatStatus = 'idle';
+  useExtensionRegistry.setState({ slots: createInitialSlots() });
   localStorage.clear();
 });
 
@@ -305,5 +310,32 @@ describe('ChatPanel first-use hint', () => {
     localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '0');
     render(<ChatPanel sessionId="test" />);
     expect(screen.queryByText('Swipe to collapse')).toBeNull();
+  });
+});
+
+describe('ChatPanel suggestion-chip slot', () => {
+  function registerChip() {
+    useExtensionRegistry.getState().register('chat.suggestion-chips', {
+      id: 'test-chip',
+      component: () => <div data-testid="suggestion-chip" />,
+    });
+  }
+
+  it('renders suggestion chips only while idle, never mid-stream', () => {
+    registerChip();
+
+    mockChatStatus = 'idle';
+    const { rerender } = render(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('suggestion-chip')).toBeTruthy();
+
+    // A turn starts: the chip must not interrupt it.
+    mockChatStatus = 'streaming';
+    rerender(<ChatPanel sessionId="test" />);
+    expect(screen.queryByTestId('suggestion-chip')).toBeNull();
+
+    // The turn settles: the chip returns.
+    mockChatStatus = 'idle';
+    rerender(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('suggestion-chip')).toBeTruthy();
   });
 });

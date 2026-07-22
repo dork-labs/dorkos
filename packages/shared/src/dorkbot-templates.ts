@@ -75,6 +75,53 @@ export const DORKBOT_ONBOARDING_LINES = {
 } as const;
 
 /**
+ * DorkBot's spoken lines for the living tour (DOR-419).
+ *
+ * Every line is authored and token-free, in DorkBot's own voice. `offers` are
+ * the one-line prompts shown as a suggestion chip when a subsystem introduces
+ * itself at first use; the per-tour blocks are the spotlight captions, each
+ * naming its target in plain language so the caption doubles as the screen-reader
+ * announcement. Plain language, no em dashes.
+ *
+ * v1 note: these are fixed constants, NOT inflected by the user's chosen
+ * personality traits (unlike the onboarding voice sample). Per-trait inflection
+ * of tour captions is deliberately deferred — the copy stays consistent and
+ * plainly readable for now; revisit if tours ever want DorkBot's voice to shift
+ * with the selected personality.
+ */
+export const DORKBOT_TOUR_LINES = {
+  /** The offer line for each occasion tour, shown as a chip in the session. */
+  offers: {
+    tasks: 'I put that on the schedule. Want to see where your scheduled work lives?',
+    relay: 'Your first channel is connected. Want to see where your channels live?',
+    mesh: "That's two agents now. Want to see your fleet?",
+  },
+  /** The on-demand general tour: home base, your agents, then Tasks. */
+  general: {
+    composer:
+      'Start here. Type a message and I open a session with you. This is where most days begin.',
+    yourAgents:
+      'These are your agents. Click any card to pick a conversation back up with that one.',
+    navTasks:
+      'And this is Tasks, where any work you schedule shows up. That is the whole place. Go build something.',
+  },
+  /** The Tasks occasion tour, fired on the first scheduled task. */
+  tasks: {
+    tasksList:
+      'Here it is. Every task you schedule lands in this list, with its next run and its history.',
+  },
+  /** The Relay occasion tour, fired on the first connected channel. */
+  relay: {
+    relayChannels:
+      'Right here. Every channel you connect shows up in this list, so you can check on it or add more.',
+  },
+  /** The Mesh occasion tour, fired when a second agent joins the fleet. */
+  mesh: {
+    navAgents: 'This opens your Agents page, where your whole fleet lives. Add more any time.',
+  },
+} as const;
+
+/**
  * DorkBot's line announcing how many projects and agents the scan found.
  *
  * @param count - Number of candidates discovered (must be at least 1; the

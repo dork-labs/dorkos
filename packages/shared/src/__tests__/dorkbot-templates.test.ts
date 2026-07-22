@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DORKBOT_ONBOARDING_LINES,
+  DORKBOT_TOUR_LINES,
   dorkbotClaudeMdTemplate,
   dorkbotDiscoveryFoundLine,
   generateVoiceSample,
@@ -54,6 +55,31 @@ describe('dorkbot-templates', () => {
         ...(['terse', 'balanced', 'warm', 'playful', 'bold', 'inventive'] as const).map(() =>
           generateVoiceSample(makeTraits())
         ),
+      ].join(' ');
+      expect(allCopy).not.toContain('—');
+    });
+  });
+
+  describe('DORKBOT_TOUR_LINES', () => {
+    it('has an offer and a caption for every tour', () => {
+      expect(DORKBOT_TOUR_LINES.offers.tasks).toContain('schedule');
+      expect(DORKBOT_TOUR_LINES.offers.relay).toContain('channel');
+      expect(DORKBOT_TOUR_LINES.offers.mesh).toContain('agents');
+      expect(DORKBOT_TOUR_LINES.general.composer.length).toBeGreaterThan(0);
+      expect(DORKBOT_TOUR_LINES.general.yourAgents.length).toBeGreaterThan(0);
+      expect(DORKBOT_TOUR_LINES.general.navTasks.length).toBeGreaterThan(0);
+      expect(DORKBOT_TOUR_LINES.tasks.tasksList.length).toBeGreaterThan(0);
+      expect(DORKBOT_TOUR_LINES.relay.relayChannels.length).toBeGreaterThan(0);
+      expect(DORKBOT_TOUR_LINES.mesh.navAgents.length).toBeGreaterThan(0);
+    });
+
+    it('never uses an em dash (writing-for-humans)', () => {
+      const allCopy = [
+        ...Object.values(DORKBOT_TOUR_LINES.offers),
+        ...Object.values(DORKBOT_TOUR_LINES.general),
+        ...Object.values(DORKBOT_TOUR_LINES.tasks),
+        ...Object.values(DORKBOT_TOUR_LINES.relay),
+        ...Object.values(DORKBOT_TOUR_LINES.mesh),
       ].join(' ');
       expect(allCopy).not.toContain('—');
     });

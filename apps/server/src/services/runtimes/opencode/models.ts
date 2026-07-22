@@ -12,6 +12,10 @@
  */
 import type { ProviderListResponse } from '@opencode-ai/sdk';
 import type { ModelOption } from '@dorkos/shared/types';
+import { capLocalTier, classifyTier, sortModelOptions } from './model-tiers.js';
+
+/** Provider id whose models run locally on this machine (Ollama), so nothing typed leaves it. */
+const LOCAL_PROVIDER_ID = 'ollama';
 
 /**
  * Project the provider catalog onto the DorkOS model-picker shape.
@@ -21,6 +25,10 @@ import type { ModelOption } from '@dorkos/shared/types';
  * supplied through provider env vars). Deprecated models are dropped;
  * `isDefault` marks the first connected provider's default model so the
  * picker has exactly one.
+ *
+ * Each option is tagged with a coarse capability {@link ModelOption.tier} and,
+ * for Ollama-provider models, `local: true`; the list is returned in the
+ * picker's reading order (Frontier → Solid coders → Quick helpers → untiered).
  *
  * @param payload - The `provider.list` response body
  */
@@ -32,10 +40,15 @@ export function projectModelOptions(payload: ProviderListResponse): ModelOption[
   const defaultProvider = providers.find((entry) => payload.default[entry.id] !== undefined);
   const options: ModelOption[] = [];
   for (const provider of providers) {
+    const isLocal = provider.id === LOCAL_PROVIDER_ID;
     for (const model of Object.values(provider.models)) {
       if (model.status === 'deprecated') continue;
       const isDefault =
         provider.id === defaultProvider?.id && payload.default[provider.id] === model.id;
+      const text = `${provider.id}/${model.id} ${model.name}`;
+      // Local models are capped below frontier (cloud-only) — a local model whose
+      // id matches a frontier family must not be badged frontier.
+      const tier = isLocal ? capLocalTier(text, classifyTier(text)) : classifyTier(text);
       options.push({
         value: `${provider.id}/${model.id}`,
         displayName: model.name,
@@ -43,11 +56,13 @@ export function projectModelOptions(payload: ProviderListResponse): ModelOption[
         // column beyond the id, so the description carries the human name).
         description: `${provider.name} · ${model.id}`,
         ...(isDefault ? { isDefault: true } : {}),
+        ...(tier ? { tier } : {}),
+        ...(isLocal ? { local: true } : {}),
         contextWindow: model.limit.context,
         maxOutputTokens: model.limit.output,
         provider: provider.id,
       });
     }
   }
-  return options;
+  return sortModelOptions(options);
 }

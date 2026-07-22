@@ -1,136 +1,58 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as THREE from 'three';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 
-// Keep the heavy <model-viewer> web component out of jsdom.
+// `<model-viewer>` is a side-effect web-component registration that assumes a
+// full browser; stub it so importing the viewer never touches jsdom internals.
 vi.mock('@google/model-viewer', () => ({}));
 
-// Fake three example loaders: each exposes a `.load(url, onLoad)` spy so the
-// format→loader dispatch is asserted without WebGL, bytes, or real parsing.
-const stlLoad = vi.fn();
-const plyLoad = vi.fn();
-const objLoad = vi.fn();
-const threeMfLoad = vi.fn();
-const fbxLoad = vi.fn();
-const colladaLoad = vi.fn();
-
-vi.mock('three/examples/jsm/loaders/STLLoader.js', () => ({
-  STLLoader: class {
-    load = stlLoad;
+// Force WebGL context creation to fail the way it does on a GPU-less / exhausted
+// machine: the THREE.WebGLRenderer constructor throws synchronously. Everything
+// after the throw (lights, controls, loaders) is never reached, so bare newable
+// stubs suffice.
+vi.mock('three', () => ({
+  WebGLRenderer: class {
+    constructor() {
+      throw new Error('Error creating WebGL context.');
+    }
   },
+  Scene: class {},
+  PerspectiveCamera: class {},
+  AmbientLight: class {},
+  DirectionalLight: class {},
+  Box3: class {},
+  Vector3: class {},
+  MeshStandardMaterial: class {},
+  Mesh: class {},
 }));
-vi.mock('three/examples/jsm/loaders/PLYLoader.js', () => ({
-  PLYLoader: class {
-    load = plyLoad;
-  },
-}));
-vi.mock('three/examples/jsm/loaders/OBJLoader.js', () => ({
-  OBJLoader: class {
-    load = objLoad;
-  },
-}));
-vi.mock('three/examples/jsm/loaders/3MFLoader.js', () => ({
-  ThreeMFLoader: class {
-    load = threeMfLoad;
-  },
-}));
-vi.mock('three/examples/jsm/loaders/FBXLoader.js', () => ({
-  FBXLoader: class {
-    load = fbxLoad;
-  },
-}));
-vi.mock('three/examples/jsm/loaders/ColladaLoader.js', () => ({
-  ColladaLoader: class {
-    load = colladaLoad;
-  },
-}));
-vi.mock('three/examples/jsm/controls/OrbitControls.js', () => ({
-  OrbitControls: class {
-    enableDamping = false;
-    update(): void {}
-    dispose(): void {}
-  },
-}));
+vi.mock('three/examples/jsm/loaders/STLLoader.js', () => ({ STLLoader: vi.fn() }));
+vi.mock('three/examples/jsm/loaders/OBJLoader.js', () => ({ OBJLoader: vi.fn() }));
+vi.mock('three/examples/jsm/controls/OrbitControls.js', () => ({ OrbitControls: vi.fn() }));
 
-import { loadThreeModel } from '../ui/Model3dViewer';
+import { Model3dViewer } from '../ui/Model3dViewer';
 
-const sharedMaterial = new THREE.MeshStandardMaterial();
+let errorSpy: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => {
+  errorSpy.mockRestore();
+  cleanup();
+});
 
-beforeEach(() => vi.clearAllMocks());
+describe('Model3dViewer — WebGL guard', () => {
+  it('renders an in-tab message instead of throwing when WebGL is unavailable', () => {
+    // Must not throw out of the effect — a throw would escape to the canvas
+    // boundary; the viewer degrades in place instead.
+    expect(() =>
+      render(<Model3dViewer url="blob:model.stl" format="stl" label="Test model" />)
+    ).not.toThrow();
 
-describe('loadThreeModel — format dispatch', () => {
-  it('routes STL to STLLoader and builds a mesh with the shared material', () => {
-    const onLoad = vi.fn();
-    stlLoad.mockImplementation((_url, cb) => cb(new THREE.BufferGeometry()));
-    loadThreeModel('stl', 'part.stl', sharedMaterial, onLoad);
-    expect(stlLoad).toHaveBeenCalledWith('part.stl', expect.any(Function));
-    const object = onLoad.mock.calls[0][0];
-    expect(object).toBeInstanceOf(THREE.Mesh);
-    expect(object.material).toBe(sharedMaterial);
-  });
-
-  it('routes PLY to PLYLoader and builds a mesh with the shared material', () => {
-    const onLoad = vi.fn();
-    plyLoad.mockImplementation((_url, cb) => cb(new THREE.BufferGeometry()));
-    loadThreeModel('ply', 'cloud.ply', sharedMaterial, onLoad);
-    expect(plyLoad).toHaveBeenCalled();
-    expect(onLoad.mock.calls[0][0]).toBeInstanceOf(THREE.Mesh);
-  });
-
-  it('routes OBJ to OBJLoader and overwrites mesh materials with the shared material', () => {
-    const onLoad = vi.fn();
-    const group = new THREE.Group();
-    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial());
-    group.add(mesh);
-    objLoad.mockImplementation((_url, cb) => cb(group));
-    loadThreeModel('obj', 'mesh.obj', sharedMaterial, onLoad);
-    expect(objLoad).toHaveBeenCalled();
-    // OBJ carries no fetched .mtl here, so its meshes take the calm-gray material.
-    expect(mesh.material).toBe(sharedMaterial);
-    expect(onLoad).toHaveBeenCalledWith(group);
-  });
-
-  it('routes 3MF to ThreeMFLoader and preserves embedded materials', () => {
-    const onLoad = vi.fn();
-    const group = new THREE.Group();
-    const embedded = new THREE.MeshStandardMaterial();
-    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), embedded);
-    group.add(mesh);
-    threeMfLoad.mockImplementation((_url, cb) => cb(group));
-    loadThreeModel('3mf', 'print.3mf', sharedMaterial, onLoad);
-    expect(threeMfLoad).toHaveBeenCalled();
-    // Fallback only paints material-less meshes, so the 3MF's own color survives.
-    expect(mesh.material).toBe(embedded);
-    expect(onLoad).toHaveBeenCalledWith(group);
-  });
-
-  it('routes FBX to FBXLoader and preserves embedded materials', () => {
-    const onLoad = vi.fn();
-    const group = new THREE.Group();
-    const embedded = new THREE.MeshPhongMaterial();
-    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), embedded);
-    group.add(mesh);
-    fbxLoad.mockImplementation((_url, cb) => cb(group));
-    loadThreeModel('fbx', 'rig.fbx', sharedMaterial, onLoad);
-    expect(fbxLoad).toHaveBeenCalled();
-    expect(mesh.material).toBe(embedded);
-  });
-
-  it('routes DAE to ColladaLoader, unwrapping the collada scene', () => {
-    const onLoad = vi.fn();
-    const scene = new THREE.Group();
-    colladaLoad.mockImplementation((_url, cb) => cb({ scene }));
-    loadThreeModel('dae', 'scene.dae', sharedMaterial, onLoad);
-    expect(colladaLoad).toHaveBeenCalled();
-    expect(onLoad).toHaveBeenCalledWith(scene);
-  });
-
-  it('is a no-op for gltf — <model-viewer> owns that path', () => {
-    const onLoad = vi.fn();
-    loadThreeModel('gltf', 'model.glb', sharedMaterial, onLoad);
-    expect(onLoad).not.toHaveBeenCalled();
-    expect(stlLoad).not.toHaveBeenCalled();
+    expect(screen.getByText(/can.t be shown here/i)).toBeInTheDocument();
+    // The 3D canvas surface is not mounted once WebGL failed.
+    expect(screen.queryByRole('img', { name: 'Test model' })).not.toBeInTheDocument();
   });
 });

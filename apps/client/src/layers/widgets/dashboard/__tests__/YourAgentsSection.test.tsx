@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import type { DashboardAgentCard } from '../lib/order-agent-cards';
 import { YourAgentsSection } from '../ui/YourAgentsSection';
 
@@ -51,6 +52,12 @@ describe('YourAgentsSection', () => {
     render(<YourAgentsSection />);
     expect(screen.getByText('DorkBot')).toBeInTheDocument();
     expect(screen.getByText('New, say hello')).toBeInTheDocument();
+  });
+
+  it('stamps the tour anchor so the living tour can spotlight it', () => {
+    mockCards = [card('/agents/default', { displayName: 'DorkBot' })];
+    render(<YourAgentsSection />);
+    expect(screen.getByTestId(TOUR_ANCHORS.yourAgents)).toBeInTheDocument();
   });
 
   it('opens a session with the agent when its card is clicked', () => {

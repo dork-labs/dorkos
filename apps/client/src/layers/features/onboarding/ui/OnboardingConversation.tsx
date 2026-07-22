@@ -16,7 +16,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
-import { useAgentBirthStore, type AgentBirthRecord } from '@/layers/shared/model';
+import { useAgentBirthStore, useAppStore, type AgentBirthRecord } from '@/layers/shared/model';
 import { fireCelebration } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { MessageItem, TypingDots, ChatInput, FirstLight } from '@/layers/features/chat';
@@ -124,6 +124,18 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
     dissolvedRef.current = true;
     convo.submitFirstMessage(text);
   }, [composerValue, convo]);
+
+  const requestTour = useAppStore((s) => s.requestTour);
+  // "Show me around" ends onboarding and hands off to the general tour instead of
+  // starting a session: finish the flow, then request the tour (the tour host,
+  // mounted app-wide, deep-links home and spotlights the dashboard).
+  const handleShowMeAround = useCallback(() => {
+    if (dissolvedRef.current) return;
+    dissolvedRef.current = true;
+    completeOnboarding();
+    requestTour('general');
+    onComplete();
+  }, [completeOnboarding, requestTour, onComplete]);
 
   const { fastForward } = convo;
   const handleAreaKeyDown = useCallback(
@@ -260,18 +272,19 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         {convo.composerEnabled ? (
           <>
             <div className="mb-2 flex flex-wrap gap-1.5">
-              {['Show me around', 'Help me set up a project', 'Just exploring for now'].map(
-                (hint) => (
-                  <Button
-                    key={hint}
-                    size="xs"
-                    variant="outline"
-                    onClick={() => setComposerValue(hint)}
-                  >
-                    {hint}
-                  </Button>
-                )
-              )}
+              <Button size="xs" variant="outline" onClick={handleShowMeAround}>
+                Show me around
+              </Button>
+              {['Help me set up a project', 'Just exploring for now'].map((hint) => (
+                <Button
+                  key={hint}
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setComposerValue(hint)}
+                >
+                  {hint}
+                </Button>
+              ))}
             </div>
             <ChatInput
               value={composerValue}

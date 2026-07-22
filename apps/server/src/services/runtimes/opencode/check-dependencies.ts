@@ -16,7 +16,9 @@
  * @module services/runtimes/opencode/check-dependencies
  */
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
+import type { UserConfig } from '@dorkos/shared/config-schema';
 import { configManager } from '../../core/config-manager.js';
+import { credentialProvider, type CredentialProvider } from '../../core/credential-provider.js';
 import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
 import { runBinaryProbe, findBinaryOnPath } from '../shared/run-probe.js';
 import { resolveProvisionedOpenCodePath } from './provision.js';
@@ -52,6 +54,33 @@ const ENVIRONMENT_COUNT_PATTERN = /\b[1-9]\d*\s+environment variables?\b/;
 /** Run the opencode binary with args and return trimmed stdout. Rejects on non-zero exit or timeout. */
 function runOpenCode(binary: string, args: string[]): Promise<string> {
   return runBinaryProbe(binary, args, PROBE_TIMEOUT_MS);
+}
+
+/** The provider whose models run locally (Ollama) — no credential is ever needed. */
+const LOCAL_PROVIDER_ID = 'ollama';
+
+/** Plain-language names for the providers a user connects OpenCode through. */
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  openrouter: 'OpenRouter',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  ollama: 'Ollama',
+};
+
+/** Human name for a provider id — a known name, or the raw id the user chose. */
+function providerDisplayName(id: string): string {
+  return PROVIDER_DISPLAY_NAMES[id] ?? id;
+}
+
+/** Minimal read surface of the config manager (injectable for tests). */
+type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
+
+/** Injectable seams for the credential-aware auth check (production defaults resolve the singletons). */
+export interface OpenCodeDependencyDeps {
+  /** Config reader (defaults to the module singleton). */
+  config?: ConfigReader;
+  /** Credential read port used to resolve a stored provider reference (defaults to the singleton). */
+  credentialProvider?: CredentialProvider;
 }
 
 /**
@@ -96,40 +125,123 @@ async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
   };
 }
 
-/** Check that OpenCode provider credentials exist (`opencode auth login`). */
-async function checkAuthState(binary: string | null): Promise<DependencyCheck> {
-  const name = 'OpenCode authentication';
+/**
+ * Auth check name. MUST keep matching `deriveRuntimeReadiness`'s `/auth|login/i`
+ * contract (`packages/shared/agent-runtime.ts`) so the runtime's Ready/Connect
+ * projection keeps identifying this as the auth check.
+ */
+const AUTH_CHECK_NAME = 'OpenCode authentication';
+
+/**
+ * Whether OpenCode is satisfied by DorkOS's own persisted provider state, checked
+ * BEFORE the CLI probe (the root-cause fix, spec §1). A provider the user
+ * connected through DorkOS (OpenRouter, a Direct key, or local Ollama) is the
+ * authoritative signal — the sidecar receives that credential at spawn via
+ * `resolveOpenCodeProviderEnv`, so a working DorkOS connection must read as ready
+ * even when the `opencode` CLI itself was never logged in.
+ *
+ * Returns:
+ * - a `satisfied` check when a provider is set and its credential requirement is
+ *   met (Ollama needs none; key providers need a reference that resolves through
+ *   the same credential seam the sidecar uses);
+ * - a `missing` check when a provider is set but its stored reference no longer
+ *   resolves (honest degradation — the copy points at reconnecting);
+ * - `null` when no provider is set in DorkOS, so the caller falls back to the CLI
+ *   `opencode auth list` probe (CLI-authenticated users keep working).
+ *
+ * @param deps - Injectable config + credential-provider seams.
+ */
+async function checkPersistedProvider(
+  deps: OpenCodeDependencyDeps
+): Promise<DependencyCheck | null> {
+  const config = deps.config ?? configManager;
+  const provider = deps.credentialProvider ?? credentialProvider;
+  let providerId: string | null;
+  try {
+    providerId = config.get('runtimes').opencode.provider;
+  } catch {
+    // Config unavailable — let the CLI probe decide rather than guess.
+    return null;
+  }
+  if (!providerId) return null;
+
+  const name = providerDisplayName(providerId);
+
+  // Local models (Ollama) need no credential — a selected provider is enough.
+  // We deliberately do not block readiness on a reachability probe.
+  if (providerId === LOCAL_PROVIDER_ID) {
+    return {
+      name: AUTH_CHECK_NAME,
+      description: 'Using models on this computer (Ollama). Nothing you type leaves your machine.',
+      status: 'satisfied',
+    };
+  }
+
+  // Key providers: the stored reference must resolve through the same credential
+  // seam the sidecar spawns with, or the connection is honestly broken.
+  const ref = config.get('providers')[providerId];
+  if (ref) {
+    try {
+      const resolution = await provider.resolve(ref);
+      if (resolution.ok) {
+        return {
+          name: AUTH_CHECK_NAME,
+          description: `Connected via ${name}.`,
+          status: 'satisfied',
+        };
+      }
+    } catch {
+      // Resolution backend unavailable (e.g. credential provider not yet wired) —
+      // treat as unresolved below rather than crashing the requirements report.
+    }
+  }
+
+  return {
+    name: AUTH_CHECK_NAME,
+    description: `Your saved ${name} connection didn't work. Connect again to keep using OpenCode.`,
+    status: 'missing',
+    infoUrl: OPENCODE_INFO_URL,
+  };
+}
+
+/**
+ * Fall back to today's `opencode auth list` CLI probe. Preserves the pre-fix
+ * behavior so users who authenticated the CLI directly (or supplied provider env
+ * vars) keep reading as ready. `opencode auth list` reports stored credentials and
+ * closes with an "N credentials" count; missing requires BOTH an explicit zero
+ * count AND no active provider environment variables (their own "Environment"
+ * section — NOTES.md §4). Local models never appear in either, so an unparseable
+ * listing stays `satisfied` rather than alarming users who need no login.
+ */
+async function checkCliAuth(binary: string | null): Promise<DependencyCheck> {
   const description =
     'Provider credentials (opencode auth login) let OpenCode reach a model provider on your behalf.';
 
   if (binary) {
     try {
-      // `opencode auth list` reports stored credentials and closes with an
-      // "N credentials" count. Missing requires BOTH an explicit zero count
-      // AND no active provider environment variables (which print in their
-      // own "Environment" section — NOTES.md §4). Local models (Ollama,
-      // OpenAI-compatible endpoints) never appear in either, so an
-      // unparseable listing stays "satisfied" rather than alarming users
-      // who need no login.
       const listing = await runOpenCode(binary, ['auth', 'list']);
       const count = CREDENTIAL_COUNT_PATTERN.exec(listing);
       if (count && Number(count[1]) === 0 && !ENVIRONMENT_COUNT_PATTERN.test(listing)) {
         return {
-          name,
+          name: AUTH_CHECK_NAME,
           description,
           status: 'missing',
           installHint: OPENCODE_LOGIN_HINT,
           infoUrl: OPENCODE_INFO_URL,
         };
       }
-      return { name, description, status: 'satisfied' };
+      return {
+        name: AUTH_CHECK_NAME,
+        description: 'Signed in with the OpenCode CLI.',
+        status: 'satisfied',
+      };
     } catch {
       // Non-zero exit — the CLI could not report auth state. Fall through.
     }
   }
 
   return {
-    name,
+    name: AUTH_CHECK_NAME,
     description,
     status: 'missing',
     installHint: OPENCODE_LOGIN_HINT,
@@ -138,12 +250,34 @@ async function checkAuthState(binary: string | null): Promise<DependencyCheck> {
 }
 
 /**
- * Check whether OpenCode's external dependencies are satisfied: (a) a runnable
- * `opencode` CLI binary — configured, provisioned, or on `PATH` — and (b)
- * stored provider credentials. Surfaced by `GET /api/system/requirements` once
- * the runtime is registered. Probes run concurrently and are each time-bounded.
+ * Check that OpenCode can reach a model provider — reading DorkOS's own persisted
+ * provider state first, then falling back to the `opencode auth list` CLI probe.
+ *
+ * @param binary - The resolved `opencode` binary (or `null`).
+ * @param deps - Injectable config + credential-provider seams.
  */
-export async function checkOpenCodeDependencies(): Promise<DependencyCheck[]> {
+async function checkAuthState(
+  binary: string | null,
+  deps: OpenCodeDependencyDeps
+): Promise<DependencyCheck> {
+  const persisted = await checkPersistedProvider(deps);
+  if (persisted) return persisted;
+  return checkCliAuth(binary);
+}
+
+/**
+ * Check whether OpenCode's external dependencies are satisfied: (a) a runnable
+ * `opencode` CLI binary — configured, provisioned, or on `PATH` — and (b) a
+ * reachable model provider (a DorkOS-connected provider first, else a
+ * CLI-authenticated one). Surfaced by `GET /api/system/requirements` once the
+ * runtime is registered. Probes run concurrently and are each time-bounded.
+ *
+ * @param deps - Injectable config + credential-provider seams (production
+ *   defaults resolve the module singletons).
+ */
+export async function checkOpenCodeDependencies(
+  deps: OpenCodeDependencyDeps = {}
+): Promise<DependencyCheck[]> {
   const binary = await resolveOpenCodeBinaryPath();
-  return Promise.all([checkCliBinary(binary), checkAuthState(binary)]);
+  return Promise.all([checkCliBinary(binary), checkAuthState(binary, deps)]);
 }

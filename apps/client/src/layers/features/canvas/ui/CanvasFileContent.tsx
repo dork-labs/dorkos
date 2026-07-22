@@ -3,7 +3,7 @@ import { Check, Pencil, RotateCw } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FileContentResponse, UiCanvasContent } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
-import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
+import { useAppStore, useResolvedTheme, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
 
@@ -84,7 +84,7 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
   const setDocumentEditing = useAppStore((s) => s.setDocumentEditing);
-  const { theme } = useTheme();
+  const resolvedTheme = useResolvedTheme();
 
   const { data, error, isLoading } = useQuery({
     queryKey: fileContentQueryKey(cwd as string, content.sourcePath),
@@ -128,7 +128,7 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
       documentId={documentId}
       cwd={cwd}
       loaded={data.content}
-      theme={theme === 'dark' ? 'dark' : 'light'}
+      theme={resolvedTheme}
       isEditing={editSession !== null}
       onEditingChange={handleEditingChange}
       setDocumentEditing={setDocumentEditing}

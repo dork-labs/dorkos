@@ -91,6 +91,18 @@ export function initializeExtensions(): void {
     register('dialog', dialog);
   }
 
+  // The living tour's in-session offer chip (DOR-419). The chat feature renders
+  // the `chat.suggestion-chips` slot; the tours feature contributes into it here
+  // (app layer), so neither feature imports the other's model. Self-gating: it
+  // renders null until an occasion stands.
+  register('chat.suggestion-chips', {
+    id: 'tour-offer',
+    component: lazy(() =>
+      import('@/layers/features/tours').then((m) => ({ default: m.TourOfferChips }))
+    ),
+    priority: 10,
+  });
+
   // Extensions settings tab (lazy-loaded to avoid bloating the initial bundle)
   register('settings.tabs', {
     id: 'extensions',

@@ -14,6 +14,10 @@ const mockState = {
   setDocumentEditing: vi.fn(),
 };
 const readFileContent = vi.fn();
+// The resolved theme handed to CodeMirror. `useResolvedTheme` (system→OS
+// resolution) is unit-tested in shared/model/__tests__/use-theme.test.ts; here
+// we prove the viewer forwards it instead of the old `=== 'dark'` collapse.
+const mockResolvedTheme = { value: 'light' as 'light' | 'dark' };
 
 /** Document id passed to the viewer under test. */
 const DOC_ID = 'doc-1';
@@ -23,7 +27,7 @@ vi.mock('@/layers/shared/model', () => {
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
-    useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
+    useResolvedTheme: () => mockResolvedTheme.value,
     useTransport: () => ({ readFileContent }),
   };
 });
@@ -53,17 +57,19 @@ vi.mock('../ui/CodeMirrorEditor', () => ({
     value,
     editable,
     onChange,
+    theme,
   }: {
     value: string;
     editable: boolean;
     onChange?: (v: string) => void;
+    theme?: string;
   }) => {
     // useEffect(mount) fires once per mount; a remount bumps the count.
     useEffect(() => {
       codeMirrorMountCount += 1;
     }, []);
     return (
-      <div data-testid="codemirror" data-editable={String(editable)}>
+      <div data-testid="codemirror" data-editable={String(editable)} data-theme={theme}>
         <span data-testid="cm-value">{value}</span>
         <button data-testid="cm-fire-change" onClick={() => onChange?.('edited body')}>
           change
@@ -90,6 +96,7 @@ describe('CanvasFileContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     codeMirrorMountCount = 0;
+    mockResolvedTheme.value = 'light';
     mockState.selectedCwd = '/work';
     mockFileSave.status = 'idle';
     mockFileSave.conflict = null;
@@ -106,6 +113,15 @@ describe('CanvasFileContent', () => {
     expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'false');
     expect(screen.getByTestId('cm-value')).toHaveTextContent('const x = 1;');
     expect(screen.getByRole('button', { name: 'Edit file' })).toBeInTheDocument();
+  });
+
+  it('forwards the resolved theme to CodeMirror (system + OS-dark → dark)', async () => {
+    // The reported defect: a system-theme user on a dark OS got a light code
+    // editor. The viewer now forwards the resolved theme, so it renders dark.
+    mockResolvedTheme.value = 'dark';
+    renderFile();
+    await screen.findByTestId('codemirror');
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-theme', 'dark');
   });
 
   it('edit → change autosaves through the file-save flow and flags edit mode', async () => {

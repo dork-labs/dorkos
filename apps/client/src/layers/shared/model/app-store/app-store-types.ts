@@ -100,6 +100,19 @@ export interface CoreSlice {
   /** Set the shared pending pre-launch runtime selection (null clears it). */
   setPendingRuntime: (runtime: string | null) => void;
 
+  /**
+   * A living tour (DOR-419) requested by name from anywhere in the app — the
+   * on-demand "Show me around" doors set it, and the tour host consumes and
+   * clears it. A cross-feature request seam so features that cannot import the
+   * tours feature (e.g. onboarding) can still launch a tour. Null when none is
+   * requested.
+   */
+  requestedTour: string | null;
+  /** Request a tour by id (the tour host runs it, then clears this). */
+  requestTour: (id: string) => void;
+  /** Clear the pending tour request (the host calls this after running it). */
+  clearRequestedTour: () => void;
+
   devtoolsOpen: boolean;
   toggleDevtools: () => void;
 

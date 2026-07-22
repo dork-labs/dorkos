@@ -1,6 +1,15 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronRight, MessageSquare, Plus, Clock, Server, X, type LucideIcon } from 'lucide-react';
+import {
+  ChevronRight,
+  Compass,
+  MessageSquare,
+  Plus,
+  Clock,
+  Server,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 
@@ -26,6 +35,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const openSettingsToTab = useAppStore((s) => s.openSettingsToTab);
+  const requestTour = useAppStore((s) => s.requestTour);
   const { startSession } = useDefaultAgentSession();
 
   const items: GettingStartedItem[] = [
@@ -33,6 +43,11 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
       icon: MessageSquare,
       label: 'Talk to DorkBot',
       onClick: startSession,
+    },
+    {
+      icon: Compass,
+      label: 'Show me around',
+      onClick: () => requestTour('general'),
     },
     {
       icon: Plus,

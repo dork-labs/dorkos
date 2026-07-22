@@ -148,8 +148,8 @@ function toProgress(line: OllamaPullLine): OllamaPullProgress {
  * DorkOS neither owns nor manages Ollama — it only triggers this one pull. Never
  * throws: an unreachable Ollama, a non-2xx response, an in-stream `{ error }`
  * line, or an interrupted stream all resolve to an honest `{ ok: false }` result.
- * The caller is expected to have already restricted `model` to a curated coding
- * model (see {@link ../ollama-catalog}).
+ * Any syntactically valid Ollama tag may be pulled (curated or not); the caller
+ * validates the tag shape before calling.
  *
  * @param model - The Ollama model id/tag to pull (e.g. `qwen2.5-coder:7b`).
  * @param onProgress - Optional callback for streamed download-progress frames.

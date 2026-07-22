@@ -17,6 +17,7 @@ import {
   useUpdateAdapterConfig,
 } from '@/layers/entities/relay';
 import { useBindings } from '@/layers/entities/binding';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { AdapterSetupWizard, CatalogCard } from '@/layers/features/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { ChannelSettingRow } from './ChannelSettingRow';
@@ -164,7 +165,7 @@ export function ChannelsTab() {
     <>
       {/* Active Channels */}
       {configuredChannels.length > 0 ? (
-        <FieldCard>
+        <FieldCard data-testid={TOUR_ANCHORS.relayChannels}>
           <FieldCardContent>
             {configuredChannels.map(({ instance, manifest }) => (
               <ChannelSettingRow

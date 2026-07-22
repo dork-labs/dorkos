@@ -47,6 +47,10 @@ vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,
 }));
 
+vi.mock('@/layers/features/tours', () => ({
+  TourHost: () => null,
+}));
+
 // Keep the real AppBannerSlot so this suite can prove *where* the global banner
 // lands in the shell (DOR-389): inside SidebarInset, below the header — never
 // above the shell where the fixed sidebar would paint over it. `useAppBanners` is

@@ -277,3 +277,15 @@ export { FilterBar } from './filter-bar';
 export { RouteErrorFallback } from './route-error-fallback';
 export { NotFoundFallback } from './not-found-fallback';
 export { AppCrashFallback } from './app-crash-fallback';
+export {
+  TourSpotlight,
+  type TourSpotlightProps,
+  TourCaption,
+  type TourCaptionProps,
+  useAnchorResolver,
+  usePrefersReducedMotion,
+  ANCHOR_TIMEOUT_MS,
+  ANCHOR_POLL_INTERVAL_MS,
+  type AnchorStatus,
+  type AnchorResolution,
+} from './tour-spotlight';
