@@ -131,6 +131,42 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     }
   }
 
+  /**
+   * Recycle the sidecar so the NEXT use boots fresh with current provider env.
+   *
+   * A just-connected credential (a first-ever OpenRouter / Direct provider key)
+   * only reaches the sidecar through `resolveOpenCodeProviderEnv` at spawn
+   * (ADR-0315). A sidecar that was already running when the key was stored still
+   * holds its pre-connect environment, so the new key would not take effect until
+   * the next restart. Recycling detaches and SIGTERMs the current child
+   * (cancelling any pending crash-restart) and returns the manager to `idle` so
+   * the next `getClient()` spawns a fresh sidecar with the new env. Unlike
+   * {@link shutdown}, the manager stays usable. The phase/child state flips
+   * synchronously before the kill is awaited, so a `getClient()` that races the
+   * teardown never receives the stale client. No-op when no sidecar is up (the
+   * next boot already picks up the credential) or after {@link shutdown}.
+   */
+  async recycle(): Promise<void> {
+    if (this.phase === 'stopped') return;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    const child = this.child;
+    // Flip state BEFORE the await: detach the child so its exit handler no-ops
+    // (the guard needs phase 'ready' AND this.child === child), and clear the
+    // client so a racing getClient() reboots instead of handing out the old one.
+    this.client = null;
+    this.child = null;
+    this.starting = null;
+    this.restartAttempts = 0;
+    this.phase = 'idle';
+    if (child) {
+      await this.killChild(child);
+      logger.info('[OpenCode] sidecar recycled — next use reboots with fresh provider env');
+    }
+  }
+
   /** Whether `shutdown()` has run. A method (not an inline compare) so async code paths can re-check after `await` without CFA narrowing lying to them. */
   private isStopped(): boolean {
     return this.phase === 'stopped';
