@@ -2695,11 +2695,12 @@ export type UploadProgress = z.infer<typeof UploadProgressSchema>;
 // === UI Control Schemas ===
 
 /**
- * A media source for the image/pdf canvas variants: an `https://` (or `http://`)
- * URL, a `data:` URI, or a local file path (absolute or session-relative). Local
- * paths are resolved within and confined to the session's working directory and
- * streamed by the server's raw-file route — only image and PDF content types are
- * ever served.
+ * A media source for the byte-backed canvas variants — `image`, `pdf`, `model3d`,
+ * `audio`, `video`, and `csv`: an `https://` (or `http://`) URL, a `data:` URI, or
+ * a local file path (absolute or session-relative). Local paths are resolved within
+ * and confined to the session's working directory and streamed by the server's
+ * raw-file route, which serves only the extensions in its media allowlist (images,
+ * PDF, 3D models, audio, and video; CSV loads over the text-content route).
  */
 const CanvasMediaSrcSchema = z.string().min(1);
 
