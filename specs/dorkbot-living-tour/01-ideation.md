@@ -23,11 +23,13 @@ DorkBot gives tours **of real surfaces, on real occasions**, not a day-one slide
 - **Interruption/resume.** A tour interrupted by navigation or an incoming approval simply ends (state saved as "seen"); no resume machinery in v1 — tours are ≤3 steps by design so resume isn't worth its complexity.
 - **Scope guardrails.** v1 subsystems: Tasks, Relay, Mesh, plus the on-demand general tour. Marketplace/Workspaces later. Nothing fires during an active streaming turn.
 
-## Open questions for SPECIFY
+## Open questions — ANSWERED 2026-07-22 (operator review)
 
-1. Does the "firsts" store live in `~/.dork/config.json` (schema addition + migration) or client localStorage (no migration, but not synced across clients)? Leaning config: multi-client consistency is the product's whole point.
-2. Can the tour offer ride the existing session-chip UI from Tier 1's conversation, or does it need a chat-level affordance for _any_ session (DorkBot suggestion chips as a general mechanism)?
-3. Accessibility review of the spotlight pattern (focus trap, screen-reader narration of captions).
+1. **Firsts store: `~/.dork/config.json`.** A `tours` block (`{ seen: string[], declined: string[] }`) beside `onboarding`; schema addition + semver migration per the `adding-config-fields` path. localStorage was rejected: per-browser state means being re-toured (or re-nagged) on every device, and multi-client consistency is the product's thesis. No backfill needed: occasions are observed 0-to-1 transitions, which pre-existing users with existing data never produce.
+2. **Tour offers do NOT ride Tier 1's chips: build a general suggestion-chip slot.** Tier 1's chips are script-local to the onboarding conversation; tour offers happen mid-real-session and must be client-rendered affordances (never LLM text). SPECIFY defines a session-surface suggestion-chip slot, triggered by client-observed events; the living tour is its first customer, future nudges reuse it.
+3. **Spotlight a11y: requirements committed now, primitive chosen in SPECIFY.** Esc and click-outside always end the tour; focus moves into and is trapped in the caption bubble; the dimmed background goes `inert`; captions announce via `aria-live="polite"` and name the target in text; reduced-motion collapses cutout animation.
+
+Remaining SPECIFY-time work is empirical, not decisional: prototype cutout rect-to-rect morphs under `motion`, and anchor-wait behavior under slow loads (skip honestly on timeout).
 
 ## Non-goals
 
