@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { InlineCode } from './inline-code';
 
 interface FeatureDisabledStateProps {
   icon: LucideIcon;
@@ -21,7 +22,7 @@ export function FeatureDisabledState({
         <p className="font-medium">{name} is currently disabled</p>
         <p className="text-muted-foreground mt-1 text-sm">{description}</p>
       </div>
-      <code className="bg-muted mt-2 rounded-md px-3 py-1.5 font-mono text-sm">{command}</code>
+      <InlineCode className="mt-2 px-3 py-1.5 text-sm">{command}</InlineCode>
     </div>
   );
 }
