@@ -106,6 +106,22 @@ A ready OpenCode has no way to change its power source. Fix: the ready-state set
 
 A session's saved model can stop existing (provider switched, model deleted). Client: when the saved model is absent from options, the model menu shows it marked "(not available)" with plain hint copy to pick another; never auto-switch. Server/client: a turn failure caused by an unknown/unavailable model maps to a friendly message pointing at the model menu (ride the typed turn-error path from the runtime-hardening batch), never a raw sidecar error.
 
+## v1.2 addendum — dogfood round 2 (DOR-439, 2026-07-22)
+
+### 12. Spinners must spin (PR4)
+
+Three `Loader2` icons render without `animate-spin`, so installs look frozen: `features/runtime-connect/ui/connect-feedback.tsx:27`, `features/runtime-connect/ui/OllamaLocalPath.tsx:480`, `entities/runtime/ui/RuntimeSetupDialog.tsx:452` (repo sweep found no other sites). Fix all three; add the class to whatever shared feedback primitive exists rather than per-site if one is shared.
+
+### 13. Explained, guided Ollama install (PR4)
+
+The Ollama not-installed state is a bare "Install Ollama" external link. Replace with:
+
+1. **Explainer, plain language** (writing-for-humans): what Ollama is (a free, open-source app that runs AI models directly on your computer) and why DorkOS needs it for local models (it is what keeps everything private; nothing you type leaves the machine).
+2. **Guided install following the onboarding provision pattern** (SSE progress, sibling of `provisionOpenCode` in `services/runtimes/opencode/`): one-click **only where it can succeed without a password prompt** — macOS via Homebrew when `brew` is on PATH (`brew install ollama`), Windows via winget when present. Linux: no silent path (the official installer needs sudo), so show the official one-line command to copy (`curl -fsSL https://ollama.com/install.sh | sh`) with copy affordance. The https://ollama.com/download link stays visible on every platform as the fallback.
+3. **Post-install**: re-probe detection; when installed-but-not-running, honest guidance to start it (macOS brew: attempt `brew services start ollama` as part of the guided path; otherwise plain instructions). Never claim it works before the probe confirms it is reachable.
+
+Constraints: loopback-only on any new route; installer failures condense to honest, non-raw messages (match `provisionOpenCode`'s pattern); no sudo attempts from the server, ever.
+
 ## Risks / notes for implementers
 
 - `deriveRuntimeReadiness` name-matching contract (see §1 constraint).

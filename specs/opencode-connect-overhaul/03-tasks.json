@@ -173,6 +173,45 @@
       "dependencies": ["3.2"],
       "parallelWith": [],
       "issue": "DOR-427"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "PR4 — dogfood round 2",
+      "subject": "[opencode-connect-overhaul] [P4] Make the three static Loader2 spinners spin",
+      "description": "Per spec §12: add animate-spin at connect-feedback.tsx:27, OllamaLocalPath.tsx:480, RuntimeSetupDialog.tsx:452 (or the shared primitive if one underlies them). Snapshot/behavioral assertion that the class is present.",
+      "activeForm": "Fixing static spinners",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["4.2"],
+      "issue": "DOR-439"
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "PR4 — dogfood round 2",
+      "subject": "[opencode-connect-overhaul] [P4] Ollama guided install: server provision seam",
+      "description": "Per spec §13: sibling of provisionOpenCode — detect capability (brew on PATH / winget on Windows), POST /api/runtimes/opencode/ollama/provision SSE route (loopback-only) streaming installer progress; macOS brew path also attempts brew services start ollama; honest condensed failures; capability surfaced to the client (e.g. in the ollama status payload: installMethod: brew|winget|manual). No sudo ever. Tests with injected exec seams.",
+      "activeForm": "Building the Ollama provision seam",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["4.1"],
+      "issue": "DOR-439"
+    },
+    {
+      "id": "4.3",
+      "phase": 4,
+      "phaseName": "PR4 — dogfood round 2",
+      "subject": "[opencode-connect-overhaul] [P4] Ollama not-installed state: explainer + one-click/copyable install UI",
+      "description": "Per spec §13: replace the bare link with the explainer copy, platform-adaptive action (one-click with SSE progress when installMethod is brew/winget; copyable official command on Linux/manual; download link always), post-install re-probe and honest not-running guidance. Mirror the onboarding install UI pattern. RTL tests per install-method state.",
+      "activeForm": "Building the guided Ollama install UI",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["4.2"],
+      "parallelWith": [],
+      "issue": "DOR-439"
     }
   ]
 }
