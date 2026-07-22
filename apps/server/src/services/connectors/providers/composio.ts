@@ -33,7 +33,9 @@ import type {
   ConnectStart,
 } from '@dorkos/shared/connector-provider';
 import type { CredentialProvider } from '../../core/credential-provider.js';
+import { logger } from '../../../lib/logger.js';
 import {
+  ComposioApiError,
   FetchComposioHttpClient,
   type ComposioAccountStatus,
   type ComposioConnectedAccount,
@@ -85,6 +87,24 @@ export function toComposioAccountId(accountId: ConnectedAccountId): string {
   return accountId.startsWith(prefix) ? accountId.slice(prefix.length) : accountId;
 }
 
+/**
+ * Whether an error is a routine Composio transport failure the read/expose
+ * methods must degrade over rather than throw through the port: a
+ * {@link ComposioApiError} (any HTTP status — a stale key's 401, a 5xx, a
+ * swallowed-elsewhere 404) or a `fetch` timeout (`AbortError`). A non-transport
+ * error (a genuine bug) is deliberately NOT matched, so it still surfaces.
+ *
+ * @param err - The caught error.
+ */
+function isTransportError(err: unknown): boolean {
+  return err instanceof ComposioApiError || (err instanceof Error && err.name === 'AbortError');
+}
+
+/** A secret-free message for a caught transport error (ComposioApiError messages are secret-free by design). */
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** Map a Composio toolkit auth scheme onto the port's {@link ConnectorToolkit.authKind}. */
 function toAuthKind(authScheme: string | undefined): ConnectorToolkit['authKind'] {
   if (authScheme === 'API_KEY') return 'api-key';
@@ -117,6 +137,29 @@ export interface ComposioConnectorProviderOpts {
  * Managed-custody connector over Composio. Multi-account by construction:
  * distinct connects of one toolkit (distinguished by `alias`) yield distinct
  * `ca_…` handles, each an independently-addressable {@link ConnectedAccountId}.
+ *
+ * **Throw-free contract** (a Composio API call can fail — a stale key's 401, a
+ * 5xx, a `fetch` timeout — so each method declares how it degrades):
+ *
+ * - `listToolkits`, `listAccounts` — throw-free; a transport failure degrades to
+ *   an empty list (logged). The registry aggregation records a warning upstream.
+ * - `toolServerForAccount` — throw-free; a transport failure resolves `null` (the
+ *   surfaced per-account null branch), because its consumer
+ *   (`session-exposure.attach`) awaits it unguarded and a throw would 500 the
+ *   attach route instead of recording attach-with-warning.
+ * - `pollConnect` — throw-free; maps a transport failure to a failure-typed
+ *   `{ status: 'failed' }`.
+ * - `disconnect` — idempotent: the client swallows a 404 (an unknown/already-
+ *   revoked id resolves cleanly). A genuine 5xx on a revoke surfaces (throws)
+ *   rather than falsely reporting success — like `startConnect`, revoke is an
+ *   interactive action.
+ * - `startConnect` — MAY throw: connect is an interactive settings action with no
+ *   failure type on the port (mirrors raw-MCP rejecting a duplicate connect), so
+ *   a transport failure or a missing authorize URL throws a clear error the UI
+ *   surfaces for retry.
+ *
+ * A non-transport error (a genuine bug, not a routine API failure) is never
+ * swallowed — it surfaces from every method.
  */
 export class ComposioConnectorProvider implements ConnectorProvider {
   readonly type = COMPOSIO_PROVIDER_TYPE;
@@ -143,42 +186,82 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   }
 
   async listToolkits(): Promise<ConnectorToolkit[]> {
-    const toolkits = await this._client.listToolkits();
-    return toolkits.map((tk) => ({
-      slug: tk.slug,
-      displayName: tk.name,
-      authKind: toAuthKind(tk.authScheme),
-      ...(typeof tk.maxAccountsPerToolkit === 'number' && {
-        maxAccountsPerUser: tk.maxAccountsPerToolkit,
-      }),
-    }));
+    try {
+      const toolkits = await this._client.listToolkits();
+      return toolkits.map((tk) => ({
+        slug: tk.slug,
+        displayName: tk.name,
+        authKind: toAuthKind(tk.authScheme),
+        ...(typeof tk.maxAccountsPerToolkit === 'number' && {
+          maxAccountsPerUser: tk.maxAccountsPerToolkit,
+        }),
+      }));
+    } catch (err) {
+      // Throw-free: a transport failure degrades to an empty list. The registry
+      // aggregation still records a warning upstream (it also races each provider
+      // under a timeout), but the adapter itself must not throw through the port.
+      if (isTransportError(err)) {
+        logger.warn(`[Connectors] composio listToolkits degraded: ${errText(err)}`);
+        return [];
+      }
+      throw err;
+    }
   }
 
   async startConnect(toolkit: string, opts?: { label?: string }): Promise<ConnectStart> {
-    // The label is carried as Composio's human-readable account alias, the
-    // disambiguator between two accounts of one toolkit (spike §1.3).
+    // Connect is an interactive settings action with NO failure type on the port
+    // (mirrors raw-MCP rejecting a duplicate connect), so a transport failure
+    // here throws a clear error rather than degrading — the UI shows it and the
+    // user retries. The label is carried as Composio's human-readable account
+    // alias, the disambiguator between two accounts of one toolkit (spike §1.3).
     const request = await this._client.initiateConnection({
       toolkit,
       ...(opts?.label && { alias: opts.label }),
     });
+    if (!request.redirectUrl) {
+      // A missing consent URL is unusable — fail loudly instead of returning an
+      // empty `authorizeUrl` the picker would silently open to nowhere.
+      throw new Error(`Composio returned no authorize URL for toolkit '${toolkit}'.`);
+    }
     return { authorizeUrl: request.redirectUrl, flowId: request.connectionRequestId };
   }
 
   async pollConnect(flowId: string): Promise<ConnectPoll> {
-    const state = await this._client.getConnectionState(flowId);
-    if (state.status === 'ACTIVE' && state.account) {
-      return { status: 'connected', account: this._toPortAccount(state.account) };
+    try {
+      const state = await this._client.getConnectionState(flowId);
+      if (state.status === 'ACTIVE' && state.account) {
+        return { status: 'connected', account: this._toPortAccount(state.account) };
+      }
+      if (state.status === 'INITIATED') {
+        return { status: 'pending' };
+      }
+      // Any unusable terminal state is a typed failure, never a throw.
+      return {
+        status: 'failed',
+        error: state.error ?? `connect ended in status '${state.status}'`,
+      };
+    } catch (err) {
+      // The port makes failure typed on pollConnect — a transport failure while
+      // polling maps to a failed poll, never a throw.
+      if (isTransportError(err)) {
+        return { status: 'failed', error: errText(err) };
+      }
+      throw err;
     }
-    if (state.status === 'INITIATED') {
-      return { status: 'pending' };
-    }
-    // Any unusable terminal state is a typed failure, never a throw.
-    return { status: 'failed', error: state.error ?? `connect ended in status '${state.status}'` };
   }
 
   async listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
-    const accounts = await this._client.listConnectedAccounts(opts);
-    return accounts.map((account) => this._toPortAccount(account));
+    try {
+      const accounts = await this._client.listConnectedAccounts(opts);
+      return accounts.map((account) => this._toPortAccount(account));
+    } catch (err) {
+      // Throw-free: a transport failure degrades to an empty list (see listToolkits).
+      if (isTransportError(err)) {
+        logger.warn(`[Connectors] composio listAccounts degraded: ${errText(err)}`);
+        return [];
+      }
+      throw err;
+    }
   }
 
   async disconnect(accountId: ConnectedAccountId): Promise<void> {
@@ -193,13 +276,24 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     // Route the opaque id back to its Composio handle and mint the Rube MCP
     // session. A null session (unusable account, no live url) surfaces as null —
     // the per-account warning path (spec §Detailed Design 3), never a throw.
-    const session = await this._client.mcpSessionForAccount(toComposioAccountId(accountId));
-    if (!session) return null;
-    return {
-      transport: 'http',
-      url: session.url,
-      ...(session.headers && { headers: session.headers }),
-    };
+    // Its consumer (session-exposure attach) awaits this UNGUARDED, so a stale
+    // key's 401, a 5xx, or a timeout must also resolve null (attach-recorded,
+    // surfaced-as-warning), not throw a 500 out of the attach route.
+    try {
+      const session = await this._client.mcpSessionForAccount(toComposioAccountId(accountId));
+      if (!session) return null;
+      return {
+        transport: 'http',
+        url: session.url,
+        ...(session.headers && { headers: session.headers }),
+      };
+    } catch (err) {
+      if (isTransportError(err)) {
+        logger.warn(`[Connectors] composio toolServerForAccount degraded to null: ${errText(err)}`);
+        return null;
+      }
+      throw err;
+    }
   }
 
   /** Map a Composio domain account onto the provider-neutral {@link ConnectedAccount}. */

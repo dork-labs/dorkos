@@ -5,14 +5,15 @@ import type {
   CredentialProvider,
   CredentialResolution,
 } from '../../../core/credential-provider.js';
-import type {
-  ComposioAccountStatus,
-  ComposioConnectedAccount,
-  ComposioConnectionRequest,
-  ComposioConnectionState,
-  ComposioHttpClient,
-  ComposioMcpSession,
-  ComposioToolkitInfo,
+import {
+  ComposioApiError,
+  type ComposioAccountStatus,
+  type ComposioConnectedAccount,
+  type ComposioConnectionRequest,
+  type ComposioConnectionState,
+  type ComposioHttpClient,
+  type ComposioMcpSession,
+  type ComposioToolkitInfo,
 } from '../composio-client.js';
 import {
   ComposioConnectorProvider,
@@ -36,6 +37,7 @@ class FakeComposioClient implements ComposioHttpClient {
   >();
   private _counter = 0;
   private _liveSessions = true;
+  private _failure: Error | null = null;
 
   private readonly _toolkits: ComposioToolkitInfo[] = [
     { slug: 'gmail', name: 'Gmail', authScheme: 'OAUTH2' },
@@ -43,6 +45,7 @@ class FakeComposioClient implements ComposioHttpClient {
   ];
 
   listToolkits(): Promise<ComposioToolkitInfo[]> {
+    if (this._failure) return Promise.reject(this._failure);
     return Promise.resolve([...this._toolkits]);
   }
 
@@ -50,6 +53,7 @@ class FakeComposioClient implements ComposioHttpClient {
     toolkit: string;
     alias?: string;
   }): Promise<ComposioConnectionRequest> {
+    if (this._failure) return Promise.reject(this._failure);
     this._counter += 1;
     const connectionRequestId = `cr_${this._counter}`;
     this._requests.set(connectionRequestId, { toolkit: input.toolkit, alias: input.alias });
@@ -60,6 +64,7 @@ class FakeComposioClient implements ComposioHttpClient {
   }
 
   getConnectionState(connectionRequestId: string): Promise<ComposioConnectionState> {
+    if (this._failure) return Promise.reject(this._failure);
     const request = this._requests.get(connectionRequestId);
     if (!request) {
       return Promise.resolve({
@@ -86,6 +91,7 @@ class FakeComposioClient implements ComposioHttpClient {
   }
 
   listConnectedAccounts(opts?: { toolkit?: string }): Promise<ComposioConnectedAccount[]> {
+    if (this._failure) return Promise.reject(this._failure);
     const all = [...this._accounts.values()];
     return Promise.resolve(opts?.toolkit ? all.filter((a) => a.toolkit === opts.toolkit) : all);
   }
@@ -97,6 +103,7 @@ class FakeComposioClient implements ComposioHttpClient {
   }
 
   mcpSessionForAccount(connectedAccountId: string): Promise<ComposioMcpSession | null> {
+    if (this._failure) return Promise.reject(this._failure);
     const account = this._accounts.get(connectedAccountId);
     if (!account || account.status !== 'ACTIVE' || !this._liveSessions) {
       return Promise.resolve(null);
@@ -117,6 +124,18 @@ class FakeComposioClient implements ComposioHttpClient {
   setLiveSessions(live: boolean): void {
     this._liveSessions = live;
   }
+
+  /** Make every Composio call reject with `err` (drives the transport-degrade path). */
+  failWith(err: Error | null): void {
+    this._failure = err;
+  }
+}
+
+/** Build an AbortError like a `fetch` timeout raises (matched by name, not type). */
+function abortError(): Error {
+  const err = new Error('The operation was aborted.');
+  err.name = 'AbortError';
+  return err;
 }
 
 function makeProvider(): ComposioConnectorProvider {
@@ -230,7 +249,82 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
   });
 });
 
-describe('maybeCreatecomposioProvider — the configured-only registry gate', () => {
+// The mock suite structurally can't catch this: the fake client never errors on
+// its own, so these lock the degrade contract by forcing the client to reject.
+// Session-exposure awaits toolServerForAccount UNGUARDED — a throw here would 500
+// the attach route instead of degrading to attach-recorded-with-warning.
+describe('ComposioConnectorProvider — throw-free degrade on transport failure', () => {
+  const errors: Array<{ label: string; err: () => Error }> = [
+    {
+      label: 'ComposioApiError 401 (stale key)',
+      err: () => new ComposioApiError(401, 'unauthorized'),
+    },
+    {
+      label: 'ComposioApiError 500 (server error)',
+      err: () => new ComposioApiError(500, 'server error'),
+    },
+    { label: 'AbortError (fetch timeout)', err: abortError },
+  ];
+
+  for (const { label, err } of errors) {
+    it(`toolServerForAccount resolves null on ${label}`, async () => {
+      const client = new FakeComposioClient();
+      const provider = new ComposioConnectorProvider({ client });
+      const { flowId } = await provider.startConnect('gmail');
+      const account = (await provider.pollConnect(flowId)).account!;
+
+      client.failWith(err());
+      await expect(provider.toolServerForAccount(account.id)).resolves.toBeNull();
+    });
+
+    it(`listToolkits returns empty on ${label}`, async () => {
+      const client = new FakeComposioClient();
+      client.failWith(err());
+      const provider = new ComposioConnectorProvider({ client });
+      await expect(provider.listToolkits()).resolves.toEqual([]);
+    });
+
+    it(`listAccounts returns empty on ${label}`, async () => {
+      const client = new FakeComposioClient();
+      client.failWith(err());
+      const provider = new ComposioConnectorProvider({ client });
+      await expect(provider.listAccounts()).resolves.toEqual([]);
+    });
+
+    it(`pollConnect maps ${label} to a failure-typed result`, async () => {
+      const client = new FakeComposioClient();
+      client.failWith(err());
+      const provider = new ComposioConnectorProvider({ client });
+      const poll = await provider.pollConnect('cr_anything');
+      expect(poll.status).toBe('failed');
+      expect(poll.error).toBeTruthy();
+    });
+  }
+
+  it('startConnect throws a typed error when Composio returns no authorize URL', async () => {
+    // A NullUrlClient returns a connection request with an empty redirectUrl —
+    // the picker must not silently open an empty authorize URL.
+    const client: ComposioHttpClient = {
+      listToolkits: () => Promise.resolve([{ slug: 'gmail', name: 'Gmail', authScheme: 'OAUTH2' }]),
+      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cr_1', redirectUrl: '' }),
+      getConnectionState: () => Promise.resolve({ status: 'INITIATED' }),
+      listConnectedAccounts: () => Promise.resolve([]),
+      deleteConnectedAccount: () => Promise.resolve(),
+      mcpSessionForAccount: () => Promise.resolve(null),
+    };
+    const provider = new ComposioConnectorProvider({ client });
+    await expect(provider.startConnect('gmail')).rejects.toThrow(/no authorize URL/);
+  });
+
+  it('does NOT swallow a non-transport error (a genuine bug still surfaces)', async () => {
+    const client = new FakeComposioClient();
+    client.failWith(new TypeError('bug in mapping'));
+    const provider = new ComposioConnectorProvider({ client });
+    await expect(provider.listToolkits()).rejects.toThrow(/bug in mapping/);
+  });
+});
+
+describe('maybeCreateComposioProvider — the configured-only registry gate', () => {
   /** A credential provider that resolves exactly the refs it is seeded with. */
   function fakeCredentials(resolved: Record<string, string>): CredentialProvider {
     return {
