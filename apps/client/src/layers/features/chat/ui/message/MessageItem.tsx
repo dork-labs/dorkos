@@ -37,6 +37,12 @@ interface MessageItemProps {
   inputZoneToolCallId?: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
   textEffect?: TextEffectConfig;
+  /**
+   * Presentation mode for off-session, scripted lines (e.g. the onboarding
+   * conversation): suppress the hover timestamp and the hover background so a
+   * synthetic bubble reads as narration, not an interactive chat message.
+   */
+  presentation?: boolean;
 }
 
 /** Format a timestamp string to a short time display (HH:MM). */
@@ -67,6 +73,7 @@ export function MessageItem({
   onRetry,
   inputZoneToolCallId = null,
   textEffect,
+  presentation = false,
 }: MessageItemProps) {
   const isUser = message.role === 'user';
   // Local-command output is a `user`-role message, but its content is a command
@@ -123,10 +130,10 @@ export function MessageItem({
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         data-testid="message-item"
         data-role={message.role}
-        className={styles.root()}
+        className={cn(styles.root(), presentation && 'hover:bg-transparent')}
       >
         {isGroupStart && groupIndex > 0 && !isUser && <div className={styles.divider()} />}
-        {message.timestamp && (
+        {!presentation && message.timestamp && (
           <span
             className={cn(
               styles.timestamp(),
