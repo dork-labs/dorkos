@@ -155,15 +155,34 @@ describe('OnboardingFlow', () => {
     expect(screen.queryByText('Skip', { exact: true })).toBeNull();
   });
 
-  it('the in-UI Back returns from the conversation to requirements', async () => {
+  it('the in-UI Back pops the forward push (no phantom history entry)', async () => {
     const harness = await renderFlow('/');
     fireEvent.click(screen.getByText('Get Started'));
     fireEvent.click(await screen.findByText('Continue'));
     await screen.findByTestId('conversation');
 
+    // Drain the mount/forward actions, then Back should POP, not PUSH — so a
+    // later browser Back can't land on a phantom conversation entry.
+    harness.actions.length = 0;
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(await screen.findByTestId('requirements-step')).toBeTruthy();
     await waitFor(() => expect(harness.readStage()).toBe('requirements'));
+    expect(harness.actions).toContain('BACK');
+    expect(harness.actions).not.toContain('PUSH');
+  });
+
+  it('the in-UI Back pushes to requirements when the stage was restored by refresh', async () => {
+    // Landed directly on conversation (refresh/deep-link) — nothing to pop, so
+    // Back pushes to requirements instead of ejecting out of the app.
+    const harness = await renderFlow('/?onboarding=conversation');
+    expect(screen.getByTestId('conversation')).toBeTruthy();
+
+    harness.actions.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByTestId('requirements-step')).toBeTruthy();
+    await waitFor(() => expect(harness.readStage()).toBe('requirements'));
+    expect(harness.actions).toContain('PUSH');
+    expect(harness.actions).not.toContain('BACK');
   });
 
   it('Skip setup in the conversation dismisses and completes', async () => {

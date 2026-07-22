@@ -30,7 +30,7 @@ interface OnboardingFlowProps {
  * @param renderRuntimeConnect - App-shell slot for the terminal-free connect flow.
  */
 export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingFlowProps) {
-  const { stage, goToStage } = useOnboardingStage();
+  const { stage, goToStage, goBack } = useOnboardingStage();
   const { dismiss, startOnboarding } = useOnboarding();
 
   // Record onboarding start timestamp once on mount. `startOnboarding` is itself
@@ -49,10 +49,12 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
   }, [dismiss, onComplete]);
 
   // All stage moves go through the history-integrated navigator so browser
-  // back/forward and the in-UI Back button walk the same path.
+  // back/forward and the in-UI Back button walk the same path. The in-UI Back
+  // pops the forward push (mirroring browser-Back) rather than pushing again,
+  // and falls back to requirements when the user landed here via refresh.
   const goToRequirements = useCallback(() => goToStage('requirements'), [goToStage]);
   const goToConversation = useCallback(() => goToStage('conversation'), [goToStage]);
-  const backToRequirements = useCallback(() => goToStage('requirements'), [goToStage]);
+  const backToRequirements = useCallback(() => goBack('requirements'), [goBack]);
 
   if (stage === 'welcome') {
     return (
