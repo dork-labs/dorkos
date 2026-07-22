@@ -88,24 +88,44 @@ export function useOnboardingStage(): OnboardingStageNav {
   return { stage, goToStage, goBack };
 }
 
+/** Inputs to {@link useClearOnboardingStageWhenDone}. */
+export interface ClearOnboardingStageInput {
+  /** True once onboarding is completed or dismissed. */
+  done: boolean;
+  /**
+   * True while the first-run overlay is latched open (the app shell's
+   * `useOnboardingOverlayVisible` value). While the overlay shows, the param is
+   * its live stage source and must not be stripped.
+   */
+  overlayVisible: boolean;
+}
+
 /**
  * Strip a lingering `?onboarding=` stage param once onboarding is over.
  *
- * The overlay owns the param while it is showing, but after the user finishes or
- * dismisses onboarding the overlay never mounts — so a param left by finishing,
- * or deep-linked by a returning user, would otherwise sit in the URL forever.
- * Gating on `done` (rather than "overlay hidden") means a fresh user's param
- * survives config loading and is read back on refresh; only a genuinely finished
- * or dismissed state clears it, via `replace` so it leaves no history entry.
+ * The overlay reads the param as its live stage while it is showing, but after
+ * the user finishes or dismisses onboarding a param left by finishing, or
+ * deep-linked by a returning user, would otherwise sit in the URL forever.
+ * Gating on `done` (rather than a config refetch) means a fresh user's param
+ * survives config loading and is read back on refresh.
  *
- * @param done - True once onboarding is completed or dismissed.
+ * The strip is additionally gated on the overlay being closed. The conversation
+ * writes `completedAt` mid-flow (so a dissolve into the real session is durable),
+ * which flips `done` true while the overlay is deliberately still latched open —
+ * stripping then would rewind the derived stage to `welcome` and destroy the
+ * in-progress conversation. So the param is cleared only once the overlay has
+ * actually closed (first-message dissolve, Skip setup, or dismiss), via `replace`
+ * so it leaves no history entry.
+ *
+ * @param input - The done signal plus whether the overlay is still showing.
  */
-export function useClearOnboardingStageWhenDone(done: boolean): void {
+export function useClearOnboardingStageWhenDone(input: ClearOnboardingStageInput): void {
+  const { done, overlayVisible } = input;
   const navigate = useNavigate();
   const raw = (useSearch({ strict: false }) as { onboarding?: unknown }).onboarding;
   useEffect(() => {
-    if (!raw || !done) return;
+    if (!raw || !done || overlayVisible) return;
     const updater: OnboardingSearchUpdater = (prev) => ({ ...prev, onboarding: undefined });
     navigate({ search: updater as never, replace: true });
-  }, [raw, done, navigate]);
+  }, [raw, done, overlayVisible, navigate]);
 }

@@ -18,9 +18,9 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 
-import { onboardingStageSearchSchema } from '../model/onboarding-stage';
+import { onboardingStageSearchSchema, type OnboardingStage } from '../model/onboarding-stage';
 import { useOnboarding } from '../model/use-onboarding';
-import { useClearOnboardingStageWhenDone } from '../model/use-onboarding-stage';
+import { useClearOnboardingStageWhenDone, useOnboardingStage } from '../model/use-onboarding-stage';
 
 // ── Router harness (mirrors use-dialog-deep-link.test) ───────
 const HookSlotContext = createContext<ReactNode>(null);
@@ -62,24 +62,84 @@ describe('useClearOnboardingStageWhenDone', () => {
   });
 
   it('leaves the stage param in place while onboarding is not done', async () => {
-    renderHook(() => useClearOnboardingStageWhenDone(false), { wrapper: harness.Wrapper });
+    renderHook(() => useClearOnboardingStageWhenDone({ done: false, overlayVisible: false }), {
+      wrapper: harness.Wrapper,
+    });
     await harness.waitForRouterReady();
     // Give any (unwanted) navigation a chance to flush, then assert it stayed.
     await new Promise((r) => setTimeout(r, 0));
     expect(harness.readStage()).toBe('requirements');
   });
 
-  it('strips the stage param once onboarding is done', async () => {
-    renderHook(() => useClearOnboardingStageWhenDone(true), { wrapper: harness.Wrapper });
+  it('strips the stage param once onboarding is done and the overlay has closed', async () => {
+    renderHook(() => useClearOnboardingStageWhenDone({ done: true, overlayVisible: false }), {
+      wrapper: harness.Wrapper,
+    });
     await harness.waitForRouterReady();
     await waitFor(() => expect(harness.readStage()).toBeUndefined());
   });
 
   it('is a no-op when there is no stage param to strip', async () => {
     harness = buildHarness('/');
-    renderHook(() => useClearOnboardingStageWhenDone(true), { wrapper: harness.Wrapper });
+    renderHook(() => useClearOnboardingStageWhenDone({ done: true, overlayVisible: false }), {
+      wrapper: harness.Wrapper,
+    });
     await harness.waitForRouterReady();
     expect(harness.readStage()).toBeUndefined();
+  });
+
+  // ── Mid-flow strip guard (the reproduced regression) ─────────
+  //
+  // The conversation writes `completedAt` at its handoff beat (so a dissolve
+  // into the real session is durable), flipping `done` true while the overlay is
+  // deliberately still latched open. Stripping the param then would rewind the
+  // derived stage to `welcome` and destroy the in-progress conversation. These
+  // probe the real derivation + strip together, as the app shell wires them.
+
+  /** Drives the derived stage and the strip hook together, mirroring AppShell. */
+  function useStageStripProbe(input: { done: boolean; overlayVisible: boolean }): OnboardingStage {
+    const { stage } = useOnboardingStage();
+    useClearOnboardingStageWhenDone(input);
+    return stage;
+  }
+
+  it('keeps the param and holds the conversation stage while the overlay is open and done flips true', async () => {
+    harness = buildHarness('/?onboarding=conversation');
+    const { result } = renderHook(() => useStageStripProbe({ done: true, overlayVisible: true }), {
+      wrapper: harness.Wrapper,
+    });
+    await harness.waitForRouterReady();
+    // Let any (unwanted) strip navigation flush, then assert nothing rewound.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(harness.readStage()).toBe('conversation');
+    expect(result.current).toBe('conversation');
+  });
+
+  it('strips the param once the overlay closes (dissolve/skip), after holding it open', async () => {
+    harness = buildHarness('/?onboarding=conversation');
+    const { result, rerender } = renderHook(
+      ({ overlayVisible }: { overlayVisible: boolean }) =>
+        useStageStripProbe({ done: true, overlayVisible }),
+      { wrapper: harness.Wrapper, initialProps: { overlayVisible: true } }
+    );
+    await harness.waitForRouterReady();
+    await new Promise((r) => setTimeout(r, 0));
+    // Held open: the param and stage survive the mid-flow `completedAt` write.
+    expect(harness.readStage()).toBe('conversation');
+    expect(result.current).toBe('conversation');
+
+    // Overlay closes (first-message dissolve or Skip setup) → param is stripped.
+    rerender({ overlayVisible: false });
+    await waitFor(() => expect(harness.readStage()).toBeUndefined());
+  });
+
+  it('strips a deep-linked param for a completed user when the overlay is not showing', async () => {
+    harness = buildHarness('/?onboarding=conversation');
+    renderHook(() => useClearOnboardingStageWhenDone({ done: true, overlayVisible: false }), {
+      wrapper: harness.Wrapper,
+    });
+    await harness.waitForRouterReady();
+    await waitFor(() => expect(harness.readStage()).toBeUndefined());
   });
 });
 
@@ -103,7 +163,11 @@ function deferred<T>() {
 /** Drives the real useOnboarding + strip hook, as the app shell wires them. */
 function StripProbe() {
   const { isOnboardingComplete, isOnboardingDismissed } = useOnboarding();
-  useClearOnboardingStageWhenDone(isOnboardingComplete || isOnboardingDismissed);
+  // The overlay is not mounted in this harness, so it is never showing.
+  useClearOnboardingStageWhenDone({
+    done: isOnboardingComplete || isOnboardingDismissed,
+    overlayVisible: false,
+  });
   return null;
 }
 
