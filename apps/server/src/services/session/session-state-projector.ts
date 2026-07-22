@@ -946,4 +946,32 @@ export function rekeyProjector(oldId: string, newId: string): void {
   // signal, a pre-rekey 'streaming' would pin agent-row liveness forever.
   projector.adoptSessionId(newId);
   notifyStatusChange(projector, oldId);
+  // Notify id-keyed subsystems that hold their own per-session state (e.g. the
+  // connector attach set) so they can move it across the same rekey. Kept as an
+  // observer list so this session-core module never imports those domains.
+  for (const listener of rekeyListeners) listener(oldId, newId);
+}
+
+/** A subscriber notified when a projector is rekeyed to its canonical id. */
+type RekeyListener = (oldId: string, newId: string) => void;
+
+/** Observers moved across a canonical-id rekey; see {@link onProjectorRekey}. */
+const rekeyListeners = new Set<RekeyListener>();
+
+/**
+ * Subscribe to projector rekeys — the canonical-id remap a brand-new session
+ * undergoes mid-first-turn ({@link rekeyProjector}). Any subsystem that holds
+ * per-session state keyed by the request id (the connector attach set) uses this
+ * to migrate that state to the canonical id, so it is not stranded on the
+ * pre-remap id. Runtime-neutral and decoupled: the listener is called after the
+ * projector move, with `(oldId, newId)`.
+ *
+ * @param listener - Invoked on every rekey with the old and new session ids.
+ * @returns An unsubscribe function.
+ */
+export function onProjectorRekey(listener: RekeyListener): () => void {
+  rekeyListeners.add(listener);
+  return () => {
+    rekeyListeners.delete(listener);
+  };
 }

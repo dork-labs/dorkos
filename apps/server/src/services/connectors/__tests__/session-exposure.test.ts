@@ -115,6 +115,43 @@ describe('SessionConnectorService', () => {
     expect(Object.keys(servers).sort()).toEqual(['gmail-shared', 'gmail-shared-2']);
   });
 
+  it('pins a server name for the session lifetime — a sibling detach never renames it', async () => {
+    const first = await connectAndRecord(registry, provider, 'gmail', 'shared');
+    const second = await connectAndRecord(registry, provider, 'gmail', 'shared');
+    await service.attach('s', first.id);
+    await service.attach('s', second.id);
+    expect(Object.keys(service.mcpServersForSession('s').servers).sort()).toEqual([
+      'gmail-shared',
+      'gmail-shared-2',
+    ]);
+
+    // Detach the account that owns the base name; the sibling keeps `-2`.
+    service.detach('s', first.id);
+    expect(Object.keys(service.mcpServersForSession('s').servers)).toEqual(['gmail-shared-2']);
+  });
+
+  it('never mints a connector server named after a built-in (no shadowing)', async () => {
+    // A toolkit literally named 'dorkos' must not take the built-in server name,
+    // or it would shadow the built-in `dorkos` server in the factory spread.
+    const composio = new CleanComposioProvider();
+    registry.register(composio);
+    const id = 'acct-dorkos';
+    composio.addLive(id);
+    registry.recordConnect({
+      id: id as ConnectedAccountId,
+      provider: 'composio',
+      toolkit: 'dorkos',
+      label: '',
+      status: 'active',
+      custody: 'managed',
+    });
+    await service.attach('s', id as ConnectedAccountId);
+
+    const names = Object.keys(service.mcpServersForSession('s').servers);
+    expect(names).not.toContain('dorkos');
+    expect(names).toEqual(['dorkos-2']);
+  });
+
   it('surfaces the null branch as a warning and never injects the account', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
     // Drive the account into the null branch: an expired account resolves null
@@ -176,6 +213,52 @@ describe('SessionConnectorService', () => {
     // Detaching again is a no-op, not a throw.
     expect(() => service.detach('s', account.id)).not.toThrow();
     expect(() => service.detach('unknown-session', account.id)).not.toThrow();
+  });
+
+  it('migrates the attach set across a canonical-id remap (tools do not vanish)', async () => {
+    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
+    // Attach BEFORE the id stabilizes — under the request UUID.
+    await service.attach('req-uuid', account.id);
+    expect(Object.keys(service.mcpServersForSession('req-uuid').servers)).toEqual([
+      'gmail-personal',
+    ]);
+
+    // The runtime rekeys the session to its canonical id mid-first-turn.
+    service.migrateSession('req-uuid', 'canonical-id');
+
+    // The account now rides the canonical id, and the old id is empty.
+    expect(service.status('canonical-id').accounts.map((a) => a.accountId)).toEqual([account.id]);
+    expect(Object.keys(service.mcpServersForSession('canonical-id').servers)).toEqual([
+      'gmail-personal',
+    ]);
+    expect(service.status('req-uuid').accounts).toEqual([]);
+    expect(service.mcpServersForSession('req-uuid').servers).toEqual({});
+  });
+
+  it('merges into an existing new-id attach set on migrate (existing wins a conflict)', async () => {
+    const a = await connectAndRecord(registry, provider, 'gmail', 'old');
+    const b = await connectAndRecord(registry, provider, 'slack', 'new');
+    await service.attach('old-id', a.id);
+    await service.attach('canonical', b.id);
+
+    service.migrateSession('old-id', 'canonical');
+
+    const ids = service
+      .status('canonical')
+      .accounts.map((acc) => acc.accountId)
+      .sort();
+    expect(ids).toEqual([a.id, b.id].sort());
+    expect(service.status('old-id').accounts).toEqual([]);
+  });
+
+  it('migrateSession is a no-op when ids match or nothing is attached', async () => {
+    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
+    await service.attach('same', account.id);
+    service.migrateSession('same', 'same');
+    expect(service.status('same').accounts).toHaveLength(1);
+    // Nothing attached under the old id → no-op, no throw.
+    expect(() => service.migrateSession('empty', 'target')).not.toThrow();
+    expect(service.status('target').accounts).toEqual([]);
   });
 
   it('only injects accounts attached to THIS session', async () => {

@@ -166,7 +166,11 @@ import {
   traceRelay,
 } from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
-import { SessionEventStore, setSessionEventStore } from './services/session/index.js';
+import {
+  SessionEventStore,
+  setSessionEventStore,
+  onProjectorRekey,
+} from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
 
@@ -882,6 +886,11 @@ async function start() {
   // relay adapter catalog is available.
   const connectorRegistry = new ConnectorRegistry({ db });
   const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
+  // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
+  // connector attach set across the same remap so tools attached under the
+  // request id are not stranded on the pre-remap id (mirrors the projector +
+  // DevTools-store rekeys).
+  onProjectorRekey((oldId, newId) => sessionConnectorService.migrateSession(oldId, newId));
   if (claudeRuntime) {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),

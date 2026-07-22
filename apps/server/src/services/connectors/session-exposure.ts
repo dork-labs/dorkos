@@ -4,9 +4,10 @@
  *
  * It adds NO new session-side injection mechanism: it reuses the existing
  * `AgentRuntime.setMcpServerFactory` seam. Per session, it holds the set of
- * accounts a user has explicitly attached (the consent binding, modeled on
- * relay's `BindingSubsystem`), resolves each attached account's
- * {@link ConnectorProvider.toolServerForAccount} once and caches the neutral
+ * accounts a user has explicitly attached (the consent binding — the same
+ * "this account is exposed to this session" shape as relay's `BindingSubsystem`,
+ * but IN MEMORY, not persisted; see Durability below), resolves each attached
+ * account's {@link ConnectorProvider.toolServerForAccount} once and caches the neutral
  * connection for the session lifetime, and folds those connections into a
  * `Record<string, McpAppServerConnection>` keyed by a provider-neutral server
  * name (`gmail-personal`, `gmail-work`). The claude-code factory converts that
@@ -32,12 +33,32 @@
  * connector tool servers — the session status still lists what is attached, so
  * the absence is honest, not an error.
  *
+ * **Durability (deferred).** Attachments are held IN MEMORY, process-scoped:
+ * they are the consent state for a session's tool exposure, not durable data.
+ * Sessions themselves are durable, so after a server restart a session's
+ * attachments are gone and the user re-attaches (a one-click step in the
+ * picker-UI phase). Persisting attachments to the `connected_accounts` layer is
+ * deliberately deferred to that phase — this is NOT relay's persisted
+ * `BindingSubsystem`; it is a lighter, in-memory consent map with the same
+ * "this account is exposed to this session" shape.
+ *
  * @module services/connectors/session-exposure
  */
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import { logger } from '../../lib/logger.js';
 import { disclosureForAccount } from './custody-disclosure.js';
 import type { ConnectedAccountBinding, ConnectorRegistry } from './registry.js';
+
+/**
+ * Server names DorkOS reserves for its own built-in MCP servers. A connector
+ * tool server may never take one of these, because the MCP factory spreads
+ * connector servers AFTER the built-ins (`{ dorkos, ...connectorServers }`) — a
+ * collision would silently shadow the built-in. A connector whose natural name
+ * would collide is minted a suffixed name instead (and the shadow attempt is
+ * logged), so the account stays usable and the built-in is never overwritten.
+ */
+const RESERVED_SERVER_NAMES = new Set<string>(['dorkos']);
 
 /**
  * Why an attached account is not currently exposed as a tool server — the
@@ -51,7 +72,11 @@ export interface SessionConnectorWarning {
   accountId: ConnectedAccountId;
   /** The account's user-facing label, for a "reconnect {label}" affordance. */
   label: string;
-  /** Why it is not exposed (drives the reconnect prompt copy). */
+  /**
+   * Why it is not exposed (drives the reconnect prompt copy). Derived from the
+   * reconciled `connected_accounts` binding cache — best-effort, not
+   * authoritative; a live provider check may disagree until the cache reconciles.
+   */
   reason: SessionConnectorUnavailableReason;
 }
 
@@ -113,6 +138,13 @@ interface AttachedAccount {
    * lifetime; a re-`attach` re-resolves it (invalidate-on-status-change).
    */
   connection: McpAppServerConnection | null;
+  /**
+   * The MCP server name PINNED to this account at attach time for the session
+   * lifetime. Stored (not recomputed positionally) so detaching one account can
+   * never rename a sibling — e.g. detaching `gmail-shared` leaves
+   * `gmail-shared-2` exactly as it was.
+   */
+  serverName: string;
 }
 
 /**
@@ -177,17 +209,13 @@ export class SessionConnectorService {
     const connection = provider ? await provider.toolServerForAccount(accountId) : null;
 
     const accounts = this._ensureSession(sessionId);
-    accounts.set(accountId, { binding, connection });
+    // A re-attach (e.g. re-resolving after a status change) keeps the name it was
+    // first given; a fresh attach mints a stable, collision-free one.
+    const existing = accounts.get(accountId);
+    const serverName = existing ? existing.serverName : this._mintServerName(binding, accounts);
+    accounts.set(accountId, { binding, connection, serverName });
 
-    const serverName = connection ? this._serverNameFor(accountId, binding, accounts) : undefined;
-    const account: SessionConnectorAccountStatus = {
-      accountId,
-      toolkit: binding.toolkit,
-      label: binding.label,
-      status: binding.status,
-      exposed: connection !== null,
-      ...(serverName && { serverName }),
-    };
+    const account = this._statusRow(accountId, { binding, connection, serverName });
     const disclosure = disclosureForAccount(binding);
     const warning = connection ? undefined : this._warningFor(accountId, binding);
     return { account, disclosure, ...(warning && { warning }) };
@@ -227,8 +255,7 @@ export class SessionConnectorService {
         warnings.push(this._warningFor(id, attached.binding));
         continue;
       }
-      const name = this._serverNameFor(id, attached.binding, accounts);
-      servers[name] = attached.connection;
+      servers[attached.serverName] = attached.connection;
     }
     return { servers, warnings };
   }
@@ -247,19 +274,34 @@ export class SessionConnectorService {
 
     for (const [accountId, attached] of accounts) {
       const id = accountId as ConnectedAccountId;
-      const exposed = attached.connection !== null;
-      const serverName = exposed ? this._serverNameFor(id, attached.binding, accounts) : undefined;
-      rows.push({
-        accountId: id,
-        toolkit: attached.binding.toolkit,
-        label: attached.binding.label,
-        status: attached.binding.status,
-        exposed,
-        ...(serverName && { serverName }),
-      });
-      if (!exposed) warnings.push(this._warningFor(id, attached.binding));
+      rows.push(this._statusRow(id, attached));
+      if (attached.connection === null) warnings.push(this._warningFor(id, attached.binding));
     }
     return { accounts: rows, warnings };
+  }
+
+  /**
+   * Move a session's whole attach set from an old id to a new (canonical) id.
+   * Called when the runtime rekeys a brand-new session mid-first-turn (the
+   * claude-code canonical-id remap): without this, an account attached under the
+   * pre-remap id would be stranded — `mcpServersForSession(canonicalId)` would
+   * come back empty and the tools would silently vanish. If the new id already
+   * has attachments, the two sets are MERGED (an existing new-id entry wins a
+   * per-account conflict, mirroring the projector rekey's "active wins"). A
+   * no-op when the ids match or nothing is attached under `oldId`.
+   *
+   * @param oldId - The session id the accounts were attached under (request UUID).
+   * @param newId - The canonical session id to move them to.
+   */
+  migrateSession(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    const from = this._sessions.get(oldId);
+    if (!from) return;
+    const to = this._ensureSession(newId);
+    for (const [accountId, attached] of from) {
+      if (!to.has(accountId)) to.set(accountId, attached);
+    }
+    this._sessions.delete(oldId);
   }
 
   /** Lazily create and return the per-account map for a session. */
@@ -272,28 +314,47 @@ export class SessionConnectorService {
     return accounts;
   }
 
-  /**
-   * Resolve the provider-neutral server name for one account, disambiguating a
-   * toolkit+label collision (two `gmail` accounts both labeled `work`) with a
-   * deterministic numeric suffix keyed on attach order.
-   */
-  private _serverNameFor(
+  /** Build one attached account's session-facing status row. */
+  private _statusRow(
     accountId: ConnectedAccountId,
+    attached: AttachedAccount
+  ): SessionConnectorAccountStatus {
+    const exposed = attached.connection !== null;
+    return {
+      accountId,
+      toolkit: attached.binding.toolkit,
+      label: attached.binding.label,
+      status: attached.binding.status,
+      exposed,
+      // Only an exposed account occupies an MCP server name in the factory.
+      ...(exposed && { serverName: attached.serverName }),
+    };
+  }
+
+  /**
+   * Mint a stable, provider-neutral, collision-free server name for a NEW
+   * attachment, checking against the names already pinned in this session (and
+   * the reserved built-in names). Never recomputed later — the returned name is
+   * stored on the attach record so a sibling detach cannot renumber it.
+   */
+  private _mintServerName(
     binding: ConnectedAccountBinding,
     accounts: Map<string, AttachedAccount>
   ): string {
     const base = baseServerName(binding.toolkit, binding.label);
-    // Deterministic: the first attached account keeps the base name; each later
-    // collision (iteration order = attach order) gets -2, -3, … so names are
-    // stable across factory rebuilds within the session.
-    let index = 0;
-    for (const [otherId, other] of accounts) {
-      const otherBase = baseServerName(other.binding.toolkit, other.binding.label);
-      if (otherBase !== base) continue;
-      if (otherId === accountId) break;
-      index += 1;
+    const taken = new Set<string>(RESERVED_SERVER_NAMES);
+    for (const other of accounts.values()) taken.add(other.serverName);
+    if (RESERVED_SERVER_NAMES.has(base)) {
+      // A connector must never take a built-in server name (it would shadow the
+      // built-in in the factory spread). Rename it and record the attempt.
+      logger.warn(
+        `[Connectors] connector server name '${base}' collides with a reserved built-in; suffixing`
+      );
     }
-    return index === 0 ? base : `${base}-${index + 1}`;
+    if (!taken.has(base)) return base;
+    let n = 2;
+    while (taken.has(`${base}-${n}`)) n += 1;
+    return `${base}-${n}`;
   }
 
   /** Build the null-branch warning for an unexposable attached account. */
