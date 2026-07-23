@@ -19,3 +19,4 @@ export {
 } from './registry.js';
 export { readOnlyCarveOutToolNames } from './mcp-projection.js';
 export { registerCapabilitiesInOpenApi } from './openapi-projection.js';
+export { CapabilityToolError, unwrapMcpEnvelope, type McpTextEnvelope } from './mcp-envelope.js';

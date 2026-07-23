@@ -132,6 +132,7 @@ import { createExtensionRoutesMiddleware } from './middleware/extension-routes.j
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
+import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import type { CapabilityRegistry } from './services/core/capabilities/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
@@ -1582,8 +1583,16 @@ async function start() {
   // deeper.) Declared as the `capabilities.list` capability's `http` surface so it
   // projects into OpenAPI (task 2.5).
   app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(capabilityRegistry));
+  // POST /api/capabilities/:id/invoke — the generic capability dispatch endpoint
+  // (task 2.4). Dispatches through the same composed registry, so every
+  // capability is reachable by id; it rides the app-wide sessionGate (mounted in
+  // `app.ts` before the routes), giving it the standard `/api/*` auth posture —
+  // not the tokenless `/mcp` read-only carve-out — so mutating capabilities are
+  // never reachable tokenlessly. Mounted at the `/api/capabilities` prefix, which
+  // the catalog (`/catalog`) and matrix (`/`) routes do not claim for `POST /:id/invoke`.
+  app.use('/api/capabilities', createCapabilitiesInvokeRouter(capabilityRegistry));
   logger.info(
-    `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog`
+    `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog, invoke at POST /api/capabilities/:id/invoke`
   );
 
   // Finalize app: API 404 catch-all, error handler, and SPA serving

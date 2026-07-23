@@ -208,9 +208,13 @@ These talk to a running DorkOS server so you (or an agent in any runtime) can dr
 | `dorkos task trigger <id>`                       | Run a task now                                                        |
 | `dorkos task runs`                               | List recent task runs                                                 |
 | `dorkos activity`                                | Show the activity feed (`--actor`, `--category`, `--type`, `--limit`) |
+| `dorkos capabilities`                            | List everything you can do here (the live capability catalog)         |
+| `dorkos call <capability-id>`                    | Invoke any capability by id (`--input <json>`, prints raw JSON)       |
 | `dorkos version --check`                         | Show the server and latest version                                    |
 
 Run any command with `--help` for its full options (for example `dorkos task create --help`).
+
+`dorkos capabilities` lists every capability the server exposes; `dorkos call <id>` invokes one by id and prints its result as JSON. Together they let an agent in any runtime discover and drive DorkOS without the in-app tools. Curated verbs like `dorkos agent` and `dorkos task` keep their own shapes; `dorkos call` is the generic, capability-shaped path to everything else.
 
 ### Environment variables
 
