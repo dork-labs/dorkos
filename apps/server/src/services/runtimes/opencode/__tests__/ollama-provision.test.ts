@@ -113,6 +113,28 @@ describe('provisionOllama', () => {
     expect(result.status).toEqual(NOT_RUNNING);
   });
 
+  it('clears the detection cache BEFORE the post-install re-probe (no stale running:false)', async () => {
+    const order: string[] = [];
+    const resetDetectionCache = vi.fn(() => order.push('reset'));
+    const detectOllamaFn = vi.fn(async () => {
+      order.push('detect');
+      return RUNNING;
+    });
+    const { runCommand } = makeRunCommand();
+
+    const result = await provisionOllama(undefined, {
+      platform: 'darwin',
+      commandExists: async (cmd) => cmd === 'brew',
+      runCommand,
+      detectOllamaFn,
+      resetDetectionCache,
+    });
+
+    // The cache reset must happen before the re-probe, or a fast install reports stale.
+    expect(order).toEqual(['reset', 'detect']);
+    expect(result.status).toEqual(RUNNING);
+  });
+
   it('winget path: installs non-interactively with the verified package id', async () => {
     const { runCommand, calls } = makeRunCommand();
     const deps: OllamaProvisionDeps = {

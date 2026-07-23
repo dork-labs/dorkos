@@ -26,7 +26,7 @@ import type {
   OllamaProvisionResult,
   OllamaStatus,
 } from '@dorkos/shared/runtime-connect';
-import { detectOllama } from './ollama.js';
+import { detectOllama, resetOllamaCache } from './ollama.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -64,6 +64,8 @@ export interface OllamaProvisionDeps {
   runCommand?: (command: string, args: string[]) => Promise<CommandOutcome>;
   /** Re-probe Ollama after install (defaults to {@link detectOllama}). */
   detectOllamaFn?: () => Promise<OllamaStatus>;
+  /** Clear the detection cache before the post-install re-probe (defaults to {@link resetOllamaCache}). */
+  resetDetectionCache?: () => void;
 }
 
 /** Default PATH-existence probe: `which <cmd>` (POSIX) / `where <cmd>` (Windows), bounded. */
@@ -194,6 +196,7 @@ async function runProvisionOllama(
 
   const runCommand = deps.runCommand ?? runCommandDefault;
   const detect = deps.detectOllamaFn ?? (() => detectOllama());
+  const resetDetectionCache = deps.resetDetectionCache ?? resetOllamaCache;
 
   onProgress?.({ stage: 'starting', message: 'Installing Ollama…' });
   const { command, args } = installerCommand(method);
@@ -211,6 +214,10 @@ async function runProvisionOllama(
   }
 
   onProgress?.({ stage: 'done', message: 'Ollama installed.' });
+  // A fast install can finish inside detectOllama's short cache window, so a
+  // stale probe would report running:false when Ollama is actually up. Clear the
+  // cache first so the terminal status always re-probes for real.
+  resetDetectionCache();
   const status = await detect();
   return { ok: true, installMethod: method, status };
 }

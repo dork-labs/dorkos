@@ -138,6 +138,7 @@ export function RuntimeSetupPanel({
   isRechecking = false,
   renderConnect,
 }: RuntimeSetupPanelProps) {
+  const reducedMotion = useReducedMotion();
   const targets = selectTargetRuntimes(runtime, types, registeredTypes);
 
   return (
@@ -161,7 +162,9 @@ export function RuntimeSetupPanel({
             onClick={onRecheck}
             disabled={isRechecking}
           >
-            <RefreshCw className={cn('size-3.5', isRechecking && 'animate-spin')} />
+            <RefreshCw
+              className={cn('size-3.5', isRechecking && !reducedMotion && 'animate-spin')}
+            />
             Check again
           </Button>
         </div>
