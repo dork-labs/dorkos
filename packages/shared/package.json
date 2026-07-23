@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./capabilities": {
+      "types": "./src/capabilities.ts",
+      "default": "./dist/capabilities.js"
+    },
     "./schemas": {
       "types": "./src/schemas.ts",
       "default": "./dist/schemas.js"
