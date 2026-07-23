@@ -65,12 +65,13 @@ afterEach(async () => {
 });
 
 describe('operate-DorkOS case metadata', () => {
-  it('registers all four cases as credentialed, core, quarantined (non-gating until verified)', () => {
+  it('registers every case as credentialed, core, quarantined (non-gating until verified)', () => {
     expect(operateDorkOsCases.map((c) => c.id)).toEqual([
       'agent-self-edit',
       'activity-read',
       'config-toggle',
       'marketplace-search-and-install',
+      'capability-discovery',
     ]);
     for (const c of operateDorkOsCases) {
       expect(c.runtimeTier).toBe('claude-code-cheap');
