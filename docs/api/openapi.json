@@ -771,7 +771,8 @@
           "max_turns",
           "execution_error",
           "budget_exceeded",
-          "output_format_error"
+          "output_format_error",
+          "auth_error"
         ]
       },
       "ElicitationPart": {

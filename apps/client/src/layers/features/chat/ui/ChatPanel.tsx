@@ -12,6 +12,7 @@ import { useChatStatusSync } from '../model/use-chat-status-sync';
 import { useRuntimeChip } from '../model/status/use-runtime-chip';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
@@ -240,6 +241,13 @@ export function ChatPanel({
   // Thread the session's runtime so a not-yet-started Codex session's palette
   // resolves to Codex's project skills rather than the inferred claude-code
   // default. Runtime + caps are resolved above (they also gate /compact dispatch).
+  // Friendly product name ("Claude", not the descriptor's "Claude Code") for the
+  // inline auth-error copy, resolved router-free here and threaded down so an
+  // auth failure names the runtime ("Your Claude sign-in expired"). Matches the
+  // label TurnFailedNotice uses, so both auth-error render paths read the same.
+  const runtimeAuthLabel = runtimeChip.runtime
+    ? runtimeDisplayName(runtimeChip.runtime)
+    : undefined;
   const { data: registry } = useCommands(
     cwd,
     sessionId ?? undefined,
@@ -335,6 +343,7 @@ export function ChatPanel({
         onRetry={handleRetry}
         inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
         messageListRef={messageListRef}
+        runtimeLabel={runtimeAuthLabel}
       />
 
       <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />

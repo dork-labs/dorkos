@@ -47,6 +47,7 @@ import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shar
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import type { SessionStateProjector } from './session-state-projector.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { assembleAdditionalContext } from './context-assembler.js';
@@ -336,6 +337,7 @@ async function* tapEachEvent(
  * @param projector - The session projector (for the direct error-status ingest).
  * @param source - The runtime's per-turn `StreamEvent` stream.
  * @param onError - Records the original failure (logging is the caller's concern).
+ * @internal Exported for testing only.
  */
 export async function* guardTurnErrors(
   projector: SessionStateProjector,
@@ -355,12 +357,15 @@ export async function* guardTurnErrors(
     // The typed error rides the stream (unlike the status ingest above) so the
     // normalizer projects it onto the turn: rendered inline live, latched into
     // SessionStatus.lastError, and reconstructed into log-backed history.
+    const errorMessage = err instanceof Error ? err.message : String(err);
     yield {
       type: 'error',
       data: {
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage,
         code: 'turn_exception',
-        category: 'execution_error',
+        // A thrown auth error (revoked/expired sign-in) still classifies so the
+        // client offers a re-auth affordance rather than a generic failure.
+        category: detectAuthError({ message: errorMessage }) ? 'auth_error' : 'execution_error',
         ...(err instanceof Error && err.stack ? { details: err.stack } : {}),
       },
     };

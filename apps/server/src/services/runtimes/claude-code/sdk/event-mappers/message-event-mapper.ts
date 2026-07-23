@@ -1,6 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from '../../agent-types.js';
+import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from '../sdk-error-mapping.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
@@ -125,7 +126,14 @@ export async function* mapMessageEvent(
         data: {
           message: describeAssistantError(assistantError),
           code: assistantError,
-          category: 'execution_error',
+          // Auth failures (revoked/expired sign-in) get the re-auth category so
+          // the client offers a "Fix sign-in" affordance; keep the human message.
+          category: detectAuthError({
+            message: describeAssistantError(assistantError),
+            code: assistantError,
+          })
+            ? 'auth_error'
+            : 'execution_error',
         },
       };
     }

@@ -23,6 +23,12 @@ interface MessageContextValue {
   inputZoneToolCallId: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
   textEffect?: TextEffectConfig;
+  /**
+   * Display name of the session's runtime (e.g. "Claude"), resolved once at the
+   * panel level. Personalizes the auth-error copy in an inline error block.
+   * Undefined when the session has no runtime row yet.
+   */
+  runtimeLabel?: string;
 }
 
 const MessageCtx = createContext<MessageContextValue | null>(null);
@@ -53,6 +59,7 @@ export function MessageProvider({
       value.onRetry,
       value.inputZoneToolCallId,
       value.textEffect,
+      value.runtimeLabel,
     ]
   );
   return <MessageCtx value={memoized}>{children}</MessageCtx>;

@@ -1,6 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
 import type { AgentSession } from '../../agent-types.js';
+import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { mapErrorCategory } from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
 
@@ -204,7 +205,12 @@ export async function* mapResultEvent(
     const subtype = result.subtype as string | undefined;
     if (subtype && subtype !== 'success') {
       const errors = result.errors as string[] | undefined;
-      const category = mapErrorCategory(subtype);
+      // Prefer the auth category when the failure text or subtype signals a
+      // revoked/expired sign-in, so the client offers a re-auth affordance
+      // instead of a generic execution error.
+      const category = detectAuthError({ message: errors?.join(' '), code: subtype })
+        ? 'auth_error'
+        : mapErrorCategory(subtype);
       yield {
         type: 'error',
         data: {

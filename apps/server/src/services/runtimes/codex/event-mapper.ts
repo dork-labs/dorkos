@@ -39,6 +39,7 @@ import type {
 } from '@openai/codex-sdk';
 import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
+import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 
 /** Tool name stamped on command_execution tool events. */
@@ -164,7 +165,13 @@ export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): Strea
         failedStatus,
         {
           type: 'error',
-          data: { message: event.error.message, code: 'turn_failed', category: 'execution_error' },
+          data: {
+            message: event.error.message,
+            code: 'turn_failed',
+            category: detectAuthError({ message: event.error.message, code: 'turn_failed' })
+              ? 'auth_error'
+              : 'execution_error',
+          },
         },
         { type: 'done', data: { sessionId: ctx.sessionId } },
       ];

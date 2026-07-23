@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { useSessionRuntime, useSessionStreamStatus } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { ErrorMessageBlock } from '../message/ErrorMessageBlock';
@@ -42,10 +43,16 @@ interface TurnFailedNoticeProps {
 export function TurnFailedNotice({ sessionId, onRetry }: TurnFailedNoticeProps) {
   const runtime = useSessionRuntime(sessionId);
   const lastError = useSessionStreamStatus(sessionId)?.lastError ?? null;
-  const heading = runtime
-    ? `${getRuntimeDescriptor(runtime).label} stopped unexpectedly`
-    : undefined;
+  const isAuthError = lastError?.category === 'auth_error';
+  // Auth failures own their friendly, runtime-aware copy inside ErrorMessageBlock,
+  // so we don't clobber it with the generic "X stopped unexpectedly" heading.
+  const heading =
+    !isAuthError && runtime
+      ? `${getRuntimeDescriptor(runtime).label} stopped unexpectedly`
+      : undefined;
   const message = lastError?.message ?? GENERIC_FAILURE_COPY;
+  const subtext = isAuthError ? undefined : message;
+  const runtimeLabel = runtime ? runtimeDisplayName(runtime) : undefined;
   const details = lastError
     ? [lastError.code, lastError.details].filter(Boolean).join('\n')
     : undefined;
@@ -62,9 +69,10 @@ export function TurnFailedNotice({ sessionId, onRetry }: TurnFailedNoticeProps) 
         category={lastError?.category ?? 'execution_error'}
         heading={heading}
         message={message}
-        subtext={message}
+        subtext={subtext}
         details={details || undefined}
         onRetry={onRetry}
+        runtimeLabel={runtimeLabel}
       />
     </motion.div>
   );

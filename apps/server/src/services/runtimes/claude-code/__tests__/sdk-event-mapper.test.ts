@@ -352,6 +352,47 @@ describe('sdk-event-mapper context usage capture', () => {
     } as unknown as Parameters<typeof mapSdkMessage>[0];
   }
 
+  it('surfaces an authentication_failed assistant error as auth_error with a human message', async () => {
+    const msg = {
+      type: 'assistant',
+      parent_tool_use_id: null,
+      error: 'authentication_failed',
+      message: { role: 'assistant', content: [] },
+      session_id: 's',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, makeSession(), sessionId, makeToolState());
+
+    const error = events.find((e) => e.type === 'error');
+    const data = error?.data as ErrorEvent | undefined;
+    expect(data?.category).toBe('auth_error');
+    expect(data?.code).toBe('authentication_failed');
+    expect(data?.message).toContain('Re-authenticate');
+  });
+
+  it('does not classify assistant content that merely discusses oauth tokens as an error', async () => {
+    // The classifier is deliberately bounded to the error CHANNEL (the terminal
+    // `error` field), never assistant content. This text would match the auth
+    // regex if it were ever fed to detectAuthError, so a passing assertion here
+    // proves ordinary content that talks about OAuth/access tokens stays clean.
+    const msg = {
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'To fix this, refresh your oauth access token — the credential expired and 401 Unauthorized means it was revoked.',
+          },
+        ],
+      },
+      session_id: 's',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, makeSession(), sessionId, makeToolState());
+
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
   it('captures the last main-thread request usage from an assistant message', async () => {
     const session = makeSession();
     await collectEvents(
@@ -589,6 +630,16 @@ describe('sdk-event-mapper result messages', () => {
     expect(err.category).toBe('execution_error');
     expect(err.message).toBe('API rate limit exceeded');
     expect(err.details).toBe('API rate limit exceeded');
+  });
+
+  it('reclassifies a revoked-OAuth result as auth_error (the exact 401 example)', async () => {
+    const msg = makeResultMessage('error_during_execution', [
+      'Claude Code returned an error result: Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
+    ]);
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const err = events[2].data as ErrorEvent;
+    expect(err.category).toBe('auth_error');
   });
 
   it('error_max_budget_usd maps to budget_exceeded category', async () => {

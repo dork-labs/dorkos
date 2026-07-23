@@ -201,3 +201,45 @@ describe('mapResultEvent — turn-total token metadata (AI observability, DOR-31
     expect('turnOutputTokens' in data).toBe(false);
   });
 });
+
+describe('mapResultEvent — error category classification', () => {
+  /** The `data` payload of the emitted `error` event, if any. */
+  function errorData(events: StreamEvent[]): Record<string, unknown> | undefined {
+    const error = events.find((e) => e.type === 'error');
+    return error?.data as Record<string, unknown> | undefined;
+  }
+
+  it('tags a revoked-OAuth result as auth_error (the exact 401 example)', async () => {
+    const events = await drain(
+      mapResultEvent(
+        msg({
+          type: 'result',
+          subtype: 'error_during_execution',
+          errors: [
+            'Claude Code returned an error result: Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
+          ],
+        }),
+        makeSession(),
+        SESSION_ID
+      )
+    );
+    const data = errorData(events);
+    expect(data?.category).toBe('auth_error');
+    expect(data?.message).toContain('Failed to authenticate');
+  });
+
+  it('keeps a non-auth execution failure as execution_error', async () => {
+    const events = await drain(
+      mapResultEvent(
+        msg({
+          type: 'result',
+          subtype: 'error_during_execution',
+          errors: ['Tool run_command exited with code 1'],
+        }),
+        makeSession(),
+        SESSION_ID
+      )
+    );
+    expect(errorData(events)?.category).toBe('execution_error');
+  });
+});
