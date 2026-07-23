@@ -195,6 +195,23 @@ export function runtimeDisplayName(type: string): string {
 }
 
 /**
+ * The connect flow a runtime uses to (re)authenticate, independent of its
+ * current readiness.
+ *
+ * A ready runtime reports no `connect` action, but "Ready" is only a fingerprint
+ * check — it cannot see a stale or invalid credential — so the setup surface
+ * still needs to know which flow to reopen when a user wants to fix their
+ * sign-in. OpenCode is provider-agnostic (reconnecting means re-picking where
+ * the model comes from), so it uses the provider picker; every other runtime
+ * signs in.
+ *
+ * @param type - Runtime type identifier (e.g. `'claude-code'`).
+ */
+export function runtimeAuthConnectKind(type: string): 'login' | 'provider-picker' {
+  return type === 'opencode' ? 'provider-picker' : 'login';
+}
+
+/**
  * Project a runtime's raw {@link DependencyCheck}[] into the two-state
  * Ready/Connect model surfaced by `GET /api/system/requirements`.
  *
@@ -236,7 +253,7 @@ export function deriveRuntimeReadiness(
   }
   // Binary present, auth missing. OpenCode has no single "login" — connecting
   // means picking where the model comes from.
-  if (type === 'opencode') {
+  if (runtimeAuthConnectKind(type) === 'provider-picker') {
     return {
       state: 'connect',
       connect: { kind: 'provider-picker', label: 'Choose a model provider' },

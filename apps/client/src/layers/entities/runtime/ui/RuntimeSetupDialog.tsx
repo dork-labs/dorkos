@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Check, ChevronDown, CircleAlert, Loader2, RefreshCw } from 'lucide-react';
 import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { RuntimeReadiness as RuntimeConnectState } from '@dorkos/shared/agent-runtime';
+import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import {
   Button,
   Collapsible,
@@ -174,6 +175,61 @@ export function RuntimeSetupPanel({
 }
 
 /**
+ * The quiet ready-state affordance that reopens a runtime's connect flow.
+ *
+ * "Ready" is a fingerprint check — it cannot see a stale API key or an expired
+ * host login — so a ready runtime with a connect flow keeps a small, calm way
+ * to fix its sign-in without leaving the settled Ready look. Two shapes:
+ * - **OpenCode** (`change`): re-pick the model source. Only offered when a
+ *   DorkOS provider is set — a runtime signed in via the OpenCode CLI has
+ *   nothing for the picker to change.
+ * - **Claude / Codex** (`reconnect`): sign in again, which also replaces a
+ *   stored bad key via the login flow's "Use an API key instead" path.
+ *
+ * Returns `null` when there is nothing honest to reopen (no injected connect
+ * renderer, or a runtime whose connect flow we do not know).
+ */
+interface ReadyReconnect {
+  /** Test-id namespace and semantic role: `change` (provider) or `reconnect` (sign-in). */
+  idPrefix: 'change' | 'reconnect';
+  /** The quiet trigger shown next to the Ready badge. */
+  triggerLabel: string;
+  /** The cancel link that closes the flow, keeping the current credential. */
+  cancelLabel: string;
+  /** Connect descriptor handed to the injected flow. */
+  connect: NonNullable<RuntimeConnectState['connect']>;
+  /** Current provider id, for the OpenCode picker's "Currently:" label. */
+  currentProvider?: string;
+}
+
+function selectReadyReconnect(
+  type: string,
+  provider: string | undefined,
+  hasRenderConnect: boolean
+): ReadyReconnect | null {
+  if (!hasRenderConnect) return null;
+  if (runtimeAuthConnectKind(type) === 'provider-picker') {
+    if (!provider) return null;
+    return {
+      idPrefix: 'change',
+      triggerLabel: 'Change',
+      cancelLabel: 'Keep current source',
+      connect: { kind: 'provider-picker', label: 'Change power source' },
+      currentProvider: provider,
+    };
+  }
+  // Login runtimes (Claude, Codex). Gate to the known sibling runtimes so a
+  // future runtime we cannot yet sign in never gets a misleading flow.
+  if (!(PRIMARY_RUNTIME_TYPES as readonly string[]).includes(type)) return null;
+  return {
+    idPrefix: 'reconnect',
+    triggerLabel: 'Fix sign-in',
+    cancelLabel: 'Keep current sign-in',
+    connect: { kind: 'login', label: `Reconnect ${runtimeDisplayName(type)}` },
+  };
+}
+
+/**
  * One runtime, presented as a sibling: identity header with a Ready badge or a
  * single Connect action, and an Advanced disclosure for the underlying checks.
  */
@@ -194,15 +250,23 @@ function RuntimeSection({
   const readiness = selectRuntimeReadiness(requirements, type, registered);
   const isReady = readiness.state === 'ready';
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [changing, setChanging] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
 
-  // A ready, provider-agnostic runtime (OpenCode reports its connected
-  // `provider`) can switch power source: the Change affordance reopens the same
-  // picker, prefilled with the current source, and runs the normal connect flow
-  // (the server is last-write-wins on the provider). Only offered when a connect
-  // renderer is wired — the picker lives in the feature layer (spec §9).
-  const currentProvider = entry?.provider;
-  const canChange = isReady && !!currentProvider && !!renderConnect;
+  // If a requirements refetch flips this runtime out of ready while the
+  // reconnect panel is open, drop the expansion so a later return to ready
+  // shows the settled badge instead of a self-opened panel.
+  if (!isReady && reconnecting) {
+    setReconnecting(false);
+  }
+
+  // A ready runtime with a connect flow keeps a quiet way to fix its sign-in:
+  // "Ready" only fingerprints the credential's presence, so a stale key or an
+  // expired host login still reads Ready. OpenCode re-picks its model source;
+  // Claude and Codex sign in again (or replace a stored key). Reopens the same
+  // feature-injected connect flow the not-ready path uses.
+  const readyReconnect = isReady
+    ? selectReadyReconnect(type, entry?.provider, !!renderConnect)
+    : null;
 
   // The command a one-click install would run — sourced from the live install
   // dependency's hint, falling back to the descriptor's static setup command.
@@ -235,39 +299,44 @@ function RuntimeSection({
             >
               <Check className="size-3.5" /> Ready
             </span>
-            {canChange && !changing && (
+            {readyReconnect && !reconnecting && (
               <button
                 type="button"
-                onClick={() => setChanging(true)}
+                onClick={() => setReconnecting(true)}
                 className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 transition-colors hover:underline"
-                data-testid={`runtime-change-${type}`}
+                data-testid={`runtime-${readyReconnect.idPrefix}-${type}`}
               >
-                Change
+                {readyReconnect.triggerLabel}
               </button>
             )}
           </div>
         )}
       </div>
 
-      {canChange && changing && (
-        <div className="mt-3 space-y-2" data-testid={`runtime-change-panel-${type}`}>
+      {readyReconnect && reconnecting && (
+        <div
+          className="mt-3 space-y-2"
+          data-testid={`runtime-${readyReconnect.idPrefix}-panel-${type}`}
+        >
           {renderConnect?.({
             type,
-            connect: { kind: 'provider-picker', label: 'Change power source' },
-            ...(currentProvider ? { currentProvider } : {}),
-            // Collapse the change UI the instant the switch lands: the cancel
+            connect: readyReconnect.connect,
+            ...(readyReconnect.currentProvider
+              ? { currentProvider: readyReconnect.currentProvider }
+              : {}),
+            // Collapse the reconnect UI the instant the connect lands: the cancel
             // affordance disappears, and the dialog's own success handling
-            // (composed onto this slot) takes over — an in-place switch ends in
+            // (composed onto this slot) takes over — an in-place reconnect ends in
             // the success panel with Done, exactly like a first connect.
-            onConnected: () => setChanging(false),
+            onConnected: () => setReconnecting(false),
           })}
           <button
             type="button"
-            onClick={() => setChanging(false)}
+            onClick={() => setReconnecting(false)}
             className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-            data-testid={`runtime-change-cancel-${type}`}
+            data-testid={`runtime-${readyReconnect.idPrefix}-cancel-${type}`}
           >
-            Keep current source
+            {readyReconnect.cancelLabel}
           </button>
         </div>
       )}
