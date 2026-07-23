@@ -24,7 +24,9 @@ Show the DorkOS activity feed from the running server.
 Options:
       --actor <type>     Filter by actor type (user|agent|system|tasks)
       --category <name>  Filter by category (comma-separated for multiple)
-      --type <event>     Filter by event type (e.g. agent.registered)
+      --type <event>     Filter by event type (e.g. agent.registered);
+                         applied to the fetched page, so events older than
+                         --limit are not shown — raise --limit to widen it
       --limit <n>        Maximum events to return (default: 50, max: 100)
       --json             Print raw JSON instead of a table
 
