@@ -2797,6 +2797,24 @@
       "created": "2026-07-23",
       "extractedFrom": "agents-as-operators",
       "specSlug": "agents-as-operators"
+    },
+    {
+      "id": "260723-050219",
+      "slug": "one-boot-composed-registry-generates-every-agent-surface",
+      "title": "One boot-composed capability registry generates every agent-facing surface",
+      "status": "accepted",
+      "created": "2026-07-23",
+      "extractedFrom": "capability-registry",
+      "specSlug": "capability-registry"
+    },
+    {
+      "id": "260723-050220",
+      "slug": "capability-invoke-endpoint-rides-the-api-session-gate",
+      "title": "The generic capability invoke endpoint rides the /api session gate, never the MCP carve-out",
+      "status": "accepted",
+      "created": "2026-07-23",
+      "extractedFrom": "capability-registry",
+      "specSlug": "capability-registry"
     }
   ]
 }
