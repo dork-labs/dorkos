@@ -2,125 +2,127 @@
 
 ## Overview
 
-DorkOS agents are not just chat partners — they can **operate DorkOS itself**: create agents, schedule tasks, install marketplace packages, toggle settings, and read the activity feed. This guide is the internal map of that agent-facing capability surface: which tools exist, on which server, where their handlers live, and how to add a new one today.
+DorkOS agents are not just chat partners: they can **operate DorkOS itself**. They read the activity feed, edit their own persona, change your settings, and install marketplace packages. This guide is the internal map of that agent-facing surface: how a capability is declared once and projected onto every surface an agent can reach, where the pieces live, and how to add a new capability.
 
-The surface has two shapes, and the split is the one idea that explains the rest:
+The one idea that explains the rest is the **Capability Registry**. A service domain declares a capability exactly once with `defineCapability` (id, model-facing description, permission tier, Zod input/output, a transport-neutral `invoke` handler, and the surfaces it projects onto). From that single declaration DorkOS generates:
 
-- **MCP tools** — how an agent reaches DorkOS from _inside a session_ (the in-session `dorkos` MCP server) or from an _external MCP client_ (the `/mcp` HTTP server). MCP injection only reaches the **claude-code** runtime.
-- **CLI operator verbs** — how an agent reaches DorkOS from _any_ runtime. The `dorkos` CLI is the only actuation surface reachable from Codex and OpenCode too (they cannot receive MCP injection), so the verbs are the portable path (DOR-434).
+- the **in-session MCP tool** (the `dorkos` server an agent reaches from inside a claude-code session),
+- the **external MCP tool** (the `/mcp` HTTP server for external MCP clients),
+- the **OpenAPI path** (so the capability shows up in `/api/docs`),
+- the **self-description catalog** (`GET /api/capabilities/catalog`, the `list_capabilities` MCP tool, and `dorkos capabilities`).
 
-Everything here is **hand-registered** today. Phase 2 replaces the hand-registration with a generated Capability Registry — see [Phase 2](#phase-2-the-capability-registry) at the end.
+CLI operator verbs (`dorkos agent`, `task`, `activity`, `version`) remain the runtime-portable path, because MCP injection only reaches claude-code and Codex/OpenCode agents cannot receive it. The generic `dorkos call <capability-id>` reaches every capability by id, so an agent on any runtime can actuate DorkOS after discovering the catalog. See [The CLI surface](#the-cli-surface).
+
+Everything above used to be hand-registered (a descriptor here, a CLI handler there, a `tool-security` entry). Phase 2 replaced that with the registry, so forgetting a surface is no longer possible: a single declaration lights them all up, and the [conformance suite](#the-conformance-suite) fails CI if a projection ever drifts. The [Phase 1 history](#phase-1-history) note at the end records what changed.
 
 **Pair this guide with:**
 
-- [spec `agents-as-operators`](../specs/agents-as-operators/02-specification.md) — the feature spec this surface implements (§1.1–1.8).
-- [research: agents as first-class operators](../research/20260722_agents-as-first-class-operators.md) — the analysis that motivated the surface and the Capability Registry direction.
-- [`contributing/adding-a-runtime.md`](adding-a-runtime.md) — why MCP injection is claude-code-only and the CLI is the universal path.
-- [`contributing/marketplace-installs.md`](marketplace-installs.md) — the install pipeline the marketplace tools and `dorkos install` both drive.
+- [spec `capability-registry`](../specs/capability-registry/02-specification.md): the registry design this surface implements.
+- [spec `agents-as-operators`](../specs/agents-as-operators/02-specification.md): phase 1, the operator/marketplace capabilities and the frozen tool-name contracts.
+- [research: agents as first-class operators](../research/20260722_agents-as-first-class-operators.md): the analysis that motivated the surface and the registry.
+- [`contributing/adding-a-runtime.md`](adding-a-runtime.md): why MCP injection is claude-code-only and the CLI is the universal path.
 - The user-facing guide [Your agents can operate DorkOS](../docs/guides/operating-dorkos.mdx) and the [CLI reference](../docs/guides/cli-usage.mdx#operator-commands).
 
-## Key Files
+## Key files
 
-| Concept                                      | Location                                                                    |
-| -------------------------------------------- | --------------------------------------------------------------------------- |
-| In-session MCP composition root              | `apps/server/src/services/runtimes/claude-code/mcp-tools/index.ts`          |
-| External `/mcp` composition root             | `apps/server/src/services/core/mcp-server.ts`                               |
-| Operator tool descriptors (shared)           | `apps/server/src/services/core/operator/operator-tool-descriptors.ts`       |
-| Operator tool handlers (shared)              | `apps/server/src/services/core/operator/operator-tool-handlers.ts`          |
-| Agent self-edit service (shared)             | `apps/server/src/services/core/operator/agent-updater.ts`                   |
-| Config deep-merge patch service (shared)     | `apps/server/src/services/core/operator/config-patch.ts`                    |
-| Operator tools, in-session glue              | `apps/server/src/services/runtimes/claude-code/mcp-tools/operator-tools.ts` |
-| Operator tools, external glue                | `apps/server/src/services/core/external-mcp/operator-tools.ts`              |
-| Marketplace tool descriptors (shared)        | `apps/server/src/services/marketplace-mcp/marketplace-tool-descriptors.ts`  |
-| Marketplace tools registration               | `apps/server/src/services/marketplace-mcp/marketplace-mcp-tools.ts`         |
-| Read-only carve-out (external mutation gate) | `apps/server/src/services/core/external-mcp/tool-security.ts`               |
-| CLI operator verb handlers                   | `packages/cli/src/commands/{agent,task,activity,version}.ts`                |
-| CLI operator output helpers                  | `packages/cli/src/lib/operator-output.ts`                                   |
-| CLI subcommand interception                  | `packages/cli/src/cli.ts`                                                   |
+| Concept                                       | Location                                                                          |
+| --------------------------------------------- | --------------------------------------------------------------------------------- |
+| Capability declaration (`defineCapability`)   | `apps/server/src/services/core/capabilities/capability-definition.ts`             |
+| Registry composition + catalog                | `apps/server/src/services/core/capabilities/registry.ts`                          |
+| Composition root (boot + docs)                | `apps/server/src/services/core/self-description/dorkos-registry.ts`               |
+| Serializable catalog types (shared)           | `packages/shared/src/capabilities.ts`                                             |
+| MCP projection (transport-neutral)            | `apps/server/src/services/core/capabilities/mcp-projection.ts`                    |
+| In-session MCP adapter                        | `apps/server/src/services/runtimes/claude-code/mcp-tools/capability-mcp-tools.ts` |
+| External MCP adapter                          | `apps/server/src/services/core/external-mcp/capability-mcp-tools.ts`              |
+| OpenAPI projection                            | `apps/server/src/services/core/capabilities/openapi-projection.ts`                |
+| Self-description domain (`list_capabilities`) | `apps/server/src/services/core/self-description/capabilities-domain.ts`           |
+| Operator domain capabilities                  | `apps/server/src/services/core/operator/operator-capabilities.ts`                 |
+| Marketplace domain capabilities               | `apps/server/src/services/marketplace-mcp/marketplace-capabilities.ts`            |
+| Read-only carve-out (derived + legacy)        | `apps/server/src/services/core/external-mcp/tool-security.ts`                     |
+| Invoke route (`dorkos call` backend)          | `apps/server/src/routes/capabilities-invoke.ts`                                   |
+| Catalog route                                 | `apps/server/src/routes/capabilities-catalog.ts`                                  |
+| CLI: `capabilities` / `call`                  | `packages/cli/src/commands/{capabilities,call}.ts`                                |
+| CLI: operator verbs                           | `packages/cli/src/commands/{agent,task,activity,version}.ts`                      |
+| Conformance suite                             | `packages/test-utils/src/capability-conformance.ts`                               |
 
-## MCP tools: which server, which tools
+## How a capability projects
 
-Both MCP servers assemble their tool list from small per-domain modules. The two composition roots register overlapping-but-different sets. The table below is the operator-relevant slice — the tools that let an agent operate DorkOS (the full lists also include mesh/relay/binding/devtools/ui plumbing, which are documented with their own domains).
+A `CapabilityDefinition` carries a `surfaces` object with three optional projections:
 
-| Tool                            | In-session `dorkos` | External `/mcp` | What it does                                                            |
-| ------------------------------- | :-----------------: | :-------------: | ----------------------------------------------------------------------- |
-| `activity_list`                 |         yes         |       yes       | Read the activity feed (filters: categories, actorType, actorId, time). |
-| `config_get`                    |         yes         |       yes       | Read the config snapshot (secrets redacted).                            |
-| `check_update`                  |         yes         |       yes       | Server version + latest npm version.                                    |
-| `agents_recent_activity`        |         yes         |       yes       | Per-agent most-recent-session map.                                      |
-| `update_agent`                  |         yes         |       yes       | Edit an agent's manifest/personality (self-edit + guards).              |
-| `config_patch`                  |         yes         |       yes       | Deep-merge user settings (same validated path as the settings UI).      |
-| `create_agent`                  |         yes         |       yes       | Create a new agent workspace.                                           |
-| `marketplace_search`            |         yes         |       yes       | Search the marketplace.                                                 |
-| `marketplace_get`               |         yes         |       yes       | Fetch one package's manifest.                                           |
-| `marketplace_list_marketplaces` |         yes         |       yes       | List configured sources.                                                |
-| `marketplace_list_installed`    |         yes         |       yes       | List installed packages.                                                |
-| `marketplace_recommend`         |         yes         |       yes       | Suggest packages for a goal.                                            |
-| `marketplace_install`           |         yes         |       yes       | Install a package (confirmation-token flow).                            |
-| `marketplace_uninstall`         |         yes         |       yes       | Remove an installed package.                                            |
-| `marketplace_create_package`    |         yes         |       yes       | Scaffold a new package (confirmation-token flow).                       |
+- `mcp`: the tool name, which server(s) advertise it (`in-session`, `external`, or both), an optional `readOnlyCarveOut` flag, and the two annotation hints (`openWorldHint`, `idempotentHint`) that a tier alone cannot express. The other two MCP hints (`readOnlyHint`, `destructiveHint`) are derived from the `tier`.
+- `cli`: a curated operator verb (and optional subcommand). Optional: a capability with no `cli` surface is still reachable through the generic `dorkos call`.
+- `http`: a method + path auto-registered into the OpenAPI document.
 
-The **six operator tools** (`activity_list`, `config_get`, `check_update`, `agents_recent_activity`, `update_agent`, `config_patch`) land from one shared catalog — `OPERATOR_TOOL_DESCRIPTORS` in `operator-tool-descriptors.ts`. The in-session server maps each descriptor onto the Claude Agent SDK `tool()` helper (`getOperatorTools`); the external server maps the same descriptors onto `McpServer.tool()` (`registerOperatorTools`). Neither re-implements a handler — the glue is transport-only.
+`composeDorkOsCapabilityRegistry` folds every domain into one immutable registry at boot and throws on any structural conflict (a duplicate id, a duplicate tool name, a duplicate CLI verb, a duplicate HTTP route, or an id not prefixed with its domain). The two MCP adapters and the OpenAPI projection then read that one registry, so a capability appears on every surface it declares with zero extra wiring.
 
-The **eight marketplace tools** work the same way: `MARKETPLACE_TOOL_DESCRIPTORS` is the shared catalog, wired into both servers so an external MCP client _and_ the user's own in-session agent can install (DOR-429).
+### Permission tiers
+
+Every capability declares a `tier`: `observe` (pure read), `act` (mutates local state), or `destructive` (deletes or unregisters). Tiers are **inert metadata today**: phase 3 will enforce them. Do not present a tier as an active permission gate anywhere user-facing.
 
 ### The external mutation gate
 
-The external `/mcp` server is reachable over HTTP, so it enforces a read-only carve-out. `READ_ONLY_MCP_TOOL_NAMES` in `tool-security.ts` is the single source of truth: a tool named there is allowed even in read-only mode; anything else is a mutation. The four read-only operator tools (`activity_list`, `config_get`, `check_update`, `agents_recent_activity`) are in the set; `update_agent` and `config_patch` are deliberately **not** — they mutate, so they are gated. When you add a tool, decide its side-effect class and update the set accordingly (a new mutating tool must _not_ be added).
+The external `/mcp` server is reachable over HTTP, so it enforces a read-only carve-out: in login-off mode, a tool not in `READ_ONLY_MCP_TOOL_NAMES` requires the per-instance local token. That set is now **derived**, not hand-listed: a capability opts in with `surfaces.mcp.readOnlyCarveOut: true` (only valid on `observe`-tier tools), and `readOnlyCarveOutToolNames` reads that flag. `tool-security.ts` unions the derivation with a shrinking list of legacy hand-registered read-only tools from domains that have not migrated onto the registry yet (core, tasks, binding, mesh, relay). The conformance suite asserts the derived portion stays in lock-step, which removes the phase-1 failure mode where a mutating tool could be hand-added to the read-only list.
 
-### Trust boundaries on the mutating tools
+### Trust boundaries stay in `invoke`
 
-- **`update_agent`** routes through `agent-updater.ts`, the same service behind `PATCH /api/agents/current`. The slug (`name`) is immutable, and system agents (DorkBot) reject identity changes — enforced in one place so the tool and the route cannot drift. The tool description directs the agent to confirm with the user before editing a _different_ agent's manifest.
-- **`config_patch`** routes through `config-patch.ts` (deep-merge, arrays replace) and the same Zod validation as `PATCH /api/config`. Its description flags it as a user-settings mutation to perform only on explicit user intent.
-- **`marketplace_install` / `marketplace_create_package`** keep their confirmation-token flow unchanged across both servers.
+Redaction, confirmation-token flows, and identity guards live inside `invoke` (or the service it calls), on every surface, because the transport adapters only shape the envelope:
 
-## CLI operator verbs
+- **`operator.update_agent`** routes through `agent-updater.ts`, the same service behind `PATCH /api/agents/current`. The slug (`name`) is immutable and system agents (DorkBot) reject identity changes.
+- **`operator.config_patch`** routes through `config-patch.ts` (deep-merge, arrays replace) and the same Zod validation as `PATCH /api/config`.
+- **`marketplace.install` / `marketplace.uninstall` / `marketplace.create_package`** keep their confirmation-token state machine inside the handler, unchanged across both servers.
 
-The `dorkos` CLI verbs (DOR-434) call a running server's HTTP API using the shared server-discovery + api-client pattern. They are the runtime-portable actuation path. Every verb accepts `--json` for machine output (raw JSON on stdout, nothing else); human output uses a small table renderer in `operator-output.ts`. Errors always go to stderr, so `--json` stdout stays clean on failure.
+## The CLI surface
 
-| Verb                             | HTTP call                                                      | Handler                |
-| -------------------------------- | -------------------------------------------------------------- | ---------------------- |
-| `dorkos agent list`              | `GET /api/mesh/agents`                                         | `commands/agent.ts`    |
-| `dorkos agent show <path-or-id>` | `GET /api/mesh/agents/:id` or `/api/agents/current?path=`      | `commands/agent.ts`    |
-| `dorkos agent create`            | `POST /api/agents/create`                                      | `commands/agent.ts`    |
-| `dorkos agent update`            | `PATCH /api/agents/current?path=`                              | `commands/agent.ts`    |
-| `dorkos task list`               | `GET /api/tasks`                                               | `commands/task.ts`     |
-| `dorkos task create`             | `POST /api/tasks`                                              | `commands/task.ts`     |
-| `dorkos task trigger <id>`       | `POST /api/tasks/:id/trigger`                                  | `commands/task.ts`     |
-| `dorkos task runs`               | `GET /api/tasks/runs`                                          | `commands/task.ts`     |
-| `dorkos activity`                | `GET /api/activity`                                            | `commands/activity.ts` |
-| `dorkos version --check`         | `GET /api/config` (falls back to the local update-check cache) | `commands/version.ts`  |
+The `dorkos` CLI verbs call a running server's HTTP API using the shared server-discovery + api-client pattern. They are the runtime-portable actuation path (Codex and OpenCode cannot receive MCP injection). Every verb accepts `--json` for raw machine output on stdout; errors go to stderr, so `--json` stdout stays clean on failure.
 
-`agent show` picks its endpoint with a small heuristic: an argument containing a path separator (or starting with `.`, `~`, `/`) resolves via the by-path endpoint; anything else is treated as a Mesh id/slug.
+| Verb                                      | What it does                                                                             |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `dorkos capabilities`                     | List the live capability catalog (id, title, tier, surfaces). `--json` for raw.          |
+| `dorkos call <id>`                        | Invoke any capability by id: `POST /api/capabilities/:id/invoke`. Output is always JSON. |
+| `dorkos agent list\|show\|create\|update` | Read and edit agents.                                                                    |
+| `dorkos task list\|create\|trigger\|runs` | Read and drive Pulse tasks.                                                              |
+| `dorkos activity`                         | Read the activity feed (`--type` filters within the fetched page).                       |
+| `dorkos version --check`                  | Server version + latest npm version (degrades to the local update cache).                |
 
-`dorkos activity --type <event>` filters **within the fetched page only** — the feed endpoint (`GET /api/activity`) has no server-side event-type filter, so the CLI applies `--type` after the fetch. A matching event older than `--limit` is not fetched and so will not appear; raise `--limit` to widen the window.
+`dorkos capabilities` and `dorkos call` are the registry-native pair: an agent discovers what it can do with `capabilities`, then actuates any of it with `call`, no curated verb required. The curated verbs are thin human sugar over specific capabilities; command names and flags are the **stable public contract**, so the registry can adopt a verb without breaking callers.
 
-`dorkos version --check` is the one verb that degrades instead of failing when no server is running: it reads the last-known latest version from `~/.dork/cache/update-check.json` and reports the CLI's own version.
+`dorkos call` validates the id against the live catalog first (a clear client-side error beats a bare 404), then posts the input to the invoke route. Pass input with `--input '<json>'` or `--input-file <path>` (`-` reads stdin).
 
-Each verb is intercepted in `cli.ts` before the top-level `parseArgs`, so its own flag namespace (including `--json`) is not rejected as unknown — the same interception pattern the marketplace verbs use.
+## How to add a capability
 
-## How to add a tool or verb today
+One declaration, and every surface follows:
 
-### Add an MCP operator tool
+1. **Declare it** in the owning domain (`operator-capabilities.ts`, `marketplace-capabilities.ts`, or a new domain that migrates onto the registry). Call `defineCapability` with:
+   - `id`: `${domain}.${verb}` (the prefix must equal the domain name).
+   - `title` and `description`: write the description for a model (imperative, name the real inputs and guards, say when to reach for it). The conformance suite rejects an empty or too-short description.
+   - `tier`: `observe` / `act` / `destructive`.
+   - `input` / `output`: Zod schemas. `input` must be a `z.object(...)` so the MCP field-map and the OpenAPI request derive cleanly.
+   - `surfaces`: the `mcp` / `cli` / `http` projections you want. Set `readOnlyCarveOut: true` only on an `observe` tool you want reachable tokenless on the external server.
+   - `invoke`: the transport-neutral handler. Wrap existing service or route logic; never duplicate route validation. Keep redaction and any confirmation flow here.
+2. **Register the domain** in `dorkos-registry.ts` if it is new (both `composeDorkOsCapabilityRegistry` and `composeCapabilityRegistryForDocs`). An existing domain needs no wiring for a new capability.
+3. **Tests.** Point a unit test at the handler (happy path + each rejection). The [conformance suite](#the-conformance-suite) already asserts the projections; you do not re-test those.
 
-1. Add a descriptor to `OPERATOR_TOOL_DESCRIPTORS` in `operator-tool-descriptors.ts`: `name`, `description` (write it for a model — imperative, name the real inputs and guards), `inputSchema` (a Zod shape), `annotations` (side-effect class), and `createHandler`.
-2. Put the handler logic in `operator-tool-handlers.ts` (or a dedicated service under `services/core/operator/` when it has real domain rules, as `agent-updater.ts` and `config-patch.ts` do). **Wrap existing service/route logic — never duplicate route validation.**
-3. Both servers pick the descriptor up automatically (the in-session and external glue both map the shared catalog). No composition-root edit is needed.
-4. If the tool is read-only, add its name to `READ_ONLY_MCP_TOOL_NAMES`. If it mutates, leave it out.
-5. Add unit tests covering the happy path and each rejection (e.g. system-agent protection, invalid patch).
+That is the whole checklist. The MCP tools (both servers), the OpenAPI path, the self-description entry, and (if declared) the CLI verb dispatch all appear automatically, and CI fails if any of them would be missing.
 
-### Add a marketplace tool
+### Adding a curated CLI verb
 
-Same shape, but the catalog is `MARKETPLACE_TOOL_DESCRIPTORS` in `marketplace-tool-descriptors.ts`, and the confirmation-token flow lives in `marketplace-mcp-tools.ts` — preserve it for any install/create-style mutation.
+A `cli` surface declares the verb name, but the curated verb handler is still a thin CLI command today (phase 2 froze the surface, not a code generator). Add a handler under `packages/cli/src/commands/` following `agent.ts` (a `parse<Verb>Args` and a `run<Verb>` returning an exit code), intercept it in `cli.ts` before the top-level `parseArgs`, and add it to the help text and the [CLI reference doc](../docs/guides/cli-usage.mdx#operator-commands). Keep the verb in lock-step with the capability's declared `cli.verb`.
 
-### Add a CLI operator verb
+## The conformance suite
 
-1. Add a handler module under `packages/cli/src/commands/` following `agent.ts`/`task.ts`: a `parse<Verb>Args` function (strict `parseArgs`, friendly unknown-option errors) and a `run<Verb>` function that calls `apiCall` and returns an exit code (never `process.exit` — `cli.ts` owns termination).
-2. Support `--json` via `printJson`; render human output with `renderTable`; send errors to stderr via `printError` (all in `operator-output.ts`).
-3. Intercept the verb in `cli.ts` before the top-level `parseArgs`, and add it to the `--help` text and the [CLI reference doc](../docs/guides/cli-usage.mdx#operator-commands).
-4. Command names and flags are the **stable public contract** — phase 2 regenerates the internals, not the surface. Do not build a framework; keep handlers thin and direct.
-5. Add tests mirroring `commands/__tests__/agent.test.ts` (mock `api-client`, cover parsing + one happy path per verb).
+`capabilityConformance(registry, fixtures)` in `@dorkos/test-utils` (the capability analogue of `runtimeConformance`) is the per-PR drift gate. It is wired against the real composed registry in `apps/server/src/services/core/capabilities/__tests__/capability-conformance.test.ts` and asserts, for every capability:
 
-## Phase 2: the Capability Registry
+- a `${domain}.${verb}` id, a non-empty title, a non-empty model-facing description, and a valid tier;
+- `invoke` is reachable against the domain's deps fixtures;
+- both MCP servers register **exactly** the declared tool surfaces (no orphan in either direction);
+- the CLI verb map covers every declared `cli` surface;
+- `READ_ONLY_MCP_TOOL_NAMES`, restricted to capability tools, equals the registry's own `readOnlyCarveOut` derivation;
+- every `readOnlyCarveOut` tool is `observe`-tier;
+- no two capabilities collide on an OpenAPI route;
+- the docs projection serves the same routes as the boot registry.
 
-Everything above is hand-registered: a descriptor here, a CLI handler there, a `tool-security` entry, a help-text line. Phase 2 (see the [spec](../specs/agents-as-operators/02-specification.md) and [research report](../research/20260722_agents-as-first-class-operators.md)) introduces a **Capability Registry** — one declaration per capability that generates the MCP descriptors, the CLI verb dispatch, and the read-only classification from a single source. When that lands, this guide's "how to add" sections collapse to "add a capability to the registry." Until then, keep the hand-registration in sync across the three surfaces (in-session MCP, external MCP, CLI), and keep command names and flags stable so the registry can adopt them without breaking callers.
+The structural checks live in a pure `checkCapabilityConformance` that returns a list of violations, so the suite is itself falsifiable: `packages/test-utils/src/__tests__/capability-conformance.test.ts` seeds drifts (a missing projection, a carve-out on a mutating tool, an OpenAPI collision) and proves each produces a violation. If you add a capability and forget a surface, this suite goes red before review.
+
+## Phase 1 history
+
+Before the registry, each capability was hand-registered three-plus times: an MCP descriptor in `operator-tool-descriptors.ts` / `marketplace-tool-descriptors.ts`, glue on each MCP server, a `tool-security.ts` entry for read-only tools, and a separate CLI handler. Keeping those in sync by hand was the failure mode the registry removes (its sharpest near-miss: a mutating tool one edit away from the hand-maintained read-only list). Phase 1 (spec `agents-as-operators`) shipped the operator and marketplace tool surfaces and froze their tool names and CLI verb names as a public contract; phase 2 (spec `capability-registry`) migrated those exact names onto the registry with byte-compatible output, so nothing an agent or MCP client relied on changed. The descriptor tables and per-server glue are gone; the tool names, CLI verbs, and confirmation flows they defined live on, generated from one declaration each.

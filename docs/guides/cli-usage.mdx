@@ -185,7 +185,22 @@ dorkos feedback --print      # Print the URL instead of opening a browser
 
 #### Operator commands
 
-These let you (or an agent running in any runtime) drive a running DorkOS from the command line: manage agents, schedule tasks, read activity, and check versions. Every command takes `--json` for clean, scriptable output (raw JSON on standard output, nothing else). Without `--json`, you get a readable table. See [Your agents can operate DorkOS](/docs/guides/operating-dorkos) for the plain-language tour.
+These let you (or an agent running in any runtime) drive a running DorkOS from the command line: discover what it can do, manage agents, schedule tasks, read activity, and check versions. Every command takes `--json` for clean, scriptable output (raw JSON on standard output, nothing else). Without `--json`, you get a readable table. See [Your agents can operate DorkOS](/docs/guides/operating-dorkos) for the plain-language tour.
+
+**`dorkos capabilities`**: list everything this DorkOS can do.
+
+```bash
+dorkos capabilities                                  # Every capability as a table (id, title, tier)
+dorkos capabilities --json                           # The full catalog as JSON
+```
+
+**`dorkos call`**: run any capability by its id. This is the one command that reaches every action, whether or not it has its own verb. List the ids with `dorkos capabilities` first.
+
+```bash
+dorkos call operator.check_update                    # Run a capability with no input
+dorkos call operator.activity_list --input '{"limit":5}'
+dorkos call operator.config_patch --input-file ./patch.json   # Read the input from a file ('-' for stdin)
+```
 
 **`dorkos agent`**: list, inspect, create, and edit agents.
 

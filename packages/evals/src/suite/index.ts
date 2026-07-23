@@ -17,6 +17,7 @@ import {
   activityReadCase,
   configToggleCase,
   marketplaceInstallCase,
+  capabilityDiscoveryCase,
 } from './operate.js';
 
 /** Every registered eval case, across all suites. */
@@ -30,6 +31,7 @@ export const ALL_CASES: EvalCase[] = [
   activityReadCase,
   configToggleCase,
   marketplaceInstallCase,
+  capabilityDiscoveryCase,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -60,5 +62,6 @@ export {
   activityReadCase,
   configToggleCase,
   marketplaceInstallCase,
+  capabilityDiscoveryCase,
   operateDorkOsCases,
 } from './operate.js';
