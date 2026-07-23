@@ -202,6 +202,20 @@
       ]
     },
     {
+      "guide": "agent-operator-surface.md",
+      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, how to add a tool/verb, phase-2 registry",
+      "patterns": [
+        "services/core/operator/",
+        "external-mcp/operator-tools",
+        "external-mcp/tool-security",
+        "marketplace-tool-descriptors",
+        "packages/cli/src/commands/(agent",
+        "task",
+        "activity",
+        "version)"
+      ]
+    },
+    {
       "guide": "authentication.md",
       "description": "Local Better Auth: session-gate, exposure-guard, per-user API keys + MCP, config + migrations",
       "patterns": [

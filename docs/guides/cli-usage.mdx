@@ -97,9 +97,11 @@ dorkos --debug-trace
 ### Subcommands
 
 <Callout type="info">
-  `install`, `uninstall`, `update`, `marketplace`, and `cache` all talk to a DorkOS server that's
-  already running. They don't start one for you, so run `dorkos` first in another terminal (or make
-  sure it's already running) before using them.
+  `install`, `uninstall`, `update`, `marketplace`, `cache`, and the operator commands (`agent`,
+  `task`, `activity`, `version --check`) all talk to a DorkOS server that's already running. They
+  don't start one for you, so run `dorkos` first in another terminal (or make sure it's already
+  running) before using them. The one exception: `version --check` still answers from a local cache
+  when no server is running.
 </Callout>
 
 #### Configuration
@@ -180,6 +182,55 @@ dorkos feedback --feature    # Request a feature
 dorkos feedback --runtime    # Report a runtime issue (Claude Code, Codex, or OpenCode)
 dorkos feedback --print      # Print the URL instead of opening a browser
 ```
+
+#### Operator commands
+
+These let you (or an agent running in any runtime) drive a running DorkOS from the command line: manage agents, schedule tasks, read activity, and check versions. Every command takes `--json` for clean, scriptable output (raw JSON on standard output, nothing else). Without `--json`, you get a readable table. See [Your agents can operate DorkOS](/docs/guides/operating-dorkos) for the plain-language tour.
+
+**`dorkos agent`**: list, inspect, create, and edit agents.
+
+```bash
+dorkos agent list                                    # List every registered agent
+dorkos agent show <path-or-id>                       # Show one agent by id or project folder
+dorkos agent create --name <slug> --path <dir>       # Create a new agent
+dorkos agent create --name <slug> --path <dir> --template <ref> --display-name "<name>"
+dorkos agent update --path <dir> --display-name "<name>"   # Edit self-editable fields
+dorkos agent update --path <dir> --color "" --icon ""      # Pass "" to clear a field
+```
+
+**`dorkos task`**: list, create, trigger, and inspect scheduled tasks.
+
+```bash
+dorkos task list                                     # List every scheduled task
+dorkos task create --name <name> --description "<text>" --prompt "<text>" --target <agent-or-global> --cron "0 8 * * *"
+dorkos task trigger <id>                             # Run a task now
+dorkos task runs --limit 10                          # List recent task runs
+dorkos task runs --schedule <id> --status failed     # Filter runs by task and status
+```
+
+**`dorkos activity`**: read the activity feed.
+
+```bash
+dorkos activity                                      # Recent activity as a table
+dorkos activity --actor agent --limit 20             # Only agent activity, most recent 20
+dorkos activity --category tasks                     # Filter by category (comma-separated for several)
+dorkos activity --type agent.registered              # Filter by event type
+```
+
+<Callout type="info">
+  `--type` filters the events already fetched, not the whole history. If a matching event is older
+  than `--limit` lets through, it won't appear; raise `--limit` to widen the window.
+</Callout>
+
+**`dorkos version`**: show versions.
+
+```bash
+dorkos version                    # The installed CLI version
+dorkos version --check            # The running server version and the latest published version
+dorkos version --check --json     # Same, as JSON
+```
+
+When no server is running, `dorkos version --check` still answers: it reports the CLI version and the last-known latest version from the local update-check cache.
 
 ### Config directory
 
