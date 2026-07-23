@@ -18,3 +18,4 @@ export {
   type CapabilityRegistry,
 } from './registry.js';
 export { readOnlyCarveOutToolNames } from './mcp-projection.js';
+export { registerCapabilitiesInOpenApi } from './openapi-projection.js';
