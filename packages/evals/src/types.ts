@@ -176,6 +176,16 @@ export interface EvalCase extends EvalCaseMeta {
    * here. The default (undefined) leaves the empty sandbox the runner creates.
    */
   seed?: (sandbox: EvalSandbox) => Promise<void>;
+  /**
+   * Extra environment for the CREDENTIALED child-process server this case boots
+   * (`claude-code-cheap` / `real-provider`). The in-process `test-mode` boot
+   * ignores it (it reads no such flags). A case sets this when its product path
+   * needs a server-level switch the default boot does not provide — e.g. the
+   * marketplace install eval sets `MARKETPLACE_AUTO_APPROVE=1` so a headless
+   * agent's `marketplace_install` completes without the out-of-band human
+   * approval POST the interactive confirmation-token flow otherwise requires.
+   */
+  serverEnv?: Record<string, string>;
   /** The outcome oracle(s) — ALL must pass. Asserts API/FS/stream state, never prose. */
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */

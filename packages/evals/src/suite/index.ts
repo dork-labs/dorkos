@@ -12,6 +12,12 @@ import { selfTestCase } from './selftest.js';
 import { widgetRoundTripCase } from './ui.js';
 import { designYourOwnInterviewCase } from './agents.js';
 import { connectorGmailCase, connectorSlackCase } from './connectors.js';
+import {
+  agentSelfEditCase,
+  activityReadCase,
+  configToggleCase,
+  marketplaceInstallCase,
+} from './operate.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -20,6 +26,10 @@ export const ALL_CASES: EvalCase[] = [
   designYourOwnInterviewCase,
   connectorGmailCase,
   connectorSlackCase,
+  agentSelfEditCase,
+  activityReadCase,
+  configToggleCase,
+  marketplaceInstallCase,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -45,3 +55,10 @@ export { selfTestCase } from './selftest.js';
 export { widgetRoundTripCase } from './ui.js';
 export { designYourOwnInterviewCase } from './agents.js';
 export { connectorGmailCase, connectorSlackCase } from './connectors.js';
+export {
+  agentSelfEditCase,
+  activityReadCase,
+  configToggleCase,
+  marketplaceInstallCase,
+  operateDorkOsCases,
+} from './operate.js';

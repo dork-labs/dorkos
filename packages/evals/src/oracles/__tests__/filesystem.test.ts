@@ -12,6 +12,7 @@ import {
   fileExists,
   dirAbsent,
   fileMatches,
+  jsonFileMatches,
   noBackupSiblings,
   dirContainsOnly,
 } from '../filesystem.js';
@@ -80,6 +81,49 @@ describe('fileMatches', () => {
       /modified/
     )(ctx());
     expect(result.passed).toBe(false);
+  });
+});
+
+describe('jsonFileMatches', () => {
+  it('passes when the parsed JSON satisfies the predicate (ui.statusBar flipped)', async () => {
+    const target = path.join(sandbox.dorkHome, 'config.json');
+    await writeFile(target, JSON.stringify({ ui: { statusBar: { git: false } } }));
+    const result = await jsonFileMatches(
+      (s) => path.join(s.dorkHome, 'config.json'),
+      (value) => (value as { ui?: { statusBar?: { git?: unknown } } }).ui?.statusBar?.git === false
+    )(ctx());
+    expect(result.passed).toBe(true);
+  });
+
+  it('fails when the parsed JSON does not satisfy the predicate (setting unchanged)', async () => {
+    const target = path.join(sandbox.dorkHome, 'config.json');
+    await writeFile(target, JSON.stringify({ ui: { statusBar: { git: true } } }));
+    const result = await jsonFileMatches(
+      (s) => path.join(s.dorkHome, 'config.json'),
+      (value) => (value as { ui?: { statusBar?: { git?: unknown } } }).ui?.statusBar?.git === false
+    )(ctx());
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('did not match');
+  });
+
+  it('fails when the file is missing (the write never landed)', async () => {
+    const result = await jsonFileMatches(
+      (s) => path.join(s.dorkHome, 'missing.json'),
+      () => true
+    )(ctx());
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('does not exist');
+  });
+
+  it('fails when the file is not valid JSON', async () => {
+    const target = path.join(sandbox.dorkHome, 'config.json');
+    await writeFile(target, 'not json {');
+    const result = await jsonFileMatches(
+      (s) => path.join(s.dorkHome, 'config.json'),
+      () => true
+    )(ctx());
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('not valid JSON');
   });
 });
 

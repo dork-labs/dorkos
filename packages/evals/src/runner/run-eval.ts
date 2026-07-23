@@ -96,10 +96,15 @@ function anthropicApiKey(): string | undefined {
 function bootServerForTier(
   tier: RuntimeTier,
   dorkHome: string,
-  opts: { model?: string; apiKey?: string }
+  opts: { model?: string; apiKey?: string; env?: Record<string, string> }
 ): Promise<HarnessServer> {
   if (tier === 'test-mode') return startInProcessServer({ dorkHome });
-  return startChildProcessServer({ dorkHome, anthropicApiKey: opts.apiKey, model: opts.model });
+  return startChildProcessServer({
+    dorkHome,
+    anthropicApiKey: opts.apiKey,
+    model: opts.model,
+    ...(opts.env ? { env: opts.env } : {}),
+  });
 }
 
 /**
@@ -166,7 +171,11 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // eval rewrites the soul of) installs it here into the fresh sandbox.
     await evalCase.seed?.(sandbox);
 
-    server = await bootServerForTier(opts.tier, sandbox.dorkHome, { model: opts.model, apiKey });
+    server = await bootServerForTier(opts.tier, sandbox.dorkHome, {
+      model: opts.model,
+      apiKey,
+      ...(evalCase.serverEnv ? { env: evalCase.serverEnv } : {}),
+    });
     const ceiling = evalCase.perEvalCeilingUsd;
     const abortWhen =
       ceiling !== undefined ? (fs: SseFrame[]) => evalCostUsd(fs) > ceiling : undefined;
