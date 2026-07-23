@@ -173,6 +173,12 @@ export function composeRegistry(
     domains.flatMap((domain) => [...domain.capabilities])
   );
 
+  // The registry is immutable, so the JSON-Schema serialization and the content
+  // hash are computed once, lazily, and reused (spec §Performance — "catalog
+  // serialization cached by content hash"). Only `generatedAt` is refreshed per
+  // read, which is trivial and keeps the timestamp honest.
+  let serializedCache: { capabilities: SerializedCapability[]; catalogVersion: string } | undefined;
+
   const registry: CapabilityRegistry = {
     capabilities,
     get(id) {
@@ -187,11 +193,17 @@ export function composeRegistry(
       return capability.invoke(deps, parsed);
     },
     catalog() {
-      const serialized = capabilities.map(serializeCapability);
+      if (!serializedCache) {
+        const serialized = capabilities.map(serializeCapability);
+        serializedCache = {
+          capabilities: serialized,
+          catalogVersion: computeCatalogVersion(serialized),
+        };
+      }
       return {
-        catalogVersion: computeCatalogVersion(serialized),
+        catalogVersion: serializedCache.catalogVersion,
         generatedAt: new Date().toISOString(),
-        capabilities: serialized,
+        capabilities: serializedCache.capabilities,
       };
     },
   };

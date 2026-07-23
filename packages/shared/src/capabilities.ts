@@ -50,9 +50,36 @@ export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type JsonSchema = Record<string, unknown>;
 
 /**
+ * The two MCP tool-annotation hints that vary WITHIN a permission tier and so
+ * cannot be regenerated from {@link CapabilityTier} alone.
+ *
+ * In the phase-1 descriptor tables both hints split tier-siblings apart:
+ * `check_update` / `marketplace_search` / `marketplace_get` /
+ * `marketplace_recommend` / `marketplace_install` are `openWorldHint: true`
+ * while their tier-mates are `false`; `update_agent` / `config_patch` are
+ * `idempotentHint: true` while `marketplace_install` / `marketplace_create_package`
+ * are `false`. A capability carries only these two overrides — the other two
+ * MCP hints are derived from tier by the adapter (see {@link McpSurface}).
+ */
+export interface McpToolHints {
+  /** Whether the tool touches an external, open world (e.g. a remote fetch). */
+  openWorldHint?: boolean;
+  /** Whether repeat calls with the same args converge (no cumulative effect). */
+  idempotentHint?: boolean;
+}
+
+/**
  * The MCP projection of a capability: the stable phase-1 tool name it answers
- * to, which server(s) advertise it, and whether it belongs to the read-only
- * carve-out that stays reachable on the tokenless external surface.
+ * to, which server(s) advertise it, whether it belongs to the read-only
+ * carve-out that stays reachable on the tokenless external surface, and the
+ * per-tool annotation hints that a tier cannot express.
+ *
+ * The MCP `readOnlyHint` and `destructiveHint` are NOT declared here: the
+ * transport adapter (task 2.2) derives them from {@link CapabilityTier}
+ * (`observe` → `readOnlyHint: true`; `destructive` → `destructiveHint: true`).
+ * Because the MCP SDK defaults `destructiveHint` to `true`, that adapter must
+ * emit `destructiveHint: false` EXPLICITLY for every non-`destructive` tool —
+ * otherwise `observe`/`act` tools would be mislabeled destructive.
  */
 export interface McpSurface {
   /** Registered MCP tool name, e.g. `config_get` (a frozen phase-1 contract). */
@@ -65,6 +92,12 @@ export interface McpSurface {
    * `observe`-tier tools; mutating tools must omit it.
    */
   readOnlyCarveOut?: boolean;
+  /**
+   * The two MCP hints that vary within a tier and so can't be derived from it.
+   * Omit when both match the tier defaults the adapter applies (open-world and
+   * idempotent both `false`). See {@link McpToolHints}.
+   */
+  annotations?: McpToolHints;
 }
 
 /**

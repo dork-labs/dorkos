@@ -27,7 +27,12 @@ const configGet = defineCapability({
   }),
   output: z.object({ ok: z.boolean() }),
   surfaces: {
-    mcp: { toolName: 'config_get', servers: ['in-session', 'external'], readOnlyCarveOut: true },
+    mcp: {
+      toolName: 'config_get',
+      servers: ['in-session', 'external'],
+      readOnlyCarveOut: true,
+      annotations: { openWorldHint: true, idempotentHint: true },
+    },
     cli: { verb: 'config', subcommand: 'get' },
     http: { method: 'get', path: '/api/config' },
   },
@@ -204,7 +209,14 @@ describe('catalog — serialization', () => {
       toolName: 'config_get',
       servers: ['in-session', 'external'],
       readOnlyCarveOut: true,
+      annotations: { openWorldHint: true, idempotentHint: true },
     });
+  });
+
+  it('carries the per-tool MCP annotation hints through unchanged', () => {
+    const registry = composeRegistry([configDomain], deps);
+    const get = registry.catalog().capabilities.find((c) => c.id === 'config.get');
+    expect(get?.surfaces.mcp?.annotations).toEqual({ openWorldHint: true, idempotentHint: true });
   });
 
   it('renders optionals, enums, and records as faithful JSON Schema', () => {
@@ -301,6 +313,29 @@ describe('catalog — content-hash version stability', () => {
     const mutated = serializeCapability(configGet);
     const bumped = computeCatalogVersion([{ ...mutated, description: 'changed' }]);
     expect(bumped).not.toBe(base.catalogVersion);
+  });
+
+  it('changes when an MCP annotation hint changes', () => {
+    const base = serializeCapability(configGet);
+    const flipped: SerializedCapability = {
+      ...base,
+      surfaces: {
+        ...base.surfaces,
+        mcp: { ...base.surfaces.mcp!, annotations: { openWorldHint: false, idempotentHint: true } },
+      },
+    };
+    expect(computeCatalogVersion([flipped])).not.toBe(computeCatalogVersion([base]));
+  });
+
+  it('memoizes the version across reads while keeping generatedAt fresh', () => {
+    const registry = composeRegistry([configDomain], deps);
+    const a = registry.catalog();
+    const b = registry.catalog();
+    // Same memoized content + version, and the same frozen capabilities array.
+    expect(a.catalogVersion).toBe(b.catalogVersion);
+    expect(a.capabilities).toBe(b.capabilities);
+    // generatedAt is a valid ISO timestamp regenerated each read.
+    expect(() => new Date(a.generatedAt).toISOString()).not.toThrow();
   });
 });
 

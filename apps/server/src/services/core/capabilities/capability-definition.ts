@@ -57,6 +57,13 @@ export interface CapabilityDeps {
  * declared schemas before erasing — so a registry holds a homogeneous
  * `CapabilityDefinition[]` while each definition site stays fully type-checked.
  *
+ * Confirmation-gated capabilities (e.g. `marketplace.install`,
+ * `marketplace.create_package`) model their approval-token state machine INSIDE
+ * `invoke` and their `output` schema (a `requires_confirmation` result carrying
+ * a token, re-invoked with that token) — by design, there is no declarative
+ * "needs confirmation" flag on the definition. The registry treats these as
+ * ordinary capabilities; the trust boundary lives in the handler.
+ *
  * @template In - The Zod input schema type.
  * @template Out - The Zod output schema type.
  */
