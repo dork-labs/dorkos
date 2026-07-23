@@ -48,6 +48,7 @@ import { READ_ONLY_MCP_TOOL_NAMES } from '../tool-security.js';
 import { readOnlyCarveOutToolNames } from '../../capabilities/index.js';
 import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
+import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
@@ -124,9 +125,11 @@ async function fetchLiveTools(): Promise<ToolListEntry[]> {
 }
 
 describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
-  it('has exactly 27 members (the audited read-only set)', () => {
+  it('has exactly 28 members (the audited read-only set)', () => {
     // A hard count anchors the constant against silent additions/removals.
-    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(27);
+    // 27 legacy + operator + marketplace carve-outs, plus `list_capabilities`
+    // from the self-description domain.
+    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(28);
   });
 
   it('every live tool with readOnlyHint === true is in the constant', async () => {
@@ -169,12 +172,14 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
     // `readOnlyCarveOut` flag — there is no second place to keep in sync. Assert
     // the derivation equals exactly the live read-only tools among the migrated
     // set (so a flag flip on either side is caught).
-    const derived = readOnlyCarveOutToolNames([
+    const migratedCapabilities = [
       ...operatorDomain.capabilities,
       ...marketplaceDomain.capabilities,
-    ]);
+      ...capabilitiesDomain.capabilities,
+    ];
+    const derived = readOnlyCarveOutToolNames(migratedCapabilities);
     const migratedToolNames = new Set(
-      [...operatorDomain.capabilities, ...marketplaceDomain.capabilities]
+      migratedCapabilities
         .map((c) => c.surfaces.mcp?.toolName)
         .filter((n): n is string => n !== undefined)
     );

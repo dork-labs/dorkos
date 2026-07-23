@@ -22,8 +22,17 @@ import {
 } from '../mcp-projection.js';
 import { composeRegistry } from '../index.js';
 import { noopLogger } from '@dorkos/shared/logger';
+import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
-const registry = composeRegistry([operatorDomain, marketplaceDomain], { logger: noopLogger });
+// Stub deps: this test inspects the static projection (tool names, annotations,
+// carve-out), never invokes a handler — but each domain's boot-time `assertDeps`
+// runs during composition, so supply empty bags to satisfy it.
+const registry = composeRegistry([operatorDomain, marketplaceDomain], {
+  logger: noopLogger,
+  operatorDeps: {} as McpToolDeps,
+  marketplaceDeps: {} as MarketplaceMcpDeps,
+});
 
 /** The exact tool set both MCP servers advertised before the migration. */
 const EXPECTED_TOOL_NAMES = [

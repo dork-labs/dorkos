@@ -124,11 +124,16 @@ describe('external MCP dorkos:// resources (real resources/list + resources/read
     expect(caps?.resources?.subscribe).toBeUndefined();
   });
 
-  it('resources/list returns the three static resources with name/description/mimeType', async () => {
+  it('resources/list returns the four static resources with name/description/mimeType', async () => {
     const { resources } = await client.listResources();
     const byUri = new Map(resources.map((r) => [r.uri, r]));
 
-    for (const uri of ['dorkos://sessions', 'dorkos://agents', 'dorkos://skills']) {
+    for (const uri of [
+      'dorkos://sessions',
+      'dorkos://agents',
+      'dorkos://skills',
+      'dorkos://capabilities',
+    ]) {
       const resource = byUri.get(uri);
       expect(resource, `expected ${uri} in resources/list`).toBeDefined();
       expect(resource!.name).toBeTruthy();
@@ -136,8 +141,8 @@ describe('external MCP dorkos:// resources (real resources/list + resources/read
       expect(resource!.mimeType).toBe('application/json');
     }
     // Templates are not enumerated into resources/list (list: undefined) —
-    // only the 3 static collection resources appear here.
-    expect(resources).toHaveLength(3);
+    // only the 4 static collection resources appear here.
+    expect(resources).toHaveLength(4);
   });
 
   it('resources/templates/list returns the three item templates', async () => {

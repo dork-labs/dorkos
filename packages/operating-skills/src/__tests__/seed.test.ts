@@ -105,6 +105,6 @@ describe('seedOperatingSkills', () => {
 
     // Assert on the raw file: the stamp was rewritten to the current pack version.
     const after = await readFile(skillFile(UMBRELLA), 'utf-8');
-    expect(after).toContain("dorkosPackVersion: '1'");
+    expect(after).toContain("dorkosPackVersion: '2'");
   });
 });
