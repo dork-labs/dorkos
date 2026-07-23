@@ -249,6 +249,13 @@ function RuntimeSection({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
 
+  // If a requirements refetch flips this runtime out of ready while the
+  // reconnect panel is open, drop the expansion so a later return to ready
+  // shows the settled badge instead of a self-opened panel.
+  if (!isReady && reconnecting) {
+    setReconnecting(false);
+  }
+
   // A ready runtime with a connect flow keeps a quiet way to fix its sign-in:
   // "Ready" only fingerprints the credential's presence, so a stale key or an
   // expired host login still reads Ready. OpenCode re-picks its model source;
