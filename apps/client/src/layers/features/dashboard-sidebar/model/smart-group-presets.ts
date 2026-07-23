@@ -6,8 +6,8 @@
  * @module features/dashboard-sidebar/model/smart-group-presets
  */
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
+import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import type { SmartGroupCandidate } from './evaluate-smart-group';
 
 /** Minimum fleet size that unlocks the "Smart" group-create fork (spec §5). */
 const DISCLOSURE_MIN_AGENTS = 8;

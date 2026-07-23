@@ -26,6 +26,7 @@ import {
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
+import { evaluateSmartGroup, type SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
@@ -47,7 +48,6 @@ import {
   DISABLED_SORTABLE_BINDINGS,
 } from './dnd/SidebarDndPrimitives';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
-import { evaluateSmartGroup, type SmartGroupCandidate } from '../model/evaluate-smart-group';
 import {
   meetsSmartGroupDisclosureThreshold,
   activeNowPreset,
