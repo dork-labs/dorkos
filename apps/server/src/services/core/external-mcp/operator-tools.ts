@@ -1,26 +1,25 @@
 /**
  * Self-service & observability MCP tools — external `/mcp` registration
- * (DOR-430).
+ * (DOR-430; migrated onto the Capability Registry in spec `capability-registry`,
+ * task 2.2).
  *
  * Registers the six operator tools (`activity_list`, `config_get`,
  * `check_update`, `agents_recent_activity`, `update_agent`, `config_patch`)
- * against the external `McpServer`. The catalog — names, descriptions,
- * annotations, input schemas, handler factories — lives in the transport-neutral
- * `operator/operator-tool-descriptors.ts`, shared with the in-session
- * `dorkos` server. This file owns only the `@modelcontextprotocol/sdk`-specific
- * registration glue.
- *
- * The four read-only tools carry `readOnlyHint: true` and are listed in
- * {@link READ_ONLY_MCP_TOOL_NAMES}; the two mutations (`update_agent`,
- * `config_patch`) are not — they require the local token on the login-off
- * external surface.
+ * against the external `McpServer`. Their single source of truth is the
+ * {@link operatorDomain} capability set; this function composes a registry over
+ * that domain (binding the operator service handles) and hands it to the
+ * generic {@link registerCapabilitiesAsMcpTools} walk. Annotations and the
+ * read-only carve-out are derived from each capability's tier and surface flags.
  *
  * @module services/core/external-mcp/operator-tools
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+import { logger } from '../../../lib/logger.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
-import { OPERATOR_TOOL_DESCRIPTORS } from '../operator/operator-tool-descriptors.js';
+import { composeRegistry } from '../capabilities/index.js';
+import { operatorDomain } from '../operator/operator-capabilities.js';
+import { registerCapabilitiesAsMcpTools } from './capability-mcp-tools.js';
 
 /**
  * Register every operator MCP tool against an existing `McpServer` instance.
@@ -30,15 +29,6 @@ import { OPERATOR_TOOL_DESCRIPTORS } from '../operator/operator-tool-descriptors
  * @param deps - Shared MCP tool dependencies threaded through every handler.
  */
 export function registerOperatorTools(server: McpServer, deps: McpToolDeps): void {
-  for (const descriptor of OPERATOR_TOOL_DESCRIPTORS) {
-    server.registerTool(
-      descriptor.name,
-      {
-        description: descriptor.description,
-        inputSchema: descriptor.inputSchema,
-        annotations: descriptor.annotations,
-      },
-      descriptor.createHandler(deps)
-    );
-  }
+  const registry = composeRegistry([operatorDomain], { logger, operatorDeps: deps });
+  registerCapabilitiesAsMcpTools(server, registry, 'external');
 }

@@ -31,8 +31,11 @@ import type { MarketplaceCache } from '../marketplace/marketplace-cache.js';
 import type { UninstallFlow } from '../marketplace/flows/uninstall.js';
 import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
 
+import { composeRegistry } from '../core/capabilities/index.js';
+import { registerCapabilitiesAsMcpTools } from '../core/external-mcp/capability-mcp-tools.js';
+
 import type { ConfirmationProvider } from './confirmation-provider.js';
-import { MARKETPLACE_TOOL_DESCRIPTORS } from './marketplace-tool-descriptors.js';
+import { marketplaceDomain } from './marketplace-capabilities.js';
 
 /**
  * Dependency bundle for the marketplace MCP tools. Mirrors the existing
@@ -74,33 +77,27 @@ export interface MarketplaceMcpDeps {
  * Called from `createExternalMcpServer()` in `services/core/mcp-server.ts`
  * after the existing tool registrations.
  *
- * Walks the shared {@link MARKETPLACE_TOOL_DESCRIPTORS} table — the same
- * catalog the in-session `dorkos` server registers — and adds each entry to
- * the external server, wiring in the external server's `annotations`
- * (read/write/destructive/open-world hints) which the in-session SDK helper
- * has no slot for.
+ * Composes a registry over the {@link marketplaceDomain} capability set — the
+ * same source of truth the in-session `dorkos` server projects — binding this
+ * server's dependency bundle, and hands it to the generic
+ * {@link registerCapabilitiesAsMcpTools} walk. Each tool's annotations
+ * (read/write/destructive/open-world hints) are derived from its capability's
+ * tier and per-tool overrides.
  *
  * Read-only tools (search, get, list_marketplaces, list_installed, recommend)
  * never mutate disk and require no confirmation. Mutation tools (install,
  * uninstall, create_package) always route through the
- * {@link ConfirmationProvider} on `deps` before any side effect. `search`,
- * `get`, and `recommend` fetch from configured external marketplace sources
- * over the network, so they carry `openWorldHint: true`; `list_marketplaces`
- * and `list_installed` only read local config/scan state.
+ * {@link ConfirmationProvider} on `deps` before any side effect — the
+ * confirmation-token state machine lives unchanged inside each capability's
+ * handler.
  *
  * @param server - The existing `McpServer` instance to register tools against.
  * @param deps - Marketplace dependency bundle shared by all tool handlers.
  */
 export function registerMarketplaceTools(server: McpServer, deps: MarketplaceMcpDeps): void {
-  for (const descriptor of MARKETPLACE_TOOL_DESCRIPTORS) {
-    server.registerTool(
-      descriptor.name,
-      {
-        description: descriptor.description,
-        inputSchema: descriptor.inputSchema,
-        annotations: descriptor.annotations,
-      },
-      descriptor.createHandler(deps)
-    );
-  }
+  const registry = composeRegistry([marketplaceDomain], {
+    logger: deps.logger,
+    marketplaceDeps: deps,
+  });
+  registerCapabilitiesAsMcpTools(server, registry, 'external');
 }
