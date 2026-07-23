@@ -184,4 +184,50 @@ describe('ensureDorkBot', () => {
     expect(JSON.parse(raw)).toEqual(manifest);
     expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
   });
+
+  // ── Operating DorkOS skill pack seeding (DOR-433) ───────────────────────
+
+  it('seeds the Operating DorkOS skill pack into DorkBot on fresh install', async () => {
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const umbrella = path.join(
+      tmpDir,
+      'agents',
+      'dorkbot',
+      '.agents',
+      'skills',
+      'operating-dorkos',
+      'SKILL.md'
+    );
+    const content = await fs.readFile(umbrella, 'utf-8');
+    expect(content).toContain('name: operating-dorkos');
+    expect(content).toContain('dorkosPack: operating-dorkos');
+  });
+
+  it('re-seeds on boot but never clobbers a user-modified skill', async () => {
+    // First boot seeds the pack.
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const umbrella = path.join(
+      tmpDir,
+      'agents',
+      'dorkbot',
+      '.agents',
+      'skills',
+      'operating-dorkos',
+      'SKILL.md'
+    );
+
+    // The user edits a seeded skill's body.
+    const original = await fs.readFile(umbrella, 'utf-8');
+    const edited = original.replace('# Operating DorkOS', '# Operating DorkOS\n\nMY EDITS.');
+    await fs.writeFile(umbrella, edited, 'utf-8');
+
+    // A subsequent boot (path 4 — already correct) re-seeds but preserves the edit.
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const after = await fs.readFile(umbrella, 'utf-8');
+    expect(after).toBe(edited);
+    expect(after).toContain('MY EDITS.');
+  });
 });
