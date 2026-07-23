@@ -185,11 +185,13 @@ describe('createExternalMcpServer', () => {
     expect(typeof server.connect).toBe('function');
   });
 
-  it('registers all 40 tools', () => {
+  it('registers all 47 tools', () => {
     // Purpose: regression guard against accidental tool omissions or additions.
-    // This count changes intentionally when new MCP tools are added.
+    // This count changes intentionally when new MCP tools are added: 40 legacy
+    // hand-registered + 6 operator capabilities + `list_capabilities` from the
+    // self-description domain (both projected from the registry).
     createExternalMcpServer(createMinimalDeps());
-    expect(registeredTools).toHaveLength(40);
+    expect(registeredTools).toHaveLength(47);
   });
 
   it('registers all expected tool names', () => {
@@ -307,7 +309,7 @@ describe('createExternalMcpServer', () => {
     const bindingTools = toolNames.filter((n) => n.startsWith('binding_'));
     const meshTools = toolNames.filter((n) => n.startsWith('mesh_'));
 
-    expect(coreTools).toHaveLength(11); // 4 core + 1 agent (create_agent) + 6 extension (get_extension_api, list_extensions, get_extension_errors, create_extension, reload_extensions, test_extension)
+    expect(coreTools).toHaveLength(18); // 4 core + 1 agent (create_agent) + 6 extension + 6 operator (activity_list, config_get, check_update, agents_recent_activity, update_agent, config_patch) + list_capabilities
     expect(taskTools).toHaveLength(5);
     expect(relayTools).toHaveLength(13); // 7 relay + 4 adapter + 2 trace
     expect(bindingTools).toHaveLength(3);

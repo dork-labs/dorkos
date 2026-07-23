@@ -169,6 +169,14 @@ export function composeRegistry(
     }
   }
 
+  // Structural validation passed; now let each domain assert its own deps are
+  // present so a registry composed with a domain's capabilities but missing that
+  // domain's service handles fails fast at boot (spec `capability-registry`,
+  // task 2.3), not on the first invoke.
+  for (const domain of domains) {
+    domain.assertDeps?.(deps);
+  }
+
   const capabilities: readonly CapabilityDefinition[] = Object.freeze(
     domains.flatMap((domain) => [...domain.capabilities])
   );

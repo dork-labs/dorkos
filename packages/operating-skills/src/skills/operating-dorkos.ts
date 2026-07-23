@@ -38,6 +38,10 @@ DorkOS gives you two actuation channels. Prefer whichever your session already h
 Do not mix channels for one operation. If an MCP tool exists for the job, use it;
 otherwise shell out to \`dorkos ... --json\`.
 
+Not sure what's available? Ask the running instance: \`dorkos capabilities\` (or the
+\`list_capabilities\` tool) returns the live catalog of everything you can do here —
+every capability's id, tier, and description. Discover, then act.
+
 ## The dorkos CLI at a glance
 
 The operator verbs hit the running server over its local HTTP API:
@@ -45,6 +49,7 @@ The operator verbs hit the running server over its local HTTP API:
 - \`dorkos agent list|show <path-or-id>|create|update\` — manage agents.
 - \`dorkos task list|create|trigger <id>|runs\` — manage scheduled tasks.
 - \`dorkos activity [--actor <t>] [--category <c>] [--type <e>] [--limit <n>]\` — read the feed.
+- \`dorkos capabilities [--json]\` — list every capability this instance exposes.
 - \`dorkos version --check\` — current server version and the latest release.
 - \`dorkos marketplace list|add|remove|refresh|validate\` — manage sources.
 - \`dorkos install <name>\` / \`dorkos uninstall <name>\` — install/remove packages.

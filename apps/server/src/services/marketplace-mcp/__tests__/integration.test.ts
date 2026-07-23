@@ -48,7 +48,8 @@ import type { UninstallFlow } from '../../marketplace/flows/uninstall.js';
 import type { UninstallRequest, UninstallResult } from '../../marketplace/flows/uninstall.js';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 
-import { registerMarketplaceTools, type MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
+import { registerMarketplaceTools } from './register-marketplace-tools.js';
+import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import {
   ensurePersonalMarketplace,

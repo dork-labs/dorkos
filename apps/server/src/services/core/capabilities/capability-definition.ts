@@ -134,4 +134,15 @@ export interface CapabilityDomain {
   name: string;
   /** The capabilities this domain declares. */
   capabilities: readonly CapabilityDefinition[];
+  /**
+   * Optional startup assertion that the composed dependency bag carries the
+   * service handles this domain's capabilities need. Called once by
+   * {@link composeRegistry} after structural validation, so a registry composed
+   * with a domain's capabilities but missing that domain's deps fails fast at
+   * boot with a clear error — never on first invoke.
+   *
+   * @param deps - The boot-time dependency bag the registry captured.
+   * @throws If a required dependency is absent.
+   */
+  assertDeps?(deps: CapabilityDeps): void;
 }

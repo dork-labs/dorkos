@@ -80,6 +80,7 @@ const agentSelectorSchema = {
  */
 export const operatorDomain: CapabilityDomain = {
   name: 'operator',
+  assertDeps: requireOperatorDeps,
   capabilities: [
     // ── Read-only observability ─────────────────────────────────────────────
     defineCapability({

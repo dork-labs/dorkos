@@ -31,6 +31,7 @@
 import { readOnlyCarveOutToolNames } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
+import { capabilitiesDomain } from '../self-description/capabilities-domain.js';
 
 /**
  * Read-only tool names from domains NOT yet migrated onto the Capability
@@ -78,5 +79,9 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  */
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   ...LEGACY_READ_ONLY_TOOL_NAMES,
-  ...readOnlyCarveOutToolNames([...operatorDomain.capabilities, ...marketplaceDomain.capabilities]),
+  ...readOnlyCarveOutToolNames([
+    ...operatorDomain.capabilities,
+    ...marketplaceDomain.capabilities,
+    ...capabilitiesDomain.capabilities,
+  ]),
 ]);

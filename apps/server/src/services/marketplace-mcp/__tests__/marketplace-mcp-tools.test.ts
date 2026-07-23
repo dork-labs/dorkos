@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { registerMarketplaceTools, type MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
+import { registerMarketplaceTools } from './register-marketplace-tools.js';
+import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { AutoApproveConfirmationProvider } from '../confirmation-provider.js';
 
 /**

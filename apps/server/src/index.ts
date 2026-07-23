@@ -130,6 +130,9 @@ import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
+import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
+import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
+import type { CapabilityRegistry } from './services/core/capabilities/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
@@ -883,6 +886,15 @@ async function start() {
   // by the time the first MCP request arrives this is either populated or
   // intentionally undefined (relay disabled).
   let marketplaceMcpDeps: MarketplaceMcpDeps | undefined;
+  // The single boot-composed Capability Registry — operator + marketplace +
+  // self-description folded into one immutable registry (spec
+  // `capability-registry`). Composed once below, after the dependency bags above
+  // are settled, then shared by both MCP servers and the `/api/capabilities/catalog`
+  // route. The factory/router closures below capture this `let` and read it lazily
+  // (they run per request, after boot has assigned it) — assigned once, but after
+  // those closures are defined, so it cannot be a `const` initialized in place.
+  // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
+  let capabilityRegistry: CapabilityRegistry | undefined;
   // Connector registry + the per-account → session tool-server binder, created
   // up front (both need only `db`) so the MCP factory closure can inject a
   // session's attached connector accounts as named MCP tool servers alongside
@@ -947,7 +959,13 @@ async function start() {
       // reads the captured binding lazily — by the time any session dispatches
       // a turn, it is either populated or intentionally undefined (marketplace
       // disabled), in which case the in-session marketplace tools are omitted.
-      dorkos: createDorkOsToolServer(mcpToolDeps!, session, sessionId, marketplaceMcpDeps),
+      dorkos: createDorkOsToolServer(
+        mcpToolDeps!,
+        session,
+        sessionId,
+        marketplaceMcpDeps,
+        capabilityRegistry
+      ),
       // Connected accounts explicitly attached to this session become named MCP
       // tool servers (`gmail-personal`, `gmail-work`). The connection details
       // are provider-neutral; the SDK-shape conversion is confined to the
@@ -980,7 +998,7 @@ async function start() {
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
         );
       }
-      return createExternalMcpServer(mcpToolDeps, marketplaceMcpDeps);
+      return createExternalMcpServer(mcpToolDeps, marketplaceMcpDeps, capabilityRegistry);
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
@@ -1543,6 +1561,30 @@ async function start() {
   });
   app.use('/api/terminal', createTerminalRouter(terminalManager));
   logger.info('[Terminal] Routes mounted');
+
+  // ── Capability Registry (spec `capability-registry`) ─────────────────────
+  // Compose the single registry now that its dependency bags are settled:
+  // `mcpToolDeps` (operator handles) and `marketplaceMcpDeps` (marketplace
+  // bundle) have their final values, so every capability whose domain is
+  // enabled is present. Composing all domains together is what gives cross-domain
+  // duplicate detection, and `composeDorkOsCapabilityRegistry` asserts each
+  // enabled domain's deps at this point — a wiring bug fails the boot, not the
+  // first request. Both MCP servers (via the closures above) and the catalog
+  // route below share this one instance.
+  capabilityRegistry = composeDorkOsCapabilityRegistry({
+    logger,
+    ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
+    ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
+  });
+  // GET /api/capabilities/catalog — the self-description catalog. (The bare
+  // `/api/capabilities` path already serves the per-runtime capability matrix, a
+  // different, client-facing contract; the registry catalog lives one segment
+  // deeper.) Declared as the `capabilities.list` capability's `http` surface so it
+  // projects into OpenAPI (task 2.5).
+  app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(capabilityRegistry));
+  logger.info(
+    `[Capabilities] Registry composed (${capabilityRegistry.capabilities.length} capabilities); catalog at GET /api/capabilities/catalog`
+  );
 
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);

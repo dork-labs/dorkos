@@ -69,6 +69,7 @@ function requireMarketplaceDeps(deps: CapabilityDeps): MarketplaceMcpDeps {
  */
 export const marketplaceDomain: CapabilityDomain = {
   name: 'marketplace',
+  assertDeps: requireMarketplaceDeps,
   capabilities: [
     // ── Read-only lookups ───────────────────────────────────────────────────
     defineCapability({

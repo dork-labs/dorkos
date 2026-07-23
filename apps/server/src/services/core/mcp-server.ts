@@ -7,14 +7,15 @@ import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
 import { registerMeshTools } from './external-mcp/mesh-tools.js';
 import { registerAgentAndExtensionTools } from './external-mcp/agent-extension-tools.js';
-import { registerOperatorTools } from './external-mcp/operator-tools.js';
 import { registerSessionResources } from './external-mcp/session-resources.js';
 import { registerAgentResources } from './external-mcp/agent-resources.js';
 import { registerSkillResources } from './external-mcp/skill-resources.js';
-import {
-  registerMarketplaceTools,
-  type MarketplaceMcpDeps,
-} from '../marketplace-mcp/marketplace-mcp-tools.js';
+import { registerCapabilitiesResource } from './external-mcp/capabilities-resource.js';
+import type { MarketplaceMcpDeps } from '../marketplace-mcp/marketplace-mcp-tools.js';
+import { registerCapabilitiesAsMcpTools } from './external-mcp/capability-mcp-tools.js';
+import { composeDorkOsCapabilityRegistry } from './self-description/dorkos-registry.js';
+import type { CapabilityRegistry } from './capabilities/index.js';
+import { logger } from '../../lib/logger.js';
 import { SERVER_ICONS } from './mcp-tool-metadata.js';
 
 /**
@@ -38,11 +39,15 @@ import { SERVER_ICONS } from './mcp-tool-metadata.js';
  * schema also declare `outputSchema` and return matching `structuredContent`
  * (via `structuredJsonContent()` in the shared handlers).
  *
- * The marketplace MCP surface is registered conditionally — when
- * `marketplaceDeps` is supplied (the relay-enabled boot path), every
- * `marketplace_*` tool is added to the server. When `marketplaceDeps` is
- * `undefined` (e.g. relay disabled), the server still boots and the
- * marketplace branch is silently skipped.
+ * The operator, marketplace, and self-description tool surfaces are generated
+ * from the Capability Registry: {@link registerCapabilitiesAsMcpTools} walks the
+ * registry once and registers every capability advertised on the `external`
+ * server (operator + marketplace + `list_capabilities`). The registry is either
+ * the shared boot-composed one passed in `registry`, or — when omitted, e.g. in
+ * unit tests — composed on the spot from `deps` and `marketplaceDeps` via
+ * {@link composeDorkOsCapabilityRegistry}. The marketplace surface is included
+ * only when `marketplaceDeps` is present, so a relay-disabled instance simply
+ * omits those capabilities from the registry (and thus the tool list).
  *
  * Read-only `dorkos://` resources (sessions, agents, skills —
  * `external-mcp/*-resources.ts`) are registered alongside the tools. This
@@ -61,11 +66,14 @@ import { SERVER_ICONS } from './mcp-tool-metadata.js';
  *
  * @param deps - Service dependencies shared with the internal tool path
  * @param marketplaceDeps - Optional marketplace dependency bundle. When
- *   provided, every marketplace tool is registered against the server.
+ *   provided, the marketplace capabilities join the registry (and the tool list).
+ * @param registry - The shared boot-composed capability registry. When omitted
+ *   (unit tests), one is composed on the spot from `deps` + `marketplaceDeps`.
  */
 export function createExternalMcpServer(
   deps: McpToolDeps,
-  marketplaceDeps?: MarketplaceMcpDeps
+  marketplaceDeps?: MarketplaceMcpDeps,
+  registry?: CapabilityRegistry
 ): McpServer {
   const server = new McpServer({
     name: 'dorkos',
@@ -84,17 +92,22 @@ export function createExternalMcpServer(
   registerBindingTools(server, deps);
   registerMeshTools(server, deps);
   registerAgentAndExtensionTools(server, deps);
-  registerOperatorTools(server, deps);
 
-  // ── Marketplace tools (conditional on marketplace deps being available) ─
-  if (marketplaceDeps) {
-    registerMarketplaceTools(server, marketplaceDeps);
-  }
+  // ── Registry-backed tools (operator + marketplace + self-description) ─────
+  const capabilityRegistry =
+    registry ??
+    composeDorkOsCapabilityRegistry({
+      logger,
+      operatorDeps: deps,
+      ...(marketplaceDeps && { marketplaceDeps }),
+    });
+  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external');
 
   // ── Read-only resources ──────────────────────────────────────────────────
   registerSessionResources(server, deps);
   registerAgentResources(server, deps);
   registerSkillResources(server, deps);
+  registerCapabilitiesResource(server, capabilityRegistry);
 
   // Correct the SDK's auto-advertised `listChanged: true` — see the module
   // TSDoc above. Must run after registration (which is what sets it) and
