@@ -4,6 +4,25 @@
  * Registers all API endpoints with descriptions, request/response schemas.
  * Powers `/api/docs` (Scalar UI) and `/api/openapi.json`.
  *
+ * ## Two sources of paths
+ *
+ * 1. **Legacy hand-registered paths** — the bulk of this file: each route is
+ *    described by a `registry.registerPath(...)` call by hand. Some of these
+ *    schemas are Zod-3 mirrors (see the `Local*Schema` block below): the
+ *    Zod-3 `@dorkos/marketplace` schemas cannot compose with this Zod-4 /
+ *    zod-to-openapi-v8 registry, so they are redeclared here as Zod-4 and kept
+ *    in sync by hand.
+ * 2. **Registry-projected paths** — every capability that declares an `http`
+ *    surface auto-registers its path via {@link registerCapabilitiesInOpenApi}
+ *    at the bottom of this module (spec `capability-registry`, task 2.5). New
+ *    capabilities appear in `/api/docs` automatically with no edit here; their
+ *    schemas are native Zod-4, so no hand-mirroring is ever needed for them.
+ *
+ * The two sets never overlap: the projection throws at generation time if a
+ * capability path collides with a hand-registered one. Migrating the legacy
+ * hand-registered paths onto the registry, domain-by-domain, is a tracked
+ * hygiene follow-up (not this task) — until then both sources coexist.
+ *
  * @module services/openapi-registry
  */
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
@@ -58,6 +77,8 @@ import {
   AgentListQuerySchema,
 } from '@dorkos/shared/mesh-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
+import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
+import { composeCapabilityRegistryForDocs } from './self-description/dorkos-registry.js';
 import {
   ConnectorToolkitSchema,
   ConnectorRecommendationSchema,
@@ -2457,6 +2478,14 @@ registry.registerPath({
     204: { description: 'Account detached (or already absent)' },
   },
 });
+
+// --- Registry-projected capability paths ---
+
+// Every capability with an `http` surface auto-registers its path here, after
+// all legacy hand-registered paths above so the collision guard can see them
+// (spec `capability-registry`, task 2.5). Runs once at module load; the
+// projection throws if a capability path shadows a hand-registered one.
+registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
 
 // --- Generator ---
 

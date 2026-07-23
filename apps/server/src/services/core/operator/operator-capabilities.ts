@@ -100,6 +100,12 @@ export const operatorDomain: CapabilityDomain = {
           readOnlyCarveOut: true,
           annotations: { idempotentHint: true },
         },
+        // The capability's input IS `ListActivityQuerySchema`, which the real
+        // `GET /api/activity` route parses verbatim from its query string — so
+        // this http surface projects into OpenAPI honestly (task 2.5). The other
+        // operator routes do not line up so cleanly and stay hand-registerable
+        // for the domain-by-domain migration follow-up (see `openapi-registry.ts`).
+        http: { method: 'get', path: '/api/activity' },
       },
       invoke: async (deps, input) =>
         unwrapMcpEnvelope(await createActivityListHandler(requireOperatorDeps(deps))(input)),

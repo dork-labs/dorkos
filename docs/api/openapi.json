@@ -4687,6 +4687,15 @@
             "description": "Snapshot the live arrangement (enabled extensions + chrome) when forking the active Shape."
           }
         }
+      },
+      "ActorType": {
+        "type": "string",
+        "enum": [
+          "user",
+          "agent",
+          "system",
+          "tasks"
+        ]
       }
     },
     "parameters": {}
@@ -11012,6 +11021,233 @@
         "responses": {
           "204": {
             "description": "Account detached (or already absent)"
+          }
+        }
+      }
+    },
+    "/api/activity": {
+      "get": {
+        "tags": [
+          "Operator"
+        ],
+        "summary": "List activity",
+        "description": "List DorkOS activity-feed events (agent, tasks, relay, config, system). Filter by categories (comma-separated), actorType, actorId, and a time window (before/since ISO timestamps); paginate with limit and the returned nextCursor.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "categories",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/ActorType"
+            },
+            "required": false,
+            "name": "actorType",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "actorId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List activity result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/capabilities/catalog": {
+      "get": {
+        "tags": [
+          "Capabilities"
+        ],
+        "summary": "List capabilities",
+        "description": "List everything you can do in this DorkOS: the live, versioned catalog of every capability the registry exposes, each with its id, title, description, permission tier, input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Call this first to discover what actions and tools are available before reaching for a specific one.",
+        "responses": {
+          "200": {
+            "description": "List capabilities result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "catalogVersion": {
+                      "type": "string"
+                    },
+                    "generatedAt": {
+                      "type": "string"
+                    },
+                    "capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "tier": {
+                            "type": "string",
+                            "enum": [
+                              "observe",
+                              "act",
+                              "destructive"
+                            ]
+                          },
+                          "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "outputSchema": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "surfaces": {
+                            "type": "object",
+                            "properties": {
+                              "mcp": {
+                                "type": "object",
+                                "properties": {
+                                  "toolName": {
+                                    "type": "string"
+                                  },
+                                  "servers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "in-session",
+                                        "external"
+                                      ]
+                                    }
+                                  },
+                                  "readOnlyCarveOut": {
+                                    "type": "boolean"
+                                  },
+                                  "annotations": {
+                                    "type": "object",
+                                    "properties": {
+                                      "openWorldHint": {
+                                        "type": "boolean"
+                                      },
+                                      "idempotentHint": {
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "toolName",
+                                  "servers"
+                                ]
+                              },
+                              "cli": {
+                                "type": "object",
+                                "properties": {
+                                  "verb": {
+                                    "type": "string"
+                                  },
+                                  "subcommand": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "verb"
+                                ]
+                              },
+                              "http": {
+                                "type": "object",
+                                "properties": {
+                                  "method": {
+                                    "type": "string",
+                                    "enum": [
+                                      "get",
+                                      "post",
+                                      "put",
+                                      "patch",
+                                      "delete"
+                                    ]
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "method",
+                                  "path"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "description",
+                          "tier",
+                          "inputSchema",
+                          "outputSchema",
+                          "surfaces"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "catalogVersion",
+                    "generatedAt",
+                    "capabilities"
+                  ]
+                }
+              }
+            }
           }
         }
       }
