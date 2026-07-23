@@ -356,6 +356,7 @@ if (
   process.argv[2] === 'task' ||
   process.argv[2] === 'activity' ||
   process.argv[2] === 'capabilities' ||
+  process.argv[2] === 'call' ||
   process.argv[2] === 'version'
 ) {
   process.env.DORK_HOME = DORK_HOME;
@@ -391,6 +392,20 @@ if (
     const { runCapabilities, parseCapabilitiesArgs } = await import('./commands/capabilities.js');
     try {
       process.exit(await runCapabilities(parseCapabilitiesArgs(subArgs)));
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+  if (process.argv[2] === 'call') {
+    if (subArgs[0] === undefined || subArgs[0] === '--help' || subArgs[0] === '-h') {
+      const { CALL_HELP } = await import('./commands/call.js');
+      console.log(CALL_HELP);
+      process.exit(subArgs[0] === undefined ? 1 : 0);
+    }
+    const { runCall, parseCallArgs } = await import('./commands/call.js');
+    try {
+      process.exit(await runCall(parseCallArgs(subArgs)));
     } catch (err) {
       console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
@@ -465,6 +480,7 @@ Commands:
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   activity             Show the activity feed (--actor|--category|--type|--limit)
   capabilities         List everything you can do here (--json for raw catalog)
+  call <capability-id> Invoke any capability by id (--input <json>; prints JSON)
   version --check      Show server + latest version (falls back to local cache)
   harness sync         Project agent files across harnesses (--check|--fix)
   auth enable          Create the owner account and require login

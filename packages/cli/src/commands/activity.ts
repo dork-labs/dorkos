@@ -6,6 +6,17 @@
  * filters; `--type` (event type) is applied client-side after the fetch because
  * the feed endpoint does not filter on it.
  *
+ * Capability binding (spec `capability-registry`, task 2.4): `GET /api/activity`
+ * is the declared `http` surface of the `operator.activity_list` capability, so
+ * this verb already dispatches through that capability by hitting its route — no
+ * change to the frozen transport or `--json` shape was needed. The other operator
+ * verbs stay on their curated routes: their route shapes differ from (or have no)
+ * capability http surface (e.g. `operator.update_agent` targets by `agent_id`/`cwd`
+ * while `dorkos agent update` uses the `?path=` route; `check_update`'s payload
+ * differs from `version --check`'s composite), and re-routing through the generic
+ * invoke endpoint would change their frozen output. Agents reach the raw
+ * capability shapes through `dorkos call` / `POST /api/capabilities/:id/invoke`.
+ *
  * Accepts `--json` for raw machine output. Returns an exit code rather than
  * calling `process.exit` so `cli.ts` stays the single source of truth for
  * termination.
