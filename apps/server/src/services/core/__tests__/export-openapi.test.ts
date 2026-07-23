@@ -24,4 +24,23 @@ describe('export-openapi', () => {
     const json = JSON.stringify(spec, null, 2);
     expect(() => JSON.parse(json)).not.toThrow();
   });
+
+  it('projects registry capabilities with an http surface (task 2.5)', () => {
+    const spec = generateOpenAPISpec();
+    const paths = spec.paths ?? {};
+
+    // `capabilities.list` → GET /api/capabilities/catalog, tagged by its domain,
+    // with the precise catalog response schema.
+    const catalog = paths['/api/capabilities/catalog']?.get;
+    expect(catalog?.tags).toEqual(['Capabilities']);
+    expect(catalog?.responses?.['200']?.content?.['application/json']?.schema).toMatchObject({
+      properties: { catalogVersion: {}, generatedAt: {}, capabilities: {} },
+    });
+
+    // The operator domain now appears in /api/docs via `operator.activity_list`
+    // → GET /api/activity, projecting its input as query parameters.
+    const activity = paths['/api/activity']?.get;
+    expect(activity?.tags).toEqual(['Operator']);
+    expect((activity?.parameters ?? []).length).toBeGreaterThan(0);
+  });
 });
