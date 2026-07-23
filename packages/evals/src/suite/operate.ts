@@ -471,10 +471,44 @@ export const marketplaceInstallCase: EvalCase = {
   ],
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// capability-discovery
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * `capability-discovery` — asked "what can you do in DorkOS?", the agent reaches
+ * for the self-description catalog through the `list_capabilities` tool rather
+ * than guessing from memory (the Capability Registry discovery proof, spec
+ * `capability-registry` §2.6). A pure read: asserts `list_capabilities` fired
+ * and that answering the question mutated nothing in the workspace.
+ */
+export const capabilityDiscoveryCase: EvalCase = {
+  id: 'capability-discovery',
+  title: 'Capability discovery — the agent lists what it can do via list_capabilities',
+  prompt: 'What can you do in DorkOS? List the capabilities and actions available to you here.',
+  runtimeTier: 'claude-code-cheap',
+  costClass: 'cheap',
+  tags: ['core'],
+  quarantined: true,
+  perEvalCeilingUsd: 0.5,
+  oracles: [
+    toolInvokedInStream(
+      'list_capabilities',
+      'the agent discovered its capabilities via the catalog'
+    ),
+    dirContainsOnly(
+      (sandbox) => sandbox.projectCwd,
+      [],
+      'read-only: discovering capabilities created nothing in the workspace'
+    ),
+  ],
+};
+
 /** Every operate-DorkOS case, in registration order. */
 export const operateDorkOsCases: EvalCase[] = [
   agentSelfEditCase,
   activityReadCase,
   configToggleCase,
   marketplaceInstallCase,
+  capabilityDiscoveryCase,
 ];
