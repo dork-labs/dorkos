@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { SmartGroupCandidate } from '../evaluate-smart-group';
+import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import {
   meetsSmartGroupDisclosureThreshold,
   activeNowPreset,

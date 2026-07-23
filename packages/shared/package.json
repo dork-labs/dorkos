@@ -160,6 +160,10 @@
     "./terminal-schemas": {
       "types": "./src/terminal-schemas.ts",
       "default": "./dist/terminal-schemas.js"
+    },
+    "./smart-groups": {
+      "types": "./src/smart-groups.ts",
+      "default": "./dist/smart-groups.js"
     }
   },
   "scripts": {
