@@ -119,16 +119,131 @@ function renderLocalPath(
   return transport;
 }
 
-describe('OllamaLocalPath — Ollama not running', () => {
-  it('shows the installer link and no raw error', async () => {
-    renderLocalPath({ detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }) });
+describe('OllamaLocalPath — Ollama not installed', () => {
+  it('manual platform: explains Ollama, shows the copyable command, and the download link', async () => {
+    renderLocalPath({
+      detectOllama: vi
+        .fn()
+        .mockResolvedValue({ running: false, models: [], installMethod: 'manual' }),
+    });
 
     expect(await screen.findByTestId('ollama-absent')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /install ollama/i })).toHaveAttribute(
+    // Plain-language explainer (what Ollama is + why it keeps things private).
+    expect(screen.getByTestId('ollama-explainer')).toHaveTextContent(/free, open-source app/i);
+    // The official one-line command is offered to copy (needs admin, runs in a terminal).
+    const manual = screen.getByTestId('ollama-manual-install');
+    expect(manual).toHaveTextContent('curl -fsSL https://ollama.com/install.sh | sh');
+    expect(screen.getByRole('button', { name: /copy the ollama install command/i })).toBeVisible();
+    // No password-free one-click on a manual platform.
+    expect(screen.queryByTestId('ollama-install-oneclick')).not.toBeInTheDocument();
+    // The download link stays visible as the fallback.
+    expect(screen.getByRole('link', { name: /download ollama/i })).toHaveAttribute(
       'href',
       'https://ollama.com/download'
     );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('winget platform: offers the one-click install button plus the download fallback', async () => {
+    renderLocalPath({
+      detectOllama: vi
+        .fn()
+        .mockResolvedValue({ running: false, models: [], installMethod: 'winget' }),
+    });
+
+    expect(await screen.findByTestId('ollama-install-oneclick')).toBeInTheDocument();
+    expect(screen.queryByTestId('ollama-manual-install')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /download ollama/i })).toBeVisible();
+  });
+
+  it('brew platform: one-click install streams a spinning progress row, then lands in the panel', async () => {
+    const user = userEvent.setup();
+    let resolveProvision: (r: {
+      ok: boolean;
+      installMethod: string;
+      status: OllamaStatus;
+    }) => void = () => {};
+    const provisionPromise = new Promise<{
+      ok: boolean;
+      installMethod: string;
+      status: OllamaStatus;
+    }>((resolve) => {
+      resolveProvision = resolve;
+    });
+    const provisionOllama = vi.fn().mockImplementation((onProgress?: (p: unknown) => void) => {
+      onProgress?.({ stage: 'installing', message: 'Installing Ollama…' });
+      return provisionPromise;
+    });
+    let detectCall = 0;
+    renderLocalPath({
+      detectOllama: vi.fn().mockImplementation(() => {
+        detectCall += 1;
+        return Promise.resolve(
+          detectCall === 1
+            ? { running: false, models: [], installMethod: 'brew' }
+            : { running: true, models: [], installMethod: 'brew' }
+        );
+      }),
+      provisionOllama,
+    });
+
+    await user.click(await screen.findByTestId('ollama-install-oneclick'));
+    expect(provisionOllama).toHaveBeenCalledTimes(1);
+
+    // The in-flight install shows a spinning progress row (DOR-439: it must spin).
+    const progress = await screen.findByTestId('connect-progress');
+    expect(progress).toHaveTextContent(/installing ollama/i);
+    expect(progress.querySelector('.animate-spin')).toBeInTheDocument();
+
+    // Completing the install re-probes detection → running → the panel appears.
+    await act(async () => {
+      resolveProvision({ ok: true, installMethod: 'brew', status: { running: true, models: [] } });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('ollama-status-line')).toBeInTheDocument();
+    });
+  });
+
+  it('brew platform: installed-but-not-running shows honest guidance to start it', async () => {
+    const user = userEvent.setup();
+    renderLocalPath({
+      detectOllama: vi
+        .fn()
+        .mockResolvedValue({ running: false, models: [], installMethod: 'brew' }),
+      provisionOllama: vi.fn().mockResolvedValue({
+        ok: true,
+        installMethod: 'brew',
+        status: { running: false, models: [] },
+      }),
+    });
+
+    await user.click(await screen.findByTestId('ollama-install-oneclick'));
+
+    expect(await screen.findByTestId('ollama-installed-not-running')).toHaveTextContent(
+      /not running yet/i
+    );
+  });
+
+  it('brew platform: a failed install shows a retryable error and keeps the download link', async () => {
+    const user = userEvent.setup();
+    renderLocalPath({
+      detectOllama: vi
+        .fn()
+        .mockResolvedValue({ running: false, models: [], installMethod: 'brew' }),
+      provisionOllama: vi.fn().mockResolvedValue({
+        ok: false,
+        installMethod: 'brew',
+        error: 'Could not install Ollama. Check your connection and try again.',
+      }),
+    });
+
+    await user.click(await screen.findByTestId('ollama-install-oneclick'));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/could not install ollama/i);
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /download ollama/i })).toBeVisible();
   });
 });
 
@@ -194,6 +309,8 @@ describe('OllamaLocalPath — curated "Add a model" shelf', () => {
 
     const progress = await screen.findByTestId('guided-pull-progress');
     expect(progress).toHaveTextContent(/50%/);
+    // The download spinner must actually spin (DOR-439).
+    expect(progress.querySelector('.animate-spin')).toBeInTheDocument();
     expect(pullOllamaModel).toHaveBeenCalledWith('qwen2.5-coder:7b', expect.any(Function));
 
     await act(async () => {

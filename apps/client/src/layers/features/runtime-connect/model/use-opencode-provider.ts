@@ -18,6 +18,13 @@ import { useTransport } from '@/layers/shared/model';
 export const OLLAMA_PROVIDER_ID = 'ollama';
 
 /**
+ * TanStack Query key for local Ollama detection. Shared so the guided-install
+ * hook can invalidate the exact same key it re-probes on (a completed install
+ * must refresh this panel).
+ */
+export const OLLAMA_DETECTION_KEY = ['runtime-connect', 'ollama'] as const;
+
+/**
  * Detect a local Ollama for the Local path.
  *
  * Bounded server-side; gated by `enabled` so it only probes when the Local tab
@@ -29,7 +36,7 @@ export const OLLAMA_PROVIDER_ID = 'ollama';
 export function useOllamaDetection(enabled: boolean) {
   const transport = useTransport();
   return useQuery<OllamaStatus>({
-    queryKey: ['runtime-connect', 'ollama'],
+    queryKey: OLLAMA_DETECTION_KEY,
     queryFn: () => transport.detectOllama(),
     enabled,
     staleTime: 30_000,

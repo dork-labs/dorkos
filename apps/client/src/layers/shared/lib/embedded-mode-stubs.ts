@@ -25,6 +25,7 @@ import type {
   OllamaModelCatalog,
   OllamaPullProgress,
   OllamaPullResult,
+  OllamaProvisionResult,
 } from '@dorkos/shared/runtime-connect';
 import type {
   Workspace,
@@ -517,6 +518,18 @@ export const serverOnlyStubs = {
       ok: false,
       model,
       error: 'Pulling an Ollama model is not supported in Obsidian plugin mode.',
+    };
+  },
+
+  async provisionOllama(
+    _onProgress?: (progress: RuntimeProvisionProgress) => void
+  ): Promise<OllamaProvisionResult> {
+    // Installing Ollama spawns a package manager — a desktop-server concern, not
+    // available in the in-process Obsidian embedding. Honest Connect/error state.
+    return {
+      ok: false,
+      installMethod: 'manual',
+      error: 'Installing Ollama is not supported in Obsidian plugin mode.',
     };
   },
 

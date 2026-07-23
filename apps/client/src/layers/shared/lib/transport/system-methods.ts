@@ -42,6 +42,7 @@ import type {
   OllamaModelCatalog,
   OllamaPullProgress,
   OllamaPullResult,
+  OllamaProvisionResult,
 } from '@dorkos/shared/runtime-connect';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
@@ -49,6 +50,50 @@ import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/age
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
+
+/**
+ * POST an SSE-streaming action and fold its frames into a single terminal result.
+ *
+ * The shared shape for every streamed install/pull endpoint (runtime provision,
+ * Ollama pull, Ollama install): `progress` frames drive `onProgress` while a
+ * terminal `result` frame carries the outcome. A non-2xx opening response throws
+ * an honest error; a stream that ends with no `result` frame resolves to
+ * `fallback`.
+ *
+ * @param url - The absolute endpoint URL to POST.
+ * @param body - Optional JSON body (omit for a bodyless trigger).
+ * @param fallback - The result returned when the stream carries no terminal frame.
+ * @param onProgress - Optional callback for streamed progress frames.
+ */
+async function postSseAction<TProgress, TResult>(
+  url: string,
+  body: Record<string, unknown> | undefined,
+  fallback: TResult,
+  onProgress?: (progress: TProgress) => void
+): Promise<TResult> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!response.ok) {
+    const errBody = (await response.json().catch(() => ({
+      error: response.statusText,
+    }))) as { error?: string };
+    throw new Error(errBody.error ?? `HTTP ${response.status}`);
+  }
+
+  const reader = response.body!.getReader();
+  let result = fallback;
+  for await (const event of parseSSEStream<TProgress | TResult>(reader)) {
+    if (event.type === 'result') {
+      result = event.data as TResult;
+    } else if (event.type === 'progress') {
+      onProgress?.(event.data as TProgress);
+    }
+  }
+  return result;
+}
 
 /**
  * Create all system-level methods bound to a base URL.
@@ -331,41 +376,16 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
     },
 
-    async provisionRuntime(
+    provisionRuntime(
       runtimeType: string,
       onProgress?: (progress: RuntimeProvisionProgress) => void
     ): Promise<RuntimeProvisionResult> {
-      const response = await fetch(
+      return postSseAction<RuntimeProvisionProgress, RuntimeProvisionResult>(
         `${baseUrl}/runtimes/${encodeURIComponent(runtimeType)}/provision`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        }
+        undefined,
+        { ok: false, error: 'Provisioning ended without a result' },
+        onProgress
       );
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({
-          error: response.statusText,
-        }))) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${response.status}`);
-      }
-
-      // Progress frames stream as `progress` events; the terminal `result` event
-      // carries the outcome.
-      const reader = response.body!.getReader();
-      let result: RuntimeProvisionResult = {
-        ok: false,
-        error: 'Provisioning ended without a result',
-      };
-      for await (const event of parseSSEStream<RuntimeProvisionProgress | RuntimeProvisionResult>(
-        reader
-      )) {
-        if (event.type === 'result') {
-          result = event.data as RuntimeProvisionResult;
-        } else if (event.type === 'progress') {
-          onProgress?.(event.data as RuntimeProvisionProgress);
-        }
-      }
-      return result;
     },
 
     // ── Runtime Connect (terminal-free auth) ──────────────────────────────
@@ -426,38 +446,27 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON<OllamaModelCatalog>(baseUrl, '/runtimes/opencode/ollama/models');
     },
 
-    async pullOllamaModel(
+    pullOllamaModel(
       model: string,
       onProgress?: (progress: OllamaPullProgress) => void
     ): Promise<OllamaPullResult> {
-      const response = await fetch(`${baseUrl}/runtimes/opencode/ollama/pull`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({
-          error: response.statusText,
-        }))) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${response.status}`);
-      }
+      return postSseAction<OllamaPullProgress, OllamaPullResult>(
+        `${baseUrl}/runtimes/opencode/ollama/pull`,
+        { model },
+        { ok: false, model, error: 'The pull ended without a result' },
+        onProgress
+      );
+    },
 
-      // Progress frames stream as `progress` events; the terminal `result` event
-      // carries the outcome (mirrors provisionRuntime).
-      const reader = response.body!.getReader();
-      let result: OllamaPullResult = {
-        ok: false,
-        model,
-        error: 'The pull ended without a result',
-      };
-      for await (const event of parseSSEStream<OllamaPullProgress | OllamaPullResult>(reader)) {
-        if (event.type === 'result') {
-          result = event.data as OllamaPullResult;
-        } else if (event.type === 'progress') {
-          onProgress?.(event.data as OllamaPullProgress);
-        }
-      }
-      return result;
+    provisionOllama(
+      onProgress?: (progress: RuntimeProvisionProgress) => void
+    ): Promise<OllamaProvisionResult> {
+      return postSseAction<RuntimeProvisionProgress, OllamaProvisionResult>(
+        `${baseUrl}/runtimes/opencode/ollama/provision`,
+        undefined,
+        { ok: false, installMethod: 'manual', error: 'The install ended without a result' },
+        onProgress
+      );
     },
 
     // ── Tunnel ────────────────────────────────────────────────────────────
