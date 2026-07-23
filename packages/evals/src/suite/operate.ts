@@ -33,7 +33,8 @@
  * - `activity-read`: the agent called `activity_list`, and the read-only
  *   summary mutated nothing in its workspace.
  * - `config-toggle`: the agent used `config_patch` and the `ui.statusBar.git`
- *   flag flipped to `false` in the sandbox `config.json`.
+ *   flag flipped to `false` in the sandbox `config.json` — a SCOPED edit, with
+ *   every other status-bar preference left at its default.
  * - `marketplace-search-and-install`: the agent used `marketplace_install`
  *   and the package tree materialized under the sandbox `DORK_HOME`.
  *
@@ -59,6 +60,7 @@ import {
   TRAIT_SECTION_END,
 } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
+import { STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { createDb, runMigrations, activityEvents } from '@dorkos/db';
 import type { EvalCase, EvalSandbox } from '../types.js';
 import {
@@ -270,11 +272,37 @@ export const activityReadCase: EvalCase = {
 const configPath = (sandbox: EvalSandbox): string => path.join(sandbox.dorkHome, 'config.json');
 
 /**
+ * Whether the parsed `config.json` reflects a SURGICAL git-item hide: exactly
+ * `ui.statusBar.git === false`, with every OTHER status-bar preference still at
+ * its default (`STATUS_BAR_PREFS_DEFAULTS`, all `true`). This rejects an agent
+ * that over-broadly flips ALL ten keys — a scoped edit is the behavior under
+ * test, not "turn the whole status bar off". Sibling ABSENCE is allowed: after a
+ * `config_patch` deep-merge the section may materialize either the full object
+ * or only the patched key, and an absent sibling still resolves to its default —
+ * so an absent sibling is treated as unchanged, while a sibling PRESENT at a
+ * non-default value fails.
+ *
+ * @param value - The parsed `config.json` object.
+ */
+function onlyGitItemHidden(value: unknown): boolean {
+  const statusBar = (value as { ui?: { statusBar?: Record<string, unknown> } }).ui?.statusBar;
+  if (!statusBar || statusBar.git !== false) return false;
+  const expected: Record<string, boolean> = { ...STATUS_BAR_PREFS_DEFAULTS, git: false };
+  return Object.entries(expected).every(([key, want]) => {
+    const got = statusBar[key];
+    // An absent sibling resolves to its default (unchanged); a present one must
+    // equal the expected value (git → false, every other key → its default).
+    return got === undefined || got === want;
+  });
+}
+
+/**
  * `config-toggle` — the user asks (by intent, not by config key) to hide the git
  * status-bar item; the agent discovers the setting and flips it via
- * `config_patch`. Asserts `config_patch` fired and `ui.statusBar.git` is `false`
- * in the sandbox `config.json`. No seed: the item defaults to visible (`true`),
- * so a `false` on disk is an unambiguous flip.
+ * `config_patch`. Asserts `config_patch` fired and the edit was SURGICAL —
+ * `ui.statusBar.git === false` while every other status-bar preference stays at
+ * its default. No seed: the items default to visible (`true`), so a lone `false`
+ * on `git` is an unambiguous, scoped flip.
  */
 export const configToggleCase: EvalCase = {
   id: 'config-toggle',
@@ -289,11 +317,8 @@ export const configToggleCase: EvalCase = {
     toolInvokedInStream('config_patch', 'the agent used config_patch to change a setting'),
     jsonFileMatches(
       configPath,
-      (value) => {
-        const ui = (value as { ui?: { statusBar?: { git?: unknown } } }).ui;
-        return ui?.statusBar?.git === false;
-      },
-      'ui.statusBar.git flipped to false in config.json'
+      onlyGitItemHidden,
+      'ui.statusBar.git flipped to false in config.json, sibling prefs unchanged'
     ),
   ],
 };
@@ -430,6 +455,14 @@ export const marketplaceInstallCase: EvalCase = {
   serverEnv: { MARKETPLACE_AUTO_APPROVE: '1' },
   seed: seedMarketplaceFixture,
   oracles: [
+    // TRACKED GAP (DOR-435): the task contract's "confirmation flow was
+    // exercised" is proven here only INDIRECTLY — a materialized install tree
+    // implies the install path ran, and `tool-install.ts` calls the
+    // confirmation provider UNCONDITIONALLY before any side effect, so a
+    // completed install cannot bypass it today. There is no confirmation SSE
+    // frame to assert on. Revisit and add a DIRECT assertion if either changes:
+    // (a) `MARKETPLACE_AUTO_APPROVE` ever short-circuits BEFORE the provider is
+    // consulted, or (b) the confirmation flow gains an observable stream frame.
     toolInvokedInStream('marketplace_install', 'the agent invoked marketplace_install'),
     fileExists(
       installedManifestPath,
