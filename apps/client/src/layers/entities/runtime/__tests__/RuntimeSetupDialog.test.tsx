@@ -188,6 +188,127 @@ describe('RuntimeSetupPanel — Ready/Connect model', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Ready-state reconnect (DOR-438) — a ready login runtime keeps a quiet way to
+// fix its sign-in, because "Ready" only fingerprints the credential and cannot
+// see a stale or invalid one. Uses a recording stub for the injected connect
+// slot so the entity's affordance is tested without a feature dependency.
+// ---------------------------------------------------------------------------
+
+const CLAUDE_READY: SystemRequirements = {
+  runtimes: {
+    'claude-code': {
+      state: 'ready',
+      dependencies: [
+        { name: 'Claude Code CLI', description: 'binary', status: 'satisfied', version: '2.1.0' },
+      ],
+    },
+  },
+};
+
+/** A connect-slot stub that records the connect descriptor it was handed. */
+function reconnectSlotStub({ type, connect, onConnected }: RuntimeConnectSlotProps) {
+  return (
+    <div data-testid={`reconnect-slot-${type}`}>
+      <span data-testid={`reconnect-slot-kind-${type}`}>{connect.kind}</span>
+      <span>{connect.label}</span>
+      <button
+        data-testid={`reconnect-slot-fire-${type}`}
+        onClick={() => onConnected?.({ title: 't', body: 'b' })}
+      >
+        landed
+      </button>
+    </div>
+  );
+}
+
+describe('RuntimeSetupPanel — ready-state reconnect (DOR-438)', () => {
+  it('offers a quiet Fix sign-in on a ready login runtime and reveals the login flow', async () => {
+    // Purpose: a ready credential can still be stale, so a ready login runtime
+    // keeps a calm reconnect path — the Ready badge stays, a small Fix sign-in
+    // link expands the SAME login connect flow, and Cancel restores the calm.
+    const user = userEvent.setup();
+    renderPanel(
+      <RuntimeSetupPanel
+        runtime="claude-code"
+        requirements={CLAUDE_READY}
+        registeredTypes={['claude-code']}
+        renderConnect={reconnectSlotStub}
+      />
+    );
+
+    const section = screen.getByTestId('runtime-section-claude-code');
+    // Ready stays primary; no loud Connect CTA.
+    expect(within(section).getByText('Ready')).toBeInTheDocument();
+    expect(within(section).queryByTestId('reconnect-slot-claude-code')).not.toBeInTheDocument();
+
+    // The quiet affordance expands the injected login flow.
+    await user.click(within(section).getByTestId('runtime-reconnect-claude-code'));
+    expect(within(section).getByTestId('reconnect-slot-claude-code')).toBeInTheDocument();
+    expect(within(section).getByTestId('reconnect-slot-kind-claude-code')).toHaveTextContent(
+      'login'
+    );
+    expect(within(section).getByText('Reconnect Claude')).toBeInTheDocument();
+
+    // Cancel restores the calm ready state.
+    await user.click(within(section).getByTestId('runtime-reconnect-cancel-claude-code'));
+    expect(within(section).queryByTestId('reconnect-slot-claude-code')).not.toBeInTheDocument();
+  });
+
+  it('collapses the reconnect flow the instant the connect lands', async () => {
+    // Purpose: a successful reconnect ends the inline flow — onConnected closes
+    // it, exactly like the OpenCode change path, so it is never a dead end.
+    const user = userEvent.setup();
+    renderPanel(
+      <RuntimeSetupPanel
+        runtime="claude-code"
+        requirements={CLAUDE_READY}
+        registeredTypes={['claude-code']}
+        renderConnect={reconnectSlotStub}
+      />
+    );
+
+    const section = screen.getByTestId('runtime-section-claude-code');
+    await user.click(within(section).getByTestId('runtime-reconnect-claude-code'));
+    await user.click(within(section).getByTestId('reconnect-slot-fire-claude-code'));
+    expect(within(section).queryByTestId('reconnect-slot-claude-code')).not.toBeInTheDocument();
+    expect(within(section).getByTestId('runtime-reconnect-claude-code')).toBeInTheDocument();
+  });
+
+  it('keeps the ready runtime calm when no connect flow is wired', () => {
+    // Purpose: the install-only surface (no injected renderConnect) has no flow
+    // to reopen, so a ready runtime shows just the settled Ready badge.
+    renderPanel(
+      <RuntimeSetupPanel
+        runtime="claude-code"
+        requirements={CLAUDE_READY}
+        registeredTypes={['claude-code']}
+      />
+    );
+
+    const section = screen.getByTestId('runtime-section-claude-code');
+    expect(within(section).getByText('Ready')).toBeInTheDocument();
+    expect(within(section).queryByTestId('runtime-reconnect-claude-code')).not.toBeInTheDocument();
+  });
+
+  it('does not offer reconnect on a not-ready runtime (not-ready path unchanged)', () => {
+    // Purpose: reconnect is a ready-state affordance only — a not-ready runtime
+    // keeps its single Connect action, no Fix sign-in link.
+    renderPanel(
+      <RuntimeSetupPanel
+        runtime="codex"
+        requirements={THREE_SIBLINGS}
+        registeredTypes={REGISTERED}
+        renderConnect={reconnectSlotStub}
+      />
+    );
+
+    const section = screen.getByTestId('runtime-section-codex');
+    expect(within(section).queryByText('Ready')).not.toBeInTheDocument();
+    expect(within(section).queryByTestId('runtime-reconnect-codex')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // OpenCode one-click provisioning (task 1.6) — through the live dialog so the
 // requirements query genuinely refetches after invalidation.
 // ---------------------------------------------------------------------------

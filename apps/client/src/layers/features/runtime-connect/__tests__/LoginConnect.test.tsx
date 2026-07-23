@@ -208,6 +208,61 @@ describe('LoginConnect — Codex (task 2.4)', () => {
   });
 });
 
+describe('LoginConnect — Fix sign-in from Ready (DOR-438)', () => {
+  const CLAUDE_READY: SystemRequirements = {
+    runtimes: {
+      'claude-code': {
+        state: 'ready',
+        dependencies: [{ name: 'Claude Code CLI', description: 'binary', status: 'satisfied' }],
+      },
+    },
+  };
+
+  it('replaces a stale key from a ready runtime and refetches requirements', async () => {
+    // Purpose: "Ready" only fingerprints the credential, so a stale key still
+    // reads Ready. The Fix sign-in affordance reopens the SAME login flow, and
+    // the key path OVERWRITES the stored credential, then invalidates
+    // ['requirements'] so readiness is re-checked (no manual "Check again").
+    const user = userEvent.setup();
+    const NEW_KEY = 'sk-ant-fresh-replacement-123';
+    const transport = renderDialog('claude-code', {
+      checkRequirements: vi.fn().mockResolvedValue(CLAUDE_READY),
+      storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:anthropic' }),
+    });
+
+    // Ready — the calm state — but a quiet Fix sign-in is offered.
+    await screen.findByTestId('runtime-ready-claude-code');
+    await user.click(screen.getByTestId('runtime-reconnect-claude-code'));
+
+    // Replace the stored key via the same paste-key path.
+    await user.click(await screen.findByRole('button', { name: 'Use an API key instead' }));
+    await user.type(await screen.findByLabelText('Anthropic API key'), NEW_KEY);
+    await user.click(screen.getByRole('button', { name: 'Save key' }));
+
+    expect(transport.storeRuntimeCredential).toHaveBeenCalledWith('claude-code', NEW_KEY);
+    // The successful save invalidates ['requirements'] → a second check fires.
+    await waitFor(() => {
+      expect(transport.checkRequirements).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('reopens the delegated sign-in for a ready runtime too', async () => {
+    // Purpose: the sign-in half of the flow is reachable from Ready as well —
+    // an expired host login is fixed by signing in again, not only by a key.
+    const user = userEvent.setup();
+    const transport = renderDialog('claude-code', {
+      checkRequirements: vi.fn().mockResolvedValue(CLAUDE_READY),
+      delegateRuntimeLogin: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    await screen.findByTestId('runtime-ready-claude-code');
+    await user.click(screen.getByTestId('runtime-reconnect-claude-code'));
+    await user.click(await screen.findByRole('button', { name: 'Sign in' }));
+
+    expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code');
+  });
+});
+
 describe('LoginConnect — Claude (task 2.5)', () => {
   it('delegate-login flips Claude to Ready on completion', async () => {
     // Purpose: Claude stays delegate-first — the Sign in button runs the
