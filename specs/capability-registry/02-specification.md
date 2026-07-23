@@ -67,7 +67,7 @@ Each domain exports `capabilities: CapabilityDefinition[]` (operator domain from
 
 ### 2.2 Self-description
 
-- `GET /api/capabilities` returns the catalog: `{ catalogVersion, generatedAt, capabilities: [{ id, title, description, tier, inputSchema, outputSchema, surfaces }] }`. `catalogVersion` is a content hash so agents can cache.
+- `GET /api/capabilities/catalog` returns the catalog (errata 2026-07-23: the bare `/api/capabilities` path was already the per-runtime capability matrix, a live client contract; the catalog lives one segment deeper): `{ catalogVersion, generatedAt, capabilities: [{ id, title, description, tier, inputSchema, outputSchema, surfaces }] }`. `catalogVersion` is a content hash so agents can cache.
 - `dorkos capabilities [--json]` renders it (table: id, tier, title; `--json` raw).
 - MCP: `dorkos://capabilities` resource on the external server; a `list_capabilities` tool on both servers (observe tier).
 - The `<dorkos_context>` system-prompt block and the `operating-dorkos` skill gain one line pointing at these (small follow-up edits, in scope).
