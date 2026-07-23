@@ -26,7 +26,7 @@ Options:
       --category <name>  Filter by category (comma-separated for multiple)
       --type <event>     Filter by event type (e.g. agent.registered);
                          applied to the fetched page, so events older than
-                         --limit are not shown — raise --limit to widen it
+                         --limit are not shown (raise --limit to widen it)
       --limit <n>        Maximum events to return (default: 50, max: 100)
       --json             Print raw JSON instead of a table
 
@@ -132,7 +132,7 @@ export async function runActivity(args: ActivityArgs): Promise<number> {
       `/api/activity${qs ? `?${qs}` : ''}`
     );
     // `--type` filters by event type, which the feed endpoint does not support
-    // server-side — apply it here so the flag still narrows the result set.
+    // server-side, so apply it here so the flag still narrows the result set.
     const filtered = args.type ? items.filter((i) => i.eventType === args.type) : items;
     if (args.json) {
       printJson(filtered);

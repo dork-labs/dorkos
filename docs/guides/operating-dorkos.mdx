@@ -1,6 +1,6 @@
 ---
 title: Your Agents Can Operate DorkOS
-description: Ask an agent to create agents, schedule tasks, install packages, change settings, and read your activity — in plain language
+description: Ask an agent to create agents, schedule tasks, install packages, change settings, and read your activity, in plain language
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
@@ -8,7 +8,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Your Agents Can Operate DorkOS
 
-Your agents don't just write code. They can run DorkOS for you. Ask in plain language, and an agent can set up new agents, put work on a schedule, add tools from the marketplace, change your settings, and tell you what's been happening — the same things you'd click through in the app.
+Your agents don't just write code. They can run DorkOS for you. Ask in plain language, and an agent can set up new agents, put work on a schedule, add tools from the marketplace, change your settings, and tell you what's been happening: the same things you'd click through in the app.
 
 You stay in charge. An agent only does these things when you ask, and the bigger ones (like changing your settings or installing a package) happen on your say-so, not on a whim.
 
@@ -28,7 +28,7 @@ You stay in charge. An agent only does these things when you ask, and the bigger
     found, and installs it after you confirm.
   </Card>
   <Card title="Change a setting">
-    "Hide the git branch from the status bar." The agent updates your settings — only because you
+    "Hide the git branch from the status bar." The agent updates your settings, but only because you
     asked.
   </Card>
   <Card title="Read your activity">
@@ -42,18 +42,18 @@ You stay in charge. An agent only does these things when you ask, and the bigger
 
 ## New agents already know how
 
-Every new agent you create comes with a set of built-in skills that teach it how to drive DorkOS — how to create agents, schedule tasks, use the marketplace, change settings, and read activity. DorkBot, your built-in assistant, gets them too. So you can just ask; you don't have to explain how DorkOS works first.
+Every new agent you create comes with a set of built-in skills that teach it how to drive DorkOS: how to create agents, schedule tasks, use the marketplace, change settings, and read activity. DorkBot, your built-in assistant, gets them too. So you can just ask; you don't have to explain how DorkOS works first.
 
 ## A few things to know
 
 - **Your agent is happy to edit itself.** It can adjust its own name, personality, and notes. Before it edits a _different_ agent, it checks with you first.
-- **Some agents are protected.** Built-in agents like DorkBot keep their identity — an agent can't rename or impersonate them.
+- **Some agents are protected.** Built-in agents like DorkBot keep their identity, so an agent can't rename or impersonate them.
 - **Settings changes need your intent.** An agent changes your settings only when you ask for the change, never as a side effect.
 - **Installing shows you first.** When an agent installs a marketplace package, you see what it's about to do and confirm before anything lands.
 
 ## Doing it from the command line
 
-If you run agents in a terminal — including runtimes that don't plug into DorkOS's in-app tools — the same actions are available as `dorkos` commands. They talk to your running DorkOS, and every one takes `--json` for clean, scriptable output.
+If you run agents in a terminal (including runtimes that don't plug into DorkOS's in-app tools), the same actions are available as `dorkos` commands. They talk to your running DorkOS, and every one takes `--json` for clean, scriptable output.
 
 ```bash
 dorkos agent list                 # See your agents
