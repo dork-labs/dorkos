@@ -76,7 +76,7 @@ User settings live in the server config, not in the client. To change them, send
 a partial config object through \`config_patch\` (in-session) — the same validated
 path as the settings UI (\`PATCH /api/config\`). Deep-merge semantics: nested
 objects merge, arrays replace. Example: hide the git status-bar item with
-\`{ "ui": { "statusBar": { "showGit": false } } }\`. Read the current shape with
+\`{ "ui": { "statusBar": { "git": false } } }\`. Read the current shape with
 \`config_get\` first so you patch the right keys. Only change settings when the user
 asked for it — this is their configuration.
 
