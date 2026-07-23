@@ -11,7 +11,8 @@ import {
   Volume2,
   RefreshCw,
 } from 'lucide-react';
-import { useAppStore } from '@/layers/shared/model';
+import { useCallback } from 'react';
+import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
 
 /** Union of all toggleable status bar item keys. */
 export type StatusBarItemKey =
@@ -30,7 +31,7 @@ export type StatusBarItemKey =
 export type StatusBarItemGroup = 'session' | 'controls';
 
 export interface StatusBarItemConfig {
-  /** Unique key matching the Zustand store property suffix (e.g., 'cwd' -> showStatusBarCwd). */
+  /** Unique key matching the `ui.statusBar` config field name (e.g., 'cwd'). */
   key: StatusBarItemKey;
   /** Human-readable label shown in the popover and right-click menu. */
   label: string;
@@ -138,39 +139,32 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
 ] as const;
 
 /**
- * Bridge between a registry key and the Zustand store's showStatusBar* / setShowStatusBar* properties.
+ * Bridge between a registry key and the server-persisted `ui.statusBar` config
+ * (DOR-431): reads visibility from the config query and returns a setter that
+ * PATCHes `/api/config`. The registry key already matches the config field name
+ * (`'cwd'` → `ui.statusBar.cwd`), so no name mapping is needed.
  *
  * @param key - Status bar item key from the registry
  * @returns Tuple of [isVisible, setVisible]
  */
 export function useStatusBarVisibility(key: StatusBarItemKey): [boolean, (value: boolean) => void] {
-  // Build the getter/setter property names from the key: 'cwd' -> 'showStatusBarCwd' / 'setShowStatusBarCwd'
-  const capitalizedKey = key.charAt(0).toUpperCase() + key.slice(1);
-  const showProp = `showStatusBar${capitalizedKey}` as keyof ReturnType<
-    typeof useAppStore.getState
-  >;
-  const setProp = `setShowStatusBar${capitalizedKey}` as keyof ReturnType<
-    typeof useAppStore.getState
-  >;
-
-  const visible = useAppStore((s) => s[showProp] as boolean);
-  const setVisible = useAppStore((s) => s[setProp] as (v: boolean) => void);
-
-  return [visible, setVisible];
+  const prefs = useStatusBarPrefs();
+  const { setVisibility } = useUpdateStatusBarPrefs();
+  const setVisible = useCallback(
+    (value: boolean) => setVisibility(key, value),
+    [setVisibility, key]
+  );
+  return [prefs[key], setVisible];
 }
 
 /**
- * Reset only status bar visibility preferences to their registry defaults.
- * Does NOT reset other preferences (font, theme, timestamps, etc.).
+ * Reset only status bar visibility preferences to their defaults (all items
+ * visible). Does NOT touch other preferences (font, theme, timestamps, etc.).
+ * Returns the reset function so callers wire it to a button/menu action.
  */
-export function resetStatusBarPreferences(): void {
-  const store = useAppStore.getState();
-  for (const item of STATUS_BAR_REGISTRY) {
-    const capitalizedKey = item.key.charAt(0).toUpperCase() + item.key.slice(1);
-    const setProp = `setShowStatusBar${capitalizedKey}` as keyof typeof store;
-    const setter = store[setProp] as (v: boolean) => void;
-    setter(item.defaultVisible);
-  }
+export function useResetStatusBarPreferences(): () => void {
+  const { reset } = useUpdateStatusBarPrefs();
+  return reset;
 }
 
 /** Return registry items grouped by their group field, in registry order. */

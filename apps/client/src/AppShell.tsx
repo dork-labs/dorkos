@@ -20,6 +20,7 @@ import {
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useCommandsSync } from '@/layers/entities/command';
+import { useStatusBarLegacyMigration } from '@/layers/entities/config';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
@@ -264,6 +265,10 @@ export function AppShell() {
   // mutations and slow polling.
   useBindingsSync();
   useRelayAdaptersSync();
+  // One-time lift of the status-bar visibility toggles from this device's legacy
+  // localStorage into server config (`ui.statusBar`, DOR-431), then delete the
+  // old keys. A no-op once migrated or when nothing was ever toggled.
+  useStatusBarLegacyMigration();
   // Make the Pulse Activity teaser live off `/api/events`: invalidate the
   // activity caches when an activity-generating broadcast (relay traffic/topology,
   // extension reloads) fires, coalescing bursts. Attention's live source

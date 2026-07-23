@@ -63,10 +63,14 @@ vi.mock('@/layers/features/shortcuts', () => ({
 vi.mock('@/layers/features/onboarding', () => ({
   useOnboarding: () => ({
     shouldShowOnboarding: false,
+    shouldShowGettingStarted: false,
     isLoading: false,
+    isOnboardingComplete: false,
+    isOnboardingDismissed: false,
     dismiss: vi.fn(),
   }),
   useOnboardingOverlayVisible: () => false,
+  useClearOnboardingStageWhenDone: () => {},
   OnboardingFlow: () => null,
   ProgressCard: () => null,
 }));
@@ -126,6 +130,16 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   return {
     ...actual,
     useRelayAdaptersSync: () => {},
+  };
+});
+
+// AppShell also mounts useStatusBarLegacyMigration (DOR-431), which reads the
+// transport + query client. This isolated test provides neither, so no-op it.
+vi.mock('@/layers/entities/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
+  return {
+    ...actual,
+    useStatusBarLegacyMigration: () => {},
   };
 });
 

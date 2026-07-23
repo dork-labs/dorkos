@@ -266,6 +266,49 @@ export type ShapeUserPrefs = z.infer<typeof ShapeUserPrefsSchema>;
  */
 export const SHAPE_USER_PREFS_DEFAULTS: ShapeUserPrefs = ShapeUserPrefsSchema.parse({});
 
+/**
+ * Person-scoped status-bar visibility preferences (`ui.statusBar`, DOR-431).
+ * Each boolean toggles one status-bar item's visibility; all default `true`
+ * (every item shown), matching the client's historical `localStorage` defaults.
+ * Promoted from client `localStorage` into server config so the choices sync
+ * across devices and an agent can flip them via `config_patch` (spec
+ * agents-as-operators). The keys mirror the client's `StatusBarItemKey`
+ * registry. The section holds no arrays, so a partial PATCH deep-merges cleanly
+ * (one item can be toggled without round-tripping the whole object).
+ */
+export const StatusBarPrefsSchema = z.object({
+  /** Show the current-working-directory item. */
+  cwd: z.boolean().default(true),
+  /** Show the git branch + change-count item. */
+  git: z.boolean().default(true),
+  /** Show the agent-runtime item. */
+  runtime: z.boolean().default(true),
+  /** Show the selected-model item. */
+  model: z.boolean().default(true),
+  /** Show the prompt-cache hit-rate item. */
+  cache: z.boolean().default(true),
+  /** Show the context-window utilization item. */
+  context: z.boolean().default(true),
+  /** Show the usage & cost item. */
+  usage: z.boolean().default(true),
+  /** Show the permission-mode selector item. */
+  permission: z.boolean().default(true),
+  /** Show the notification-sound toggle item. */
+  sound: z.boolean().default(true),
+  /** Show the background-polling toggle item. */
+  polling: z.boolean().default(true),
+});
+
+/** Person-scoped status-bar visibility preferences (`ui.statusBar`). */
+export type StatusBarPrefs = z.infer<typeof StatusBarPrefsSchema>;
+
+/**
+ * Fully-defaulted {@link StatusBarPrefs} (every item visible). Parsed once so
+ * the config route, the client selector, and the conf migration share one
+ * canonical default.
+ */
+export const STATUS_BAR_PREFS_DEFAULTS: StatusBarPrefs = StatusBarPrefsSchema.parse({});
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -319,6 +362,19 @@ export const UserConfigSchema = z.object({
         agentDefaults: {},
         autoFollowAgent: false,
       })),
+      /** Person-scoped status-bar visibility toggles (DOR-431). */
+      statusBar: StatusBarPrefsSchema.default(() => ({
+        cwd: true,
+        git: true,
+        runtime: true,
+        model: true,
+        cache: true,
+        context: true,
+        usage: true,
+        permission: true,
+        sound: true,
+        polling: true,
+      })),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -337,6 +393,18 @@ export const UserConfigSchema = z.object({
         active: null,
         agentDefaults: {},
         autoFollowAgent: false,
+      },
+      statusBar: {
+        cwd: true,
+        git: true,
+        runtime: true,
+        model: true,
+        cache: true,
+        context: true,
+        usage: true,
+        permission: true,
+        sound: true,
+        polling: true,
       },
     })),
   logging: LoggingConfigSchema.default(() => ({

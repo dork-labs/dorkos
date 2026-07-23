@@ -638,6 +638,43 @@ export function backfillShapesDefaults(store: {
 }
 
 /**
+ * Migration body: backfill `ui.statusBar` (person-scoped status-bar visibility
+ * toggles — every item shown by default; DOR-431) onto an EXISTING `ui` block.
+ * conf merges top-level defaults SHALLOWLY, so a `ui` object already on disk
+ * never inherits the new nested `statusBar` default — this supplies it.
+ * Additive + idempotent: only writes when `ui.statusBar` is absent, never
+ * overwrites an existing value. The whole-`ui`-absent case is handled by the
+ * schema default on read (which already yields the status-bar defaults). Seeds
+ * every item visible, matching the client's historical localStorage defaults.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillStatusBarDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (ui && typeof ui === 'object' && (ui as { statusBar?: unknown }).statusBar === undefined) {
+    store.set('ui', {
+      ...(ui as Record<string, unknown>),
+      statusBar: {
+        cwd: true,
+        git: true,
+        runtime: true,
+        model: true,
+        cache: true,
+        context: true,
+        usage: true,
+        permission: true,
+        sound: true,
+        polling: true,
+      },
+    });
+  }
+}
+
+/**
  * Migration body: backfill the DOR-339 display-filter/mute fields onto an
  * EXISTING `ui.sidebar` — `muted: []` and `ungroupedDisplayFilter: 'all'` on
  * the section itself, plus `displayFilter: 'all'` and `muted: false` on every
@@ -920,6 +957,13 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
+  // Backfill `ui.statusBar` (person-scoped status-bar visibility toggles;
+  // DOR-431) onto an existing `ui` block — promotes the toggles from client
+  // localStorage into server config so devices/agents can read + flip them.
+  // Additive + idempotent; seeds every item visible. Keyed to the next
+  // unreleased version (0.56.0 is already tagged); /system:release reconciles
+  // the key at tag time if the real release differs.
+  '0.57.0': backfillStatusBarDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

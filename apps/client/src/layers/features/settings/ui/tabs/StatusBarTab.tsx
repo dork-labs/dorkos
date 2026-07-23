@@ -7,7 +7,7 @@ import {
 import {
   STATUS_BAR_REGISTRY,
   useStatusBarVisibility,
-  resetStatusBarPreferences,
+  useResetStatusBarPreferences,
   type StatusBarItemConfig,
 } from '@/layers/features/status';
 
@@ -26,6 +26,7 @@ function StatusBarSettingRow({ item }: { item: StatusBarItemConfig }) {
 
 /** Status Bar settings tab — toggle visibility of registry items. */
 export function StatusBarTab() {
+  const resetStatusBarPreferences = useResetStatusBarPreferences();
   return (
     <div className="space-y-4">
       <NavigationLayoutPanelHeader

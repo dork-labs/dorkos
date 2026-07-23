@@ -126,20 +126,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
       setActiveForm: vi.fn(),
-      showStatusBarCwd: false,
-      setShowStatusBarCwd: vi.fn(),
-      showStatusBarPermission: false,
-      setShowStatusBarPermission: vi.fn(),
-      showStatusBarModel: false,
-      setShowStatusBarModel: vi.fn(),
-      showStatusBarContext: false,
-      setShowStatusBarContext: vi.fn(),
-      showStatusBarGit: false,
-      setShowStatusBarGit: vi.fn(),
-      showStatusBarSound: false,
-      setShowStatusBarSound: vi.fn(),
-      showStatusBarPolling: false,
-      setShowStatusBarPolling: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -187,8 +173,28 @@ vi.mock('@/layers/features/status', () => ({
     <>{children}</>
   )),
   useGitStatus: vi.fn(() => ({ data: undefined })),
+  SubagentsItem: vi.fn(() => null),
   STATUS_BAR_REGISTRY: [],
-  resetStatusBarPreferences: vi.fn(),
+  // Status-bar visibility lives in server config (DOR-431); ChatStatusSection
+  // reads/writes it through these hooks. Everything hidden — this suite asserts
+  // ChatPanel layout, not individual status items.
+  useStatusBarPrefs: () => ({
+    cwd: false,
+    git: false,
+    runtime: false,
+    model: false,
+    cache: false,
+    context: false,
+    usage: false,
+    permission: false,
+    sound: false,
+    polling: false,
+  }),
+  useUpdateStatusBarPrefs: () => ({
+    setVisibility: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 vi.mock('../ui/tasks/TaskListPanel', () => ({
