@@ -193,6 +193,25 @@ dorkos cleanup                # Remove all DorkOS data
 | `dorkos config path`              | Show where the config lives  |
 | `dorkos config validate`          | Check the config is valid    |
 
+### Operator commands
+
+These talk to a running DorkOS server so you (or an agent in any runtime) can drive it from the command line. Every command takes `--json` for machine-readable output.
+
+| Command                                          | What it does                                                          |
+| ------------------------------------------------ | --------------------------------------------------------------------- |
+| `dorkos agent list`                              | List every registered agent                                           |
+| `dorkos agent show <path-or-id>`                 | Show one agent by id or project folder                                |
+| `dorkos agent create --name <slug> --path <dir>` | Create a new agent                                                    |
+| `dorkos agent update --path <dir> ...`           | Edit an agent's display name, description, color, or icon             |
+| `dorkos task list`                               | List every scheduled task                                             |
+| `dorkos task create ...`                         | Create a scheduled task                                               |
+| `dorkos task trigger <id>`                       | Run a task now                                                        |
+| `dorkos task runs`                               | List recent task runs                                                 |
+| `dorkos activity`                                | Show the activity feed (`--actor`, `--category`, `--type`, `--limit`) |
+| `dorkos version --check`                         | Show the server and latest version                                    |
+
+Run any command with `--help` for its full options (for example `dorkos task create --help`).
+
 ### Environment variables
 
 None are required if you already have the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) signed in. DorkOS uses that sign-in.

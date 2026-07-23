@@ -343,6 +343,49 @@ if (process.argv[2] === 'telemetry') {
   process.exit(await runTelemetryDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
 }
 
+// Operator verbs (`agent`, `task`, `activity`, `version`). Each has its own flag
+// namespace (`--json` plus per-verb fields), so intercept before the top-level
+// parseArgs call. They call the running server's HTTP API via the shared
+// api-client (server-discovery + local port resolution) — the CLI is the only
+// actuation surface reachable from every runtime, so Codex/OpenCode agents drive
+// DorkOS through these. `version --check` degrades to the local update-check
+// cache when no server is running. Setting DORK_HOME lets the api-client resolve
+// the configured port and the version cache read the right data directory.
+if (
+  process.argv[2] === 'agent' ||
+  process.argv[2] === 'task' ||
+  process.argv[2] === 'activity' ||
+  process.argv[2] === 'version'
+) {
+  process.env.DORK_HOME = DORK_HOME;
+  const subArgs = process.argv.slice(3);
+  if (process.argv[2] === 'agent') {
+    const { runAgentDispatcher } = await import('./commands/agent.js');
+    process.exit(await runAgentDispatcher(subArgs));
+  }
+  if (process.argv[2] === 'task') {
+    const { runTaskDispatcher } = await import('./commands/task.js');
+    process.exit(await runTaskDispatcher(subArgs));
+  }
+  if (process.argv[2] === 'activity') {
+    if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+      const { ACTIVITY_HELP } = await import('./commands/activity.js');
+      console.log(ACTIVITY_HELP);
+      process.exit(0);
+    }
+    const { runActivity, parseActivityArgs } = await import('./commands/activity.js');
+    try {
+      process.exit(await runActivity(parseActivityArgs(subArgs)));
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+  // version
+  const { runVersionDispatcher } = await import('./commands/version.js');
+  process.exit(await runVersionDispatcher(__CLI_VERSION__, DORK_HOME, subArgs));
+}
+
 let values: ReturnType<typeof parseArgs>['values'];
 let positionals: ReturnType<typeof parseArgs>['positionals'];
 
@@ -403,6 +446,10 @@ Commands:
   update [<name>]      Check for (or apply with --apply) package updates
   marketplace <sub>    Manage + validate marketplace sources (add|remove|list|refresh|validate)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
+  agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
+  task <sub>           Manage scheduled tasks (list|create|trigger|runs)
+  activity             Show the activity feed (--actor|--category|--type|--limit)
+  version --check      Show server + latest version (falls back to local cache)
   harness sync         Project agent files across harnesses (--check|--fix)
   auth enable          Create the owner account and require login
   auth reset-password  Reset the owner account's password
