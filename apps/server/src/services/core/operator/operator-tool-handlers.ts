@@ -7,9 +7,10 @@
  * service, `ActivityService`, `ConfigManager` (via the shared config-patch
  * service), `update-checker`, and the recent-sessions fan-out — so no route
  * validation is duplicated. Handlers take plain args and return an MCP
- * text-content result, importing neither MCP SDK; the two servers own the
- * SDK-specific registration glue and share these handlers via
- * {@link module:services/core/operator/operator-tool-descriptors}.
+ * text-content result, importing neither MCP SDK. Each is wrapped by a
+ * {@link CapabilityDefinition} in
+ * {@link module:services/core/operator/operator-capabilities}, whose `invoke`
+ * unwraps this envelope to the plain payload the registry contract requires.
  *
  * @module services/core/operator/operator-tool-handlers
  */

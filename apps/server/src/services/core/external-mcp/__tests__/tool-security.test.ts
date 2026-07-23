@@ -45,6 +45,9 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import { createExternalMcpServer } from '../../mcp-server.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../tool-security.js';
+import { readOnlyCarveOutToolNames } from '../../capabilities/index.js';
+import { operatorDomain } from '../../operator/operator-capabilities.js';
+import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
@@ -159,6 +162,34 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
       .sort();
     const constant = [...READ_ONLY_MCP_TOOL_NAMES].sort();
     expect(liveReadOnly).toEqual(constant);
+  });
+
+  it("the migrated tools' carve-out is a registry derivation, not a hand list", async () => {
+    // The operator + marketplace carve-out is DERIVED from each capability's
+    // `readOnlyCarveOut` flag — there is no second place to keep in sync. Assert
+    // the derivation equals exactly the live read-only tools among the migrated
+    // set (so a flag flip on either side is caught).
+    const derived = readOnlyCarveOutToolNames([
+      ...operatorDomain.capabilities,
+      ...marketplaceDomain.capabilities,
+    ]);
+    const migratedToolNames = new Set(
+      [...operatorDomain.capabilities, ...marketplaceDomain.capabilities]
+        .map((c) => c.surfaces.mcp?.toolName)
+        .filter((n): n is string => n !== undefined)
+    );
+
+    const tools = await fetchLiveTools();
+    const liveMigratedReadOnly = tools
+      .filter((t) => t.annotations?.readOnlyHint === true && migratedToolNames.has(t.name))
+      .map((t) => t.name)
+      .sort();
+
+    expect([...derived].sort()).toEqual(liveMigratedReadOnly);
+    // And every derived name is admitted to the exported carve-out constant.
+    for (const name of derived) {
+      expect(READ_ONLY_MCP_TOOL_NAMES.has(name)).toBe(true);
+    }
   });
 });
 

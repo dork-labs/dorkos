@@ -17,3 +17,4 @@ export {
   computeCatalogVersion,
   type CapabilityRegistry,
 } from './registry.js';
+export { readOnlyCarveOutToolNames } from './mcp-projection.js';

@@ -1,23 +1,23 @@
 /**
  * Self-service & observability tools on the in-session `dorkos` MCP server
- * (DOR-430).
+ * (DOR-430; migrated onto the Capability Registry in spec `capability-registry`,
+ * task 2.2).
  *
- * Registers the same six operator tools the external `/mcp` server exposes
+ * Builds the same six operator tools the external `/mcp` server exposes
  * (`activity_list`, `config_get`, `check_update`, `agents_recent_activity`,
  * `update_agent`, `config_patch`) so the user's own agent inside a DorkOS
- * session can inspect and operate DorkOS — not only external MCP clients.
- *
- * The catalog and its handlers come from the transport-neutral
- * `services/core/operator/operator-tool-descriptors.ts`, shared with
- * `registerOperatorTools` (external). This module owns only the Claude Agent
- * SDK-specific glue: it maps each shared descriptor onto the SDK `tool()` helper.
+ * session can inspect and operate DorkOS. Their single source of truth is the
+ * {@link operatorDomain} capability set; this function composes a registry over
+ * that domain (binding the operator service handles) and projects it through the
+ * generic {@link capabilityMcpTools} helper.
  *
  * @module services/runtimes/claude-code/mcp-tools/operator-tools
  */
-import { tool } from '@anthropic-ai/claude-agent-sdk';
-
+import { logger } from '../../../../lib/logger.js';
 import type { McpToolDeps } from './types.js';
-import { OPERATOR_TOOL_DESCRIPTORS } from '../../../core/operator/operator-tool-descriptors.js';
+import { composeRegistry } from '../../../core/capabilities/index.js';
+import { operatorDomain } from '../../../core/operator/operator-capabilities.js';
+import { capabilityMcpTools } from './capability-mcp-tools.js';
 
 /**
  * Build the operator tool definitions for the in-session `dorkos` server.
@@ -26,12 +26,6 @@ import { OPERATOR_TOOL_DESCRIPTORS } from '../../../core/operator/operator-tool-
  * @returns SDK tool definitions to spread into `createSdkMcpServer({ tools })`.
  */
 export function getOperatorTools(deps: McpToolDeps) {
-  return OPERATOR_TOOL_DESCRIPTORS.map((descriptor) =>
-    tool(
-      descriptor.name,
-      descriptor.description,
-      descriptor.inputSchema,
-      descriptor.createHandler(deps)
-    )
-  );
+  const registry = composeRegistry([operatorDomain], { logger, operatorDeps: deps });
+  return capabilityMcpTools(registry, 'in-session');
 }
