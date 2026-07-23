@@ -8,7 +8,22 @@
  * @module shared/__tests__/agent-runtime
  */
 import { describe, it, expect } from 'vitest';
-import type { RuntimeCapabilities, PermissionModeDescriptor } from '../agent-runtime.js';
+import type {
+  RuntimeCapabilities,
+  PermissionModeDescriptor,
+  DependencyCheck,
+} from '../agent-runtime.js';
+import { deriveRuntimeReadiness } from '../agent-runtime.js';
+
+/** Build a satisfied CLI-binary check for a runtime under test. */
+function cli(name: string): DependencyCheck {
+  return { name, description: 'CLI', status: 'satisfied', version: '1.0.0' };
+}
+
+/** Build an auth check with the given status; the name matches the `/auth|login/i` contract. */
+function auth(name: string, status: DependencyCheck['status']): DependencyCheck {
+  return { name, description: 'auth', status };
+}
 
 describe('RuntimeCapabilities shape', () => {
   it('accepts a Claude-like declaration with four permission-mode descriptors and a features entry', () => {
@@ -98,5 +113,50 @@ describe('RuntimeCapabilities shape', () => {
     };
 
     expect(described.description).toBe('Research only, no edits');
+  });
+});
+
+describe('deriveRuntimeReadiness', () => {
+  it('legacy shape: a binary-only claude-code (no auth check) still reads ready', () => {
+    // Backward-compat: a runtime that declares no auth check is treated as
+    // "auth not required" so old single-dependency shapes never regress.
+    const readiness = deriveRuntimeReadiness('claude-code', [cli('Claude Code CLI')]);
+    expect(readiness).toEqual({ state: 'ready' });
+  });
+
+  it('binary + satisfied auth: claude-code reads ready', () => {
+    const readiness = deriveRuntimeReadiness('claude-code', [
+      cli('Claude Code CLI'),
+      auth('Claude Code authentication', 'satisfied'),
+    ]);
+    expect(readiness).toEqual({ state: 'ready' });
+  });
+
+  it('binary present + auth missing: claude-code projects to Connect with kind "login"', () => {
+    const readiness = deriveRuntimeReadiness('claude-code', [
+      cli('Claude Code CLI'),
+      auth('Claude Code authentication', 'missing'),
+    ]);
+    expect(readiness.state).toBe('connect');
+    expect(readiness.connect?.kind).toBe('login');
+    expect(readiness.connect?.label).toMatch(/claude/i);
+  });
+
+  it('binary missing: claude-code projects to Connect with kind "install" regardless of auth', () => {
+    const readiness = deriveRuntimeReadiness('claude-code', [
+      { name: 'Claude Code CLI', description: 'CLI', status: 'missing' },
+      auth('Claude Code authentication', 'missing'),
+    ]);
+    expect(readiness.state).toBe('connect');
+    expect(readiness.connect?.kind).toBe('install');
+  });
+
+  it('opencode with binary present + auth missing maps to the provider-picker, not login', () => {
+    const readiness = deriveRuntimeReadiness('opencode', [
+      cli('OpenCode CLI'),
+      auth('OpenCode authentication', 'missing'),
+    ]);
+    expect(readiness.state).toBe('connect');
+    expect(readiness.connect?.kind).toBe('provider-picker');
   });
 });

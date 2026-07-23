@@ -89,15 +89,23 @@ vi.mock('../../../marketplace/installed-scanner.js', () => ({
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: vi.fn().mockResolvedValue([]),
 }));
-// checkDependencies() shells out to `claude --version` for real — mock the
-// probe so conformance never spawns (or requires) the binary.
+// checkDependencies() shells out to `claude --version` and `claude auth status`
+// for real — mock the probes so conformance never spawns (or requires) the
+// binary. Returns both the CLI-binary and authentication checks.
 vi.mock('../tooling/check-dependency.js', () => ({
-  checkClaudeDependency: vi.fn().mockReturnValue({
-    name: 'Claude Code CLI',
-    description: 'The Claude Code CLI powers agent sessions in DorkOS.',
-    status: 'satisfied',
-    version: '0.0.0-mock',
-  }),
+  checkClaudeDependencies: vi.fn().mockResolvedValue([
+    {
+      name: 'Claude Code CLI',
+      description: 'The Claude Code CLI powers agent sessions in DorkOS.',
+      status: 'satisfied',
+      version: '0.0.0-mock',
+    },
+    {
+      name: 'Claude Code authentication',
+      description: 'Signed in to Claude.',
+      status: 'satisfied',
+    },
+  ]),
 }));
 
 import { query } from '@anthropic-ai/claude-agent-sdk';

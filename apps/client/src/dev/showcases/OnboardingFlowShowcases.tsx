@@ -26,6 +26,11 @@ const CLAUDE_READY: SystemRequirements['runtimes']['x'] = {
       status: 'satisfied',
       version: '1.0.31',
     },
+    {
+      name: 'Claude Code authentication',
+      description: 'Signed in to Claude.',
+      status: 'satisfied',
+    },
   ],
 };
 
