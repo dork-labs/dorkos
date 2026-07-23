@@ -105,6 +105,56 @@ export function fileMatches(
 }
 
 /**
+ * Oracle: the resolved file exists, parses as JSON, and its parsed value
+ * satisfies `matcher` — the outcome check for a settings/manifest write that
+ * lands as JSON on disk (`config.json`'s `ui.statusBar` flip, an `agent.json`
+ * whose immutable `name` must be unchanged). A missing file or a JSON parse
+ * error fails the oracle (the write did not land, or landed malformed), never
+ * throws.
+ *
+ * @param pathOf - Resolves the asserted JSON file from the sandbox.
+ * @param matcher - Predicate over the parsed JSON value (`unknown`; narrow inside).
+ * @param label - Human-readable label; defaults to `<resolved path> JSON matches`.
+ * @returns An {@link Oracle}.
+ */
+export function jsonFileMatches(
+  pathOf: SandboxPath,
+  matcher: (value: unknown) => boolean,
+  label?: string
+): Oracle {
+  return async (ctx) => {
+    const target = pathOf(ctx.sandbox);
+    if (!(await pathExists(target))) {
+      return {
+        label: label ?? `${target} JSON matches`,
+        passed: false,
+        evidence: { path: target, exists: false },
+        detail: `file does not exist: ${target}`,
+      };
+    }
+    const raw = await readFile(target, 'utf8');
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch (err) {
+      return {
+        label: label ?? `${target} JSON matches`,
+        passed: false,
+        evidence: { path: target, parseError: err instanceof Error ? err.message : String(err) },
+        detail: `file is not valid JSON: ${target}`,
+      };
+    }
+    const passed = matcher(value);
+    return {
+      label: label ?? `${target} JSON matches`,
+      passed,
+      evidence: { path: target, matched: passed },
+      detail: passed ? undefined : `parsed JSON did not match: ${target}`,
+    };
+  };
+}
+
+/**
  * Oracle: the resolved directory's top-level entries are a SUBSET of `allowed`.
  * Proves a turn did NOT create anything it was not supposed to — the
  * offer-not-action guard for the design-your-own interview, where the newborn

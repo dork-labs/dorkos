@@ -23,6 +23,7 @@
     }
   },
   "dependencies": {
+    "@dorkos/db": "workspace:*",
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
