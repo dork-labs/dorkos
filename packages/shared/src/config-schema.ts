@@ -122,7 +122,7 @@ export type SidebarDisplayFilter = z.infer<typeof SidebarDisplayFilterSchema>;
  * A smart group's membership rule set (smart-agent-groups, DOR-338). Every
  * PRESENT field is an AND constraint; within a field, values are OR'd (e.g.
  * `runtimes: ['codex', 'opencode']` matches either). An absent field imposes
- * no constraint. Evaluated client-side by `evaluateSmartGroup` — never
+ * no constraint. Evaluated by `evaluateSmartGroup` in `@dorkos/shared/smart-groups` — never
  * persisted as materialized membership.
  */
 export const SmartGroupRulesSchema = z.object({
