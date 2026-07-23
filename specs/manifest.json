@@ -2,11 +2,19 @@
   "version": 1,
   "specs": [
     {
+      "id": "260723-050355",
+      "slug": "agent-trust",
+      "title": "Agent trust — identity, capability tiers, approvals, isolated evals",
+      "created": "2026-07-23",
+      "status": "specified",
+      "project": "Agents as First-Class Operators"
+    },
+    {
       "id": "260723-013455",
       "slug": "capability-registry",
       "title": "Capability Registry — one source of truth, projected everywhere",
       "created": "2026-07-23",
-      "status": "implemented",
+      "status": "specified",
       "project": "Agents as First-Class Operators"
     },
     {
