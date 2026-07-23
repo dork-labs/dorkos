@@ -355,6 +355,7 @@ if (
   process.argv[2] === 'agent' ||
   process.argv[2] === 'task' ||
   process.argv[2] === 'activity' ||
+  process.argv[2] === 'capabilities' ||
   process.argv[2] === 'version'
 ) {
   process.env.DORK_HOME = DORK_HOME;
@@ -376,6 +377,20 @@ if (
     const { runActivity, parseActivityArgs } = await import('./commands/activity.js');
     try {
       process.exit(await runActivity(parseActivityArgs(subArgs)));
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+  if (process.argv[2] === 'capabilities') {
+    if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+      const { CAPABILITIES_HELP } = await import('./commands/capabilities.js');
+      console.log(CAPABILITIES_HELP);
+      process.exit(0);
+    }
+    const { runCapabilities, parseCapabilitiesArgs } = await import('./commands/capabilities.js');
+    try {
+      process.exit(await runCapabilities(parseCapabilitiesArgs(subArgs)));
     } catch (err) {
       console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
@@ -449,6 +464,7 @@ Commands:
   agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   activity             Show the activity feed (--actor|--category|--type|--limit)
+  capabilities         List everything you can do here (--json for raw catalog)
   version --check      Show server + latest version (falls back to local cache)
   harness sync         Project agent files across harnesses (--check|--fix)
   auth enable          Create the owner account and require login

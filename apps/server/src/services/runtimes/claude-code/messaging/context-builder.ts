@@ -631,6 +631,7 @@ function buildDorkosContextBlock(): string {
   return `<dorkos_context>
 DorkOS is the operating system for autonomous AI agents.
 Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
+Run \`dorkos capabilities\` or call the list_capabilities tool to see everything you can do here.
 Documentation: https://dorkos.ai/llms.txt
 Full docs: https://dorkos.ai/docs
 </dorkos_context>`;

@@ -26,7 +26,7 @@ export interface OperatingSkill {
  * body or description changes so the seeder re-writes unmodified on-disk copies.
  * User-modified copies are never overwritten regardless of version.
  */
-export const OPERATING_SKILLS_VERSION = 1;
+export const OPERATING_SKILLS_VERSION = 2;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

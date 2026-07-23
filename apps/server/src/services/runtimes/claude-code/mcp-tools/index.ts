@@ -18,9 +18,11 @@ import { getAgentTools } from './agent-tools.js';
 import { getUiTools } from './ui-tools.js';
 import { getDevtoolsTools } from './devtools-tools.js';
 import { getExtensionTools } from './extension-tools.js';
-import { getMarketplaceTools } from './marketplace-tools.js';
-import { getOperatorTools } from './operator-tools.js';
+import { capabilityMcpTools } from './capability-mcp-tools.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
+import type { CapabilityRegistry } from '../../../core/capabilities/index.js';
+import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
+import { logger } from '../../../../lib/logger.js';
 
 // Re-export types and handlers for external consumers
 export type { McpToolDeps } from './types.js';
@@ -90,9 +92,6 @@ export {
   createReloadExtensionsHandler,
   createTestExtensionHandler,
 } from './extension-tools.js';
-export { getMarketplaceTools } from './marketplace-tools.js';
-export { getOperatorTools } from './operator-tools.js';
-
 /**
  * Create the DorkOS MCP tool server with all registered tools.
  *
@@ -106,22 +105,28 @@ export { getOperatorTools } from './operator-tools.js';
  * additionally rides the session's event queue (the `ui_command` seam) to
  * reach the attached client with its capture request.
  *
- * The `marketplaceDeps` bundle is resolved lazily at the call site in
- * `index.ts` (the per-query factory closure reads a captured binding populated
- * later in server boot), so passing `undefined` simply omits the marketplace
- * tools — the same eight that back the external `/mcp` server.
+ * The operator, marketplace, and self-description tools are generated from the
+ * Capability Registry via {@link capabilityMcpTools}: the shared boot-composed
+ * `registry` when passed, or one composed on the spot from `deps` +
+ * `marketplaceDeps` when omitted (unit tests). The marketplace capabilities join
+ * the registry only when `marketplaceDeps` is present — resolved lazily at the
+ * `index.ts` call site (the per-query factory closure reads a binding populated
+ * later in boot), so a relay-disabled instance simply omits those tools.
  *
  * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.)
  * @param session - Per-query session for UI tool event emission and state access
  * @param sessionId - Per-query trigger session id (DevTools read fallback)
  * @param marketplaceDeps - Marketplace dependency bundle, or `undefined` when
  *   the marketplace surface is unavailable (relay disabled / not yet wired)
+ * @param registry - The shared boot-composed capability registry. When omitted,
+ *   one is composed on the spot from `deps` + `marketplaceDeps`.
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
   session?: import('./ui-tools.js').UiToolSession,
   sessionId?: string,
-  marketplaceDeps?: MarketplaceMcpDeps
+  marketplaceDeps?: MarketplaceMcpDeps,
+  registry?: CapabilityRegistry
 ) {
   // Resolve the caller's trusted Relay identity from the session's working
   // directory (its agent manifest), not from tool arguments — this is what
@@ -134,6 +139,15 @@ export function createDorkOsToolServer(
   // error variants.
   const resolveDevtoolsSessionId =
     session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
+  // Operator + marketplace + self-description tools, all generated from the
+  // Capability Registry (shared boot instance, or composed on the spot).
+  const capabilityRegistry =
+    registry ??
+    composeDorkOsCapabilityRegistry({
+      logger,
+      operatorDeps: deps,
+      ...(marketplaceDeps && { marketplaceDeps }),
+    });
   return createSdkMcpServer({
     name: 'dorkos',
     version: '1.0.0',
@@ -149,8 +163,7 @@ export function createDorkOsToolServer(
       ...getUiTools(deps, session),
       ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
       ...getExtensionTools(deps),
-      ...getMarketplaceTools(marketplaceDeps),
-      ...getOperatorTools(deps),
+      ...capabilityMcpTools(capabilityRegistry, 'in-session'),
     ],
   });
 }

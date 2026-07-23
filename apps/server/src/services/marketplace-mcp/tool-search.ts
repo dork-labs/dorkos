@@ -9,8 +9,8 @@
  *
  * The handler is constructed via {@link createSearchHandler} so the
  * `MarketplaceMcpDeps` bundle can be injected once at server startup. Tool
- * registration is performed by `registerMarketplaceTools()` in the
- * server-wiring task — this module never imports `McpServer`.
+ * registration is generated from the marketplace capability set by the Capability
+ * Registry projection — this module never imports `McpServer`.
  *
  * @module services/marketplace-mcp/tool-search
  */
