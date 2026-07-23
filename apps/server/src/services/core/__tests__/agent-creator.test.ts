@@ -34,6 +34,13 @@ vi.mock('@dorkos/harness', () => ({
   scaffoldInstructions: (...args: unknown[]) => mockScaffoldInstructions(...args),
 }));
 
+const mockSeedOperatingSkills = vi.fn(() =>
+  Promise.resolve({ skillsDir: '/skills', outcomes: [] })
+);
+vi.mock('@dorkos/operating-skills', () => ({
+  seedOperatingSkills: (...args: unknown[]) => mockSeedOperatingSkills(...args),
+}));
+
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(),
   validateBoundaryOrDorkHome: vi.fn(),
@@ -121,6 +128,13 @@ describe('createAgentWorkspace', () => {
     expect(rootDir).toBe(result.path);
     expect(opts.agentsBody).toContain('my-agent');
     expect(opts.agentsBody).not.toBe('# DorkBot');
+  });
+
+  it('seeds the Operating DorkOS skill pack into the new workspace', async () => {
+    const result = await createAgentWorkspace({ name: 'my-agent' }, mockMeshCore);
+
+    expect(mockSeedOperatingSkills).toHaveBeenCalledTimes(1);
+    expect(mockSeedOperatingSkills).toHaveBeenCalledWith(result.path);
   });
 
   it('uses the DorkBot template as the canonical body for DorkBot', async () => {

@@ -31,6 +31,7 @@
     "@dorkos/harness": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
     "@dorkos/mesh": "workspace:*",
+    "@dorkos/operating-skills": "workspace:*",
     "@dorkos/relay": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/skills": "workspace:*",

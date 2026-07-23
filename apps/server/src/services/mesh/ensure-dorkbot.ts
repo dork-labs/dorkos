@@ -9,8 +9,26 @@ import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { scaffoldInstructions } from '@dorkos/harness';
+import { seedOperatingSkills } from '@dorkos/operating-skills';
 import type { MeshCore } from '@dorkos/mesh';
 import { logger } from '../../lib/logger.js';
+
+/**
+ * Seed (or re-seed) the Operating DorkOS skill pack into DorkBot's home.
+ *
+ * Runs on every boot so DorkBot picks up newer pack versions; idempotent and
+ * version-stamped, and best-effort so a seeding hiccup never blocks boot (which
+ * must finish before the task watchers start).
+ *
+ * @param dorkbotDir - DorkBot's workspace root.
+ */
+async function seedDorkbotSkills(dorkbotDir: string): Promise<void> {
+  try {
+    await seedOperatingSkills(dorkbotDir);
+  } catch (err) {
+    logger.warn('[Mesh] Failed to seed DorkBot Operating DorkOS skill pack: %s', String(err));
+  }
+}
 
 /** DorkBot's branded display name — the label every roster surface renders. */
 const DORKBOT_DISPLAY_NAME = 'DorkBot';
@@ -49,27 +67,24 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
         displayName: existing.displayName ?? DORKBOT_DISPLAY_NAME,
       };
       await writeManifest(dorkbotDir, upgraded);
-      await meshCore.syncFromDisk(dorkbotDir);
       logger.info('[Mesh] Upgraded existing DorkBot to system agent');
-      return;
-    }
-
-    // Path 3: already a system agent but missing its display name — backfill it
-    // so every roster surface renders "DorkBot", not "dorkbot". Idempotent: runs
-    // once, then Path 4 takes over on subsequent boots.
-    if (!existing.displayName) {
+    } else if (!existing.displayName) {
+      // Path 3: already a system agent but missing its display name — backfill it
+      // so every roster surface renders "DorkBot", not "dorkbot".
       const named: AgentManifest = { ...existing, displayName: DORKBOT_DISPLAY_NAME };
       await writeManifest(dorkbotDir, named);
-      await meshCore.syncFromDisk(dorkbotDir);
       logger.info('[Mesh] Backfilled DorkBot display name');
-      return;
+    } else {
+      // Path 4: already correct — no manifest rewrite.
+      logger.debug('[Mesh] DorkBot already registered as system agent');
     }
 
-    // Path 4: already correct. Still sync: registerAgent re-asserts default access
-    // rules on every boot, so existing installs pick up newly-introduced rules
-    // (e.g. the system-agent cross-namespace allow) without a manifest change.
+    // Common tail for every existing-DorkBot path: re-seed the skill pack (picks
+    // up newer pack versions on boot) then sync. registerAgent re-asserts default
+    // access rules on every boot, so existing installs pick up newly-introduced
+    // rules (e.g. the system-agent cross-namespace allow) without a manifest change.
+    await seedDorkbotSkills(dorkbotDir);
     await meshCore.syncFromDisk(dorkbotDir);
-    logger.debug('[Mesh] DorkBot already registered as system agent');
     return;
   }
 
@@ -106,6 +121,9 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   // `.dork/AGENTS.md`, which nothing read — the harness + agent discovery both read
   // the root-level AGENTS.md.
   scaffoldInstructions(dorkbotDir, { agentsBody: dorkbotClaudeMdTemplate() });
+
+  // Seed the Operating DorkOS skill pack so DorkBot ships knowing how to run DorkOS.
+  await seedDorkbotSkills(dorkbotDir);
 
   // Sync to Mesh DB
   await meshCore.syncFromDisk(dorkbotDir);

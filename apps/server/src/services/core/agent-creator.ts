@@ -25,6 +25,7 @@ import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { scaffoldInstructions } from '@dorkos/harness';
+import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { validateBoundaryOrDorkHome, expandTilde, BoundaryError } from '../../lib/boundary.js';
 import { configManager } from './config-manager.js';
 import { notifyAgentCreated } from './agent-created-hook.js';
@@ -310,6 +311,15 @@ export async function createAgentWorkspace(
         ? dorkbotClaudeMdTemplate()
         : defaultAgentsTemplate(manifest.displayName ?? manifest.name);
     scaffoldInstructions(resolvedPath, { agentsBody });
+
+    // Seed the Operating DorkOS skill pack into the new workspace's
+    // .agents/skills/ so every agent knows how to run DorkOS. Idempotent and
+    // version-stamped; best-effort so a seeding hiccup never fails creation.
+    try {
+      await seedOperatingSkills(resolvedPath);
+    } catch (err) {
+      logger.warn('[agents] Failed to seed Operating DorkOS skill pack: %s', String(err));
+    }
 
     // ADR-0043: sync to Mesh DB cache (best-effort)
     try {

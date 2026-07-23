@@ -1,0 +1,29 @@
+{
+  "name": "@dorkos/operating-skills",
+  "version": "0.0.0",
+  "description": "The Operating DorkOS skill pack — first-party skills that teach agents how to run DorkOS, plus a version-stamped, idempotent seeder.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "lint": "eslint src/"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@dorkos/skills": "workspace:*"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/node": "^24",
+    "gray-matter": "^4.0.3",
+    "vitest": "^4.1.10"
+  }
+}
