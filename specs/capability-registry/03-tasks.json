@@ -1,0 +1,113 @@
+{
+  "spec": "specs/capability-registry/02-specification.md",
+  "slug": "capability-registry",
+  "generatedAt": "2026-07-23T01:40:00-07:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-07-23",
+  "tasks": [
+    {
+      "id": "2.1",
+      "phase": 1,
+      "phaseName": "P2 — Registry spine",
+      "subject": "[capability-registry] [P2] Build the registry core and shared catalog types",
+      "description": "Create apps/server/src/services/core/capabilities/: CapabilityDefinition<In,Out> (id `${domain}.${verb}`, title, model-facing description, tier observe|act|destructive, Zod input/output, surfaces {mcp?{toolName, servers[], readOnlyCarveOut?}, cli?{verb, subcommand?}, http?{method, path}}, invoke(deps, input)), composeRegistry(domains, deps) building an immutable runtime registry at boot with startup-throw on duplicate ids or duplicate surface names, and catalog serialization (everything but invoke; Zod schemas converted to JSON Schema via Zod v4 native conversion) with a stable content-hash catalogVersion. Serializable catalog types go in a new @dorkos/shared/capabilities subpath (follow the exports-map pattern; TSDoc everywhere). CapabilityDeps follows the existing service-dependency-bag pattern (see how createDorkOsToolServer and marketplace deps are threaded in apps/server/src/index.ts). Do NOT migrate any domain yet (task 2.3) and do NOT mount routes (task 2.2) — this task is the spine + exhaustive unit tests: dup detection, catalog serialization determinism, hash stability across key order, JSON Schema fidelity for representative Zod shapes (optionals, enums, records), tier presence enforced by type. Acceptance: shared + server typecheck/lint green; new unit tests green; no runtime wiring changes.",
+      "activeForm": "Building the registry core",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": "DOR-440",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "2.2",
+      "phase": 1,
+      "phaseName": "P2 — Registry spine",
+      "subject": "[capability-registry] [P2] Migrate operator + marketplace domains onto the registry and generate both MCP registrations",
+      "description": "Convert every entry of operator-tool-descriptors.ts and marketplace-tool-descriptors.ts into CapabilityDefinition[] exported from their owning domains (services/core/operator/, services/marketplace-mcp/), preserving tool names, descriptions, Zod input schemas, annotations semantics, and handler behavior BYTE-COMPATIBLY (existing MCP tool tests on both servers must pass unchanged — they are the compatibility proof; re-point their registration entry points only). Redaction stays inside invoke per ADR 260723-013236. Implement registerCapabilitiesAsMcpTools(registry, server, transport) for both the in-session SDK server (services/runtimes/claude-code/mcp-tools/) and the external McpServer (services/core/external-mcp/), replacing the hand-walks; DELETE both descriptor tables when green (no tolerated legacy). Derive READ_ONLY_MCP_TOOL_NAMES from readOnlyCarveOut flags: the exported constant becomes a registry derivation and the tool-security drift-guard test flips to asserting registry equality. compose the registry in index.ts at boot with the same late-binding deps pattern phase 1 used. Acceptance: all existing marketplace-mcp + operator + mcp-tools tests pass unchanged; tool sets on both servers identical to pre-change (assert in a test via snapshot of tool names); carve-out derivation covered; server typecheck/lint green.",
+      "activeForm": "Migrating domains onto the registry",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.5"
+      ],
+      "issue": "DOR-441",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "2.3",
+      "phase": 1,
+      "phaseName": "P2 — Registry spine",
+      "subject": "[capability-registry] [P2] Self-description: GET /api/capabilities, list_capabilities tool, dorkos capabilities verb, MCP resource",
+      "description": "Expose the live catalog: (1) GET /api/capabilities returning { catalogVersion, generatedAt, capabilities: [...serializable catalog...] } (route registered via the registry's own http surface so it appears in OpenAPI); (2) a list_capabilities capability (tier observe, mcp surface on both servers, readOnlyCarveOut true) whose invoke returns the catalog — defined AS a registry entry so generation exposes it; (3) dorkos capabilities [--json] CLI verb (table: id, tier, title; --json raw catalog; reuse the operator-output helpers and server-discovery pattern from phase 1); (4) dorkos://capabilities resource on the external server following the existing skill-resources.ts pattern; (5) one-line pointers added to the <dorkos_context> block (context-builder.ts, keep it to a single sentence) and the operating-dorkos skill body in @dorkos/operating-skills (bump pack version so seeding upgrades pristine copies). Acceptance: catalog endpoint serves all migrated capabilities with correct JSON Schemas; CLI verb works against a dev server incl. --json purity (stdout only JSON); resource readable; tests for route + tool + CLI parsing; pack-version bump covered by the existing seed tests; server/cli/shared/operating-skills typecheck/lint/tests green.",
+      "activeForm": "Exposing self-description surfaces",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.2"
+      ],
+      "parallelWith": [
+        "2.5"
+      ],
+      "issue": "DOR-442",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "2.4",
+      "phase": 1,
+      "phaseName": "P2 — Registry spine",
+      "subject": "[capability-registry] [P2] CLI dispatch through capability ids + generic dorkos call",
+      "description": "Re-bind the phase-1 operator verbs' internals to capability ids: each verb maps its flags to the capability's input shape and invokes via the server (either the capability's http surface or a generic POST /api/capabilities/:id/invoke endpoint — implementer chooses after reading how 2.2 mounted things; if adding the invoke endpoint, register it via the registry itself and keep it auth-consistent, and note that mutating capabilities must NOT be reachable through any tokenless path). Command names, flags, human output, and --json shapes are FROZEN (existing CLI tests must pass unchanged; adjust only transport internals). Add `dorkos call <capability-id> [--input <json> | --input-file <path>] --json`: validates the id against the catalog, sends input, prints the result (raw JSON on stdout; schema-validation errors from the server surfaced on stderr + non-zero exit). Update CLI help + README operator table with call + capabilities. Acceptance: existing CLI operator tests pass unchanged; new call tests (happy, unknown id, invalid input, no server); esbuild bundle builds; cli typecheck/lint green.",
+      "activeForm": "Re-binding CLI dispatch to capabilities",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-443",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "2.5",
+      "phase": 1,
+      "phaseName": "P2 — Registry spine",
+      "subject": "[capability-registry] [P2] OpenAPI projection for registry-backed capabilities",
+      "description": "Registry entries with an http surface auto-register into the existing zod-to-openapi document (services/core/openapi-registry.ts): implement registerCapabilitiesInOpenApi(registry, registryDoc) emitting one path per http surface, tagged by domain, request/response schemas from the entry's Zod schemas (mind the file's existing Zod-3/Zod-4 mirror caveats — if the zod-to-openapi version in use conflicts with Zod v4 schemas, document and solve the smallest honest bridge, no hand-mirrored schema copies). The operator domain's capabilities and /api/capabilities itself must appear in /api/docs. Legacy hand-registered paths untouched; add a short section to the openapi-registry file header documenting that new capabilities project automatically and legacy migrates domain-by-domain (tracked follow-up, not this task). Acceptance: /api/openapi.json contains the new paths with valid schemas (openapi-fresh CI check green — note the repo has an openapi freshness gate; regenerate whatever artifact it compares); server typecheck/lint/tests green.",
+      "activeForm": "Projecting capabilities into OpenAPI",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.3"
+      ],
+      "issue": "DOR-444",
+      "parentIssue": "DOR-428"
+    },
+    {
+      "id": "2.6",
+      "phase": 1,
+      "phaseName": "P2 — Registry spine",
+      "subject": "[capability-registry] [P2] Capability conformance suite, discovery eval, docs rewrite",
+      "description": "Three deliverables. (1) capabilityConformance(registry, fixtures) in @dorkos/test-utils (pattern: runtime-conformance.ts): for every entry assert invoke works against domain-supplied deps fixtures, both MCP servers expose exactly the declared tool surfaces (no orphans in either direction), the CLI verb map covers every declared cli surface, every entry has a tier + non-empty model-facing description, and READ_ONLY_MCP_TOOL_NAMES equals the registry derivation; wire into the server test suite (per-PR). (2) One new quarantined eval case in packages/evals (tier claude-code-cheap, tag core, follow the operate.ts patterns incl. the sibling-assertion discipline): prompt 'what can you do in DorkOS?' → toolInvokedInStream('list_capabilities') + no state mutated. (3) Rewrite contributing/agent-operator-surface.md around the registry (the how-to-add recipe becomes defineCapability + conformance; keep the phase-1 history note), update the CLI reference for capabilities/call, one plain-language changelog fragment. Acceptance: conformance suite green and demonstrably failing on a seeded drift (test the test: a fixture registry with a missing projection must fail); eval structural run exit 0 with the new case quarantined; docs coverage map in sync; site lint green.",
+      "activeForm": "Building conformance, discovery eval, and docs",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-445",
+      "parentIssue": "DOR-428"
+    }
+  ]
+}
