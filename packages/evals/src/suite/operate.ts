@@ -147,6 +147,9 @@ export const agentSelfEditCase: EvalCase = {
   tags: ['core'],
   quarantined: true,
   perEvalCeilingUsd: 0.5,
+  // A self-edit turn rewrites files with the agent's real file tools; prefer a
+  // container when one is available (falls back to child-process without docker).
+  preferDocker: true,
   seed: seedSelfEditAgent,
   oracles: [
     toolInvokedInStream('update_agent', 'the agent used update_agent to edit itself'),
@@ -453,6 +456,10 @@ export const marketplaceInstallCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: 0.5,
   serverEnv: { MARKETPLACE_AUTO_APPROVE: '1' },
+  // Real install turns execute tools and write a package tree; prefer a container
+  // when one is available so the agent's file tools are bounded by more than a
+  // sandbox directory (falls back to child-process when docker is absent).
+  preferDocker: true,
   seed: seedMarketplaceFixture,
   oracles: [
     // TRACKED GAP (DOR-435): the task contract's "confirmation flow was

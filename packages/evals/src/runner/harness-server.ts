@@ -35,6 +35,18 @@ export interface HarnessServer {
   /** The `DORK_HOME` this server was booted against (the sandbox). */
   dorkHome: string;
   /**
+   * The path THIS SERVER sees for the sandbox project directory, when it differs
+   * from the host path (the docker tier's container mount point). Undefined for
+   * the local tiers, whose view is the host filesystem. The drive loop prefers
+   * it for `?cwd=`; oracles always read the host sandbox.
+   */
+  projectCwd?: string;
+  /**
+   * Identifier of the underlying isolation unit when externally inspectable (the
+   * docker tier's container id), so a retained failure is findable.
+   */
+  containerId?: string;
+  /**
    * Stop the server and free every resource the boot held. The in-process mode
    * closes the sandbox DB and restores the `process.env` it mutated (`DORK_HOME`,
    * `DORKOS_TEST_RUNTIME`) to their pre-boot values; the child-process mode kills
@@ -49,8 +61,12 @@ export interface HarnessServer {
    * unwind them is not worth it. Acceptable because in-process servers boot
    * SERIALLY (the next boot OVERWRITES each singleton) and the harness owns the
    * whole process; nothing outside the runner reads them between boots.
+   *
+   * @param opts.failed - True when the eval FAILED, so a tier that can retain
+   *   post-mortem state (the docker tier keeps the stopped container + its logs)
+   *   does; other tiers ignore it.
    */
-  dispose: () => Promise<void>;
+  dispose: (opts?: { failed?: boolean }) => Promise<void>;
 }
 
 /** Options for {@link startInProcessServer}. */
@@ -285,6 +301,10 @@ export async function startChildProcessServer(
   return {
     baseUrl: launched.baseUrl,
     dorkHome: opts.dorkHome,
-    dispose: () => launched.kill(),
+    // A tier whose server sees the sandbox at a different path (docker) reports
+    // it; local tiers leave both undefined.
+    ...(launched.projectCwd !== undefined ? { projectCwd: launched.projectCwd } : {}),
+    ...(launched.containerId !== undefined ? { containerId: launched.containerId } : {}),
+    dispose: (disposeOpts) => launched.kill(disposeOpts),
   };
 }

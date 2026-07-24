@@ -26,6 +26,7 @@ import {
   startChildProcessServer,
   type HarnessServer,
 } from './harness-server.js';
+import type { IsolationLauncher } from './isolation/index.js';
 import { driveConversation, driveWidgetAction, DriveError, type TurnOutcome } from './drive.js';
 import { BudgetTracker, evalCostUsd } from './budget.js';
 import { writeTranscript } from '../report/transcript.js';
@@ -44,6 +45,12 @@ export interface RunEvalOptions {
   timeoutMs?: number;
   /** Cheap model for the credentialed tiers (`ANTHROPIC_MODEL`); defaults per the boot. */
   model?: string;
+  /**
+   * The isolation launcher the credentialed tiers boot through (`--isolation`).
+   * Omitted ⇒ the default child-process tier. `test-mode` runs in-process and
+   * ignores this.
+   */
+  launcher?: IsolationLauncher;
 }
 
 /** Normalize an eval case's prompt into an ordered list (empty ⇒ no drive). */
@@ -96,7 +103,12 @@ function anthropicApiKey(): string | undefined {
 function bootServerForTier(
   tier: RuntimeTier,
   dorkHome: string,
-  opts: { model?: string; apiKey?: string; env?: Record<string, string> }
+  opts: {
+    model?: string;
+    apiKey?: string;
+    env?: Record<string, string>;
+    launcher?: IsolationLauncher;
+  }
 ): Promise<HarnessServer> {
   if (tier === 'test-mode') return startInProcessServer({ dorkHome });
   return startChildProcessServer({
@@ -104,6 +116,7 @@ function bootServerForTier(
     anthropicApiKey: opts.apiKey,
     model: opts.model,
     ...(opts.env ? { env: opts.env } : {}),
+    ...(opts.launcher ? { launcher: opts.launcher } : {}),
   });
 }
 
@@ -175,7 +188,13 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       model: opts.model,
       apiKey,
       ...(evalCase.serverEnv ? { env: evalCase.serverEnv } : {}),
+      ...(opts.launcher ? { launcher: opts.launcher } : {}),
     });
+    // The cwd a turn runs in must be a path the SERVER can validate against its
+    // own filesystem boundary. Local tiers see the host sandbox; the docker tier
+    // sees it at its container mount point and reports that as `projectCwd`.
+    // Oracles are unaffected — they always read the host sandbox.
+    const driveCwd = server.projectCwd ?? sandbox.projectCwd;
     const ceiling = evalCase.perEvalCeilingUsd;
     const abortWhen =
       ceiling !== undefined ? (fs: SseFrame[]) => evalCostUsd(fs) > ceiling : undefined;
@@ -184,7 +203,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       const drive = await driveConversation({
         baseUrl: server.baseUrl,
         sessionId,
-        cwd: sandbox.projectCwd,
+        cwd: driveCwd,
         prompts: turns,
         clientId,
         timeoutMs: opts.timeoutMs,
@@ -202,7 +221,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         baseUrl: server.baseUrl,
         sessionId,
         action: evalCase.widgetAction,
-        cwd: sandbox.projectCwd,
+        cwd: driveCwd,
         clientId,
         timeoutMs: opts.timeoutMs,
         abortWhen,
@@ -266,7 +285,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       oracleResults: result.oracleResults,
       rubricResult: result.rubricResult,
     });
-    await server?.dispose();
+    await server?.dispose({ failed });
     await sandbox.cleanup({ failed });
   }
 

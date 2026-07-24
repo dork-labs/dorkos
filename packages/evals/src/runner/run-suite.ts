@@ -11,6 +11,7 @@ import path from 'node:path';
 import type { EvalCase, EvalResult, RunSummary, RuntimeTier } from '../types.js';
 import { BudgetTracker, DEFAULT_RUN_BUDGET_USD } from './budget.js';
 import { runEval } from './run-eval.js';
+import { createLauncherResolver, type IsolationTier } from './isolation/resolve-launcher.js';
 import { writeResults } from '../report/summary.js';
 
 /** Options for {@link runSuite}. */
@@ -27,6 +28,13 @@ export interface RunSuiteOptions {
   timeoutMs?: number;
   /** Cheap model for the credentialed tiers (`ANTHROPIC_MODEL`); defaults per the boot. */
   model?: string;
+  /**
+   * The isolation tier the credentialed evals boot through (`--isolation`).
+   * `child-process` (default) spawns a Node subprocess; `docker` runs each eval
+   * in a container. Resolved to a launcher by {@link resolveLauncher}, which
+   * degrades to `child-process` with a clear message when docker is unavailable.
+   */
+  isolation?: IsolationTier;
 }
 
 /** The outcome of a suite run: the summary and where it was written. */
@@ -73,6 +81,12 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   const budgetUsd = opts.budgetUsd ?? DEFAULT_RUN_BUDGET_USD;
   const tracker = new BudgetTracker({ runBudgetUsd: budgetUsd });
   const startedAt = new Date().toISOString();
+  // Resolves each case's isolation launcher, probing docker at most once per run
+  // and degrading to the child-process tier (with a message) when unavailable.
+  const launchers = createLauncherResolver({
+    ...(opts.isolation ? { isolation: opts.isolation } : {}),
+    runId,
+  });
 
   const results: EvalResult[] = [];
   for (const evalCase of cases) {
@@ -80,6 +94,12 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
       results.push(skippedResult(evalCase, opts.tier));
       continue;
     }
+    // `test-mode` boots in-process and never consults a launcher; only the
+    // credentialed tiers do, so skip the probe entirely for structural runs.
+    const launcher =
+      opts.tier === 'test-mode'
+        ? undefined
+        : await launchers.forCase({ preferDocker: evalCase.preferDocker ?? false });
     results.push(
       await runEval(evalCase, {
         tier: opts.tier,
@@ -88,6 +108,7 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
         tracker,
         timeoutMs: opts.timeoutMs,
         model: opts.model,
+        ...(launcher ? { launcher } : {}),
       })
     );
   }
