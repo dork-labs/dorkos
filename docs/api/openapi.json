@@ -4685,8 +4685,48 @@
           "captureCurrent": {
             "type": "boolean",
             "description": "Snapshot the live arrangement (enabled extensions + chrome) when forking the active Shape."
+          },
+          "liveLayout": {
+            "$ref": "#/components/schemas/ShapeLiveLayoutCapture"
           }
         }
+      },
+      "ShapeLiveLayoutCapture": {
+        "type": "object",
+        "properties": {
+          "sidebarOpen": {
+            "type": "boolean",
+            "description": "Whether the sidebar is open right now."
+          },
+          "sidebarTab": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
+            "description": "Selected sidebar tab. Only a host that renders a sidebar tab strip (the embedded Obsidian shell) can observe this; the web cockpit omits it."
+          },
+          "openPanels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "settings",
+                "tasks",
+                "relay",
+                "picker"
+              ]
+            },
+            "description": "Panels open right now."
+          },
+          "focusDashboardSections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Dashboard sections to order first. No client observes this today."
+          }
+        },
+        "description": "The client’s live chrome, merged field-wise over the source Shape’s layout. Only honored alongside `captureCurrent` on the active Shape."
       },
       "ActorType": {
         "type": "string",
@@ -10230,7 +10270,7 @@
           "Shapes"
         ],
         "summary": "Fork an installed Shape",
-        "description": "Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape.",
+        "description": "Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape: the currently-enabled extensions (read server-side) plus the caller’s `liveLayout`. `liveLayout` is a PARTIAL chrome snapshot merged field-wise over the source Shape’s `layout` — every field the caller omits keeps the source’s value, so a client never overwrites chrome it cannot observe.",
         "parameters": [
           {
             "schema": {

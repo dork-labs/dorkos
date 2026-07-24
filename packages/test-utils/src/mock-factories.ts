@@ -359,13 +359,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       models: [],
     }),
     pullOllamaModel: vi.fn().mockResolvedValue({ ok: true, model: 'qwen2.5-coder:7b' }),
-    provisionOllama: vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        installMethod: 'brew',
-        status: { running: true, models: [] },
-      }),
+    provisionOllama: vi.fn().mockResolvedValue({
+      ok: true,
+      installMethod: 'brew',
+      status: { running: true, models: [] },
+    }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
     // Tasks
@@ -526,6 +524,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),
+    forkShape: vi.fn(),
     // Cloud account link (accounts-and-auth P2)
     startCloudLink: vi.fn().mockResolvedValue({
       userCode: 'ABCD-1234',

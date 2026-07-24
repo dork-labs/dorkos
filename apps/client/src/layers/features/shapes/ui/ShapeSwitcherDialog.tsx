@@ -11,6 +11,7 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   Shapes,
   ArrowRight,
+  Copy,
   Sparkles,
   Loader2,
   TriangleAlert,
@@ -33,6 +34,7 @@ import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { useShapes } from '@/layers/entities/shapes';
 import { useApplyShape } from '../model/use-apply-shape';
 import { useSwitchAgentCwd } from '../model/use-switch-agent-cwd';
+import { ShapeForkForm } from './ShapeForkForm';
 
 /** Props for {@link ShapeSwitcherDialog} — the registry dialog contract. */
 export interface ShapeSwitcherDialogProps {
@@ -66,12 +68,15 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const [result, setResult] = useState<ApplyShapeResult | null>(null);
   // The Shape that produced `result` — labels the offer as "offered by …".
   const [appliedLabel, setAppliedLabel] = useState<string | null>(null);
+  // Whether the footer is showing the "make your own version" form.
+  const [forkOpen, setForkOpen] = useState(false);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
         setResult(null);
         setAppliedLabel(null);
+        setForkOpen(false);
       }
       onOpenChange(next);
     },
@@ -296,18 +301,45 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
           )}
         </div>
 
-        {/* Reset re-applies the active Shape's own defaults (idempotent). */}
+        {/*
+          Footer actions for the ACTIVE Shape only: reset it to its own defaults
+          (idempotent), or save the arrangement you are living in as your own
+          copy. Both are about the Shape you are in — copying a Shape you are not
+          using captures nothing, and stays a CLI capability.
+        */}
         {activeShape && (
           <div className="border-border border-t px-5 py-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={applyShape.isPending}
-              onClick={() => handleApply(activeShape)}
-              className="text-muted-foreground"
-            >
-              Reset {shapeLabel(activeShape)} to defaults
-            </Button>
+            {forkOpen ? (
+              // Keyed on the active Shape so switching Shapes with the form open
+              // re-seeds the suggested name instead of leaving a stale one.
+              <ShapeForkForm
+                key={activeShape.name}
+                shapeName={activeShape.name}
+                onDone={() => setForkOpen(false)}
+              />
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={applyShape.isPending}
+                  onClick={() => handleApply(activeShape)}
+                  className="text-muted-foreground"
+                >
+                  Reset {shapeLabel(activeShape)} to defaults
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={applyShape.isPending}
+                  onClick={() => setForkOpen(true)}
+                  className="text-muted-foreground"
+                >
+                  <Copy className="size-[--size-icon-xs]" />
+                  Make your own version
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

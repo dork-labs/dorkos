@@ -5,7 +5,10 @@
  * - `POST /api/shapes/:name/apply` — apply a Shape; returns the exact §5 value
  *   `{ ok, applied, warnings[], offeredAgents[] }` so the client restores the
  *   chrome (`applied.layout`) without a second fetch.
- * - `POST /api/shapes/:name/fork` — fork a Shape (body `{ as?, captureCurrent? }`).
+ * - `POST /api/shapes/:name/fork` — fork a Shape (body
+ *   `{ as?, captureCurrent?, liveLayout? }`). `liveLayout` is the client's
+ *   partial chrome snapshot; the fork service merges it field-wise over the
+ *   source Shape's layout.
  *
  * The router holds no I/O of its own — every collaborator is injected, so it is
  * driven with fakes in tests and the real singletons in `index.ts`.

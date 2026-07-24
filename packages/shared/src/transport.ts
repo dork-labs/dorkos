@@ -90,6 +90,7 @@ import type {
   McpAppResourceRequest,
   McpAppResourceResponse,
   DevtoolsIngest,
+  ForkShapeRequest,
 } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
@@ -109,6 +110,7 @@ import type {
   AddSourceInput,
   InstalledShapeSummary,
   ApplyShapeResult,
+  ForkShapeResult,
 } from './marketplace-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackSubmission } from './telemetry-events.js';
@@ -1434,6 +1436,22 @@ export interface Transport {
    * @param name - Installed Shape name. Will be URL-encoded.
    */
   applyShape(name: string): Promise<ApplyShapeResult>;
+
+  /**
+   * Fork an installed Shape into a new, independently-editable one stamped with
+   * `lineage`. With `captureCurrent` on the *active* Shape, the new Shape also
+   * records the arrangement in use: the enabled extensions the server reads for
+   * itself, plus whatever chrome the caller reports in `liveLayout`. That
+   * capture is a partial — every field the caller omits keeps the source Shape's
+   * value, so a client never overwrites state it cannot observe.
+   *
+   * Rejects when the source Shape is not installed (404) or the target name is
+   * invalid or taken (409); the thrown error carries the server's message.
+   *
+   * @param name - Installed source Shape name. Will be URL-encoded.
+   * @param request - Fork options (`as`, `captureCurrent`, `liveLayout`).
+   */
+  forkShape(name: string, request?: ForkShapeRequest): Promise<ForkShapeResult>;
 
   // --- DorkOS account link (accounts-and-auth P2) ---
 

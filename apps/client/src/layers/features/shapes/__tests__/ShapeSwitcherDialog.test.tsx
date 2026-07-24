@@ -4,7 +4,11 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ApplyShapeResult, InstalledShapeSummary } from '@dorkos/shared/marketplace-schemas';
+import type {
+  ApplyShapeResult,
+  ForkShapeResult,
+  InstalledShapeSummary,
+} from '@dorkos/shared/marketplace-schemas';
 import { TransportProvider, useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { ShapeSwitcherDialog } from '../ui/ShapeSwitcherDialog';
@@ -133,7 +137,16 @@ describe('ShapeSwitcherDialog', () => {
   beforeEach(() => {
     mockNavigate.mockClear();
     useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
-    useAppStore.setState({ shapeSwitcherFocus: null });
+    // Reset the chrome the fork capture reads, so one test's arrangement never
+    // leaks into the next one's expectations.
+    useAppStore.setState({
+      shapeSwitcherFocus: null,
+      sidebarOpen: false,
+      settingsOpen: false,
+      tasksOpen: false,
+      relayOpen: false,
+      pickerOpen: false,
+    });
   });
   afterEach(cleanup);
 
@@ -318,5 +331,121 @@ describe('ShapeSwitcherDialog', () => {
     expect(await screen.findByText(/no shapes installed yet/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /browse marketplace/i }));
     expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/marketplace' }));
+  });
+
+  // --- Make your own version (DOR-402) ---
+
+  /** A fork response for `flow-board` (the active Shape in SHAPES). */
+  function forkResult(name = 'flow-board-fork'): ForkShapeResult {
+    return {
+      ok: true,
+      name,
+      forkedFrom: 'flow-board@dorkos-community',
+      installPath: `/home/kai/.dork/shapes/${name}`,
+      manifest: {},
+    };
+  }
+
+  /** Open the footer's inline "make your own version" form and return its input. */
+  async function openForkForm(transport = createMockTransport()) {
+    const rendered = renderDialog(transport);
+    fireEvent.click(await screen.findByRole('button', { name: /make your own version/i }));
+    return { ...rendered, input: await screen.findByLabelText(/name your version/i) };
+  }
+
+  it('opens an inline form pre-filled with the default name, scoped to the active Shape', async () => {
+    // Only the ACTIVE Shape gets the affordance — capture only means anything
+    // there — and the default matches the API's own `<active>-fork`.
+    const { input } = await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES) })
+    );
+
+    expect(input).toHaveValue('flow-board-fork');
+    // The hint says truthfully what rides along.
+    expect(screen.getByText(/extensions you have turned on/i)).toBeInTheDocument();
+  });
+
+  it('rejects a name the server would refuse, before any request', async () => {
+    const forkShape = vi.fn();
+    const { input } = await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+
+    fireEvent.change(input, { target: { value: 'Not A Slug!' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/lowercase letters/i);
+    expect(forkShape).not.toHaveBeenCalled();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('captures the live chrome and creates the copy without applying it', async () => {
+    // The chrome the person is living in, straight from the app store.
+    useAppStore.setState({
+      sidebarOpen: true,
+      settingsOpen: false,
+      tasksOpen: true,
+      relayOpen: false,
+      pickerOpen: false,
+    });
+    const forkShape = vi.fn().mockResolvedValue(forkResult('my-board'));
+    const applyShape = vi.fn();
+    const listShapes = vi.fn().mockResolvedValue(SHAPES);
+    const { input } = await openForkForm(
+      createMockTransport({ listShapes, forkShape, applyShape })
+    );
+
+    fireEvent.change(input, { target: { value: 'my-board' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() =>
+      expect(forkShape).toHaveBeenCalledWith('flow-board', {
+        as: 'my-board',
+        captureCurrent: true,
+        // Only the observed fields — sidebarTab and focusDashboardSections are
+        // omitted so the source Shape's values survive.
+        liveLayout: { sidebarOpen: true, openPanels: ['tasks'] },
+      })
+    );
+    // The list is refreshed so the copy appears with its "forked from …" caption…
+    await waitFor(() => expect(listShapes.mock.calls.length).toBeGreaterThan(1));
+    // …and the footer returns to rest.
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/name your version/i)).not.toBeInTheDocument()
+    );
+    // The arrangement already IS the new Shape — applying it would be a no-op.
+    expect(applyShape).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the server's 409 message inline and keeps the form open", async () => {
+    const forkShape = vi
+      .fn()
+      .mockRejectedValue(new Error("A Shape named 'my-board' already exists"));
+    const { input } = await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+
+    fireEvent.change(input, { target: { value: 'my-board' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
+    expect(screen.getByLabelText(/name your version/i)).toBeInTheDocument();
+  });
+
+  it('cancels back to the footer buttons without creating anything', async () => {
+    const forkShape = vi.fn();
+    await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/name your version/i)).not.toBeInTheDocument()
+    );
+    expect(
+      screen.getByRole('button', { name: /reset flow board to defaults/i })
+    ).toBeInTheDocument();
+    expect(forkShape).not.toHaveBeenCalled();
   });
 });

@@ -543,3 +543,22 @@ export interface InstalledShapeSummary {
   /** Fork lineage, present only on forked Shapes. */
   lineage?: ShapeLineageInfo;
 }
+
+/**
+ * Response body for `POST /api/shapes/:name/fork` — the browser-safe view of the
+ * server's `ForkShapeResult`. The forked `manifest` rides along opaquely: no
+ * client surface reads it, and typing it here would drag the Zod-3
+ * `@dorkos/marketplace` manifest union into the browser bundle.
+ */
+export interface ForkShapeResult {
+  /** Always true — the fork throws (404/409/400) rather than reporting failure. */
+  ok: true;
+  /** The new Shape's name. */
+  name: string;
+  /** The `<name>@<source>` lineage stamp on the fork. */
+  forkedFrom: string;
+  /** Absolute path the new Shape landed at. */
+  installPath: string;
+  /** The forked manifest, as written to disk. */
+  manifest: Record<string, unknown>;
+}

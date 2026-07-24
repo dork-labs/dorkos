@@ -2194,7 +2194,7 @@ registry.registerPath({
   tags: ['Shapes'],
   summary: 'Fork an installed Shape',
   description:
-    'Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape.',
+    'Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape: the currently-enabled extensions (read server-side) plus the caller’s `liveLayout`. `liveLayout` is a PARTIAL chrome snapshot merged field-wise over the source Shape’s `layout` — every field the caller omits keeps the source’s value, so a client never overwrites chrome it cannot observe.',
   request: {
     params: z.object({ name: z.string() }),
     body: { content: { 'application/json': { schema: ForkShapeRequestSchema } } },

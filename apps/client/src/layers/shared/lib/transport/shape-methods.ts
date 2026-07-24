@@ -7,7 +7,12 @@
  *
  * @module shared/lib/transport/shape-methods
  */
-import type { InstalledShapeSummary, ApplyShapeResult } from '@dorkos/shared/marketplace-schemas';
+import type {
+  InstalledShapeSummary,
+  ApplyShapeResult,
+  ForkShapeResult,
+} from '@dorkos/shared/marketplace-schemas';
+import type { ForkShapeRequest } from '@dorkos/shared/schemas';
 import { fetchJSON } from './http-client';
 
 /** Create all Shape methods bound to a base URL. */
@@ -22,6 +27,13 @@ export function createShapeMethods(baseUrl: string) {
     applyShape(name: string): Promise<ApplyShapeResult> {
       return fetchJSON<ApplyShapeResult>(baseUrl, `/shapes/${encodeURIComponent(name)}/apply`, {
         method: 'POST',
+      });
+    },
+
+    forkShape(name: string, request: ForkShapeRequest = {}): Promise<ForkShapeResult> {
+      return fetchJSON<ForkShapeResult>(baseUrl, `/shapes/${encodeURIComponent(name)}/fork`, {
+        method: 'POST',
+        body: JSON.stringify(request),
       });
     },
   };
