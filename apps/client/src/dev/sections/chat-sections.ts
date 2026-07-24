@@ -160,13 +160,6 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     keywords: ['queue', 'message', 'panel', 'pending', 'edit'],
   },
   {
-    id: 'shortcutchips',
-    title: 'ShortcutChips',
-    page: 'chat',
-    category: 'Input',
-    keywords: ['shortcut', 'chip', 'command', 'mention', 'file', 'slash'],
-  },
-  {
     id: 'commandpalette',
     title: 'CommandPalette',
     page: 'chat',

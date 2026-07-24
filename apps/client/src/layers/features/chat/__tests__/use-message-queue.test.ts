@@ -52,7 +52,7 @@ describe('useMessageQueue', () => {
     expect(result.current.queue).toHaveLength(0);
   });
 
-  it('updateQueueItem modifies content at index, preserves id', () => {
+  it('saveEditing rewrites the edited item in place, preserving its id', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
     act(() => {
@@ -61,14 +61,18 @@ describe('useMessageQueue', () => {
     const originalId = result.current.queue[0].id;
 
     act(() => {
-      result.current.updateQueueItem(0, 'Updated');
+      result.current.startEditing(originalId);
+    });
+    act(() => {
+      result.current.saveEditing('Updated');
     });
 
     expect(result.current.queue[0].content).toBe('Updated');
     expect(result.current.queue[0].id).toBe(originalId);
+    expect(result.current.editingId).toBeNull();
   });
 
-  it('removeFromQueue removes item and adjusts editingIndex', () => {
+  it('removeFromQueue removes the addressed item and reseats the derived editingIndex', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
     act(() => {
@@ -80,19 +84,46 @@ describe('useMessageQueue', () => {
     act(() => {
       result.current.addToQueue('C');
     });
+    const [a, , c] = result.current.queue;
     act(() => {
-      result.current.startEditing(2);
+      result.current.startEditing(c.id);
     });
 
     act(() => {
-      result.current.removeFromQueue(0);
+      result.current.removeFromQueue(a.id);
     });
 
     expect(result.current.queue).toHaveLength(2);
+    // The cursor still points at C — its position just moved up.
+    expect(result.current.editingId).toBe(c.id);
     expect(result.current.editingIndex).toBe(1);
   });
 
-  it('removeFromQueue when editing the removed item resets editingIndex to null', () => {
+  it('removeFromQueue hits the intended item even when a flush dequeues the head first', () => {
+    const { result } = renderHook(() => useMessageQueue(defaultOptions));
+
+    for (const content of ['A', 'B', 'C', 'D']) {
+      act(() => {
+        result.current.addToQueue(content);
+      });
+    }
+    const thirdId = result.current.queue[2].id;
+
+    // The auto-flush dequeues the head between render and click. An index-based
+    // remove would delete 'D' here; addressing by id cannot slip.
+    act(() => {
+      useSessionStreamStore
+        .getState()
+        .removeQueuedMessage('test-session', result.current.queue[0].id);
+    });
+    act(() => {
+      result.current.removeFromQueue(thirdId);
+    });
+
+    expect(result.current.queue.map((item) => item.content)).toEqual(['B', 'D']);
+  });
+
+  it('removeFromQueue when editing the removed item clears the cursor', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
     act(() => {
@@ -101,64 +132,55 @@ describe('useMessageQueue', () => {
     act(() => {
       result.current.addToQueue('B');
     });
+    const editedId = result.current.queue[0].id;
     act(() => {
-      result.current.startEditing(0);
+      result.current.startEditing(editedId);
     });
 
     act(() => {
-      result.current.removeFromQueue(0);
+      result.current.removeFromQueue(editedId);
     });
 
+    expect(result.current.editingId).toBeNull();
     expect(result.current.editingIndex).toBeNull();
   });
 
-  it('removeFromQueue when editing item after removed one decrements editingIndex', () => {
-    const { result } = renderHook(() => useMessageQueue(defaultOptions));
-
-    act(() => {
-      result.current.addToQueue('A');
-    });
-    act(() => {
-      result.current.addToQueue('B');
-    });
-    act(() => {
-      result.current.addToQueue('C');
-    });
-    act(() => {
-      result.current.startEditing(2);
-    });
-
-    act(() => {
-      result.current.removeFromQueue(1);
-    });
-
-    expect(result.current.editingIndex).toBe(1);
-  });
-
-  it('startEditing sets editingIndex and returns content', () => {
+  it('startEditing sets the cursor and returns content', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
     act(() => {
       result.current.addToQueue('test content');
     });
 
-    let returned = '';
+    let returned: string | null = null;
     act(() => {
-      returned = result.current.startEditing(0);
+      returned = result.current.startEditing(result.current.queue[0].id);
     });
 
     expect(returned).toBe('test content');
     expect(result.current.editingIndex).toBe(0);
   });
 
-  it('cancelEditing resets editingIndex to null', () => {
+  it('startEditing returns null for an item that is no longer queued', () => {
+    const { result } = renderHook(() => useMessageQueue(defaultOptions));
+
+    let returned: string | null = 'unset';
+    act(() => {
+      returned = result.current.startEditing('gone');
+    });
+
+    expect(returned).toBeNull();
+    expect(result.current.editingId).toBeNull();
+  });
+
+  it('cancelEditing clears the cursor', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
     act(() => {
       result.current.addToQueue('test');
     });
     act(() => {
-      result.current.startEditing(0);
+      result.current.startEditing(result.current.queue[0].id);
     });
 
     act(() => {
@@ -168,14 +190,14 @@ describe('useMessageQueue', () => {
     expect(result.current.editingIndex).toBeNull();
   });
 
-  it('saveEditing updates item content and resets editingIndex', () => {
+  it('saveEditing updates item content and clears the cursor', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
     act(() => {
       result.current.addToQueue('original');
     });
     act(() => {
-      result.current.startEditing(0);
+      result.current.startEditing(result.current.queue[0].id);
     });
     act(() => {
       result.current.saveEditing('updated');
@@ -217,7 +239,7 @@ describe('useMessageQueue', () => {
     expect(onFlush).toHaveBeenCalledWith('My message', 'test-session', { queued: true });
   });
 
-  it('auto-flush skips when sessionBusy is true', () => {
+  it('auto-flush skips while sessionBusy is true', () => {
     const onFlush = vi.fn();
     const { result, rerender } = renderHook(
       ({ status, sessionBusy }) =>
@@ -247,7 +269,7 @@ describe('useMessageQueue', () => {
       result.current.addToQueue('Should flush');
     });
     act(() => {
-      result.current.startEditing(0);
+      result.current.startEditing(result.current.queue[0].id);
     });
 
     rerender({ status: 'idle' as const });
@@ -308,5 +330,162 @@ describe('useMessageQueue', () => {
     rerender({ sessionId: 'session-b', selectedCwd: '/dir-b' });
 
     expect(result.current.queue).toHaveLength(0);
+  });
+});
+
+describe('useMessageQueue — a queued message never strands', () => {
+  type FlushCallback = (
+    content: string,
+    originSessionId: string,
+    opts: { queued: boolean }
+  ) => void;
+
+  /** Queues one message mid-stream and parks the editing cursor on it. */
+  function editOnlyItemThenSettle(onFlush: FlushCallback) {
+    const harness = renderHook(
+      ({ status }) => useMessageQueue({ ...defaultOptions, status, onFlush }),
+      { initialProps: { status: 'streaming' as ChatStatus } }
+    );
+
+    act(() => {
+      harness.result.current.addToQueue('only item');
+    });
+    act(() => {
+      harness.result.current.startEditing(harness.result.current.queue[0].id);
+    });
+
+    // The turn ends while the only queued item is under edit: nothing is
+    // flushable yet, so the flush is owed rather than dropped.
+    harness.rerender({ status: 'idle' as const });
+    expect(onFlush).not.toHaveBeenCalled();
+
+    return harness;
+  }
+
+  it('flushes the owed message when the edit is saved', () => {
+    const onFlush = vi.fn();
+    const { result } = editOnlyItemThenSettle(onFlush);
+
+    act(() => {
+      result.current.saveEditing('edited item');
+    });
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith('edited item', 'test-session', { queued: true });
+    expect(result.current.queue).toHaveLength(0);
+    expect(result.current.editingIndex).toBeNull();
+  });
+
+  it('flushes the owed message when the edit is cancelled', () => {
+    const onFlush = vi.fn();
+    const { result } = editOnlyItemThenSettle(onFlush);
+
+    act(() => {
+      result.current.cancelEditing();
+    });
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith('only item', 'test-session', { queued: true });
+    expect(result.current.queue).toHaveLength(0);
+  });
+
+  it('flushes the owed message exactly once, however many idle renders follow', () => {
+    const onFlush = vi.fn();
+    const { result, rerender } = editOnlyItemThenSettle(onFlush);
+
+    act(() => {
+      result.current.cancelEditing();
+    });
+    rerender({ status: 'idle' as const });
+    rerender({ status: 'idle' as const });
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+  });
+
+  it('flushes only the head when the edit ends with more items behind it', () => {
+    const onFlush = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ status }) => useMessageQueue({ ...defaultOptions, status, onFlush }),
+      { initialProps: { status: 'streaming' as ChatStatus } }
+    );
+
+    act(() => {
+      result.current.addToQueue('first');
+    });
+    act(() => {
+      result.current.addToQueue('second');
+    });
+    act(() => {
+      result.current.startEditing(result.current.queue[0].id);
+    });
+
+    // 'second' is flushable at the edge, so the owed flush is satisfied there…
+    rerender({ status: 'idle' as const });
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith('second', 'test-session', { queued: true });
+
+    // …and ending the edit does not fire a second, un-owed flush: 'first' waits
+    // for the turn that 'second' just started.
+    act(() => {
+      result.current.cancelEditing();
+    });
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(result.current.queue.map((item) => item.content)).toEqual(['first']);
+  });
+
+  it('flushes the owed message once the session stops being busy', () => {
+    const onFlush = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ status, sessionBusy }) =>
+        useMessageQueue({ ...defaultOptions, status, sessionBusy, onFlush }),
+      { initialProps: { status: 'streaming' as ChatStatus, sessionBusy: true } }
+    );
+
+    act(() => {
+      result.current.addToQueue('waiting on the lock');
+    });
+    rerender({ status: 'idle' as const, sessionBusy: true });
+    expect(onFlush).not.toHaveBeenCalled();
+
+    rerender({ status: 'idle' as const, sessionBusy: false });
+
+    expect(onFlush).toHaveBeenCalledWith('waiting on the lock', 'test-session', { queued: true });
+  });
+
+  it("drops an owed flush on a session switch — A's message waits for A's own next turn (DOR-81)", () => {
+    const onFlush = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ status, sessionId }) => useMessageQueue({ ...defaultOptions, status, sessionId, onFlush }),
+      { initialProps: { status: 'streaming' as ChatStatus, sessionId: 'session-a' } }
+    );
+
+    act(() => {
+      result.current.addToQueue('for A');
+    });
+    act(() => {
+      result.current.startEditing(result.current.queue[0].id);
+    });
+
+    // A settles while its only item is under edit — a flush is owed to A.
+    rerender({ status: 'idle' as const, sessionId: 'session-a' });
+    expect(onFlush).not.toHaveBeenCalled();
+
+    // Switch to B. The owed flush belongs to A and is dropped with the tracker,
+    // so nothing A composed can be delivered from inside B.
+    rerender({ status: 'idle' as const, sessionId: 'session-b' });
+    act(() => {
+      result.current.cancelEditing();
+    });
+
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(useSessionStreamStore.getState().getSession('session-a').queuedMessages).toHaveLength(1);
+    expect(useSessionStreamStore.getState().getSession('session-b').queuedMessages).toHaveLength(0);
+
+    // Back in A the message is still deliverable — to A, on A's own edge.
+    rerender({ status: 'streaming' as const, sessionId: 'session-a' });
+    rerender({ status: 'idle' as const, sessionId: 'session-a' });
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith('for A', 'session-a', { queued: true });
   });
 });

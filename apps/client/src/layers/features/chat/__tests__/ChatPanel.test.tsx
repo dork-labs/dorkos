@@ -115,13 +115,11 @@ vi.mock('@/layers/entities/session/model/use-directory-state', () => ({
 }));
 
 // Mock useAppStore — supports both selector call and no-selector (destructure) call patterns
-const mockShowShortcutChips = vi.fn(() => true);
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      showShortcutChips: mockShowShortcutChips(),
       setIsStreaming: vi.fn(),
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
@@ -144,8 +142,8 @@ vi.mock('../ui/MessageList', () => ({
   MessageList: vi.fn(() => <div data-testid="message-list">MessageList</div>),
 }));
 
-vi.mock('../ui/input/ShortcutChips', () => ({
-  ShortcutChips: vi.fn(() => <div data-testid="shortcut-chips">ShortcutChips</div>),
+vi.mock('../ui/input/AgentIdentityChip', () => ({
+  AgentIdentityChip: vi.fn(() => <div data-testid="agent-identity-chip">AgentIdentityChip</div>),
 }));
 
 vi.mock('@/layers/features/status', () => ({
@@ -235,7 +233,6 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseIsMobile.mockReturnValue(true);
-  mockShowShortcutChips.mockReturnValue(true);
   mockChatStatus = 'idle';
   useExtensionRegistry.setState({ slots: createInitialSlots() });
   localStorage.clear();
@@ -256,29 +253,29 @@ describe('ChatPanel collapse', () => {
     expect(screen.queryByLabelText(/input extras/)).toBeNull();
   });
 
-  it('mobile: chips and status bar visible by default', () => {
+  it('mobile: identity chip and status bar visible by default', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(<ChatPanel sessionId="test" />);
-    expect(screen.getByTestId('shortcut-chips')).toBeTruthy();
+    expect(screen.getByTestId('agent-identity-chip')).toBeTruthy();
     expect(screen.getByTestId('status-line')).toBeTruthy();
   });
 
-  it('mobile: tap handle hides chips and status bar', () => {
+  it('mobile: tap handle hides identity chip and status bar', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(<ChatPanel sessionId="test" />);
     fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.queryByTestId('shortcut-chips')).toBeNull();
+    expect(screen.queryByTestId('agent-identity-chip')).toBeNull();
     expect(screen.queryByTestId('status-line')).toBeNull();
   });
 
-  it('mobile: tap handle again shows chips and status bar', () => {
+  it('mobile: tap handle again shows identity chip and status bar', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(<ChatPanel sessionId="test" />);
     const handle = screen.getByLabelText(/input extras/);
     fireEvent.click(handle);
-    expect(screen.queryByTestId('shortcut-chips')).toBeNull();
+    expect(screen.queryByTestId('agent-identity-chip')).toBeNull();
     fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.getByTestId('shortcut-chips')).toBeTruthy();
+    expect(screen.getByTestId('agent-identity-chip')).toBeTruthy();
     expect(screen.getByTestId('status-line')).toBeTruthy();
   });
 });

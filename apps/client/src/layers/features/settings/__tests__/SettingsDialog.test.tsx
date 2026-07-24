@@ -246,13 +246,6 @@ describe('SettingsDialog', () => {
     await screen.findByText(/version/i);
   });
 
-  it('displays "Show shortcut chips" toggle in Preferences', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/preferences/i);
-    expect(screen.getByText('Show shortcut chips')).toBeDefined();
-    expect(screen.getByText('Display shortcut hints below the message input')).toBeDefined();
-  });
-
   it('shows "Git Status" toggle in Status Bar', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/status bar/i);
@@ -264,18 +257,6 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/status bar/i);
     const label = screen.getByText('Git Status');
-    // Traverse up to the row container — works for both the private SettingRow
-    // (div.justify-between) and the Field-based shared SettingRow (data-slot="field").
-    const row = label.closest('[data-slot="field"], [class~="justify-between"]')!;
-    const toggle = row.querySelector('[role="switch"]');
-    expect(toggle).toBeDefined();
-    expect(toggle?.getAttribute('data-state')).toBe('checked');
-  });
-
-  it('has shortcut chips toggle enabled by default', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/preferences/i);
-    const label = screen.getByText('Show shortcut chips');
     // Traverse up to the row container — works for both the private SettingRow
     // (div.justify-between) and the Field-based shared SettingRow (data-slot="field").
     const row = label.closest('[data-slot="field"], [class~="justify-between"]')!;

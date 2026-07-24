@@ -87,17 +87,17 @@ describe('Queue workflow integration', () => {
       result.current.addToQueue('Second');
     });
 
-    let content: string;
+    let content: string | null = null;
     act(() => {
-      content = result.current.startEditing(1);
+      content = result.current.startEditing(result.current.queue[1].id);
     });
-    expect(content!).toBe('Second');
+    expect(content).toBe('Second');
     expect(result.current.editingIndex).toBe(1);
 
     act(() => {
-      content = result.current.startEditing(0);
+      content = result.current.startEditing(result.current.queue[0].id);
     });
-    expect(content!).toBe('First');
+    expect(content).toBe('First');
     expect(result.current.editingIndex).toBe(0);
 
     act(() => {
@@ -121,7 +121,7 @@ describe('Queue workflow integration', () => {
       result.current.addToQueue('Original content');
     });
     act(() => {
-      result.current.startEditing(0);
+      result.current.startEditing(result.current.queue[0].id);
     });
     act(() => {
       result.current.saveEditing('Modified content');
@@ -178,7 +178,7 @@ describe('Queue workflow integration', () => {
       result.current.addToQueue('Should flush');
     });
     act(() => {
-      result.current.startEditing(0);
+      result.current.startEditing(result.current.queue[0].id);
     });
 
     rerender({ status: 'idle' as const });

@@ -42,7 +42,6 @@ export const BOOL_KEYS = {
   showTimestamps: 'dorkos-show-timestamps',
   expandToolCalls: 'dorkos-expand-tool-calls',
   autoHideToolCalls: 'dorkos-auto-hide-tool-calls',
-  showShortcutChips: 'dorkos-show-shortcut-chips',
   showTaskCelebrations: 'dorkos-show-task-celebrations',
   enableNotificationSound: 'dorkos-enable-notification-sound',
   enableTasksNotifications: 'dorkos-enable-tasks-notifications',
@@ -51,22 +50,25 @@ export const BOOL_KEYS = {
 } as const;
 
 /**
- * Orphaned localStorage keys removed by the one-time migration below.
+ * Orphaned localStorage keys removed by the one-time purge below.
  *
  * `dorkos-enable-cross-client-sync` backed the retired "Multi-window sync" flag
  * and `dorkos-show-status-bar-sync` backed its now-removed status-bar toggle.
  * Cross-client live sync is always-on (spec chat-stream-reconnection, ADR-0266),
- * so both preferences no longer exist.
+ * so both preferences no longer exist. `dorkos-show-shortcut-chips` backed the
+ * "Show shortcut chips" toggle; the `/` and `@` chips are gone (spec
+ * composer-status-redesign) and the placeholder hints teach both triggers.
  */
 const ORPHANED_BOOL_KEYS = [
   'dorkos-enable-cross-client-sync',
   'dorkos-show-status-bar-sync',
+  'dorkos-show-shortcut-chips',
 ] as const;
 
 /**
- * One-time purge of localStorage keys for preferences removed in the
- * always-on-sync migration. Mirrors the `try/catch` + `removeItem` pattern used
- * by `resetPreferences`. A no-op when the keys are absent; never throws.
+ * One-time purge of localStorage keys for preferences that no longer exist.
+ * Mirrors the `try/catch` + `removeItem` pattern used by `resetPreferences`.
+ * A no-op when the keys are absent; never throws.
  */
 export function purgeOrphanedPreferenceKeys(): void {
   try {
@@ -82,7 +84,6 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
   showTimestamps: false,
   expandToolCalls: false,
   autoHideToolCalls: true,
-  showShortcutChips: true,
   showTaskCelebrations: true,
   enableNotificationSound: true,
   enableTasksNotifications: true,

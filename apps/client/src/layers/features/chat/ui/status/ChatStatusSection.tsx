@@ -22,7 +22,7 @@ import { compactComposerGate } from '../../model/build-palette-commands';
 import { useRuntimeChip } from '../../model/status/use-runtime-chip';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
-import { ShortcutChips } from '../input/ShortcutChips';
+import { AgentIdentityChip } from '../input/AgentIdentityChip';
 import { CompactionChip } from './CompactionChip';
 import { DragHandle } from './DragHandle';
 import {
@@ -64,14 +64,13 @@ interface ChatStatusSectionProps {
   sessionId: string;
   sessionStatus: SessionStatusEvent | null;
   isStreaming: boolean;
-  onChipClick: (trigger: string) => void;
   /** Live-sync connection state (from the durable `/events` stream) for the ConnectionItem indicator. */
   syncConnectionState: ConnectionState;
-  /** Agent display name for the shortcut chips row. */
+  /** Agent display name for the identity chip. */
   agentName?: string;
-  /** Agent color (HSL or hex) for the shortcut chips row. */
+  /** Agent color (HSL or hex) for the identity chip. */
   agentColor?: string;
-  /** Agent emoji for the shortcut chips row. */
+  /** Agent emoji for the identity chip. */
   agentEmoji?: string;
   /** Agent working directory path (used for context menu actions). */
   agentPath?: string;
@@ -123,7 +122,7 @@ const VELOCITY_THRESHOLD = 500;
 
 /**
  * Mobile gesture UI (drag handle, swipe hint, collapsible status) and
- * desktop status bar (shortcut chips + status line).
+ * desktop status bar (agent identity chip + status line).
  *
  * Owns all data fetching for the status bar and composes the compound
  * StatusLine API. The StatusLine component itself is presentation-only.
@@ -132,7 +131,6 @@ export function ChatStatusSection({
   sessionId,
   sessionStatus,
   isStreaming,
-  onChipClick,
   syncConnectionState,
   agentName,
   agentColor,
@@ -151,7 +149,6 @@ export function ChatStatusSection({
   // All status bar data hooks — moved here from StatusLine
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming, runtimeChip.runtime);
   const {
-    showShortcutChips,
     enableNotificationSound,
     setEnableNotificationSound,
     enableMessagePolling,
@@ -573,15 +570,12 @@ export function ChatStatusSection({
               onDragEnd={handleDragEnd}
               style={{ touchAction: 'pan-y' }}
             >
-              {showShortcutChips && (
-                <ShortcutChips
-                  onChipClick={onChipClick}
-                  agentName={agentName}
-                  agentColor={agentColor}
-                  agentEmoji={agentEmoji}
-                  agentPath={agentPath}
-                />
-              )}
+              <AgentIdentityChip
+                agentName={agentName}
+                agentColor={agentColor}
+                agentEmoji={agentEmoji}
+                agentPath={agentPath}
+              />
               {statusLineContent}
             </motion.div>
           )}
@@ -592,17 +586,12 @@ export function ChatStatusSection({
 
   return (
     <>
-      <AnimatePresence>
-        {showShortcutChips && (
-          <ShortcutChips
-            onChipClick={onChipClick}
-            agentName={agentName}
-            agentColor={agentColor}
-            agentEmoji={agentEmoji}
-            agentPath={agentPath}
-          />
-        )}
-      </AnimatePresence>
+      <AgentIdentityChip
+        agentName={agentName}
+        agentColor={agentColor}
+        agentEmoji={agentEmoji}
+        agentPath={agentPath}
+      />
       {statusLineContent}
     </>
   );

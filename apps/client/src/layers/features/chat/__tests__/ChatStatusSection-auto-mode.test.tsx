@@ -77,7 +77,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      showShortcutChips: false,
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -89,6 +88,11 @@ vi.mock('@/layers/shared/model/app-store', () => ({
 
 // Mock PermissionModeItem so we can drive its onChangeMode directly without
 // the dropdown internals. Render a button that selects 'auto'.
+// The identity chip needs a router; it is not part of the status line under test.
+vi.mock('../ui/input/AgentIdentityChip', () => ({
+  AgentIdentityChip: () => null,
+}));
+
 vi.mock('@/layers/features/status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/features/status')>();
   return {
@@ -167,7 +171,6 @@ const defaultProps = {
   sessionId: SESSION_ID,
   sessionStatus: null,
   isStreaming: false,
-  onChipClick: vi.fn(),
   syncConnectionState: 'connected' as const,
 };
 

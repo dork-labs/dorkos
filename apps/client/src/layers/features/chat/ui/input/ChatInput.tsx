@@ -110,8 +110,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     },
   }));
 
-  // Auto-focus on mount (e.g. returning from interactive tool-approval mode)
+  // Auto-focus on mount (e.g. returning from interactive tool-approval mode),
+  // desktop only — on a touch device this pops the software keyboard and scrolls
+  // the view every time a session opens. Read through a ref snapshot so a later
+  // viewport change can never steal focus mid-session.
+  const isMobileOnMountRef = useRef(isMobile);
   useEffect(() => {
+    if (isMobileOnMountRef.current) return;
     textareaRef.current?.focus();
   }, []);
 
@@ -234,7 +239,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             placeholder={placeholderOverlay ? '' : placeholder}
             className="block max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-0.5 text-sm focus:outline-none"
             rows={1}
-            disabled={sessionBusy}
           />
         </div>
         <motion.button

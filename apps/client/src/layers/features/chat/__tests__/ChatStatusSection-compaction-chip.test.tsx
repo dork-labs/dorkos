@@ -58,7 +58,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      showShortcutChips: false,
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -89,6 +88,11 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     TooltipContent: () => null,
   };
 });
+
+// The identity chip needs a router; it is not part of the status line under test.
+vi.mock('../ui/input/AgentIdentityChip', () => ({
+  AgentIdentityChip: () => null,
+}));
 
 vi.mock('@/layers/features/status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/features/status')>();
@@ -141,7 +145,6 @@ const props = {
   sessionId: SESSION_ID,
   sessionStatus: null,
   isStreaming: false,
-  onChipClick: vi.fn(),
   syncConnectionState: 'connected' as const,
 };
 

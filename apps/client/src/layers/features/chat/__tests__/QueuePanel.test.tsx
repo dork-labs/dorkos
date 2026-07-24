@@ -55,41 +55,56 @@ describe('QueuePanel', () => {
     expect(screen.getByText('Queued (2)')).toBeDefined();
   });
 
-  it('clicking card calls onEdit with correct index', () => {
+  it('clicking card calls onEdit with the item id, not its position', () => {
     const onEdit = vi.fn();
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
     render(<QueuePanel queue={queue} editingIndex={null} onEdit={onEdit} onRemove={vi.fn()} />);
     fireEvent.click(screen.getByText('Second'));
-    expect(onEdit).toHaveBeenCalledWith(1);
+    expect(onEdit).toHaveBeenCalledWith('id-1');
   });
 
-  it('clicking x button calls onRemove with correct index and NOT onEdit', () => {
+  it('clicking x button calls onRemove with the item id and NOT onEdit', () => {
     const onEdit = vi.fn();
     const onRemove = vi.fn();
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
     render(<QueuePanel queue={queue} editingIndex={null} onEdit={onEdit} onRemove={onRemove} />);
     fireEvent.click(screen.getByLabelText('Remove queued message 1'));
-    expect(onRemove).toHaveBeenCalledWith(0);
+    expect(onRemove).toHaveBeenCalledWith('id-0');
     expect(onEdit).not.toHaveBeenCalled();
   });
 
-  it('editing item shows selected state with border-l-2', () => {
+  it('nests no interactive element inside another', () => {
+    // The row used to be a <button> wrapping a role="button" span — invalid HTML
+    // that browsers resolve inconsistently and screen readers flatten to one control.
+    const queue = [makeItem('First', 0), makeItem('Second', 1)];
+    const { container } = render(
+      <QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />
+    );
+    expect(container.querySelectorAll('button button')).toHaveLength(0);
+    expect(container.querySelectorAll('button [role="button"]')).toHaveLength(0);
+    expect(container.querySelectorAll('button [tabindex]')).toHaveLength(0);
+  });
+
+  it('exposes an edit and a remove button per item', () => {
+    const queue = [makeItem('First', 0), makeItem('Second', 1)];
+    render(<QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />);
+    expect(screen.getAllByRole('button')).toHaveLength(4);
+  });
+
+  it('editing item shows selected state on its row', () => {
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
     render(<QueuePanel queue={queue} editingIndex={1} onEdit={vi.fn()} onRemove={vi.fn()} />);
-    // The second card button should have border-l-2 class
-    screen.getAllByRole('button', { name: /\d+\./ });
-    // Find the second card button (index 1)
-    const allButtons = document.querySelectorAll('button[type="button"]');
-    const cardButtons = Array.from(allButtons).filter((b) => b.className.includes('rounded-md'));
-    expect(cardButtons[1].className).toContain('border-l-2');
+    const editButton = screen.getByRole('button', { name: /Second/ });
+    expect(editButton.getAttribute('aria-current')).toBe('true');
+    expect(editButton.parentElement?.className).toContain('border-l-2');
   });
 
   it('non-editing items do not have selected state', () => {
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
     render(<QueuePanel queue={queue} editingIndex={0} onEdit={vi.fn()} onRemove={vi.fn()} />);
-    const allButtons = document.querySelectorAll('button[type="button"]');
-    const cardButtons = Array.from(allButtons).filter((b) => b.className.includes('rounded-md'));
-    expect(cardButtons[1].className).not.toContain('border-l-2');
+    const editButton = screen.getByRole('button', { name: /Second/ });
+    expect(editButton.getAttribute('aria-current')).toBeNull();
+    expect(editButton.parentElement?.className).not.toContain('border-l-2');
   });
 
   it('remove button is always visible (opacity-100 base class, not standalone opacity-0)', () => {

@@ -34,10 +34,10 @@ interface UseChatQueueReturn {
   queue: QueueItem[];
   editingIndex: number | null;
   handleQueue: () => void;
-  handleQueueEdit: (index: number) => void;
+  handleQueueEdit: (id: string) => void;
   handleQueueSaveEdit: () => void;
   handleQueueCancelEdit: () => void;
-  handleQueueRemove: (index: number) => void;
+  handleQueueRemove: (id: string) => void;
   handleQueueNavigateUp: () => void;
   handleQueueNavigateDown: () => void;
 }
@@ -47,6 +47,12 @@ interface UseChatQueueReturn {
  *
  * Owns the draft ref that preserves the user's in-progress composition when they
  * navigate into the queue. Provides fully-wired callbacks for QueuePanel and ChatInput.
+ *
+ * Card callbacks (`handleQueueEdit` / `handleQueueRemove`) address a queue item
+ * by its stable id, never its position: the auto-flush dequeues the head while
+ * the panel is on screen, so an index captured at render time can point at a
+ * different message by the time the click lands. Keyboard navigation is
+ * positional by nature and resolves the position to an id at the call site.
  */
 export function useChatQueue({
   input,
@@ -94,11 +100,13 @@ export function useChatQueue({
   }, [input, messageQueue, setInput, tryNativeCommand]);
 
   const handleQueueEdit = useCallback(
-    (index: number) => {
-      if (messageQueue.editingIndex === null) {
-        draftRef.current = input;
-      }
-      const content = messageQueue.startEditing(index);
+    (id: string) => {
+      const wasEditing = messageQueue.editingId !== null;
+      // `null` means the item was flushed or removed between render and click —
+      // leave the composer exactly as the user left it.
+      const content = messageQueue.startEditing(id);
+      if (content === null) return;
+      if (!wasEditing) draftRef.current = input;
       setInput(content);
       chatInputRef.current?.focus();
     },
@@ -106,7 +114,7 @@ export function useChatQueue({
   );
 
   const handleQueueSaveEdit = useCallback(() => {
-    if (messageQueue.editingIndex !== null && input.trim()) {
+    if (messageQueue.editingId !== null && input.trim()) {
       messageQueue.saveEditing(input.trim());
       setInput(draftRef.current);
     }
@@ -118,40 +126,54 @@ export function useChatQueue({
   }, [messageQueue, setInput]);
 
   const handleQueueRemove = useCallback(
-    (index: number) => {
-      if (messageQueue.editingIndex === index) {
+    (id: string) => {
+      if (messageQueue.editingId === id) {
         setInput(draftRef.current);
       }
-      messageQueue.removeFromQueue(index);
+      messageQueue.removeFromQueue(id);
+    },
+    [messageQueue, setInput]
+  );
+
+  /** Moves the editing cursor to a position, restoring the draft if it falls off the queue. */
+  const editAtPosition = useCallback(
+    (index: number) => {
+      const id = messageQueue.queue[index]?.id;
+      const content = id === undefined ? null : messageQueue.startEditing(id);
+      if (content === null) {
+        messageQueue.cancelEditing();
+        setInput(draftRef.current);
+        return;
+      }
+      setInput(content);
     },
     [messageQueue, setInput]
   );
 
   const handleQueueNavigateUp = useCallback(() => {
-    if (messageQueue.editingIndex === null) {
+    const { editingIndex, queue } = messageQueue;
+    if (editingIndex === null) {
+      if (queue.length === 0) return;
       draftRef.current = input;
-      const content = messageQueue.startEditing(messageQueue.queue.length - 1);
-      setInput(content);
-    } else if (messageQueue.editingIndex > 0) {
-      const content = messageQueue.startEditing(messageQueue.editingIndex - 1);
-      setInput(content);
+      editAtPosition(queue.length - 1);
+    } else if (editingIndex > 0) {
+      editAtPosition(editingIndex - 1);
     } else {
       messageQueue.cancelEditing();
       setInput(draftRef.current);
     }
-  }, [input, messageQueue, setInput]);
+  }, [editAtPosition, input, messageQueue, setInput]);
 
   const handleQueueNavigateDown = useCallback(() => {
-    if (messageQueue.editingIndex !== null) {
-      if (messageQueue.editingIndex < messageQueue.queue.length - 1) {
-        const content = messageQueue.startEditing(messageQueue.editingIndex + 1);
-        setInput(content);
-      } else {
-        messageQueue.cancelEditing();
-        setInput(draftRef.current);
-      }
+    const { editingIndex, queue } = messageQueue;
+    if (editingIndex === null) return;
+    if (editingIndex < queue.length - 1) {
+      editAtPosition(editingIndex + 1);
+    } else {
+      messageQueue.cancelEditing();
+      setInput(draftRef.current);
     }
-  }, [messageQueue, setInput]);
+  }, [editAtPosition, messageQueue, setInput]);
 
   return {
     queue: messageQueue.queue,

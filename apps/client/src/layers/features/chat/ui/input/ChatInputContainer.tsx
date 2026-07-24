@@ -284,7 +284,6 @@ export function ChatInputContainer({
               sessionId={sessionId}
               sessionStatus={sessionStatus}
               isStreaming={isStreaming}
-              onChipClick={autocomplete.handleChipClick}
               syncConnectionState={sync.connectionState}
               agentName={agentName}
               agentColor={agentVisual.color}
