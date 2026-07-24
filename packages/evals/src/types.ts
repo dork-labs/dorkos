@@ -186,6 +186,16 @@ export interface EvalCase extends EvalCaseMeta {
    * approval POST the interactive confirmation-token flow otherwise requires.
    */
   serverEnv?: Record<string, string>;
+  /**
+   * This case prefers the hardened DOCKER isolation tier when one is available
+   * (`--isolation auto`, the default). Set it on cases whose turns actually
+   * EXECUTE tools and mutate a filesystem — the destructive scenarios and the
+   * marketplace install case — so a real agent's file tools are bounded by a
+   * container rather than only by a sandbox directory. Purely a preference:
+   * without a reachable docker daemon and eval image the case still runs on the
+   * child-process tier, with a message (never a hard failure).
+   */
+  preferDocker?: boolean;
   /** The outcome oracle(s) — ALL must pass. Asserts API/FS/stream state, never prose. */
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */

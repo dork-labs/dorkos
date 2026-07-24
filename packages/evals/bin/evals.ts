@@ -4,10 +4,16 @@
  *
  * Usage:
  *   dorkos-evals run --suite <name> --tier <tier> [--budget <usd>] [--out <dir>]
+ *                    [--isolation auto|child-process|docker]
  *
  * Selects the suite's cases, runs each in its own sandbox + server under a
  * shared run budget, writes JSONL transcripts + `results.json`, prints a
  * pass/fail table, and exits non-zero on any non-quarantined failure.
+ *
+ * `--isolation` picks how a CREDENTIALED eval's server is contained: `auto`
+ * (default) containerizes only the cases that ask for it, `docker` containerizes
+ * every one, `child-process` never does. Without a reachable docker daemon and
+ * eval image the run degrades to child-process with a message, never a failure.
  *
  * @module evals/bin
  */
@@ -15,6 +21,10 @@ import path from 'node:path';
 import { RuntimeTierSchema, type RuntimeTier } from '../src/types.js';
 import { selectSuite } from '../src/suite/index.js';
 import { runSuite } from '../src/runner/run-suite.js';
+import {
+  parseIsolationTier,
+  type IsolationTier,
+} from '../src/runner/isolation/resolve-launcher.js';
 import { formatSummaryTable, runGateFailed } from '../src/report/summary.js';
 
 /** Parsed CLI flags. */
@@ -25,6 +35,7 @@ interface Cli {
   budgetUsd?: number;
   outDir: string;
   model?: string;
+  isolation: IsolationTier;
 }
 
 /** Read `--flag value` pairs (and the optional leading command) out of argv. */
@@ -52,6 +63,7 @@ function parseArgs(rawArgv: string[]): Cli {
     budgetUsd: budget !== undefined ? Number(budget) : undefined,
     outDir: flags.get('out') ?? path.join(process.cwd(), '.evals-runs'),
     model: flags.get('model'),
+    isolation: parseIsolationTier(flags.get('isolation')),
   };
 }
 
@@ -76,6 +88,7 @@ async function main(): Promise<void> {
     budgetUsd: cli.budgetUsd,
     outDir: cli.outDir,
     model: cli.model,
+    isolation: cli.isolation,
   });
 
   process.stdout.write(formatSummaryTable(summary) + '\n');

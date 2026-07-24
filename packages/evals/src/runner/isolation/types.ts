@@ -16,9 +16,10 @@
  *   no launcher — see `harness-server.ts`. Fastest; serial (shared singletons).
  * - `child-process` (default credentialed): a Node subprocess with its own
  *   sandbox `DORK_HOME` + port. Real per-eval isolation; the judgment tier.
- * - `docker` (future, hardened): a container per eval for tool-executing
- *   judgment evals that must not touch the host. Not built yet; this seam is
- *   why it will be additive.
+ * - `docker` (hardened, `docker-launcher.ts`): a container per eval for
+ *   tool-executing judgment evals that must not touch the host. Landed
+ *   additively on this seam, exactly as designed — its only host mount is the
+ *   throwaway sandbox.
  *
  * @module evals/runner/isolation/types
  */
@@ -56,11 +57,30 @@ export interface LaunchedServer {
   /** Base URL the harness reaches the launched server on (e.g. `http://127.0.0.1:53511`). */
   baseUrl: string;
   /**
+   * The path the LAUNCHED SERVER sees for the sandbox project directory, when it
+   * differs from the host path. Local tiers (in-process, child-process) run in
+   * the host filesystem and omit it; the docker tier mounts the sandbox at a
+   * container path and reports that here, so the drive loop's `?cwd=` is a path
+   * the server can actually validate against its own boundary. Oracles always
+   * read the HOST sandbox paths and ignore this.
+   */
+  projectCwd?: string;
+  /**
+   * Identifier of the underlying isolation unit, when it is externally
+   * inspectable — the docker tier's container id, so a retained container can be
+   * found with `docker logs <id>`. Omitted by tiers with nothing to expose.
+   */
+  containerId?: string;
+  /**
    * Kill the launched server and free every resource it holds — the OS process
    * (and its descendant runtime binaries) or the container, and its port.
    * Idempotent; MUST succeed even mid-boot, before the server is healthy.
+   *
+   * @param opts.failed - True when the eval FAILED. A tier that can retain
+   *   post-mortem state (the docker tier keeps the stopped container and its
+   *   logs) honors it; tiers with nothing to retain ignore it.
    */
-  kill: () => Promise<void>;
+  kill: (opts?: { failed?: boolean }) => Promise<void>;
   /**
    * Resolves if the server exits on its OWN, before {@link kill} — carrying the
    * exit code/signal and a stderr tail so a boot crash surfaces as a diagnosable
