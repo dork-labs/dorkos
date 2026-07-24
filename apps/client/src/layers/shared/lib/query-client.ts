@@ -5,8 +5,12 @@
  * Error handling strategy:
  * - QueryCache.onError: Logs all query errors for telemetry. Shows toast only
  *   when the query opts in via `meta.showToastOnError`.
- * - MutationCache.onError: Shows a generic toast for all failed mutations.
- *   Individual mutations can override with their own `onError` callback.
+ * - MutationCache.onError: Shows a generic toast for all failed mutations,
+ *   unless the mutation opts out via `meta.suppressErrorToast`. A mutation's own
+ *   `onError` does NOT replace this one — TanStack awaits the cache handler and
+ *   then the mutation's, so both fire. Opt out via `meta` when the surface
+ *   already renders the failure itself (e.g. an inline form error), or the user
+ *   sees the same problem reported twice in two different voices.
  *
  * throwOnError is NOT set globally — it's opt-in per query:
  * - Background/polling queries: never throw (stale data > crashed page)
@@ -34,8 +38,9 @@ export const queryClient = new QueryClient({
     },
   }),
   mutationCache: new MutationCache({
-    onError: (error) => {
+    onError: (error, _variables, _onMutateResult, mutation) => {
       console.error('[dorkos:mutation-error]', { error: error.message });
+      if (mutation.meta?.suppressErrorToast) return;
       toast.error('Action failed. Please try again.');
     },
   }),

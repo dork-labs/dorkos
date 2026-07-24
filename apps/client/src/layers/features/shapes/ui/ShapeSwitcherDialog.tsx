@@ -314,7 +314,17 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
         {activeShape && (
           <div className="border-border border-t px-5 py-3">
             {forkOpen ? (
-              <ShapeForkForm shapeName={activeShape.name} onDone={() => setForkOpen(false)} />
+              // Keyed so the active Shape changing from OUTSIDE the dialog (an
+              // agent's `control_ui apply_layout`, or another client applying
+              // and this one refetching) re-seeds the suggested name. Without
+              // it the form would silently re-aim at the new Shape while the
+              // input still read the old one's name. `handleApply` covers the
+              // in-dialog path; these two guards are complementary.
+              <ShapeForkForm
+                key={activeShape.name}
+                shapeName={activeShape.name}
+                onDone={() => setForkOpen(false)}
+              />
             ) : (
               <div className="flex flex-wrap gap-2">
                 <Button

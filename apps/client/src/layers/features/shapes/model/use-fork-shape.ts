@@ -38,6 +38,9 @@ export function useForkShape() {
   const queryClient = useQueryClient();
 
   return useMutation<ForkShapeResult, Error, ForkShapeVars>({
+    // The form renders the failure itself — a name conflict has to say WHICH
+    // name is taken. The generic mutation toast would talk over it.
+    meta: { suppressErrorToast: true },
     mutationFn: ({ name, as }) => {
       // Read the store fresh at submit time so the capture reflects the chrome
       // as it stands now, not as it stood when the form opened.
