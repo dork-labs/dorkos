@@ -89,6 +89,27 @@ function readConfigPort(): number | null {
 }
 
 /**
+ * The identity headers to send with an API call.
+ *
+ * When DorkOS spawns an agent session it injects `DORKOS_AGENT_TOKEN` into the
+ * process env, so a `dorkos` command the agent runs inherits it and can say who
+ * it is. The server resolves the token to an agent identity and attributes the
+ * resulting Activity events to that agent.
+ *
+ * The header is purely additive: a server without the resolution middleware, an
+ * older server, or any other HTTP endpoint simply ignores an unknown header, so
+ * attaching it can never break a call. Absent the env var, nothing is sent and
+ * the request is byte-identical to before.
+ *
+ * @returns The identity header, or an empty object when no token is present.
+ */
+function agentIdentityHeaders(): Record<string, string> {
+  // eslint-disable-next-line no-restricted-syntax -- DORKOS_AGENT_TOKEN is injected into the spawned agent's env by the server, not CLI config
+  const token = process.env.DORKOS_AGENT_TOKEN?.trim();
+  return token ? { 'X-DorkOS-Agent': token } : {};
+}
+
+/**
  * Make a JSON HTTP call against the DorkOS server.
  *
  * Throws an {@link ApiError} on non-2xx responses. The error carries the
@@ -108,7 +129,7 @@ export async function apiCall<T>(method: string, apiPath: string, body?: unknown
   try {
     res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...agentIdentityHeaders() },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (err) {

@@ -29,7 +29,7 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type { CapabilityDefinition } from './capability-definition.js';
-import type { CapabilityRegistry } from './registry.js';
+import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
 import { CapabilityToolError } from './mcp-envelope.js';
 
 /**
@@ -120,15 +120,19 @@ export function readOnlyCarveOutToolNames(
  * @param registry - The composed capability registry.
  * @param id - The capability id to invoke.
  * @param args - Raw tool arguments from the MCP client.
+ * @param context - Optional request-scoped context (the calling agent's
+ *   identity, resolved from the `X-DorkOS-Agent` header). Omitting it invokes
+ *   unattributed, exactly as before.
  * @returns The MCP text-content result.
  */
 export async function invokeCapabilityAsMcpResult(
   registry: CapabilityRegistry,
   id: string,
-  args: unknown
+  args: unknown,
+  context?: CapabilityInvocationContext
 ): Promise<CallToolResult> {
   try {
-    const data = await registry.invoke(id, args);
+    const data = await registry.invoke(id, args, context);
     return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
   } catch (err) {
     if (err instanceof CapabilityToolError) {

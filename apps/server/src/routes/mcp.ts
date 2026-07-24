@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -13,15 +15,22 @@ import { logger } from '../lib/logger.js';
  * request (per MCP SDK docs). The `McpServer.connect()` method binds a
  * server to a transport and cannot be called twice on the same instance.
  *
- * @param serverFactory - Creates a fresh McpServer instance per request
+ * Because the server is built per request, it can capture request-scoped
+ * context: the factory receives the agent identity `resolveAgentIdentity`
+ * resolved from the call's `X-DorkOS-Agent` header (`undefined` when the caller
+ * presented none), so capability invocations made through this transport are
+ * attributed to the agent that made them.
+ *
+ * @param serverFactory - Creates a fresh McpServer instance per request,
+ *   optionally specialized to the calling agent's identity.
  */
-export function createMcpRouter(serverFactory: () => McpServer): Router {
+export function createMcpRouter(serverFactory: (identity?: AgentIdentity) => McpServer): Router {
   const router = Router();
 
   // POST: JSON-RPC tool calls (primary endpoint)
   router.post('/', async (req, res) => {
     try {
-      const server = serverFactory();
+      const server = serverFactory(getRequestAgentIdentity(res));
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless
       });

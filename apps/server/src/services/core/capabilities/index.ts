@@ -16,6 +16,8 @@ export {
   serializeCapability,
   computeCatalogVersion,
   type CapabilityRegistry,
+  type CapabilityInvocationContext,
+  type CapabilityInvocationObserver,
 } from './registry.js';
 export { readOnlyCarveOutToolNames } from './mcp-projection.js';
 export { registerCapabilitiesInOpenApi } from './openapi-projection.js';

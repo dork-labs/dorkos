@@ -15,6 +15,7 @@ import type { MarketplaceMcpDeps } from '../marketplace-mcp/marketplace-mcp-tool
 import { registerCapabilitiesAsMcpTools } from './external-mcp/capability-mcp-tools.js';
 import { composeDorkOsCapabilityRegistry } from './self-description/dorkos-registry.js';
 import type { CapabilityRegistry } from './capabilities/index.js';
+import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { logger } from '../../lib/logger.js';
 import { SERVER_ICONS } from './mcp-tool-metadata.js';
 
@@ -69,11 +70,16 @@ import { SERVER_ICONS } from './mcp-tool-metadata.js';
  *   provided, the marketplace capabilities join the registry (and the tool list).
  * @param registry - The shared boot-composed capability registry. When omitted
  *   (unit tests), one is composed on the spot from `deps` + `marketplaceDeps`.
+ * @param identity - The calling agent's resolved identity, when the request
+ *   carried an `X-DorkOS-Agent` token. This server is rebuilt per request, so
+ *   the identity is captured by every capability tool handler it registers and
+ *   the resulting invocations are attributed to that agent.
  */
 export function createExternalMcpServer(
   deps: McpToolDeps,
   marketplaceDeps?: MarketplaceMcpDeps,
-  registry?: CapabilityRegistry
+  registry?: CapabilityRegistry,
+  identity?: AgentIdentity
 ): McpServer {
   const server = new McpServer({
     name: 'dorkos',
@@ -101,7 +107,12 @@ export function createExternalMcpServer(
       operatorDeps: deps,
       ...(marketplaceDeps && { marketplaceDeps }),
     });
-  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external');
+  registerCapabilitiesAsMcpTools(
+    server,
+    capabilityRegistry,
+    'external',
+    identity ? { identity } : undefined
+  );
 
   // ── Read-only resources ──────────────────────────────────────────────────
   registerSessionResources(server, deps);

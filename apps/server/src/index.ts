@@ -131,6 +131,10 @@ import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
+import {
+  initAgentIdentityService,
+  createCapabilityAttributionObserver,
+} from './services/core/agent-identity/index.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import type { CapabilityRegistry } from './services/core/capabilities/index.js';
@@ -309,6 +313,11 @@ async function start() {
   if (configManager.get('auth')?.enabled !== true && !env.MCP_API_KEY?.trim()) {
     resolveMcpLocalToken(dorkHome);
   }
+
+  // Agent identity (spec `agent-trust` §3.1) — must be initialized before
+  // `createApp()`, whose `resolveAgentIdentity` middleware reaches this
+  // singleton lazily (it has no database handle in scope, same as `getAuth`).
+  initAgentIdentityService(db);
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
@@ -993,13 +1002,20 @@ async function start() {
     requireMcpEnabled,
     createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
-    createMcpRouter(() => {
+    createMcpRouter((agentIdentity) => {
       if (!claudeRuntime || !mcpToolDeps) {
         throw new Error(
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
         );
       }
-      return createExternalMcpServer(mcpToolDeps, marketplaceMcpDeps, capabilityRegistry);
+      // The server is rebuilt per request, so the caller's resolved identity
+      // (if any) is captured by the capability tool handlers it registers.
+      return createExternalMcpServer(
+        mcpToolDeps,
+        marketplaceMcpDeps,
+        capabilityRegistry,
+        agentIdentity
+      );
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
@@ -1572,11 +1588,17 @@ async function start() {
   // enabled domain's deps at this point — a wiring bug fails the boot, not the
   // first request. Both MCP servers (via the closures above) and the catalog
   // route below share this one instance.
-  capabilityRegistry = composeDorkOsCapabilityRegistry({
-    logger,
-    ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
-    ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
-  });
+  // The attribution observer records an Activity event for every invocation
+  // made by an agent that presented an identity token (spec `agent-trust`
+  // §3.1). Unattributed calls write nothing, so the no-token path is unchanged.
+  capabilityRegistry = composeDorkOsCapabilityRegistry(
+    {
+      logger,
+      ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
+      ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
+    },
+    createCapabilityAttributionObserver(activityService)
+  );
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a
   // different, client-facing contract; the registry catalog lives one segment
