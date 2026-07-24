@@ -31,10 +31,6 @@ on:
     - cron: '0 8 * * *'
   workflow_dispatch:
     inputs:
-      model_key_secret:
-        description: 'Name of the repository secret holding the Anthropic API key'
-        required: false
-        default: 'ANTHROPIC_API_KEY'
       suite:
         description: 'Eval suite to run (core, smoke, experimental, connector, all, or a case id)'
         required: false
@@ -113,21 +109,28 @@ jobs:
     timeout-minutes: 45
     steps:
       # A `secrets` context cannot be read from a job-level `if`, so the skip
-      # decision is a step. Indexing `secrets[...]` by the supplied name is what
-      # lets the dispatcher choose WHICH key to spend without editing this file.
-      # Dry-running without the secret configured is a first-class path: it
-      # reports clearly and the job ends green rather than failing confusingly.
+      # decision is a step. Dry-running without the secret configured is a
+      # first-class path: it reports clearly and the job ends green rather than
+      # failing confusingly.
+      #
+      # The secret is PINNED to `ANTHROPIC_API_KEY` rather than named by a
+      # dispatch input. There is exactly one key, so the indirection bought
+      # nothing — and it opened a no-malice disclosure path: a stale or mistyped
+      # secret name would ship that credential to api.anthropic.com as an
+      # `x-api-key` header (auth fails, but the token has already landed in a
+      # third party's request logs), and it is a ready-made exfil lever the
+      # moment a second write-access collaborator exists.
       - name: Resolve model key
         id: key
         env:
-          MODEL_KEY: ${{ secrets[github.event.inputs.model_key_secret] }}
+          MODEL_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "${MODEL_KEY}" ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Credentialed evals skipped::No value found in secret '${{ github.event.inputs.model_key_secret }}'. Configure that repository secret (or dispatch with a different secret name) to run the credentialed suite. Skipping — this is not a failure."
+            echo "::notice title=Credentialed evals skipped::No value found in the ANTHROPIC_API_KEY repository secret. Configure it to run the credentialed suite. Skipping — this is not a failure."
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
-            echo "Using model key from secret '${{ github.event.inputs.model_key_secret }}'."
+            echo "Using the model key from the ANTHROPIC_API_KEY repository secret."
           fi
 
       - uses: actions/checkout@v4
@@ -157,16 +160,24 @@ jobs:
       # This is the run that exercises the quarantined cases for real. Read the
       # uploaded results.json, then decide by hand whether to drop `quarantined`
       # from a case — the job never edits code.
+      #
+      # `suite` and `budget_usd` reach the shell as environment variables, never
+      # as `${{ }}` interpolated into the script body: a dispatch input is
+      # attacker-influenced text, and interpolating it would splice it straight
+      # into the command (the standard Actions script-injection footgun). Quoted
+      # shell vars are passed as data and cannot break out.
       - name: Run credentialed suite
         if: steps.key.outputs.present == 'true'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets[github.event.inputs.model_key_secret] }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUITE: ${{ github.event.inputs.suite }}
+          BUDGET_USD: ${{ github.event.inputs.budget_usd }}
         run: |
           pnpm --filter @dorkos/evals run evals -- \
-            --suite "${{ github.event.inputs.suite }}" \
+            --suite "$SUITE" \
             --tier claude-code-cheap \
             --isolation child-process \
-            --budget "${{ github.event.inputs.budget_usd }}" \
+            --budget "$BUDGET_USD" \
             --out "$RUNNER_TEMP/evals-runs"
 
       # `always()` so a failed or over-budget run still publishes its evidence —
