@@ -1,0 +1,183 @@
+name: Evals
+
+# Eval cadence (spec `agent-trust`, task 3.5), scoped honestly to what runs
+# credential-free in CI:
+#
+#   1. structural (per-PR)   — label-gated on `run-evals`, `--suite core
+#                              --tier test-mode`. Free, no model, minutes.
+#   2. structural (nightly)  — the same run on a schedule, so drift surfaces
+#                              without anyone remembering to ask.
+#   3. credentialed          — manual `workflow_dispatch` only. Runs the
+#                              quarantined cases on `claude-code-cheap` and
+#                              uploads `results.json` as evidence.
+#
+# Promotion out of quarantine stays a HUMAN decision made on that green
+# evidence: the credentialed job publishes results and never edits code.
+#
+# CI budget discipline: there is deliberately NO automatic per-PR eval run. A PR
+# runs evals only when someone applies the `run-evals` label.
+
+on:
+  pull_request:
+    # `labeled` makes applying `run-evals` trigger a run immediately;
+    # `synchronize` re-runs it on later pushes while the label is still on.
+    #
+    # Deliberately NO `paths:` filter: the label IS the filter. A path filter
+    # would silently swallow a labeled run on a PR that only touches workflows
+    # or docs, which is exactly when someone is trying to prove the job works.
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    # 08:00 UTC daily (~midnight US Pacific) — off-peak for the shared runners.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      model_key_secret:
+        description: 'Name of the repository secret holding the Anthropic API key'
+        required: false
+        default: 'ANTHROPIC_API_KEY'
+      suite:
+        description: 'Eval suite to run (core, smoke, experimental, connector, all, or a case id)'
+        required: false
+        default: 'core'
+      budget_usd:
+        description: 'Hard spend ceiling for the run, in USD'
+        required: false
+        default: '3'
+
+# Cancel superseded runs on the same ref for PRs only — nightly and dispatched
+# runs each keep their own completed run as the record.
+concurrency:
+  group: evals-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+permissions:
+  contents: read
+
+jobs:
+  structural:
+    name: Structural suite (test-mode)
+    # Per-PR runs require the `run-evals` label; scheduled runs always go.
+    # `workflow_dispatch` is handled by the credentialed job below.
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-evals'))
+    runs-on: ubuntu-latest
+    # The suite itself is seconds; the headroom is for a cold pnpm/turbo cache.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The harness imports its workspace deps through their `exports` maps,
+      # which point at `dist/` — so those dists must exist before the run, or
+      # every case dies on a stale/missing build. `...` builds the dependency
+      # closure (shared, db, test-utils, server, …), not just the leaf.
+      - name: Build eval harness dependencies
+        run: pnpm turbo build --filter=@dorkos/evals...
+
+      # `--tier test-mode` boots the deterministic in-process runtime: no model,
+      # no credentials, no spend. The quarantined credentialed cases still run
+      # here and still report, but they never gate the exit code — so a green
+      # run means "the structural harness and its non-quarantined cases hold".
+      - name: Run structural suite
+        run: pnpm --filter @dorkos/evals run evals -- --suite core --tier test-mode --out "$RUNNER_TEMP/evals-runs"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-structural-${{ github.run_id }}
+          path: ${{ runner.temp }}/evals-runs/**/results.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  credentialed:
+    name: Credentialed suite (claude-code-cheap)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # Real model calls over several cases; the run budget is the real ceiling.
+    timeout-minutes: 45
+    steps:
+      # A `secrets` context cannot be read from a job-level `if`, so the skip
+      # decision is a step. Indexing `secrets[...]` by the supplied name is what
+      # lets the dispatcher choose WHICH key to spend without editing this file.
+      # Dry-running without the secret configured is a first-class path: it
+      # reports clearly and the job ends green rather than failing confusingly.
+      - name: Resolve model key
+        id: key
+        env:
+          MODEL_KEY: ${{ secrets[github.event.inputs.model_key_secret] }}
+        run: |
+          if [ -z "${MODEL_KEY}" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Credentialed evals skipped::No value found in secret '${{ github.event.inputs.model_key_secret }}'. Configure that repository secret (or dispatch with a different secret name) to run the credentialed suite. Skipping — this is not a failure."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Using model key from secret '${{ github.event.inputs.model_key_secret }}'."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+
+      - uses: pnpm/action-setup@v4
+        if: steps.key.outputs.present == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+        if: steps.key.outputs.present == 'true'
+
+      - name: Build eval harness dependencies
+        if: steps.key.outputs.present == 'true'
+        run: pnpm turbo build --filter=@dorkos/evals...
+
+      # `--isolation child-process` is pinned deliberately: the docker isolation
+      # tier needs a prebuilt eval image that CI does not have, and `auto` would
+      # probe for a daemon and degrade anyway. Naming the honest path keeps the
+      # run's containment legible instead of implied.
+      #
+      # This is the run that exercises the quarantined cases for real. Read the
+      # uploaded results.json, then decide by hand whether to drop `quarantined`
+      # from a case — the job never edits code.
+      - name: Run credentialed suite
+        if: steps.key.outputs.present == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets[github.event.inputs.model_key_secret] }}
+        run: |
+          pnpm --filter @dorkos/evals run evals -- \
+            --suite "${{ github.event.inputs.suite }}" \
+            --tier claude-code-cheap \
+            --isolation child-process \
+            --budget "${{ github.event.inputs.budget_usd }}" \
+            --out "$RUNNER_TEMP/evals-runs"
+
+      # `always()` so a failed or over-budget run still publishes its evidence —
+      # that transcript is the whole point of dispatching the job.
+      - name: Upload results
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-credentialed-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/evals-runs/**/results.json
+            ${{ runner.temp }}/evals-runs/**/*.jsonl
+          retention-days: 30
+          if-no-files-found: warn
