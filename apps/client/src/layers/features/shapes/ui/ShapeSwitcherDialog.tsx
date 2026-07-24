@@ -86,6 +86,10 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const handleApply = useCallback(
     (shape: InstalledShapeSummary) => {
       const label = shapeLabel(shape);
+      // Applying moves the active Shape, and the fork form only ever targets the
+      // active one. Leaving it open would silently re-aim a half-typed name at a
+      // Shape the person never asked to copy — so close it first.
+      setForkOpen(false);
       applyShape.mutate(
         { name: shape.name, label },
         {
@@ -310,13 +314,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
         {activeShape && (
           <div className="border-border border-t px-5 py-3">
             {forkOpen ? (
-              // Keyed on the active Shape so switching Shapes with the form open
-              // re-seeds the suggested name instead of leaving a stale one.
-              <ShapeForkForm
-                key={activeShape.name}
-                shapeName={activeShape.name}
-                onDone={() => setForkOpen(false)}
-              />
+              <ShapeForkForm shapeName={activeShape.name} onDone={() => setForkOpen(false)} />
             ) : (
               <div className="flex flex-wrap gap-2">
                 <Button

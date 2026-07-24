@@ -432,6 +432,27 @@ describe('ShapeSwitcherDialog', () => {
     expect(screen.getByLabelText(/name your version/i)).toBeInTheDocument();
   });
 
+  it('closes the form when another Shape is applied, rather than re-aiming at it', async () => {
+    // The form only ever targets the ACTIVE Shape. Applying a different one moves
+    // that target, so a half-typed name must not silently follow it across.
+    const forkShape = vi.fn();
+    const { input } = await openForkForm(
+      createMockTransport({
+        listShapes: vi.fn().mockResolvedValue(SHAPES),
+        applyShape: vi.fn().mockResolvedValue(applyResult()),
+        forkShape,
+      })
+    );
+
+    fireEvent.change(input, { target: { value: 'my-board' } });
+    fireEvent.click(screen.getByText('Linear Ops'));
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/name your version/i)).not.toBeInTheDocument()
+    );
+    expect(forkShape).not.toHaveBeenCalled();
+  });
+
   it('cancels back to the footer buttons without creating anything', async () => {
     const forkShape = vi.fn();
     await openForkForm(

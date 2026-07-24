@@ -44,13 +44,13 @@ describe('captureShapeLayout', () => {
     ).toEqual({ sidebarOpen: true, openPanels: ['tasks', 'picker'] });
   });
 
-  it('reports an empty panel list when nothing is open, never omits the field', () => {
-    // An empty list is a real observation ("no panels open") — omitting it would
-    // make the fork inherit the source Shape's panels instead.
-    expect(captureShapeLayout(chrome({ sidebarOpen: false }))).toEqual({
-      sidebarOpen: false,
-      openPanels: [],
-    });
+  it('omits openPanels when nothing is open — an empty set is not an observation', () => {
+    // The panels slice is transient (resets on refresh), so "nothing open" cannot
+    // be told apart from "this session just reset". Omitting it hands the
+    // decision back to the source Shape rather than writing a choice nobody made.
+    const capture = captureShapeLayout(chrome({ sidebarOpen: false }));
+    expect(capture).toEqual({ sidebarOpen: false });
+    expect(capture).not.toHaveProperty('openPanels');
   });
 
   it('omits sidebarTab and focusDashboardSections — nothing observable backs them', () => {
@@ -84,15 +84,22 @@ describe('captureShapeLayout', () => {
     expect(forked.focusDashboardSections).toEqual(['linear-issues:board']);
   });
 
-  it('round-trips a fully closed arrangement', () => {
+  it("keeps the source Shape's panels when a reload closed everything (no data loss)", () => {
+    // The regression guard for the reload path: apply a Shape that opens the
+    // tasks panel, reload (panels reset — the user changed nothing), then fork.
+    // The copy must still carry the source's arrival panel.
     const source: ShapeLayout = {
       sidebarOpen: true,
-      openPanels: ['settings', 'tasks'],
+      openPanels: ['tasks'],
       focusDashboardSections: [],
     };
 
-    const forked = mergeOverSource(source, captureShapeLayout(chrome()));
+    const forked = mergeOverSource(source, captureShapeLayout(chrome({ sidebarOpen: true })));
 
-    expect(buildShapeLayoutCommands(forked, false)).toEqual([{ action: 'close_sidebar' }]);
+    expect(forked.openPanels).toEqual(['tasks']);
+    expect(buildShapeLayoutCommands(forked, false)).toEqual([
+      { action: 'open_sidebar' },
+      { action: 'open_panel', panel: 'tasks' },
+    ]);
   });
 });

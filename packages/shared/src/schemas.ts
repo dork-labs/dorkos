@@ -2648,8 +2648,9 @@ export const ShapeLiveLayoutCaptureSchema = z
       .regex(SIDEBAR_TAB_ID_PATTERN, 'Not a valid sidebar tab id')
       .optional()
       .describe(
-        'Selected sidebar tab. Only a host that renders a sidebar tab strip (the ' +
-          'embedded Obsidian shell) can observe this; the web cockpit omits it.'
+        'The selected sidebar tab. Report it only where the person picked a tab ' +
+          'from a sidebar tab strip the host renders; omit it otherwise, and the ' +
+          "source Shape's value is kept."
       ),
     openPanels: z
       .array(z.enum(['settings', 'tasks', 'relay', 'picker']))

@@ -15,6 +15,7 @@
  *   - `apps/server/src/services/shapes/apply-shape.ts` — ApplyShapeResult, AppliedShape,
  *     OfferedAgent, ShapeLayout (DOR-355 §5/§9)
  *   - `apps/server/src/services/shapes/shape-services.ts` — InstalledShapeSummary
+ *   - `apps/server/src/services/shapes/fork.ts` — ForkShapeResult (DOR-402)
  *   - `packages/marketplace` — MarketplaceJsonEntry, MarketplacePackageManifest, PackageType
  *
  * @module shared/marketplace-schemas

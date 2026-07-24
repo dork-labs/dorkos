@@ -27,6 +27,8 @@ export interface ForkShapeVars {
 }
 
 /**
+ * Copy the active Shape into a new one, capturing the live arrangement.
+ *
  * @returns The fork mutation — `mutate({ name, as })` copies the Shape with the
  *   live arrangement captured, then refreshes the installed-Shapes list so the
  *   copy appears with its "forked from …" caption.
