@@ -12,5 +12,9 @@ export {
   type AgentIdentity,
   type MintAgentTokenInput,
 } from './agent-identity-service.js';
-export { resolveAgentTokenEnv, AGENT_TOKEN_ENV_VAR } from './agent-token-env.js';
+export {
+  resolveAgentTokenEnv,
+  createInSessionContextResolver,
+  AGENT_TOKEN_ENV_VAR,
+} from './agent-token-env.js';
 export { createCapabilityAttributionObserver } from './capability-attribution.js';

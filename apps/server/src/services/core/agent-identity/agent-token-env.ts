@@ -16,6 +16,7 @@
  */
 import { logger } from '../../../lib/logger.js';
 import { getAgentIdentityService } from './agent-identity-service.js';
+import type { CapabilityInvocationContext } from '../capabilities/index.js';
 
 /** The env var a spawned agent reads its identity token from. */
 export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
@@ -61,4 +62,50 @@ export async function resolveAgentTokenEnv(
     });
     return {};
   }
+}
+
+/**
+ * Build the invocation-context resolver for an in-session `dorkos` MCP server.
+ *
+ * In-session tools run IN PROCESS: the agent calls them from inside its own
+ * session, so there is no HTTP request and no `X-DorkOS-Agent` header to
+ * resolve. The caller is instead structurally known — it is the agent whose
+ * session this is — so identity comes from the session's working directory.
+ * This is the same reasoning `resolveSenderIdentity` uses for Relay.
+ *
+ * The lookup is memoized for the life of the server instance (one per SDK
+ * query), so a session that makes twenty tool calls performs one indexed read,
+ * not twenty. It resolves to `undefined` — leaving calls unattributed, exactly
+ * as before — when the directory hosts no agent with a live token.
+ *
+ * @param agentPath - The session's working directory, or `undefined` when the
+ *   server is built without a session (the external/introspection path).
+ * @returns A memoized resolver for `capabilityMcpTools`.
+ */
+export function createInSessionContextResolver(
+  agentPath: string | undefined
+): () => Promise<CapabilityInvocationContext | undefined> {
+  let pending: Promise<CapabilityInvocationContext | undefined> | undefined;
+
+  return () => {
+    pending ??= (async () => {
+      if (!agentPath) return undefined;
+
+      const service = getAgentIdentityService();
+      if (!service) return undefined;
+
+      try {
+        const identity = await service.describeAgent(agentPath);
+        return identity ? { identity } : undefined;
+      } catch (err) {
+        // Attribution is a side channel: never fail the agent's tool call.
+        logger.debug('[agent-identity] In-session identity lookup failed', {
+          agentPath,
+          err: String(err),
+        });
+        return undefined;
+      }
+    })();
+    return pending;
+  };
 }

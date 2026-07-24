@@ -30,7 +30,7 @@
  * @module services/core/agent-identity/agent-identity-service
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, isNull, agentIdentityTokens, type Db } from '@dorkos/db';
+import { and, desc, eq, isNull, agentIdentityTokens, type Db } from '@dorkos/db';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
 /** Bytes of CSPRNG randomness behind a minted token (128 bits, per spec §3.1). */
@@ -139,6 +139,42 @@ export class AgentIdentityService {
     if (presented.length !== stored.length || !timingSafeEqual(presented, stored)) {
       return undefined;
     }
+
+    return {
+      agentPath: row.agentPath,
+      displayName: row.displayName,
+      tierCeiling: row.tierCeiling,
+      createdAt: row.createdAt,
+    };
+  }
+
+  /**
+   * The identity of the agent rooted at `agentPath`, taken from its most
+   * recently minted live token, or `undefined` when it holds none.
+   *
+   * This is the in-session counterpart to {@link resolve}. Tools the agent runs
+   * inside its own session reach DorkOS in-process, with no HTTP hop to carry a
+   * token — but the caller is structurally known to be the agent whose session
+   * it is. Reading the stored record (rather than synthesizing one) means the
+   * in-session path sees the SAME `tierCeiling` the token path would, so the two
+   * surfaces cannot drift once that ceiling is enforced.
+   *
+   * @param agentPath - Absolute path to the agent's project directory.
+   * @returns The agent's current identity, or `undefined` when it has no live token.
+   */
+  async describeAgent(agentPath: string): Promise<AgentIdentity | undefined> {
+    if (!agentPath) return undefined;
+
+    const [row] = await this.db
+      .select()
+      .from(agentIdentityTokens)
+      .where(
+        and(eq(agentIdentityTokens.agentPath, agentPath), isNull(agentIdentityTokens.revokedAt))
+      )
+      .orderBy(desc(agentIdentityTokens.createdAt))
+      .limit(1);
+
+    if (!row) return undefined;
 
     return {
       agentPath: row.agentPath,
