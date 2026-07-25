@@ -259,9 +259,14 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
  * has to add it to this list and defend it. The drift guard checks the list in
  * both directions.
  *
- * Today: agent projectPath to Shape name, and file extension to viewer id. Both
- * value types are closed and non-secret, and both key spaces are paths the
- * snapshot already discloses elsewhere.
+ * **The guard checks value types and never keys.** A record's keys are whatever
+ * a person or an agent wrote, so listing one here also promises its *key* space
+ * is not sensitive, and no test can check that for you. Today: agent projectPath
+ * to Shape name, and file extension to viewer id. Both value types are closed and
+ * non-secret; the agent paths already leave through three exposed scalar arrays
+ * and the equally tokenless `GET /api/config`, and a file extension discloses
+ * nothing. A record keyed by something a caller should not learn does not belong
+ * on this list even if its values are harmless.
  */
 export const EXPOSED_RECORD_PATHS: readonly string[] = [
   'ui.shapes.agentDefaults',
@@ -312,12 +317,18 @@ function isScalarValue(value: unknown): value is DisclosedScalar {
  * Copy one exposed leaf value, refusing to carry nested structure out with it.
  *
  * The schema guard already proves every `expose` path is scalar-shaped, so this
- * is the runtime half of the same promise: even against a stored file the schema
- * never validated (a hand-edited `config.json`, a value written before a retype),
- * an object hiding under a leaf cannot ride along. Scalars pass through, and so
- * do arrays whose every element is a scalar. An object is only ever accepted at
- * an {@link EXPOSED_RECORD_PATHS} path, and even there only its scalar-valued
- * entries survive.
+ * is the runtime half of the same promise, in code rather than in a test.
+ * Scalars pass through, and so do arrays whose every element is a scalar. An
+ * object is only ever accepted at an {@link EXPOSED_RECORD_PATHS} path, and even
+ * there only its scalar-valued entries survive.
+ *
+ * It is **defense in depth, not a live code path**. `ConfigManager` builds `conf`
+ * with `clearInvalidConfig: false`, and `conf` re-validates the whole store on
+ * every read, so `getAll()` throws rather than handing a schema-violating value
+ * to this function. What does reach here unvalidated is an unknown **top-level**
+ * key, which `conf`'s root wrapper permits and the projection plan drops anyway.
+ * The value of this function is that the guarantee survives a future change that
+ * relaxes `conf`'s validation.
  *
  * @param value - The raw stored value at an exposed path.
  * @param isRecord - Whether this path is an allowlisted open record.
@@ -329,6 +340,10 @@ function sanitizeLeafValue(value: unknown, isRecord: boolean): unknown {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
     const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
+      // Assigning `__proto__` onto an object literal hits the prototype setter
+      // and no-ops, so the key is already dropped. Skip it explicitly so the
+      // intent survives a refactor to `Object.fromEntries` or similar.
+      if (key === '__proto__') continue;
       if (isScalarValue(entry)) out[key] = entry;
     }
     return out;

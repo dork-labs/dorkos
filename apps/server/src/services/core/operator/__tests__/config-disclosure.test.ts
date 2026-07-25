@@ -13,7 +13,7 @@
  * Membership alone is not enough, so there is a third direction: every `expose`
  * verdict must also **resolve to a scalar**, an array of scalars, or an
  * explicitly allowlisted open record. Without that, a verdict on a subtree
- * (`ui.sidebar.groups`, an array of eight-field objects) silently covers whatever
+ * (`ui.sidebar.groups`, an array of nine-property objects) silently covers whatever
  * anyone adds inside it, which is the `mcp.apiKey` failure mode one level down.
  *
  * @vitest-environment node
@@ -223,7 +223,7 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
 
   it('descends into array elements rather than stopping at the array', () => {
     const paths = configSchemaLeafPaths();
-    // The concrete regression: `ui.sidebar.groups` is an array of eight-field
+    // The concrete regression: `ui.sidebar.groups` is an array of nine-property
     // objects. Stopping there is what let a field added to a group inherit the
     // array's verdict.
     expect(paths).not.toContain('ui.sidebar.groups');
@@ -445,14 +445,24 @@ describe('projectDisclosedConfig', () => {
     // An open record's keys are user-supplied, so the allowlist promise is only
     // about its value type. If a value ever stops being scalar, the entry goes.
     const raw = fullyPopulatedConfig();
-    (raw.ui as { shapes: { agentDefaults: Record<string, unknown> } }).shapes.agentDefaults = {
-      '/Users/me/code': 'focus',
-      '/Users/me/work': { shape: 'focus', token: 'LEAK-12-record-value' },
-    };
+    // A record's keys are whatever someone wrote, including the one key that is
+    // not really a key. It has to be built with `JSON.parse` (as `conf` does when
+    // it reads the file): an object literal's `__proto__` hits the prototype
+    // setter and never becomes an own property, so a literal would assert
+    // nothing. Skipping it is explicit in `sanitizeLeafValue` rather than left to
+    // the setter's no-op, which a refactor could quietly undo.
+    (raw.ui as { shapes: { agentDefaults: unknown } }).shapes.agentDefaults = JSON.parse(
+      '{"/Users/me/code":"focus",' +
+        '"/Users/me/work":{"shape":"focus","token":"LEAK-12-record-value"},' +
+        '"__proto__":"LEAK-14-prototype-key"}'
+    ) as Record<string, unknown>;
 
     const projected = projectDisclosedConfig(raw);
+    const disclosed = at(projected, 'ui.shapes.agentDefaults') as Record<string, unknown>;
     expect(JSON.stringify(projected)).not.toMatch(/LEAK-/);
-    expect(at(projected, 'ui.shapes.agentDefaults')).toEqual({ '/Users/me/code': 'focus' });
+    expect(disclosed).toEqual({ '/Users/me/code': 'focus' });
+    expect(Object.getOwnPropertyNames(disclosed)).toEqual(['/Users/me/code']);
+    expect(({} as Record<string, unknown>).token).toBeUndefined();
   });
 
   it('drops structure hiding under a scalar leaf in a hand-edited config', () => {
