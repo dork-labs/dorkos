@@ -24,7 +24,6 @@ function buildTokenProvider(): TokenConfirmationProvider {
   return new TokenConfirmationProvider(new ApprovalService(createTestDb()));
 }
 
-
 /**
  * In-memory `ConfirmationProvider` test double. Tests can pre-program the
  * status returned by `requestInstallConfirmation()` and `resolveToken()` and
