@@ -16,6 +16,12 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 DorkOS gives you control over what Claude does during a session. When tool approval is active, Claude pauses before running operations and waits for your decision.
 
+<Callout type="info">
+  This page covers tools inside a session. When an agent asks DorkOS itself to do something that
+  can't be undone, like removing an installed package, a different card appears on your dashboard.
+  See [Action Approvals](/docs/guides/action-approvals).
+</Callout>
+
 ## How It Works
 
 When Claude wants to use a tool (writing a file, running a command, editing code), a tool approval card appears in the chat. The card shows:
