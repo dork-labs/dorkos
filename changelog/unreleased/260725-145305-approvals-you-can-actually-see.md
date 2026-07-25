@@ -1,3 +1,9 @@
+---
+covers:
+  - "feat(approvals): tell the person an agent is waiting on them (DOR-428)"
+  - "fix(approvals): stop the expiry timer spinning on an overflowing delay (DOR-428)"
+---
+
 ### Added
 
 - See when an agent is waiting on you, from any screen. A marker in the top bar says how many requests need your approval, and clicking it opens them right there so you can answer without leaving what you were doing.
