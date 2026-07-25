@@ -257,6 +257,19 @@ describe('checkCapabilityConformance — seeded drift must fail', () => {
     expect(hasCheck(checkCapabilityConformance(registry, fixtures), 'approval-card-fields')).toBe(
       true
     );
+
+    // And a declared field whose NAME says secret: the renderer's declared branch
+    // is an allowlist, so it shows this verbatim on a card agents can read.
+    destroy.approvalDisplayFields = ['confirmationToken', 'target'];
+    const declared = checkCapabilityConformance(registry, fixtures);
+    expect(hasCheck(declared, 'approval-card-fields')).toBe(true);
+    expect(declared.some((v) => v.detail.includes('confirmationToken'))).toBe(true);
+
+    // Including under a dotted path, where the leaf is what gets read.
+    destroy.approvalDisplayFields = ['auth.apiKey'];
+    expect(hasCheck(checkCapabilityConformance(registry, fixtures), 'approval-card-fields')).toBe(
+      true
+    );
   });
 
   it('metadata: a description too short to be model-facing', () => {

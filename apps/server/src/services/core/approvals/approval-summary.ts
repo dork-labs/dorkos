@@ -30,6 +30,8 @@
  * @module services/core/approvals/approval-summary
  */
 
+import { isSecretInputKey } from '@dorkos/shared/capabilities';
+
 /**
  * Longest a single rendered value may be.
  *
@@ -47,48 +49,37 @@ const SUMMARY_LABEL_MAX_LENGTH = 60;
 export const REDACTED_SUMMARY_VALUE = '(hidden)';
 
 /**
- * Field names whose VALUE is credential material, matched case-insensitively
- * against the whole key.
- *
- * `confirmationToken` on `marketplace.uninstall` is the live example: its own
- * description tells a model to re-call with a token, so a model that puts the
- * token in the wrong place would otherwise publish it. Matching on the name is a
- * blunt instrument by design — a capability that wants a precise card declares
- * `approvalDisplayFields` instead.
- */
-const SECRET_KEY_PATTERN =
-  /token|secret|password|passphrase|credential|cookie|authorization|apikey|api[-_]key|private[-_]?key/i;
-
-/**
  * A run of 32 or more hex characters: the shape of every token DorkOS mints
  * (approval tokens and agent identity tokens are both `randomBytes(16).toString('hex')`)
  * and of any SHA-256 digest.
  *
- * ULIDs (26 chars, Crockford base32, uppercase) do not match, so an approval id
+ * ULIDs (26 chars, Crockford base32) are too short to match, so an approval id
  * still reads plainly on the card.
+ *
+ * **Deliberately NOT `\b`-anchored.** Word boundaries look like the careful choice
+ * and are the opposite: `\b` requires a non-word character before the run, so a
+ * token glued to any other word character — `sentry-monitorf3a9…`, or a caller
+ * simply padding with letters — never matched the pattern at all. That is a
+ * one-character evasion of the whole sweep. Matching anywhere costs only that a
+ * 32-character hex substring inside a longer word is also hidden, which is the
+ * right trade for something broadcast to every cockpit.
  */
-const SECRET_VALUE_PATTERN = /\b[0-9a-f]{32,}\b/gi;
+const SECRET_VALUE_PATTERN = /[0-9a-f]{32,}/gi;
 
 /**
- * Whether a field name says its value is a secret and must not reach a card, an
- * event, or the pending list.
+ * Replace anything token-shaped in a string.
  *
- * @param key - The input field name.
- * @returns True when the field's value must be withheld.
- */
-function isSecretInputKey(key: string): boolean {
-  return SECRET_KEY_PATTERN.test(key);
-}
-
-/**
- * Replace anything token-shaped in a finished sentence.
+ * Runs at two points, and both are load-bearing for different reasons:
  *
- * The last line of defense, applied where a summary is STORED as well as where
- * it is composed, so the invariant holds for every producer — including the
- * marketplace confirmation provider, which writes its own sentences.
+ * 1. On each caller-supplied value BEFORE it is shortened ({@link quoteSummaryValue},
+ *    {@link renderRequesterLabel}). This is the one that matters for a value a
+ *    caller controls, because a shortened token no longer matches the pattern.
+ * 2. Where a summary is STORED (`approval-service.ts`), which catches sentences a
+ *    producer composed itself — the marketplace confirmation provider writes its
+ *    own, so no producer can skip the sweep entirely.
  *
- * @param text - The composed summary.
- * @returns The same sentence with token-shaped runs replaced.
+ * @param text - The raw value or composed summary.
+ * @returns The same string with token-shaped runs replaced.
  */
 export function redactSecretsInText(text: string): string {
   return text.replace(SECRET_VALUE_PATTERN, REDACTED_SUMMARY_VALUE);
@@ -108,11 +99,19 @@ function clamp(value: string, max: number): string {
  * The surrounding quotes are part of the result: a person reading
  * `name: "pkg, purge: no"` can see that the whole thing is one value.
  *
+ * ## Redact BEFORE clamping, never after
+ *
+ * Review reproduced the inverted order: clamping first slices a 32-hex run below
+ * 32 characters, so {@link SECRET_VALUE_PATTERN} stops matching and a padded token
+ * publishes its surviving prefix. The storage sweep cannot recover it either,
+ * because by then the run is already short. Redaction can only ever SHORTEN a
+ * string, so running it first is free — the cap still holds.
+ *
  * @param value - The raw string from the caller.
  * @returns The quoted, escaped, capped rendering.
  */
 export function quoteSummaryValue(value: string): string {
-  return JSON.stringify(redactSecretsInText(clamp(value, SUMMARY_VALUE_MAX_LENGTH)));
+  return JSON.stringify(clamp(redactSecretsInText(value), SUMMARY_VALUE_MAX_LENGTH));
 }
 
 /**
@@ -136,13 +135,14 @@ function renderSummaryValue(value: unknown): string {
  *
  * An agent's `displayName` comes from its own `agent.json`, which an agent can
  * change through an `act`-tier capability — so it is caller-controlled and gets
- * exactly the same treatment as an argument.
+ * exactly the same treatment as an argument, including redacting BEFORE clamping
+ * (see {@link quoteSummaryValue} for why the order is load-bearing).
  *
  * @param label - The raw label.
- * @returns The capped, redacted label.
+ * @returns The redacted, capped label.
  */
 export function renderRequesterLabel(label: string): string {
-  return redactSecretsInText(clamp(label, SUMMARY_LABEL_MAX_LENGTH));
+  return clamp(redactSecretsInText(label), SUMMARY_LABEL_MAX_LENGTH);
 }
 
 /** Characters a field name may contribute to the sentence. Everything else is dropped. */

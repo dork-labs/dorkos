@@ -112,10 +112,17 @@ export interface CapabilityDefinition<
    * description tells a model to re-call with a token, would otherwise publish a
    * live secret to every connected cockpit.
    *
-   * Declare this on any `destructive` capability. Omitting it is safe but blunt:
-   * every top-level field is shown except those whose NAME says secret
+   * Declare this on any `destructive` capability — conformance fails one that does
+   * not, and one that names a secret-shaped field. Omitting it is otherwise safe
+   * but blunt: every top-level field is shown except those whose NAME says secret
    * (`approval-summary.ts`), and a nested object renders as an unhelpful
    * `details` — naming `options.purge` here fixes that.
+   *
+   * **Order most-consequential-first.** The whole sentence is capped at
+   * `APPROVAL_SUMMARY_MAX_LENGTH`, and while today's cards are nowhere near it (312
+   * characters worst case), a capability declaring several long string fields could
+   * push a later one past the cap. The field that decides how much damage the action
+   * does should never be the one at risk of being cut.
    */
   approvalDisplayFields?: readonly string[];
   /**

@@ -225,3 +225,31 @@ function sortKeysDeep(value: unknown): unknown {
   }
   return value;
 }
+
+/**
+ * Capability input field names whose VALUE is credential material, matched
+ * case-insensitively against the whole key.
+ *
+ * `confirmationToken` on `marketplace.uninstall` is the live example: its own
+ * description tells a model to re-call with a token, so a model that puts the
+ * token in the wrong place would publish it.
+ */
+const SECRET_INPUT_KEY_PATTERN =
+  /token|secret|password|passphrase|credential|cookie|authorization|apikey|api[-_]key|private[-_]?key/i;
+
+/**
+ * Whether a capability input field name says its value is a secret.
+ *
+ * Lives here, in the dependency-free capability spine, so the ONE definition is
+ * shared by the two places that must agree: the server's approval-card renderer,
+ * which drops such a field, and the conformance suite, which fails a capability
+ * that names one in its `approvalDisplayFields`. Two copies of this list would
+ * drift, and the drift would be silent — the renderer would keep a field off the
+ * card while the checker waved it through, or vice versa.
+ *
+ * @param key - The input field name (or the last segment of a dotted path).
+ * @returns True when the field's value must be withheld from an approval card.
+ */
+export function isSecretInputKey(key: string): boolean {
+  return SECRET_INPUT_KEY_PATTERN.test(key);
+}

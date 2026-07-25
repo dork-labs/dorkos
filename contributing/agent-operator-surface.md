@@ -157,9 +157,11 @@ The same inversion survived one file away, at the endpoint that DECIDES: `POST /
 | `signed-in-operator` | `auth.enabled: true`  | An authenticated `res.locals.user`. Real enforcement.             |
 | `local-trust`        | `auth.enabled: false` | No agent identity, no approval token. Everything else is allowed. |
 
+`signed-in-operator` verifies a CREDENTIAL, not a human. A per-user API key satisfies `sessionGate` exactly as a session cookie does (DOR-474), so a program holding one — that also sheds its `X-DorkOS-Agent` header, which the check above refuses first — reaches the decide path. That is why the Activity record says "a signed-in account", never "a person": an audit line that overstates is worse than none, because it is believed.
+
 `local-trust` is the DEFAULT posture and it is stated honestly rather than dressed up: with login off, `sessionGate` is a pass-through and there is no cryptographic difference between the person in the cockpit and an agent running `curl` on the same machine. It stops accidents and prompt-injected agents that play by the rules; it does not stop an adversary with shell access. Do not add a forgeable check (an `Origin` header, a "cockpit" marker) and call it security — the gap is better than the lie. The available mitigation is visibility: every recorded decision writes an Activity event (`approval.granted` / `approval.denied`) carrying its posture.
 
-The falsifiable half is `requesterDecideProbe` in the conformance suite: it takes the approval the real invoke route just handed a caller and tries to grant it through the real approvals router as that same caller. The invariant is **a caller that can reach `POST /api/capabilities/:id/invoke` must not be able to reach `POST /api/approvals/:id/grant`**.
+The falsifiable half is `requesterDecideProbe` in the conformance suite: it takes the approval the real invoke route just handed a caller and tries to grant it through the real approvals router, carrying that approval's own retry token. The invariant it encodes is exactly as wide as it proves — **a caller presenting an approval token cannot decide that approval** — and no wider. The broader "whoever can invoke cannot grant" is false by design with login off, and the identified-agent refusal is pinned at the route level instead (`routes/__tests__/capabilities-invoke.test.ts`), because this probe's caller is anonymous.
 
 ### How enforcement is proven, and the trap to avoid
 

@@ -130,6 +130,12 @@ export function createApprovalsRouter(
   /**
    * Record a decision in the Activity feed, naming the posture it rests on.
    *
+   * The `signed-in-operator` line says ACCOUNT, not person, and that word is
+   * load-bearing: `sessionGate` accepts a per-user API key as well as a session
+   * cookie (DOR-474), so an authenticated credential is not proof that a human
+   * clicked. This record must not assert more than the gate verified — an audit
+   * line that overstates is worse than no audit line, because it is believed.
+   *
    * `emit` is fire-and-forget and never throws, so this cannot turn a recorded
    * decision into a failed request.
    */
@@ -147,7 +153,7 @@ export function createApprovalsRouter(
       resourceId: approvalId,
       summary:
         authority.posture === 'signed-in-operator'
-          ? `A signed-in person ${outcome} an approval`
+          ? `A signed-in account (${authority.decidedBy}) ${outcome} an approval`
           : `An approval was ${outcome} from this machine (login is off, so DorkOS cannot verify who)`,
       metadata: { posture: authority.posture, outcome },
     });

@@ -22,6 +22,15 @@
  * enforcement: a caller with no credential cannot decide, whatever headers it
  * sends or omits.
  *
+ * State the converse too, because it is the part that is easy to leave unsaid: a
+ * PROGRAM holding a valid credential CAN decide. A per-user API key satisfies
+ * `sessionGate` exactly as a person's cookie does (DOR-474), so an agent handed
+ * one, that also sheds its `X-DorkOS-Agent` header, reaches this path. The header
+ * check above refuses it before the posture is ever consulted, which is why an
+ * honest agent still cannot — but "authenticated" means the credential was valid,
+ * never that a human was present. The Activity record this produces says
+ * "a signed-in account", not "a person", for that reason.
+ *
  * ## `local-trust` — the default posture, stated honestly
  *
  * `config.auth.enabled` defaults to `false`, and with login off `sessionGate` is
