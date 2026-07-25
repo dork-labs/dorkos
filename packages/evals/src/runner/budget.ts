@@ -22,6 +22,49 @@ export const DEFAULT_RUN_BUDGET_USD = 3;
 export const DEFAULT_PER_EVAL_CEILING_USD = 1;
 
 /**
+ * The sentinel the CLI's arg parser stores for a `--flag` given no value. Named
+ * here because {@link parseBudgetUsd} has to reject exactly that case.
+ */
+export const VALUELESS_FLAG = 'true';
+
+/**
+ * Parse a `--budget` value into a spend ceiling.
+ *
+ * Rejects anything that is not a finite, non-negative number, LOUDLY — because
+ * the quiet path was expensive. A cleared `budget_usd` workflow input reaches the
+ * shell as `--budget ""`, which the arg parser stores as {@link VALUELESS_FLAG};
+ * `Number('true')` is `NaN`; `NaN ?? 3` is `NaN` (`??` only catches
+ * null/undefined), so `isOverRunBudget()` evaluated `total > NaN` — always false
+ * — and the credentialed run spent with NO ceiling. Then `writeResults` threw
+ * inside `RunSummarySchema.parse` (zod rejects `NaN`), so `results.json` was
+ * never written: the money was gone and the evidence the job exists to produce
+ * went with it.
+ *
+ * @param raw - The raw `--budget` argument, if present.
+ * @returns The parsed budget, or `undefined` to use {@link DEFAULT_RUN_BUDGET_USD}.
+ * @throws {Error} When the value is present but not a usable number.
+ */
+export function parseBudgetUsd(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === VALUELESS_FLAG) {
+    throw new Error(
+      '--budget needs a number, e.g. --budget 3. It was passed with no value, which would have ' +
+        'run with no spend ceiling at all.'
+    );
+  }
+  // `Number('')` is 0 — a "budget" that silently caps every run at zero spend.
+  // An empty value is a cleared input, not a decision, so say so.
+  if (raw.trim() === '') {
+    throw new Error('--budget must be a finite, non-negative number of USD; got an empty value.');
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`--budget must be a finite, non-negative number of USD; got "${raw}".`);
+  }
+  return value;
+}
+
+/**
  * Read the cumulative session cost a single durable-stream frame reports, or
  * `null` if the frame carries none. Prefers the runtime-neutral
  * `status.usage.costUsd` (validated against `UsageStatusSchema`) and falls back
@@ -60,6 +103,32 @@ export function evalCostUsd(frames: SseFrame[]): number {
   return max;
 }
 
+/**
+ * Resolve a cap, refusing a value that would silently disable enforcement.
+ *
+ * `NaN` is the dangerous one: every `>` comparison against it is false, so a
+ * `NaN` cap does not raise the ceiling, it REMOVES it. `??` cannot catch that
+ * (`NaN` is neither null nor undefined), so the guard lives here as well as at
+ * the CLI boundary — the tracker is the thing that actually enforces spend, and
+ * it must not be constructible in a state where it enforces nothing.
+ *
+ * @param value - The caller's cap, if any.
+ * @param fallback - The default cap for an absent value.
+ * @param what - Name of the cap, for the error message.
+ * @returns The cap to enforce.
+ * @throws {Error} When `value` is present but not a finite, non-negative number.
+ */
+function requireFiniteCap(value: number | undefined, fallback: number, what: string): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `The ${what} must be a finite, non-negative number of USD; got ${String(value)}. ` +
+        'A non-finite cap disables enforcement rather than raising it.'
+    );
+  }
+  return value;
+}
+
 /** A budget verdict for one eval, plus whether the run may continue. */
 export interface BudgetVerdict {
   /** The eval's own cumulative cost. */
@@ -89,8 +158,12 @@ export class BudgetTracker {
    * @param opts.perEvalCeilingUsd - Per-eval soft ceiling; an eval over it fails.
    */
   constructor(opts: { runBudgetUsd?: number; perEvalCeilingUsd?: number } = {}) {
-    this.runBudgetUsd = opts.runBudgetUsd ?? DEFAULT_RUN_BUDGET_USD;
-    this.perEvalCeilingUsd = opts.perEvalCeilingUsd ?? DEFAULT_PER_EVAL_CEILING_USD;
+    this.runBudgetUsd = requireFiniteCap(opts.runBudgetUsd, DEFAULT_RUN_BUDGET_USD, 'run budget');
+    this.perEvalCeilingUsd = requireFiniteCap(
+      opts.perEvalCeilingUsd,
+      DEFAULT_PER_EVAL_CEILING_USD,
+      'per-eval ceiling'
+    );
   }
 
   /** The run's total accumulated cost so far. */
@@ -110,7 +183,15 @@ export class BudgetTracker {
   record(frames: SseFrame[], overrides: { perEvalCeilingUsd?: number } = {}): BudgetVerdict {
     const cost = evalCostUsd(frames);
     this.total += cost;
-    const ceiling = overrides.perEvalCeilingUsd ?? this.perEvalCeilingUsd;
+    // The per-case override goes through the SAME guard as the constructor. It
+    // was the one path that skipped it, so a `NaN` ceiling from a malformed case
+    // silently removed that eval's soft cap — the exact failure the guard's own
+    // docstring argues against, one layer down.
+    const ceiling = requireFiniteCap(
+      overrides.perEvalCeilingUsd,
+      this.perEvalCeilingUsd,
+      'per-eval ceiling override'
+    );
     return {
       evalCostUsd: cost,
       totalCostUsd: this.total,

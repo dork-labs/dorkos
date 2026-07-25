@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "evals": "tsx bin/evals.ts"
+    "evals": "tsx bin/evals.ts",
+    "sweep": "tsx bin/evals.ts sweep"
   },
   "exports": {
     ".": {

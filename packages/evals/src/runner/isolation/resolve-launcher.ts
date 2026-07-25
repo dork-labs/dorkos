@@ -20,6 +20,11 @@
  * `docker image inspect` cost a subprocess each, and a suite re-probing per eval
  * would add seconds for no new information.
  *
+ * The probe verdict is deliberately NOT readable from here. What matters
+ * downstream is not what docker could have done but what each eval ACTUALLY ran
+ * inside, which `runEval` records per case on `EvalResult.isolation` and the
+ * summary table prints — a durable, per-case fact rather than a run-level guess.
+ *
  * @module evals/runner/isolation/resolve-launcher
  */
 import type { IsolationLauncher } from './types.js';
@@ -78,8 +83,6 @@ export interface LauncherResolver {
    * @returns The launcher to boot with, or `undefined` for the default tier.
    */
   forCase(opts: { preferDocker?: boolean }): Promise<IsolationLauncher | undefined>;
-  /** The memoized docker probe result, or `undefined` if docker was never needed. */
-  availability(): DockerAvailability | undefined;
 }
 
 /**
@@ -131,7 +134,6 @@ export function createLauncherResolver(opts: LauncherResolverOptions = {}): Laun
         ...(opts.runId ? { runId: opts.runId } : {}),
       });
     },
-    availability: () => probe,
   };
 }
 

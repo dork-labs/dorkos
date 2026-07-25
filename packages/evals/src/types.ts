@@ -28,6 +28,26 @@ export const RuntimeTierSchema = z.enum(['test-mode', 'claude-code-cheap', 'real
 /** Inferred type for {@link RuntimeTierSchema}. */
 export type RuntimeTier = z.infer<typeof RuntimeTierSchema>;
 
+/**
+ * The isolation an eval's server ACTUALLY ran inside — the durable record of
+ * containment, not the request.
+ *
+ * `--isolation auto` + `preferDocker` is a PREFERENCE: a case that asked for a
+ * container silently runs on the child-process tier when no daemon or eval image
+ * is present. Without this on the result, `results.json` cannot tell the person
+ * promoting a destructive case out of quarantine whether its destructive turn
+ * ran in a container or on the bare host, and the only trace of the downgrade
+ * was one ephemeral stderr line.
+ *
+ * - `in-process`: the `test-mode` harness server, inside the runner process.
+ * - `child-process`: a credentialed server as a host subprocess.
+ * - `docker`: a credentialed server in a per-eval container.
+ */
+export const IsolationRecordSchema = z.enum(['in-process', 'child-process', 'docker']);
+
+/** Inferred type for {@link IsolationRecordSchema}. */
+export type IsolationRecord = z.infer<typeof IsolationRecordSchema>;
+
 /** Rough cost envelope, used for budget planning and tier selection. */
 export const CostClassSchema = z.enum(['free', 'cheap', 'standard', 'deep']);
 
@@ -155,6 +175,22 @@ export const EvalCaseMetaSchema = z.object({
   quarantined: z.boolean().optional(),
   /** Per-eval cost ceiling in USD; a single turn exceeding this fails the eval. */
   perEvalCeilingUsd: z.number().nonnegative().optional(),
+  /**
+   * This case prefers the hardened DOCKER isolation tier when one is available
+   * (`--isolation auto`, the default). Set it on cases whose turns actually
+   * EXECUTE tools and mutate a filesystem — the destructive scenarios and the
+   * marketplace install case — so a real agent's file tools are bounded by a
+   * container rather than only by a sandbox directory. Purely a preference:
+   * without a reachable docker daemon and eval image the case still runs on the
+   * child-process tier, with a message (never a hard failure). The tier it
+   * actually got is recorded on {@link EvalResultSchema}'s `isolation`.
+   *
+   * Part of the SERIALIZABLE metadata like every other field: a case manifest
+   * that dropped it would silently lose the isolation preference, which is the
+   * difference between a destructive turn running in a container and running on
+   * the bare host.
+   */
+  preferDocker: z.boolean().optional(),
 });
 
 /** Inferred type for {@link EvalCaseMetaSchema}. */
@@ -186,16 +222,6 @@ export interface EvalCase extends EvalCaseMeta {
    * person otherwise has to grant (spec `agent-trust` §3.3).
    */
   serverEnv?: Record<string, string>;
-  /**
-   * This case prefers the hardened DOCKER isolation tier when one is available
-   * (`--isolation auto`, the default). Set it on cases whose turns actually
-   * EXECUTE tools and mutate a filesystem — the destructive scenarios and the
-   * marketplace install case — so a real agent's file tools are bounded by a
-   * container rather than only by a sandbox directory. Purely a preference:
-   * without a reachable docker daemon and eval image the case still runs on the
-   * child-process tier, with a message (never a hard failure).
-   */
-  preferDocker?: boolean;
   /** The outcome oracle(s) — ALL must pass. Asserts API/FS/stream state, never prose. */
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */
@@ -234,6 +260,12 @@ export const EvalResultSchema = z.object({
   status: EvalStatusSchema,
   /** The tier this eval ran on. */
   runtimeTier: RuntimeTierSchema,
+  /**
+   * The isolation the eval's server ACTUALLY ran inside (see
+   * {@link IsolationRecordSchema}). Omitted only when the eval never launched a
+   * server — a `skipped-over-budget` case, or a pre-flight `error`.
+   */
+  isolation: IsolationRecordSchema.optional(),
   /** The eval's cost class. */
   costClass: CostClassSchema,
   /** Cumulative USD cost the runtime reported for this eval (0 for `test-mode`). */

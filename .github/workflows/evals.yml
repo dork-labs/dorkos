@@ -36,8 +36,12 @@ on:
         required: false
         default: 'core'
       budget_usd:
+        # REQUIRED on purpose. An empty value reached the shell as `--budget ""`,
+        # which the CLI once read as NaN — and a NaN ceiling does not raise the
+        # cap, it removes it (`total > NaN` is always false). The CLI now rejects
+        # that outright; making the input required stops it being submitted at all.
         description: 'Hard spend ceiling for the run, in USD'
-        required: false
+        required: true
         default: '3'
 
 # Cancel superseded runs on the same ref for PRs only — nightly and dispatched
@@ -87,8 +91,15 @@ jobs:
 
       # `--tier test-mode` boots the deterministic in-process runtime: no model,
       # no credentials, no spend. The quarantined credentialed cases still run
-      # here and still report, but they never gate the exit code — so a green
-      # run means "the structural harness and its non-quarantined cases hold".
+      # here and still report, but they never gate the exit code.
+      #
+      # Read the GATING line at the bottom of the run's output before trusting a
+      # green tick. It states how many of the suite's cases could fail this run;
+      # today that is ONE (`widget-round-trip`) out of seven, because every other
+      # core case needs a real model and stays quarantined until a credentialed
+      # run promotes it. A green structural run means "the harness boots and the
+      # one credential-free product case holds" — not "the product is proven".
+      # A run that gates on ZERO cases now FAILS rather than reporting green.
       - name: Run structural suite
         run: pnpm --filter @dorkos/evals run evals -- --suite core --tier test-mode --out "$RUNNER_TEMP/evals-runs"
 

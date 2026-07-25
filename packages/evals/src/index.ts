@@ -14,6 +14,8 @@ export * from './runner/drive.js';
 export * from './runner/budget.js';
 export * from './runner/run-eval.js';
 export * from './runner/run-suite.js';
+export * from './runner/interrupt.js';
+export * from './runner/sweep.js';
 export * from './oracles/index.js';
 export * from './report/transcript.js';
 export * from './report/summary.js';
