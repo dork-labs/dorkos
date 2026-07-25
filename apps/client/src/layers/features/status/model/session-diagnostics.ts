@@ -11,6 +11,7 @@
  * @module features/status/model/session-diagnostics
  */
 import type {
+  BackgroundTaskStatus,
   ConnectionState,
   ContextUsage,
   EffortLevel,
@@ -32,14 +33,33 @@ export interface CacheDiagnostics {
 }
 
 /**
- * One subagent this session has running (or has run) in the turn in progress,
- * folded from the turn's `subagent_update` events.
+ * What is known about the working directory's git repository.
+ *
+ * Three states, never two: "the request has not answered" is a different claim
+ * from "this is not a repository", and a single nullable branch collapsed them —
+ * so the readout asserted `no repo` on a real checkout for as long as the query
+ * took to resolve.
+ */
+export type GitDiagnostics =
+  /** The status request has not answered yet, or it failed. Nothing is known. */
+  | { state: 'unknown' }
+  /** The directory resolved and it is not a git repository. */
+  | { state: 'no-repo' }
+  /** A repository: the branch it is on, and whether the tree has changes. */
+  | { state: 'repo'; branch: string; dirty: boolean };
+
+/**
+ * One subagent the turn in progress started, folded from the turn's
+ * `subagent_update` events. Present whether it is still running or has finished —
+ * {@link SessionDiagnostics.activeSubagents} keeps terminal rows so a surface can
+ * report what a turn DID, and every reader must therefore partition on
+ * {@link ActiveSubagent.status} before calling anything "running".
  */
 export interface ActiveSubagent {
   /** The runtime's task id — stable identity across updates. */
   taskId: string;
-  /** Lifecycle of the subagent task. */
-  status: string;
+  /** Lifecycle of the subagent task — only `running` is still in flight. */
+  status: BackgroundTaskStatus;
   /** What it was asked to do, when the runtime reported it. */
   description?: string;
   /** How many tools it has called so far. */
@@ -56,10 +76,8 @@ export interface SessionDiagnostics {
   sessionId: string;
   /** Working directory, or `null` when unresolved. */
   cwd: string | null;
-  /** Current branch name, or `null` when the directory is not a git repository. */
-  gitBranch: string | null;
-  /** Whether the working tree has uncommitted changes; `null` when unknown. */
-  gitDirty: boolean | null;
+  /** The working directory's repository, in one of its three honest states. */
+  git: GitDiagnostics;
   /** Runtime this session runs on, or `null` while it is resolving. */
   runtime: string | null;
   /**
@@ -119,8 +137,25 @@ export interface SessionDiagnostics {
   queueDepth: number;
   /** Subagents this session can call. */
   subagents: SubagentInfo[];
-  /** Subagents folded from the turn in progress; empty when nothing is running. */
-  activeSubagents: ActiveSubagent[];
+  /**
+   * Every subagent the turn in progress started — still running AND already
+   * finished, so a surface can report both. Empty when the turn started none.
+   *
+   * Folded on ACCESS, not on assembly: a long turn's event list reaches thousands
+   * of frames, and the always-mounted status line reads every other field on this
+   * snapshot but never this one — folding eagerly made it an O(turn²) rescan for a
+   * surface that renders none of it. Reading it is memoized per applied frame, so
+   * a surface that does show it folds at most once per frame.
+   */
+  readonly activeSubagents: ActiveSubagent[];
+  /**
+   * Running subagents as the SERVER counts them, or `null` before the stream
+   * hydrates. Deliberately kept beside {@link activeSubagents} rather than derived
+   * from it: that fold is this client's own reading of the turn's frames, and a
+   * disagreement between the two is a real defect — a dropped frame, or a fold
+   * that mis-read a terminal status — which one number alone would hide.
+   */
+  runningSubagentCount: number | null;
   /** DorkOS version reported by the server, or `null` while config loads. */
   clientVersion: string | null;
 }
@@ -167,8 +202,11 @@ export function statusRowValue(key: StatusBarItemKey, d: SessionDiagnostics): st
     case 'cwd':
       return d.cwd ? leafFolder(d.cwd) : null;
     case 'git':
-      if (d.gitBranch === null) return 'No repo';
-      return d.gitDirty ? `${d.gitBranch} · changed` : d.gitBranch;
+      // `unknown` reports nothing at all (the row renders `—`): claiming "No
+      // repo" while the request is still in flight is the one wrong answer.
+      if (d.git.state === 'unknown') return null;
+      if (d.git.state === 'no-repo') return 'No repo';
+      return d.git.dirty ? `${d.git.branch} · changed` : d.git.branch;
     case 'runtime':
       return d.runtime;
     case 'model':
@@ -200,7 +238,10 @@ export function formatDiagnostics(d: SessionDiagnostics): string {
     {
       sessionId: d.sessionId,
       cwd: d.cwd,
-      git: d.gitBranch === null ? null : { branch: d.gitBranch, dirty: d.gitDirty },
+      // The whole discriminated state, not a nullable branch: a bug report that
+      // says `"git": { "state": "unknown" }` is reporting something different from
+      // one that says `"no-repo"`, and the reader needs to be able to tell.
+      git: d.git,
       runtime: d.runtime,
       model: d.model,
       selectedModel: d.selectedModel,
@@ -229,6 +270,9 @@ export function formatDiagnostics(d: SessionDiagnostics): string {
       queueDepth: d.queueDepth,
       subagents: d.subagents.map((a) => a.name),
       activeSubagents: d.activeSubagents,
+      // Beside the fold, never instead of it: a mismatch between the two is the
+      // signal, so a bug report has to carry both.
+      runningSubagentCount: d.runningSubagentCount,
       clientVersion: d.clientVersion,
       capturedAt: new Date().toISOString(),
     },

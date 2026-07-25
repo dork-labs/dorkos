@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import { foldActiveSubagents } from '../lib/fold-active-subagents';
+import { foldActiveSubagents, partitionSubagents } from '../lib/fold-active-subagents';
+import type { ActiveSubagent } from '../model/session-diagnostics';
 
 /** A `subagent_update` frame at `seq`. */
 function update(
@@ -54,5 +55,45 @@ describe('foldActiveSubagents', () => {
       { seq: 3, type: 'turn_end' } as SessionEvent,
     ]);
     expect(folded).toHaveLength(1);
+  });
+
+  it('keeps a finished subagent in the fold, carrying its terminal status', () => {
+    // The contract every reader depends on: the fold is "what this turn handed
+    // off", not "what is running". A reader that treated membership as liveness
+    // reported finished subagents as running for the rest of the turn.
+    const folded = foldActiveSubagents([
+      update(1, 't1', { description: 'done thing' }),
+      update(2, 't1', { status: 'complete' }),
+      update(3, 't2', { description: 'live thing' }),
+    ]);
+    expect(folded.map((s) => [s.taskId, s.status])).toEqual([
+      ['t1', 'complete'],
+      ['t2', 'running'],
+    ]);
+  });
+});
+
+/** A folded row. */
+function row(taskId: string, status: ActiveSubagent['status']): ActiveSubagent {
+  return { taskId, status };
+}
+
+describe('partitionSubagents', () => {
+  it('treats only `running` as still in flight', () => {
+    // Written as a negative check on purpose: `complete`, `error` and `stopped`
+    // are all finished, and so is any fifth status a runtime adds later.
+    const { running, finished } = partitionSubagents([
+      row('t1', 'running'),
+      row('t2', 'complete'),
+      row('t3', 'error'),
+      row('t4', 'stopped'),
+      row('t5', 'running'),
+    ]);
+    expect(running.map((s) => s.taskId)).toEqual(['t1', 't5']);
+    expect(finished.map((s) => s.taskId)).toEqual(['t2', 't3', 't4']);
+  });
+
+  it('returns two empty lists for a turn that handed nothing off', () => {
+    expect(partitionSubagents([])).toEqual({ running: [], finished: [] });
   });
 });

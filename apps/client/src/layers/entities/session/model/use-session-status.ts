@@ -5,7 +5,7 @@ import { useModels } from './use-models';
 import {
   useSessionSettingsOverride,
   useSessionSettingsOverridesStore,
-  type SessionSettingsOverrideKey,
+  type SessionSettingsOverride,
 } from './session-settings-overrides';
 // Same-slice import via the sibling module (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
@@ -116,18 +116,16 @@ export function useSessionStatus(
       // No-op when no session is active — the UI should only invoke this with a live session.
       if (!sessionId) return;
 
-      // Apply optimistic update immediately, for every reader of this session
-      const touched: SessionSettingsOverrideKey[] = [];
-      if (opts.model) touched.push('model');
-      if (opts.permissionMode) touched.push('permissionMode');
-      if (opts.effort) touched.push('effort');
-      if (opts.fastMode !== undefined) touched.push('fastMode');
-      applyOverrides(sessionId, {
+      // Apply optimistic update immediately, for every reader of this session.
+      // Held onto so the failure path can revert exactly these values — see the
+      // `clear` contract: reverting by KEY would clobber a later writer.
+      const applied: SessionSettingsOverride = {
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
         ...(opts.effort ? { effort: opts.effort } : {}),
         ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
-      });
+      };
+      applyOverrides(sessionId, applied);
 
       try {
         const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
@@ -147,9 +145,11 @@ export function useSessionStatus(
         // This eliminates the render gap between setQueryData and useQuery re-render.
         return updated;
       } catch (err) {
-        // Revert optimistic state on failure
+        // Revert our own optimistic state on failure — and only ours. If another
+        // surface applied a newer value to the same key while this request was in
+        // flight, that value is still pending and must survive this rollback.
         console.error('[useSessionStatus] updateSession failed for session', sessionId, err);
-        clearOverrides(sessionId, touched);
+        clearOverrides(sessionId, applied);
       }
     },
     [transport, sessionId, selectedCwd, queryClient, applyOverrides, clearOverrides]
@@ -162,23 +162,23 @@ export function useSessionStatus(
   // instances running this effect notify the store at most once.
   useEffect(() => {
     if (!sessionId) return;
-    const converged: SessionSettingsOverrideKey[] = [];
+    const converged: SessionSettingsOverride = {};
     if (overrides.model !== undefined && session?.model === overrides.model) {
-      converged.push('model');
+      converged.model = overrides.model;
     }
     if (
       overrides.permissionMode !== undefined &&
       session?.permissionMode === overrides.permissionMode
     ) {
-      converged.push('permissionMode');
+      converged.permissionMode = overrides.permissionMode;
     }
     if (overrides.effort !== undefined && session?.effort === overrides.effort) {
-      converged.push('effort');
+      converged.effort = overrides.effort;
     }
     if (overrides.fastMode !== undefined && session?.fastMode === overrides.fastMode) {
-      converged.push('fastMode');
+      converged.fastMode = overrides.fastMode;
     }
-    if (converged.length > 0) clearOverrides(sessionId, converged);
+    if (Object.keys(converged).length > 0) clearOverrides(sessionId, converged);
   }, [
     sessionId,
     session?.model,

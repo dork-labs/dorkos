@@ -3,10 +3,29 @@ import { cn } from '@/layers/shared/lib';
 import type { ConnectionState } from '@dorkos/shared/types';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/layers/shared/ui';
 
-const STATE_CONFIG: Record<
-  ConnectionState,
-  { color: string; label: string; shortLabel: string; icon: typeof Wifi; tasks: boolean }
-> = {
+/** How one {@link ConnectionState} is drawn and named. */
+interface ConnectionStateConfig {
+  /** Dot colour class — severity, so `disconnected` is red and not another warning. */
+  color: string;
+  /** Full human label. */
+  label: string;
+  /** The same sentence, shortened for a narrow status line. */
+  shortLabel: string;
+  /** Glyph for the hover card. */
+  icon: typeof Wifi;
+  /** Whether the state is transient enough to animate. */
+  tasks: boolean;
+}
+
+/**
+ * The one mapping from connection state to colour and words.
+ *
+ * Every surface that draws this state reads it here — the status-line item and the
+ * Session readout both — because deciding a second time is how `disconnected`
+ * ended up amber on the readout while it was red on the line, and how "connected"
+ * ended up in two different greens.
+ */
+export const CONNECTION_STATE_CONFIG: Record<ConnectionState, ConnectionStateConfig> = {
   connecting: {
     color: 'bg-amber-500',
     label: 'Connecting',
@@ -56,7 +75,7 @@ interface ConnectionItemProps {
  * @param props - The session's live-sync connection state.
  */
 export function ConnectionItem({ connectionState, compact }: ConnectionItemProps) {
-  const config = STATE_CONFIG[connectionState];
+  const config = CONNECTION_STATE_CONFIG[connectionState];
   const Icon = config.icon;
 
   return (

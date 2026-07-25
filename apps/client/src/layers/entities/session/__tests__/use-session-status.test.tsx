@@ -66,7 +66,9 @@ describe('useSessionStatus', () => {
 
   it("keeps one session's optimism out of another session", async () => {
     const transport = createMockTransport({
-      getSession: vi.fn(async (id: string) => ({ id, model: 'a', permissionMode: 'default' }) as never),
+      getSession: vi.fn(
+        async (id: string) => ({ id, model: 'a', permissionMode: 'default' }) as never
+      ),
       updateSession: vi.fn().mockResolvedValue({ permissionMode: 'plan' }),
     });
     const wrapper = createWrapper(transport);
@@ -145,6 +147,71 @@ describe('useSessionStatus', () => {
     await waitFor(() => {
       expect(result.current.model).toBe('claude-sonnet-4-5-20250929');
     });
+  });
+
+  it("a failed PATCH does not revert a later writer's pending value", async () => {
+    // Two surfaces now share one optimism store, so a rollback has to be
+    // value-scoped. Key-scoped, this sequence snapped every reader back to the
+    // server's model while B's request was still in flight: A sets X, B sets Y, A
+    // rejects, A's catch drops the `model` key — including B's value.
+    let rejectA: (err: Error) => void = () => {};
+    const transport = createMockTransport({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ id: 's1', model: 'server', permissionMode: 'default' }),
+      updateSession: vi
+        .fn()
+        // A: never settles until we say so.
+        .mockImplementationOnce(() => new Promise((_, reject) => (rejectA = reject)))
+        // B: also in flight, and still in flight when A fails.
+        .mockImplementationOnce(() => new Promise(() => {})),
+    });
+    const wrapper = createWrapper(transport);
+
+    const a = renderHook(() => useSessionStatus('s1', null, false), { wrapper });
+    const b = renderHook(() => useSessionStatus('s1', null, false), { wrapper });
+    await waitFor(() => expect(b.result.current.model).toBe('server'));
+
+    await act(async () => {
+      void a.result.current.updateSession({ model: 'X' });
+    });
+    expect(b.result.current.model).toBe('X');
+
+    await act(async () => {
+      void b.result.current.updateSession({ model: 'Y' });
+    });
+    expect(a.result.current.model).toBe('Y');
+
+    // A now fails. Its own value is long gone — the key belongs to B.
+    await act(async () => {
+      rejectA(new Error('Network error'));
+      await Promise.resolve();
+    });
+
+    expect(a.result.current.model).toBe('Y');
+    expect(b.result.current.model).toBe('Y');
+  });
+
+  it('still reverts its own value when nothing newer is pending', async () => {
+    const transport = createMockTransport({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ id: 's1', model: 'server', permissionMode: 'default' }),
+      updateSession: vi.fn().mockRejectedValue(new Error('Network error')),
+    });
+    const wrapper = createWrapper(transport);
+
+    const a = renderHook(() => useSessionStatus('s1', null, false), { wrapper });
+    const b = renderHook(() => useSessionStatus('s1', null, false), { wrapper });
+    await waitFor(() => expect(b.result.current.model).toBe('server'));
+
+    await act(async () => {
+      await a.result.current.updateSession({ model: 'X' });
+    });
+
+    // Both readers roll back together — the point of sharing the store.
+    expect(a.result.current.model).toBe('server');
+    expect(b.result.current.model).toBe('server');
   });
 
   it('applies convergence to permissionMode consistently', async () => {

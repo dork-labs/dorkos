@@ -13,7 +13,7 @@ import type { SessionStatusData } from '@/layers/entities/session';
 import { gitPromotionState } from '@/layers/features/status';
 import type { SessionDiagnostics, StatusPromotionContext } from '@/layers/features/status';
 import type { StatusItemNodesInput } from '@/layers/features/chat/ui/status/status-item-nodes';
-import type { RuntimeChipState } from '@/layers/features/chat/model/status/use-runtime-chip';
+import type { RuntimeChipState } from '@/layers/features/status';
 
 export const AGENT = {
   name: 'dorkbot',
@@ -119,36 +119,56 @@ export interface StatusScenario {
 const HEALTHY_DIAGNOSTICS: SessionDiagnostics = {
   sessionId: '3d81b5c0-6a24-4f9e-8c11-7b0e2d4a9f31',
   cwd: CWD,
-  gitBranch: CLEAN_GIT.branch,
-  gitDirty: false,
+  git: { state: 'repo', branch: CLEAN_GIT.branch, dirty: false },
   runtime: 'claude-code',
   model: 'claude-opus-4-6',
+  selectedModel: 'default',
   effort: null,
+  fastMode: false,
   permissionMode: 'default',
   contextPercent: 31,
+  contextUsage: null,
   cache: { readTokens: 48_100, creationTokens: 6_200, contextTokens: 62_000 },
   usage: USAGE_OK,
   connectionState: 'connected',
+  streaming: false,
+  lifecycle: 'idle',
+  triggerPending: false,
   lastEventSeq: 184,
+  snapshotCursor: 180,
+  lastEventAt: null,
   queueDepth: 0,
+  subagents: [],
+  activeSubagents: [],
+  runningSubagentCount: 0,
   clientVersion: '0.57.0',
 };
 
 const DEGRADED_DIAGNOSTICS: SessionDiagnostics = {
   sessionId: '9f3c1a7e-4b2d-4f10-9c85-2a6e1b0d7f44',
   cwd: CWD,
-  gitBranch: DIRTY_GIT.branch,
-  gitDirty: true,
+  git: { state: 'repo', branch: DIRTY_GIT.branch, dirty: true },
   runtime: 'codex',
   model: 'gpt-5.3-codex',
+  selectedModel: 'gpt-5.3-codex',
   effort: 'high',
+  fastMode: false,
   permissionMode: 'bypassPermissions',
   contextPercent: 88,
+  contextUsage: null,
   cache: { readTokens: 141_200, creationTokens: 18_400, contextTokens: 176_000 },
   usage: USAGE_WARNING,
   connectionState: 'disconnected',
+  streaming: false,
+  lifecycle: 'idle',
+  triggerPending: false,
   lastEventSeq: 2471,
+  snapshotCursor: 2400,
+  lastEventAt: null,
   queueDepth: 2,
+  subagents: [],
+  activeSubagents: [],
+  runningSubagentCount: 0,
   clientVersion: '0.57.0',
 };
 

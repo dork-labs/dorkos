@@ -658,8 +658,7 @@ export const SESSION_DIAGNOSTICS: Record<'healthy' | 'degraded' | 'cold', Sessio
   healthy: {
     sessionId: '9f3c1b7a-2e4d-4f18-9c02-7a6b5d3e1f88',
     cwd: '/Users/dev/work/dorkos',
-    gitBranch: 'dor-460-session-tab',
-    gitDirty: true,
+    git: { state: 'repo', branch: 'dor-460-session-tab', dirty: true },
     runtime: 'claude-code',
     model: 'claude-opus-4-6',
     selectedModel: 'default',
@@ -696,14 +695,25 @@ export const SESSION_DIAGNOSTICS: Record<'healthy' | 'degraded' | 'cold', Sessio
         toolUses: 7,
         lastToolName: 'Grep',
       },
+      // A finished row, because the fold keeps them for the whole turn: the
+      // showcase has to show that they land under "Finished this turn" and not
+      // under "Running".
+      {
+        taskId: 'task-0',
+        status: 'complete',
+        description: 'Read the spec',
+        toolUses: 3,
+        lastToolName: 'Read',
+        summary: 'Summarised §2',
+      },
     ],
+    runningSubagentCount: 1,
     clientVersion: '0.56.0',
   },
   degraded: {
     sessionId: '9f3c1b7a-2e4d-4f18-9c02-7a6b5d3e1f88',
     cwd: '/Users/dev/work/dorkos',
-    gitBranch: 'dor-460-session-tab',
-    gitDirty: true,
+    git: { state: 'repo', branch: 'dor-460-session-tab', dirty: true },
     runtime: 'codex',
     model: 'gpt-5-codex',
     selectedModel: 'gpt-5-codex',
@@ -734,13 +744,15 @@ export const SESSION_DIAGNOSTICS: Record<'healthy' | 'degraded' | 'cold', Sessio
         lastToolName: 'Edit',
       },
     ],
+    // Two by the server's count, one by this client's fold — a dropped frame,
+    // which on a silent stream is exactly the kind of thing worth seeing.
+    runningSubagentCount: 2,
     clientVersion: '0.56.0',
   },
   cold: {
     sessionId: 'c0ld0000-0000-4000-8000-000000000000',
     cwd: null,
-    gitBranch: null,
-    gitDirty: null,
+    git: { state: 'unknown' },
     runtime: null,
     model: null,
     selectedModel: null,
@@ -761,6 +773,7 @@ export const SESSION_DIAGNOSTICS: Record<'healthy' | 'degraded' | 'cold', Sessio
     queueDepth: 0,
     subagents: [],
     activeSubagents: [],
+    runningSubagentCount: null,
     clientVersion: null,
   },
 };

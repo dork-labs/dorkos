@@ -2,10 +2,18 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Users } from 'lucide-react';
 import { Badge, Separator } from '@/layers/shared/ui';
 import { cn, formatDuration } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import { useSessionId } from '@/layers/entities/session';
 import { useSessionDiagnostics } from '../model/use-session-diagnostics';
-import { cacheHitPercent, type SessionDiagnostics } from '../model/session-diagnostics';
+import {
+  cacheHitPercent,
+  type ActiveSubagent,
+  type GitDiagnostics,
+  type SessionDiagnostics,
+} from '../model/session-diagnostics';
 import { formatTokens } from '../lib/format-tokens';
+import { partitionSubagents } from '../lib/fold-active-subagents';
+import { CONNECTION_STATE_CONFIG } from './ConnectionItem';
 import { CopyDiagnosticsButton } from './CopyDiagnosticsButton';
 import { UsageDetail, hasRenderableUsage } from './UsageStatusItem';
 
@@ -30,6 +38,12 @@ const AGE_TICK_MS = 1000;
 export function SessionInspector() {
   const [sessionId] = useSessionId();
   const diagnostics = useSessionDiagnostics(sessionId ?? '');
+  // Whether this readout is actually on screen, which mounting does NOT imply:
+  // the container renders the active tab's content unconditionally and collapses
+  // the desktop Panel to zero width, so a closed panel leaves the active tab
+  // mounted and invisible. The overlay/mobile variant returns null when closed,
+  // so the same flag is exactly right there too.
+  const visible = useAppStore((s) => s.rightPanelOpen);
 
   if (!sessionId) {
     return (
@@ -39,22 +53,32 @@ export function SessionInspector() {
     );
   }
 
-  return <SessionReadout diagnostics={diagnostics} />;
+  return <SessionReadout diagnostics={diagnostics} live={visible} />;
 }
 
 /**
  * The readout's rendering, split from its data resolution so the dev playground
  * can show it against a mock snapshot without recreating a single row of layout.
  *
- * @param props - The session snapshot to render.
+ * @param props - The session snapshot to render, and whether it is on screen.
+ * @param props.diagnostics - The session snapshot to render.
+ * @param props.live - Whether the readout is visible, gating the one-second age
+ *   tick. Defaults to `true` for static hosts (the playground) that only ever
+ *   render it when it is on screen.
  */
-export function SessionReadout({ diagnostics }: { diagnostics: SessionDiagnostics }) {
+export function SessionReadout({
+  diagnostics,
+  live = true,
+}: {
+  diagnostics: SessionDiagnostics;
+  live?: boolean;
+}) {
   return (
     <div
       data-slot="session-inspector"
       className="flex h-full min-w-0 flex-col gap-4 overflow-y-auto p-3"
     >
-      <LiveGroup diagnostics={diagnostics} />
+      <LiveGroup diagnostics={diagnostics} live={live} />
       <ResolvedGroup diagnostics={diagnostics} />
       <UsageGroup diagnostics={diagnostics} />
       <SubagentsGroup diagnostics={diagnostics} />
@@ -67,9 +91,12 @@ export function SessionReadout({ diagnostics }: { diagnostics: SessionDiagnostic
 }
 
 /** The stream's own health — the reason this surface stays open. */
-function LiveGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) {
-  const age = useAgeSince(d.lastEventAt);
-  const connected = d.connectionState === 'connected';
+function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; live: boolean }) {
+  const age = useAgeSince(d.lastEventAt, live);
+  // Colour and words from the same map the status line's item reads — the surface
+  // built to diagnose a dropped connection must not be the one that under-reports
+  // it (see `CONNECTION_STATE_CONFIG`).
+  const connection = CONNECTION_STATE_CONFIG[d.connectionState];
 
   return (
     <Group label="Live">
@@ -79,10 +106,11 @@ function LiveGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) {
             aria-hidden
             className={cn(
               'inline-block size-1.5 rounded-full',
-              connected ? 'bg-green-500' : 'bg-amber-500'
+              connection.color,
+              connection.tasks && 'animate-tasks'
             )}
           />
-          {d.connectionState}
+          {connection.label}
         </span>
       </Row>
       <Row label="Turn">{turnLabel(d)}</Row>
@@ -115,7 +143,7 @@ function ResolvedGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) 
       <Row label="Directory" wrap>
         {d.cwd ?? '—'}
       </Row>
-      <Row label="Git">{gitLabel(d)}</Row>
+      <Row label="Git">{gitLabel(d.git)}</Row>
       <Row label="Runtime">{d.runtime ?? '—'}</Row>
       <Row label="Model" wrap>
         {d.model ?? '—'}
@@ -186,39 +214,58 @@ function UsageGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) {
   );
 }
 
-/** Helper agents — what is running now, and what this session could call. */
+/** Helper agents — what is running now, what just finished, and what could be called. */
 function SubagentsGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) {
+  // The fold keeps one row per task for the whole turn, terminal rows included,
+  // and the store keeps the turn's events after `turn_end` until the reconcile
+  // reloads history. Rendering the list wholesale under "Running" therefore
+  // asserted that three FINISHED subagents were still running, badged `complete`.
+  const { running, finished } = partitionSubagents(d.activeSubagents);
+
   return (
     <Group label="Subagents">
-      {d.activeSubagents.length === 0 ? (
-        <Row label="Running">none</Row>
-      ) : (
-        d.activeSubagents.map((subagent) => (
-          <div
-            key={subagent.taskId}
-            data-testid={`active-subagent-${subagent.taskId}`}
-            className="space-y-0.5 px-1 py-1"
-          >
-            <div className="flex items-center gap-2 text-sm">
-              <Users className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">
-                {subagent.description ?? subagent.taskId}
-              </span>
-              <Badge variant="secondary" className="shrink-0 text-[10px]">
-                {subagent.status}
-              </Badge>
-            </div>
-            <p className="text-muted-foreground pl-5 text-[10px] leading-tight">
-              {subagent.toolUses ?? 0} tool{subagent.toolUses === 1 ? '' : 's'}
-              {subagent.lastToolName ? ` · last ${subagent.lastToolName}` : ''}
-            </p>
-          </div>
-        ))
+      {/* Counted, not just listed, so the running rows are unambiguously labelled
+          once "Finished this turn" sits below them — and so the server's own count
+          has somewhere honest to contradict this one. */}
+      <Row label="Running">{runningLabel(running.length, d.runningSubagentCount)}</Row>
+      {running.map((subagent) => (
+        <SubagentRow key={subagent.taskId} subagent={subagent} />
+      ))}
+      {finished.length > 0 && (
+        <>
+          <Row label="Finished this turn">{String(finished.length)}</Row>
+          {finished.map((subagent) => (
+            <SubagentRow key={subagent.taskId} subagent={subagent} />
+          ))}
+        </>
       )}
       <Row label="Available">
         {d.subagents.length === 0 ? 'none' : d.subagents.map((a) => a.name).join(', ')}
       </Row>
     </Group>
+  );
+}
+
+/** One subagent: what it was asked to do, its status, and its tool tally. */
+function SubagentRow({ subagent }: { subagent: ActiveSubagent }) {
+  return (
+    <div
+      data-testid={`active-subagent-${subagent.taskId}`}
+      data-status={subagent.status}
+      className="space-y-0.5 px-1 py-1"
+    >
+      <div className="flex items-center gap-2 text-sm">
+        <Users className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">{subagent.description ?? subagent.taskId}</span>
+        <Badge variant="secondary" className="shrink-0 text-[10px]">
+          {subagent.status}
+        </Badge>
+      </div>
+      <p className="text-muted-foreground pl-5 text-[10px] leading-tight">
+        {subagent.toolUses ?? 0} tool{subagent.toolUses === 1 ? '' : 's'}
+        {subagent.lastToolName ? ` · last ${subagent.lastToolName}` : ''}
+      </p>
+    </div>
   );
 }
 
@@ -286,26 +333,59 @@ function turnLabel(d: SessionDiagnostics): string {
   return d.lifecycle ?? 'not hydrated';
 }
 
-/** Branch + cleanliness, or the honest absence of a repository. */
-function gitLabel(d: SessionDiagnostics): string {
-  if (d.gitBranch === null) return 'no repo';
-  return d.gitDirty ? `${d.gitBranch} · changed` : `${d.gitBranch} · clean`;
+/**
+ * How many subagents are running, and what the server says if it disagrees.
+ *
+ * The server projects `runningSubagentCount` from the same `subagent_update`
+ * frames this client folds, so the two should never differ. When they do, one of
+ * them is wrong — a dropped frame, or a fold that mis-read a terminal status — and
+ * the surface built to diagnose a session has to say so rather than quietly pick a
+ * side. Silent while they agree, which is always.
+ *
+ * @param folded - Running rows this client folded from the turn.
+ * @param serverCount - The server's own count, or `null` before the stream hydrates.
+ */
+function runningLabel(folded: number, serverCount: number | null): string {
+  const own = folded === 0 ? 'none' : String(folded);
+  if (serverCount === null || serverCount === folded) return own;
+  return `${own} · server says ${serverCount}`;
+}
+
+/**
+ * Branch + cleanliness, the absence of a repository, or the honest silence of a
+ * question not yet answered — three states, because `—` and `no repo` are
+ * different claims and only one of them can be wrong about a real checkout.
+ *
+ * @param git - The snapshot's repository state.
+ */
+function gitLabel(git: GitDiagnostics): string {
+  if (git.state === 'unknown') return '—';
+  if (git.state === 'no-repo') return 'no repo';
+  return git.dirty ? `${git.branch} · changed` : `${git.branch} · clean`;
 }
 
 /**
  * Milliseconds since `timestamp`, re-read once a second so the readout ages in
- * place. Ticks only while this component is mounted, which is only while the tab
- * is the active one — the container renders no inactive contribution.
+ * place.
+ *
+ * Gated on `live`, because being mounted is not the same as being visible: the
+ * right panel keeps its active tab mounted and collapses to zero width, so an
+ * ungated interval kept re-rendering this group every second behind a closed
+ * panel — and since the active tab is persisted, closing the panel on the Session
+ * tab was enough to reach that state. Re-reads the clock when it becomes visible
+ * again so the first render after reopening is not up to a second stale.
  *
  * @param timestamp - `Date.now()` of the last event, or `null` before hydration.
+ * @param live - Whether the readout is on screen.
  */
-function useAgeSince(timestamp: number | null): number | null {
+function useAgeSince(timestamp: number | null, live: boolean): number | null {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (timestamp === null) return;
+    if (timestamp === null || !live) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), AGE_TICK_MS);
     return () => clearInterval(id);
-  }, [timestamp]);
+  }, [timestamp, live]);
   if (timestamp === null) return null;
   return Math.max(0, now - timestamp);
 }

@@ -10,7 +10,7 @@
  *
  * @module entities/session/model/use-session-rendered-status
  */
-import type { ChatStatus } from '@/layers/shared/model/chat-message-types';
+import type { ChatStatus } from '@/layers/shared/model';
 import { renderedStatusFrom } from '../lib/select-rendered-status';
 import { useSessionStatus as useSessionChatStatus } from './session-chat-store';
 import { useSessionStreamLifecycle, useSessionTriggerPending } from './session-stream-store';

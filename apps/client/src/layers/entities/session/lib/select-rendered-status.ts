@@ -13,7 +13,7 @@
  * @module entities/session/lib/select-rendered-status
  */
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { ChatStatus } from '@/layers/shared/model/chat-message-types';
+import type { ChatStatus } from '@/layers/shared/model';
 import type { SessionStreamState } from '../model/session-stream-store';
 
 /**

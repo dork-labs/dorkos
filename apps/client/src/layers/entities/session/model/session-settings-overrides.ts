@@ -3,15 +3,25 @@
  * the status line: model, permission mode, reasoning effort, and fast mode.
  *
  * These used to be `useState` inside `useSessionStatus`, which meant every
- * component calling that hook held its OWN optimism. Two surfaces reading the
- * same session then disagreed for the length of a PATCH round-trip — the status
- * line's permission item showed `plan` the instant it was clicked while the
- * status strip above it (a second `useSessionStatus` instance in `ChatPanel`)
- * still read `default`. Keyed per session in one store, every reader converges
- * on the same value in the same tick, however many of them there are.
+ * component calling that hook held its OWN optimism. Two concrete defects
+ * followed, both on `main`:
  *
- * Entries are short-lived: `useSessionStatus`'s convergence effect drops each
- * key as soon as the server confirms it, and a failed PATCH clears it outright.
+ * - **Readers disagreed for a whole PATCH round-trip.** `ChatPanel` and
+ *   `ChatStatusSection` each call `useSessionStatus`, so changing the model from
+ *   the status line flipped the line's own item instantly while the second
+ *   instance kept serving the old value to everything reading through it —
+ *   including the `bypassPermissions` verb list the streaming strip seeds from
+ *   `permissionMode`, which kept rotating the wrong verbs mid-turn.
+ * - **Optimism leaked across a session switch.** The state was keyed to the
+ *   component instance, not the session, so a pending model change survived a
+ *   switch and briefly asserted itself about the session you had just opened.
+ *
+ * Keyed per session in one store, every reader converges on the same value in the
+ * same tick, however many of them there are, and switching sessions reads a
+ * different key.
+ *
+ * Entries are short-lived: `useSessionStatus`'s convergence effect drops each key
+ * as soon as the server confirms it, and a failed PATCH clears its own.
  *
  * @module entities/session/model/session-settings-overrides
  */
@@ -30,16 +40,31 @@ export interface SessionSettingsOverride {
   fastMode?: boolean;
 }
 
-/** Keys of {@link SessionSettingsOverride} — the unit `clear` operates on. */
-export type SessionSettingsOverrideKey = keyof SessionSettingsOverride;
+/** Keys of {@link SessionSettingsOverride} — one pending setting. */
+type SessionSettingsOverrideKey = keyof SessionSettingsOverride;
+
+/** One `[key, value]` pair of a patch, with the value narrowed to that key's type. */
+type SessionSettingsOverrideEntry = [
+  SessionSettingsOverrideKey,
+  SessionSettingsOverride[SessionSettingsOverrideKey],
+];
 
 interface SessionSettingsOverridesState {
   /** Pending settings per session id. Absent means "nothing pending". */
   bySession: Record<string, SessionSettingsOverride>;
   /** Merge pending settings onto a session (no-op for an empty patch). */
   apply: (sessionId: string, patch: SessionSettingsOverride) => void;
-  /** Drop the named pending settings from a session. */
-  clear: (sessionId: string, keys: readonly SessionSettingsOverrideKey[]) => void;
+  /**
+   * Drop pending settings that still hold the value the caller applied.
+   *
+   * Value-scoped, not key-scoped, because two writers can have the same key in
+   * flight at once. Key-scoped, a FAILED first PATCH reverted a second writer's
+   * still-pending optimism: A sets `model: X`, B sets `model: Y`, A rejects, and
+   * A's rollback dropped the key — snapping every reader back to the server value
+   * while B's request was still live. A key whose current value is no longer the
+   * caller's belongs to a later writer and is left alone.
+   */
+  clear: (sessionId: string, applied: SessionSettingsOverride) => void;
 }
 
 /**
@@ -63,14 +88,16 @@ export const useSessionSettingsOverridesStore = create<SessionSettingsOverridesS
       };
     }),
 
-  clear: (sessionId, keys) =>
+  clear: (sessionId, applied) =>
     set((state) => {
       const current = state.bySession[sessionId];
       if (!current) return state;
       const next = { ...current };
       let changed = false;
-      for (const key of keys) {
-        if (key in next) {
+      for (const [key, value] of Object.entries(applied) as SessionSettingsOverrideEntry[]) {
+        // Only what is still ours: a key a later writer has since overwritten is
+        // that writer's pending value, and dropping it would revert them.
+        if (value !== undefined && next[key] === value) {
           delete next[key];
           changed = true;
         }

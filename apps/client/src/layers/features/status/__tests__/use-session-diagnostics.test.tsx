@@ -26,6 +26,20 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   useRuntimeCapabilities: () => ({ data: { defaultRuntime: 'claude-code', capabilities: {} } }),
 }));
 
+// Counts folds without changing what the fold returns — the subagent list is
+// resolved lazily, and "nobody folded it" is the assertion.
+const foldCalls = vi.fn();
+vi.mock('../lib/fold-active-subagents', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/fold-active-subagents')>();
+  return {
+    ...actual,
+    foldActiveSubagents: (events: Parameters<typeof actual.foldActiveSubagents>[0]) => {
+      foldCalls();
+      return actual.foldActiveSubagents(events);
+    },
+  };
+});
+
 import { useSessionDiagnostics } from '../model/use-session-diagnostics';
 import {
   useSessionChatStore,
@@ -162,9 +176,11 @@ describe('useSessionDiagnostics — the snapshot it assembles', () => {
       creationTokens: 1_000,
       contextTokens: 176_000,
     });
-    expect(result.current.gitBranch).toBe('dor-460');
-    expect(result.current.gitDirty).toBe(true);
+    expect(result.current.git).toEqual({ state: 'repo', branch: 'dor-460', dirty: true });
     expect(result.current.subagents.map((a) => a.name)).toEqual(['researcher']);
+    // The server's own count, reported beside the fold so a drift between them is
+    // visible rather than silently resolved in the fold's favour.
+    expect(result.current.runningSubagentCount).toBe(1);
     expect(result.current.activeSubagents).toEqual([
       {
         taskId: 't1',
@@ -210,6 +226,58 @@ describe('useSessionDiagnostics — the snapshot it assembles', () => {
     void writer.result.current.updateSession({ model: 'default' });
     await waitFor(() => expect(result.current.selectedModel).toBe('default'));
     expect(result.current.model).toBe('claude-opus-4-6');
+  });
+
+  it('tells the three git states apart instead of guessing "no repo"', async () => {
+    // The defect this replaces: `no repo` was rendered for a query in flight, a
+    // failed query, AND a real answer — so opening the tab on a checkout asserted
+    // it had no repository until the first request came back.
+    const { wrapper } = harness();
+    const { result } = renderHook(() => useSessionDiagnostics('s1'), { wrapper });
+
+    expect(result.current.git).toEqual({ state: 'unknown' });
+    await waitFor(() =>
+      expect(result.current.git).toEqual({ state: 'repo', branch: 'dor-460', dirty: true })
+    );
+  });
+
+  it('reports a resolved non-repository as exactly that', async () => {
+    mockSessionRows.mockReturnValue({ sessions: [sessionRow()], isLoading: false });
+    const transport = createMockTransport({
+      getSession: vi.fn().mockResolvedValue(sessionRow()),
+      getSubagents: vi.fn().mockResolvedValue([]),
+      getModels: vi.fn().mockResolvedValue([]),
+      getGitStatus: vi.fn().mockResolvedValue({ error: 'not_git_repo' }),
+      getConfig: vi.fn().mockResolvedValue({ version: '1.4.0' } as ServerConfig),
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useSessionDiagnostics('s1'), { wrapper });
+    await waitFor(() => expect(result.current.git).toEqual({ state: 'no-repo' }));
+  });
+
+  it('does not fold the turn for a caller that never reads the subagents', async () => {
+    // The status line is mounted for the whole session and reads every other field
+    // on this snapshot. `inProgressTurn` carries `text_delta`, so it runs to
+    // thousands of entries in a long turn — folding it on assembly rescanned all
+    // of them on every applied frame, an O(turn²) cost for rows nobody rendered.
+    useSessionStreamStore.getState().applySnapshot('s1', snapshot());
+    const { wrapper } = harness();
+    const { result } = renderHook(() => useSessionDiagnostics('s1'), { wrapper });
+    await waitFor(() => expect(result.current.cwd).toBe('/Users/dev/work/dorkos'));
+
+    expect(foldCalls).not.toHaveBeenCalled();
+
+    // Reading it folds once, and reading it again reuses that fold.
+    expect(result.current.activeSubagents).toHaveLength(1);
+    expect(foldCalls).toHaveBeenCalledTimes(1);
+    expect(result.current.activeSubagents).toHaveLength(1);
+    expect(foldCalls).toHaveBeenCalledTimes(1);
   });
 
   it('stamps when the last frame was applied, so a silent stream is visible', async () => {

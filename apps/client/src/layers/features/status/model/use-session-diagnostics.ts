@@ -8,8 +8,11 @@
  *
  * **Why one hook is enough to guarantee agreement.** Everything read here is
  * either a session-scoped Zustand selector, a TanStack Query cache entry, or a
- * pure function of those — there is no component-local state anywhere in the
- * dependency graph, so N callers always resolve N identical snapshots. That
+ * pure function of those — no component-local state anywhere in the dependency
+ * graph can affect a VALUE, so N callers always resolve N equal snapshots.
+ * (Identity may differ, and local state that cannot change a value is fine: the
+ * `useShallow` below is a `useRef`, and a memo cache is a `useMemo`. The
+ * guarantee is about what the fields say, not about object identity.) That
  * property was not free:
  *
  * - `useSessionStatus`'s optimistic model / permission / effort / fast-mode used
@@ -46,9 +49,9 @@ import {
 } from '@/layers/entities/session';
 import { useConfig } from '@/layers/entities/config';
 import { foldActiveSubagents } from '../lib/fold-active-subagents';
-import { isGitStatusOk, useGitStatus } from './use-git-status';
+import { gitDiagnosticsFrom, useGitStatus } from './use-git-status';
 import { useResolvedSessionRuntime } from './use-runtime-chip';
-import type { SessionDiagnostics } from './session-diagnostics';
+import type { ActiveSubagent, SessionDiagnostics } from './session-diagnostics';
 
 /** Stable empty list so a session with no subagents keeps a stable snapshot. */
 const NO_SUBAGENTS: SubagentInfo[] = [];
@@ -116,7 +119,19 @@ export function useSessionDiagnostics(sessionId: string): SessionDiagnostics {
   const triggerPending = useSessionTriggerPending(sessionId);
   const queueDepth = useSessionQueue(sessionId).length;
   const inProgressTurn = useSessionInProgressTurn(sessionId);
-  const activeSubagents = useMemo(() => foldActiveSubagents(inProgressTurn), [inProgressTurn]);
+  // Deferred, not eager. `TURN_EVENT_TYPES` includes `text_delta`, so a long
+  // turn's event list runs to thousands of entries and folding it on assembly
+  // rescanned all of them on every applied frame — an O(turn²) cost paid by the
+  // always-mounted status line, which reads every other field here and none of
+  // this one. The thunk is memoized per frame, so a surface that DOES show the
+  // rows folds once per frame and every other caller pays nothing.
+  const foldSubagents = useMemo(() => {
+    let folded: ActiveSubagent[] | null = null;
+    return () => (folded ??= foldActiveSubagents(inProgressTurn));
+  }, [inProgressTurn]);
+  // Server truth to cross-check the fold against (see `runningSubagentCount`).
+  const runningSubagentCount = streamStatus?.runningSubagentCount ?? null;
+  const git = useMemo(() => gitDiagnosticsFrom(gitStatus), [gitStatus]);
 
   const contextPercent = resolveDisplayContextPercent(
     streamValues.contextPercent ?? status.contextPercent,
@@ -135,8 +150,7 @@ export function useSessionDiagnostics(sessionId: string): SessionDiagnostics {
     () => ({
       sessionId,
       cwd: status.cwd,
-      gitBranch: isGitStatusOk(gitStatus) ? gitStatus.branch : null,
-      gitDirty: isGitStatusOk(gitStatus) ? !gitStatus.clean : null,
+      git,
       runtime: runtime.runtime,
       model,
       selectedModel: status.model || null,
@@ -162,7 +176,10 @@ export function useSessionDiagnostics(sessionId: string): SessionDiagnostics {
       lastEventAt,
       queueDepth,
       subagents: subagents ?? NO_SUBAGENTS,
-      activeSubagents,
+      get activeSubagents() {
+        return foldSubagents();
+      },
+      runningSubagentCount,
       clientVersion: serverConfig?.version ?? null,
     }),
     [
@@ -172,7 +189,7 @@ export function useSessionDiagnostics(sessionId: string): SessionDiagnostics {
       status.effort,
       status.fastMode,
       status.permissionMode,
-      gitStatus,
+      git,
       runtime.runtime,
       model,
       contextPercent,
@@ -188,7 +205,8 @@ export function useSessionDiagnostics(sessionId: string): SessionDiagnostics {
       lastEventAt,
       queueDepth,
       subagents,
-      activeSubagents,
+      foldSubagents,
+      runningSubagentCount,
       serverConfig?.version,
     ]
   );

@@ -19,8 +19,7 @@ export function makeDiagnostics(overrides: Partial<SessionDiagnostics> = {}): Se
   return {
     sessionId: 'session-42',
     cwd: '/Users/dev/work/dorkos',
-    gitBranch: 'dor-452',
-    gitDirty: true,
+    git: { state: 'repo', branch: 'dor-452', dirty: true },
     runtime: 'claude-code',
     model: 'claude-opus-4-6',
     selectedModel: 'default',
@@ -41,6 +40,7 @@ export function makeDiagnostics(overrides: Partial<SessionDiagnostics> = {}): Se
     queueDepth: 2,
     subagents: [],
     activeSubagents: [],
+    runningSubagentCount: 0,
     clientVersion: '1.4.0',
     ...overrides,
   };

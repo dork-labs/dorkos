@@ -47,6 +47,7 @@ export {
 } from './agent-birth/agent-birth-store';
 export type {
   ChatMessage,
+  ChatStatus,
   MessageGrouping,
   GroupPosition,
   MessageAuthor,
