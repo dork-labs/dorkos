@@ -34,8 +34,12 @@ name: claude-code-review
 # it conflicted, and only its two rebase force-pushes produced runs. Rebase to
 # restore CI — or, to review without rebasing, use the `workflow_dispatch` below.
 #
-# Two failure modes are deliberately made loud rather than silent: an infra
-# failure posts a comment naming its actual cause (see "Note infra failure"), and
+# SECOND BLIND SPOT — a PR that edits this workflow gets a GREEN check and no
+# review. That one lives in the action, not in GitHub; the `workflow_dispatch`
+# comment below has the mechanism and the way around it.
+#
+# What is deliberately made loud rather than silent: an infra failure posts a
+# comment naming its actual cause (see "Note infra failure"), and
 # `workflow_dispatch` exists so a review can always be forced by hand.
 
 on:
@@ -47,10 +51,18 @@ on:
   # Manual review of any open PR by number. Two jobs (DOR-457):
   #   1. Escape hatch for the conflicted-PR blind spot above — the only way to get
   #      a review onto a PR GitHub refuses to dispatch events for.
-  #   2. Debugging affordance for this file. A `pull_request` run always uses the
-  #      copy of this workflow on the DEFAULT branch, so a PR that edits this file
-  #      cannot exercise its own change. After merging a change here, dispatch it
-  #      against a known PR number to confirm the workflow still reviews.
+  #   2. Debugging affordance for this file. A PR that edits this workflow gets a
+  #      GREEN `claude-code-review` check and no review: the steps below do run
+  #      (a `pull_request` run uses the PR merge commit's copy of the workflow,
+  #      not the default branch's), but `anthropics/claude-code-action` refuses to
+  #      start when the workflow file's content differs from the copy on the
+  #      default branch — an anti-exfiltration guard, since a PR could otherwise
+  #      rewrite this file to leak the OAuth token — and it exits SUCCESSFULLY:
+  #      "Skipping action due to workflow validation ... must ... have identical
+  #      content to the version on the repository's default branch". So a change
+  #      here is unreviewable and untestable until it lands. After merging, come
+  #      back and dispatch against a known PR number: run from the default branch
+  #      the content matches, the guard passes, and the review actually runs.
   # Dispatch already requires write access, so it needs no author gate; it is an
   # explicit human action and therefore ignores `skip-review` and draft state. It
   # still refuses fork PRs (see "Resolve target PR").

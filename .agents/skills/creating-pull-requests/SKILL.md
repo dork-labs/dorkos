@@ -135,10 +135,13 @@ gh label create re-review    --description "Request another automated review pas
 
 ## Gotchas
 
-- **Workflow changes can't be tested on their own PR.** GitHub runs the review
-  workflow as defined on the default branch, so changes to
-  `.github/workflows/claude-code-review.yml` or `REVIEW.md` only take effect after
-  merge. Merge to `main`, then exercise the merged version against a real PR with
+- **A PR that edits the review workflow gets a green check and no review.** The
+  Claude action refuses to start unless `.github/workflows/claude-code-review.yml`
+  matches the copy on `main` — otherwise a PR could rewrite the workflow to steal
+  the token — and it exits _successfully_, so the check is green and nothing was
+  reviewed. The steps around the action still run, so YAML and shell mistakes do
+  surface; the review itself does not. Merge first, then exercise the merged
+  version against a real PR with
   `gh workflow run claude-code-review.yml -f pr=<number>`.
 - **A red review check is not always a finding.** When the review itself breaks, it
   posts a comment saying so and naming the cause: it either never started (the
