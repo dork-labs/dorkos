@@ -2,6 +2,13 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260725-004456",
+      "slug": "status-bar-items-are-registry-driven-and-quiet-by-default",
+      "title": "Status bar items are registry-driven and quiet by default",
+      "status": "accepted",
+      "created": "2026-07-25"
+    },
+    {
       "id": "260718-045630",
       "slug": "connector-provider-custody-composio-nango-raw-mcp",
       "title": "Connector custody stance: a ConnectorProvider abstraction — Composio (managed), Nango (self-host), raw MCP (baseline)",
