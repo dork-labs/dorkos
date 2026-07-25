@@ -11,7 +11,11 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Accepted. Amended 2026-07-25: the decision window moved from ten minutes to two hours
+(`APPROVAL_TTL_MS`) once the cockpit gained a global pending-approval marker that reaches a person
+on every route. Ten minutes only ever worked for an operator already watching the dashboard, which
+was the one place a pending approval appeared. Nothing else in this decision changes: the binding,
+the single-use conditional write, and the consume-time expiry check all stand.
 
 ## Context
 
@@ -19,7 +23,7 @@ The marketplace's pre-existing confirmation flow issued a token that authorized 
 
 ## Decision
 
-We will bind every approval to `(capabilityId, sha256(stableStringify(parsed input)))` and require that binding at `consume`. Absence is bound as absence (`?? null`), never as a substituted default, so an omitted argument cannot hash the same as a supplied one. The hash covers the _parsed_ input that will execute, with a conformance assertion that every destructive capability's schema is parse-idempotent so the hashed and executed values cannot diverge. Every argument that changes what happens to the machine is bound; free-text metadata that only changes what a package says about itself is deliberately not, since binding a field the person never saw protects nothing. A mismatch is refused _without_ spending the approval, so the honest retry still works. Approvals are single-use with a conditional write, expire in ten minutes checked at consume time, and the card's identity region (title and tier) is derived from the capability registry rather than supplied by the caller.
+We will bind every approval to `(capabilityId, sha256(stableStringify(parsed input)))` and require that binding at `consume`. Absence is bound as absence (`?? null`), never as a substituted default, so an omitted argument cannot hash the same as a supplied one. The hash covers the _parsed_ input that will execute, with a conformance assertion that every destructive capability's schema is parse-idempotent so the hashed and executed values cannot diverge. Every argument that changes what happens to the machine is bound; free-text metadata that only changes what a package says about itself is deliberately not, since binding a field the person never saw protects nothing. A mismatch is refused _without_ spending the approval, so the honest retry still works. Approvals are single-use with a conditional write, expire after a bounded decision window (`APPROVAL_TTL_MS`, two hours since the amendment above) checked at consume time, and the card's identity region (title and tier) is derived from the capability registry rather than supplied by the caller.
 
 ## Consequences
 

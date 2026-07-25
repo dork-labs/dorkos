@@ -3,7 +3,7 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Feature component sections from FeaturesPage.
  *
- * Sources: AgentIdentityShowcases, AgentSidebarShowcases, RelayShowcases, MeshShowcases, TasksShowcases, PipPanelShowcases.
+ * Sources: AgentIdentityShowcases, AgentSidebarShowcases, RelayShowcases, MeshShowcases, TasksShowcases, PipPanelShowcases, ApprovalsShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
   // PersonalityPickerShowcases
@@ -216,5 +216,37 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'PIP Panel',
     keywords: ['pip', 'panel', 'floating', 'drag', 'resize', 'mini-player', 'pop out'],
+  },
+  // ApprovalsShowcases
+  {
+    id: 'approvalcard',
+    title: 'ApprovalCard',
+    page: 'features',
+    category: 'Approvals',
+    keywords: [
+      'approval',
+      'approve',
+      'allow',
+      'deny',
+      'destructive',
+      'tier',
+      'irreversible',
+      'consent',
+      'waiting on you',
+    ],
+  },
+  {
+    id: 'approvallist',
+    title: 'ApprovalList',
+    page: 'features',
+    category: 'Approvals',
+    keywords: ['approval', 'queue', 'stack', 'cap', 'pending', 'waiting on you'],
+  },
+  {
+    id: 'approvalsunavailable',
+    title: 'ApprovalsUnavailable',
+    page: 'features',
+    category: 'Approvals',
+    keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
   },
 ];

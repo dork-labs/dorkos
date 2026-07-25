@@ -358,7 +358,7 @@ export const tierGateStoppedTheUninstall: Oracle = async (ctx): Promise<OracleRe
  *
  * Reads the row rather than `GET /api/approvals/pending` (which is
  * `ApprovalService.listPending`) on purpose: `listPending` hides an approval once
- * its 10-minute window closes, so a slow credentialed turn would make the
+ * its decision window closes, so a slow credentialed turn would make the
  * evidence vanish even though the request was made. The row is durable until the
  * purge sweep, so it is the honest artifact to assert on. It also proves the
  * request landed in the SANDBOX `DORK_HOME` and nowhere near a real `~/.dork`.

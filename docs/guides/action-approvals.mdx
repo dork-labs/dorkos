@@ -21,7 +21,9 @@ When an agent asks DorkOS to do something that cannot be undone, DorkOS stops an
 
 ## What you see
 
-A card shows up on your dashboard under **Waiting On You**. It holds everything you need to decide:
+An amber marker appears in the top bar, on whatever screen you happen to be on, saying how many requests are waiting on you. Click it and the requests open right there, so you can answer without leaving what you were doing. The same requests also show up on your dashboard under **Waiting On You**.
+
+Either way you get the same card, and it holds everything you need to decide:
 
 - **What would run**, in plain words, including the details that matter (which package, whether saved data goes too)
 - **How big the change is**: a label that reads "Cannot be undone", "Changes things", or "Read only"
@@ -67,7 +69,7 @@ This also holds for the command line. Running an agent outside DorkOS, or droppi
 
 - **One approval, one action.** Saying yes to removing one package does not say yes to removing another, or to the same one with different options. If a detail changes, DorkOS asks again.
 - **Used once.** After an approval is spent it stops working. A second attempt needs a second yes.
-- **Ten minutes.** If nobody answers, the request runs out and the agent has to ask again.
+- **Two hours.** If nobody answers in two hours, the request runs out and the agent has to ask again. Two hours is long enough that a meeting or a school run does not kill the request, and short enough that you are never asked to approve something you read about yesterday.
 
 You don't have to babysit the card. Whatever the agent does next, the action itself does not run until you answer.
 

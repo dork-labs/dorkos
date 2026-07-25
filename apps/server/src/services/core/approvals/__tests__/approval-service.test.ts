@@ -54,7 +54,7 @@ describe('ApprovalService', () => {
   }
 
   describe('request', () => {
-    it('returns an id, an opaque token, and an expiry ten minutes out', () => {
+    it('returns an id, an opaque token, and an expiry one decision window out', () => {
       const before = Date.now();
       const ticket = requestOne();
 

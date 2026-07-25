@@ -46,8 +46,21 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { APPROVAL_SUMMARY_MAX_LENGTH, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 
-/** How long an operator has to decide before a token stops being honored. */
-export const APPROVAL_TTL_MS = 10 * 60 * 1000;
+/**
+ * How long an operator has to decide before a token stops being honored.
+ *
+ * Two hours, not ten minutes. The window has to survive the operator being away
+ * from the screen: a meeting, an errand, an agent that asked at 3am. A request
+ * nobody was present for is precisely the case this primitive exists for, and a
+ * ten-minute window only ever worked for someone already watching the screen.
+ *
+ * It deliberately does NOT survive a night's sleep. Consent has to stay
+ * contemporaneous with the request a person actually read, so an approval that
+ * could still be granted the next day is its own hazard. A longer window would
+ * also buy little in practice: the requester has to still be running to spend
+ * its token.
+ */
+export const APPROVAL_TTL_MS = 2 * 60 * 60 * 1000;
 
 /** Bytes of CSPRNG randomness behind an approval token (128 bits). */
 const TOKEN_BYTES = 16;

@@ -51,6 +51,12 @@ vi.mock('@/layers/widgets/app-banner', () => ({
   useAppBanners: () => [],
 }));
 
+// The approvals marker subscribes to the global event stream, which this suite
+// mounts no provider for. Its placement is covered by app-shell-slots.test.tsx.
+vi.mock('@/layers/widgets/approvals-indicator', () => ({
+  ApprovalsIndicator: () => null,
+}));
+
 vi.mock('@/layers/features/command-palette', () => ({
   CommandPaletteDialog: () => null,
 }));
