@@ -1,0 +1,21 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "error_invalid_api_key",
+    "is_error": true,
+    "duration_ms": 118,
+    "duration_api_ms": 96,
+    "num_turns": 0,
+    "total_cost_usd": 0,
+    "errors": ["Invalid API key"],
+    "session_id": "a1b2c3",
+    "permission_denials": []
+  }
+]

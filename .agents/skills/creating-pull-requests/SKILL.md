@@ -160,22 +160,28 @@ gh label create re-review    --description "Request another automated review pas
   exercise the merged version against a real PR with
   `gh workflow run claude-code-review.yml -f pr=<number>`.
 - **A red review check is not always a finding.** When the review itself breaks, it
-  posts a comment saying so and naming which of four things happened:
-  - **It never started.** Zero turns, zero spend, nothing in the PR looked at.
-    The Claude subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit its usage limit
-    (clears on its own) or the token needs regenerating.
+  posts a comment saying so and naming which of five things happened:
+  - **It never started.** It ended without naming a cause, after one turn or fewer
+    and with nothing spent, so nothing in the PR was looked at. The Claude
+    subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit its usage limit (clears on its
+    own) or the token needs regenerating.
   - **It ran out of its turn budget.** It reviewed, then hit the cap.
-  - **It hit an error partway through.** It reviewed, then something failed —
-    commonly a usage limit reached mid-review. Not a turn-budget problem.
+  - **It hit an error.** The run ended with an error it named itself — a usage limit
+    crossed mid-review, or a tool or MCP server that failed to start. The comment
+    quotes what it said. Not a turn-budget problem, and not about your code.
+  - **The review finished but the check is still red.** The review reported success,
+    so the failure is in the machinery around it (posting, cleanup, the runner). Any
+    verdict above is complete.
   - **It could not tell.** The comment points you at the Actions log rather than
     guessing.
 
-  In the middle two, any verdict already posted stands. Read the comment before you
+  In the middle three, any verdict already posted stands. Read the comment before you
   go hunting in your diff. The wording comes from
   `scripts/classify-review-failure.sh`, and the shapes it must get right are pinned
-  by `scripts/test-review-classifier.sh` (run by `pnpm verify`) — DOR-457 was that
-  comment confidently naming the wrong cause nine times, so add a fixture if you
-  touch it.
+  by `scripts/test-review-classifier.sh` (run by `pnpm verify` and by the
+  `scripts-test` workflow) — DOR-457 was that comment confidently naming the wrong
+  cause nine times, and then doing it again for a different shape that had no
+  fixture, so add a fixture if you touch it.
 
 - **Changelog populator.** A `post-commit` hook writes a changelog fragment under
   `changelog/unreleased/` from the commit subject (it dedupes across amend/rebase and

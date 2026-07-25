@@ -6,7 +6,10 @@
 # split announced "ran out of its turn budget" for failures that never took a
 # turn, and would have said the same for a usage limit crossed at turn 20. There
 # were ad-hoc checks at the time and none covered the shape that actually
-# happened. That gap WAS the bug, so the shapes are pinned here.
+# happened. That gap WAS the bug, so the shapes are pinned here — and it bit a
+# second time (review round 3, finding 2), when an error subtype that died at turn
+# 1 was announced as a credentials problem because no fixture covered that shape
+# either. A branch without a fixture is how this keeps going wrong.
 #
 #   bash scripts/test-review-classifier.sh
 #   CLASSIFIER=/path/to/other.sh bash scripts/test-review-classifier.sh
@@ -19,6 +22,16 @@ set -uo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 classifier=${CLASSIFIER:-$repo_root/scripts/classify-review-failure.sh}
 fixtures=$repo_root/scripts/fixtures/review-failure
+
+# The classifier shells out to these. Both ship on ubuntu-latest and on macOS, so
+# a miss means an unusual local box — say so plainly instead of failing every
+# assertion with empty output.
+for tool in jq iconv; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "review-failure classifier: needs $tool on PATH (used by scripts/classify-review-failure.sh)" >&2
+    exit 2
+  fi
+done
 
 pass=0
 fail=0
@@ -43,17 +56,20 @@ while read -r fixture expected; do
   [ -n "${fixture:-}" ] || continue
   check "class($fixture)" "$expected" "$(classify "$fixtures/$fixture")"
 done <<'CASES'
-never-started.json           no
-dirty-result-string.json     no
-died-mid-run.json            died
-error-during-execution.json  died
-max-turns.json               max_turns
-max-turns-at-turn-one.json   max_turns
-two-results-last-wins.json   max_turns
-clean-success.json           unknown
-no-result-message.json       unknown
-empty-array.json             unknown
-malformed.json               unknown
+never-started.json                        no
+dirty-result-string.json                  no
+died-mid-run.json                         died
+error-during-execution.json               died
+error-during-execution-at-turn-one.json   died
+error-during-execution-no-cost-field.json died
+error-unknown-subtype-no-turns.json       died
+max-turns.json                            max_turns
+max-turns-at-turn-one.json                max_turns
+two-results-last-wins.json                max_turns
+clean-success.json                        completed
+no-result-message.json                    unknown
+empty-array.json                          unknown
+malformed.json                            unknown
 CASES
 
 # A log the action never got round to writing is the commonest case of all, and
@@ -61,6 +77,17 @@ CASES
 check "class(missing file)" unknown "$(classify "$fixtures/does-not-exist.json")"
 check "reported(missing file)" "" "$(reported "$fixtures/does-not-exist.json")"
 check "reported(no result message)" "" "$(reported "$fixtures/no-result-message.json")"
+
+# Every error_* subtype reports through `errors[]`, not `result` — SDKResultError
+# has no `result` field. Without the fallback the whole `died`/`max_turns` space
+# would post a failure comment with no cause in it.
+check "reported(errors[] fallback)" \
+  "MCP server github_inline_comment exited unexpectedly" \
+  "$(reported "$fixtures/error-during-execution.json")"
+check "reported(result wins over errors[])" \
+  "Claude AI usage limit reached|1753500000" \
+  "$(reported "$fixtures/died-mid-run.json")"
+check "reported(no result, no errors)" "" "$(reported "$fixtures/max-turns.json")"
 
 # The error string is model/API text posted verbatim into a public comment.
 # Backticks would break out of its code fence, token-shaped strings must never be

