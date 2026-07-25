@@ -4723,7 +4723,8 @@
             ]
           },
           "summary": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "requestedBy": {
             "type": "string"
