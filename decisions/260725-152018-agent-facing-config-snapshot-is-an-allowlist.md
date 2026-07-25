@@ -51,5 +51,20 @@ The content-level choice from ADR 260723-013236 is retained: redaction lives ins
 
 - Every config-field author now owes a verdict. `contributing/configuration.md` and the `adding-config-fields` skill carry the step, and the guard is the backstop.
 - The snapshot is no longer shape-identical to `config.json`: it gains `…Configured` booleans and `providersConfigured`, and omits withheld keys. It is an informational view, not something to round-trip back through `config_patch`.
-- The classification walker treats any JSON-Schema node without a `properties` map as a leaf, so a field nested below one is covered only by its ancestor's verdict. Two exposed leaves are open records (`ui.shapes.agentDefaults` and `workbench.defaultViewers`, classified at `config-disclosure.ts:105` and `:171`), but their value types are constrained to a plain string and a viewer enum, so nothing sensitive can be stored under them today. The sharper gap is arrays: a field added to the object inside `ui.sidebar.groups[]` is invisible to the walker no matter what `additionalProperties` says, so the guard stays green and the projection copies it. Recursing the walker into `items` and union branches is the fix if that shape ever needs to carry anything sensitive.
+- The classification walker descends into array elements and union branches, so leaf-ness is asserted rather than inferred (see the amendment below). What it still refuses to resolve is indirection: a `$ref`, an `allOf`, or a tuple is classified `unsupported` instead of followed, and an `unsupported` node can never be exposed. That fails the build rather than disclosing a shape nobody read, and Zod's generated schema produces none of those shapes today.
+- Open records (`z.record`) are the one shape still disclosed whole, because their keys are user-supplied and cannot be classified in advance. Two are exposed (`ui.shapes.agentDefaults`, `workbench.defaultViewers`); both are listed in `EXPOSED_RECORD_PATHS`, so exposing a new one, or widening an existing one's value type past a scalar, fails the guard and has to be argued.
 - The authenticated HTTP `GET`/`PATCH /api/config` still echo the raw config to the cockpit (pre-existing, deliberate); the asymmetry must be remembered when touching those routes.
+
+## Amendment (2026-07-25): the walker asserts leaf-ness (DOR-470)
+
+This ADR shipped with a known gap, recorded at the time as a negative consequence:
+
+> The classification walker treats any JSON-Schema node without a `properties` map as a leaf, so a field nested below one is covered only by its ancestor's verdict. [...] The sharper gap is arrays: a field added to the object inside `ui.sidebar.groups[]` is invisible to the walker no matter what `additionalProperties` says, so the guard stays green and the projection copies it.
+
+That gap is now closed, and the bullet above was rewritten to describe what is true instead. Three things changed in `config-disclosure.ts`:
+
+1. **The walk descends.** It follows array `items` (adding a `[]` segment to the path) and every non-null `anyOf` / `oneOf` branch, so the eight fields of a sidebar group, and anything behind a nullable object or a discriminated union, are enumerated individually. `ui.sidebar.groups` is no longer one verdict; it is thirteen.
+2. **A leaf must prove what it is.** Every node resolves to `scalar`, `scalar-array`, `record`, or `unsupported`, and a third guard direction rejects any `expose` verdict that is not a scalar, an array of scalars, or a record named in the new `EXPOSED_RECORD_PATHS` allowlist. A subtree-shaped exposure now has to be argued for.
+3. **The projection matches the model.** It compiles the `expose` paths into a plan and rebuilds arrays of objects element by element, copying each leaf through a sanitizer that refuses nested structure. So an unclassified field one level down is absent by construction, not merely absent because a test was watching. That also covers a stored `config.json` the schema never validated.
+
+Nothing that reached the snapshot before reaches less of it now: the same values are disclosed, argued field by field instead of subtree by subtree.

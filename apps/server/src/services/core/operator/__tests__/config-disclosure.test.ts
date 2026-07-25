@@ -10,26 +10,49 @@
  * pass silently in exactly that case, which is how `mcp.apiKey` once reached this
  * surface.
  *
+ * Membership alone is not enough, so there is a third direction: every `expose`
+ * verdict must also **resolve to a scalar**, an array of scalars, or an
+ * explicitly allowlisted open record. Without that, a verdict on a subtree
+ * (`ui.sidebar.groups`, an array of eight-field objects) silently covers whatever
+ * anyone adds inside it, which is the `mcp.apiKey` failure mode one level down.
+ *
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import {
   CONFIG_DISCLOSURE,
+  EXPOSED_RECORD_PATHS,
   PRESENCE_FLAG_PATHS,
   type ConfigDisclosure,
+  type SchemaLeafShape,
+  classifySchemaLeaves,
   configSchemaLeafPaths,
+  configSchemaLeaves,
   projectDisclosedConfig,
 } from '../config-disclosure.js';
 
-/** Read a dot-path out of a plain object, or `undefined` when any hop is missing. */
+/**
+ * Read a dot-path out of a plain object, or `undefined` when any hop is missing.
+ * A `[]` segment reads the first array element, which is enough to prove an
+ * exposed per-element path made it into the projection.
+ */
 function at(root: unknown, dotPath: string): unknown {
   let node: unknown = root;
-  for (const part of dotPath.split('.')) {
+  for (const segment of dotPath.split('.')) {
     if (node === null || typeof node !== 'object') return undefined;
-    node = (node as Record<string, unknown>)[part];
+    node = (node as Record<string, unknown>)[segment.replace(/\[\]$/, '')];
+    if (segment.endsWith('[]')) {
+      if (!Array.isArray(node)) return undefined;
+      node = node[0];
+    }
   }
   return node;
+}
+
+/** Shape the walker assigned to each leaf of the live schema. */
+function schemaLeafShapes(): Map<string, SchemaLeafShape> {
+  return new Map(configSchemaLeaves().map((leaf) => [leaf.path, leaf.shape]));
 }
 
 /** Dot-paths classified with the given verdict. */
@@ -43,12 +66,55 @@ function pathsWithVerdict(verdict: ConfigDisclosure): string[] {
  * A fully-populated, schema-valid config where every secret and credential
  * reference carries a unique `LEAK-<n>` sentinel, so a single sweep over the
  * serialized projection proves none of them escaped.
+ *
+ * Every nested shape is populated too (a smart sidebar group with all five rules,
+ * both open records), because an empty array or map proves nothing about how the
+ * projection treats what is inside one.
  */
 function fullyPopulatedConfig(): Record<string, unknown> {
   const base = UserConfigSchema.parse({ version: 1 }) as unknown as Record<string, unknown>;
   return {
     ...base,
     server: { port: 4242, cwd: '/Users/me/code', boundary: '/Users/me', open: true },
+    ui: {
+      theme: 'dark',
+      dismissedUpgradeVersions: ['0.55.0'],
+      sidebar: {
+        pinned: ['/Users/me/code'],
+        groups: [
+          {
+            id: 'group-1',
+            name: 'Work',
+            agentPaths: ['/Users/me/code'],
+            sortMode: 'recent',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'smart',
+            rules: {
+              runtimes: ['claude-code'],
+              namespaces: ['default'],
+              statuses: ['active'],
+              lastActiveWithinMs: 86_400_000,
+              pathPrefix: '/Users/me',
+            },
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: ['/Users/me/noisy'],
+        ungroupedDisplayFilter: 'all',
+      },
+      shapes: {
+        active: 'focus',
+        agentDefaults: { '/Users/me/code': 'focus' },
+        autoFollowAgent: false,
+      },
+      statusBar: { pins: ['cwd'] },
+    },
+    workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
     tunnel: {
       enabled: true,
       domain: 'my.example.com',
@@ -125,9 +191,156 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       expect(CONFIG_DISCLOSURE[dotPath as keyof typeof CONFIG_DISCLOSURE]).toBe('withhold');
     }
   });
+
+  it('resolves every exposed leaf to a scalar, an array of scalars, or an allowlisted record', () => {
+    // Direction C, and the reason this file exists a second time: membership in
+    // the table says a path was classified, not that the verdict covers a value
+    // anybody read. A verdict on a subtree covers every field added inside it
+    // forever, which is `mcp.apiKey` one level down. Exposing a shape whose
+    // contents the schema does not fully name has to be argued, so it fails here.
+    const shapes = schemaLeafShapes();
+    const offenders = pathsWithVerdict('expose')
+      .map((path) => ({ path, shape: shapes.get(path) }))
+      .filter(({ path, shape }) => {
+        if (shape === 'scalar' || shape === 'scalar-array') return false;
+        return !(shape === 'record' && EXPOSED_RECORD_PATHS.includes(path));
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it('lists every exposed open record explicitly', () => {
+    const shapes = schemaLeafShapes();
+    // Forward: nothing sits on the allowlist that is not actually an exposed
+    // record, so the list cannot rot into a place stale entries hide.
+    for (const path of EXPOSED_RECORD_PATHS) {
+      expect(CONFIG_DISCLOSURE[path as keyof typeof CONFIG_DISCLOSURE]).toBe('expose');
+      expect(shapes.get(path)).toBe('record');
+    }
+    // Backward: every exposed record is on it.
+    const exposedRecords = pathsWithVerdict('expose').filter((p) => shapes.get(p) === 'record');
+    expect(exposedRecords.sort()).toEqual([...EXPOSED_RECORD_PATHS].sort());
+  });
+
+  it('descends into array elements rather than stopping at the array', () => {
+    const paths = configSchemaLeafPaths();
+    // The concrete regression: `ui.sidebar.groups` is an array of eight-field
+    // objects. Stopping there is what let a field added to a group inherit the
+    // array's verdict.
+    expect(paths).not.toContain('ui.sidebar.groups');
+    expect(paths).toContain('ui.sidebar.groups[].id');
+    expect(paths).toContain('ui.sidebar.groups[].rules.pathPrefix');
+  });
+});
+
+describe('classifySchemaLeaves', () => {
+  // Shapes the live config schema does not contain today. The point of the walk
+  // is what it does when one of them arrives, so it is exercised directly.
+  const scalar = { type: 'string' } as const;
+  const secretObject = {
+    type: 'object',
+    properties: { host: scalar, secretToken: scalar },
+    additionalProperties: false,
+  } as const;
+
+  it('reads a nullable scalar as one scalar leaf', () => {
+    expect(classifySchemaLeaves({ anyOf: [scalar, { type: 'null' }] }, 'tunnel.domain')).toEqual([
+      { path: 'tunnel.domain', shape: 'scalar' },
+    ]);
+  });
+
+  it('sees through a nullable object branch', () => {
+    // The reviewer's first synthetic repro: retyping `tunnel.domain` to a
+    // nullable object used to hide `secretToken` from the leaf set entirely.
+    expect(
+      classifySchemaLeaves({ anyOf: [secretObject, { type: 'null' }] }, 'tunnel.domain')
+    ).toEqual([
+      { path: 'tunnel.domain.host', shape: 'scalar' },
+      { path: 'tunnel.domain.secretToken', shape: 'scalar' },
+    ]);
+  });
+
+  it('sees into every branch of a union', () => {
+    // The second repro: a discriminated union used to read as a single leaf.
+    const leaves = classifySchemaLeaves(
+      {
+        anyOf: [
+          { type: 'object', properties: { kind: scalar }, additionalProperties: false },
+          {
+            type: 'object',
+            properties: { kind: scalar, secretKey: scalar },
+            additionalProperties: false,
+          },
+        ],
+      },
+      'auth'
+    );
+    expect(leaves).toEqual([
+      { path: 'auth.kind', shape: 'scalar' },
+      { path: 'auth.secretKey', shape: 'scalar' },
+    ]);
+  });
+
+  it('marks a path whose union branches disagree unsupported', () => {
+    expect(
+      classifySchemaLeaves(
+        { anyOf: [{ type: 'array', items: scalar }, secretObject] },
+        'tunnel.domain'
+      )
+    ).toContainEqual({ path: 'tunnel.domain', shape: 'unsupported' });
+  });
+
+  it('descends into array elements and flags arrays of scalars', () => {
+    expect(classifySchemaLeaves({ type: 'array', items: scalar }, 'mesh.scanRoots')).toEqual([
+      { path: 'mesh.scanRoots', shape: 'scalar-array' },
+    ]);
+    expect(
+      classifySchemaLeaves({ type: 'array', items: secretObject }, 'ui.sidebar.groups')
+    ).toEqual([
+      { path: 'ui.sidebar.groups[].host', shape: 'scalar' },
+      { path: 'ui.sidebar.groups[].secretToken', shape: 'scalar' },
+    ]);
+  });
+
+  it('accepts a record of scalars and refuses a record of anything else', () => {
+    expect(
+      classifySchemaLeaves({ type: 'object', additionalProperties: scalar }, 'providers')
+    ).toEqual([{ path: 'providers', shape: 'record' }]);
+    expect(
+      classifySchemaLeaves({ type: 'object', additionalProperties: secretObject }, 'providers')
+    ).toEqual([{ path: 'providers', shape: 'unsupported' }]);
+    // `z.record(z.string(), z.unknown())` — an untyped value can hold anything.
+    expect(classifySchemaLeaves({ type: 'object', additionalProperties: {} }, 'providers')).toEqual(
+      [{ path: 'providers', shape: 'unsupported' }]
+    );
+  });
+
+  it('refuses shapes it cannot reduce instead of waving them through', () => {
+    const unsupported = (node: unknown) => classifySchemaLeaves(node, 'x');
+    // Named fields plus an open catchall: the catchall's contents have no path.
+    expect(
+      unsupported({ type: 'object', properties: { a: scalar }, additionalProperties: scalar })
+    ).toEqual([{ path: 'x', shape: 'unsupported' }]);
+    expect(unsupported({ $ref: '#/$defs/Thing' })).toEqual([{ path: 'x', shape: 'unsupported' }]);
+    expect(unsupported({ allOf: [secretObject] })).toEqual([{ path: 'x', shape: 'unsupported' }]);
+    expect(unsupported({ type: 'array', prefixItems: [scalar] })).toEqual([
+      { path: 'x', shape: 'unsupported' },
+    ]);
+    expect(unsupported({ type: 'array' })).toEqual([{ path: 'x', shape: 'unsupported' }]);
+    expect(unsupported({})).toEqual([{ path: 'x', shape: 'unsupported' }]);
+  });
+
+  it('contributes no leaf for an object that can hold nothing', () => {
+    expect(classifySchemaLeaves({ type: 'object', additionalProperties: false }, 'x')).toEqual([]);
+  });
 });
 
 describe('projectDisclosedConfig', () => {
+  it('starts from a fixture the live schema still accepts', () => {
+    // Everything below asserts against this fixture, so it has to stay real: a
+    // schema change that invalidates it would otherwise quietly weaken the rest.
+    expect(() => UserConfigSchema.parse(fullyPopulatedConfig())).not.toThrow();
+  });
+
   it('emits every exposed path present in the input', () => {
     const projected = projectDisclosedConfig(fullyPopulatedConfig());
     const missing = pathsWithVerdict('expose').filter((p) => at(projected, p) === undefined);
@@ -199,6 +412,60 @@ describe('projectDisclosedConfig', () => {
     expect(projected.version).toBe(1);
     expect(projected.server).toBeUndefined();
     expect(projected.ui).toBeUndefined();
+  });
+
+  it('rebuilds a sidebar group from classified fields, dropping anything else', () => {
+    // The realistic version of the defect: a credential-shaped property added to
+    // the object inside `ui.sidebar.groups[]`. The guard above fails the build in
+    // that case, and this proves the projection would not have emitted it anyway.
+    const raw = fullyPopulatedConfig();
+    const group = (raw.ui as { sidebar: { groups: Record<string, unknown>[] } }).sidebar.groups[0]!;
+    group.secretToken = 'LEAK-10-group-token';
+    group.credentials = { anthropic: 'LEAK-11-nested-in-group' };
+
+    const projected = projectDisclosedConfig(raw);
+    const projectedGroup = at(projected, 'ui.sidebar.groups[]') as Record<string, unknown>;
+    expect(JSON.stringify(projected)).not.toMatch(/LEAK-/);
+    expect(projectedGroup.secretToken).toBeUndefined();
+    expect(projectedGroup.credentials).toBeUndefined();
+    // And not over-redacted: the group a person configured still arrives whole.
+    expect(projectedGroup.id).toBe('group-1');
+    expect(projectedGroup.name).toBe('Work');
+    expect(projectedGroup.agentPaths).toEqual(['/Users/me/code']);
+    expect(projectedGroup.rules).toEqual({
+      runtimes: ['claude-code'],
+      namespaces: ['default'],
+      statuses: ['active'],
+      lastActiveWithinMs: 86_400_000,
+      pathPrefix: '/Users/me',
+    });
+  });
+
+  it('drops a non-scalar value stored under an exposed open record', () => {
+    // An open record's keys are user-supplied, so the allowlist promise is only
+    // about its value type. If a value ever stops being scalar, the entry goes.
+    const raw = fullyPopulatedConfig();
+    (raw.ui as { shapes: { agentDefaults: Record<string, unknown> } }).shapes.agentDefaults = {
+      '/Users/me/code': 'focus',
+      '/Users/me/work': { shape: 'focus', token: 'LEAK-12-record-value' },
+    };
+
+    const projected = projectDisclosedConfig(raw);
+    expect(JSON.stringify(projected)).not.toMatch(/LEAK-/);
+    expect(at(projected, 'ui.shapes.agentDefaults')).toEqual({ '/Users/me/code': 'focus' });
+  });
+
+  it('drops structure hiding under a scalar leaf in a hand-edited config', () => {
+    // The stored file is not always schema-valid: `conf` repairs corruption, and
+    // a person can edit `config.json`. A leaf classified scalar never carries an
+    // object out, whatever the file says.
+    const projected = projectDisclosedConfig({
+      ...fullyPopulatedConfig(),
+      server: { port: 4242, cwd: { path: '/Users/me/code', token: 'LEAK-13-under-a-scalar' } },
+    });
+    expect(JSON.stringify(projected)).not.toMatch(/LEAK-/);
+    expect(at(projected, 'server.cwd')).toBeUndefined();
+    expect(at(projected, 'server.port')).toBe(4242);
   });
 
   it('returns a copy, never a live reference into the stored config', () => {
