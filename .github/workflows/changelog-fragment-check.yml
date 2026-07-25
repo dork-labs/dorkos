@@ -16,6 +16,13 @@ name: changelog-fragment-check
 # branch commits, so it is immune to squash-merge relabeling and to wherever the
 # work was committed.
 #
+# Coverage is a declared fact (DOR-387): a fragment's `covers:` frontmatter names
+# the commit subjects, SHAs, or PR it covers, and the hook that mints fragments
+# pre-fills it. That keeps the gate independent of the fragment's prose, which
+# authors are supposed to rewrite for a human. `--pr` is passed so a fragment
+# declaring `"#<this PR>"` covers the whole PR. Fragments with no declaration
+# still fall back to the old word-overlap match.
+#
 # To pass: add the fragment (see changelog/README.md + the writing-changelogs
 # skill), or label the PR `skip-changelog` for a deliberately non-user-facing
 # change — a pure refactor, a CI/build-infra fix (e.g. a `fix(ci):` scope), or a
@@ -48,6 +55,18 @@ jobs:
           base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
+      # The gate guards itself: the analyzer's own tests run before it decides
+      # anything. Pure-stdlib Python 3, seconds to run, and it fires even on a
+      # `skip-changelog` PR so a regression in the gate can never slip through.
+      #
+      # That last part is only safe because the suite is HERMETIC: every case
+      # builds a throwaway git repo in a temp dir, and nothing reads this repo's
+      # real changelog/unreleased/ or commit history. A test that depended on live
+      # repo state would red-light unrelated PRs — including the `skip-changelog`
+      # ones this job is supposed to wave through. Keep it that way.
+      - name: Test the fragment analyzer
+        run: python3 .claude/scripts/__tests__/test_changelog_backfill.py
+
       # Skipped (success) when the PR carries `skip-changelog`, so a deliberate
       # non-user-facing PR is never blocked and the check still reports green.
       # The analyzer is pure-stdlib Python 3 — no install/build step needed.
@@ -55,4 +74,5 @@ jobs:
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         run: |
           python3 .claude/scripts/changelog_backfill.py \
-            --since "${{ steps.base.outputs.sha }}" --check
+            --since "${{ steps.base.outputs.sha }}" \
+            --pr "${{ github.event.pull_request.number }}" --check

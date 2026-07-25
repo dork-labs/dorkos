@@ -52,7 +52,9 @@ Process each commit line:
 
 ### Step 4: Compare with Existing Fragments
 
-Read every fragment in `changelog/unreleased/`. For each categorized commit, check if a similar entry already exists (fuzzy match on key terms). Only propose genuinely missing entries.
+Read every fragment in `changelog/unreleased/`. A commit is covered when a fragment's `covers:` frontmatter names it (by subject or SHA); a fragment with no declaration falls back to a fuzzy match on key terms. Only propose genuinely missing entries.
+
+Fragments written by `--apply` declare `covers:` for the commit they cover, so rewriting their prose for a human never un-covers the commit.
 
 ### Step 5: Present Proposals
 
@@ -101,6 +103,6 @@ options:
     description: "Don't write any fragments"
 ```
 
-If "Yes, write all": run `changelog_backfill.py --apply` (or write the fragments directly), one file per entry.
+If "Yes, write all": run `changelog_backfill.py --apply` (or write the fragments directly), one file per entry. Hand-written fragments should carry the same `covers:` declaration (see `changelog/README.md`).
 If "Review individually": Present each entry with accept/reject options, then write the accepted ones as fragments.
 If "Skip" or `--dry-run`: Report and exit.
