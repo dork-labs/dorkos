@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
@@ -71,6 +71,8 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 // Dynamically import after mocks are set up
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
@@ -78,12 +80,34 @@ import {
   runtimeRegistry,
   RuntimeNotRegisteredError,
 } from '../../services/core/runtime-registry.js';
+import { disposeProjector } from '../../services/session/session-state-projector.js';
 
 const app = createApp();
 finalizeApp(app);
 
+/**
+ * ONE listener for the whole file, reused by every request.
+ *
+ * Handed a non-listening app, supertest opens a fresh ephemeral listener per
+ * request and closes it in the response callback; this file makes ~47 requests,
+ * and that listen/close churn intermittently lands a connection on a listener
+ * mid-close, failing a random test with a client-side `socket hang up` rather
+ * than an assertion (DOR-458). Given a server whose `address()` is already set,
+ * supertest reuses it and never closes it.
+ */
+const server = createServer(app);
+
 /** Valid UUID for session ID params (routes validate UUID format). */
 const S1 = '00000000-0000-4000-8000-000000000001';
+
+beforeAll(async () => {
+  server.listen(0);
+  await once(server, 'listening');
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
 
 describe('Sessions Routes', () => {
   beforeEach(() => {
@@ -100,18 +124,49 @@ describe('Sessions Routes', () => {
     fakeRuntime.getInternalSessionId.mockReturnValue(undefined);
     // Reset registry spies — per-test `.mockReturnValue(...)` overrides leak
     // across cases otherwise (clearAllMocks only clears call history).
-    vi.mocked(runtimeRegistry.resolveForSession).mockResolvedValue(fakeRuntime);
-    vi.mocked(runtimeRegistry.getSessionRuntimeType).mockResolvedValue('fake');
-    vi.mocked(runtimeRegistry.persistSessionRuntime).mockResolvedValue(undefined);
-    vi.mocked(runtimeRegistry.has).mockReturnValue(true);
-    vi.mocked(runtimeRegistry.getDefaultType).mockReturnValue('fake');
+    //
+    // `mockReset()` before the default matters as much as the default itself:
+    // `clearAllMocks` does NOT drain a queued ONE-SHOT (`mockRejectedValueOnce`
+    // / `mockResolvedValueOnce`) implementation. An unconsumed one-shot survives
+    // into a later test and fires against whatever request gets there first —
+    // observed under load as a matched pair of failures, the test that queued it
+    // getting 200 instead of 500 while a later `/approve` test got 500 instead
+    // of 200 (DOR-458). Draining the queue here makes that impossible to inherit
+    // no matter which caller consumed the original.
+    //
+    // EVERY registry spy a test overrides is reset, not just the ones that use
+    // `...Once` today: the leak is a property of the shared mock, so a future
+    // one-shot on `has` or `getDefaultType` would reintroduce it silently.
+    vi.mocked(runtimeRegistry.resolveForSession).mockReset().mockResolvedValue(fakeRuntime);
+    vi.mocked(runtimeRegistry.getSessionRuntimeType).mockReset().mockResolvedValue('fake');
+    vi.mocked(runtimeRegistry.persistSessionRuntime).mockReset().mockResolvedValue(undefined);
+    vi.mocked(runtimeRegistry.getSessionSettingsMany).mockReset().mockReturnValue(new Map());
+    vi.mocked(runtimeRegistry.getSessionSettings).mockReset().mockResolvedValue(null);
+    vi.mocked(runtimeRegistry.saveSessionSettings).mockReset().mockResolvedValue(undefined);
+    vi.mocked(runtimeRegistry.get).mockReset().mockReturnValue(fakeRuntime);
+    vi.mocked(runtimeRegistry.getDefault).mockReset().mockReturnValue(fakeRuntime);
+    vi.mocked(runtimeRegistry.listRuntimes).mockReset().mockReturnValue([fakeRuntime]);
+    vi.mocked(runtimeRegistry.has).mockReset().mockReturnValue(true);
+    vi.mocked(runtimeRegistry.getDefaultType).mockReset().mockReturnValue('fake');
+    mockReadManifest.mockReset().mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    // `POST /:id/messages` returns 202 and runs its turn DETACHED against the
+    // process-singleton projector for S1, and every test here uses that one
+    // session id. Disposing UNREGISTERS the projector, so the next test's
+    // `getOrCreateProjector(S1)` mints a fresh one instead of inheriting the
+    // previous turn's accumulated state. It does NOT stop the detached turn —
+    // that turn holds its own reference to the now-orphaned instance and runs to
+    // completion against it, which is precisely why the orphaning matters.
+    disposeProjector(S1);
   });
 
   // ---- GET /api/sessions ----
 
   describe('GET /api/sessions', () => {
     it('returns an empty envelope when no sessions', async () => {
-      const res = await request(app).get('/api/sessions');
+      const res = await request(server).get('/api/sessions');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ sessions: [] });
       expect(fakeRuntime.listSessions).toHaveBeenCalled();
@@ -138,7 +193,7 @@ describe('Sessions Routes', () => {
       ];
       fakeRuntime.listSessions.mockResolvedValue(sessions);
 
-      const res = await request(app).get('/api/sessions');
+      const res = await request(server).get('/api/sessions');
       expect(res.status).toBe(200);
       // Envelope (ADR-0310): { sessions, warnings? } — no warnings when healthy.
       expect(res.body).toEqual({ sessions });
@@ -159,7 +214,7 @@ describe('Sessions Routes', () => {
       };
       fakeRuntime.getSession.mockResolvedValue(session);
 
-      const res = await request(app).get(`/api/sessions/${S1}`);
+      const res = await request(server).get(`/api/sessions/${S1}`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(session);
     });
@@ -175,7 +230,7 @@ describe('Sessions Routes', () => {
         permissionMode: 'default' as const,
       });
 
-      const res = await request(app).get(`/api/sessions/${S1}`);
+      const res = await request(server).get(`/api/sessions/${S1}`);
       expect(res.status).toBe(200);
       expect(res.body.runtime).toBe('fake');
     });
@@ -194,21 +249,21 @@ describe('Sessions Routes', () => {
         permissionMode: 'bypassPermissions',
       });
 
-      const res = await request(app).get(`/api/sessions/${S1}`);
+      const res = await request(server).get(`/api/sessions/${S1}`);
       expect(res.status).toBe(200);
       expect(res.body.permissionMode).toBe('bypassPermissions'); // store wins
       expect(res.body.model).toBe('transcript-model'); // transcript kept where store has no value
     });
 
     it('returns 400 for invalid (non-UUID) session ID', async () => {
-      const res = await request(app).get('/api/sessions/nonexistent');
+      const res = await request(server).get('/api/sessions/nonexistent');
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('INVALID_SESSION_ID');
     });
 
     it('returns 404 for missing session', async () => {
       const missingId = '00000000-0000-4000-8000-ffffffffffff';
-      const res = await request(app).get(`/api/sessions/${missingId}`);
+      const res = await request(server).get(`/api/sessions/${missingId}`);
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Session not found');
     });
@@ -227,7 +282,7 @@ describe('Sessions Routes', () => {
         permissionMode: 'dontAsk',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .patch(`/api/sessions/${S1}`)
         .send({ permissionMode: 'dontAsk' });
 
@@ -250,7 +305,9 @@ describe('Sessions Routes', () => {
       fakeRuntime.updateSession.mockReturnValue(true);
       fakeRuntime.getSession.mockResolvedValue(null);
 
-      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
+      const res = await request(server)
+        .patch(`/api/sessions/${S1}`)
+        .send({ permissionMode: 'plan' });
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
@@ -263,14 +320,16 @@ describe('Sessions Routes', () => {
     it('returns 404 when session does not exist', async () => {
       fakeRuntime.updateSession.mockReturnValue(false);
 
-      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
+      const res = await request(server)
+        .patch(`/api/sessions/${S1}`)
+        .send({ permissionMode: 'plan' });
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('SESSION_NOT_FOUND');
     });
 
     it('returns 400 for invalid session ID', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/sessions/not-a-uuid')
         .send({ permissionMode: 'plan' });
 
@@ -279,7 +338,7 @@ describe('Sessions Routes', () => {
     });
 
     it('returns 400 for invalid request body', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .patch(`/api/sessions/${S1}`)
         .send({ permissionMode: 'invalid_mode' });
 
@@ -299,7 +358,7 @@ describe('Sessions Routes', () => {
         permissionMode: 'plan',
       });
 
-      await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
+      await request(server).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
 
       expect(fakeRuntime.updateSession).toHaveBeenCalledWith(
         internalId,
@@ -318,7 +377,7 @@ describe('Sessions Routes', () => {
         model: 'claude-sonnet-4-20250514',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .patch(`/api/sessions/${S1}`)
         .send({ model: 'claude-sonnet-4-20250514' });
 
@@ -343,7 +402,7 @@ describe('Sessions Routes', () => {
 
   describe('POST /api/sessions/:id/messages', () => {
     it('returns 400 for missing content', async () => {
-      const res = await request(app).post(`/api/sessions/${S1}/messages`).send({});
+      const res = await request(server).post(`/api/sessions/${S1}/messages`).send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid request');
@@ -358,7 +417,9 @@ describe('Sessions Routes', () => {
       ]);
       fakeRuntime.getInternalSessionId.mockReturnValue(S1);
 
-      const res = await request(app).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
+      const res = await request(server)
+        .post(`/api/sessions/${S1}/messages`)
+        .send({ content: 'hi' });
 
       expect(res.status).toBe(202);
       expect(res.type).toBe('application/json');
@@ -376,7 +437,7 @@ describe('Sessions Routes', () => {
       ]);
       fakeRuntime.getInternalSessionId.mockReturnValue(S1);
 
-      await request(app).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
+      await request(server).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
 
       expect(fakeRuntime.acquireLock).toHaveBeenCalledWith(
         S1,
@@ -400,7 +461,9 @@ describe('Sessions Routes', () => {
         acquiredAt: Date.now() - 60000,
       });
 
-      const res = await request(app).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
+      const res = await request(server)
+        .post(`/api/sessions/${S1}/messages`)
+        .send({ content: 'hi' });
 
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({
@@ -419,7 +482,9 @@ describe('Sessions Routes', () => {
         },
       ]);
 
-      const res = await request(app).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
+      const res = await request(server)
+        .post(`/api/sessions/${S1}/messages`)
+        .send({ content: 'hi' });
 
       // The 202 is sent regardless — the error surfaces on /events, not here.
       expect(res.status).toBe(202);
@@ -438,7 +503,7 @@ describe('Sessions Routes', () => {
           yield { type: 'done', data: {} } as StreamEvent;
         },
       ]);
-      return request(app).post(`/api/sessions/${sessionId}/messages`).send(body);
+      return request(server).post(`/api/sessions/${sessionId}/messages`).send(body);
     }
 
     it('persists runtime=<default> when no hint or manifest is provided', async () => {
@@ -482,7 +547,7 @@ describe('Sessions Routes', () => {
     it('returns 400 when the hinted runtime is not registered', async () => {
       vi.mocked(runtimeRegistry.has).mockReturnValue(false);
 
-      const res = await request(app)
+      const res = await request(server)
         .post(`/api/sessions/${S1}/messages`)
         .send({ content: 'hi', runtime: 'codex' });
 
@@ -537,7 +602,7 @@ describe('Sessions Routes', () => {
         new RuntimeNotRegisteredError('codex', S1)
       );
 
-      const res = await request(app).get(`/api/sessions/${S1}`);
+      const res = await request(server).get(`/api/sessions/${S1}`);
 
       expect(res.status).toBe(503);
       expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
@@ -550,7 +615,7 @@ describe('Sessions Routes', () => {
         new Error('settings store unavailable')
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .post(`/api/sessions/${S1}/approve`)
         .send({ toolCallId: 'tool-1' });
 
@@ -565,7 +630,7 @@ describe('Sessions Routes', () => {
     it('approves pending tool call', async () => {
       fakeRuntime.approveTool.mockReturnValue(true);
 
-      const res = await request(app)
+      const res = await request(server)
         .post(`/api/sessions/${S1}/approve`)
         .send({ toolCallId: 'tc1' });
 
@@ -577,7 +642,7 @@ describe('Sessions Routes', () => {
     it('returns 404 when no pending approval', async () => {
       fakeRuntime.approveTool.mockReturnValue(false);
 
-      const res = await request(app)
+      const res = await request(server)
         .post(`/api/sessions/${S1}/approve`)
         .send({ toolCallId: 'tc1' });
 
@@ -592,7 +657,9 @@ describe('Sessions Routes', () => {
     it('denies pending tool call', async () => {
       fakeRuntime.approveTool.mockReturnValue(true);
 
-      const res = await request(app).post(`/api/sessions/${S1}/deny`).send({ toolCallId: 'tc1' });
+      const res = await request(server)
+        .post(`/api/sessions/${S1}/deny`)
+        .send({ toolCallId: 'tc1' });
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
@@ -602,7 +669,9 @@ describe('Sessions Routes', () => {
     it('returns 404 when no pending approval', async () => {
       fakeRuntime.approveTool.mockReturnValue(false);
 
-      const res = await request(app).post(`/api/sessions/${S1}/deny`).send({ toolCallId: 'tc1' });
+      const res = await request(server)
+        .post(`/api/sessions/${S1}/deny`)
+        .send({ toolCallId: 'tc1' });
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('No pending approval');
@@ -616,7 +685,7 @@ describe('Sessions Routes', () => {
       fakeRuntime.getInternalSessionId.mockReturnValue('sdk-uuid-123');
       fakeRuntime.getMessageHistory.mockResolvedValue([]);
 
-      await request(app).get(`/api/sessions/${S1}/messages`);
+      await request(server).get(`/api/sessions/${S1}/messages`);
 
       expect(fakeRuntime.getInternalSessionId).toHaveBeenCalledWith(S1);
       expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(
@@ -628,7 +697,7 @@ describe('Sessions Routes', () => {
     it('returns 500 when getMessageHistory throws', async () => {
       fakeRuntime.getMessageHistory.mockRejectedValueOnce(new Error('I/O error'));
 
-      const res = await request(app)
+      const res = await request(server)
         .get(`/api/sessions/${S1}/messages`)
         .set('x-client-id', 'test-client');
 
@@ -640,7 +709,7 @@ describe('Sessions Routes', () => {
       fakeRuntime.getInternalSessionId.mockReturnValue(undefined);
       fakeRuntime.getMessageHistory.mockResolvedValue([]);
 
-      await request(app).get(`/api/sessions/${S1}/messages`);
+      await request(server).get(`/api/sessions/${S1}/messages`);
 
       expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(expect.any(String), S1);
     });
@@ -655,7 +724,7 @@ describe('Sessions Routes', () => {
         permissionMode: 'default',
       });
 
-      const res = await request(app).get(`/api/sessions/${S1}`);
+      const res = await request(server).get(`/api/sessions/${S1}`);
 
       expect(res.status).toBe(200);
       expect(fakeRuntime.getSession).toHaveBeenCalledWith(expect.any(String), 'sdk-uuid-456');
@@ -664,7 +733,7 @@ describe('Sessions Routes', () => {
     it('GET /:id/tasks uses internal session ID', async () => {
       fakeRuntime.getInternalSessionId.mockReturnValue('sdk-uuid-789');
 
-      await request(app).get(`/api/sessions/${S1}/tasks`);
+      await request(server).get(`/api/sessions/${S1}/tasks`);
 
       expect(fakeRuntime.getSessionTasks).toHaveBeenCalledWith(expect.any(String), 'sdk-uuid-789');
     });
@@ -678,7 +747,7 @@ describe('Sessions Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get('/api/sessions').query({ cwd: '/etc/passwd' });
+      const res = await request(server).get('/api/sessions').query({ cwd: '/etc/passwd' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -689,7 +758,7 @@ describe('Sessions Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get(`/api/sessions/${S1}`).query({ cwd: '/etc' });
+      const res = await request(server).get(`/api/sessions/${S1}`).query({ cwd: '/etc' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -700,7 +769,7 @@ describe('Sessions Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .get(`/api/sessions/${S1}/messages`)
         .query({ cwd: '/tmp/evil' });
 
@@ -713,7 +782,9 @@ describe('Sessions Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get(`/api/sessions/${S1}/tasks`).query({ cwd: '/tmp/evil' });
+      const res = await request(server)
+        .get(`/api/sessions/${S1}/tasks`)
+        .query({ cwd: '/tmp/evil' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -724,7 +795,7 @@ describe('Sessions Routes', () => {
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/sessions')
         .query({ cwd: '/home/user/project\0/../../etc' });
 
@@ -737,7 +808,7 @@ describe('Sessions Routes', () => {
 
   describe('POST /api/sessions/:id/fork', () => {
     it('returns 400 for invalid session ID', async () => {
-      const res = await request(app).post('/api/sessions/not-a-uuid/fork').send({});
+      const res = await request(server).post('/api/sessions/not-a-uuid/fork').send({});
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('INVALID_SESSION_ID');
     });
@@ -752,7 +823,7 @@ describe('Sessions Routes', () => {
       };
       fakeRuntime.forkSession.mockResolvedValue(forkedSession);
 
-      const res = await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      const res = await request(server).post(`/api/sessions/${S1}/fork`).send({});
       expect(res.status).toBe(201);
       expect(res.body).toEqual(forkedSession);
       expect(fakeRuntime.forkSession).toHaveBeenCalledWith(expect.any(String), S1, {});
@@ -767,7 +838,7 @@ describe('Sessions Routes', () => {
         permissionMode: 'default' as const,
       });
 
-      await request(app)
+      await request(server)
         .post(`/api/sessions/${S1}/fork`)
         .send({ upToMessageId: 'msg-123', title: 'Custom fork' });
 
@@ -780,7 +851,7 @@ describe('Sessions Routes', () => {
     it('returns 404 when fork fails (session not found)', async () => {
       fakeRuntime.forkSession.mockResolvedValue(null);
 
-      const res = await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      const res = await request(server).post(`/api/sessions/${S1}/fork`).send({});
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('FORK_FAILED');
     });
@@ -788,7 +859,7 @@ describe('Sessions Routes', () => {
     it('returns 500 when runtime throws', async () => {
       fakeRuntime.forkSession.mockRejectedValue(new Error('SDK crash'));
 
-      const res = await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      const res = await request(server).post(`/api/sessions/${S1}/fork`).send({});
       expect(res.status).toBe(500);
       expect(res.body.code).toBe('FORK_ERROR');
     });
@@ -804,7 +875,7 @@ describe('Sessions Routes', () => {
         permissionMode: 'default' as const,
       });
 
-      await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      await request(server).post(`/api/sessions/${S1}/fork`).send({});
       expect(fakeRuntime.forkSession).toHaveBeenCalledWith(expect.any(String), internalId, {});
     });
   });
