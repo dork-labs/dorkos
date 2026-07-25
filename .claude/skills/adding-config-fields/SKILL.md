@@ -151,7 +151,7 @@ For **type changes** (e.g., `number` → `string`):
 
 Edit `CONFIG_DISCLOSURE` in `apps/server/src/services/core/operator/config-disclosure.ts` and give the new leaf a verdict: `expose` or `withhold`.
 
-This is not optional bookkeeping. The `config_get` MCP tool carries `readOnlyCarveOut: true`, so on the default login-off posture it answers on `/mcp` with no credential at all, and its snapshot is built by copying only `expose` paths. The drift guard compares the table against every leaf of `UserConfigSchema` in both directions, so it stays red until you decide:
+This is not optional bookkeeping. The `config_get` MCP tool carries `readOnlyCarveOut: true`, so on the default login-off posture it answers on `/mcp` with no credential at all, and its snapshot is built by copying only `expose` paths. The drift guard compares the table against every leaf of `UserConfigSchema` in three directions (every leaf is classified, no verdict is stale, and every `expose` verdict resolves to something safe), so it stays red until you decide:
 
 ```bash
 pnpm vitest run apps/server/src/services/core/operator/__tests__/config-disclosure.test.ts
@@ -169,6 +169,8 @@ That reads the schema **source**, not `packages/shared/dist/` — `apps/server/v
 ```
 
 **Withhold anything that is a credential or points at one.** If callers legitimately need to know whether it is set up, add the path to `PRESENCE_FLAG_PATHS` in the same file: the projection then emits a boolean `<leafName>Configured` sibling instead of the value. Absolute paths are exposed on purpose (they are how the operator surface addresses agents and directories); see that module's doc comment for the reasoning before changing that line.
+
+**Two things about the key you write.** A field nested inside an array of objects gets one verdict per field, with `[]` marking the array hop: a new property on a sidebar group is keyed `'ui.sidebar.groups[].myField'`, not covered by any verdict on `ui.sidebar.groups`. And an `expose` verdict has to resolve to a scalar, an array of scalars, or an open record (`z.record`) listed in `EXPOSED_RECORD_PATHS` — a subtree cannot be exposed wholesale, because that would silently cover whatever anyone adds inside it later. If the guard reports your field as `unsupported`, the schema shape is one the walker will not disclose without being taught it first.
 
 ### 5. Document the field in `contributing/configuration.md`
 
