@@ -59,6 +59,7 @@ vi.mock('@/layers/features/chat', () => ({
   MessageItem: ({ message }: { message: { content: string } }) => (
     <div data-testid="msg">{message.content}</div>
   ),
+  resolveMessageAuthor: () => ({ kind: 'agent', id: 'dorkbot', displayName: 'DorkBot' }),
   TypingDots: () => <div data-testid="typing" />,
   FirstLight: () => <div data-testid="first-light" />,
   ChatInput: ({

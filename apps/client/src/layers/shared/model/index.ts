@@ -45,7 +45,12 @@ export {
   useAgentBirthRecord,
   type AgentBirthRecord,
 } from './agent-birth/agent-birth-store';
-export type { ChatMessage, MessageGrouping, GroupPosition } from './chat-message-types';
+export type {
+  ChatMessage,
+  MessageGrouping,
+  GroupPosition,
+  MessageAuthor,
+} from './chat-message-types';
 export { useTabVisibility } from './use-tab-visibility';
 export {
   useSSEConnection,

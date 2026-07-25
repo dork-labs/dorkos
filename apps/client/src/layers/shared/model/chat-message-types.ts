@@ -34,11 +34,35 @@ export interface ChatMessage {
 /** Client-side view of a single hook execution attached to a tool call. */
 export type HookState = HookPart;
 
+/**
+ * Who a message is from, as the message list renders it.
+ *
+ * A client-derived view-model, NOT a wire-schema field (spec
+ * `multi-participant-message-list`, D2): `ChatMessage` stays unchanged and a
+ * pure resolver computes this from the message plus the session's agent and
+ * runtime. The type is the seam — a later phase can move the source to the
+ * server without touching a UI component.
+ */
+export interface MessageAuthor {
+  /** Which kind of participant spoke: a person, an agent, or the system itself. */
+  kind: 'human' | 'agent' | 'system';
+  /** Stable identity key — drives grouping and avatar color. */
+  id: string;
+  /** Name shown in the group header. Never a bare "Assistant". */
+  displayName: string;
+  /** Emoji glyph for the avatar, when the identity has one. */
+  emoji?: string;
+  /** CSS color string for the avatar background. */
+  color?: string;
+  /** Runtime brand key, when the identity falls back to a runtime. */
+  runtime?: string;
+}
+
 export type GroupPosition = 'only' | 'first' | 'middle' | 'last';
 
+/** Where a message sits inside its author group — the list's vertical rhythm. */
 export interface MessageGrouping {
   position: GroupPosition;
-  groupIndex: number;
 }
 
 export interface ToolCallState {

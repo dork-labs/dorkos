@@ -94,7 +94,6 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-  --color-user-msg: hsl(var(--user-msg));
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
   --color-chart-1: hsl(var(--chart-1));
@@ -141,7 +140,6 @@
   --shadow-msg-tool: var(--msg-tool-shadow);
   --shadow-msg-tool-hover: var(--msg-tool-shadow-hover);
   --radius-msg: var(--msg-radius);
-  --radius-msg-tight: var(--msg-radius-tight);
   --radius-msg-tool: var(--msg-tool-radius);
 }
 
@@ -166,7 +164,6 @@
   --input: 0 0% 83%;
   --ring: 24 90% 44%;
   --radius: 0.5rem;
-  --user-msg: 0 0% 91%;
   --brand: 24 90% 44%;
   --brand-foreground: 0 0% 100%;
 
@@ -215,25 +212,23 @@
   --msg-padding-y-end: 2rem;
   --msg-gap: 0.75rem;
   --msg-content-max-width: 100ch;
-  --msg-user-max-width: 85%;
+  /* Width of the message list's left identity gutter. Matches the avatar's
+     edge length exactly, so a continuation row (which renders an empty gutter,
+     or the hover timestamp) stays flush with the group start above it. */
+  --msg-gutter-width: 1.75rem;
 
   /* === Shape tokens === */
   --msg-radius: 1.25rem;
-  --msg-radius-tight: 4px;
   --msg-tool-radius: var(--radius);
-  --msg-divider-color: hsl(var(--border) / 0.2);
 
   /* === Motion tokens === */
   --msg-enter-y: 8px;
-  --msg-enter-scale-user: 0.97;
   --msg-enter-stiffness: 320;
   --msg-enter-damping: 28;
   --msg-tool-expand-duration: 300ms;
   --msg-tool-expand-easing: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* === Interactive state tokens === */
-  --msg-hover-user: hsl(var(--user-msg) / 0.9);
-  --msg-hover-assistant: hsl(var(--muted) / 0.2);
   --msg-actions-opacity-default: 0;
   --msg-actions-opacity-hover: 1;
 
@@ -295,7 +290,6 @@
   --border: 0 0% 25%;
   --input: 0 0% 25%;
   --ring: 24 88% 55%;
-  --user-msg: 0 0% 15%;
   --brand: 24 88% 55%;
   --brand-foreground: 0 0% 100%;
 
@@ -843,7 +837,6 @@ body {
   --color-border: var(--background-modifier-border);
   --color-input: var(--background-modifier-form-field);
   --color-ring: var(--interactive-accent);
-  --color-user-msg: var(--background-secondary-alt);
 
   --color-status-success: #16a34a;
   --color-status-success-bg: rgba(22, 163, 74, 0.1);

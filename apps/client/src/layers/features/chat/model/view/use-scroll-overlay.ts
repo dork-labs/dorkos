@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, type RefObject } from 'react';
-import type { MessageListHandle, ScrollState } from '../ui/MessageList';
+import type { MessageListHandle, ScrollState } from '../../ui/MessageList';
 
 interface UseScrollOverlayReturn {
   isAtBottom: boolean;

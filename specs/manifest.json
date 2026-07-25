@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260725-014841",
+      "slug": "multi-participant-message-list",
+      "title": "Multi-participant message list — Slack-style identity, reactions, threads",
+      "created": "2026-07-25",
+      "status": "specified"
+    },
+    {
       "id": "260723-050355",
       "slug": "agent-trust",
       "title": "Agent trust — identity, capability tiers, approvals, isolated evals",

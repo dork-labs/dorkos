@@ -5,7 +5,7 @@ import { useChatSession } from '../model/use-chat-session';
 import { useCommands } from '@/layers/entities/command';
 import { useTaskState } from '../model/use-task-state';
 import { useToolShortcuts } from '../model/use-tool-shortcuts';
-import { useScrollOverlay } from '../model/use-scroll-overlay';
+import { useScrollOverlay } from '../model/view/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
 import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';

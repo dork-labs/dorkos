@@ -2,17 +2,16 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import {
-  MessageList,
-  computeGrouping,
-  findLastWidgetFenceIndex,
-  type MessageListHandle,
-} from '../ui/MessageList';
+import { MessageList, findLastWidgetFenceIndex, type MessageListHandle } from '../ui/MessageList';
 import type { ChatMessage } from '../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 
 afterEach(() => {
+  // Pinned-to-the-bottom rendering marks the newest message seen, so clear
+  // storage before the next test reads it back as "where I left off".
   cleanup();
+  window.localStorage.clear();
+  mockIsAtEnd.mockImplementation(() => true);
   // Reset store to defaults between tests
   useAppStore.getState().resetPreferences();
 });
@@ -47,10 +46,23 @@ vi.mock('../ui/ScrollThumb', () => ({
   ScrollThumb: () => null,
 }));
 
+// Author identity comes from the working directory's agent and the session's
+// runtime, both transport-backed caches. Mocked at their source modules (not at
+// the entity barrels) so everything else those barrels export stays real.
+vi.mock('@/layers/entities/agent/model/use-current-agent', () => ({
+  useCurrentAgent: () => ({ data: null }),
+}));
+vi.mock('@/layers/entities/session/model/use-session-runtime', () => ({
+  useSessionRuntime: () => 'claude-code',
+}));
+
 // Native end-anchor scroll now rides the virtualizer (DOR-163): scrollToBottom
 // calls `scrollToEnd()`, and pinned state derives from `isAtEnd()`. The mock
-// reports pinned (isAtEnd true) so the scroll-state contract holds.
+// defaults to pinned (isAtEnd true) so the scroll-state contract holds; tests
+// that care about the pinned/not-pinned seam override `mockIsAtEnd`.
 const mockScrollToEnd = vi.fn();
+const mockScrollToIndex = vi.fn();
+const mockIsAtEnd = vi.fn(() => true);
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getVirtualItems: () =>
@@ -63,77 +75,134 @@ vi.mock('@tanstack/react-virtual', () => ({
     getTotalSize: () => count * 80,
     measureElement: () => {},
     scrollToEnd: mockScrollToEnd,
-    isAtEnd: () => true,
+    scrollToIndex: mockScrollToIndex,
+    isAtEnd: () => mockIsAtEnd(),
   }),
 }));
 
-describe('computeGrouping', () => {
-  it('returns empty array for empty messages', () => {
-    expect(computeGrouping([])).toEqual([]);
+/**
+ * Model the real virtualizer's first-commit lie: `isAtEnd()` is vacuously true
+ * while `scrollElement` is still null, then tells the truth once the element is
+ * attached. Here the truth is "scrolled up, not pinned".
+ */
+function isAtEndTrueOnlyOnFirstCommit(): void {
+  let call = 0;
+  mockIsAtEnd.mockImplementation(() => call++ === 0);
+}
+
+// Grouping itself (author change, time gap, day boundary) is unit-tested where
+// it lives now — `lib/__tests__/build-list-rows.test.ts`. What matters here is
+// that the list virtualizes ROWS: dividers are real rows with their own heights,
+// not decoration inside a message.
+describe('MessageList rows', () => {
+  /** A message at a given local time, `hoursAgo` whole days back from now. */
+  function messageOnDay(id: string, daysAgo: number, text: string): ChatMessage {
+    const now = new Date();
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, 10, 0, 0);
+    return {
+      id,
+      role: 'user',
+      content: text,
+      parts: [{ type: 'text', text }],
+      timestamp: day.toISOString(),
+    };
+  }
+
+  it('renders a day divider row at each calendar boundary', () => {
+    const messages = [messageOnDay('1', 1, 'Yesterday work'), messageOnDay('2', 0, 'Today work')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    expect(screen.getAllByTestId('day-divider')).toHaveLength(2);
+    expect(screen.getByText('Yesterday')).toBeDefined();
+    expect(screen.getByText('Today')).toBeDefined();
   });
 
-  it('marks a single message as "only"', () => {
-    const messages: ChatMessage[] = [
-      { id: '1', role: 'user', content: 'Hello', parts: [], timestamp: '' },
-    ];
-    const result = computeGrouping(messages);
-    expect(result).toEqual([{ position: 'only', groupIndex: 0 }]);
+  it('counts dividers as virtualized rows alongside the messages', () => {
+    const messages = [messageOnDay('1', 1, 'Yesterday work'), messageOnDay('2', 0, 'Today work')];
+    const { container } = render(<MessageList sessionId="test-session" messages={messages} />);
+    // 2 messages + 2 day dividers, each an independently measured row.
+    expect(container.querySelectorAll('[data-index]')).toHaveLength(4);
   });
 
-  it('marks alternating messages as "only" with incrementing groupIndex', () => {
+  it('renders no day divider when messages carry no usable timestamp', () => {
     const messages: ChatMessage[] = [
-      { id: '1', role: 'user', content: 'Hi', parts: [], timestamp: '' },
-      { id: '2', role: 'assistant', content: 'Hello', parts: [], timestamp: '' },
-      { id: '3', role: 'user', content: 'Bye', parts: [], timestamp: '' },
+      { id: '1', role: 'user', content: 'A', parts: [{ type: 'text', text: 'A' }], timestamp: '' },
     ];
-    const result = computeGrouping(messages);
-    expect(result).toEqual([
-      { position: 'only', groupIndex: 0 },
-      { position: 'only', groupIndex: 1 },
-      { position: 'only', groupIndex: 2 },
-    ]);
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    expect(screen.queryByTestId('day-divider')).toBeNull();
   });
 
-  it('marks consecutive same-role messages with first/middle/last', () => {
-    const messages: ChatMessage[] = [
-      { id: '1', role: 'user', content: 'A', parts: [], timestamp: '' },
-      { id: '2', role: 'user', content: 'B', parts: [], timestamp: '' },
-      { id: '3', role: 'user', content: 'C', parts: [], timestamp: '' },
-    ];
-    const result = computeGrouping(messages);
-    expect(result).toEqual([
-      { position: 'first', groupIndex: 0 },
-      { position: 'middle', groupIndex: 0 },
-      { position: 'last', groupIndex: 0 },
-    ]);
+  it('renders the unread rule after the stored cursor', () => {
+    window.localStorage.setItem('dorkos:chat:last-seen:test-session', '1');
+    const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    expect(screen.getByTestId('unread-divider')).toBeDefined();
+    expect(screen.getByText('New messages')).toBeDefined();
   });
 
-  it('handles two consecutive messages as first/last', () => {
-    const messages: ChatMessage[] = [
-      { id: '1', role: 'assistant', content: 'A', parts: [], timestamp: '' },
-      { id: '2', role: 'assistant', content: 'B', parts: [], timestamp: '' },
-    ];
-    const result = computeGrouping(messages);
-    expect(result).toEqual([
-      { position: 'first', groupIndex: 0 },
-      { position: 'last', groupIndex: 0 },
-    ]);
+  it('renders no unread rule for a session with no stored cursor', () => {
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    expect(screen.queryByTestId('unread-divider')).toBeNull();
   });
 
-  it('handles mixed groups correctly', () => {
-    const messages: ChatMessage[] = [
-      { id: '1', role: 'user', content: 'A', parts: [], timestamp: '' },
-      { id: '2', role: 'user', content: 'B', parts: [], timestamp: '' },
-      { id: '3', role: 'assistant', content: 'C', parts: [], timestamp: '' },
-      { id: '4', role: 'user', content: 'D', parts: [], timestamp: '' },
-    ];
-    const result = computeGrouping(messages);
-    expect(result).toEqual([
-      { position: 'first', groupIndex: 0 },
-      { position: 'last', groupIndex: 0 },
-      { position: 'only', groupIndex: 1 },
-      { position: 'only', groupIndex: 2 },
-    ]);
+  it('renders no unread rule when the cursor is already the newest message', () => {
+    window.localStorage.setItem('dorkos:chat:last-seen:test-session', '2');
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    expect(screen.queryByTestId('unread-divider')).toBeNull();
+  });
+
+  it('marks the newest message seen while pinned to the bottom', () => {
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    expect(window.localStorage.getItem('dorkos:chat:last-seen:test-session')).toBe('2');
+  });
+
+  it('opens one row above the unread rule, keeping the last seen message on screen', () => {
+    window.localStorage.setItem('dorkos:chat:last-seen:anchor-session', '1');
+    mockScrollToEnd.mockClear();
+    mockScrollToIndex.mockClear();
+    isAtEndTrueOnlyOnFirstCommit();
+    const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
+    render(<MessageList sessionId="anchor-session" messages={messages} />);
+    // Rows: day-divider, message, unread-divider, message — the rule is row 2,
+    // so the list lands on row 1 and the seen message stays visible above it.
+    expect(mockScrollToIndex).toHaveBeenCalledWith(1, { align: 'start' });
+    expect(mockScrollToEnd).not.toHaveBeenCalled();
+    // Regression pin: mounting must NOT consume the rule it just drew. The
+    // first commit reports pinned only because the virtualizer has no scroll
+    // element yet; marking seen on it overwrites the cursor with '2'.
+    expect(window.localStorage.getItem('dorkos:chat:last-seen:anchor-session')).toBe('1');
+  });
+
+  it('lands on the newest message when there is no unread rule', () => {
+    mockScrollToEnd.mockClear();
+    mockScrollToIndex.mockClear();
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    expect(mockScrollToEnd).toHaveBeenCalled();
+    expect(mockScrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it('anchors once per session, not again as messages stream in', () => {
+    const messages = [messageOnDay('1', 0, 'A')];
+    const { rerender } = render(<MessageList sessionId="test-session" messages={messages} />);
+    mockScrollToEnd.mockClear();
+    mockScrollToIndex.mockClear();
+    rerender(
+      <MessageList sessionId="test-session" messages={[...messages, messageOnDay('2', 0, 'B')]} />
+    );
+    expect(mockScrollToEnd).not.toHaveBeenCalled();
+    expect(mockScrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it('does not mark messages seen from the first commit, before the list has geometry', () => {
+    window.localStorage.setItem('dorkos:chat:last-seen:unmeasured-session', '1');
+    isAtEndTrueOnlyOnFirstCommit();
+    const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
+    render(<MessageList sessionId="unmeasured-session" messages={messages} />);
+    expect(window.localStorage.getItem('dorkos:chat:last-seen:unmeasured-session')).toBe('1');
+    expect(screen.getByTestId('unread-divider')).toBeDefined();
   });
 });
 

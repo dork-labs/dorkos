@@ -4,6 +4,7 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 import { MessageItem } from '../ui/message';
 import { useAppStore } from '@/layers/shared/model';
 import type { MessageGrouping } from '../model/use-chat-session';
+import type { MessageAuthor } from '@/layers/shared/model';
 
 afterEach(() => {
   cleanup();
@@ -45,9 +46,23 @@ vi.mock('../ui/message/RunWithMenu', () => ({
   RunWithMenu: () => <div data-testid="run-with-menu" />,
 }));
 
-const onlyGrouping: MessageGrouping = { position: 'only', groupIndex: 0 };
-const firstGrouping: MessageGrouping = { position: 'first', groupIndex: 0 };
-const middleGrouping: MessageGrouping = { position: 'middle', groupIndex: 0 };
+const onlyGrouping: MessageGrouping = { position: 'only' };
+const firstGrouping: MessageGrouping = { position: 'first' };
+const middleGrouping: MessageGrouping = { position: 'middle' };
+
+const HUMAN_AUTHOR: MessageAuthor = { kind: 'human', id: 'human', displayName: 'You' };
+const AGENT_AUTHOR: MessageAuthor = {
+  kind: 'agent',
+  id: 'dorkbot',
+  displayName: 'DorkBot',
+  emoji: '\u{1F916}',
+  color: 'hsl(210, 70%, 55%)',
+};
+
+/** Identity props for a message. The header is derived from `grouping.position`. */
+function authorProps(message: { role: 'user' | 'assistant' }) {
+  return { author: message.role === 'user' ? HUMAN_AUTHOR : AGENT_AUTHOR };
+}
 
 describe('MessageItem', () => {
   it('renders user messages as plain text', () => {
@@ -58,7 +73,14 @@ describe('MessageItem', () => {
       parts: [{ type: 'text' as const, text: '**not bold**' }],
       timestamp: new Date().toISOString(),
     };
-    render(<MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />);
+    render(
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
+    );
     expect(screen.getByText('**not bold**')).toBeDefined();
     expect(screen.queryByTestId('streamdown')).toBeNull();
   });
@@ -71,7 +93,14 @@ describe('MessageItem', () => {
       parts: [{ type: 'text' as const, text: '# Heading' }],
       timestamp: new Date().toISOString(),
     };
-    render(<MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />);
+    render(
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
+    );
     expect(screen.getByTestId('streamdown')).toBeDefined();
     expect(screen.getByText('# Heading')).toBeDefined();
   });
@@ -85,7 +114,7 @@ describe('MessageItem', () => {
       timestamp: '2026-07-22T08:00:00.000Z',
     };
     const { container: normal } = render(
-      <MessageItem message={msg} sessionId="" grouping={onlyGrouping} />
+      <MessageItem message={msg} sessionId="" grouping={onlyGrouping} {...authorProps(msg)} />
     );
     // The timestamp text is in the DOM on a normal render (shown on hover).
     expect(normal.textContent).toMatch(/\d{1,2}:\d{2}/);
@@ -93,7 +122,13 @@ describe('MessageItem', () => {
     cleanup();
 
     const { container: scripted } = render(
-      <MessageItem message={msg} sessionId="" grouping={onlyGrouping} presentation />
+      <MessageItem
+        message={msg}
+        sessionId=""
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+        presentation
+      />
     );
     // No timestamp, and the hover background is neutralized.
     expect(scripted.textContent).not.toMatch(/\d{1,2}:\d{2}/);
@@ -102,17 +137,45 @@ describe('MessageItem', () => {
     );
   });
 
-  it('does not render name labels', () => {
+  it('renders the author name and avatar on a group start', () => {
     const msg = {
       id: '1',
-      role: 'user' as const,
+      role: 'assistant' as const,
       content: 'Test',
       parts: [{ type: 'text' as const, text: 'Test' }],
       timestamp: new Date().toISOString(),
     };
-    render(<MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />);
-    expect(screen.queryByText('You')).toBeNull();
-    expect(screen.queryByText('Claude')).toBeNull();
+    const { container } = render(
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        author={AGENT_AUTHOR}
+      />
+    );
+    expect(screen.getByText('DorkBot')).toBeDefined();
+    expect(container.querySelector('[data-slot="agent-avatar"]')).not.toBeNull();
+  });
+
+  it('renders neither name nor avatar on a continuation', () => {
+    const msg = {
+      id: '1',
+      role: 'assistant' as const,
+      content: 'Test',
+      parts: [{ type: 'text' as const, text: 'Test' }],
+      timestamp: new Date().toISOString(),
+    };
+    const { container } = render(
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={middleGrouping}
+        author={AGENT_AUTHOR}
+      />
+    );
+    expect(screen.queryByText('DorkBot')).toBeNull();
+    expect(container.querySelector('[data-slot="agent-avatar"]')).toBeNull();
+    expect(container.querySelector('[data-slot="message-author-avatar"]')).toBeNull();
   });
 
   it('renders tool calls for assistant messages', () => {
@@ -135,7 +198,14 @@ describe('MessageItem', () => {
       ],
       timestamp: new Date().toISOString(),
     };
-    render(<MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />);
+    render(
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
+    );
     expect(screen.getByText('Read ...')).toBeDefined();
   });
 
@@ -158,10 +228,15 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
     );
     const messageItemEl = container.querySelector('[data-testid="message-item"]');
-    const contentDiv = messageItemEl?.querySelector('.min-w-0');
+    const contentDiv = messageItemEl?.querySelector('[data-slot="message-content"]');
     const children = Array.from(contentDiv!.children);
     // First child: text part "Before tool"
     expect(children[0].textContent).toContain('Before tool');
@@ -180,7 +255,13 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} isNew={true} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+        isNew={true}
+      />
     );
     expect(screen.getByText('New message')).toBeDefined();
   });
@@ -194,22 +275,56 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} isNew={false} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+        isNew={false}
+      />
     );
     expect(screen.getByText('Old message')).toBeDefined();
   });
 
-  it('renders timestamp from message on hover', () => {
-    const ts = '2026-02-07T10:30:00.000Z';
+  it('always shows the timestamp on a group header', () => {
     const msg = {
       id: '1',
       role: 'user' as const,
       content: 'Test',
       parts: [{ type: 'text' as const, text: 'Test' }],
-      timestamp: ts,
+      timestamp: '2026-02-07T10:30:00.000Z',
     };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
+    );
+    // The header time is part of the identity line, so it is never
+    // hover-gated — a header with a blank where the time belongs looks broken.
+    const timeEl = container.querySelector('.text-msg-timestamp');
+    expect(timeEl).not.toBeNull();
+    expect(timeEl!.textContent).toBeTruthy();
+    expect(container.querySelector('.group-hover\\:text-msg-timestamp')).toBeNull();
+  });
+
+  it('hover-gates the timestamp on a continuation row', () => {
+    const msg = {
+      id: '2',
+      role: 'user' as const,
+      content: 'Follow-up',
+      parts: [{ type: 'text' as const, text: 'Follow-up' }],
+      timestamp: '2026-02-07T10:31:00.000Z',
+    };
+    const { container } = render(
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={middleGrouping}
+        author={HUMAN_AUTHOR}
+      />
     );
     const timeEl = container.querySelector('.group-hover\\:text-msg-timestamp');
     expect(timeEl).not.toBeNull();
@@ -229,6 +344,7 @@ describe('MessageItem', () => {
         message={msg}
         sessionId="test-session"
         grouping={onlyGrouping}
+        {...authorProps(msg)}
         isStreaming={true}
       />
     );
@@ -236,7 +352,7 @@ describe('MessageItem', () => {
     expect(cursorWrapper).not.toBeNull();
   });
 
-  it('renders divider on first-in-group when not the first group', () => {
+  it('opens a group with the identity gutter, not an in-message divider', () => {
     const msg = {
       id: '1',
       role: 'assistant' as const,
@@ -244,28 +360,21 @@ describe('MessageItem', () => {
       parts: [{ type: 'text' as const, text: 'Reply' }],
       timestamp: new Date().toISOString(),
     };
-    const grouping: MessageGrouping = { position: 'first', groupIndex: 1 };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={grouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={firstGrouping}
+        {...authorProps(msg)}
+      />
     );
-    const divider = container.querySelector('.bg-\\[var\\(--msg-divider-color\\)\\]');
-    expect(divider).not.toBeNull();
-  });
-
-  it('does not render divider on the first group', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'Hello',
-      parts: [{ type: 'text' as const, text: 'Hello' }],
-      timestamp: new Date().toISOString(),
-    };
-    const grouping: MessageGrouping = { position: 'first', groupIndex: 0 };
-    const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={grouping} />
+    // Separators are list rows now (see MessageList's day/unread dividers), so a
+    // group start renders the gutter + content layout and nothing above it.
+    const root = container.firstElementChild;
+    expect(root?.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]')).not.toBeNull();
+    expect(root?.querySelector('[data-slot="message-content"]')?.className).toContain(
+      'max-w-[var(--msg-content-max-width)]'
     );
-    const divider = container.querySelector('.bg-\\[var\\(--msg-divider-color\\)\\]');
-    expect(divider).toBeNull();
   });
 
   it('uses msg-assistant class and max-width on content container', () => {
@@ -277,17 +386,22 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
     );
     const el = container.querySelector('.msg-assistant');
     expect(el).not.toBeNull();
     // content container uses TV slot class (max-w-[var(--msg-content-max-width)])
-    const contentContainer = container.querySelector('.min-w-0.flex-1');
-    expect(contentContainer).not.toBeNull();
+    const contentContainer = container.querySelector('[data-slot="message-content"]');
+    expect(contentContainer?.className).toContain('max-w-[var(--msg-content-max-width)]');
     expect(contentContainer?.querySelector('.msg-assistant')).not.toBeNull();
   });
 
-  it('applies tight spacing for middle user messages', () => {
+  it('applies tight vertical padding to a mid-group row', () => {
     const msg = {
       id: '1',
       role: 'user' as const,
@@ -296,13 +410,18 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={middleGrouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={middleGrouping}
+        {...authorProps(msg)}
+      />
     );
     const el = container.firstElementChild;
-    expect(el?.className).toContain('my-px');
+    expect(el?.className).toContain('pt-[var(--msg-padding-y-mid)]');
   });
 
-  it('applies larger spacing for first-in-group user messages', () => {
+  it('opens a group with the larger top padding', () => {
     const msg = {
       id: '1',
       role: 'user' as const,
@@ -311,10 +430,15 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={firstGrouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={firstGrouping}
+        {...authorProps(msg)}
+      />
     );
     const el = container.firstElementChild;
-    expect(el?.className).toContain('mt-3');
+    expect(el?.className).toContain('pt-[var(--msg-padding-y-start)]');
   });
 
   it('new user message has initial scale 0.97', () => {
@@ -326,7 +450,13 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} isNew={true} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+        isNew={true}
+      />
     );
     // Under the motion mock, motion.div renders as a plain div.
     // We verify the component renders without error and the message is visible.
@@ -346,7 +476,13 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} isNew={true} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+        isNew={true}
+      />
     );
     expect(screen.getByTestId('message-item')).toBeDefined();
   });
@@ -360,12 +496,18 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} isNew={false} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+        isNew={false}
+      />
     );
     expect(screen.getByText('Old message')).toBeDefined();
   });
 
-  it('renders user messages as right-aligned bubbles', () => {
+  it('renders user messages in the same left gutter as everyone else', () => {
     const msg = {
       id: '1',
       role: 'user' as const,
@@ -374,43 +516,26 @@ describe('MessageItem', () => {
       timestamp: new Date().toISOString(),
     };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
     );
     const el = container.firstElementChild;
-    expect(el?.className).toContain('ml-auto');
-    expect(el?.className).toContain('max-w-[var(--msg-user-max-width)]');
-    expect(el?.className).toContain('rounded-msg');
+    // The right-aligned bubble is gone (spec decision D1): the row spans the
+    // full width instead of floating to the right.
+    expect(el?.className).not.toContain('ml-auto');
+    expect(el?.className).toContain('w-full');
+    // Both roles get the identity gutter and the same content column.
+    expect(container.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="message-content"]')?.className).toContain(
+      'max-w-[var(--msg-content-max-width)]'
+    );
   });
 
-  it('applies tight right corners for grouped user bubbles', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'Grouped',
-      parts: [{ type: 'text' as const, text: 'Grouped' }],
-      timestamp: new Date().toISOString(),
-    };
-    // first in group: bottom-right tight
-    const { container: c1 } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={firstGrouping} />
-    );
-    expect(c1.firstElementChild?.className).toContain('rounded-br-msg-tight');
-
-    // middle: both right corners tight
-    const { container: c2 } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={middleGrouping} />
-    );
-    expect(c2.firstElementChild?.className).toContain('rounded-r-msg-tight');
-
-    // last: top-right tight
-    const lastGrouping: MessageGrouping = { position: 'last', groupIndex: 0 };
-    const { container: c3 } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={lastGrouping} />
-    );
-    expect(c3.firstElementChild?.className).toContain('rounded-tr-msg-tight');
-  });
-
-  it('does not render divider for user messages even when groupIndex > 0', () => {
+  it('leaves the identity gutter empty on a user continuation', () => {
     const msg = {
       id: '1',
       role: 'user' as const,
@@ -418,12 +543,18 @@ describe('MessageItem', () => {
       parts: [{ type: 'text' as const, text: 'Hello' }],
       timestamp: new Date().toISOString(),
     };
-    const grouping: MessageGrouping = { position: 'first', groupIndex: 1 };
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={grouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={middleGrouping}
+        author={HUMAN_AUTHOR}
+      />
     );
-    const divider = container.querySelector('.bg-\\[var\\(--msg-divider-color\\)\\]');
-    expect(divider).toBeNull();
+    const gutter = container.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]');
+    expect(gutter).not.toBeNull();
+    expect(gutter?.querySelector('[data-slot="agent-avatar"]')).toBeNull();
+    expect(screen.queryByText('You')).toBeNull();
   });
 
   it('renders text parts adjacent to tool call without orphaned standalone rendering', () => {
@@ -454,7 +585,12 @@ describe('MessageItem', () => {
     };
 
     const { container } = render(
-      <MessageItem message={msg} sessionId="test-session" grouping={onlyGrouping} />
+      <MessageItem
+        message={msg}
+        sessionId="test-session"
+        grouping={onlyGrouping}
+        {...authorProps(msg)}
+      />
     );
 
     // Both text parts should be present in the DOM
@@ -511,7 +647,10 @@ describe('Auto-hide tool calls', () => {
 
   it('hides tool calls that are already complete on mount when autoHide is ON', () => {
     useAppStore.getState().setAutoHideToolCalls(true);
-    render(<MessageItem message={makeMsg('complete')} sessionId="s" grouping={onlyGrouping} />);
+    const msg = makeMsg('complete');
+    render(
+      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
+    );
     expect(screen.queryByText('Read ...')).toBeNull();
   });
 
@@ -519,13 +658,20 @@ describe('Auto-hide tool calls', () => {
     useAppStore.getState().setAutoHideToolCalls(true);
     const msg = makeMsg('running');
     const { rerender } = render(
-      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} />
+      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
     expect(screen.getByText('Read ...')).toBeDefined();
 
     // Transition to complete
     const completedMsg = makeMsg('complete');
-    rerender(<MessageItem message={completedMsg} sessionId="s" grouping={onlyGrouping} />);
+    rerender(
+      <MessageItem
+        message={completedMsg}
+        sessionId="s"
+        grouping={onlyGrouping}
+        {...authorProps(completedMsg)}
+      />
+    );
     // Still visible immediately after completion
     expect(screen.getByText('Read ...')).toBeDefined();
 
@@ -538,7 +684,10 @@ describe('Auto-hide tool calls', () => {
 
   it('never hides tool calls with error status', () => {
     useAppStore.getState().setAutoHideToolCalls(true);
-    render(<MessageItem message={makeMsg('error')} sessionId="s" grouping={onlyGrouping} />);
+    const msg = makeMsg('error');
+    render(
+      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
+    );
     act(() => {
       vi.advanceTimersByTime(10_000);
     });
@@ -547,7 +696,10 @@ describe('Auto-hide tool calls', () => {
 
   it('shows all tool calls when autoHide is OFF', () => {
     useAppStore.getState().setAutoHideToolCalls(false);
-    render(<MessageItem message={makeMsg('complete')} sessionId="s" grouping={onlyGrouping} />);
+    const msg = makeMsg('complete');
+    render(
+      <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
+    );
     expect(screen.getByText('Read ...')).toBeDefined();
   });
 });

@@ -26,7 +26,6 @@ const SEMANTIC_COLORS: ColorToken[] = [
   { name: 'input', bg: 'bg-input' },
   { name: 'ring', bg: 'bg-ring' },
   { name: 'brand', bg: 'bg-brand' },
-  { name: 'user-msg', bg: 'bg-user-msg' },
   { name: 'surface', bg: 'bg-surface', border: true },
 ];
 
@@ -283,14 +282,6 @@ function RadiiSection() {
           />
           <p className="text-muted-foreground text-3xs font-mono">radius-msg</p>
           <p className="text-muted-foreground text-3xs">20px</p>
-        </div>
-        <div className="space-y-1.5 text-center">
-          <div
-            className="border-border bg-muted h-16 w-16 border-2"
-            style={{ borderRadius: 'var(--radius-msg-tight)' }}
-          />
-          <p className="text-muted-foreground text-3xs font-mono">radius-msg-tight</p>
-          <p className="text-muted-foreground text-3xs">4px</p>
         </div>
       </div>
     </PlaygroundSection>

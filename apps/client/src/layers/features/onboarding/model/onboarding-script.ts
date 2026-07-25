@@ -95,12 +95,10 @@ export function buildScriptMessage(
  */
 export function computeGrouping(messages: readonly ChatMessage[]): MessageGrouping[] {
   const result: MessageGrouping[] = [];
-  let groupIndex = -1;
   for (let i = 0; i < messages.length; i++) {
     const role = messages[i].role;
     const prevSame = i > 0 && messages[i - 1].role === role;
     const nextSame = i < messages.length - 1 && messages[i + 1].role === role;
-    if (!prevSame) groupIndex++;
     let position: GroupPosition;
     if (!prevSame && !nextSame) {
       position = 'only';
@@ -111,7 +109,7 @@ export function computeGrouping(messages: readonly ChatMessage[]): MessageGroupi
     } else {
       position = 'last';
     }
-    result.push({ position, groupIndex });
+    result.push({ position });
   }
   return result;
 }
