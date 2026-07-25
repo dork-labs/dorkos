@@ -5,6 +5,13 @@ import { useMessageQueue } from '../model/use-message-queue';
 import type { ChatStatus } from '../model/chat-types';
 import { useSessionStreamStore } from '@/layers/entities/session';
 
+/**
+ * The out-of-band options every flush carries: the queue signal, plus the undo
+ * the submit path calls when a trigger is refused so the message goes back in
+ * the queue instead of being destroyed (DOR-480).
+ */
+const FLUSH_OPTS = { queued: true, restore: expect.any(Function) };
+
 describe('Queue workflow integration', () => {
   const onFlush = vi.fn();
 
@@ -40,7 +47,7 @@ describe('Queue workflow integration', () => {
 
     expect(onFlush).toHaveBeenCalledTimes(1);
     // Pristine content + queue signal out-of-band — no annotation prepended.
-    expect(onFlush).toHaveBeenCalledWith('First followup', 'test', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('First followup', 'test', FLUSH_OPTS);
     expect(result.current.queue).toHaveLength(1);
     expect(result.current.queue[0].content).toBe('Second followup');
   });
@@ -63,7 +70,7 @@ describe('Queue workflow integration', () => {
     });
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith('My message', 'test', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('My message', 'test', FLUSH_OPTS);
     const flushedContent = onFlush.mock.calls[0][0] as string;
     expect(flushedContent).toBe('My message');
     expect(flushedContent).not.toContain('[Note:');
@@ -183,9 +190,9 @@ describe('Queue workflow integration', () => {
 
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test', {
-      queued: true,
-    });
+    // Exact, not `stringContaining`: a truncated flush is not the message the
+    // person typed, and the loose matcher passed for both.
+    expect(onFlush).toHaveBeenCalledWith('Should flush', 'test', FLUSH_OPTS);
     expect(result.current.queue).toHaveLength(1);
     expect(result.current.queue[0].content).toBe('Being edited');
   });

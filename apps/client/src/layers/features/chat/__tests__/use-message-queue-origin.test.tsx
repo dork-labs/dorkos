@@ -129,7 +129,10 @@ describe('useMessageQueue — origin pinning (DOR-81 wrong-session queue flush)'
     rerender({ status: 'idle' as ChatStatus });
 
     expect(onFlush).toHaveBeenCalledTimes(1);
-    expect(onFlush).toHaveBeenCalledWith('message for A', 'A', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('message for A', 'A', {
+      queued: true,
+      restore: expect.any(Function),
+    });
     // Flushed item was dequeued from A.
     expect(useSessionStreamStore.getState().getSession('A').queuedMessages).toHaveLength(0);
   });
@@ -163,7 +166,7 @@ describe('useMessageQueue — origin pinning (DOR-81 wrong-session queue flush)'
 });
 
 describe('useSessionSubmit.submitContent — cross-session defense-in-depth (DOR-81)', () => {
-  it('rejects (drops + logs) a queued message whose origin session != active session', async () => {
+  it('refuses a queued message whose origin session != active session, and puts it back', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const postMessage = vi
       .fn()
@@ -176,13 +179,29 @@ describe('useSessionSubmit.submitContent — cross-session defense-in-depth (DOR
     await waitFor(() => expect(result.current.status).toBe('idle'));
 
     // Flush a message whose origin is a DIFFERENT session than the active one.
+    // The restore handle closes over the ORIGIN session, so refusing is not the
+    // same as discarding: it goes back into the queue it came from (DOR-480).
+    const restore = () =>
+      useSessionStreamStore
+        .getState()
+        .requeueMessage('other-session', { id: 'q-1', content: 'stale queued message' }, 0);
     await act(async () => {
-      result.current.submitContent('stale queued message', 'other-session');
+      result.current.submitContent('stale queued message', 'other-session', {
+        queued: true,
+        restore,
+      });
     });
 
     // The submit path refused to deliver it — postMessage never fired.
     expect(postMessage).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('other-session'));
+    // …and the message survives, in its own session's queue.
+    expect(
+      useSessionStreamStore
+        .getState()
+        .getSession('other-session')
+        .queuedMessages.map((m) => m.content)
+    ).toEqual(['stale queued message']);
     warn.mockRestore();
   });
 
@@ -207,6 +226,139 @@ describe('useSessionSubmit.submitContent — cross-session defense-in-depth (DOR
       '/test/cwd',
       expect.any(Object)
     );
+  });
+});
+
+describe('queue → submit — a refused trigger never destroys the message (DOR-480)', () => {
+  /**
+   * The real pairing ChatInputContainer wires up: the queue's `onFlush` IS
+   * `useSessionSubmit`'s `submitContent`. Driving both together is the only way
+   * to see the whole failure — the queue dequeues, the trigger is refused, and
+   * whatever happens next decides whether a person's words survive.
+   */
+  function useQueueWiredToSubmit(sessionId: string, status: ChatStatus) {
+    const chat = useChatSession(sessionId);
+    const queue = useMessageQueue({
+      ...baseQueueOptions,
+      status,
+      sessionId,
+      onFlush: chat.submitContent,
+    });
+    return { chat, queue };
+  }
+
+  it('a queued flush that comes back SESSION_LOCKED is still in the queue afterward', async () => {
+    // Exactly what a blocked turn does server-side: the turn keeps its session
+    // lock while it waits for an approval, so the flush's trigger 409s.
+    const lockError = Object.assign(new Error('Session locked'), { code: 'SESSION_LOCKED' });
+    const postMessage = vi.fn().mockRejectedValue(lockError);
+    const transport = createMockTransport({ postMessage });
+
+    const { result, rerender } = renderHook(
+      ({ status }) => useQueueWiredToSubmit('s1', status),
+      // Mid-turn: the person types a follow-up and it queues.
+      { initialProps: { status: 'streaming' as ChatStatus }, wrapper: createWrapper(transport) }
+    );
+    await waitFor(() => expect(result.current.chat.status).toBe('idle'));
+
+    act(() => {
+      result.current.queue.addToQueue('and then run the tests');
+    });
+    const queuedId = useSessionStreamStore.getState().getSession('s1').queuedMessages[0]!.id;
+
+    // The turn settles, the flush fires, the trigger is refused.
+    await act(async () => {
+      rerender({ status: 'idle' as ChatStatus });
+    });
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+
+    // THE measurement: the queue's contents, not whether a mock was called.
+    // Before the fix this was an empty array and nothing anywhere held the text.
+    await waitFor(() => {
+      const queued = useSessionStreamStore.getState().getSession('s1').queuedMessages;
+      expect(queued.map((m) => m.content)).toEqual(['and then run the tests']);
+      // Same item, same identity — not a re-typed copy.
+      expect(queued[0]!.id).toBe(queuedId);
+    });
+    // The composer was never holding this text, so nothing was pushed into it.
+    expect(result.current.chat.input).toBe('');
+    // And no half-sent bubble is left behind claiming it went out.
+    expect(useSessionStreamStore.getState().getSession('s1').optimisticUserMessage).toBeNull();
+  });
+
+  it('the restored message is deliverable by hand, and lands the second time', async () => {
+    const lockError = Object.assign(new Error('Session locked'), { code: 'SESSION_LOCKED' });
+    const postMessage = vi
+      .fn()
+      .mockRejectedValueOnce(lockError)
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result, rerender } = renderHook(({ status }) => useQueueWiredToSubmit('s1', status), {
+      initialProps: { status: 'streaming' as ChatStatus },
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.chat.status).toBe('idle'));
+
+    act(() => {
+      result.current.queue.addToQueue('and then run the tests');
+    });
+    await act(async () => {
+      rerender({ status: 'idle' as ChatStatus });
+    });
+    await waitFor(() =>
+      expect(useSessionStreamStore.getState().getSession('s1').queuedMessages).toHaveLength(1)
+    );
+
+    // Recovery the way a person does it: click Send now on the restored row.
+    // (In the app the row is briefly disabled while the submit path holds
+    // `sessionBusy`; this harness passes `sessionBusy: false` throughout, so the
+    // send is available immediately — the gating itself is pinned in
+    // use-message-queue.test.ts.)
+    const restoredId = useSessionStreamStore.getState().getSession('s1').queuedMessages[0]!.id;
+    await act(async () => {
+      result.current.queue.sendNow(restoredId);
+    });
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(2));
+    expect(postMessage).toHaveBeenLastCalledWith(
+      's1',
+      'and then run the tests',
+      '/test/cwd',
+      expect.any(Object)
+    );
+    expect(useSessionStreamStore.getState().getSession('s1').queuedMessages).toHaveLength(0);
+  });
+
+  it('a queued flush that fails for any other reason is also put back', async () => {
+    // A dead network is the same data-loss shape: the composer never held this
+    // text, so dropping it leaves nowhere to recover it from.
+    const postMessage = vi.fn().mockRejectedValue(new Error('network down'));
+    const transport = createMockTransport({ postMessage });
+
+    const { result, rerender } = renderHook(({ status }) => useQueueWiredToSubmit('s1', status), {
+      initialProps: { status: 'streaming' as ChatStatus },
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.chat.status).toBe('idle'));
+
+    act(() => {
+      result.current.queue.addToQueue('please also update the docs');
+    });
+    await act(async () => {
+      rerender({ status: 'idle' as ChatStatus });
+    });
+
+    await waitFor(() => {
+      expect(
+        useSessionStreamStore
+          .getState()
+          .getSession('s1')
+          .queuedMessages.map((m) => m.content)
+      ).toEqual(['please also update the docs']);
+    });
+    // The failure is still surfaced honestly — the message did not send.
+    expect(result.current.chat.error?.heading).toBe('Could not send message');
   });
 });
 

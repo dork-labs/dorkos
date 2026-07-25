@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   useSessionStreamStore,
   useSessionQueue,
+  useSessionAwaitingDecision,
   type QueuedMessage,
 } from '@/layers/entities/session';
 import type { ChatStatus } from './chat-types';
@@ -9,20 +10,41 @@ import type { ChatStatus } from './chat-types';
 /** A single item in the message queue (re-exported from the session entity). */
 export type QueueItem = QueuedMessage;
 
+/** Out-of-band metadata carried by a queue flush. */
+export interface QueueFlushOptions {
+  /** Always `true` for a queue flush — becomes `context: { queued: true }` on the wire. */
+  queued: boolean;
+  /**
+   * Undo for this flush: puts the message back in the queue at the position it
+   * was dequeued from, keeping its id.
+   *
+   * The queue has to dequeue BEFORE the trigger POST resolves (the flush is
+   * fire-and-forget, and leaving the item in place would let the next render
+   * flush it twice). So the submit path owns the failure case: a refused
+   * trigger — `SESSION_LOCKED` from a turn lock the server still holds, a dead
+   * network — calls this instead of dropping the message. Without it, a person's
+   * typed words were destroyed by a race they could not see (DOR-480).
+   * Idempotent, so calling it twice cannot duplicate the message.
+   */
+  restore: () => void;
+}
+
 interface UseMessageQueueOptions {
   status: ChatStatus;
   sessionBusy: boolean;
   sessionId: string | null;
   selectedCwd: string | null;
   /**
-   * Called when the queue auto-flushes a message on the streaming→idle edge.
-   * Receives the PRISTINE message, its origin session id (so the submit path can
-   * refuse to misdeliver it after a session switch — DOR-81 defense-in-depth),
-   * and `{ queued }` carrying the queue origin out-of-band. The submit path
-   * turns `queued: true` into `context: { queued: true }` so the model sees a
-   * server-rendered `<queue_note>` — the content itself is never annotated.
+   * Called when the queue flushes a message — automatically on the
+   * streaming→idle edge, or on demand via
+   * {@link UseMessageQueueReturn.sendNow}. Receives the PRISTINE message, its
+   * origin session id (so the submit path can refuse to misdeliver it after a
+   * session switch — DOR-81 defense-in-depth), and {@link QueueFlushOptions}
+   * carrying the queue origin plus the restore handle out-of-band. The submit
+   * path turns `queued: true` into `context: { queued: true }` so the model sees
+   * a server-rendered `<queue_note>` — the content itself is never annotated.
    */
-  onFlush: (content: string, originSessionId: string, opts: { queued: boolean }) => void;
+  onFlush: (content: string, originSessionId: string, opts: QueueFlushOptions) => void;
 }
 
 interface UseMessageQueueReturn {
@@ -39,12 +61,34 @@ interface UseMessageQueueReturn {
    * nothing is being edited.
    */
   editingIndex: number | null;
+  /**
+   * Why a manual send cannot happen right now, in words fit for a tooltip, or
+   * `null` when {@link UseMessageQueueReturn.sendNow} will work. Drives the
+   * disabled state of the queue rows' Send-now control so it never fails
+   * silently.
+   */
+  sendBlockedReason: string | null;
   addToQueue: (content: string) => void;
   removeFromQueue: (id: string) => void;
+  /**
+   * Send a queued message immediately, ahead of the auto-flush pump.
+   *
+   * The escape hatch for every state the pump cannot drain: a turn that ended in
+   * `error` (the pump only arms on streaming→idle), a lock race that put a
+   * message back, or simply a message the operator wants out first. A no-op when
+   * {@link UseMessageQueueReturn.sendBlockedReason} is set.
+   */
+  sendNow: (id: string) => void;
   /** Starts editing `id`; returns its content, or `null` if the item is gone. */
   startEditing: (id: string) => string | null;
   cancelEditing: () => void;
   saveEditing: (content: string) => void;
+  /**
+   * Rewrite a queued item's content WITHOUT moving the editing cursor — the
+   * commit half of edit-in-place, used when the operator leaves an edit by
+   * navigating rather than by saving.
+   */
+  updateQueued: (id: string, content: string) => void;
   clearQueue: () => void;
 }
 
@@ -65,17 +109,30 @@ interface UseMessageQueueReturn {
  *
  * **Flush is owed, not edge-triggered.** The streaming→idle edge *arms* the
  * flush; the flush itself fires as soon as the session can take it (idle, not
- * busy, and at least one item is not under edit). A one-shot edge stranded the
- * queue whenever the only item was being edited when the turn ended: the edge
- * was consumed, `onFlush` never fired, and — with no manual "send now" — the
- * message sat there until the operator happened to send something else. The
- * owed flag makes the same effect re-evaluate when editing ends or the session
- * stops being busy, so a queued message cannot strand.
+ * busy, not awaiting a decision, and at least one item is not under edit). A
+ * one-shot edge stranded the queue whenever the only item was being edited when
+ * the turn ended: the edge was consumed, `onFlush` never fired, and the message
+ * sat there until the operator happened to send something else. The owed flag
+ * makes the same effect re-evaluate when editing ends or the session stops being
+ * busy, so a queued message cannot strand.
  *
  * The owed flag is scoped to the tracked session exactly like the status
  * tracker: a session/cwd change drops it along with the streaming→idle history,
  * so an owed flush belonging to A can never fire into B (DOR-81). Both are reset
  * BEFORE the edge is evaluated, so a phantom edge right after a switch is inert.
+ *
+ * **Drainability is read from the authoritative lifecycle, not from the rendered
+ * status** (DOR-480). `selectRenderedStatus` collapses `blocked` → `idle` on
+ * purpose — the renderer shows blocking through the interaction cards — but the
+ * server keeps the turn's session lock for the entire time a turn sits blocked
+ * on an approval. Draining against the rendered `idle` therefore dequeued the
+ * message and handed it to a trigger the lock would refuse, and it was gone.
+ * {@link useSessionAwaitingDecision} is the truth the drain gates on.
+ *
+ * Delivery is still not guaranteed by the gate alone (a second client can hold
+ * the lock), so every flush carries a {@link QueueFlushOptions.restore} handle
+ * and every row offers {@link UseMessageQueueReturn.sendNow}: a refused trigger
+ * puts the message back, and the operator can always send it by hand.
  */
 export function useMessageQueue({
   status,
@@ -85,6 +142,7 @@ export function useMessageQueue({
   onFlush,
 }: UseMessageQueueOptions): UseMessageQueueReturn {
   const queue = useSessionQueue(sessionId ?? '');
+  const awaitingDecision = useSessionAwaitingDecision(sessionId ?? '');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Position is derived, never stored: the queue mutates under the cursor and
@@ -113,6 +171,29 @@ export function useMessageQueue({
   const prevStatusRef = useRef<ChatStatus>('idle');
   const trackedKeyRef = useRef<string | null>(null);
   const flushOwedRef = useRef(false);
+
+  /**
+   * Dequeue `item` and hand it to the submit path with an undo bound to the
+   * position it came from. The single delivery seam — the auto-flush and the
+   * manual send must not diverge on the restore contract.
+   */
+  const deliver = useCallback((targetSessionId: string, item: QueueItem, index: number) => {
+    useSessionStreamStore.getState().removeQueuedMessage(targetSessionId, item.id);
+    // Flush PRISTINE content; the queued origin rides out-of-band as
+    // `{ queued: true }` → `context.queued` → server `<queue_note>`.
+    onFlushRef.current(item.content, targetSessionId, {
+      queued: true,
+      restore: () => useSessionStreamStore.getState().requeueMessage(targetSessionId, item, index),
+    });
+  }, []);
+
+  const sendBlockedReason = useMemo(() => {
+    if (!sessionId) return 'No session to send to yet';
+    if (status === 'streaming') return 'Waiting for the reply to finish';
+    if (awaitingDecision) return 'Waiting for your answer above';
+    if (sessionBusy) return 'This session is busy right now';
+    return null;
+  }, [sessionId, status, awaitingDecision, sessionBusy]);
 
   // Auto-flush: armed by the streaming→idle transition, drained as soon as the
   // session can take a message. Pinned to `sessionId` — the queue read, dequeue,
@@ -150,22 +231,26 @@ export function useMessageQueue({
       flushOwedRef.current = false;
       return;
     }
-    // Drain. Re-runs when editing ends or the session stops being busy, so a
-    // flush blocked at the edge is delivered the moment it becomes possible.
-    if (status !== 'idle' || sessionBusy || !sessionId) return;
+    // Drain. Re-runs when editing ends, the session stops being busy, or a
+    // pending approval resolves, so a flush blocked at the edge is delivered the
+    // moment it becomes possible.
+    //
+    // `status === 'idle'` keeps the pump off a failed turn on purpose: a person
+    // whose turn just errored should decide what happens next, so the queue waits
+    // for their Send-now (BUG 4's strand fix) rather than auto-firing into a
+    // broken session. `sendBlockedReason` adds the authoritative half — a
+    // `blocked` session reads `idle` to the renderer but still holds the turn's
+    // server-side lock, and draining into it destroyed the message (DOR-480).
+    if (status !== 'idle' || sendBlockedReason !== null || !sessionId) return;
 
     // Skip the item being edited; flush the first item that is not under edit.
-    const item = queueRef.current.find((queued) => queued.id !== editingId);
+    const index = queueRef.current.findIndex((queued) => queued.id !== editingId);
     // Only the edited item is left — stay owed and flush when editing ends.
-    if (!item) return;
+    if (index === -1) return;
 
     flushOwedRef.current = false;
-    useSessionStreamStore.getState().removeQueuedMessage(sessionId, item.id);
-
-    // Flush PRISTINE content; the queued origin rides out-of-band as
-    // `{ queued: true }` → `context.queued` → server `<queue_note>`.
-    onFlushRef.current(item.content, sessionId, { queued: true });
-  }, [status, sessionBusy, sessionId, selectedCwd, editingId]);
+    deliver(sessionId, queueRef.current[index]!, index);
+  }, [status, sessionBusy, sessionId, selectedCwd, editingId, sendBlockedReason, deliver]);
 
   const addToQueue = useCallback(
     (content: string) => {
@@ -175,7 +260,7 @@ export function useMessageQueue({
     [sessionId]
   );
 
-  const updateQueueItem = useCallback(
+  const updateQueued = useCallback(
     (id: string, content: string) => {
       if (!sessionId) return;
       useSessionStreamStore.getState().updateQueuedMessage(sessionId, id, content);
@@ -189,6 +274,25 @@ export function useMessageQueue({
       setEditingId((prev) => (prev === id ? null : prev));
     },
     [sessionId]
+  );
+
+  const sendNow = useCallback(
+    (id: string) => {
+      if (!sessionId || sendBlockedReason !== null) return;
+      // Read the LIVE store, not the render-time snapshot: the caller may have
+      // just committed an in-progress edit into this very item, and `queueRef`
+      // still holds the pre-commit array (it is assigned during render).
+      const items = useSessionStreamStore.getState().getSession(sessionId).queuedMessages;
+      const index = items.findIndex((item) => item.id === id);
+      if (index === -1) return;
+      // A hand-sent message satisfies whatever flush was owed: the send starts a
+      // turn, and re-arming would drain a SECOND message the operator did not
+      // ask for. The next streaming→idle edge arms the pump again.
+      flushOwedRef.current = false;
+      setEditingId((prev) => (prev === id ? null : prev));
+      deliver(sessionId, items[index]!, index);
+    },
+    [sessionId, sendBlockedReason, deliver]
   );
 
   const startEditing = useCallback(
@@ -208,10 +312,10 @@ export function useMessageQueue({
   const saveEditing = useCallback(
     (content: string) => {
       if (editingId === null) return;
-      updateQueueItem(editingId, content);
+      updateQueued(editingId, content);
       setEditingId(null);
     },
-    [editingId, updateQueueItem]
+    [editingId, updateQueued]
   );
 
   const clearQueue = useCallback(() => {
@@ -223,11 +327,14 @@ export function useMessageQueue({
     queue,
     editingId,
     editingIndex,
+    sendBlockedReason,
     addToQueue,
     removeFromQueue,
+    sendNow,
     startEditing,
     cancelEditing,
     saveEditing,
+    updateQueued,
     clearQueue,
   };
 }

@@ -266,3 +266,156 @@ describe('useFileUpload', () => {
     expect(mockTransport.uploadFiles).not.toHaveBeenCalled();
   });
 });
+
+describe('useFileUpload — a failed attachment never rides a silent send (DOR-480)', () => {
+  let mockTransport: ReturnType<typeof createMockTransport>;
+  let queryClient: QueryClient;
+
+  function createWrapper() {
+    return function Wrapper({ children }: { children: React.ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={mockTransport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      );
+    };
+  }
+
+  const uploadResult = (name: string): UploadResult => ({
+    originalName: name,
+    savedPath: `/test/project/.dork/.temp/uploads/${name}`,
+    filename: name,
+    size: 1,
+    mimeType: 'text/plain',
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    mockTransport = createMockTransport();
+  });
+
+  /** Attaches one file and fails its upload, leaving it in `error`. */
+  async function attachAndFail() {
+    vi.mocked(mockTransport.uploadFiles).mockRejectedValue(new Error('File too large'));
+    const harness = renderHook(() => useFileUpload(), { wrapper: createWrapper() });
+
+    act(() => {
+      harness.result.current.addFiles([new File(['x'], 'huge.bin', { type: 'text/plain' })]);
+    });
+    await act(async () => {
+      await harness.result.current.uploadAndGetPaths().catch(() => {});
+    });
+    await waitFor(() => expect(harness.result.current.pendingFiles[0].status).toBe('error'));
+    return harness;
+  }
+
+  it('reports the failure so the composer can refuse to send', async () => {
+    const { result } = await attachAndFail();
+    expect(result.current.hasFailedUpload).toBe(true);
+  });
+
+  it('refuses to hand back paths while an attachment is in error', async () => {
+    // The bug: `uploadAndGetPaths` filtered errored files out, so a second Send
+    // returned an empty list, the read-files block was omitted, the message went
+    // to the model with NO attachment, and clearFiles() then wiped the evidence.
+    const { result } = await attachAndFail();
+    vi.mocked(mockTransport.uploadFiles).mockClear();
+
+    await expect(result.current.uploadAndGetPaths()).rejects.toThrow(/huge\.bin did not upload/);
+    // It did not quietly send an empty attachment list either.
+    expect(mockTransport.uploadFiles).not.toHaveBeenCalled();
+    expect(result.current.pendingFiles).toHaveLength(1);
+  });
+
+  it('refuses even when a sibling attachment uploaded fine', async () => {
+    // The partial case is the nastiest: returning just the good path looks like
+    // success while one of the person's files is silently missing.
+    vi.mocked(mockTransport.uploadFiles).mockResolvedValueOnce([uploadResult('good.txt')]);
+    const { result } = renderHook(() => useFileUpload(), { wrapper: createWrapper() });
+
+    act(() => {
+      result.current.addFiles([new File(['a'], 'good.txt', { type: 'text/plain' })]);
+    });
+    await act(async () => {
+      await result.current.uploadAndGetPaths();
+    });
+    await waitFor(() => expect(result.current.pendingFiles[0].status).toBe('uploaded'));
+
+    vi.mocked(mockTransport.uploadFiles).mockRejectedValueOnce(new Error('Network error'));
+    act(() => {
+      result.current.addFiles([new File(['b'], 'bad.bin', { type: 'text/plain' })]);
+    });
+    await act(async () => {
+      await result.current.uploadAndGetPaths().catch(() => {});
+    });
+    await waitFor(() => expect(result.current.hasFailedUpload).toBe(true));
+
+    await expect(result.current.uploadAndGetPaths()).rejects.toThrow(/bad\.bin did not upload/);
+  });
+
+  it('retryFile puts the file back in line and clears its error', async () => {
+    const { result } = await attachAndFail();
+
+    act(() => {
+      result.current.retryFile(result.current.pendingFiles[0].id);
+    });
+
+    await waitFor(() => {
+      const file = result.current.pendingFiles[0];
+      expect(file.status).toBe('pending');
+      expect(file.error).toBeUndefined();
+    });
+    expect(result.current.hasFailedUpload).toBe(false);
+  });
+
+  it('a retried file uploads on the next send', async () => {
+    const { result } = await attachAndFail();
+    act(() => {
+      result.current.retryFile(result.current.pendingFiles[0].id);
+    });
+    await waitFor(() => expect(result.current.pendingFiles[0].status).toBe('pending'));
+
+    vi.mocked(mockTransport.uploadFiles).mockReset();
+    vi.mocked(mockTransport.uploadFiles).mockResolvedValue([uploadResult('huge.bin')]);
+
+    let paths: string[] = [];
+    await act(async () => {
+      paths = await result.current.uploadAndGetPaths();
+    });
+
+    expect(paths).toEqual(['/test/project/.dork/.temp/uploads/huge.bin']);
+  });
+
+  it('returns already-uploaded paths alongside newly-uploaded ones', async () => {
+    // A previously-uploaded attachment used to be dropped from the list whenever
+    // a newer one still needed uploading.
+    vi.mocked(mockTransport.uploadFiles).mockResolvedValueOnce([uploadResult('first.txt')]);
+    const { result } = renderHook(() => useFileUpload(), { wrapper: createWrapper() });
+
+    act(() => {
+      result.current.addFiles([new File(['a'], 'first.txt', { type: 'text/plain' })]);
+    });
+    await act(async () => {
+      await result.current.uploadAndGetPaths();
+    });
+    await waitFor(() => expect(result.current.pendingFiles[0].status).toBe('uploaded'));
+
+    vi.mocked(mockTransport.uploadFiles).mockResolvedValueOnce([uploadResult('second.txt')]);
+    act(() => {
+      result.current.addFiles([new File(['b'], 'second.txt', { type: 'text/plain' })]);
+    });
+
+    let paths: string[] = [];
+    await act(async () => {
+      paths = await result.current.uploadAndGetPaths();
+    });
+
+    expect(paths).toEqual([
+      '/test/project/.dork/.temp/uploads/first.txt',
+      '/test/project/.dork/.temp/uploads/second.txt',
+    ]);
+  });
+});

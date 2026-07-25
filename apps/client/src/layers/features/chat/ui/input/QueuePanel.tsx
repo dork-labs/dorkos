@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { X } from 'lucide-react';
+import { X, CornerDownLeft } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
 
@@ -10,17 +10,38 @@ interface QueuePanelProps {
   onEdit: (id: string) => void;
   /** Called with the item's stable id — positions shift when the queue auto-flushes. */
   onRemove: (id: string) => void;
+  /** Send this message now, ahead of the queue. Called with the item's stable id. */
+  onSend: (id: string) => void;
+  /**
+   * Why Send-now cannot happen right now, or `null` when it can. Shown as the
+   * disabled control's title so the refusal always says why.
+   */
+  sendBlockedReason: string | null;
 }
 
 /**
  * Inline queue card list rendered above the chat textarea.
  *
- * Each row is a plain container holding two sibling buttons — edit and remove.
- * Nesting the remove control inside the edit button would be invalid HTML, so
+ * Each row is a plain container holding sibling buttons — edit, send-now, and
+ * remove. Nesting them inside the edit button would be invalid HTML, so
  * browsers handle it inconsistently and assistive tech only ever sees one
  * control.
+ *
+ * Send-now is what keeps a queued message from ever being trapped (DOR-480). The
+ * auto-flush pump only arms on the streaming→idle edge, so a turn that ended in
+ * failure — or any lock race that put a message back — used to leave the queue
+ * frozen with no way out but Edit-then-Remove, which threw the text away. When a
+ * send genuinely cannot happen the control is disabled and says why, rather than
+ * doing nothing.
  */
-export function QueuePanel({ queue, editingIndex, onEdit, onRemove }: QueuePanelProps) {
+export function QueuePanel({
+  queue,
+  editingIndex,
+  onEdit,
+  onRemove,
+  onSend,
+  sendBlockedReason,
+}: QueuePanelProps) {
   if (queue.length === 0) return null;
 
   return (
@@ -64,6 +85,19 @@ export function QueuePanel({ queue, editingIndex, onEdit, onRemove }: QueuePanel
                   <span className="text-muted-foreground line-clamp-1 flex-1 text-sm">
                     {item.content}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSend(item.id)}
+                  disabled={sendBlockedReason !== null}
+                  title={sendBlockedReason ?? undefined}
+                  // Always visible, unlike the tucked-away remove: this is the
+                  // primary action on a queued row and the only way out of a
+                  // stranded queue, so it must not need a hover to be found.
+                  className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors disabled:opacity-40"
+                  aria-label={`Send queued message ${i + 1} now`}
+                >
+                  <CornerDownLeft className="size-3" />
                 </button>
                 <button
                   type="button"

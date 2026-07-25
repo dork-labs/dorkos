@@ -252,6 +252,17 @@ interface SessionStreamActions {
   updateQueuedMessage: (sessionId: string, id: string, content: string) => void;
   /** Remove a single queued message by id (after flush or operator removal). */
   removeQueuedMessage: (sessionId: string, id: string) => void;
+  /**
+   * Put a dequeued message BACK in the queue at `index` (clamped to the current
+   * length), keeping its original id.
+   *
+   * The flush dequeues a message before the trigger POST resolves, so a refused
+   * trigger — `SESSION_LOCKED` from a still-held turn lock, a network failure —
+   * used to destroy text a person typed (DOR-480). The submit path calls this
+   * instead of dropping it. Idempotent: a no-op when the id is already queued,
+   * so a double restore cannot duplicate the message.
+   */
+  requeueMessage: (sessionId: string, message: QueuedMessage, index: number) => void;
   /** Clear a session's entire flush queue. */
   clearQueue: (sessionId: string) => void;
   /**
@@ -333,9 +344,18 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
     // Only evict idle sessions (no turn in progress) and never the pinned
     // session (DOR-298 PIP) — a pinned session showing a completed, non-
     // streaming widget board is exactly the idle-but-must-not-evict case.
+    //
+    // A session holding QUEUED MESSAGES is never evictable either (DOR-480):
+    // those are words a person typed that have not been delivered yet, and a
+    // stranded queue is by definition not streaming — so without this guard,
+    // visiting 20 other sessions silently deleted them. The eviction only
+    // reclaims a derived projection; the queue is the only thing in here the
+    // server cannot send again.
+    const session = state.sessions[id];
     if (
-      state.sessions[id] &&
-      state.sessions[id]!.inProgressTurn.length === 0 &&
+      session &&
+      session.inProgressTurn.length === 0 &&
+      session.queuedMessages.length === 0 &&
       id !== state.pinnedSessionId
     ) {
       delete state.sessions[id];
@@ -590,6 +610,18 @@ export const useSessionStreamStore: SessionStreamStore = create<
           'session-stream/removeQueuedMessage'
         ),
 
+      requeueMessage: (sessionId, message, index) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            if (session.queuedMessages.some((m) => m.id === message.id)) return;
+            const at = Math.max(0, Math.min(index, session.queuedMessages.length));
+            session.queuedMessages.splice(at, 0, { ...message });
+          },
+          false,
+          'session-stream/requeueMessage'
+        ),
+
       clearQueue: (sessionId) =>
         set(
           (state) => {
@@ -715,6 +747,31 @@ export function useSessionStreamStatus(sessionId: string): SessionStatus | null 
 export function useSessionStreamLifecycle(sessionId: string): SessionLifecycle | undefined {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId]?.status?.lifecycle, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: whether this session is waiting on a decision from the
+ * operator — a `blocked` lifecycle, or any pending interaction still on screen.
+ *
+ * This is the AUTHORITATIVE answer, which the coarse rendered status cannot give:
+ * `selectRenderedStatus` deliberately collapses `blocked` → `idle` because the
+ * renderer expresses blocking through the interaction cards instead. Anything
+ * that must not treat a blocked session as ready for a new turn — the queue's
+ * auto-flush above all, since the server keeps the turn's session lock for the
+ * whole time it is blocked (DOR-480) — has to read this rather than the
+ * projection meant for display.
+ */
+export function useSessionAwaitingDecision(sessionId: string): boolean {
+  return useSessionStreamStore(
+    useCallback(
+      (s) => {
+        const session = s.sessions[sessionId];
+        if (!session) return false;
+        return session.status?.lifecycle === 'blocked' || session.pendingInteractions.length > 0;
+      },
+      [sessionId]
+    )
   );
 }
 

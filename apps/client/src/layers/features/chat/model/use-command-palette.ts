@@ -106,14 +106,27 @@ export function useCommandPalette({
     return false;
   }, []);
 
-  /** Returns the new input value after inserting the selected command. */
+  /**
+   * Returns the new input value after inserting the selected command, with
+   * whatever the operator had typed after the caret left intact.
+   *
+   * The palette reopens whenever the caret lands just after a slash word — a
+   * click or an arrow key is enough — so `/deploy| staging` + Enter is a normal
+   * thing to do. Dropping the tail there both swallowed the send AND deleted
+   * ` staging` with no way to get it back (DOR-480). Mirrors
+   * `useFileAutocomplete.handleFileSelect`; the single separating space is not
+   * doubled when the tail already begins with one.
+   */
   const handleCommandSelect = useCallback(
     (cmd: CommandEntry): string => {
       const before = input.slice(0, slashTriggerPos);
+      // +1 for the '/' itself: [slashTriggerPos, slashTriggerPos + 1 + query) is
+      // the text the palette consumed; everything past it is the tail.
+      const after = input.slice(slashTriggerPos + 1 + commandQuery.length);
       setShowCommands(false);
-      return before + cmd.fullCommand + ' ';
+      return before + cmd.fullCommand + (after.startsWith(' ') ? '' : ' ') + after;
     },
-    [input, slashTriggerPos]
+    [input, commandQuery, slashTriggerPos]
   );
 
   const handleArrowDown = useCallback(() => {
