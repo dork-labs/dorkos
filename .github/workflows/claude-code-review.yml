@@ -368,6 +368,15 @@ jobs:
       # --output=` onto a 0500 file fails with "could not open ... for writing:
       # Permission denied". Nothing later in the job writes into this directory, and
       # ubuntu-latest runners are ephemeral, so it needs no teardown.
+      #
+      # BOOTSTRAP, once per rename: a PR that adds or renames scripts/review-gh.sh
+      # gets a RED check here and no review, because the trusted copy does not exist
+      # until that PR lands. That is the fail-closed behaviour working, not a
+      # regression — the alternative is running the PR's own copy — and the comment
+      # it posts says so. A PR that only edits THIS FILE is unaffected: the helper is
+      # already on the default branch, so this step succeeds and the run then ends in
+      # the action's own workflow-validation guard (SECOND BLIND SPOT, green check,
+      # no review) exactly as before.
       - name: Materialize the trusted review helper
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -396,6 +405,16 @@ jobs:
           if ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" >/dev/null; then
             git fetch --no-recurse-submodules --no-tags origin \
               "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" || true
+          fi
+
+          # Two different problems, two different messages. "Not on the default
+          # branch yet" is the bootstrap case: the PR that ADDS or RENAMES the
+          # helper cannot review itself, because the only copy the reviewer will
+          # ever run is the trusted one, and that copy does not exist until the PR
+          # lands. Saying so plainly is the difference between a maintainer reading
+          # "expected, merge it" and reading "the reviewer is broken".
+          if ! git cat-file -e "origin/$DEFAULT_BRANCH:scripts/review-gh.sh" 2>/dev/null; then
+            refuse "the reviewer's GitHub helper is not on the $DEFAULT_BRANCH branch yet. If this is the PR that adds or renames scripts/review-gh.sh, that is expected and needs no fix: the reviewer only ever runs the trusted copy, so it starts working once this merges."
           fi
 
           mkdir -p "$HELPER_DIR"
