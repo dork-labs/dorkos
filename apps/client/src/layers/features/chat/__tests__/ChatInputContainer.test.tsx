@@ -12,11 +12,11 @@ vi.mock('../ui/status/ChatStatusSection', () => ({
 }));
 
 vi.mock('../ui/input/FileChipBar', () => ({
-  FileChipBar: () => <div data-testid="file-chips">FileChipBar</div>,
+  FileChipBar: vi.fn(() => <div data-testid="file-chips">FileChipBar</div>),
 }));
 
 vi.mock('../ui/input/QueuePanel', () => ({
-  QueuePanel: () => <div data-testid="queue-panel">QueuePanel</div>,
+  QueuePanel: vi.fn(() => <div data-testid="queue-panel">QueuePanel</div>),
 }));
 
 vi.mock('../ui/tools/ToolApproval', () => ({
@@ -51,11 +51,13 @@ vi.mock('../model/use-chat-queue', () => ({
   useChatQueue: () => ({
     queue: [],
     editingIndex: null,
+    sendBlockedReason: null,
     handleQueue: vi.fn(),
     handleQueueEdit: vi.fn(),
     handleQueueSaveEdit: vi.fn(),
     handleQueueCancelEdit: vi.fn(),
     handleQueueRemove: vi.fn(),
+    handleQueueSend: vi.fn(),
     handleQueueNavigateUp: vi.fn(),
     handleQueueNavigateDown: vi.fn(),
   }),
@@ -94,8 +96,15 @@ vi.mock('@/layers/entities/session', () => ({
 }));
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
+import { ChatInput } from '../ui/input/ChatInput';
+import { QueuePanel } from '../ui/input/QueuePanel';
 import type { ToolCallState } from '../model/chat-types';
 import { createRef } from 'react';
+
+/** Props the (mocked) ChatInput was last rendered with. */
+function lastChatInputProps() {
+  return vi.mocked(ChatInput).mock.calls.at(-1)![0];
+}
 
 const baseProps = {
   chatInputRef: createRef<null>(),
@@ -127,7 +136,9 @@ const baseProps = {
     pendingFiles: [],
     onFilesSelected: vi.fn(),
     onFileRemove: vi.fn(),
+    onFileRetry: vi.fn(),
     isUploading: false,
+    hasFailedUpload: false,
   },
   interaction: {
     active: null,
@@ -258,5 +269,45 @@ describe('ChatInputContainer mode switching', () => {
     );
 
     expect(setInput).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('leaves the send enabled while every attachment is healthy', () => {
+    render(<ChatInputContainer {...baseProps} input="have a look at this" />);
+    expect(lastChatInputProps().canSubmit).toBe(true);
+  });
+
+  it('withholds the send while an attachment failed to upload', () => {
+    // ChatInput.test.tsx pins what canSubmit={false} does: the send button reads
+    // disabled, Enter does not submit, and the textarea stays typeable — so the
+    // person keeps their words instead of watching them go out attachment-less.
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        input="have a look at this"
+        fileUpload={{ ...baseProps.fileUpload, hasFailedUpload: true }}
+      />
+    );
+    expect(lastChatInputProps().canSubmit).toBe(false);
+  });
+
+  it('blocks a hand-send from the queue too, and says why', () => {
+    // Without this the click dequeues, the upload throws inside the flush, the
+    // restore fires, and the person gets a generic "Could not send message" for
+    // a cause that was on screen the whole time.
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        fileUpload={{ ...baseProps.fileUpload, hasFailedUpload: true }}
+      />
+    );
+
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    expect(panelProps.sendBlockedReason).toBe('An attachment did not upload');
   });
 });

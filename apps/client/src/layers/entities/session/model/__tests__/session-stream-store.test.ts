@@ -507,6 +507,93 @@ describe('useSessionStreamStore', () => {
       useSessionStreamStore.getState().setPinnedSession(null);
       expect(useSessionStreamStore.getState().pinnedSessionId).toBeNull();
     });
+
+    it('a session holding queued messages survives eviction (DOR-480)', () => {
+      // Real failure mode: a queue that stranded (a failed turn, a lock race) is
+      // by definition not streaming, so the idle-only guard let it be evicted —
+      // and evicting the entry DELETED the messages. Visiting 20 other sessions
+      // was enough, which one person running ten agents across five projects
+      // does in an ordinary afternoon.
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage('s-0', 'do the migration next'); // s-0 is now the oldest
+      seedIdleSessions(store, RETENTION_LIMIT); // s-0 .. s-19, s-0 first in line
+
+      store.ensureSession('s-20'); // pushes past the limit
+
+      const after = useSessionStreamStore.getState();
+      expect(after.sessions['s-0']).toBeDefined();
+      expect(after.sessions['s-0']!.queuedMessages.map((m) => m.content)).toEqual([
+        'do the migration next',
+      ]);
+    });
+
+    it('the same session becomes evictable once its queue is empty', () => {
+      // The guard protects undelivered words, not the projection: once the queue
+      // drains there is nothing left in here the server cannot send again.
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage('s-0', 'still queued');
+      seedIdleSessions(store, RETENTION_LIMIT);
+      store.ensureSession('s-20');
+      expect(useSessionStreamStore.getState().sessions['s-0']).toBeDefined();
+
+      const queuedId = useSessionStreamStore.getState().sessions['s-0']!.queuedMessages[0]!.id;
+      // Draining also touches s-0 to the front of the LRU, so walk past the
+      // retention limit again to make it the oldest entry once more.
+      store.removeQueuedMessage('s-0', queuedId);
+      for (let i = 21; i <= 21 + RETENTION_LIMIT; i++) store.ensureSession(`s-${i}`);
+
+      expect(useSessionStreamStore.getState().sessions['s-0']).toBeUndefined();
+    });
+  });
+
+  describe('requeueMessage (a refused trigger puts the message back — DOR-480)', () => {
+    it('re-inserts at the original position, keeping the id', () => {
+      const store = useSessionStreamStore.getState();
+      for (const content of ['first', 'second', 'third']) store.enqueueMessage(SID, content);
+      const head = useSessionStreamStore.getState().getSession(SID).queuedMessages[0]!;
+
+      // The flush dequeued the head, then the trigger came back refused.
+      store.removeQueuedMessage(SID, head.id);
+      expect(
+        useSessionStreamStore
+          .getState()
+          .getSession(SID)
+          .queuedMessages.map((m) => m.content)
+      ).toEqual(['second', 'third']);
+
+      store.requeueMessage(SID, head, 0);
+
+      const after = useSessionStreamStore.getState().getSession(SID).queuedMessages;
+      expect(after.map((m) => m.content)).toEqual(['first', 'second', 'third']);
+      expect(after[0]!.id).toBe(head.id);
+    });
+
+    it('is idempotent — a double restore cannot duplicate the message', () => {
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage(SID, 'only');
+      const item = useSessionStreamStore.getState().getSession(SID).queuedMessages[0]!;
+      store.removeQueuedMessage(SID, item.id);
+
+      store.requeueMessage(SID, item, 0);
+      store.requeueMessage(SID, item, 0);
+
+      expect(useSessionStreamStore.getState().getSession(SID).queuedMessages).toHaveLength(1);
+    });
+
+    it('clamps an index past the end of a queue that moved on', () => {
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage(SID, 'survivor');
+      const item = { id: 'dequeued-1', content: 'came back' };
+
+      store.requeueMessage(SID, item, 99);
+
+      expect(
+        useSessionStreamStore
+          .getState()
+          .getSession(SID)
+          .queuedMessages.map((m) => m.content)
+      ).toEqual(['survivor', 'came back']);
+    });
   });
 });
 

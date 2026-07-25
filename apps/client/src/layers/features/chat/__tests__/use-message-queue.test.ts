@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
 import { useMessageQueue } from '../model/use-message-queue';
+import type { QueueFlushOptions } from '../model/use-message-queue';
 import type { ChatStatus } from '../model/chat-types';
 import { useSessionStreamStore } from '@/layers/entities/session';
 
@@ -12,6 +14,56 @@ const defaultOptions = {
   selectedCwd: '/test/dir',
   onFlush: vi.fn(),
 };
+
+/**
+ * The out-of-band flush options every queue flush carries. `restore` is the
+ * queue's undo — the submit path calls it when a trigger is refused, so a
+ * flush that never lands puts the message back instead of destroying it.
+ */
+const FLUSH_OPTS = { queued: true, restore: expect.any(Function) };
+
+/** The flush callback's real shape, so a spy passed to a helper still typechecks. */
+type FlushCallback = (content: string, originSessionId: string, opts: QueueFlushOptions) => void;
+
+/** A minimal projected status, so the queue can read an authoritative lifecycle. */
+function statusWith(lifecycle: SessionStatus['lifecycle']): SessionStatus {
+  return {
+    contextUsage: null,
+    cost: null,
+    usage: null,
+    cacheStats: null,
+    model: null,
+    permissionMode: 'default',
+    todoCounts: null,
+    runningSubagentCount: 0,
+    lifecycle,
+    lastError: null,
+  };
+}
+
+/** An approval landing mid-turn — what puts a real session into `blocked`. */
+function approvalEvent(seq: number, id: string): SessionEvent {
+  return {
+    type: 'approval_required',
+    seq,
+    startedAt: 1000,
+    remainingMs: 30000,
+    id,
+    toolName: 'Bash',
+    input: 'rm -rf build',
+    hasSuggestions: false,
+  };
+}
+
+/** The exact server sequence for "the agent stopped to ask you something". */
+function blockSession(sessionId: string, seq: number) {
+  const store = useSessionStreamStore.getState();
+  store.applyEvent(sessionId, { seq, type: 'status_change', status: statusWith('streaming') });
+  store.applyEvent(sessionId, approvalEvent(seq + 1, 'approval-1'));
+  // The turn ends while the approval is outstanding: the server projects
+  // `blocked` and — critically — KEEPS the turn's session lock.
+  store.applyEvent(sessionId, { seq: seq + 2, type: 'turn_end' });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -236,7 +288,7 @@ describe('useMessageQueue', () => {
     rerender({ status: 'idle' as const });
 
     // No `[Note: …]` prose — content is byte-for-byte; queue origin rides `{ queued: true }`.
-    expect(onFlush).toHaveBeenCalledWith('My message', 'test-session', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('My message', 'test-session', FLUSH_OPTS);
   });
 
   it('auto-flush skips while sessionBusy is true', () => {
@@ -274,9 +326,10 @@ describe('useMessageQueue', () => {
 
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test-session', {
-      queued: true,
-    });
+    // Exact, not `stringContaining`: a truncated or annotated flush is a
+    // different message than the one the person typed, and the loose matcher
+    // would have passed for both.
+    expect(onFlush).toHaveBeenCalledWith('Should flush', 'test-session', FLUSH_OPTS);
     expect(result.current.queue[0].content).toBe('Being edited');
   });
 
@@ -334,12 +387,6 @@ describe('useMessageQueue', () => {
 });
 
 describe('useMessageQueue — a queued message never strands', () => {
-  type FlushCallback = (
-    content: string,
-    originSessionId: string,
-    opts: { queued: boolean }
-  ) => void;
-
   /** Queues one message mid-stream and parks the editing cursor on it. */
   function editOnlyItemThenSettle(onFlush: FlushCallback) {
     const harness = renderHook(
@@ -371,7 +418,7 @@ describe('useMessageQueue — a queued message never strands', () => {
     });
 
     expect(onFlush).toHaveBeenCalledTimes(1);
-    expect(onFlush).toHaveBeenCalledWith('edited item', 'test-session', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('edited item', 'test-session', FLUSH_OPTS);
     expect(result.current.queue).toHaveLength(0);
     expect(result.current.editingIndex).toBeNull();
   });
@@ -385,7 +432,7 @@ describe('useMessageQueue — a queued message never strands', () => {
     });
 
     expect(onFlush).toHaveBeenCalledTimes(1);
-    expect(onFlush).toHaveBeenCalledWith('only item', 'test-session', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('only item', 'test-session', FLUSH_OPTS);
     expect(result.current.queue).toHaveLength(0);
   });
 
@@ -422,7 +469,7 @@ describe('useMessageQueue — a queued message never strands', () => {
     // 'second' is flushable at the edge, so the owed flush is satisfied there…
     rerender({ status: 'idle' as const });
     expect(onFlush).toHaveBeenCalledTimes(1);
-    expect(onFlush).toHaveBeenCalledWith('second', 'test-session', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('second', 'test-session', FLUSH_OPTS);
 
     // …and ending the edit does not fire a second, un-owed flush: 'first' waits
     // for the turn that 'second' just started.
@@ -449,7 +496,7 @@ describe('useMessageQueue — a queued message never strands', () => {
 
     rerender({ status: 'idle' as const, sessionBusy: false });
 
-    expect(onFlush).toHaveBeenCalledWith('waiting on the lock', 'test-session', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('waiting on the lock', 'test-session', FLUSH_OPTS);
   });
 
   it("drops an owed flush on a session switch — A's message waits for A's own next turn (DOR-81)", () => {
@@ -486,6 +533,219 @@ describe('useMessageQueue — a queued message never strands', () => {
     rerender({ status: 'idle' as const, sessionId: 'session-a' });
 
     expect(onFlush).toHaveBeenCalledTimes(1);
-    expect(onFlush).toHaveBeenCalledWith('for A', 'session-a', { queued: true });
+    expect(onFlush).toHaveBeenCalledWith('for A', 'session-a', FLUSH_OPTS);
+  });
+});
+
+describe('useMessageQueue — the agent asks for permission mid-queue (DOR-480)', () => {
+  /**
+   * The exact sequence that destroyed a message: the agent is streaming, a
+   * follow-up is queued, then a tool needs approval. The server projects
+   * `blocked` but keeps the turn's session lock, and the renderer collapses
+   * `blocked` → `idle` on purpose — so the drain saw a drainable session,
+   * dequeued the message, and handed it to a trigger the lock refused.
+   *
+   * The measurement is the QUEUE'S CONTENTS, not whether a mock fired: a test
+   * that only asserted `onFlush` was not called would still pass if the item had
+   * been dequeued and dropped.
+   */
+  function queueThenBlock(onFlush: FlushCallback) {
+    const harness = renderHook(
+      ({ status }) => useMessageQueue({ ...defaultOptions, status, onFlush }),
+      { initialProps: { status: 'streaming' as ChatStatus } }
+    );
+
+    act(() => {
+      harness.result.current.addToQueue('and then deploy it');
+    });
+    act(() => {
+      blockSession('test-session', 1);
+    });
+
+    // What the composer sees: `blocked` renders as `idle` (CLI-B7 / the
+    // rendered-status contract), so the drain is asked to run.
+    harness.rerender({ status: 'idle' as const });
+    return harness;
+  }
+
+  it('does not drain into a session that is waiting on an approval', () => {
+    const onFlush = vi.fn();
+    const { result } = queueThenBlock(onFlush);
+
+    expect(onFlush).not.toHaveBeenCalled();
+    // The message is still there — the whole point. Before the fix the store
+    // held zero queued messages here and nothing re-enqueued them.
+    expect(result.current.queue.map((item) => item.content)).toEqual(['and then deploy it']);
+    expect(useSessionStreamStore.getState().getSession('test-session').queuedMessages).toHaveLength(
+      1
+    );
+  });
+
+  it('says why a hand-send is unavailable while an approval is outstanding', () => {
+    const onFlush = vi.fn();
+    const { result } = queueThenBlock(onFlush);
+
+    expect(result.current.sendBlockedReason).toBe('Waiting for your answer above');
+
+    act(() => {
+      result.current.sendNow(result.current.queue[0].id);
+    });
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(result.current.queue).toHaveLength(1);
+  });
+
+  it('delivers the still-owed message once the approval is answered', () => {
+    const onFlush = vi.fn();
+    const { result, rerender } = queueThenBlock(onFlush);
+
+    // Approved: the interaction resolves, the turn resumes, then settles.
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('test-session', { seq: 10, type: 'interaction_resolved', id: 'approval-1' });
+      store.applyEvent('test-session', {
+        seq: 11,
+        type: 'status_change',
+        status: statusWith('streaming'),
+      });
+    });
+    rerender({ status: 'streaming' as const });
+    act(() => {
+      useSessionStreamStore.getState().applyEvent('test-session', { seq: 12, type: 'turn_end' });
+    });
+    rerender({ status: 'idle' as const });
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith('and then deploy it', 'test-session', FLUSH_OPTS);
+    expect(result.current.queue).toHaveLength(0);
+  });
+
+  it('restores a flushed message to its original position when the trigger is refused', () => {
+    // What the submit path does on a 409: call the flush's `restore`. Position
+    // matters — a queue is an order the person chose.
+    const flushes: { content: string; restore: () => void }[] = [];
+    const onFlush = vi.fn((content: string, _origin: string, opts: { restore: () => void }) => {
+      flushes.push({ content, restore: opts.restore });
+    });
+    const { result, rerender } = renderHook(
+      ({ status }) => useMessageQueue({ ...defaultOptions, status, onFlush }),
+      { initialProps: { status: 'streaming' as ChatStatus } }
+    );
+
+    for (const content of ['first', 'second', 'third']) {
+      act(() => {
+        result.current.addToQueue(content);
+      });
+    }
+    rerender({ status: 'idle' as const });
+
+    expect(flushes.map((f) => f.content)).toEqual(['first']);
+    expect(result.current.queue.map((item) => item.content)).toEqual(['second', 'third']);
+
+    act(() => {
+      flushes[0].restore();
+    });
+
+    expect(result.current.queue.map((item) => item.content)).toEqual(['first', 'second', 'third']);
+
+    // Idempotent: a second restore cannot duplicate the message.
+    act(() => {
+      flushes[0].restore();
+    });
+    expect(result.current.queue.map((item) => item.content)).toEqual(['first', 'second', 'third']);
+  });
+});
+
+describe('useMessageQueue — a failed turn does not trap the queue (DOR-480)', () => {
+  /** Queues two messages, then the turn fails. */
+  function queueThenFail(onFlush: FlushCallback) {
+    const harness = renderHook(
+      ({ status }) => useMessageQueue({ ...defaultOptions, status, onFlush }),
+      { initialProps: { status: 'streaming' as ChatStatus } }
+    );
+    act(() => {
+      harness.result.current.addToQueue('first');
+    });
+    act(() => {
+      harness.result.current.addToQueue('second');
+    });
+    harness.rerender({ status: 'error' as const });
+    return harness;
+  }
+
+  it('holds the queue rather than auto-firing into a session that just failed', () => {
+    const onFlush = vi.fn();
+    const { result } = queueThenFail(onFlush);
+
+    // Deliberate: the pump arms on streaming→idle only, so a failed turn waits
+    // for the person to decide. What must NOT happen is losing the messages.
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(result.current.queue.map((item) => item.content)).toEqual(['first', 'second']);
+  });
+
+  it('lets the operator send a stranded message by hand, in any order', () => {
+    const onFlush = vi.fn();
+    const { result } = queueThenFail(onFlush);
+
+    // `error` is not a reason a send cannot happen — the server released the
+    // turn's lock when the turn died.
+    expect(result.current.sendBlockedReason).toBeNull();
+
+    const secondId = result.current.queue[1].id;
+    act(() => {
+      result.current.sendNow(secondId);
+    });
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith('second', 'test-session', FLUSH_OPTS);
+    // Only the chosen message left; the other is untouched and still queued.
+    expect(result.current.queue.map((item) => item.content)).toEqual(['first']);
+  });
+
+  it('refuses a hand-send while a reply is streaming, and keeps the message', () => {
+    const onFlush = vi.fn();
+    const { result } = renderHook(() =>
+      useMessageQueue({ ...defaultOptions, status: 'streaming', onFlush })
+    );
+    act(() => {
+      result.current.addToQueue('later');
+    });
+
+    expect(result.current.sendBlockedReason).toBe('Waiting for the reply to finish');
+    act(() => {
+      result.current.sendNow(result.current.queue[0].id);
+    });
+
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(result.current.queue).toHaveLength(1);
+  });
+
+  it('refuses a hand-send while the session is busy, and keeps the message', () => {
+    const onFlush = vi.fn();
+    const { result } = renderHook(() =>
+      useMessageQueue({ ...defaultOptions, sessionBusy: true, onFlush })
+    );
+    act(() => {
+      result.current.addToQueue('later');
+    });
+
+    expect(result.current.sendBlockedReason).toBe('This session is busy right now');
+    act(() => {
+      result.current.sendNow(result.current.queue[0].id);
+    });
+
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(result.current.queue).toHaveLength(1);
+  });
+
+  it('a hand-send does not also drain a second message behind it', () => {
+    const onFlush = vi.fn();
+    const { result } = queueThenFail(onFlush);
+
+    act(() => {
+      result.current.sendNow(result.current.queue[0].id);
+    });
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(result.current.queue.map((item) => item.content)).toEqual(['second']);
   });
 });

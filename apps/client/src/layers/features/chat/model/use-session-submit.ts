@@ -143,7 +143,7 @@ export function useSessionSubmit({
    * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
    * @param restoreContentOnLock - Content to restore if the session is locked.
-   * @param queued - True when this send originated from a queue auto-flush; sent
+   * @param queued - True when this send originated from a queue flush; sent
    *   as `context: { queued: true }` so the server renders a `<queue_note>`.
    * @param opts - `{ kickoff: true }` for the M4 auto-first-turn: the content is
    *   a DorkOS-injected "introduce yourself" instruction, not a person's typing,
@@ -151,6 +151,10 @@ export function useSessionSubmit({
    *   the honesty seam — the optimistic user bubble. It still rides the full
    *   trigger machinery (subscribe-first, rekey, watchdog) so the greeting
    *   streams in normally.
+   *   `{ restoreQueued }` is the queue's undo for a flushed message: the queue
+   *   dequeues before the trigger resolves, so ANY failed trigger — a lock the
+   *   server still holds while a turn sits blocked on an approval, a dead
+   *   network — has to put the message back rather than drop it (DOR-480).
    */
   const executeSubmission = useCallback(
     async (
@@ -158,7 +162,7 @@ export function useSessionSubmit({
       clearInput: boolean,
       restoreContentOnLock: string,
       queued = false,
-      opts: { kickoff?: boolean } = {}
+      opts: { kickoff?: boolean; restoreQueued?: () => void } = {}
     ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
       // runtime/model. This is the funnel safety net for the non-streaming paths
@@ -172,6 +176,37 @@ export function useSessionSubmit({
       if (!opts.kickoff) {
         const native = tryNativeCommand(content);
         if (native.handled) {
+          // A REJECTED command performed nothing, and this return is upstream of
+          // the try/catch that restores a queued flush — so a queued message the
+          // operator had rewritten into one (say a bare `/rename`) was dequeued
+          // and then simply ceased to exist: the composer never held it either
+          // (DOR-480). Put it back. Restoring is idempotent, so a later edge that
+          // flushes it again just returns it again, and the row stays on screen
+          // with its Send-now control until the text is corrected.
+          //
+          // A command that RAN is not restored — it did what was asked, so the
+          // message is consumed and re-queueing would re-run it on every edge.
+          // But `ran` is only "the dispatch started" for a command that finishes
+          // asynchronously: a queued `/compact` refused by the session lock would
+          // otherwise be spent with no compaction and nothing to recover. Settle
+          // those on `confirmed` instead, so "it ran" has to be true before the
+          // message is treated as gone.
+          if (!native.ran) {
+            opts.restoreQueued?.();
+          } else if (native.confirmed && opts.restoreQueued) {
+            const restoreQueued = opts.restoreQueued;
+            // The rejection arm is not defensive padding: without it "never
+            // rejects" is a convention two producers happen to honour rather
+            // than something the call site can rely on. Treating an unexpected
+            // rejection as "not confirmed" is also the right default — it puts
+            // the message back instead of silently eating it.
+            void native.confirmed.then(
+              (accepted) => {
+                if (!accepted) restoreQueued();
+              },
+              () => restoreQueued()
+            );
+          }
           if (clearInput && native.ran) setInput('');
           return;
         }
@@ -326,6 +361,14 @@ export function useSessionSubmit({
         useSessionStreamStore.getState().setOptimisticUserMessage(targetSessionId, null);
         useSessionStreamStore.getState().setTriggerPending(targetSessionId, false);
 
+        // A queued message was dequeued to make this attempt. The attempt failed,
+        // so it goes straight back where it was — every failure mode, not just the
+        // lock: the composer was never holding this text, so dropping it here is
+        // pure data loss with nowhere to recover it from (DOR-480). The queue row
+        // reappears with its Send-now control, so the person can see it survived
+        // and retry deliberately.
+        opts.restoreQueued?.();
+
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
           // A locked birth session means a turn is already running — the
           // greeting rode another trigger. Nothing to restore or retry.
@@ -367,29 +410,46 @@ export function useSessionSubmit({
 
   /**
    * Submit a message by content string directly, without clearing the input state.
-   * Used by the auto-flush mechanism for queued messages.
+   * Used by the queue's flush (automatic and hand-triggered).
    *
    * @param content - The message text to submit (PRISTINE — never annotated).
-   * @param originSessionId - When supplied (queue auto-flush), the session the
-   *   message was QUEUED in. Defense-in-depth (DOR-81): if it no longer matches
-   *   the active session, the message is dropped (logged) rather than misdelivered
-   *   — a queued message must never flush into a session the operator switched to.
+   * @param originSessionId - When supplied (queue flush), the session the message
+   *   was QUEUED in. Defense-in-depth (DOR-81): if it no longer matches the
+   *   active session, the message is NOT delivered here — it goes back into its
+   *   own session's queue, because a queued message must never flush into a
+   *   session the operator switched to.
    * @param opts - `{ queued }` carries the queue origin out-of-band so the send
-   *   forwards `context: { queued: true }` (ADR-0273). Defaults to non-queued.
+   *   forwards `context: { queued: true }` (ADR-0273). `{ restore }` puts the
+   *   message back in its queue when the send does not happen — every refusal
+   *   path below, and every failed trigger, calls it (DOR-480). Defaults to
+   *   non-queued.
    */
   const submitContent = useCallback(
-    async (content: string, originSessionId?: string, opts?: { queued: boolean }) => {
-      if (!content.trim() || status === 'streaming') return;
-      if (originSessionId !== undefined && originSessionId !== sessionId) {
-        // Should be unreachable — the per-session queue key already pins the
-        // flush to its origin. Logged + dropped so a wrong-session flush can
-        // never silently misdeliver.
-        console.warn(
-          `[chat] Dropped a queued message whose origin session (${originSessionId}) no longer matches the active session (${sessionId ?? 'none'}).`
-        );
+    async (
+      content: string,
+      originSessionId?: string,
+      opts?: { queued: boolean; restore?: () => void }
+    ) => {
+      if (!content.trim() || status === 'streaming') {
+        // A turn started between the drain decision and this call. The message is
+        // already dequeued, so put it back — it will ride the next edge.
+        opts?.restore?.();
         return;
       }
-      await executeSubmission(content.trim(), false, '', opts?.queued ?? false);
+      if (originSessionId !== undefined && originSessionId !== sessionId) {
+        // Should be unreachable — the per-session queue key already pins the
+        // flush to its origin. Logged, and returned to its OWN queue (the restore
+        // closes over the origin session), so a wrong-session flush can neither
+        // misdeliver nor destroy the message.
+        console.warn(
+          `[chat] Refused a queued message whose origin session (${originSessionId}) no longer matches the active session (${sessionId ?? 'none'}); it stays queued in its origin.`
+        );
+        opts?.restore?.();
+        return;
+      }
+      await executeSubmission(content.trim(), false, '', opts?.queued ?? false, {
+        ...(opts?.restore ? { restoreQueued: opts.restore } : {}),
+      });
     },
     [status, sessionId, executeSubmission]
   );

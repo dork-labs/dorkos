@@ -150,18 +150,28 @@ export function InputShowcases() {
         <ChatInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
       </PlaygroundSection>
 
-      <PlaygroundSection title="FileChipBar" description="File chips in various upload states.">
+      <PlaygroundSection
+        title="FileChipBar"
+        description="File chips in various upload states. A failed upload states its reason and offers a retry."
+      >
         <ShowcaseDemo>
           <FileChipBar
             files={files}
             onRemove={(id) => setFiles((prev) => prev.filter((f) => f.id !== id))}
+            onRetry={(id) =>
+              setFiles((prev) =>
+                prev.map((f) =>
+                  f.id === id ? { ...f, status: 'pending', progress: 0, error: undefined } : f
+                )
+              )
+            }
           />
         </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection
         title="QueuePanel"
-        description="Queued messages displayed above the input."
+        description="Queued messages displayed above the input. Every row can be sent now, edited, or removed."
       >
         <ShowcaseLabel>With items</ShowcaseLabel>
         <ShowcaseDemo>
@@ -170,12 +180,33 @@ export function InputShowcases() {
             editingIndex={null}
             onEdit={() => {}}
             onRemove={() => {}}
+            onSend={() => {}}
+            sendBlockedReason={null}
           />
         </ShowcaseDemo>
 
         <ShowcaseLabel>With item being edited</ShowcaseLabel>
         <ShowcaseDemo>
-          <QueuePanel queue={SAMPLE_QUEUE} editingIndex={1} onEdit={() => {}} onRemove={() => {}} />
+          <QueuePanel
+            queue={SAMPLE_QUEUE}
+            editingIndex={1}
+            onEdit={() => {}}
+            onRemove={() => {}}
+            onSend={() => {}}
+            sendBlockedReason={null}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Send-now unavailable (a reply is still streaming)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <QueuePanel
+            queue={SAMPLE_QUEUE}
+            editingIndex={null}
+            onEdit={() => {}}
+            onRemove={() => {}}
+            onSend={() => {}}
+            sendBlockedReason="Waiting for the reply to finish"
+          />
         </ShowcaseDemo>
       </PlaygroundSection>
 

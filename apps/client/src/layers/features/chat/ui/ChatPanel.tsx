@@ -422,7 +422,9 @@ export function ChatPanel({
           pendingFiles: fileUpload.pendingFiles,
           onFilesSelected: fileUpload.addFiles,
           onFileRemove: fileUpload.removeFile,
+          onFileRetry: fileUpload.retryFile,
           isUploading: fileUpload.isUploading,
+          hasFailedUpload: fileUpload.hasFailedUpload,
         }}
         interaction={{
           active: activeInteraction,

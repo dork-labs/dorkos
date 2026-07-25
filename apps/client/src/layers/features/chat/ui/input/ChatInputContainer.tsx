@@ -40,7 +40,11 @@ interface ChatInputContainerProps {
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
-  submitContent: (content: string, originSessionId?: string, opts?: { queued: boolean }) => void;
+  submitContent: (
+    content: string,
+    originSessionId?: string,
+    opts?: { queued: boolean; restore?: () => void }
+  ) => void;
   /**
    * Native (client-side) command interceptor. Used at the queue decision so a
    * native command typed while a turn streams runs instantly instead of being
@@ -95,7 +99,8 @@ export function ChatInputContainer({
     onToolRef,
     onToolDecided,
   } = interaction;
-  const { pendingFiles, onFilesSelected, onFileRemove, isUploading } = fileUpload;
+  const { pendingFiles, onFilesSelected, onFileRemove, onFileRetry, isUploading, hasFailedUpload } =
+    fileUpload;
   const isStreaming = status === 'streaming';
   const isTextStreaming = useAppStore((s) => s.isTextStreaming);
   const [selectedCwd] = useDirectoryState();
@@ -225,13 +230,22 @@ export function ChatInputContainer({
             </div>
 
             {pendingFiles.length > 0 && (
-              <FileChipBar files={pendingFiles} onRemove={onFileRemove} />
+              <FileChipBar files={pendingFiles} onRemove={onFileRemove} onRetry={onFileRetry} />
             )}
             <QueuePanel
               queue={chatQueue.queue}
               editingIndex={chatQueue.editingIndex}
               onEdit={chatQueue.handleQueueEdit}
               onRemove={chatQueue.handleQueueRemove}
+              onSend={chatQueue.handleQueueSend}
+              // A failed attachment blocks a hand-send exactly as it blocks a
+              // normal one — and says so, instead of letting the click dequeue,
+              // fail inside the upload, and land as a generic "Could not send
+              // message". This component is the one place that holds both the
+              // queue and the attachment state.
+              sendBlockedReason={
+                hasFailedUpload ? 'An attachment did not upload' : chatQueue.sendBlockedReason
+              }
             />
             <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
 
@@ -256,6 +270,12 @@ export function ChatInputContainer({
               activeDescendantId={autocomplete.activeDescendantId}
               onCursorChange={autocomplete.handleCursorChange}
               onAttach={onFilesSelected}
+              // A failed attachment blocks the send outright. Sending anyway
+              // delivered a message with no attachment and then wiped the error
+              // chips, leaving the person waiting on an answer about a file the
+              // agent never received (DOR-480). The red chip above states the
+              // reason and offers both ways out — try again, or remove it.
+              canSubmit={!hasFailedUpload}
               editingQueueItem={chatQueue.editingIndex !== null}
               queueDepth={chatQueue.queue.length}
               onQueue={chatQueue.handleQueue}
