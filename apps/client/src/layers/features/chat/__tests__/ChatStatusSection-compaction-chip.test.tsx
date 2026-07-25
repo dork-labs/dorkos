@@ -177,4 +177,22 @@ describe('ChatStatusSection — inline compact action percent (DOR-112)', () => 
     // together — the SDK percentage must win when a breakdown exists.
     expect(actionPercent).toBe(88);
   });
+
+  it('offers no compact affordance mid-turn, however full the window is', () => {
+    // Purpose: `/compact` mid-turn can only 409 (`SESSION_LOCKED`), so DOR-112
+    // requirement 1 is that the affordance HIDES rather than shows and relies on
+    // the error toast. The percent is over the action threshold and the runtime
+    // supports compact, so the only thing withholding the button is `isStreaming` —
+    // which is exactly the input a separately-derived visibility condition dropped.
+    act(() => {
+      useSessionChatStore.getState().updateSession(SESSION_ID, { contextUsage });
+    });
+
+    render(<ChatStatusSection {...props} isStreaming />);
+
+    // The badge still reports the state — this is a missing button, not a missing item.
+    expect(screen.getByText('88%')).toBeInTheDocument();
+    expect(screen.queryByTestId('compaction-chip')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /compact/i })).not.toBeInTheDocument();
+  });
 });

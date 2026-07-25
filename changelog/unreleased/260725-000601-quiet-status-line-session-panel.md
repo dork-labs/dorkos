@@ -3,7 +3,7 @@
 - A **Session** panel behind the `⋯` at the end of the status line, on click or `Cmd+Shift+.`. It lists everything about the session with its live value — directory, git, runtime, model, context, cache, usage, permissions — plus sound and background refresh, and diagnostics: connection, how far the live link has caught up, how many messages are waiting, and the session id. On a phone it opens as a bottom sheet, most urgent first (DOR-452).
 - **Copy diagnostics** in the Session panel puts everything above on your clipboard as one block of readable JSON — the thing to paste into a bug report (DOR-452).
 - **Pin** any session row to keep it in the status line even when it has nothing to report, and **Reset pins** to clear them all. Your pins are saved with the rest of your settings rather than in one browser, so they follow you to your other windows, the desktop app, and Obsidian — and you can just ask an agent to pin something for you (DOR-452).
-- When the conversation window passes 85% full, a one-click **Compact** appears right beside the percentage instead of on a row of its own (DOR-452).
+- When the conversation window passes 85% full and your agent is not mid-answer, a one-click **Compact** appears right beside the percentage instead of on a row of its own. It waits for the turn to finish, because compacting cannot start while your agent is still working (DOR-452).
 
 ### Changed
 

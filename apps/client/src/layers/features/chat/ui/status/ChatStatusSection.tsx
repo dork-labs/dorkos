@@ -195,11 +195,16 @@ export function ChatStatusSection({
     contextPercent: displayContextPercent,
     connectionState: syncConnectionState,
     permissionMode: status.permissionMode,
+    // `runtimeCaps === undefined` is "the capability map has not arrived", not
+    // "this runtime is not the default": treating it as the latter would promote
+    // the item at RUNTIME_NON_DEFAULT for the frames before the query resolves,
+    // outranking git, model, and cwd on a narrow bar. Every other item follows
+    // the same rule — data hasn't arrived, so no slot.
     runtime:
-      runtimeChip.runtime === null
+      runtimeChip.runtime === null || runtimeCaps === undefined
         ? null
         : {
-            isDefault: runtimeChip.runtime === runtimeCaps?.defaultRuntime,
+            isDefault: runtimeChip.runtime === runtimeCaps.defaultRuntime,
             canSelect: runtimeChip.canSelect,
           },
     usage,
@@ -209,7 +214,12 @@ export function ChatStatusSection({
   // The inline Compact action is the one thing the line gives up first: it costs a
   // labelled button, and below the widest tier the Session panel offers it as a
   // full-width button instead, so the fix is never lost — only relocated.
-  const inlineCompact = compactIntent.supported && budget.density === 'full';
+  //
+  // Gated on `compaction.visible`, never re-derived: the hook already folds in
+  // runtime support, the 85% threshold, AND `isStreaming`. A separately-derived
+  // condition drifted from it once already, offering an enabled Compact button
+  // mid-turn that could only ever 409 `SESSION_LOCKED` (DOR-112 requirement 1).
+  const inlineCompact = compaction.visible && budget.density === 'full';
   const promotedCompactAction = compaction.visible && !inlineCompact;
 
   const nodes = buildStatusItemNodes({
