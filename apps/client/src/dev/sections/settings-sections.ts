@@ -3,8 +3,8 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Settings sections from SettingsPage.
  *
- * Sources: SettingsShowcases — Full Settings Dialog, Full Agent Dialog,
- * Individual Tabs, Mobile Drill-In, Loading & Empty States, Settings Primitives.
+ * Sources: SettingsShowcases — Full Settings Dialog, Individual Tabs,
+ * Mobile Drill-In, Loading & Empty States, Settings Primitives.
  */
 export const SETTINGS_SECTIONS: PlaygroundSection[] = [
   // Dialogs
@@ -14,13 +14,6 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     page: 'settings',
     category: 'Dialogs',
     keywords: ['settings', 'dialog', 'modal', 'full', 'tabs'],
-  },
-  {
-    id: 'full-agent-dialog',
-    title: 'Full Agent Dialog',
-    page: 'settings',
-    category: 'Dialogs',
-    keywords: ['agent', 'dialog', 'modal', 'configuration'],
   },
   // Individual tabs
   {

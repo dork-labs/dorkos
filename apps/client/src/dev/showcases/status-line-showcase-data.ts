@@ -1,0 +1,279 @@
+/**
+ * The session states the status-line showcases run through the real pipeline, and the
+ * widths they run them at.
+ *
+ * Data only, kept out of `StatusLineShowcases` so the demos read as demos. Each
+ * scenario is one session's worth of live state: what the promotion rules see, what
+ * the items need to render, and what the Session panel behind the `⋯` reports.
+ *
+ * @module dev/showcases/status-line-showcase-data
+ */
+import type { GitStatusResponse, SubagentInfo, UsageStatus } from '@dorkos/shared/types';
+import type { SessionStatusData } from '@/layers/entities/session';
+import { gitPromotionState } from '@/layers/features/status';
+import type { SessionDiagnostics, StatusPromotionContext } from '@/layers/features/status';
+import type { StatusItemNodesInput } from '@/layers/features/chat/ui/status/status-item-nodes';
+import type { RuntimeChipState } from '@/layers/features/chat/model/status/use-runtime-chip';
+
+export const AGENT = {
+  name: 'dorkbot',
+  color: '#6366f1',
+  emoji: '🤖',
+  path: '/Users/dev/code/dorkos',
+} as const;
+
+const CWD = '/Users/dev/code/dorkos';
+
+const CLEAN_GIT: GitStatusResponse = {
+  branch: 'main',
+  ahead: 0,
+  behind: 0,
+  modified: 0,
+  staged: 0,
+  untracked: 0,
+  conflicted: 0,
+  clean: true,
+  detached: false,
+  tracking: 'origin/main',
+};
+
+const DIRTY_GIT: GitStatusResponse = {
+  branch: 'dor-452-status-line',
+  ahead: 2,
+  behind: 0,
+  modified: 3,
+  staged: 1,
+  untracked: 2,
+  conflicted: 0,
+  clean: false,
+  detached: false,
+  tracking: 'origin/dor-452-status-line',
+};
+
+const DEFAULT_RUNTIME_CHIP: RuntimeChipState = {
+  runtime: 'claude-code',
+  model: 'claude-opus-4-6',
+  canSelect: false,
+  onChangeRuntime: () => {},
+};
+
+const CODEX_RUNTIME_CHIP: RuntimeChipState = {
+  runtime: 'codex',
+  model: 'gpt-5.3-codex',
+  canSelect: false,
+  onChangeRuntime: () => {},
+};
+
+const USAGE_OK: UsageStatus = {
+  kind: 'subscription',
+  utilization: 0.22,
+  windowLabel: '5-hour window',
+  costUsd: 0.41,
+  state: 'ok',
+};
+
+const USAGE_WARNING: UsageStatus = {
+  kind: 'subscription',
+  utilization: 0.87,
+  windowLabel: '5-hour window',
+  costUsd: 6.12,
+  state: 'warning',
+};
+
+const SUBAGENTS: SubagentInfo[] = [
+  { name: 'Explore', description: 'Read-only search agent' },
+  { name: 'code-reviewer', description: 'Reviews completed work' },
+];
+
+const HEALTHY_STATUS: SessionStatusData = {
+  permissionMode: 'default',
+  model: 'claude-opus-4-6',
+  effort: null,
+  fastMode: false,
+  costUsd: 0.41,
+  contextPercent: 31,
+  isStreaming: false,
+  cwd: CWD,
+};
+
+const DEGRADED_STATUS: SessionStatusData = {
+  ...HEALTHY_STATUS,
+  permissionMode: 'bypassPermissions',
+  model: 'gpt-5.3-codex',
+  costUsd: 6.12,
+  contextPercent: 88,
+};
+
+/** One session's worth of state, minus the density the width decides. */
+export interface StatusScenario {
+  /** What this state is, in the words a reviewer would use. */
+  label: string;
+  /** Live state the promotion rules read. */
+  ctx: StatusPromotionContext;
+  /** Everything the items need, minus `density`. */
+  input: Omit<StatusItemNodesInput, 'density'>;
+  /** What the Session panel behind the `⋯` reports for this session. */
+  diagnostics: SessionDiagnostics;
+}
+
+const HEALTHY_DIAGNOSTICS: SessionDiagnostics = {
+  sessionId: '3d81b5c0-6a24-4f9e-8c11-7b0e2d4a9f31',
+  cwd: CWD,
+  gitBranch: CLEAN_GIT.branch,
+  gitDirty: false,
+  runtime: 'claude-code',
+  model: 'claude-opus-4-6',
+  effort: null,
+  permissionMode: 'default',
+  contextPercent: 31,
+  cache: { readTokens: 48_100, creationTokens: 6_200, contextTokens: 62_000 },
+  usage: USAGE_OK,
+  connectionState: 'connected',
+  lastEventSeq: 184,
+  queueDepth: 0,
+  clientVersion: '0.57.0',
+};
+
+const DEGRADED_DIAGNOSTICS: SessionDiagnostics = {
+  sessionId: '9f3c1a7e-4b2d-4f10-9c85-2a6e1b0d7f44',
+  cwd: CWD,
+  gitBranch: DIRTY_GIT.branch,
+  gitDirty: true,
+  runtime: 'codex',
+  model: 'gpt-5.3-codex',
+  effort: 'high',
+  permissionMode: 'bypassPermissions',
+  contextPercent: 88,
+  cache: { readTokens: 141_200, creationTokens: 18_400, contextTokens: 176_000 },
+  usage: USAGE_WARNING,
+  connectionState: 'disconnected',
+  lastEventSeq: 2471,
+  queueDepth: 2,
+  clientVersion: '0.57.0',
+};
+
+/**
+ * A resting session: clean tree on the default branch, a third of the context
+ * window used, connected, default permissions, the default runtime. Nothing here
+ * is news, so almost nothing shows.
+ */
+export const HEALTHY: StatusScenario = {
+  label: 'Healthy — nothing to report',
+  ctx: {
+    cwd: CWD,
+    git: gitPromotionState(CLEAN_GIT.branch, CLEAN_GIT.clean, CLEAN_GIT.detached),
+    contextPercent: 31,
+    connectionState: 'connected',
+    permissionMode: 'default',
+    runtime: { isDefault: true, canSelect: false },
+    usage: USAGE_OK,
+    subagentCount: 0,
+  },
+  input: {
+    sessionId: 'showcase-healthy',
+    agent: { name: AGENT.name, color: AGENT.color, emoji: AGENT.emoji, path: AGENT.path },
+    status: HEALTHY_STATUS,
+    onUpdateSession: () => {},
+    onChangeMode: () => {},
+    modelSupportsAutoMode: true,
+    gitStatus: CLEAN_GIT,
+    workspace: null,
+    runtimeChip: DEFAULT_RUNTIME_CHIP,
+    contextPercent: 31,
+    contextUsage: null,
+    compact: null,
+    usage: USAGE_OK,
+    supportsCostTracking: true,
+    subagents: [],
+    connectionState: 'connected',
+  },
+  diagnostics: HEALTHY_DIAGNOSTICS,
+};
+
+/**
+ * Everything going wrong at once — the state the width budget exists for. The
+ * live link is down, the context window is nearly full, permissions are bypassed,
+ * the runtime is not the default, the tree is dirty on a feature branch, usage is
+ * near its ceiling, and two subagents are available.
+ */
+export const DEGRADED: StatusScenario = {
+  label: 'Degraded — connection lost, context critical, bypass permissions, non-default runtime',
+  ctx: {
+    cwd: CWD,
+    git: gitPromotionState(DIRTY_GIT.branch, DIRTY_GIT.clean, DIRTY_GIT.detached),
+    contextPercent: 88,
+    connectionState: 'disconnected',
+    permissionMode: 'bypassPermissions',
+    runtime: { isDefault: false, canSelect: false },
+    usage: USAGE_WARNING,
+    subagentCount: SUBAGENTS.length,
+  },
+  input: {
+    sessionId: 'showcase-degraded',
+    agent: { name: AGENT.name, color: AGENT.color, emoji: AGENT.emoji, path: AGENT.path },
+    status: DEGRADED_STATUS,
+    onUpdateSession: () => {},
+    onChangeMode: () => {},
+    modelSupportsAutoMode: false,
+    gitStatus: DIRTY_GIT,
+    workspace: null,
+    runtimeChip: CODEX_RUNTIME_CHIP,
+    contextPercent: 88,
+    contextUsage: null,
+    compact: null,
+    usage: USAGE_WARNING,
+    supportsCostTracking: true,
+    subagents: SUBAGENTS,
+    connectionState: 'disconnected',
+  },
+  diagnostics: DEGRADED_DIAGNOSTICS,
+};
+
+/**
+ * The same degraded state on the default runtime, whose `bypassPermissions`
+ * descriptor is the longest permission label DorkOS ships: `Bypass permissions`, 18
+ * characters against a slot priced at 13 (`STATUS_VALUE_MAX_CHARS`). The widest tier
+ * draws it whole, so this is the row where that shows. Codex's own bypass label is
+ * `Full access`, which fits — which is exactly why the degraded rows above do not
+ * make the point.
+ */
+export const DEGRADED_ON_DEFAULT: StatusScenario = {
+  label: 'Degraded on the default runtime — the longest permission label DorkOS ships',
+  ctx: { ...DEGRADED.ctx, runtime: { isDefault: true, canSelect: false } },
+  input: {
+    ...DEGRADED.input,
+    sessionId: 'showcase-degraded-default',
+    status: { ...DEGRADED_STATUS, model: 'claude-opus-4-6' },
+    runtimeChip: DEFAULT_RUNTIME_CHIP,
+  },
+  diagnostics: {
+    ...DEGRADED_DIAGNOSTICS,
+    runtime: 'claude-code',
+    model: 'claude-opus-4-6',
+    effort: null,
+  },
+};
+
+/**
+ * One bar width per density tier, widest first: each tier at its floor from
+ * `status-budget` (640 / 440 / 340), plus 320 for `avatar`, which has no floor.
+ *
+ * A tier's floor is the tier at its worst — the most it may say in the fewest
+ * pixels it may say it in — which is the interesting width and the only one where a
+ * budget can be caught over-promising.
+ *
+ * Capped at 640 on purpose. These boxes are a fixed pixel width, and the
+ * playground's content column is ~680px on a 1280px laptop; a wider row would
+ * scroll its own `⋯` out of sight, which is the one thing this demo must never
+ * hide. The `full` tier's budget keeps growing above 640 — the showcase's budget
+ * table reports that from the same function without drawing a 1440px bar.
+ */
+export const TIER_WIDTHS = [640, 440, 340, 320] as const;
+
+/**
+ * Widths the showcase's budget table samples, from a small phone to a wide desktop:
+ * every tier floor (340 / 440 / 640), a 320px phone below the narrowest of them, one
+ * width inside `compact` to show a tier whose budget does not move, and four above
+ * 640, the only tier whose budget grows with the width.
+ */
+export const SAMPLED_WIDTHS = [320, 340, 440, 520, 640, 764, 890, 1024, 1440] as const;

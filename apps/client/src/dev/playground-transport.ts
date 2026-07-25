@@ -1,4 +1,90 @@
 import type { Transport } from '@dorkos/shared/transport';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+
+/**
+ * Runtime capabilities the playground answers `getCapabilities` with — a mirror of
+ * the server's `CLAUDE_CODE_CAPABILITIES`, `CODEX_CAPABILITIES`, and
+ * `OPENCODE_CAPABILITIES` (`apps/server/src/services/runtimes/<name>/runtime-constants.ts`).
+ *
+ * The one call in the transport that must not resolve `null`. Permission-mode labels
+ * are declared by the runtime, so with no capabilities `PermissionModeItem` falls
+ * back to its own built-in short names — `Bypass All` (10 characters) where Claude
+ * Code's real descriptor says `Bypass permissions` (18). The status-line showcase
+ * exists to show how much a measured width budget can hold, and a demo quietly
+ * shaving ~50px off its widest value would be showing a line the app never draws.
+ *
+ * A copy can go stale: if a runtime renames a mode, this list is not updated for it.
+ * What the showcases depend on is label *length*, so keep the longest ones in step.
+ */
+const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
+  'claude-code': {
+    type: 'claude-code',
+    supportsToolApproval: true,
+    supportsCostTracking: true,
+    supportsResume: true,
+    supportsMcp: true,
+    supportsQuestionPrompt: true,
+    supportsPlugins: true,
+    nativeContext: [],
+    permissionModes: {
+      supported: true,
+      default: 'default',
+      values: [
+        { id: 'default', label: 'Default' },
+        { id: 'acceptEdits', label: 'Accept edits' },
+        { id: 'plan', label: 'Plan' },
+        { id: 'bypassPermissions', label: 'Bypass permissions' },
+        { id: 'auto', label: 'Auto' },
+      ],
+    },
+    commandIntents: { compact: { supported: true } },
+    features: {},
+  },
+  codex: {
+    type: 'codex',
+    supportsToolApproval: false,
+    supportsCostTracking: false,
+    supportsResume: true,
+    supportsMcp: false,
+    supportsQuestionPrompt: false,
+    supportsPlugins: false,
+    nativeContext: [],
+    logBackedHistory: true,
+    permissionModes: {
+      supported: true,
+      default: 'default',
+      values: [
+        { id: 'default', label: 'Read only' },
+        { id: 'acceptEdits', label: 'Workspace write' },
+        { id: 'bypassPermissions', label: 'Full access' },
+      ],
+    },
+    commandIntents: { compact: { supported: false } },
+    features: {},
+  },
+  opencode: {
+    type: 'opencode',
+    supportsToolApproval: true,
+    supportsCostTracking: true,
+    supportsResume: true,
+    supportsMcp: false,
+    supportsQuestionPrompt: false,
+    supportsPlugins: false,
+    nativeContext: [],
+    logBackedHistory: true,
+    permissionModes: {
+      supported: true,
+      default: 'default',
+      values: [
+        { id: 'default', label: 'Default' },
+        { id: 'acceptEdits', label: 'Accept edits' },
+        { id: 'bypassPermissions', label: 'Bypass permissions' },
+      ],
+    },
+    commandIntents: { compact: { supported: true } },
+    features: {},
+  },
+};
 
 /**
  * Proxy-based mock Transport for the dev playground.
@@ -8,6 +94,8 @@ import type { Transport } from '@dorkos/shared/transport';
  * `undefined` (it uses it internally for "no data yet"), but `null` is valid data
  * that still short-circuits optional chaining (`null?.field === undefined`).
  *
+ * `getCapabilities` is the one exception: see {@link PLAYGROUND_CAPABILITIES}.
+ *
  * Unlike `createMockTransport` from test-utils, this has no dependency on
  * `vi.fn()` and works at runtime.
  */
@@ -15,6 +103,12 @@ export function createPlaygroundTransport(): Transport {
   return new Proxy({} as Transport, {
     get: (_target, prop) => {
       if (typeof prop !== 'string') return undefined;
+      if (prop === 'getCapabilities') {
+        return async () => ({
+          capabilities: PLAYGROUND_CAPABILITIES,
+          defaultRuntime: 'claude-code',
+        });
+      }
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },

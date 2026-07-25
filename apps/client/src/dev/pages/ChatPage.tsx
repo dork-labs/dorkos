@@ -4,6 +4,7 @@ import { MessageShowcases } from '../showcases/MessageShowcases';
 import { ToolShowcases } from '../showcases/ToolShowcases';
 import { InputShowcases } from '../showcases/InputShowcases';
 import { StatusShowcases } from '../showcases/StatusShowcases';
+import { StatusLineShowcases } from '../showcases/StatusLineShowcases';
 import { MiscShowcases } from '../showcases/MiscShowcases';
 
 /** Chat component showcase page for the dev playground. */
@@ -18,6 +19,7 @@ export function ChatPage() {
       <ToolShowcases />
       <InputShowcases />
       <StatusShowcases />
+      <StatusLineShowcases />
       <MiscShowcases />
     </PlaygroundPageLayout>
   );

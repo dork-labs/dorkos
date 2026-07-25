@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
 import {
   PLAYGROUND_REGISTRY,
   TOKENS_SECTIONS,
@@ -107,5 +110,95 @@ describe('playground-config', () => {
         expect(PLAYGROUND_REGISTRY).toContainEqual(section);
       }
     }
+  });
+});
+
+/**
+ * The registry is a hand-maintained index of components rendered somewhere else, so
+ * the two drift silently in both directions: a showcase added without an entry is
+ * invisible to the TOC and to ⌘K, and an entry left behind by a rename or a deletion
+ * points both of them at an anchor that no longer exists. The assertions above can
+ * only ever check the registry against itself, which is why this drift kept shipping
+ * (`UsageStatusItem` rendered unregistered from DOR-109 to DOR-452; `SessionRow` and
+ * `Full Agent Dialog` outlived the showcases they named).
+ *
+ * So this block reads the showcase sources. `<PlaygroundSection title="…">` is the
+ * only thing that emits an anchor, and its title is what `slugify` turns into the
+ * anchor id, so the tag is the ground truth and the registry is what must match it.
+ */
+const DEV_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Directories whose `.tsx` files may render a `<PlaygroundSection>`. */
+const SECTION_DIRS = ['showcases', 'pages'];
+
+/**
+ * Registered for search but rendering no `<PlaygroundSection>`, because the whole
+ * page *is* the section — the simulator is a full-height app rather than a card, so
+ * ⌘K takes you to the page itself. Everything else must have a rendered anchor.
+ */
+const PAGE_LEVEL_SECTIONS = new Set(['Chat Simulator']);
+
+/** Matches one `<PlaygroundSection …>` opening tag; group 1 is its props. */
+const SECTION_TAG = /<PlaygroundSection\b([\s\S]*?)>/g;
+
+/** One rendered section: where it lives, and its literal title if it has one. */
+interface RenderedSection {
+  file: string;
+  title: string | null;
+}
+
+/** Every `<PlaygroundSection>` the playground renders, read from source. */
+function readRenderedSections(): RenderedSection[] {
+  const found: RenderedSection[] = [];
+  for (const dir of SECTION_DIRS) {
+    const dirPath = join(DEV_DIR, dir);
+    for (const file of readdirSync(dirPath).filter((f) => f.endsWith('.tsx'))) {
+      const source = readFileSync(join(dirPath, file), 'utf8');
+      for (const match of source.matchAll(SECTION_TAG)) {
+        const title = /title="([^"]*)"/.exec(match[1]);
+        found.push({ file: `${dir}/${file}`, title: title ? title[1] : null });
+      }
+    }
+  }
+  return found;
+}
+
+describe('the registry matches what the playground actually renders', () => {
+  const rendered = readRenderedSections();
+
+  it('parses the showcase sources at all — a parse that matches nothing proves nothing', () => {
+    // Every section below is only as strong as this: if the tag regex or the source
+    // layout changes, the drift checks would pass by finding nothing to check.
+    expect(rendered.length).toBeGreaterThan(100);
+  });
+
+  it('gives every rendered section a literal title, the only kind a registry can match', () => {
+    const computed = rendered.filter((s) => s.title === null).map((s) => s.file);
+    expect(
+      computed,
+      'a <PlaygroundSection> needs title="A Literal String" so it can be registered and searched'
+    ).toEqual([]);
+  });
+
+  it('registers every rendered section', () => {
+    const registered = new Set(PLAYGROUND_REGISTRY.map((s) => s.title));
+    const missing = rendered
+      .filter((s) => s.title !== null && !registered.has(s.title))
+      .map((s) => `${s.file} renders "${s.title}"`);
+    expect(
+      missing,
+      "add an entry to that page's sections file in dev/sections/, or the TOC and ⌘K cannot see the section"
+    ).toEqual([]);
+  });
+
+  it('renders every registered section, so no entry points at an anchor that is gone', () => {
+    const renderedTitles = new Set(rendered.map((s) => s.title));
+    const dangling = PLAYGROUND_REGISTRY.filter(
+      (s) => !renderedTitles.has(s.title) && !PAGE_LEVEL_SECTIONS.has(s.title)
+    ).map((s) => s.title);
+    expect(
+      dangling,
+      'drop the entry, or retitle it to match the showcase that replaced it'
+    ).toEqual([]);
   });
 });
