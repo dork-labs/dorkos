@@ -2,18 +2,24 @@ import { useMemo, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
-import { useSessions, selectAgentSessions } from '@/layers/entities/session';
+import { useAgentAttentionMap } from '@/layers/entities/session';
 import { applySortAndFilter } from '@/layers/shared/lib';
 import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
-import { DataTable } from '@/layers/shared/ui/data-table';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { useAppStore } from '@/layers/shared/model';
-import { agentFilterSchema, agentSortOptions } from '../lib/agent-filter-schema';
-import { createAgentColumns, type AgentTableRow } from '../lib/agent-columns';
+import {
+  agentFilterSchema,
+  agentSortMenuOptions,
+  agentSortOptions,
+  ATTENTION_SORT_FIELD,
+} from '../lib/agent-filter-schema';
+import { isPastOnboardingGrace, sortAgentsByAttention } from '../lib/agent-attention';
+import type { AgentTableRow } from '../lib/agent-columns';
 import { AgentEmptyFilterState } from './AgentEmptyFilterState';
+import { AgentFleetTable } from './AgentFleetTable';
 
 interface AgentsListProps {
   agents: TopologyAgent[];
@@ -21,9 +27,12 @@ interface AgentsListProps {
 }
 
 /**
- * Agent fleet table — sortable, filterable DataTable of all registered agents.
- * Replaces the previous card-based layout with a responsive table that hides
- * secondary columns (Runtime, Project, Sessions) on mobile.
+ * Agent fleet surface — filter bar plus the fleet table.
+ *
+ * The default order is attention, not inventory: rows group into needs you /
+ * working / quiet so the page's first row answers "who needs me". Picking any
+ * field from the sort menu flattens the groups and sorts purely by that field —
+ * the grouping is the default answer, not a cage.
  */
 export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const navigate = useNavigate();
@@ -33,32 +42,39 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     debounce: { search: 200 },
   });
 
-  const { sessions } = useSessions();
-
   // Derive dynamic namespace options from the agent list
   const namespaceOptions = useMemo(
     () => [...new Set(agents.map((a) => a.namespace).filter((ns): ns is string => Boolean(ns)))],
     [agents]
   );
 
-  // Apply filters and sort (flat list — no namespace grouping)
+  // No `sort` param means attention order, so a first visit lands on it.
+  const isAttentionOrder = !filterState.sortField || filterState.sortField === ATTENTION_SORT_FIELD;
+
+  // Filter first. Attention order is applied after enrichment below, because it
+  // reads the chat state and registration age that only the enriched row carries.
   const filteredAgents = useMemo(
     () =>
-      applySortAndFilter(agents, agentFilterSchema, filterState.values, agentSortOptions, {
-        field: filterState.sortField,
-        direction: filterState.sortDirection,
-      }),
-    [agents, filterState.values, filterState.sortField, filterState.sortDirection]
+      isAttentionOrder
+        ? agentFilterSchema.applyFilters(agents, filterState.values)
+        : applySortAndFilter(agents, agentFilterSchema, filterState.values, agentSortOptions, {
+            field: filterState.sortField,
+            direction: filterState.sortDirection,
+          }),
+    [agents, isAttentionOrder, filterState.values, filterState.sortField, filterState.sortDirection]
   );
 
-  // Compute session counts per agent — canonical membership rule (DOR-203).
-  const sessionCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const agent of agents) {
-      counts[agent.id] = selectAgentSessions(sessions, agent.projectPath ?? null).length;
-    }
-    return counts;
-  }, [agents, sessions]);
+  // Fleet-wide chat state per agent folder. `useAgentAttentionMap` is the app's
+  // single source of per-agent "does this need my eyes?" truth (DOR-339): live
+  // session lifecycle off the global event stream, joined with cross-agent
+  // session recency from `/api/sessions/recent`. It has to be this and not a
+  // count off `useSessions()` — that list is scoped to the selected working
+  // directory, so a per-row count would be zero for every agent but one.
+  const projectPaths = useMemo(
+    () => agents.map((a) => a.projectPath).filter((path): path is string => Boolean(path)),
+    [agents]
+  );
+  const chatStates = useAgentAttentionMap(projectPaths);
 
   // Fetch config once for default-agent badge
   const { data: config } = useQuery({
@@ -67,16 +83,24 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     staleTime: 30_000,
   });
 
-  // Enrich topology agents with computed fields for the table
-  const tableData: AgentTableRow[] = useMemo(
-    () =>
-      filteredAgents.map((agent) => ({
-        ...agent,
-        sessionCount: sessionCounts[agent.id] ?? 0,
-        isDefault: config?.agents?.defaultAgent === agent.name,
-      })),
-    [filteredAgents, sessionCounts, config?.agents?.defaultAgent]
-  );
+  // Enrich topology agents with computed fields, then apply attention order
+  const tableData: AgentTableRow[] = useMemo(() => {
+    const rows = filteredAgents.map((agent) => ({
+      ...agent,
+      // An agent with no project folder can hold no chats at all — exact-cwd
+      // membership (DOR-203) has nothing to match — which is what 'fresh' means.
+      chatState: (agent.projectPath ? chatStates[agent.projectPath] : undefined) ?? 'fresh',
+      isPastOnboardingGrace: isPastOnboardingGrace(agent.registeredAt),
+      isDefault: config?.agents?.defaultAgent === agent.name,
+    }));
+    return isAttentionOrder ? sortAgentsByAttention(rows, filterState.sortDirection) : rows;
+  }, [
+    filteredAgents,
+    chatStates,
+    config?.agents?.defaultAgent,
+    isAttentionOrder,
+    filterState.sortDirection,
+  ]);
 
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
@@ -105,14 +129,13 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     [navigate]
   );
 
-  // Stable column definitions — only recreated when callbacks change
-  const columns = useMemo(
-    () =>
-      createAgentColumns({
-        onNavigate: handleNavigate,
-        onManage: handleManage,
-        onStartSession: handleStartSession,
-      }),
+  // Stable row-action handlers — only recreated when a callback changes
+  const callbacks = useMemo(
+    () => ({
+      onNavigate: handleNavigate,
+      onManage: handleManage,
+      onStartSession: handleStartSession,
+    }),
     [handleNavigate, handleManage, handleStartSession]
   );
 
@@ -132,7 +155,7 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
         <FilterBar.Search placeholder="Filter agents..." />
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
-        <FilterBar.Sort options={agentSortOptions} />
+        <FilterBar.Sort options={agentSortMenuOptions} defaultField={ATTENTION_SORT_FIELD} />
         <FilterBar.ResultCount count={filteredAgents.length} total={agents.length} noun="agent" />
         <FilterBar.ActiveFilters />
       </FilterBar>
@@ -144,12 +167,7 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
               filterDescription={filterState.describeActive()}
             />
           ) : (
-            <DataTable
-              columns={columns}
-              data={tableData}
-              emptyMessage="No agents registered."
-              className="border-0"
-            />
+            <AgentFleetTable rows={tableData} grouped={isAttentionOrder} callbacks={callbacks} />
           )}
         </div>
       </ScrollArea>

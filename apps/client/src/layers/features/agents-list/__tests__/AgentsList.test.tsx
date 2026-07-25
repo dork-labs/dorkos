@@ -7,6 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
+import type { AttentionState } from '@/layers/entities/session';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -15,10 +16,16 @@ import { TooltipProvider } from '@/layers/shared/ui';
 // Mocks — URL search state is simulated via a mutable record.
 // ---------------------------------------------------------------------------
 
+/**
+ * Fleet-wide chat state per project path. Set per test; anything absent reads as
+ * 'fresh' (no chats), the same default the component applies.
+ */
+let chatStates: Record<string, AttentionState> = {};
+
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  // Keep the real selectAgentSessions — only the data hook is stubbed.
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
-  useSessions: () => ({ sessions: [], isLoading: false }),
+  useAgentAttentionMap: (paths: string[]) =>
+    Object.fromEntries(paths.map((path) => [path, chatStates[path] ?? 'fresh'])),
 }));
 
 let currentSearch: Record<string, string | undefined> = {};
@@ -119,7 +126,9 @@ const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): Topology
     capabilities: [],
     behavior: { responseMode: 'always' },
     namespace: overrides.namespace,
-    registeredAt: new Date().toISOString(),
+    // Registered a month ago, so silence means something. Tests that care about
+    // the onboarding grace override this.
+    registeredAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     registeredBy: 'user',
     personaEnabled: true,
     enabledToolGroups: {},
@@ -134,6 +143,15 @@ const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): Topology
   return { ...base, ...overrides };
 };
 
+/** A last-seen timestamp, so no fixture accidentally reads as never-active. */
+const SEEN_AT = '2026-07-25T10:00:00.000Z';
+
+/** Group header rows rendered by the DataTable, in document order. */
+const groupHeaders = () =>
+  Array.from(document.querySelectorAll('[data-slot="data-table-group-header"]')).map(
+    (el) => el.textContent
+  );
+
 const multiNsAgents: TopologyAgent[] = [
   makeAgent({ id: '1', name: 'Agent A', namespace: 'web', projectPath: '/a' }),
   makeAgent({ id: '2', name: 'Agent B', namespace: 'web', projectPath: '/b' }),
@@ -147,6 +165,7 @@ const multiNsAgents: TopologyAgent[] = [
 afterEach(() => {
   cleanup();
   currentSearch = {};
+  chatStates = {};
 });
 
 describe('AgentsList', () => {
@@ -175,20 +194,185 @@ describe('AgentsList', () => {
     expect(screen.getByText('Agent C')).toBeInTheDocument();
   });
 
-  it('does NOT group by namespace (flat table)', () => {
+  it('does NOT group by namespace', () => {
     render(<AgentsList agents={multiNsAgents} isLoading={false} />, {
       wrapper: createWrapper(),
     });
 
-    // All agents are in a flat table — no namespace group headers
+    // Grouping is by attention state, never by namespace.
     expect(screen.getByText('Agent A')).toBeInTheDocument();
     expect(screen.getByText('Agent C')).toBeInTheDocument();
-    // No namespace headers rendered as <h3>
-    const h3s = document.querySelectorAll('h3');
-    for (const h3 of h3s) {
-      expect(h3.textContent).not.toBe('web');
-      expect(h3.textContent).not.toBe('api');
-    }
+    expect(screen.queryByText('web')).not.toBeInTheDocument();
+    expect(screen.queryByText('api')).not.toBeInTheDocument();
+  });
+
+  it('groups rows by attention state, most urgent group first', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Idle One', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+          makeAgent({ id: '2', name: 'Busy One', healthStatus: 'active', lastSeenAt: SEEN_AT }),
+          makeAgent({
+            id: '3',
+            name: 'Gone One',
+            healthStatus: 'unreachable',
+            lastSeenAt: SEEN_AT,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Needs you1', 'Working1', 'Quiet1']);
+
+    // Row order follows the groups.
+    const rowText = screen
+      .getAllByRole('row')
+      .map((row) => row.textContent ?? '')
+      .join('|');
+    expect(rowText.indexOf('Gone One')).toBeLessThan(rowText.indexOf('Busy One'));
+    expect(rowText.indexOf('Busy One')).toBeLessThan(rowText.indexOf('Idle One'));
+  });
+
+  it('populates "Working" for several agents at once, across different folders', () => {
+    // The regression this pins. Chat state used to be counted from
+    // `useSessions()`, which lists only the SELECTED working directory, so at
+    // most one row in the fleet could ever reach Working and the rule was dead
+    // for every other agent. Neither of these two folders is "the" selected one.
+    chatStates = { '/b': 'active', '/c': 'active' };
+
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Quiet One', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+          makeAgent({
+            id: '2',
+            name: 'Chatting B',
+            projectPath: '/b',
+            healthStatus: 'inactive',
+            lastSeenAt: SEEN_AT,
+          }),
+          makeAgent({
+            id: '3',
+            name: 'Chatting C',
+            projectPath: '/c',
+            healthStatus: 'inactive',
+            lastSeenAt: SEEN_AT,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Working2', 'Quiet1']);
+  });
+
+  it('never tells you a chat is open, because it cannot know that', () => {
+    chatStates = { '/1': 'active' };
+
+    render(
+      <AgentsList
+        agents={[makeAgent({ id: '1', name: 'Chatty', lastSeenAt: SEEN_AT })]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(document.body.textContent).not.toMatch(/session/i);
+  });
+
+  it('puts an agent whose chat is blocked in "Needs you" and says so', () => {
+    chatStates = { '/1': 'needs-attention' };
+
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Blocked', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Needs you1']);
+    expect(screen.getByText('A chat needs you')).toBeInTheDocument();
+  });
+
+  it('flags a long-registered agent that never reports while schedules keep coming due', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({
+            id: '1',
+            name: 'Silent Scheduler',
+            healthStatus: 'stale',
+            lastSeenAt: null,
+            taskCount: 3,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Needs you1']);
+  });
+
+  it('leaves a just-registered agent quiet even with schedules attached', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({
+            id: '1',
+            name: 'Fresh DorkBot',
+            healthStatus: 'stale',
+            lastSeenAt: null,
+            taskCount: 3,
+            registeredAt: new Date().toISOString(),
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Quiet1']);
+  });
+
+  it('flattens the groups when the user picks a field sort', () => {
+    currentSearch = { sort: 'name:asc' };
+
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Idle One', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+          makeAgent({
+            id: '2',
+            name: 'Gone One',
+            healthStatus: 'unreachable',
+            lastSeenAt: SEEN_AT,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual([]);
+    expect(screen.getByText('Gone One')).toBeInTheDocument();
+    expect(screen.getByText('Idle One')).toBeInTheDocument();
+  });
+
+  it('labels the default order "Attention" in the sort menu', () => {
+    render(<AgentsList agents={multiNsAgents} isLoading={false} />, {
+      wrapper: createWrapper(),
+    });
+
+    expect(document.querySelector('[data-slot="filter-bar-sort"]')?.textContent).toContain(
+      'Attention'
+    );
   });
 
   it('renders the composable FilterBar with search input', () => {
@@ -275,7 +459,7 @@ describe('AgentsList', () => {
     expect(screen.getByText('Agent A')).toBeInTheDocument();
   });
 
-  it('renders status column with health indicators', () => {
+  it('says what an agent last did, with the time underneath', () => {
     render(
       <AgentsList
         agents={[
@@ -283,14 +467,8 @@ describe('AgentsList', () => {
             id: '1',
             name: 'Active Agent',
             healthStatus: 'active',
-            lastSeenAt: '2026-07-20T00:00:00.000Z',
-          }),
-          // A genuinely dormant agent carries an old last-seen timestamp.
-          makeAgent({
-            id: '2',
-            name: 'Stale Agent',
-            healthStatus: 'stale',
-            lastSeenAt: '2026-01-01T00:00:00.000Z',
+            lastSeenAt: SEEN_AT,
+            lastSeenEvent: 'response_complete',
           }),
         ]}
         isLoading={false}
@@ -298,11 +476,13 @@ describe('AgentsList', () => {
       { wrapper: createWrapper() }
     );
 
-    expect(screen.getByText('Active')).toBeInTheDocument();
-    expect(screen.getByText('Stale')).toBeInTheDocument();
+    expect(screen.getByText('Finished a reply')).toBeInTheDocument();
+    expect(screen.getByText('5m ago')).toBeInTheDocument();
+    // Never the raw event name.
+    expect(screen.queryByText('response_complete')).not.toBeInTheDocument();
   });
 
-  it('shows a never-active agent as "New", not "Stale"/"Never"', () => {
+  it('shows a never-active agent as unused, not "Stale"/"Never"', () => {
     render(
       <AgentsList
         // A brand-new agent: server health is stale, last-seen is null.
@@ -312,10 +492,47 @@ describe('AgentsList', () => {
       { wrapper: createWrapper() }
     );
 
-    // "New" appears in both the Status column and the Last Seen column.
-    expect(screen.getAllByText('New').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Not used yet')).toBeInTheDocument();
     expect(screen.queryByText('Stale')).not.toBeInTheDocument();
     expect(screen.queryByText('Never')).not.toBeInTheDocument();
+  });
+
+  it('shows the runtime and project under the agent name', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({
+            id: '1',
+            name: 'Alpha',
+            runtime: 'codex',
+            projectPath: '/home/kai/blintz/app',
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('blintz/app')).toBeInTheDocument();
+    expect(screen.getByText('· Codex')).toBeInTheDocument();
+  });
+
+  it('surfaces scheduled tasks, and stays silent when there are none', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Busy', lastSeenAt: SEEN_AT, taskCount: 7 }),
+          makeAgent({ id: '2', name: 'Solo', lastSeenAt: SEEN_AT, taskCount: 1 }),
+          makeAgent({ id: '3', name: 'None', lastSeenAt: SEEN_AT, taskCount: 0 }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('7 tasks')).toBeInTheDocument();
+    expect(screen.getByText('1 task')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 
   it('shows "No agents registered." when data is empty', () => {

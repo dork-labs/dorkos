@@ -10,7 +10,11 @@ import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
 import { Button } from '@/layers/shared/ui/button';
-import { taskFilterSchema, taskSortOptions } from '../lib/task-filter-schema';
+import {
+  TASK_DEFAULT_SORT_FIELD,
+  taskFilterSchema,
+  taskSortOptions,
+} from '../lib/task-filter-schema';
 import { TaskRow } from './TaskRow';
 
 /** Items beyond this index are rendered without stagger delay to keep animation snappy. */
@@ -68,7 +72,9 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
   const filteredTasks = useMemo(
     () =>
       applySortAndFilter(baseTasks, taskFilterSchema, filterState.values, taskSortOptions, {
-        field: filterState.sortField,
+        // The control names TASK_DEFAULT_SORT_FIELD as the default, so the list
+        // has to actually be in that order when the URL says nothing.
+        field: filterState.sortField || TASK_DEFAULT_SORT_FIELD,
         direction: filterState.sortDirection,
       }),
     [baseTasks, filterState.values, filterState.sortField, filterState.sortDirection]
@@ -90,7 +96,7 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
         <FilterBar.Search placeholder="Filter tasks..." />
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ agent: agentOptions }} />
-        <FilterBar.Sort options={taskSortOptions} />
+        <FilterBar.Sort options={taskSortOptions} defaultField={TASK_DEFAULT_SORT_FIELD} />
         <FilterBar.ResultCount count={filteredTasks.length} total={baseTasks.length} noun="task" />
         <FilterBar.ActiveFilters />
       </FilterBar>

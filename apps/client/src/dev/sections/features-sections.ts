@@ -38,6 +38,25 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Agent',
     keywords: ['agent', 'identity', 'card', 'name', 'avatar', 'detail', 'profile'],
   },
+  // AgentFleetShowcases
+  {
+    id: 'agentfleettable',
+    title: 'AgentFleetTable',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'agent',
+      'fleet',
+      'table',
+      'attention',
+      'needs you',
+      'working',
+      'quiet',
+      'activity',
+      'scheduled',
+      'group',
+    ],
+  },
   // RelayShowcases
   {
     id: 'catalogcard',

@@ -65,3 +65,14 @@ export const taskSortOptions = createSortOptions<Task>({
     },
   },
 });
+
+/**
+ * Field the tasks list sorts by when the URL carries no `sort` param.
+ *
+ * `/tasks` has no `validateSearch`, so a fresh visit arrives with `sort`
+ * undefined. Without a named default the list fell back to whatever order the
+ * store returned and the sort control rendered "Sort: " with nothing after it.
+ * Soonest-first is the useful lead for a page about scheduled work; paused tasks
+ * carry no `nextRun` and sort to the end.
+ */
+export const TASK_DEFAULT_SORT_FIELD = 'nextRun';

@@ -16,7 +16,7 @@ import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
-import { agentFilterSchema } from '@/layers/features/agents-list';
+import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
@@ -95,7 +95,9 @@ const agentsSearchSchema = mergeDialogSearch(
   z
     .object({
       view: z.enum(['list', 'topology', 'denied', 'access']).optional().default('list'),
-      sort: z.string().optional().default('lastSeen:desc'),
+      // Attention order is the fleet page's default: the agents that need you
+      // lead, and the rows group by state. Any other field flattens the groups.
+      sort: z.string().optional().default(`${ATTENTION_SORT_FIELD}:asc`),
       agent: z.string().optional(), // selected agent ID for topology detail panel
     })
     .merge(agentFilterSchema.searchValidator)

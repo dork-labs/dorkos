@@ -218,6 +218,14 @@ function useMockFilterState(): UseFilterStateReturn<AgentFilterDefs> {
   };
 }
 
+/**
+ * Field the demo list sorts by before the user picks one. `useMockFilterState`
+ * deliberately starts with no sort set — the state a real page is in on a fresh
+ * visit — so this is what keeps the trigger from reading "Sort: " with nothing
+ * after it, and what the list is actually ordered by.
+ */
+const DEMO_DEFAULT_SORT_FIELD = 'name';
+
 // ── Status badge color map ─────────────────────────────────────
 
 const STATUS_BADGE_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -243,7 +251,7 @@ export function FilterBarShowcase() {
   const filteredAgents = useMemo(
     () =>
       applySortAndFilter(MOCK_AGENTS, agentFilterSchema, filterState.values, agentSortOptions, {
-        field: filterState.sortField,
+        field: filterState.sortField || DEMO_DEFAULT_SORT_FIELD,
         direction: filterState.sortDirection,
       }),
     [filterState.values, filterState.sortField, filterState.sortDirection]
@@ -261,7 +269,7 @@ export function FilterBarShowcase() {
               <FilterBar.Search placeholder="Filter agents..." />
               <FilterBar.Primary name="status" />
               <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
-              <FilterBar.Sort options={agentSortOptions} />
+              <FilterBar.Sort options={agentSortOptions} defaultField={DEMO_DEFAULT_SORT_FIELD} />
               <FilterBar.ResultCount
                 count={filteredAgents.length}
                 total={MOCK_AGENTS.length}
@@ -319,7 +327,7 @@ export function FilterBarShowcase() {
               <FilterBar.Search placeholder="Filter agents..." />
               <FilterBar.Primary name="status" />
               <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
-              <FilterBar.Sort options={agentSortOptions} />
+              <FilterBar.Sort options={agentSortOptions} defaultField={DEMO_DEFAULT_SORT_FIELD} />
               <FilterBar.ResultCount
                 count={filteredAgents.length}
                 total={MOCK_AGENTS.length}

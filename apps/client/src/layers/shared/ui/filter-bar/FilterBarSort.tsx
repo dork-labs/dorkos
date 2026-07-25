@@ -11,19 +11,26 @@ import { useFilterBar } from './FilterBarContext';
 interface FilterBarSortProps {
   /** Sort options from createSortOptions — keys map to field names. */
   options: Record<string, { label: string }>;
+  /**
+   * Field the list sorts by when the URL carries no `sort` param. Naming it
+   * lets the trigger read the real default instead of an empty label, and makes
+   * the direction toggle act on that field rather than on nothing.
+   */
+  defaultField?: string;
   className?: string;
 }
 
 /** Dropdown for selecting sort field and toggling direction. */
-function FilterBarSort({ options, className }: FilterBarSortProps) {
+function FilterBarSort({ options, defaultField, className }: FilterBarSortProps) {
   const { sortField, sortDirection, setSort } = useFilterBar();
 
-  const currentLabel = options[sortField]?.label ?? sortField;
+  const activeField = sortField || (defaultField ?? '');
+  const currentLabel = options[activeField]?.label ?? activeField;
   const DirectionIcon = sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon;
 
   function toggleDirection(e: React.MouseEvent) {
     e.stopPropagation();
-    setSort(sortField, sortDirection === 'asc' ? 'desc' : 'asc');
+    setSort(activeField, sortDirection === 'asc' ? 'desc' : 'asc');
   }
 
   return (
@@ -57,7 +64,7 @@ function FilterBarSort({ options, className }: FilterBarSortProps) {
           <DropdownMenuItem
             key={key}
             onClick={() => setSort(key, sortDirection)}
-            className={cn(key === sortField && 'bg-accent font-medium')}
+            className={cn(key === activeField && 'bg-accent font-medium')}
           >
             {opt.label}
           </DropdownMenuItem>
