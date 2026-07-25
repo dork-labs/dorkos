@@ -2,6 +2,7 @@
 covers:
   - "fix(approvals): deciding an approval needs a person, and the card cannot lie (DOR-428)"
   - "fix(approvals): redact secrets before clamping, and stop anchoring the sweep (DOR-428)"
+  - "fix(approvals): put the card's query container on an ancestor so the wide layout works"
 ---
 
 ### Security

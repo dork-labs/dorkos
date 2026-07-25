@@ -200,10 +200,32 @@ describe('PendingApprovalsSection', () => {
     await screen.findByText('Uninstall a marketplace package');
     const card = document.querySelector('[data-slot="approval-card"]')!;
 
-    expect(card.className).toContain('@container/approval');
     expect(card.className).toContain('@[34rem]/approval:flex-row');
     // No viewport breakpoint may decide this layout.
     expect(card.className).not.toMatch(/(?:^|\s)(?:sm|md|lg):flex-row/);
+  });
+
+  it('declares the query container on an ANCESTOR, never on the querying element', async () => {
+    // The invariant a class-name assertion cannot see, and the one that broke: an
+    // element is never its own query container, so `@container/approval` and
+    // `@[34rem]/approval:` on ONE element make the query silently never match — the
+    // card would stay stacked at every width, including the ~824px dashboard.
+    // Confirmed in a real engine; jsdom does not evaluate container queries, so
+    // this structural check is what stands in for it.
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+
+    await screen.findByText('Uninstall a marketplace package');
+    const card = document.querySelector('[data-slot="approval-card"]')!;
+
+    expect(card.classList.contains('@container/approval')).toBe(false);
+
+    let container: HTMLElement | null = card.parentElement;
+    while (container && !container.classList.contains('@container/approval')) {
+      container = container.parentElement;
+    }
+    expect(container, 'no ancestor declares @container/approval').not.toBeNull();
   });
 
   it('styles itself from theme tokens, so it matches in light, dark, and Obsidian', async () => {
