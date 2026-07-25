@@ -1,3 +1,8 @@
+---
+covers:
+  - "fix(security): allowlist the tokenless config snapshot, give the CLI a credential (DOR-428)"
+---
+
 ### Security
 
 - Closed an information leak in the `config_get` tool. It returned your whole settings file with only four fields held back. What came through included pointers to where your provider keys live. That means an environment variable name, a keychain entry, or the path to a key file on your disk. It also included the name of the DorkOS account this install is linked to. That tool answers without asking for a token, so any program running on your machine could read all of it. Your keys themselves were never in there. Now the tool shares a fixed list of settings. Anything key-related comes back as a plain yes or no instead of a value. Adding a new setting to DorkOS now means deciding whether it belongs on that list, so nothing new can slip in unnoticed (DOR-428)
