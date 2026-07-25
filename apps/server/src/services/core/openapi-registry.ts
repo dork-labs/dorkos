@@ -2509,12 +2509,18 @@ registry.registerPath({
   summary: 'Allow the requested action',
   description:
     'Grants a pending approval so the requester can spend its token once, on exactly the ' +
-    'capability and input the approval is bound to.',
+    'capability and input the approval is bound to. Deciding is the human half of the gate: a ' +
+    'caller that presents an agent identity (`X-DorkOS-Agent`) is refused, so an agent cannot ' +
+    'answer its own request.',
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
       description: 'Approval granted',
       content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+    },
+    403: {
+      description: 'Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
       description: 'No such approval',
@@ -2536,7 +2542,9 @@ registry.registerPath({
   path: '/api/approvals/{id}/deny',
   tags: ['Approvals'],
   summary: 'Refuse the requested action',
-  description: 'Denies a pending approval, with an optional reason the requester sees.',
+  description:
+    'Denies a pending approval, with an optional reason the requester sees. As with grant, a ' +
+    'caller that presents an agent identity (`X-DorkOS-Agent`) is refused.',
   request: {
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: DenyApprovalBodySchema } } },
@@ -2545,6 +2553,10 @@ registry.registerPath({
     200: {
       description: 'Approval denied',
       content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+    },
+    403: {
+      description: 'Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     400: {
       description: 'Invalid body',

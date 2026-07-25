@@ -11144,7 +11144,7 @@
           "Approvals"
         ],
         "summary": "Allow the requested action",
-        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to.",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate: a caller that presents an agent identity (`X-DorkOS-Agent`) is refused, so an agent cannot answer its own request.",
         "parameters": [
           {
             "schema": {
@@ -11162,6 +11162,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApprovalDecisionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -11205,7 +11215,7 @@
           "Approvals"
         ],
         "summary": "Refuse the requested action",
-        "description": "Denies a pending approval, with an optional reason the requester sees.",
+        "description": "Denies a pending approval, with an optional reason the requester sees. As with grant, a caller that presents an agent identity (`X-DorkOS-Agent`) is refused.",
         "parameters": [
           {
             "schema": {
@@ -11238,6 +11248,16 @@
           },
           "400": {
             "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)",
             "content": {
               "application/json": {
                 "schema": {

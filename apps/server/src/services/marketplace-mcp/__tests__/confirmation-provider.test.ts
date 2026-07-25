@@ -232,7 +232,7 @@ describe('TokenConfirmationProvider', () => {
       );
       expect(redirected).toEqual({
         status: 'declined',
-        reason: 'This approval was granted for a different package or operation',
+        reason: 'This approval was granted for a different action',
       });
 
       // Refusing a mismatch must not spend the approval — the package the user
@@ -259,7 +259,7 @@ describe('TokenConfirmationProvider', () => {
       );
       expect(escalated).toEqual({
         status: 'declined',
-        reason: 'This approval was granted for a different package or operation',
+        reason: 'This approval was granted for a different action',
       });
 
       // The approval the user actually gave is untouched and still spendable.
@@ -268,6 +268,43 @@ describe('TokenConfirmationProvider', () => {
         buildRequest({ operation: 'uninstall', packageName: 'sentry-monitor', purge: false })
       );
       expect(asApproved).toEqual({ status: 'approved' });
+    });
+
+    it('refuses an install approval retried without the marketplace it pinned', async () => {
+      // A named marketplace pins resolution; omitting it searches every enabled
+      // source, first match wins. Those are different effects, so the binding
+      // must not treat an absent marketplace as the one the user approved.
+      const issued = await provider.requestInstallConfirmation(
+        buildRequest({ marketplace: 'dorkos-community' })
+      );
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const unpinned = await provider.resolveToken(issued.token, {
+        packageName: 'code-review-suite',
+        operation: 'install',
+        preview: buildPreview(),
+      });
+      expect(unpinned).toEqual({
+        status: 'declined',
+        reason: 'This approval was granted for a different action',
+      });
+
+      // And the reverse: an approval granted with no marketplace pinned cannot be
+      // spent against one particular source.
+      const anySource = await provider.requestInstallConfirmation({
+        packageName: 'code-review-suite',
+        operation: 'install',
+        preview: buildPreview(),
+      });
+      if (anySource.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const pinned = await provider.resolveToken(
+        anySource.token,
+        buildRequest({ marketplace: 'somewhere-else' })
+      );
+      expect(pinned.status).toBe('declined');
     });
 
     it('refuses an approval redirected at a different project', async () => {

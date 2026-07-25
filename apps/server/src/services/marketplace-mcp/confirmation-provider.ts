@@ -53,7 +53,13 @@ export type ConfirmationResult =
  */
 export interface ConfirmationRequest {
   packageName: string;
-  marketplace: string;
+  /**
+   * Which marketplace to act in. Absent means "search every enabled
+   * marketplace, first match wins" — a materially different resolution from any
+   * named source, so absence is bound as absence and never defaulted to a source
+   * name the caller did not pin.
+   */
+  marketplace?: string;
   operation: ConfirmationOperation;
   /**
    * Uninstall only: also delete the package's saved data and secrets. This is
@@ -98,12 +104,13 @@ export interface ConfirmationProvider {
    * client re-calls `marketplace_install` after the user approved out-of-band.
    *
    * The caller must restate what it is about to do: an approval is bound to one
-   * package and one operation, so a token granted for installing A is refused
-   * when presented for installing B.
+   * exact action, so a token granted for installing A is refused when presented
+   * for installing B — or for the same package with a different marketplace,
+   * project, or purge flag.
    *
    * @param token - The token previously returned via `pending`.
-   * @param req - The operation the caller is about to run. Must describe the
-   *   same package and operation the token was issued for.
+   * @param req - The operation the caller is about to run. Must describe the same
+   *   action the token was issued for, field for field.
    */
   resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
 }
@@ -162,7 +169,9 @@ function bindingOf(req: ConfirmationRequest): { capabilityId: string; inputHash:
     capabilityId: CAPABILITY_IDS[req.operation],
     inputHash: hashApprovalInput({
       packageName: req.packageName,
-      marketplace: req.marketplace,
+      // Absence is bound as absence: an unnamed marketplace searches every
+      // enabled source, which is not the same effect as a pinned one.
+      marketplace: req.marketplace ?? null,
       operation: req.operation,
       purge: req.purge ?? false,
       projectPath: req.projectPath ?? null,
@@ -176,17 +185,23 @@ function scopeOf(req: ConfirmationRequest): string {
   return req.projectPath ? ` in ${req.projectPath}` : '';
 }
 
-/** Plain-language summary of a pending marketplace operation, for the card. */
+/**
+ * Plain-language summary of a pending marketplace operation, for the card.
+ *
+ * Says only what the request actually pins. An install with no marketplace named
+ * really does search every enabled source, so the card says that rather than
+ * naming a default the code does not apply.
+ */
 function summaryOf(req: ConfirmationRequest): string {
   switch (req.operation) {
     case 'install':
-      return `Install "${req.packageName}" from ${req.marketplace}${scopeOf(req)}`;
+      return `Install "${req.packageName}" from ${req.marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
     case 'uninstall':
       return req.purge
         ? `Uninstall "${req.packageName}"${scopeOf(req)} and delete its saved data and secrets`
         : `Uninstall "${req.packageName}"${scopeOf(req)}, keeping its saved data`;
     case 'create-package':
-      return `Create the ${req.packageType ?? 'new'} package "${req.packageName}" in ${req.marketplace}`;
+      return `Create the ${req.packageType ?? 'new'} package "${req.packageName}" in ${req.marketplace ?? 'your personal marketplace'}`;
   }
 }
 
@@ -257,7 +272,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       case 'mismatched':
         return {
           status: 'declined',
-          reason: 'This approval was granted for a different package or operation',
+          reason: 'This approval was granted for a different action',
         };
       case 'consumed':
       case 'unknown':
