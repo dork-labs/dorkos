@@ -248,10 +248,23 @@ async function seedRightPanelSplit(page: Page, rightPct: number): Promise<void> 
 
 /**
  * Canvas right-panel split (founder art direction: the document needs a
- * genuinely readable column, not a sliver — 45% ≈ 576px at the 1280px capture
+ * genuinely readable column, not a sliver — 58% ≈ 742px at the 1280px capture
  * viewport).
+ *
+ * Widened from 45% after the Session tab (DOR-460) brought the /session tab
+ * strip to six contributions: at 45% the strip's own `[data-slot=right-panel-
+ * header]` scroller measured a 116px deficit (scrollWidth over clientWidth),
+ * clipping the active Canvas tab's label with no visible scroll-fade cue — a
+ * real product bug (the fade element renders per `edges.end`, but is not
+ * visually perceptible against the active tab's own background). 58% is the
+ * narrowest split with zero deficit (measured via a throwaway capture-side
+ * probe, not a shots.ts registry change), so every tab shows in full. It also
+ * lands the main content column at ~538px — inside the status line's
+ * `compact` tier (440–640px) rather than skirting the `full` tier's 640px
+ * floor, where DOR-461 lives — so this side-steps that bug too instead of
+ * trading one visible defect for the other.
  */
-const CANVAS_PANEL_PCT = 45;
+const CANVAS_PANEL_PCT = 58;
 
 /** Drive the canvas open beside chat (shared by the still and the loop). */
 async function driveCanvasOpen(page: Page): Promise<void> {
@@ -415,15 +428,21 @@ async function shootSubagents(page: Page, theme: Theme, rec: RunRecorder): Promi
 
 /** Stagger between concurrent multi-session turn triggers. */
 const MULTI_SESSION_STAGGER_MS = 700;
-/** How many concurrent sessions each multi-session drive launches. */
-const MULTI_SESSION_COUNT = 4;
+/**
+ * How many concurrent sessions each multi-session drive launches. Capped at
+ * `AgentListItem`'s `MAX_PREVIEW_SESSIONS` (3) — the sidebar's per-agent
+ * conversation preview never renders a 4th real row for the same agent
+ * (session-origin-legibility, DOR-408), so a 4th launched session here would
+ * leave the drive waiting on a row that can never mount.
+ */
+const MULTI_SESSION_COUNT = 3;
 /** Rotates through the prompt pool so repeated drives mint distinct titles. */
 let multiSessionPromptCursor = 0;
 
 /**
- * Drive the fleet moment: launch four concurrent turns (three coding streams +
- * one approval-blocked) across separate sessions, THEN open the session view
- * with the sidebar visible — the freshly mounted list includes every new row,
+ * Drive the fleet moment: launch concurrent turns (coding streams + one
+ * approval-blocked) across separate sessions, THEN open the session view with
+ * the sidebar visible — the freshly mounted list includes every new row,
  * pulsing green and amber while the turns stream. (Triggers come first because
  * an already-mounted list does not grow rows for brand-new sessions.)
  */
@@ -451,7 +470,7 @@ async function driveMultiSession(page: Page): Promise<void> {
   await page.goto(url(`/session?session=${first.id}&dir=${encodeURIComponent(cwd)}`));
   await page.waitForSelector('[data-testid="chat-panel"]', { timeout: WAIT_MS });
   await ensureDesktopSidebarExpanded(page);
-  // All four rows present in the freshly mounted, expanded list.
+  // Every launched row present in the freshly mounted, expanded list.
   await page
     .locator('[data-testid="session-row"]')
     .nth(MULTI_SESSION_COUNT - 1)
@@ -513,20 +532,55 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
  * Drive the onboarding wizard to the agent-discovery step and let the real
  * unified scanner sweep the seeded projects tree until the mixed-harness
  * candidates are on screen. Requires onboarding to be un-dismissed first.
+ *
+ * KNOWN BROKEN as of DOR-460/DOR-459 (2026-07-25): reaching Discovery requires
+ * a rewrite this pass didn't take on, so `agent-discovery` currently records
+ * via a local, uncommitted override of the last-known-good asset rather than
+ * a real capture. Left broken deliberately rather than patched around:
+ *
+ * - The Requirements step's ready-state CTA now reads "Meet DorkBot" (its
+ *   `onboarding-get-started` testid predates that copy) — fixed below.
+ * - Past Requirements, onboarding is no longer a step wizard but a scripted
+ *   DorkBot conversation (ADR 260722-111314): the nav bar's only control is
+ *   "Skip setup", which now calls `dismiss()` and exits onboarding entirely
+ *   (verified live) — there is no more per-step skip to jump past the
+ *   conversation into Discovery.
+ * - Discovery is now an inline beat *inside* that conversation, gated behind
+ *   confirming DorkBot's personality first (the `confirm-personality` CTA,
+ *   `OnboardingConversation.tsx`). That confirm is a real, non-idempotent
+ *   write of DorkBot's traits — the same write the pre-redesign comment here
+ *   warned wrote "under the DorkOS home, outside the capture-world boundary."
+ *   Nothing in this pass confirmed that write is confined to the sandboxed
+ *   `DORK_HOME` in the current code path, and given the scan-boundary privacy
+ *   incident this skill's Staging Knobs section already documents, driving
+ *   through it speculatively is the wrong call. Fix by either confirming that
+ *   write is sandbox-safe and scripting the personality beat here, or adding a
+ *   dedicated skip-to-Discovery seam for capture, not by guessing.
  */
 async function driveOnboardingDiscovery(page: Page): Promise<void> {
   // With onboarding un-dismissed the wizard replaces the app shell entirely,
   // so the boot signal is the welcome screen itself.
   await page.goto(url('/'));
-  // Welcome → Requirements → Meet DorkBot → Discovery. Meet DorkBot is
-  // advanced via the nav bar's Skip: its Continue writes DorkBot traits under
-  // the DorkOS home, which sits outside the capture-world boundary.
   await page.getByText('Get Started', { exact: true }).first().click({ timeout: WAIT_MS });
-  await page.getByText('Continue', { exact: true }).first().click({ timeout: WAIT_MS });
-  await page.getByText('Skip', { exact: true }).first().click({ timeout: WAIT_MS });
-  // The discovery step auto-starts its scan; wait for the seeded fleet.
-  await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
-  await sleep(800); // let the remaining candidate cards animate in
+  await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
+  // Everything past this point is the broken span described above. Fail fast
+  // rather than driving into it: "Skip setup" dismisses the whole flow (DOR-472),
+  // so the candidate-card wait below can only ever time out, and it would burn a
+  // full WAIT_MS on each of this drive's two callers (still + loop) before
+  // reporting a failure that is already known to be deterministic.
+  //
+  // The two lines the fix needs are kept here, unreachable, so whoever closes
+  // DOR-472 has the recipe rather than having to rediscover it:
+  //
+  //   await page.getByText('Skip setup', { exact: true }).first().click({ timeout: WAIT_MS });
+  //   await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
+  //   await sleep(800); // let the remaining candidate cards animate in
+  throw new Error(
+    'agent-discovery drive is known-broken: "Skip setup" dismisses the whole onboarding ' +
+      'flow instead of one step (DOR-472), and Discovery now sits behind a real DorkBot ' +
+      'personality save whose sandbox safety is unverified. This shot carries forward its ' +
+      'last-known-good asset. See the block comment above this function.'
+  );
 }
 
 /**
