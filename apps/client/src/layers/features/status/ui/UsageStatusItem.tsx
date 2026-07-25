@@ -1,8 +1,8 @@
 import { Gauge, DollarSign } from 'lucide-react';
-import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import type { UsageStatus } from '@dorkos/shared/types';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { formatCost } from '../lib/format-tokens';
 
 interface UsageStatusItemProps {
   usage: UsageStatus;
@@ -125,15 +125,14 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
   // Cost-primary: pay-as-you-go, or a subscription before its first rate-limit
   // signal. Rendered only when a cost is present (parent gate).
   if (usage.costUsd == null) return null;
-  const costLabel = `$${usage.costUsd.toFixed(2)}`;
-  // The only value in the line with unbounded magnitude — every other one is a
-  // percent, a name held to `STATUS_VALUE_MAX_CHARS`, or a small count. A rigid
-  // item cannot truncate its way out of a figure that outgrows its slot, so it
-  // steps aside instead: a `null` node never enters the line (see
-  // `selectPromotedItems`), which lands the amount on the `⋯` where it is still
-  // exact. Today only a pin can reach this branch — `promote` never fires for
-  // pay-as-you-go, but a pin bypasses `promote` entirely (DOR-461 review).
-  if (costLabel.length > STATUS_VALUE_MAX_CHARS) return null;
+  // Bounded by magnitude, not by character count: this is the only value in the
+  // line that can grow without limit, and a rigid item cannot truncate its way out
+  // of one. `formatCost` keeps it to seven characters short of a billion dollars,
+  // so the figure never outgrows the slot in the first place. A character limit
+  // written for labels was the wrong instrument — it admitted `$99999.99` long
+  // after the cluster had run out of room (DOR-461 review). Reachable today only
+  // by a pin, which bypasses `promote` entirely.
+  const costLabel = formatCost(usage.costUsd);
 
   if (!usage.detail) {
     return (

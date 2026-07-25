@@ -9,10 +9,10 @@ function item(
   key: StatusBarItemKey,
   cluster: 'left' | 'right',
   severity: number,
-  pinned = false
+  pinned = false,
+  rigid = false
 ): PromotedStatusItem {
-  // `rigid` is a rendering decision the row makes; the budget never reads it.
-  return { key, cluster, severity, pinned, rigid: false, node: `node:${key}` };
+  return { key, cluster, severity, pinned, rigid, node: `node:${key}` };
 }
 
 /** The degraded session from the design notes: everything promoted at once. */
@@ -61,11 +61,15 @@ describe('resolveStatusBudget', () => {
     expect(resolveStatusBudget(640 + slot * 4).rightBudget).toBe(8);
   });
 
-  it('drops the directory and keeps four slots between 440 and 640px', () => {
+  it('drops the directory and keeps three slots between 440 and 640px', () => {
+    // Three, and it took a retraction to earn: the first cut to three was masking
+    // an item that could neither shrink nor be shrunk, and was reverted when that
+    // item was fixed. It is three again because a fourth measured 8-16px past the
+    // cluster's box at the 438px floor, whichever item took the slot (DOR-461).
     for (const width of [440, 639]) {
       const budget = resolveStatusBudget(width);
       expect(budget.density).toBe('compact');
-      expect(budget.rightBudget).toBe(4);
+      expect(budget.rightBudget).toBe(3);
       expect(budget.dropped).toEqual(['cwd']);
     }
   });
@@ -124,17 +128,10 @@ describe('applyStatusBudget — truncation per tier', () => {
     expect(overflow).toBe(3);
   });
 
-  it('drops the directory and four right-cluster slots survive at a tablet width', () => {
+  it('drops the directory and three right-cluster slots survive at a tablet width', () => {
     const { items, overflow } = applyStatusBudget(degradedLine(), resolveStatusBudget(500));
-    expect(items.map((i) => i.key)).toEqual([
-      'agent',
-      'git',
-      'context',
-      'usage',
-      'subagents',
-      'connection',
-    ]);
-    expect(overflow).toBe(3);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'git', 'context', 'usage', 'connection']);
+    expect(overflow).toBe(4);
   });
 
   it('leaves identity plus three signals on a phone', () => {
@@ -152,6 +149,51 @@ describe('applyStatusBudget — truncation per tier', () => {
   it('never drops the identity anchor, however narrow the bar', () => {
     const { items } = applyStatusBudget(degradedLine(), resolveStatusBudget(200));
     expect(items.map((i) => i.key)).toContain('agent');
+  });
+});
+
+describe('applyStatusBudget — items that cannot shrink', () => {
+  it('takes only the two most urgent of them, however many slots are free', () => {
+    // The slot count assumes items compress. A third rigid item put the cluster
+    // 16px past its box at the compact floor whatever floor the shrinkable ones
+    // were given, so the third waits under the `⋯` where its number is exact
+    // (DOR-461 review).
+    const { items, overflow } = applyStatusBudget(
+      [
+        item('connection', 'right', 100),
+        item('context', 'right', 90, false, true),
+        item('usage', 'right', 80, false, true),
+        item('subagents', 'right', 35, false, true),
+      ],
+      { density: 'full', rightBudget: 4, dropped: [] }
+    );
+    expect(items.map((i) => i.key)).toEqual(['connection', 'context', 'usage']);
+    expect(overflow).toBe(1);
+  });
+
+  it('drops the least urgent of them, not whichever came last', () => {
+    const { items } = applyStatusBudget(
+      [
+        item('subagents', 'right', 35, false, true),
+        item('context', 'right', 90, false, true),
+        item('usage', 'right', 80, false, true),
+      ],
+      { density: 'full', rightBudget: 4, dropped: [] }
+    );
+    expect(items.map((i) => i.key)).toEqual(['context', 'usage']);
+  });
+
+  it('still fills the remaining slots with items that can shrink', () => {
+    const { items } = applyStatusBudget(
+      [
+        item('context', 'right', 90, false, true),
+        item('usage', 'right', 80, false, true),
+        item('subagents', 'right', 35, false, true),
+        item('model', 'right', 10),
+      ],
+      { density: 'full', rightBudget: 4, dropped: [] }
+    );
+    expect(items.map((i) => i.key)).toEqual(['context', 'usage', 'model']);
   });
 });
 

@@ -67,7 +67,7 @@ describe('useStatusBudget', () => {
 
     resizeTo(500);
     expect(bar).toHaveAttribute('data-density', 'compact');
-    expect(bar).toHaveAttribute('data-budget', '4');
+    expect(bar).toHaveAttribute('data-budget', '3');
     expect(bar).toHaveAttribute('data-dropped', 'cwd');
 
     resizeTo(375);

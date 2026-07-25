@@ -217,15 +217,21 @@ export interface StatusBarItemConfig {
    * to drop the item to the `⋯` — where the number is still exact — and the
    * browser guard fails loudly if it does not.
    *
-   * Rigidity is expensive, so it is not for every number. `subagents` renders a
-   * count and was marked rigid for one round; measuring the cost said no. It is
-   * the quietest thing that can be on the row (severity 35), and protecting it
-   * meant the deficit had nowhere to go but `connection` — `Connection lost`, at
-   * severity 100 — which was cut to 24px, a dot and a sliver. Its glyph already
-   * says what it means without the number, so it gives way like a name and the
-   * exact tally stays in its tooltip and accessible name. The test in
-   * `status-bar-registry.test` is the list, and adding to it is a claim that the
-   * row can afford one more thing that will not move.
+   * Rigidity is expensive, so it is not for every number — but an item with no
+   * compressible part has no other honest option. `subagents` is glyph plus
+   * digits: there is no label to abbreviate, so a row that squeezes it can only
+   * take digits away, and `12` losing one reads as `1`, confidently and wrongly.
+   *
+   * It went both ways before this settled. Rigid at its old `N running` width
+   * (77px) it was the quietest item on the row holding pixels that `connection` —
+   * severity 100 — then had to give up, and `connection` measured 24px. The
+   * inversion was the width, not the rigidity: as a bare count the item is ~36px,
+   * which is what its shrink floor already reserved, so protecting it costs the
+   * row nothing it was not already spending. The word moved to the tooltip and
+   * the accessible name, where a narrow row cannot cut it.
+   *
+   * The test in `status-bar-registry.test` is the list, and adding to it is a
+   * claim that the row can afford one more thing that will not move.
    */
   rigid?: true;
 }
@@ -358,6 +364,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'diagnostics',
     icon: Users,
+    rigid: true,
     promote: (ctx) => ctx.subagentsInFlight > 0,
     severity: (ctx) => (ctx.subagentsInFlight > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
   },

@@ -162,6 +162,10 @@ function StatusCluster({
           <motion.div
             key={item.key}
             data-testid={`status-item-${item.key}`}
+            // Published for the browser guard: an item whose value is a number
+            // must never be drawn partly, and a partly-drawn number is not an
+            // overlap, so the guard cannot infer this from geometry alone.
+            data-rigid={item.rigid ? 'true' : undefined}
             layout="position"
             initial={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
             animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
@@ -173,12 +177,23 @@ function StatusCluster({
             style={item.rigid ? undefined : { flexShrink: shrinkFactorFor(item, urgencyOrder) }}
             className={cn(
               'inline-flex items-center gap-2',
-              // `min-w-9`, not `min-w-0`: the separator and the glyph inside the
+              // A floor, not `min-w-0`: the separator and the glyph inside the
               // wrapper are `shrink-0`, so an item squeezed below them renders
               // ~23px of content in a 0px box and paints into its neighbour — the
               // very defect this file exists to prevent, reintroduced from the
-              // other end. The floor is the width of what cannot shrink anyway.
-              item.rigid ? 'shrink-0' : 'min-w-9',
+              // other end.
+              //
+              // 40px is measured, not derived, and it does not cover every item:
+              // `GitStatusItem` at full density carries an incompressible
+              // `· 12 changes` plus two ahead/behind groups, ~150px that this
+              // floor does not reserve. That is safe only because the gradient
+              // above never drives `git` near it (measured 96-180px), not because
+              // the number is right for it. CSS cannot express "the width of my
+              // own incompressible parts" — `min-width: auto` computes to
+              // max-content here, since a `truncate` child still contributes its
+              // full text to min-content — so the honest options were a per-item
+              // declaration or a measured floor with this caveat written down.
+              item.rigid ? 'shrink-0' : 'min-w-10',
               TAP_TARGET
             )}
           >

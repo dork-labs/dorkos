@@ -115,7 +115,7 @@ describe('StatusLine', () => {
   describe('numbers keep their pixels; names give them up', () => {
     it('lets a name-bearing item be squeezed, so its value can truncate', () => {
       render(<StatusLine items={[item('permission')]} />);
-      expect(wrapper('permission').className).toContain('min-w-9');
+      expect(wrapper('permission').className).toContain('min-w-10');
       expect(wrapper('permission').className).not.toContain('shrink-0');
     });
 
@@ -124,13 +124,13 @@ describe('StatusLine', () => {
       // different number — so the row must not be able to ask (DOR-461 review).
       render(<StatusLine items={[item('context', 'right', 90, true)]} />);
       expect(wrapper('context').className).toContain('shrink-0');
-      expect(wrapper('context').className).not.toContain('min-w-9');
+      expect(wrapper('context').className).not.toContain('min-w-10');
     });
 
     it('applies the decision per item, not per row', () => {
       render(<StatusLine items={[item('context', 'right', 90, true), item('connection')]} />);
       expect(wrapper('context').className).toContain('shrink-0');
-      expect(wrapper('connection').className).toContain('min-w-9');
+      expect(wrapper('connection').className).toContain('min-w-10');
     });
 
     it('floors a shrinkable item at the width of what cannot shrink inside it', () => {
@@ -138,7 +138,7 @@ describe('StatusLine', () => {
       // in a 0px box and paints into its neighbour — the same defect from the
       // other end (DOR-461 review).
       render(<StatusLine items={[item('model'), item('connection')]} />);
-      expect(wrapper('model').className).toContain('min-w-9');
+      expect(wrapper('model').className).toContain('min-w-10');
       expect(wrapper('model').className).not.toContain('min-w-0');
     });
   });

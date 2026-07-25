@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import type { UsageStatus } from '@dorkos/shared/types';
 import { UsageStatusItem, hasRenderableUsage } from '../ui/UsageStatusItem';
 
@@ -127,24 +126,30 @@ describe('UsageStatusItem — the figure never abbreviates', () => {
 });
 
 describe('UsageStatusItem — the one value with no upper bound', () => {
-  it('draws a cost that fits the bound every other value is held to', () => {
-    render(<UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 99999.99 }} />, {
+  it('shows small amounts to the cent', () => {
+    render(<UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 12.4 }} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByText('$99999.99')).toBeInTheDocument();
+    expect(screen.getByText('$12.40')).toBeInTheDocument();
   });
 
-  it('steps aside instead of drawing a figure too long for a slot', () => {
-    // Every other value in the line is a percent, a small count, or a name held to
-    // `STATUS_VALUE_MAX_CHARS`. A cost has no ceiling, and a rigid item cannot
-    // truncate its way out of one — so it renders nothing and the amount lands on
-    // the `⋯`, still exact. `selectPromotedItems` drops a null node, and a pin is
-    // what makes this reachable: it bypasses `promote` entirely (DOR-461 review).
-    const { container } = render(
-      <UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 12345678901.99 }} />,
-      { wrapper: Wrapper }
-    );
-    expect(`$${(12345678901.99).toFixed(2)}`.length).toBeGreaterThan(STATUS_VALUE_MAX_CHARS);
-    expect(container).toBeEmptyDOMElement();
+  it('gets shorter as the amount gets bigger, so the slot never has to grow', () => {
+    // A rigid item cannot truncate its way out of a figure too wide for its slot,
+    // so the figure must not get wide. Bounding the character count instead was the
+    // wrong instrument: a limit written for labels admitted `$99999.99` long after
+    // the cluster had run out of room (DOR-461 review).
+    for (const [cost, shown] of [
+      [999.99, '$999.99'],
+      [9999.99, '$10.0k'],
+      [99999.99, '$100.0k'],
+      [9999999.99, '$10.0M'],
+    ] as const) {
+      cleanup();
+      render(<UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: cost }} />, {
+        wrapper: Wrapper,
+      });
+      expect(screen.getByText(shown)).toBeInTheDocument();
+      expect(shown.length).toBeLessThanOrEqual(7);
+    }
   });
 });

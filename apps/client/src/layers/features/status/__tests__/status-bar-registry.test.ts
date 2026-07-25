@@ -155,15 +155,16 @@ describe('STATUS_BAR_REGISTRY — numbers are rigid', () => {
     // alternative is an item that renders outside its own box, which is how all
     // three of these were found.
     const rigid = STATUS_BAR_REGISTRY.filter((i) => i.rigid).map((i) => i.key);
-    expect(rigid).toEqual(['context', 'usage']);
+    expect(rigid).toEqual(['context', 'usage', 'subagents']);
   });
 
-  it('does not protect a count whose glyph already carries the meaning', () => {
-    // `subagents` was rigid for a round. It is the quietest item that can be on
-    // the row, so protecting it left the deficit nowhere to go but `connection` —
-    // severity 100 — which measured 24px, a dot and a sliver. A rigid item is a
-    // claim on space that nothing else can reclaim, so the list stays short.
-    expect(getStatusBarItem('subagents')?.rigid).toBeUndefined();
+  it('protects a count, which has no label to give up instead', () => {
+    // Squeezed, `12` loses a digit and reads as `1` — with the ellipsis clipped
+    // too, so it does not even look cut (DOR-461 review). There is no label in the
+    // item to abbreviate first, so the row must not be able to ask. The width that
+    // makes this affordable is the bare count: ~36px, which its shrink floor
+    // reserved anyway.
+    expect(getStatusBarItem('subagents')?.rigid).toBe(true);
   });
 
   it('leaves every label-bearing item free to truncate', () => {

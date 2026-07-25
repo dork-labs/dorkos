@@ -178,6 +178,33 @@ async function measureSettledStatusLines(page: Page): Promise<MeasuredLine[]> {
 }
 
 /**
+ * Assert that every number in the line is drawn whole.
+ *
+ * Overlap and truncation are different failures and only one of them is
+ * geometric: an item marked `data-rigid` renders a number, and a number the row
+ * has cut is not a smaller number, it is a wrong one. `12` squeezed to its floor
+ * rendered `1` — with the ellipsis clipped too, so it did not even look cut — and
+ * every geometric check on this page stayed green through it (DOR-461 review).
+ *
+ * @param page - The page holding one or more status lines.
+ */
+async function expectNoTruncatedNumbers(page: Page) {
+  const cut = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="status-line"] [data-rigid="true"]')].flatMap(
+      (item) =>
+        [...item.querySelectorAll('span')]
+          .filter((span) => span.children.length === 0 && span.scrollWidth > span.clientWidth + 1)
+          .map(
+            (span) =>
+              `${item.getAttribute('data-testid')}: "${span.textContent?.trim()}" needs ` +
+              `${span.scrollWidth}px in ${span.clientWidth}px`
+          )
+    )
+  );
+  expect(cut, `a number the row cut is a wrong number:\n${cut.join('\n')}`).toEqual([]);
+}
+
+/**
  * Assert that nothing in the line paints over anything else in it.
  *
  * Both readings are collected into one list so a failure reports the whole
@@ -351,5 +378,6 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
     ).toBe(true);
 
     expectNoOverlap(lines);
+    await expectNoTruncatedNumbers(page);
   });
 });

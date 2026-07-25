@@ -21,11 +21,10 @@ interface SubagentsItemProps {
  * the Session panel under "Available" instead.
  *
  * The value is the bare count beside the glyph — `2`, not `2 running` — which is
- * the same shape every other number in the line takes (`▤ 88%`, `$1.23`). It also
- * keeps the number safe: a value with a word after it truncates that word first
- * and the digits last, so `12 running` can reach `1…` and read as one subagent
- * when there are twelve. Two characters cannot. The word is in the tooltip and in
- * the accessible name, where a narrow row cannot cut it.
+ * the same shape every other number in the line takes (`▤ 88%`, `$1.23`). Two
+ * characters are also cheap enough to protect: the registry marks this item rigid,
+ * so the row never squeezes it and the count is never partly drawn. The word is in
+ * the tooltip and in the accessible name, where a narrow row cannot cut it.
  *
  * @param props - The running subagents.
  */
@@ -41,7 +40,11 @@ export function SubagentsItem({ running }: SubagentsItemProps) {
           aria-label={`${running.length} subagent${running.length === 1 ? '' : 's'} running`}
         >
           <Users className="size-(--size-icon-xs) shrink-0" />
-          <span className="truncate tabular-nums">{running.length}</span>
+          {/* No `truncate`: an ellipsis costs width, so a squeezed two-digit
+              count renders as one digit with the ellipsis itself clipped — a
+              confident wrong number rather than a visibly cut one. The item is
+              rigid instead, so it is never asked. */}
+          <span className="shrink-0 tabular-nums">{running.length}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">

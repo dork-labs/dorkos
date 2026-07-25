@@ -33,6 +33,7 @@ import {
   AGENT,
   DEGRADED,
   DEGRADED_ON_DEFAULT,
+  DELEGATING,
   HEALTHY,
   RATE_LIMITED,
   SAMPLED_WIDTHS,
@@ -204,6 +205,15 @@ export function StatusLineShowcases() {
         </ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
           <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={640} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Delegating — twelve subagents, drawn as a whole number</ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <div className="space-y-5">
+            {TIER_WIDTHS.map((width) => (
+              <BudgetedLine key={width} scenario={DELEGATING} width={width} />
+            ))}
+          </div>
         </ShowcaseDemo>
 
         <ShowcaseLabel>

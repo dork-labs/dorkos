@@ -96,7 +96,16 @@ const USAGE_EXHAUSTED: UsageStatus = {
  * Two subagents mid-flight. The item counts what is RUNNING, not what the runtime
  * could call — a catalogue never changes, so counting it says nothing (DOR-462).
  */
-const RUNNING_SUBAGENTS: ActiveSubagent[] = [
+const RUNNING_SUBAGENTS: ActiveSubagent[] = Array.from({ length: 12 }, (_, i) => ({
+  taskId: `task-${i}`,
+  status: 'running' as const,
+  description: `Explore the ${i}th call site`,
+  toolUses: i,
+  lastToolName: 'Grep',
+}));
+
+/** Kept only so the shape above stays readable beside a hand-written example. */
+const _EXAMPLE_SUBAGENT_SHAPE: ActiveSubagent[] = [
   {
     taskId: 'task-explore-1',
     status: 'running',
@@ -332,6 +341,36 @@ export const RATE_LIMITED: StatusScenario = {
     permissionMode: 'default',
     usage: USAGE_EXHAUSTED,
   },
+};
+
+/**
+ * A turn that has delegated work, with one number beside it.
+ *
+ * The row where the subagents item is actually drawn: two rigid items is the most
+ * the right cluster accepts, so a session that is also rate-limited pushes this
+ * one under the `⋯` (see `MAX_RIGID_ITEMS`). Twelve running on purpose — a
+ * two-digit count is the case that can be drawn wrong, and was: squeezed to its
+ * floor it rendered `1`, with the ellipsis clipped off, reading as one subagent
+ * out of twelve (DOR-461 review).
+ */
+export const DELEGATING: StatusScenario = {
+  label: 'Delegating — a nearly-full window and twelve subagents running',
+  ctx: {
+    ...DEGRADED.ctx,
+    connectionState: 'connected',
+    permissionMode: 'default',
+    runtime: { isDefault: true, canSelect: false },
+    usage: USAGE_OK,
+  },
+  input: {
+    ...DEGRADED.input,
+    sessionId: 'showcase-delegating',
+    status: { ...DEGRADED_STATUS, permissionMode: 'default' },
+    runtimeChip: DEFAULT_RUNTIME_CHIP,
+    usage: USAGE_OK,
+    connectionState: 'connected',
+  },
+  diagnostics: { ...DEGRADED_DIAGNOSTICS, connectionState: 'connected', usage: USAGE_OK },
 };
 
 /**
