@@ -4,6 +4,7 @@ covers:
   - 'fix(right-panel): scroll the selected tab into view (DOR-471)'
   - 'fix(status): numbers in the status row never abbreviate (DOR-461)'
   - 'fix(status): the quietest item gives up its width first (DOR-461)'
+  - 'fix(changelog): match a covers declaration whichever way it is quoted'
 ---
 
 ### Fixed
