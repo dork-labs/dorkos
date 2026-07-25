@@ -9,7 +9,9 @@ Review (the managed GitHub product, if enabled) and injected into the
 
 Work the diff like a senior engineer, not a linter:
 
-1. Get the full diff (`gh pr diff`) and the changed-file list. Read the enclosing
+1. Get the full diff and the changed-file list, with whatever command your harness
+   gives you for it — the `claude-code-review` workflow pins that to a helper and
+   says so in its prompt, so do not reach for `gh` there. Read the enclosing
    function or module around each hunk: a bug in an unchanged line of a touched
    function is in scope.
 2. Trace outward. For every symbol the diff changes, removes, or renames, grep the
