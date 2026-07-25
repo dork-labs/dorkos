@@ -43,7 +43,7 @@ Internal only: the capability registry + invoke endpoint (phase 2), ActivityServ
 
 ### 3.1 Agent identity + attribution
 
-New `services/core/agent-identity/`: mints a per-agent token (random 128-bit, stored hashed in the agents SQLite table via the existing file-first agents domain; `agent.json` never holds the secret) with fields `{ agentPath, displayName, tierCeiling: 'observe'|'act'|'destructive' (default 'destructive' = unrestricted, per current trust), createdAt, revokedAt? }`. Delivery: the claude-code runtime env seam injects `DORKOS_AGENT_TOKEN` into spawned sessions (context-builder env block stays clean; the token rides process env for CLI use and an `X-DorkOS-Agent` header the api-client and MCP tool deps attach when present). Resolution middleware on `/api/*` and both MCP servers resolves the token to an `AgentIdentity` and stashes it on the request context; absent token = human/unattributed (today's behavior). ActivityService emit sites for capability invocations gain `actorType: 'agent', actorId: <agentPath>` when identity is present. Cockpit: no new UI beyond Activity showing agent attribution (existing actor rendering).
+New `services/core/agent-identity/`: mints a per-agent token (random 128-bit, stored hashed in the agents SQLite table via the existing file-first agents domain; `agent.json` never holds the secret) with fields `{ agentPath, displayName, tierCeiling: 'observe'|'act'|'destructive' (default 'destructive' = unrestricted, per current trust), createdAt, revokedAt? }`. Delivery: the claude-code runtime env seam injects `DORKOS_AGENT_TOKEN` into spawned sessions (context-builder env block stays clean; the token rides process env for CLI use and an `X-DorkOS-Agent` header the api-client and MCP tool deps attach when present). Resolution middleware on `/api/*` and both MCP servers resolves the token to an `AgentIdentity` and stashes it on the request context; absent token = human/unattributed (today's behavior). ActivityService emit sites for capability invocations gain `actorType: 'agent', actorId: <agentPath>` when identity is present. [Narrowed — see Errata.] Cockpit: no new UI beyond Activity showing agent attribution (existing actor rendering).
 
 ### 3.2 Tier enforcement at the choke points
 
@@ -93,7 +93,7 @@ Single phase; decomposition in `03-tasks.json`.
 
 ## Open Questions
 
-- ~~Should identity be enforced (agent must present a token)?~~ **(RESOLVED)** No: absent identity = today's behavior. Rationale: mandatory identity breaks external MCP clients and human CLI use; attribution + tier gating deliver the value without a breaking change.
+- ~~Should identity be enforced (agent must present a token)?~~ **(RESOLVED)** No: absent identity = today's behavior. Rationale: mandatory identity breaks external MCP clients and human CLI use; attribution + tier gating deliver the value without a breaking change. [Narrowed — see Errata.]
 - ~~Approval persistence?~~ **(RESOLVED)** SQLite table (derived data, not user-owned files). Rationale: approvals are operational state like tasks runs, not identity like `agent.json`.
 - ~~Docker tier in per-PR CI?~~ **(RESOLVED)** No: docker-in-CI cost and flake risk; per-PR stays test-mode structural; docker is local + nightly/dispatch. Rationale: eval-harness spec's cadence intent, honest about CI budget.
 
@@ -107,3 +107,12 @@ Single phase; decomposition in `03-tasks.json`.
 - `specs/capability-registry/04-implementation.md` (the choke points)
 - `specs/eval-harness/02-specification.md` (isolation seam + cadence design)
 - `apps/server/src/services/marketplace-mcp/` confirmation providers (the seam being generalized)
+
+## Errata (2026-07-25)
+
+Adversarial review after phase 3 shipped found that this spec's "absent identity = today's behavior" resolution, correct for attribution in general, left a hole for irreversible actions. Two clauses above are narrower than written:
+
+- **An anonymous `destructive` invocation IS recorded.** The tier gate deliberately does not audit calls it allows (it defers to the registry's invocation observer), and that observer only fired for an identified caller — so an unidentified caller that completed something irreversible produced a `capability.approval_required` line and then silence. Such an invocation now emits with `actorType: 'system'` and `actorLabel: 'Unidentified caller'`, never as a nameless agent. `observe` and `act` calls by an unidentified caller still write nothing, exactly as this spec intended.
+- **An unidentified caller has a tier ceiling.** §3.2's ceiling was applied only when an identity was present, which meant dropping `DORKOS_AGENT_TOKEN` moved a caller onto the more permissive path. Every caller is capped now; an unidentified one defaults to `destructive` (no extra restriction), so shipped behavior is unchanged while the escape is closed.
+
+Also corrected in the same round: who may DECIDE an approval. `POST /api/approvals/:id/grant` keyed on the presence of an agent identity, so a requester that omitted one header granted its own approval. See the errata on ADRs 260725-133220 and 260725-133221, and the follow-up section in `04-implementation.md`.

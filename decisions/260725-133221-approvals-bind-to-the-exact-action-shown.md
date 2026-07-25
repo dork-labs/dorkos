@@ -30,10 +30,19 @@ We will bind every approval to `(capabilityId, sha256(stableStringify(parsed inp
 ### Positive
 
 - Consent means one thing: the action described on the card, once, soon. Retry-with-different-arguments is structurally refused rather than trusted.
-- The card cannot be spoofed by the requester: title and tier come from the registry, and the summary is composed server-side from the same values that get hashed.
+- The card cannot be spoofed by the requester: title and tier come from the registry, and the summary is composed server-side from the same values that get hashed. **(Overstated as written — see Errata, 2026-07-25.)**
 - The invariant is stated where it is enforced, so adding an argument that reaches a mutation without adding it to the binding is a documented, reviewable mistake.
 
 ### Negative
 
 - Every new destructive capability owes its binding a deliberate field-by-field decision; the compiler cannot tell you that a newly added argument changes machine effect.
 - A non-idempotent Zod `.transform()` on a destructive schema would break the hash identity; today only a conformance assertion catches that, not the type system.
+
+## Errata (2026-07-25)
+
+The consequence "The card cannot be spoofed by the requester" was overstated, and adversarial review reproduced two ways it failed. The code was fixed to match the claim rather than the claim relaxed.
+
+1. **The summary could be made to lie.** Arguments were joined with unescaped `, ` and `: ` separators, so `{ name: 'pkg, purge: no', purge: true }` rendered a fake `purge: no` pair BEFORE the real `purge: yes`, and padding the injected value pushed the true one past the summary's length cap and out of the card's `line-clamp-2`. Caller-supplied values are now quoted and escaped, each capped independently before the sentence is capped, and a destructive card is never clamped. Requester labels get the same treatment: an agent's `displayName` comes from its own `agent.json`, which it can rewrite through an `act`-tier capability.
+2. **Secret-shaped values reached the card, the SSE broadcast, and the agent-readable pending list.** `confirmationToken` is a declared field of the only destructive capability's input, and the generic renderer echoed it, contradicting the invariants stated verbatim in `approval-events.ts` and `approval-schemas.ts`. A capability now declares `approvalDisplayFields`; undeclared inputs drop fields whose name says secret; and a final sweep replaces token-shaped runs where the summary is stored, which covers the marketplace confirmation provider's own sentences too.
+
+Separately, the binding hash silently unbound anything `stableStringify` cannot canonicalize (`Date`, `Set`, `Map`, class instances: `{ at: new Date(0) }` and `{ at: new Date(9e11) }` produced the same digest). Latent, since every destructive input is scalars today, and invisible to the parse-idempotence assertion. `hashApprovalInput` now rejects non-plain values outright and the gate turns that into a refusal (`input_not_bindable`) rather than binding an approval to a hash that ignores part of the action.

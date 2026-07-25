@@ -109,6 +109,34 @@ describe('ApprovalService', () => {
     });
   });
 
+  describe('a stored summary never carries a secret', () => {
+    it('redacts a token-shaped run wherever the summary came from', () => {
+      // Every producer passes through here, including the marketplace confirmation
+      // provider, which composes its own sentences. `approvals.summary` is broadcast
+      // to every cockpit and returned by the agent-readable pending list, so this is
+      // the single choke point that has to hold.
+      const live = 'f3a9c1d47b8e5026aa11bb22cc33dd44';
+      service.request({
+        ...BINDING,
+        summary: `Uninstall "sentry-monitor" using ${live}`,
+        requestedBy: `agent ${live}`,
+      });
+
+      const [pending] = service.listPending();
+      expect(pending.summary).not.toContain(live);
+      expect(pending.requestedBy).not.toContain(live);
+      expect(JSON.stringify(broadcast.mock.calls)).not.toContain(live);
+      expect(JSON.stringify(service.listPending())).not.toContain(live);
+    });
+
+    it('caps a requester label so a self-chosen name cannot flood the card', () => {
+      service.request({ ...BINDING, summary: 'Uninstall', requestedBy: 'A'.repeat(500) });
+
+      const [pending] = service.listPending();
+      expect(pending.requestedBy!.length).toBeLessThanOrEqual(60);
+    });
+  });
+
   describe('consume', () => {
     it('reports pending until somebody decides', () => {
       const ticket = requestOne();

@@ -272,10 +272,18 @@ export function composeRegistry(
       // guarding for an absent context on every call site.
       const invocationContext = context ?? {};
 
-      // No observer, or nothing to attribute: run the original path untouched
-      // so an unattributed call stays byte-identical to before this seam
-      // existed (spec §3.1 — absent identity is today's behavior).
-      if (!onInvocation || !invocationContext.identity) {
+      // No observer, or nothing to attribute: run the original path untouched so
+      // an unattributed call stays byte-identical to before this seam existed
+      // (spec §3.1 — absent identity is today's behavior).
+      //
+      // A `destructive` capability is the exception, and it is not optional: the
+      // tier gate deliberately does NOT audit an `allowed` call ("allowed calls
+      // are audited on invoke", `tier-enforcement.ts`), so skipping the observer
+      // for an unidentified caller meant an irreversible action that actually RAN
+      // produced an `approval_required` line and then silence. Two seams each
+      // correctly deferred to the other and the record fell between them.
+      const auditedWithoutIdentity = capability.tier === 'destructive';
+      if (!onInvocation || (!invocationContext.identity && !auditedWithoutIdentity)) {
         return capability.invoke(deps, parsed, invocationContext);
       }
 

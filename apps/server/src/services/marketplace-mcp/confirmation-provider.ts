@@ -25,7 +25,13 @@
  * @module services/marketplace-mcp/confirmation-provider
  */
 import type { PermissionPreview } from '../marketplace/types.js';
-import { hashApprovalInput, type ApprovalService } from '../core/approvals/index.js';
+import {
+  hashApprovalInput,
+  quoteSummaryValue,
+  ApprovalInputNotBindableError,
+  type ApprovalService,
+} from '../core/approvals/index.js';
+import { logger } from '../../lib/logger.js';
 
 /** The kind of mutation a confirmation request is gating. */
 export type ConfirmationOperation = 'install' | 'uninstall' | 'create-package';
@@ -208,9 +214,44 @@ function bindingOf(req: ConfirmationRequest): { capabilityId: string; inputHash:
   };
 }
 
+/**
+ * Refuse a request whose values cannot be bound to an approval.
+ *
+ * `hashApprovalInput` rejects anything canonicalization would flatten (a `Date`, a
+ * `Set`, a class instance), because an approval bound to a hash that ignores part
+ * of the action is worse than no approval. The tier gate turns that into a
+ * structured `denied`; this path has to do the same rather than let the error out
+ * as an opaque 500 — a person looking at a failed install has no way to guess that
+ * a schema field is unbindable.
+ *
+ * Fails CLOSED: `declined` means the mutation does not run.
+ *
+ * @param req - The confirmation request that could not be bound.
+ * @param err - Why it could not be, carrying the offending field path.
+ * @returns A declined result carrying a reason the caller can act on.
+ */
+function unbindableRefusal(
+  req: ConfirmationRequest,
+  err: ApprovalInputNotBindableError
+): ConfirmationResult {
+  logger.error('[marketplace] confirmation request could not be bound to an approval', {
+    operation: req.operation,
+    path: err.path,
+    err: err.message,
+  });
+  return {
+    status: 'declined',
+    reason:
+      `DorkOS cannot pin down exactly what this ${req.operation} would do (${err.path} is not a ` +
+      `value it can compare on a retry), so it refused instead of asking for an approval it could ` +
+      `not enforce. Nothing was changed. This is a bug in the tool that asked, not something to ` +
+      `approve around.`,
+  };
+}
+
 /** Where an operation lands, for the card: a named project or the global scope. */
 function scopeOf(req: ConfirmationRequest): string {
-  return req.projectPath ? ` in ${req.projectPath}` : '';
+  return req.projectPath ? ` in ${quoteSummaryValue(req.projectPath)}` : '';
 }
 
 /**
@@ -219,17 +260,24 @@ function scopeOf(req: ConfirmationRequest): string {
  * Says only what the request actually pins. An install with no marketplace named
  * really does search every enabled source, so the card says that rather than
  * naming a default the code does not apply.
+ *
+ * Every caller-supplied value goes through {@link quoteSummaryValue}, which adds
+ * the quotes, escapes the contents, and caps the length. Interpolating them raw
+ * let a package name carrying its own quotes and connectives forge the rest of the
+ * sentence — the same defect `describeGatedAttempt` had (`tier-enforcement.ts`).
  */
 function summaryOf(req: ConfirmationRequest): string {
+  const name = quoteSummaryValue(req.packageName);
+  const marketplace = req.marketplace ? quoteSummaryValue(req.marketplace) : undefined;
   switch (req.operation) {
     case 'install':
-      return `Install "${req.packageName}" from ${req.marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
+      return `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
     case 'uninstall':
       return req.purge
-        ? `Uninstall "${req.packageName}"${scopeOf(req)} and delete its saved data and secrets`
-        : `Uninstall "${req.packageName}"${scopeOf(req)}, keeping its saved data`;
+        ? `Uninstall ${name}${scopeOf(req)} and delete its saved data and secrets`
+        : `Uninstall ${name}${scopeOf(req)}, keeping its saved data`;
     case 'create-package':
-      return `Create the ${req.packageType ?? 'new'} package "${req.packageName}" in ${req.marketplace ?? 'your personal marketplace'}`;
+      return `Create the ${req.packageType ? quoteSummaryValue(req.packageType) : 'new'} package ${name} in ${marketplace ?? 'your personal marketplace'}`;
   }
 }
 
@@ -265,10 +313,21 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * The card's title and tier are resolved from the capability registry by
    * `ApprovalService`, not stated here — a requester cannot describe itself.
    *
+   * A request DorkOS cannot bind is `declined` rather than thrown (see
+   * {@link unbindableRefusal}), so the mutation does not run and the caller learns
+   * why.
+   *
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
-    const { capabilityId, inputHash } = bindingOf(req);
+    let binding: { capabilityId: string; inputHash: string };
+    try {
+      binding = bindingOf(req);
+    } catch (err) {
+      if (err instanceof ApprovalInputNotBindableError) return unbindableRefusal(req, err);
+      throw err;
+    }
+    const { capabilityId, inputHash } = binding;
     const ticket = this.approvals.request({
       capabilityId,
       inputHash,
@@ -288,7 +347,14 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The operation the caller is about to run.
    */
   async resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult> {
-    const result = this.approvals.consume(token, bindingOf(req));
+    let binding: { capabilityId: string; inputHash: string };
+    try {
+      binding = bindingOf(req);
+    } catch (err) {
+      if (err instanceof ApprovalInputNotBindableError) return unbindableRefusal(req, err);
+      throw err;
+    }
+    const result = this.approvals.consume(token, binding);
     switch (result.outcome) {
       case 'granted':
         return { status: 'approved' };

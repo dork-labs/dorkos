@@ -2,6 +2,13 @@
  * Tests for the approvals routes (spec `agent-trust` §3.3) — the cockpit lists
  * what is waiting and records the operator's decision.
  *
+ * The `who may decide` block is the important one. Review reproduced a complete
+ * self-approval chain against the real routers: ask for a destructive capability
+ * (the 202 hands the caller both the approval id AND its token), grant it with a
+ * bare request that simply omits the agent header, retry with the token, done.
+ * Those cases are pinned here in both login postures, because the refusal must not
+ * depend on accounts being switched on — `auth.enabled` defaults to `false`.
+ *
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -13,7 +20,10 @@ import {
   APPROVAL_TTL_MS,
   hashApprovalInput,
 } from '../../services/core/approvals/index.js';
+import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/index.js';
+import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
 import { createApprovalsRouter } from '../approvals.js';
 
 /** The action every test in this file asks approval for. */
@@ -22,9 +32,53 @@ const BINDING = {
   inputHash: hashApprovalInput({ name: 'sentry-monitor' }),
 };
 
+/** A resolved agent identity, as the real middleware attaches it. */
+const AGENT_IDENTITY = {
+  agentPath: '/Users/dev/agents/dorkbot',
+  displayName: 'DorkBot',
+  tierCeiling: 'destructive' as const,
+  createdAt: new Date().toISOString(),
+};
+
 describe('approvals routes', () => {
   let approvals: ApprovalService;
   let app: express.Express;
+  let emitted: { eventType: string; metadata?: Record<string, unknown> | null }[];
+
+  /**
+   * Build an app around the real router.
+   *
+   * @param options - Login posture, whether an agent identity is pre-resolved onto
+   *   `res.locals` (what the real middleware does), and whether a signed-in user is.
+   */
+  function buildApp(
+    options: {
+      loginEnabled?: boolean;
+      agentIdentity?: boolean;
+      user?: { userId: string };
+    } = {}
+  ): express.Express {
+    const built = express();
+    built.use(express.json());
+    built.use((_req, res, next) => {
+      if (options.agentIdentity) res.locals.agentIdentity = AGENT_IDENTITY;
+      if (options.user) res.locals.user = options.user;
+      next();
+    });
+    const activity = {
+      emit: async (event: { eventType: string; metadata?: Record<string, unknown> | null }) => {
+        emitted.push({ eventType: event.eventType, metadata: event.metadata });
+      },
+    } as unknown as ActivityService;
+    built.use(
+      '/api/approvals',
+      createApprovalsRouter(approvals, {
+        activity,
+        isLoginEnabled: () => options.loginEnabled === true,
+      })
+    );
+    return built;
+  }
 
   beforeEach(() => {
     // A stand-in for the capability registry the real boot injects — the card's
@@ -35,10 +89,9 @@ describe('approvals routes', () => {
           ? { title: 'Uninstall a marketplace package', tier: 'destructive' }
           : undefined,
     });
+    emitted = [];
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    app = express();
-    app.use(express.json());
-    app.use('/api/approvals', createApprovalsRouter(approvals));
+    app = buildApp();
   });
 
   afterEach(() => {
@@ -159,28 +212,11 @@ describe('approvals routes', () => {
     });
   });
 
-  describe('only a person may decide', () => {
-    /** The same router, reached by a caller carrying a resolved agent identity. */
-    function agentApp(): express.Express {
-      const built = express();
-      built.use(express.json());
-      built.use((_req, res, next) => {
-        res.locals.agentIdentity = {
-          agentPath: '/Users/dev/agents/dorkbot',
-          displayName: 'DorkBot',
-          tierCeiling: 'destructive',
-          createdAt: new Date().toISOString(),
-        };
-        next();
-      });
-      built.use('/api/approvals', createApprovalsRouter(approvals));
-      return built;
-    }
-
-    it('403s a grant that arrives with an agent identity', async () => {
+  describe('who may decide', () => {
+    it('403s a grant from a caller whose agent identity resolved', async () => {
       const ticket = requestOne();
 
-      const res = await request(agentApp())
+      const res = await request(buildApp({ agentIdentity: true }))
         .post(`/api/approvals/${ticket.approvalId}/grant`)
         .send();
 
@@ -190,22 +226,139 @@ describe('approvals routes', () => {
       expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
     });
 
-    it('403s a deny that arrives with an agent identity', async () => {
+    it('403s a deny from a caller whose agent identity resolved', async () => {
       const ticket = requestOne();
 
-      const res = await request(agentApp()).post(`/api/approvals/${ticket.approvalId}/deny`).send();
+      const res = await request(buildApp({ agentIdentity: true }))
+        .post(`/api/approvals/${ticket.approvalId}/deny`)
+        .send();
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
     });
 
+    it('403s a caller whose agent token did NOT resolve — a revoked agent is still an agent', async () => {
+      const ticket = requestOne();
+
+      const res = await request(app)
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .set(AGENT_IDENTITY_HEADER, 'a-revoked-or-bogus-token')
+        .send();
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+    });
+
+    it('403s the requester: holding the approval token means you asked, not that you decide', async () => {
+      const ticket = requestOne();
+
+      const res = await request(app)
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .set(APPROVAL_TOKEN_HEADER, ticket.token)
+        .send();
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+      expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+    });
+
+    it('403s a denial from the requester too — a token holder decides nothing', async () => {
+      const ticket = requestOne();
+
+      const res = await request(app)
+        .post(`/api/approvals/${ticket.approvalId}/deny`)
+        .set(APPROVAL_TOKEN_HEADER, ticket.token)
+        .send();
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+    });
+
     it('still lets an agent read what is pending — only deciding is blocked', async () => {
       requestOne();
 
-      const res = await request(agentApp()).get('/api/approvals/pending');
+      const res = await request(buildApp({ agentIdentity: true })).get('/api/approvals/pending');
 
       expect(res.status).toBe(200);
       expect(res.body.approvals).toHaveLength(1);
+    });
+
+    describe('with login enabled', () => {
+      it('401s a caller that sessionGate did not authenticate', async () => {
+        const ticket = requestOne();
+
+        const res = await request(buildApp({ loginEnabled: true }))
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send();
+
+        expect(res.status).toBe(401);
+        expect(res.body.code).toBe('AUTH_REQUIRED');
+        expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+      });
+
+      it('lets a signed-in person decide, and records who', async () => {
+        const ticket = requestOne();
+
+        const res = await request(buildApp({ loginEnabled: true, user: { userId: 'user_123' } }))
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send();
+
+        expect(res.status).toBe(200);
+        expect(approvals.consume(ticket.token, BINDING).outcome).toBe('granted');
+        expect(emitted).toEqual([
+          {
+            eventType: 'approval.granted',
+            metadata: { posture: 'signed-in-operator', outcome: 'granted' },
+          },
+        ]);
+      });
+
+      it('still refuses an authenticated caller that presents an agent identity', async () => {
+        const ticket = requestOne();
+
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_123' }, agentIdentity: true })
+        )
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send();
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      });
+    });
+
+    describe('with login disabled (the default posture)', () => {
+      it('records the decision as local-trust, so an unverifiable yes is still visible', async () => {
+        const ticket = requestOne();
+
+        await request(app).post(`/api/approvals/${ticket.approvalId}/grant`).send();
+
+        expect(emitted).toEqual([
+          {
+            eventType: 'approval.granted',
+            metadata: { posture: 'local-trust', outcome: 'granted' },
+          },
+        ]);
+      });
+
+      it('records a refusal too', async () => {
+        const ticket = requestOne();
+
+        await request(app).post(`/api/approvals/${ticket.approvalId}/deny`).send();
+
+        expect(emitted.map((e) => e.eventType)).toEqual(['approval.denied']);
+      });
+
+      it('writes no Activity record for a decision it refused', async () => {
+        const ticket = requestOne();
+
+        await request(buildApp({ agentIdentity: true }))
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send();
+
+        expect(emitted).toEqual([]);
+      });
     });
   });
 

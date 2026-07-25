@@ -15,6 +15,20 @@
 export {
   ApprovalService,
   APPROVAL_TTL_MS,
+  type ApprovalConsumeResult,
   type ApprovalDecisionFailure,
+  type ApprovalTicket,
 } from './approval-service.js';
-export { hashApprovalInput } from './approval-input-hash.js';
+export { hashApprovalInput, ApprovalInputNotBindableError } from './approval-input-hash.js';
+export {
+  quoteSummaryValue,
+  redactSecretsInText,
+  renderRequesterLabel,
+  summaryFields,
+  REDACTED_SUMMARY_VALUE,
+} from './approval-summary.js';
+export {
+  resolveDecisionAuthority,
+  type DecisionAuthorityResult,
+  type LoginEnabledLookup,
+} from './decision-authority.js';

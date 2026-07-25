@@ -234,6 +234,11 @@ export const marketplaceDomain: CapabilityDomain = {
       tier: 'destructive',
       input: z.object(UninstallInputSchema),
       output: z.unknown(),
+      // What a person needs to decide, and nothing else. `confirmationToken` is a
+      // field of this schema, so without this allowlist the card — and the
+      // agent-readable pending list, and the SSE broadcast — echoed whatever token
+      // a model put there.
+      approvalDisplayFields: ['name', 'purge', 'projectPath'],
       surfaces: {
         mcp: {
           toolName: 'marketplace_uninstall',
@@ -264,7 +269,10 @@ export const marketplaceDomain: CapabilityDomain = {
       },
       invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
-          await createCreatePackageHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+          await createCreatePackageHandler(requireMarketplaceDeps(deps))(
+            input,
+            callerContext(context)
+          )
         ),
     }),
   ],

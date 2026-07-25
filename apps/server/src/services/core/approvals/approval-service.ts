@@ -45,6 +45,7 @@ import { and, asc, eq, isNull, lt, approvals, type Db } from '@dorkos/db';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { APPROVAL_SUMMARY_MAX_LENGTH, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
+import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js';
 
 /**
  * How long an operator has to decide before a token stops being honored.
@@ -164,15 +165,21 @@ function hashToken(token: string): string {
 }
 
 /**
- * Shorten a summary to what a card can hold.
+ * Make a summary safe to store: strip anything token-shaped, then shorten it to
+ * what a card can hold.
  *
- * Enforced on the way IN rather than at render time: the cockpit parses stored
- * rows against a schema that caps this length, so a long sentence has to become a
- * short one here or the card would be dropped instead of shown.
+ * Both happen on the way IN rather than at render time. The length cap is because
+ * the cockpit parses stored rows against a schema that caps it, so a long sentence
+ * has to become a short one here or the card would be dropped instead of shown.
+ * The redaction is because this string is broadcast on the global event stream and
+ * returned by `GET /api/approvals/pending`, which agents can read — so it is the
+ * one place every producer of a summary passes through, including the marketplace
+ * confirmation provider, which writes its own sentences.
  */
-function clampSummary(summary: string): string {
-  if (summary.length <= APPROVAL_SUMMARY_MAX_LENGTH) return summary;
-  return `${summary.slice(0, APPROVAL_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+function storableSummary(summary: string): string {
+  const safe = redactSecretsInText(summary);
+  if (safe.length <= APPROVAL_SUMMARY_MAX_LENGTH) return safe;
+  return `${safe.slice(0, APPROVAL_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
 }
 
 /** A stored approval row, as Drizzle infers it. */
@@ -236,8 +243,9 @@ export class ApprovalService {
       capabilityTitle: descriptor?.title ?? input.capabilityId,
       tier: descriptor?.tier ?? ('destructive' as const),
       inputHash: input.inputHash,
-      summary: clampSummary(input.summary),
-      requestedBy: input.requestedBy ?? null,
+      summary: storableSummary(input.summary),
+      // Caller-supplied, so capped and swept for secrets exactly like the summary.
+      requestedBy: input.requestedBy ? renderRequesterLabel(input.requestedBy) : null,
       state: 'pending' as const,
       denyReason: null,
       createdAt: new Date(now).toISOString(),

@@ -10,37 +10,84 @@
  *
  * Decisions are made by approval id, never by token: the person deciding should
  * not have to hold the requester's secret, and no response here ever returns
- * token material. A caller that presents an agent identity is refused (403), so
- * an agent cannot answer its own request.
+ * token material.
  *
- * Auth is the global `sessionGate` mounted in `app.ts` — every `/api/*` path
- * inherits it, so these routes need no gate of their own.
+ * ## Deciding needs proof of a person, not the absence of proof of a machine
+ *
+ * Who may decide is `resolveDecisionAuthority` in
+ * `services/core/approvals/decision-authority.ts`, and its module TSDoc is the
+ * honest statement of what that guarantees under each posture — including what it
+ * cannot guarantee when local login is off. Read it before changing anything here:
+ * the earlier version of this file refused a caller that PRESENTED an agent
+ * identity and let every other caller through, which made a bare `curl` with no
+ * headers a complete self-approval bypass.
+ *
+ * Every recorded decision is written to the Activity feed with the posture it was
+ * made under, so a "yes" that nobody clicked in the cockpit still leaves a trace.
+ *
+ * Transport auth is the global `sessionGate` mounted in `app.ts` — every `/api/*`
+ * path inherits it, so these routes need no gate of their own; the authority check
+ * below is a second, independent one.
  *
  * @module routes/approvals
  */
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { DenyApprovalBodySchema } from '@dorkos/shared/approval-schemas';
 import type { ApprovalDecisionFailure, ApprovalService } from '../services/core/approvals/index.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import {
+  resolveDecisionAuthority,
+  type DecisionAuthorityResult,
+  type LoginEnabledLookup,
+} from '../services/core/approvals/index.js';
+import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
+import type { ActivityService } from '../services/activity/activity-service.js';
+import type { RequestUser } from '../services/core/auth/session-gate.js';
+import { AGENT_IDENTITY_HEADER, getRequestAgentIdentity } from '../middleware/agent-identity.js';
+
+/** Optional collaborators the boot wiring supplies; omitted in unit tests. */
+export interface ApprovalsRouterOptions {
+  /**
+   * Activity feed writer. Every decision is recorded with its posture, which is
+   * the only mitigation available in the `local-trust` posture: DorkOS cannot
+   * prove a person clicked, so it makes sure the click is visible.
+   */
+  activity?: ActivityService;
+  /**
+   * Whether local login is on. Defaults to the live user config; injected in
+   * tests so both postures are exercised against the real route.
+   */
+  isLoginEnabled?: LoginEnabledLookup;
+}
 
 /**
- * Refuse a decision that arrives with an agent identity attached.
+ * Decide whether this request may record a decision.
  *
- * Deciding is the human's half of the gate. A person in the cockpit presents no
- * `X-DorkOS-Agent` header, so this rejects exactly one thing: an agent granting
- * a request — its own or another's — which is the whole point of asking.
+ * An agent counts as present if EITHER the middleware resolved one or the raw
+ * `X-DorkOS-Agent` header is there at all: a header that did not resolve (a revoked
+ * or expired agent) still means a machine is calling, and a person in the cockpit
+ * never sends it.
  *
- * @param res - The response carrying the resolved identity, if any.
- * @returns An error body when the caller is an agent, otherwise `undefined`.
+ * @param req - The incoming request.
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param isLoginEnabled - Optional login-state lookup for tests.
+ * @returns Permission with its posture, or a structured refusal.
  */
-function agentSelfApprovalRefusal(res: Response): { error: string; code: string } | undefined {
-  const identity = getRequestAgentIdentity(res);
-  if (!identity) return undefined;
-  return {
-    error: 'Approvals are decided by a person in DorkOS, not by an agent',
-    code: 'AGENT_CANNOT_DECIDE',
-  };
+function decisionAuthority(
+  req: Request,
+  res: Response,
+  isLoginEnabled?: LoginEnabledLookup
+): DecisionAuthorityResult {
+  return resolveDecisionAuthority({
+    agentIdentityPresented:
+      getRequestAgentIdentity(res) !== undefined ||
+      req.headers[AGENT_IDENTITY_HEADER] !== undefined,
+    approvalTokenPresented: req.headers[APPROVAL_TOKEN_HEADER] !== undefined,
+    ...((res.locals.user as RequestUser | undefined)
+      ? { user: res.locals.user as RequestUser }
+      : {}),
+    ...(isLoginEnabled ? { loginEnabled: isLoginEnabled } : {}),
+  });
 }
 
 /** Map a decision failure onto the HTTP status and code the cockpit branches on. */
@@ -71,10 +118,46 @@ function decisionFailureResponse(failure: ApprovalDecisionFailure): {
  * Create the approvals router.
  *
  * @param approvals - The approval service that owns the token lifecycle.
+ * @param options - Boot collaborators; see {@link ApprovalsRouterOptions}.
  * @returns The configured router, to mount at `/api/approvals`.
  */
-export function createApprovalsRouter(approvals: ApprovalService): Router {
+export function createApprovalsRouter(
+  approvals: ApprovalService,
+  options: ApprovalsRouterOptions = {}
+): Router {
   const router = Router();
+
+  /**
+   * Record a decision in the Activity feed, naming the posture it rests on.
+   *
+   * The `signed-in-operator` line says ACCOUNT, not person, and that word is
+   * load-bearing: `sessionGate` accepts a per-user API key as well as a session
+   * cookie (DOR-474), so an authenticated credential is not proof that a human
+   * clicked. This record must not assert more than the gate verified — an audit
+   * line that overstates is worse than no audit line, because it is believed.
+   *
+   * `emit` is fire-and-forget and never throws, so this cannot turn a recorded
+   * decision into a failed request.
+   */
+  const auditDecision = (
+    approvalId: string,
+    outcome: 'granted' | 'denied',
+    authority: Extract<DecisionAuthorityResult, { allowed: true }>
+  ): void => {
+    void options.activity?.emit({
+      actorType: 'user',
+      actorLabel: authority.decidedBy,
+      category: 'agent',
+      eventType: outcome === 'granted' ? 'approval.granted' : 'approval.denied',
+      resourceType: 'approval',
+      resourceId: approvalId,
+      summary:
+        authority.posture === 'signed-in-operator'
+          ? `A signed-in account (${authority.decidedBy}) ${outcome} an approval`
+          : `An approval was ${outcome} from this machine (login is off, so DorkOS cannot verify who)`,
+      metadata: { posture: authority.posture, outcome },
+    });
+  };
 
   // GET /pending -- approvals still waiting on a person
   router.get('/pending', (_req, res) => {
@@ -83,21 +166,26 @@ export function createApprovalsRouter(approvals: ApprovalService): Router {
 
   // POST /:id/grant -- allow the requested action
   router.post('/:id/grant', (req, res) => {
-    const refusal = agentSelfApprovalRefusal(res);
-    if (refusal) return res.status(403).json(refusal);
+    const authority = decisionAuthority(req, res, options.isLoginEnabled);
+    if (!authority.allowed) {
+      return res.status(authority.status).json({ error: authority.error, code: authority.code });
+    }
 
     const failure = approvals.grant(req.params.id);
     if (failure) {
       const mapped = decisionFailureResponse(failure);
       return res.status(mapped.status).json(mapped.body);
     }
+    auditDecision(req.params.id, 'granted', authority);
     return res.json({ ok: true, approvalId: req.params.id, outcome: 'granted' });
   });
 
   // POST /:id/deny -- refuse the requested action
   router.post('/:id/deny', (req, res) => {
-    const refusal = agentSelfApprovalRefusal(res);
-    if (refusal) return res.status(403).json(refusal);
+    const authority = decisionAuthority(req, res, options.isLoginEnabled);
+    if (!authority.allowed) {
+      return res.status(authority.status).json({ error: authority.error, code: authority.code });
+    }
 
     // Express 5 leaves `req.body` undefined on an empty POST, and a reason is
     // optional, so an absent body is a valid bare denial.
@@ -115,6 +203,7 @@ export function createApprovalsRouter(approvals: ApprovalService): Router {
       const mapped = decisionFailureResponse(failure);
       return res.status(mapped.status).json(mapped.body);
     }
+    auditDecision(req.params.id, 'denied', authority);
     return res.json({ ok: true, approvalId: req.params.id, outcome: 'denied' });
   });
 

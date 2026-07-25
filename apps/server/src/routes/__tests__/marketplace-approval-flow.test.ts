@@ -66,7 +66,9 @@ describe('marketplace install → cockpit approval → retry', () => {
 
     app = express();
     app.use(express.json());
-    app.use('/api/approvals', createApprovalsRouter(approvals));
+    // Local login off: the DEFAULT posture, and therefore the one this flow has to
+    // work in. Who may decide is `resolveDecisionAuthority`; see its module TSDoc.
+    app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
   });
 
   afterEach(() => {
@@ -89,7 +91,9 @@ describe('marketplace install → cockpit approval → retry', () => {
     expect(pending.body.approvals).toHaveLength(1);
     expect(pending.body.approvals[0]).toMatchObject({
       capabilityId: 'marketplace.install',
-      summary: 'Install "sentry-monitor" from community',
+      // Caller-supplied values are quoted on the card so an injected one cannot
+      // forge a second field (`approval-summary.ts`).
+      summary: 'Install "sentry-monitor" from "community"',
     });
     // The token the agent holds is never echoed to the cockpit.
     expect(pending.text).not.toContain(confirmationToken);
@@ -158,7 +162,10 @@ describe('marketplace install → cockpit approval → retry', () => {
       };
       next();
     });
-    agentApp.use('/api/approvals', createApprovalsRouter(approvals));
+    agentApp.use(
+      '/api/approvals',
+      createApprovalsRouter(approvals, { isLoginEnabled: () => false })
+    );
 
     const first = await handler({ name: 'sentry-monitor', marketplace: 'community' });
     const { confirmationToken } = parsePayload<{ confirmationToken: string }>(first);

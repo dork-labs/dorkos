@@ -16,6 +16,12 @@
  * while the fake `uninstallFlow` never runs. A path that forgets the gate fails
  * here; the shared suite's own test proves this check can fail.
  *
+ * And it proves the other half of the gate: `requesterDecideProbe` takes the
+ * approval the REAL invoke route just handed an anonymous caller and tries to grant
+ * it through the REAL approvals router as that same caller. That must be refused
+ * with the approval left pending — otherwise an agent grants its own permission,
+ * which is precisely what review reproduced end to end.
+ *
  * The registry is composed with FAKE operator + marketplace deps, and the three
  * non-hermetic seams the operator handlers reach through module singletons —
  * `config-patch` (config snapshot/merge), `update-checker` (npm fetch), and the
@@ -171,8 +177,10 @@ const externalToolNames = Object.keys(
 const CLI_VERBS = ['agent', 'task', 'activity', 'capabilities', 'call', 'version'];
 
 // ── Destructive-gate probes: the three real adapter paths ──────────────────
-const { createCapabilitiesInvokeRouter } = await import('../../../../routes/capabilities-invoke.js');
-const { initCapabilityTierGate } = await import('../tier-enforcement.js');
+const { createCapabilitiesInvokeRouter } =
+  await import('../../../../routes/capabilities-invoke.js');
+const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
+const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
 const { ApprovalService, hashApprovalInput } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
@@ -199,7 +207,8 @@ const DESTRUCTIVE_SAMPLE_INPUTS: Record<string, unknown> = {
 
 // Arm the gate over a real approval service on a throwaway database, exactly as
 // boot does — so the probes exercise the real request/consume path, not a stub.
-initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
+const approvalService = new ApprovalService(createTestDb());
+initCapabilityTierGate({ approvals: approvalService });
 
 /** Read a plain payload back out of an MCP text-content result. */
 function unwrapText(result: { content: { type: string; text?: string }[] }): unknown {
@@ -286,8 +295,50 @@ function externalProbe(identity?: typeof PROBE_IDENTITY) {
     });
 }
 
+/**
+ * Ask for an approval through the REAL invoke route as an anonymous caller, then
+ * try to GRANT it through the REAL approvals router as that same caller — carrying
+ * exactly what the 202 handed it and nothing a person in the cockpit would carry.
+ *
+ * Login is off here (`isLoginEnabled: () => false`), which is the DEFAULT posture
+ * and therefore the one worth pinning: the refusal must not depend on accounts
+ * being switched on.
+ */
+const requesterDecideProbe = async () => {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
+  app.use(
+    '/api/approvals',
+    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
+  );
+
+  const asked = await request(app)
+    .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
+    .send(DESTRUCTIVE_INPUT);
+  expect(asked.status).toBe(202);
+  const { approvalId, approvalToken } = asked.body as {
+    approvalId: string;
+    approvalToken: string;
+  };
+
+  const decided = await request(app)
+    .post(`/api/approvals/${approvalId}/grant`)
+    .set(APPROVAL_TOKEN_HEADER, approvalToken)
+    .send();
+
+  // Read the outcome from the service rather than trusting the status code: the
+  // approval must still be spendable-only-after-a-human, i.e. still pending.
+  const stillPending = approvalService
+    .listPending()
+    .some((pending) => pending.approvalId === approvalId);
+
+  return { status: decided.status, approvalDecided: !stillPending };
+};
+
 capabilityConformance(registry, {
   name: 'DorkOS capability registry — conformance (real registry)',
+  requesterDecideProbe,
   destructiveGateProbes: {
     // Identified agent on each adapter path…
     'invoke-route': routeProbe(PROBE_IDENTITY),
