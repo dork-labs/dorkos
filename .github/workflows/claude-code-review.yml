@@ -727,6 +727,17 @@ jobs:
           # denying the home tree would deny the entire workspace and break every
           # review. Only the credential directories under it are named. Verified
           # that the review still reads workspace files with this list applied.
+          #
+          # `Read(...)` COVERS `Grep` TOO, and `Grep(...)` does not exist as a
+          # path-scoped rule. This is worth stating because the intuitive patch —
+          # adding `Grep(//etc/**)` alongside — is the one that does NOT work, and
+          # it would read as protection while providing none. Measured, same
+          # version, grepping /etc/hosts with only `Grep` granted:
+          #   no deny rule                -> content returned
+          #   deny `Grep(//etc/**)`       -> content STILL returned
+          #   deny `Read(//etc/**)`       -> refused
+          # So the list above is already the whole control for the file tools.
+          # (`Glob` is not separately denied: it returns path names, not contents.)
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(bash ${{ runner.temp }}/trusted/review-gh.sh:*),Read,Grep,Glob"
             --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(~/.claude/**),Read(~/.config/**),Read(~/.ssh/**)"
