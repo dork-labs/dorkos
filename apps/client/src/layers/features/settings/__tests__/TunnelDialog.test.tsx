@@ -9,7 +9,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TunnelDialog } from '../ui/TunnelDialog';
 
 // Mock useIsMobile to always return false (desktop dialog)
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 

@@ -310,3 +310,116 @@ describe('isNativeCommandContent — what the funnel will swallow (DOR-480)', ()
     expect(isNativeCommandContent('/compact')).toBe(true);
   });
 });
+
+describe('useNativeCommands — the in-flight latch (DOR-479)', () => {
+  let transport: ReturnType<typeof createMockTransport>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    transport = createMockTransport();
+  });
+
+  function setup() {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    return renderHook(
+      () =>
+        useNativeCommands('/repo', 's1', {
+          startFreshSession,
+          compact: { supported: true, runtimeLabel: 'Claude Code' },
+        }),
+      { wrapper }
+    );
+  }
+
+  it('is not latched when nothing has been dispatched', () => {
+    expect(setup().result.current.commandPending).toBe(false);
+  });
+
+  // The composer keeps the command's text until it confirms, so a refused
+  // `/compact` cannot eat its instructions. That window is exactly when a second
+  // Enter would turn one intent into two triggers, so it has to be observable.
+  it('latches while a dispatched /compact is still in flight', async () => {
+    let settle: () => void = () => {};
+    vi.mocked(transport.runCommandIntent).mockImplementation(
+      () =>
+        new Promise<{ sessionId: string }>((resolve) => {
+          settle = () => resolve({ sessionId: 's1' });
+        })
+    );
+    const { result } = setup();
+
+    act(() => {
+      result.current.tryRun('/compact focus on the API changes');
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(true));
+
+    await act(async () => {
+      settle();
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(false));
+  });
+
+  // The reason this is a counter and not a boolean. Nothing else in the suite
+  // distinguishes the two: a boolean would pass every other test here, then
+  // unlatch on the FIRST settle and leave a still-in-flight dispatch
+  // re-triggerable by the next Enter.
+  it('stays latched when the first of two overlapping dispatches settles', async () => {
+    const settlers: Array<() => void> = [];
+    vi.mocked(transport.runCommandIntent).mockImplementation(
+      () =>
+        new Promise<{ sessionId: string }>((resolve) => {
+          settlers.push(() => resolve({ sessionId: 's1' }));
+        })
+    );
+    const { result } = setup();
+
+    act(() => {
+      result.current.tryRun('/compact first');
+    });
+    act(() => {
+      result.current.tryRun('/compact second');
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(true));
+    expect(settlers).toHaveLength(2);
+
+    await act(async () => {
+      settlers[0]();
+    });
+    expect(result.current.commandPending).toBe(true);
+
+    await act(async () => {
+      settlers[1]();
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(false));
+  });
+
+  it('releases the latch when the dispatch is REFUSED, not just when it succeeds', async () => {
+    let reject: (err: Error) => void = () => {};
+    vi.mocked(transport.runCommandIntent).mockImplementation(
+      () =>
+        new Promise<{ sessionId: string }>((_resolve, rej) => {
+          reject = rej;
+        })
+    );
+    const { result } = setup();
+
+    act(() => {
+      result.current.tryRun('/compact');
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(true));
+
+    await act(async () => {
+      reject(Object.assign(new Error('locked'), { code: 'SESSION_LOCKED' }));
+    });
+    // A refusal must hand the composer back — otherwise the honest "keep the
+    // text" behavior becomes a box you can never send from again.
+    await waitFor(() => expect(result.current.commandPending).toBe(false));
+  });
+});

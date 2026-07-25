@@ -24,6 +24,13 @@ interface UseInputAutocompleteReturn {
     selectedIndex: number;
   };
   isPaletteOpen: boolean;
+  /**
+   * Whether the open palette actually has rows. Distinct from
+   * {@link UseInputAutocompleteReturn.isPaletteOpen}, which stays true for the
+   * "No commands found." panel: that panel has nothing for Enter to select, so
+   * Enter must reach the send path instead of being swallowed.
+   */
+  paletteHasResults: boolean;
   activeDescendantId: string | undefined;
   handleInputChange: (value: string) => void;
   handleCursorChange: (pos: number) => void;
@@ -142,6 +149,9 @@ export function useInputAutocomplete({
   }, [cmdPalette, fileComplete]);
 
   const isPaletteOpen = cmdPalette.showCommands || fileComplete.showFiles;
+  const paletteHasResults =
+    (fileComplete.showFiles && fileComplete.filteredFiles.length > 0) ||
+    (cmdPalette.showCommands && cmdPalette.filteredCommands.length > 0);
 
   const activeDescendantId =
     fileComplete.showFiles && fileComplete.filteredFiles.length > 0
@@ -162,6 +172,7 @@ export function useInputAutocomplete({
       selectedIndex: fileComplete.fileSelectedIndex,
     },
     isPaletteOpen,
+    paletteHasResults,
     activeDescendantId,
     handleInputChange,
     handleCursorChange,

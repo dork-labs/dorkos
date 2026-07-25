@@ -32,6 +32,13 @@ import { fetchJSON, buildQueryString } from './http-client';
 const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
+ * Timeout for the command-intent trigger, matching `fetchJSON`'s default. It is
+ * spelled out here because `runCommandIntent` is a raw `fetch` (it reads the 409
+ * body itself) and so does not inherit that default.
+ */
+const COMMAND_INTENT_TIMEOUT_MS = 30_000;
+
+/**
  * Create all session-related methods bound to a base URL.
  *
  * @param baseUrl - Server base URL
@@ -197,6 +204,14 @@ export function createSessionMethods(
      * and the 202 body carries the SDK-canonical id. Throws a typed
      * `SESSION_LOCKED` error on 409 when a turn is already running. Trailing
      * instructions (e.g. `/compact focus on the API changes`) ride the JSON body.
+     *
+     * Bounded by the same 30s timeout `fetchJSON` gives every other call. This
+     * is a raw `fetch` (it needs the 409 body), and without a signal it was the
+     * one transport call that could hang forever — so a dead network left
+     * `dispatchCompactIntent` unsettled, silently, with no toast. Callers now
+     * latch composer state on that promise (DOR-479), which turns "hangs
+     * silently" into "the composer never comes back", so the bound is what
+     * makes the latch safe to hold.
      */
     async runCommandIntent(
       sessionId: string,
@@ -210,6 +225,7 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         credentials: 'include',
+        signal: AbortSignal.timeout(COMMAND_INTENT_TIMEOUT_MS),
         // Express 5 leaves req.body undefined on an empty POST, so the body is
         // sent only when there are instructions to carry.
         ...(instructions !== undefined ? { body: JSON.stringify({ instructions }) } : {}),

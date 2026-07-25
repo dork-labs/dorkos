@@ -17,7 +17,8 @@ export {
   type ResolvedTheme,
 } from './use-theme';
 export { useReportIssue } from './report-issue/use-report-issue';
-export { useIsMobile } from './use-is-mobile';
+export { useIsMobile } from './media/use-is-mobile';
+export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';
 export { useDocumentTitle } from './use-document-title';

@@ -20,7 +20,7 @@ const toastSuccess = vi.fn();
 vi.mock('sonner', () => ({ toast: { success: (m: string) => toastSuccess(m) } }));
 
 const mockIsMobile = vi.fn(() => false);
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({ useIsMobile: () => mockIsMobile() }));
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => mockIsMobile() }));
 
 const writeText = vi.fn();
 Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });

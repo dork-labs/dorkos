@@ -191,6 +191,7 @@ export function ChatPanel({
     syncConnectionState,
     retryMessage,
     tryNativeCommand,
+    commandPending,
   } = useChatSession(sessionId, {
     transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
@@ -221,8 +222,10 @@ export function ChatPanel({
   // Focus the prompt textarea whenever the session changes (new session, switch, page mount).
   // Every navigation scenario — sidebar click, new session, agent switch, page load —
   // results in sessionId changing, so this single effect covers all of them.
+  // Desktop only: nobody asked for focus here, and on a phone this fires on
+  // mount and on every session switch, popping the software keyboard each time.
   useEffect(() => {
-    chatInputRef.current?.focus();
+    chatInputRef.current?.focusUnlessTouch();
   }, [sessionId]);
 
   // Seed the composer from a "Run this with…" re-run (`?prompt=`). Guarded so
@@ -234,7 +237,7 @@ export function ChatPanel({
     if (launchPrompt && seededPromptRef.current !== launchPrompt && messages.length === 0) {
       seededPromptRef.current = launchPrompt;
       setInput(launchPrompt);
-      chatInputRef.current?.focus();
+      chatInputRef.current?.focusUnlessTouch();
     }
   }, [launchPrompt, messages.length, setInput]);
 
@@ -412,6 +415,7 @@ export function ChatPanel({
         handleSubmit={handleSubmit}
         submitContent={submitContent}
         tryNativeCommand={tryNativeCommand}
+        commandPending={commandPending}
         status={status}
         sessionBusy={sessionBusy}
         stop={stop}

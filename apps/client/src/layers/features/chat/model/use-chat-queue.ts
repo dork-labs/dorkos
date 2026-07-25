@@ -7,6 +7,7 @@ import type { QueueItem, QueueFlushOptions } from './use-message-queue';
 import { isNativeCommandContent } from './native-commands';
 import type { NativeCommandResult } from './native-commands';
 import { sessionContextKey } from '../lib/session-context-key';
+import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import type { ChatStatus } from './chat-types';
 import type { ChatInputHandle } from '../ui/input/ChatInput';
 
@@ -180,12 +181,22 @@ export function useChatQueue({
     // the composer only when it actually ran — a rejected command keeps its text.
     const native = tryNativeCommand(trimmed);
     if (native.handled) {
-      if (native.ran) setInput('');
+      if (!native.ran) return;
+      // `ran` is only "the dispatch started" for a command that finishes
+      // asynchronously. `/compact <instructions>` typed mid-stream is exactly
+      // that: the trigger 409s against the streaming turn's lock and toasts
+      // "the agent is busy" — with the instructions already deleted. Settle the
+      // clear on the same signal the queue settles its undo on.
+      if (native.confirmed) {
+        clearComposerOnConfirmed(sessionId, trimmed, native.confirmed);
+      } else {
+        setInput('');
+      }
       return;
     }
     messageQueue.addToQueue(trimmed);
     setInput('');
-  }, [input, messageQueue, setInput, tryNativeCommand]);
+  }, [input, messageQueue, sessionId, setInput, tryNativeCommand]);
 
   const handleQueueEdit = useCallback(
     (id: string) => {

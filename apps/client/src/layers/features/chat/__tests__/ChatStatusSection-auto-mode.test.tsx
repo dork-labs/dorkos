@@ -9,7 +9,7 @@ import { useSessionChatStore } from '@/layers/entities/session';
 // Mocks (hoisted before component import)
 // ──────────────────────────────────────────────────────────────────────────────
 
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 

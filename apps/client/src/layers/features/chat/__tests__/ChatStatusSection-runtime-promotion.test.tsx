@@ -25,7 +25,7 @@ const capsState: { data: CapabilityMap | undefined } = { data: undefined };
 // misread as "not the default runtime".
 const sessionRow: { runtime: string } = { runtime: 'codex' };
 
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({ useIsMobile: () => false }));
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),

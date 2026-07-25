@@ -574,6 +574,137 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.error?.retryable).toBe(true);
   });
 
+  it('does not latch the trigger while an attachment uploads', async () => {
+    // The latch used to be set BEFORE the upload ran, so for the whole upload
+    // the status read `streaming`: the button turned into a red Stop that
+    // called interruptSession on a session with no turn (the .catch() swallowed
+    // it, so the click did nothing), and a hung upload wedged the composer in
+    // queue mode forever — the watchdog that releases the latch is only armed
+    // after the POST.
+    let releaseUpload: (value: string) => void = () => {};
+    const upload = new Promise<string>((resolve) => {
+      releaseUpload = resolve;
+    });
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1', { transformContent: () => upload }), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('what is in this screenshot?');
+    });
+    await waitFor(() => expect(result.current.input).toBe('what is in this screenshot?'));
+
+    let submitted!: Promise<void>;
+    await act(async () => {
+      submitted = result.current.handleSubmit();
+      await Promise.resolve();
+    });
+
+    // Mid-upload: nothing has been triggered yet.
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(useSessionStreamStore.getState().getSession('s1').triggerPending).toBe(false);
+    expect(result.current.status).toBe('idle');
+
+    await act(async () => {
+      releaseUpload('read the file, then: what is in this screenshot?');
+      await submitted;
+    });
+
+    expect(postMessage).toHaveBeenCalledWith(
+      's1',
+      'read the file, then: what is in this screenshot?',
+      '/test/cwd',
+      expect.anything()
+    );
+    expect(useSessionStreamStore.getState().getSession('s1').triggerPending).toBe(true);
+  });
+
+  it('attaches the durable stream BEFORE the upload, not after it', async () => {
+    // `attachSession` re-targets the ONE active-session connection, and the only
+    // other caller is an effect keyed on (sessionId, cwd) that fires once per
+    // switch. Behind the upload await, a session switch made DURING the upload
+    // gets silently undone: B attaches, the upload resolves, and this drags the
+    // connection back to A — leaving B on screen with no live stream and nothing
+    // to re-fire until the session or cwd changes again.
+    let releaseUpload: (value: string) => void = () => {};
+    const upload = new Promise<string>((resolve) => {
+      releaseUpload = resolve;
+    });
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1', { transformContent: () => upload }), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('here are the files');
+    });
+    await waitFor(() => expect(result.current.input).toBe('here are the files'));
+
+    attachSession.mockClear();
+    let submitted!: Promise<void>;
+    await act(async () => {
+      submitted = result.current.handleSubmit();
+      await Promise.resolve();
+    });
+
+    // Still mid-upload — nothing has been POSTed — and the attach has already
+    // happened, so no later resolution can re-target away from a switch.
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(attachSession).toHaveBeenCalledWith('s1', '/test/cwd');
+
+    await act(async () => {
+      releaseUpload('here are the files');
+      await submitted;
+    });
+  });
+
+  it('an upload failure leaves the typed message in the composer', async () => {
+    // The input was cleared before the try, and only SESSION_LOCKED restored
+    // it — so an ordinary send whose attachment failed destroyed the message.
+    const postMessage = vi.fn();
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(
+      () =>
+        useChatSession('s1', {
+          transformContent: () =>
+            Promise.reject(
+              new Error('photo.png did not upload. Retry it or remove it, then send again.')
+            ),
+        }),
+      { wrapper: createWrapper(transport) }
+    );
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('what is in this screenshot?');
+    });
+    await waitFor(() => expect(result.current.input).toBe('what is in this screenshot?'));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('what is in this screenshot?');
+    expect(useSessionStreamStore.getState().getSession('s1').triggerPending).toBe(false);
+    expect(result.current.error?.message).toContain('did not upload');
+    // The words are still in the box, so Enter is the retry. A Retry button
+    // here would resend the PREVIOUS user message instead.
+    expect(result.current.error?.retryable).toBe(false);
+  });
+
   it('a failed KICKOFF raises no error banner (no dead Retry) and marks the greeting failed', async () => {
     // The birth session's auto-first-turn: the person typed nothing, so a
     // "Could not send message" banner with a Retry (which would find no user

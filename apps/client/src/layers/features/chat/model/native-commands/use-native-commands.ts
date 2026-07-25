@@ -13,7 +13,7 @@
  *
  * @module features/chat/model/native-commands/use-native-commands
  */
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { resolveCommandIntent } from '@dorkos/shared/command-intents';
 import { useRenameSession } from '@/layers/entities/session';
@@ -136,10 +136,11 @@ export function isNativeCommandContent(content: string): boolean {
  * @param cwd - Working directory scope for the rename mutation's cache key.
  * @param sessionId - The active session id (rename / compact target).
  * @param deps - Injected host capabilities (see {@link NativeCommandDeps}).
- * @returns `{ tryRun }` — `tryRun(content)` recognizes a canonical intent or a
- *   native command, runs it locally (or dispatches compact to the runtime), and
- *   returns a {@link NativeCommandResult} describing whether it was handled (skip
- *   the runtime send) and whether it actually ran.
+ * @returns `{ tryRun, commandPending }` — `tryRun(content)` recognizes a
+ *   canonical intent or a native command, runs it locally (or dispatches compact
+ *   to the runtime), and returns a {@link NativeCommandResult} describing whether
+ *   it was handled (skip the runtime send) and whether it actually ran.
+ *   `commandPending` is true while any dispatched command is still settling.
  */
 export function useNativeCommands(
   cwd: string | null,
@@ -149,6 +150,20 @@ export function useNativeCommands(
   const { mutateAsync: renameMutate } = useRenameSession(cwd);
   const transport = useTransport();
   const { startFreshSession, compact } = deps;
+
+  // In-flight dispatches. The composer deliberately KEEPS its text until a
+  // command confirms (so a refused `/compact` does not eat its instructions),
+  // which leaves the text sitting there with both submit paths live — press
+  // Enter twice and one intent becomes two triggers. Counted rather than a
+  // boolean so overlapping dispatches cannot clear the latch early.
+  const [pendingCount, setPendingCount] = useState(0);
+
+  /** Hold the latch until `confirmed` settles, whichever way it settles. */
+  const track = useCallback((confirmed: Promise<boolean>) => {
+    setPendingCount((n) => n + 1);
+    const release = () => setPendingCount((n) => Math.max(0, n - 1));
+    void confirmed.then(release, release);
+  }, []);
 
   const tryRun = useCallback(
     (content: string): NativeCommandResult => {
@@ -180,6 +195,7 @@ export function useNativeCommands(
         // compaction ever happened. `dispatchCompactIntent` swallows its own
         // errors and resolves to a boolean, so this never rejects.
         const confirmed = dispatchCompactIntent(transport, sessionId, slash.rest || undefined);
+        track(confirmed);
         return { handled: true, ran: true, confirmed };
       }
 
@@ -212,6 +228,7 @@ export function useNativeCommands(
             },
             () => false
           );
+          track(confirmed);
         },
         notify: (message, kind) =>
           kind === 'error' ? toast.error(message) : toast.success(message),
@@ -223,8 +240,8 @@ export function useNativeCommands(
       });
       return { handled: true, ran, ...(confirmed ? { confirmed } : {}) };
     },
-    [renameMutate, transport, sessionId, startFreshSession, compact]
+    [renameMutate, transport, sessionId, startFreshSession, compact, track]
   );
 
-  return { tryRun };
+  return { tryRun, commandPending: pendingCount > 0 };
 }

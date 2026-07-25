@@ -2,13 +2,29 @@ import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHand
 import { motion } from 'motion/react';
 import { X, Paperclip } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
+import { useIsTouchOnly } from '@/layers/shared/model';
 import { useInputKeyboard } from './use-input-keyboard';
 import { useTextareaResize } from './use-textarea-resize';
 import { InputActionButton } from './InputActionButton';
 
 export interface ChatInputHandle {
   focus: () => void;
+  /**
+   * Focus unless touch is the only pointer, where an unbidden focus pops the
+   * software keyboard and scrolls the view.
+   *
+   * The rule lives HERE rather than at each call site: the composer's own
+   * mount-time autofocus has always been guarded, but every host that focused
+   * the composer through the handle — on session switch, on `?prompt=` seeding
+   * — re-opened the same hole one caller at a time. Use this for any focus the
+   * person did not just ask for; use {@link ChatInputHandle.focus} for the ones
+   * they did (tapping a queued row, picking a suggestion).
+   *
+   * Gated on the pointer, not the viewport width, for the same reason the Enter
+   * rule is: a desktop window dragged under 768px has no software keyboard to
+   * pop, and used to lose its focus-on-session-switch for no reason.
+   */
+  focusUnlessTouch: () => void;
   focusAt: (pos: number) => void;
 }
 
@@ -20,6 +36,12 @@ interface ChatInputProps {
   isStreaming: boolean;
   /** File upload is in progress. */
   isUploading?: boolean;
+  /**
+   * A dispatched native command (`/compact`, `/rename`) has not settled yet.
+   * The composer keeps its text across that window on purpose, so this is what
+   * stops a second Enter from turning one intent into two triggers.
+   */
+  commandPending?: boolean;
   sessionBusy?: boolean;
   /** Currently editing a queued message item. */
   editingQueueItem?: boolean;
@@ -33,8 +55,21 @@ interface ChatInputProps {
   /** Cancel editing the current queue item and restore draft. */
   onCancelEdit?: () => void;
   onEscape?: () => void;
+  /**
+   * Clear the composer. When omitted the clear BUTTON is not rendered at all —
+   * a visible X wired to nothing is a control that lies. The Escape-Escape
+   * wipe still works either way: it edits this component's own textarea, and
+   * the host's `onChange` carries the empty value out, so a composer with no
+   * `onClear` is not a composer you cannot clear.
+   */
   onClear?: () => void;
   isPaletteOpen?: boolean;
+  /**
+   * Whether the open palette has at least one row. Enter only belongs to the
+   * palette when there is something to pick; on "No commands found." it falls
+   * through and sends. Defaults to `false`.
+   */
+  paletteHasResults?: boolean;
   onArrowUp?: () => void;
   onArrowDown?: () => void;
   onCommandSelect?: () => void;
@@ -61,6 +96,14 @@ interface ChatInputProps {
    * only the send action.
    */
   canSubmit?: boolean;
+  /**
+   * Why the message cannot be sent yet, in one plain line, shown above the box
+   * while `canSubmit` is false. Without it a greyed Send and an inert Enter are
+   * the only feedback — someone typing their first sentence into DorkOS presses
+   * Enter and nothing happens, with nothing on screen to explain it. Omit only
+   * when another surface already states the reason.
+   */
+  canSubmitReason?: string;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
@@ -70,6 +113,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onSubmit,
     isStreaming,
     isUploading = false,
+    commandPending = false,
     sessionBusy = false,
     editingQueueItem = false,
     queueDepth = 0,
@@ -80,6 +124,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onEscape,
     onClear,
     isPaletteOpen,
+    paletteHasResults,
     onArrowUp,
     onArrowDown,
     onCommandSelect,
@@ -92,16 +137,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onQueueNavigateDown,
     queueHasItems = false,
     canSubmit = true,
+    canSubmitReason,
   },
   ref
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isFocused, setIsFocused] = useState(false);
-  const isMobile = useIsMobile();
+  // One signal for both questions this component asks about the device, because
+  // they are the same question: is there a software keyboard here? Enter's
+  // meaning and whether an unbidden focus is welcome both follow from it, and
+  // neither follows from viewport width.
+  const isTouchOnly = useIsTouchOnly();
 
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
+    focusUnlessTouch: () => {
+      if (isTouchOnly) return;
+      textareaRef.current?.focus();
+    },
     focusAt: (pos: number) => {
       const el = textareaRef.current;
       if (!el) return;
@@ -111,12 +165,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   }));
 
   // Auto-focus on mount (e.g. returning from interactive tool-approval mode),
-  // desktop only — on a touch device this pops the software keyboard and scrolls
-  // the view every time a session opens. Read through a ref snapshot so a later
-  // viewport change can never steal focus mid-session.
-  const isMobileOnMountRef = useRef(isMobile);
+  // except on a touch-only device, where it pops the software keyboard and
+  // scrolls the view every time a session opens. Read through a ref snapshot so
+  // a later device change can never steal focus mid-session.
+  const isTouchOnlyOnMountRef = useRef(isTouchOnly);
   useEffect(() => {
-    if (isMobileOnMountRef.current) return;
+    if (isTouchOnlyOnMountRef.current) return;
     textareaRef.current?.focus();
   }, []);
 
@@ -124,11 +178,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     textareaRef,
     value,
     isStreaming,
-    isMobile,
+    isTouchOnly,
     sessionBusy,
+    isUploading,
+    commandPending,
     canSubmit,
     editingQueueItem,
     isPaletteOpen,
+    paletteHasResults,
     queueHasItems,
     onSubmit,
     onStop,
@@ -144,7 +201,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onQueueNavigateDown,
   });
 
-  const resize = useTextareaResize(textareaRef, value);
+  // Sizing is driven by `value` alone, so a programmatic change (a queued item
+  // opened for edit, a restored draft, a seeded prompt) grows the box exactly
+  // the way typing does.
+  useTextareaResize(textareaRef, value);
 
   const handleFocus = useCallback(() => setIsFocused(true), []);
   const handleBlur = useCallback(() => {
@@ -156,9 +216,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       onChange(e.target.value);
       onCursorChange?.(e.target.selectionStart);
-      resize();
     },
-    [onChange, onCursorChange, resize]
+    [onChange, onCursorChange]
   );
 
   const handleSelect = useCallback(() => {
@@ -173,6 +232,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       {sessionBusy && (
         <div className="px-1 text-xs text-amber-600 dark:text-amber-500">
           Session is busy. Please wait...
+        </div>
+      )}
+      {/* A live region, not a plain line: the failure it explains is "I pressed
+          Enter and nothing happened", which a screen-reader user gets no other
+          signal for at all. */}
+      {!canSubmit && !sessionBusy && canSubmitReason && (
+        <div role="status" className="text-muted-foreground px-1 text-xs">
+          {canSubmitReason}
         </div>
       )}
       {editingQueueItem && (
@@ -241,34 +308,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             rows={1}
           />
         </div>
-        <motion.button
-          animate={{ opacity: showClear ? 0.5 : 0, scale: showClear ? 1 : 0.8 }}
-          transition={{ duration: 0.15 }}
-          whileHover={showClear ? { opacity: 1 } : undefined}
-          onClick={onClear}
-          disabled={!showClear}
-          type="button"
-          className={cn(
-            'text-muted-foreground hover:text-foreground shrink-0 rounded-lg p-1 transition-colors',
-            !showClear && 'pointer-events-none'
-          )}
-          aria-label="Clear message"
-        >
-          <X className="size-(--size-icon-sm)" />
-        </motion.button>
+        {/* Only rendered when there is something to clear TO. Hosts that pass no
+            `onClear` (the dashboard and onboarding composers) used to show this
+            X at half opacity, enabled and tab-reachable, wired to nothing. */}
+        {onClear && (
+          <motion.button
+            animate={{ opacity: showClear ? 0.5 : 0, scale: showClear ? 1 : 0.8 }}
+            transition={{ duration: 0.15 }}
+            whileHover={showClear ? { opacity: 1 } : undefined}
+            onClick={onClear}
+            disabled={!showClear}
+            type="button"
+            className={cn(
+              'text-muted-foreground hover:text-foreground shrink-0 rounded-lg p-1 transition-colors',
+              !showClear && 'pointer-events-none'
+            )}
+            aria-label="Clear message"
+          >
+            <X className="size-(--size-icon-sm)" />
+          </motion.button>
+        )}
         <InputActionButton
           hasText={hasText}
           isStreaming={isStreaming}
           isUploading={isUploading}
+          commandPending={commandPending}
           sessionBusy={sessionBusy}
           submitDisabled={!canSubmit}
           editingQueueItem={editingQueueItem}
           queueDepth={queueDepth}
-          isMobile={isMobile}
+          isTouchOnly={isTouchOnly}
           onSubmit={onSubmit}
           onStop={onStop}
           onQueue={onQueue}
           onSaveEdit={onSaveEdit}
+          onCancelEdit={onCancelEdit}
         />
       </div>
     </div>
