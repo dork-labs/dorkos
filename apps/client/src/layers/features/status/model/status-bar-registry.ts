@@ -30,7 +30,11 @@ import { useCallback } from 'react';
 import type { ConnectionState, PermissionMode, UsageStatus } from '@dorkos/shared/types';
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
-import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
+import {
+  CONTEXT_ACTION_PERCENT,
+  CONTEXT_PROMOTE_PERCENT,
+  isBypassPermissionMode,
+} from '@/layers/entities/session';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
 
 /** Union of every status line item key. */
@@ -171,9 +175,6 @@ const SEVERITY = {
   /** Promoted, but nothing about it is urgent. */
   QUIET: 0,
 } as const;
-
-/** Permission modes that hand the agent the keys — the loudest non-connection signal. */
-const BYPASS_PERMISSION_MODES = new Set<string>(['bypassPermissions', 'always-allow']);
 
 export interface StatusBarItemConfig {
   /** Stable identity — used for pins, React keys, and the popover rows. */
@@ -353,7 +354,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     icon: Shield,
     promote: (ctx) => ctx.permissionMode !== 'default',
     severity: (ctx) => {
-      if (BYPASS_PERMISSION_MODES.has(ctx.permissionMode)) return SEVERITY.PERMISSION_BYPASS;
+      if (isBypassPermissionMode(ctx.permissionMode)) return SEVERITY.PERMISSION_BYPASS;
       return ctx.permissionMode === 'default' ? SEVERITY.QUIET : SEVERITY.PERMISSION_ELEVATED;
     },
   },
