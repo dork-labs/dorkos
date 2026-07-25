@@ -32,12 +32,25 @@ name: claude-code-review
 # THE CONTAINMENT INVARIANT, which is the property to preserve and the thing to
 # check any change against: NO tool the reviewer is granted can execute a shell,
 # read the process environment, or reach the network of its own accord. Every
-# grant either stays inside the workspace (`Read`, `Grep`, `Glob`) or goes through
-# scripts/review-gh.sh, whose destination — host, repo, PR number, commit — is
-# fixed by this file and cannot be influenced by an argument. The allow-list is
-# asserted against an exact expected set in scripts/test-review-classifier.sh, so
-# adding a grant fails the harness until someone shows the new one holds the
-# invariant too.
+# grant is either a file tool held inside the workspace (`Read`, `Grep`, `Glob`) or
+# goes through scripts/review-gh.sh, whose destination — host, repo, PR number,
+# commit — is fixed by this file and cannot be influenced by an argument.
+#
+# Two of those three clauses are structural. The environment clause is NOT, and
+# saying so matters: `Read` is not confined to the workspace by anything in Claude
+# Code — measured on 2.1.219, a bare `Read` grant reads /etc/hosts — and
+# `--setting-sources user` drops this repo's own `Read(...)` deny rules. It is the
+# `--disallowedTools` line in claude_args that makes that clause true, so treat
+# that line as part of the invariant rather than as a nicety, and read the note
+# beside it about the double slash before touching it.
+#
+# The harness (scripts/test-review-classifier.sh) enforces the broader property
+# that NO CHANGE TO THE REVIEWER'S POWERS GOES UNNOTICED: it pins the whole
+# claude_args block — every flag, in order, and the exact contents of both tool
+# lists — plus the fact that the helper is materialized under `${{ runner.temp }}`
+# rather than anywhere a PR can write. A flag like
+# `--dangerously-skip-permissions` or `--permission-mode bypassPermissions` voids
+# the allow-list without changing its contents, so the fence watches the flags too.
 #
 # Why a helper rather than a tighter pattern: the Bash matcher is a PREFIX match.
 # It cannot forbid a trailing `--repo attacker.example/a/b`, `--hostname
@@ -556,8 +569,13 @@ jobs:
             To search the tree and read files, use the Grep, Glob and Read tools.
             That helper is the ONLY shell command you have: there is no `gh`, no
             `grep`, no `rg`, no `git`, no `ls`. Do not spend turns rediscovering
-            that — Grep and Glob cover every search this review needs, including the
-            dangling-reference sweep.
+            that — Grep and Glob cover every search this review needs.
+
+            One trap worth knowing before the dangling-reference sweep: a search
+            with no path does NOT descend into dot-directories, so `.github/`,
+            `.claude/` and `.husky/` come back empty even when they contain the
+            token. Whenever a sweep matters, repeat it with an explicit path for
+            each of those directories.
 
             First, read REVIEW.md and AGENTS.md at the repository root and apply
             them in full, including REVIEW.md's "How to review" process, the
@@ -688,8 +706,30 @@ jobs:
           # to summary-only, dropping every line-level finding. The helper's
           # `inline` subcommand covers both triggers, so the fallback no longer
           # needs a trigger-conditional grant of its own.
+          #
+          # The deny list makes the invariant's "cannot read the process
+          # environment" clause true by construction instead of by assertion.
+          # `Read` is NOT workspace-confined — measured on Claude Code 2.1.219, a
+          # bare `Read` grant reads /etc/hosts — and `--setting-sources user` drops
+          # this repo's own `Read(...)` deny list (see the note above), so nothing
+          # else was stopping it.
+          #
+          # THE DOUBLE SLASH IS LOAD-BEARING. A single leading slash anchors the
+          # pattern at the settings source, not the filesystem root, so
+          # `Read(/etc/**)` silently protects nothing. Measured, same version: with
+          # `Read(/etc/**)` the read succeeded; with `Read(//etc/**)` it was
+          # refused. A wrong pattern here fails OPEN and quietly, which is why it is
+          # asserted in scripts/test-review-classifier.sh and why this stays a
+          # second layer rather than the control.
+          #
+          # `~/**` is deliberately NOT denied: on a GitHub runner HOME is
+          # /home/runner and the checkout is /home/runner/work/<repo>/<repo>, so
+          # denying the home tree would deny the entire workspace and break every
+          # review. Only the credential directories under it are named. Verified
+          # that the review still reads workspace files with this list applied.
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(bash ${{ runner.temp }}/trusted/review-gh.sh:*),Read,Grep,Glob"
+            --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(~/.claude/**),Read(~/.config/**),Read(~/.ssh/**)"
             --setting-sources user
             --max-turns ${{ steps.pr-size.outputs.max_turns }}
 
