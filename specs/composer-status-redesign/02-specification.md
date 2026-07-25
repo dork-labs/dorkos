@@ -199,7 +199,7 @@ New `SessionPopover` in `features/status`, anchored to the `⋯` and right-align
 
 Rows follow the same two-cluster rule one level down: label left, live value + pin right. Groups:
 
-- **Session** — directory, git, runtime, model, context, cache, usage, permission (each pinnable, each showing its live value).
+- **Session** — directory, git, runtime, model, context, cache, usage, permission, each showing its live value. Pinnable **except** `cache`: §4.1 marks it `neverInLine`, and `neverInLine` wins over pinnability. (Resolved conflict — an earlier draft of this section called every Session row pinnable.)
 - **Controls** — sound, refresh (toggles, not pins).
 - **Diagnostics** — connection (+ last event seq), queue depth, session id. **No pin control** — system-managed rows can never be promoted into the line, which is what stops pins from quietly becoming ten toggles again.
 

@@ -1,0 +1,156 @@
+/**
+ * The measured width budget for the status line — how much the bar may say at the
+ * width it actually has.
+ *
+ * The line never scrolls and never wraps, so something has to give when a
+ * degraded session promotes more than fits. And every promotion rule fires under
+ * stress, which is exactly when the person is on their phone trying to find out
+ * what broke. So: fill the right cluster by urgency until the budget runs out and
+ * report the remainder as a count on the `⋯`. Nothing is lost — it is one tap
+ * away, and the count is the honesty.
+ *
+ * Width comes from a `ResizeObserver` on the bar itself, never from a viewport
+ * breakpoint. A 767px tablet and a 320px phone are the same boolean, and no
+ * breakpoint can see browser zoom, Dynamic Type, or the sidebar opening.
+ *
+ * @module features/status/model/status-budget
+ */
+import type { PromotedStatusItem } from './promoted-items';
+import type { StatusBarItemKey } from './status-bar-registry';
+
+/**
+ * How much the line may say at the width it has.
+ *
+ * - `full` — every promoted item, full labels, the inline Compact action included.
+ * - `compact` — glyph and value only; the directory drops off the left cluster.
+ * - `identity` — who you are talking to, and the two or three loudest signals.
+ * - `avatar` — the agent's avatar alone, its name carried by assistive text.
+ */
+export type StatusDensity = 'full' | 'compact' | 'identity' | 'avatar';
+
+/** What one measured width affords. */
+export interface StatusBudget {
+  /** How much each item may say. */
+  density: StatusDensity;
+  /** How many right-cluster items may render. */
+  rightBudget: number;
+  /** Left-cluster keys this width cannot afford. */
+  dropped: readonly StatusBarItemKey[];
+}
+
+/** The result of fitting the promoted set into a budget. */
+export interface BudgetedStatusLine {
+  /** What the line draws, in registry order. */
+  items: PromotedStatusItem[];
+  /** How many promoted right-cluster items the width could not afford. */
+  overflow: number;
+}
+
+/**
+ * Tier floors in CSS pixels of measured bar width, per spec
+ * composer-status-redesign §6.1. A realistic degraded state needs ~568px of bar,
+ * and a 375px phone offers ~343px — hence four tiers rather than one breakpoint.
+ */
+const TIER_FULL_MIN_PX = 640;
+const TIER_COMPACT_MIN_PX = 440;
+const TIER_IDENTITY_MIN_PX = 340;
+
+/** Right-cluster slots at each tier. Three at `identity`: two problems plus one item of context. */
+const BUDGET_COMPACT = 4;
+const BUDGET_IDENTITY = 3;
+const BUDGET_AVATAR = 2;
+
+/** The `full` tier's floor — the spec's "4+", which grows with the width above it. */
+const BUDGET_FULL_BASE = 4;
+
+/**
+ * Measured cost of one more full-label right-cluster item: a 12px glyph, its
+ * value, the 8px gap, and the separator — about 110px in the composer's `text-xs`.
+ * This is what turns the spec's "4+" into a real number instead of a guess.
+ */
+const FULL_SLOT_COST_PX = 110;
+
+/** No cap — the line has not been measured yet, so draw everything and clamp on the first observation. */
+const UNMEASURED_BUDGET = Number.POSITIVE_INFINITY;
+
+/** Left-cluster keys each tier gives up, cheapest information first. */
+const DROPPED_NONE: readonly StatusBarItemKey[] = [];
+const DROPPED_CWD: readonly StatusBarItemKey[] = ['cwd'];
+const DROPPED_CWD_AND_GIT: readonly StatusBarItemKey[] = ['cwd', 'git'];
+
+/**
+ * Resolve what a measured bar width affords.
+ *
+ * An unmeasured width (`null`, or the `0` a detached or not-yet-laid-out element
+ * reports) is treated as "not known yet", not as a 0px screen: the line draws
+ * everything for that first frame and the `ResizeObserver` clamps it before paint.
+ * Guessing narrow instead would flash a two-item bar on every desktop mount.
+ *
+ * @param width - Measured inline size of the bar container in CSS pixels.
+ */
+export function resolveStatusBudget(width: number | null): StatusBudget {
+  if (width === null || width <= 0) {
+    return { density: 'full', rightBudget: UNMEASURED_BUDGET, dropped: DROPPED_NONE };
+  }
+  if (width >= TIER_FULL_MIN_PX) {
+    const extra = Math.floor((width - TIER_FULL_MIN_PX) / FULL_SLOT_COST_PX);
+    return { density: 'full', rightBudget: BUDGET_FULL_BASE + extra, dropped: DROPPED_NONE };
+  }
+  if (width >= TIER_COMPACT_MIN_PX) {
+    return { density: 'compact', rightBudget: BUDGET_COMPACT, dropped: DROPPED_CWD };
+  }
+  if (width >= TIER_IDENTITY_MIN_PX) {
+    return { density: 'identity', rightBudget: BUDGET_IDENTITY, dropped: DROPPED_CWD_AND_GIT };
+  }
+  return { density: 'avatar', rightBudget: BUDGET_AVATAR, dropped: DROPPED_CWD_AND_GIT };
+}
+
+/**
+ * Rank two promoted items for a contested slot: urgency first, then the pin.
+ *
+ * A pin raises priority without buying immunity — an item that is in the line
+ * only because someone pinned it ranks quiet, so it loses its slot to anything
+ * that is actually news. A pin says "show me", not "shout at me".
+ *
+ * @internal
+ */
+function byUrgency(a: PromotedStatusItem, b: PromotedStatusItem): number {
+  if (b.severity !== a.severity) return b.severity - a.severity;
+  return Number(b.pinned) - Number(a.pinned);
+}
+
+/**
+ * Fit the promoted set into a measured budget.
+ *
+ * Slots are won by urgency but rendered in registry order: what survives is what
+ * is most likely to be a real problem, while positions stay put as numbers cross
+ * their thresholds — nothing shuffles under the finger that is reaching for it.
+ *
+ * The left cluster is trimmed by density rather than by count, and those drops are
+ * deliberately **not** counted in `overflow`. Saying less about where you are is
+ * not the same as withholding news, and a permanent `+1` beside the `⋯` on every
+ * tablet would be exactly the wallpaper this redesign removes.
+ *
+ * @param items - Everything that promoted, in registry order.
+ * @param budget - What the measured width affords.
+ */
+export function applyStatusBudget(
+  items: readonly PromotedStatusItem[],
+  budget: StatusBudget
+): BudgetedStatusLine {
+  const dropped = new Set<StatusBarItemKey>(budget.dropped);
+  const right = items.filter((item) => item.cluster === 'right');
+  const kept = new Set(
+    [...right]
+      .sort(byUrgency)
+      .slice(0, budget.rightBudget)
+      .map((item) => item.key)
+  );
+
+  return {
+    items: items.filter((item) =>
+      item.cluster === 'right' ? kept.has(item.key) : !dropped.has(item.key)
+    ),
+    overflow: right.length - kept.size,
+  };
+}

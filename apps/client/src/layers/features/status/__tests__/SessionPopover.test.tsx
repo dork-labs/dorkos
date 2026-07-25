@@ -112,6 +112,38 @@ describe('SessionPopover — the trigger', () => {
     fireEvent.click(trigger);
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
+
+  it('counts what the width budget could not fit, in the label as well as on screen', () => {
+    // `aria-label` replaces a button's text, so a visible `+2` with no count in the
+    // label would be honest to the eye and silent to a screen reader.
+    render(
+      <SessionPopover
+        open={false}
+        onOpenChange={vi.fn()}
+        diagnostics={diagnostics()}
+        controls={controls}
+        promotionContext={promotionContext()}
+        overflowCount={2}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Session details, 2 more' })).toBeInTheDocument();
+    expect(screen.getByText('+2')).toBeInTheDocument();
+  });
+
+  it('says nothing extra when the line fitted everything', () => {
+    render(
+      <SessionPopover
+        open={false}
+        onOpenChange={vi.fn()}
+        diagnostics={diagnostics()}
+        controls={controls}
+        promotionContext={promotionContext()}
+        overflowCount={0}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Session details' })).toBeInTheDocument();
+    expect(screen.queryByText(/^\+/)).not.toBeInTheDocument();
+  });
 });
 
 describe('SessionPopover — rows', () => {
@@ -230,9 +262,11 @@ describe('SessionPopover — copy diagnostics', () => {
   });
 });
 
-describe('SessionPopover — on a phone', () => {
-  it('leads with an urgent action and closes the sheet once it is taken', () => {
-    mockIsMobile.mockReturnValue(true);
+describe('SessionPopover — an action the line had no room for', () => {
+  it('leads with it and closes the panel once it is taken', () => {
+    // Supplied by the caller only when the width budget dropped the inline action
+    // from the bar, so the fix is relocated rather than lost. The panel does not
+    // second-guess that with a breakpoint of its own.
     const onOpenChange = vi.fn();
     const onAction = vi.fn();
     renderPanel({
@@ -245,6 +279,13 @@ describe('SessionPopover — on a phone', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('shows nothing when the line kept the action itself', () => {
+    renderPanel({ urgentAction: null });
+    expect(screen.queryByRole('button', { name: /Compact conversation/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('SessionPopover — on a phone', () => {
   it('sorts Session rows attention-first', () => {
     // A 88%-full window outranks an elevated permission mode, which outranks a
     // dirty working tree — the same ranking the line uses for a contested slot.

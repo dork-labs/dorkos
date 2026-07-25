@@ -1,32 +1,53 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import type { PromotedStatusItem } from '../model/promoted-items';
 
 const ITEM_TRANSITION = { duration: 0.2, ease: [0.4, 0, 0.2, 1] } as const;
 
+/**
+ * Grow every tappable thing in an item to a 44px-tall hit area on touch (Apple
+ * HIG; WCAG 2.5.8 asks 24px). Padding on the control itself, not an overlay on the
+ * wrapper — an absolutely-positioned strip would sit *above* the button it was
+ * meant to enlarge and swallow the tap instead of passing it on.
+ *
+ * Vertical only, deliberately. Four 44px-wide targets plus the `⋯` do not fit
+ * across a 320px phone, and widening them would push content out of the very
+ * budget that decides what the line may hold. Horizontal separation comes from the
+ * row's 8px gaps; most items are already 44px wide once their value is rendered.
+ *
+ * @internal
+ */
+const TAP_TARGET = 'pointer-coarse:[&_button]:py-3';
+
 interface StatusLineProps {
   /**
-   * The items to show, already promoted and in order. Visibility is decided
-   * upstream by `selectPromotedItems`, so this component never asks whether an
-   * item belongs — it draws what it is given.
+   * The items to show, already promoted, budgeted, and in order. Visibility is
+   * decided upstream by `selectPromotedItems` and `applyStatusBudget`, so this
+   * component never asks whether an item belongs — it draws what it is given.
    */
   items: readonly PromotedStatusItem[];
   /**
-   * The fixed trailing anchor — the Session `⋯`. Rendered outside the scrolling
-   * region so it is always reachable, always last, and never dropped.
+   * The fixed trailing anchor — the Session `⋯`. Rendered outside the clipped
+   * region and outside the budget, so it is always reachable, always last, and
+   * never dropped.
    */
   trailing?: ReactNode;
 }
 
 /**
- * The composer status line — one row, two clusters.
+ * The composer status line — one row, two clusters, never scrolled and never
+ * wrapped.
  *
  * Left is who and where; right is state and numbers. A single flexible gap
  * separates them, and separators only ever sit *between* items inside a cluster,
  * so no middot is ever left floating in the gap.
  *
- * @param props - The promoted items and the trailing anchor.
+ * Nothing here overflows: the width budget upstream decides how many items fit,
+ * and the left cluster truncates its text right-to-left under pressure. The clip
+ * is only a backstop for the one frame before the bar has been measured.
+ *
+ * @param props - The budgeted items and the trailing anchor.
  */
 export function StatusLine({ items, trailing }: StatusLineProps) {
   const left = items.filter((item) => item.cluster === 'left');
@@ -38,12 +59,12 @@ export function StatusLine({ items, trailing }: StatusLineProps) {
       aria-label="Session status"
       aria-live="polite"
       data-testid="status-line"
-      className="text-muted-foreground flex items-center gap-2 text-xs"
+      className="text-muted-foreground flex items-center gap-2 overflow-hidden px-1 text-xs whitespace-nowrap pointer-coarse:min-h-11"
     >
-      <StatusLineScroller>
-        <StatusCluster items={left} className="min-w-0 flex-1" />
-        <StatusCluster items={right} />
-      </StatusLineScroller>
+      {/* Left absorbs the slack and gives it back first: under pressure the agent
+          name truncates right-to-left rather than pushing state off the row. */}
+      <StatusCluster items={left} className="min-w-0 flex-1" />
+      <StatusCluster items={right} className="shrink-0" />
       {trailing}
     </div>
   );
@@ -64,7 +85,7 @@ function StatusCluster({
   className?: string;
 }) {
   return (
-    <div className={cn('flex shrink-0 items-center gap-2', className)}>
+    <div className={cn('flex items-center gap-2', className)}>
       <AnimatePresence initial={false} mode="popLayout">
         {items.map((item, index) => (
           <motion.div
@@ -75,7 +96,7 @@ function StatusCluster({
             animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
             exit={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
             transition={ITEM_TRANSITION}
-            className="inline-flex items-center gap-2"
+            className={cn('inline-flex min-w-0 items-center gap-2', TAP_TARGET)}
           >
             {index > 0 && <StatusLineSeparator />}
             {item.node}
@@ -96,60 +117,5 @@ function StatusLineSeparator() {
     <span className="text-muted-foreground/30" aria-hidden="true">
       &middot;
     </span>
-  );
-}
-
-/**
- * The measured region of the line: the two clusters, with a right-edge fade when
- * their content is wider than the space available.
- *
- * @internal
- */
-function StatusLineScroller({ children }: { children: ReactNode }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkOverflow = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // Allow 1px tolerance for sub-pixel rounding
-    setCanScrollRight(el.scrollWidth - el.scrollLeft - el.clientWidth > 1);
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    checkOverflow();
-
-    el.addEventListener('scroll', checkOverflow, { passive: true });
-
-    // ResizeObserver catches layout changes (items added/removed, viewport resize)
-    const ro = new ResizeObserver(checkOverflow);
-    ro.observe(el);
-
-    return () => {
-      el.removeEventListener('scroll', checkOverflow);
-      ro.disconnect();
-    };
-  }, [checkOverflow]);
-
-  return (
-    <div className="relative min-w-0 flex-1">
-      <div
-        ref={scrollRef}
-        className="flex scrollbar-none items-center gap-2 overflow-x-auto px-1 whitespace-nowrap"
-      >
-        {children}
-      </div>
-      {/* Right fade gradient — hints at content wider than the row */}
-      <div
-        className={cn(
-          'from-background pointer-events-none absolute top-0 right-0 bottom-0 w-8 bg-gradient-to-l to-transparent transition-opacity duration-200',
-          canScrollRight ? 'opacity-100' : 'opacity-0'
-        )}
-        aria-hidden
-      />
-    </div>
   );
 }

@@ -4,15 +4,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { StatusLine } from '../ui/StatusLine';
+import { applyStatusBudget, resolveStatusBudget } from '../model/status-budget';
 import type { PromotedStatusItem } from '../model/promoted-items';
 import type { StatusBarItemKey } from '../model/status-bar-registry';
-
-// ResizeObserver is not available in jsdom — provide a minimal stub.
-globalThis.ResizeObserver ??= class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-} as unknown as typeof ResizeObserver;
 
 afterEach(() => {
   cleanup();
@@ -45,6 +39,45 @@ describe('StatusLine', () => {
       expect(screen.getByText('cwd content')).toBeInTheDocument();
       expect(screen.getByText('model content')).toBeInTheDocument();
       expect(screen.getByText('context content')).toBeInTheDocument();
+    });
+  });
+
+  describe('never scrolled, never wrapped', () => {
+    it('clips instead of offering a scroller nobody can pan', () => {
+      // `touch-action: pan-y` on an ancestor used to block the inner container's
+      // horizontal panning, so overflowed items were unreachable on a phone while a
+      // fade gradient advertised that they existed. The budget replaces both.
+      render(<StatusLine items={[item('model'), item('context')]} />);
+      const toolbar = screen.getByRole('toolbar');
+      expect(toolbar.className).toContain('overflow-hidden');
+      expect(toolbar.className).toContain('whitespace-nowrap');
+      expect(toolbar.className).not.toContain('overflow-x-auto');
+    });
+
+    it('keeps the Session anchor reachable at the narrowest width', () => {
+      // The `⋯` sits outside the budget and outside the clip, so no width can leave
+      // the panel — and everything the line dropped — unreachable.
+      const promoted: PromotedStatusItem[] = [
+        item('agent', 'left', 1000),
+        item('cwd', 'left', 5),
+        item('git', 'left', 20),
+        item('runtime', 'right', 30),
+        item('model', 'right', 10),
+        item('context', 'right', 90),
+        item('connection', 'right', 100),
+      ];
+      const { items: budgeted, overflow } = applyStatusBudget(promoted, resolveStatusBudget(320));
+      render(
+        <StatusLine
+          items={budgeted}
+          trailing={<button aria-label={`Session details, ${overflow} more`}>anchor</button>}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: 'Session details, 2 more' })).toBeInTheDocument();
+      expect(screen.getByTestId('status-item-agent')).toBeInTheDocument();
+      expect(screen.queryByTestId('status-item-cwd')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('status-item-model')).not.toBeInTheDocument();
     });
   });
 

@@ -24,6 +24,7 @@ import {
   SubagentsItem,
   type ContextCompactAction,
   type StatusBarItemKey,
+  type StatusDensity,
 } from '@/layers/features/status';
 import type { RuntimeChipState } from '../../model/status/use-runtime-chip';
 import { AgentIdentityChip } from './AgentIdentityChip';
@@ -62,6 +63,12 @@ export interface StatusItemNodesInput {
   subagents: SubagentInfo[] | undefined;
   /** Live-sync connection state. */
   connectionState: ConnectionState;
+  /**
+   * How much the measured bar width lets each item say. Only the narrowest tier
+   * changes what is *drawn* rather than which items are drawn: the agent keeps its
+   * avatar and gives up its name.
+   */
+  density: StatusDensity;
 }
 
 /**
@@ -89,6 +96,7 @@ export function buildStatusItemNodes(
         agentColor={agent.color}
         agentEmoji={agent.emoji}
         agentPath={agent.path}
+        nameHidden={input.density === 'avatar'}
       />
     );
   }

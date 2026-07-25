@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
-import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
+import { render, screen, cleanup } from '@testing-library/react';
 import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
 
 // Mock useIsMobile — default to mobile
@@ -197,77 +196,18 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe('ChatPanel collapse', () => {
-  it('mobile: renders drag handle', () => {
-    mockUseIsMobile.mockReturnValue(true);
+describe('ChatPanel status line', () => {
+  // The width budget caps the line at one row of at most a few items, so there is
+  // nothing left to collapse: no drag handle, no swipe gesture, and no hint to
+  // teach either of them.
+  it.each([
+    ['a phone', true],
+    ['desktop', false],
+  ])('shows one uncollapsible status line on %s', (_label, mobile) => {
+    mockUseIsMobile.mockReturnValue(mobile);
     render(<ChatPanel sessionId="test" />);
-    const handle = screen.getByLabelText(/input extras/);
-    expect(handle).toBeTruthy();
-    expect(handle.getAttribute('role')).toBe('button');
-  });
-
-  it('desktop: does not render drag handle', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('status-line')).toBeTruthy();
     expect(screen.queryByLabelText(/input extras/)).toBeNull();
-  });
-
-  it('mobile: status bar visible by default', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.getByTestId('status-line')).toBeTruthy();
-  });
-
-  it('mobile: tap handle hides the status bar', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(<ChatPanel sessionId="test" />);
-    fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.queryByTestId('status-line')).toBeNull();
-  });
-
-  it('mobile: tap handle again shows the status bar', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(<ChatPanel sessionId="test" />);
-    const handle = screen.getByLabelText(/input extras/);
-    fireEvent.click(handle);
-    expect(screen.queryByTestId('status-line')).toBeNull();
-    fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.getByTestId('status-line')).toBeTruthy();
-  });
-});
-
-describe('ChatPanel first-use hint', () => {
-  it('shows hint when localStorage count < 3 on mobile', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '1');
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.getByText('Swipe to collapse')).toBeTruthy();
-  });
-
-  it('does not show hint when count >= 3', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '3');
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.queryByText('Swipe to collapse')).toBeNull();
-  });
-
-  it('increments count on dismiss', () => {
-    vi.useFakeTimers();
-    mockUseIsMobile.mockReturnValue(true);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '0');
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.getByText('Swipe to collapse')).toBeTruthy();
-    act(() => {
-      vi.advanceTimersByTime(4000);
-    });
-    expect(localStorage.getItem(STORAGE_KEYS.GESTURE_HINT_COUNT)).toBe('1');
-    vi.useRealTimers();
-  });
-
-  it('does not show hint on desktop regardless of count', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '0');
-    render(<ChatPanel sessionId="test" />);
     expect(screen.queryByText('Swipe to collapse')).toBeNull();
   });
 });

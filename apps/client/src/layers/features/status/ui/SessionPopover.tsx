@@ -65,8 +65,17 @@ interface SessionPopoverProps {
    * are ordered by it, so what needs attention is what you see without scrolling.
    */
   promotionContext: StatusPromotionContext;
-  /** An action promoted to a full-width button at the top on mobile. */
+  /**
+   * An action the line had no room for, promoted to a full-width button at the top
+   * of the panel. Supplied only when the width budget dropped it from the bar.
+   */
   urgentAction?: SessionUrgentAction | null;
+  /**
+   * How many promoted items the bar's measured width could not afford, shown as
+   * `+N` beside the `⋯`. This count is what makes truncation honest rather than
+   * silent — the items are all still in here, one tap away.
+   */
+  overflowCount?: number;
 }
 
 /**
@@ -87,6 +96,7 @@ export function SessionPopover({
   controls,
   promotionContext,
   urgentAction,
+  overflowCount = 0,
 }: SessionPopoverProps) {
   const isMobile = useIsMobile();
   const { pins, toggle, reset } = useStatusBarPins();
@@ -97,6 +107,8 @@ export function SessionPopover({
     toast.success('Diagnostics copied to your clipboard');
   };
 
+  const hidden = overflowCount > 0;
+
   return (
     <ResponsivePopover open={open} onOpenChange={onOpenChange}>
       <TooltipProvider>
@@ -105,20 +117,25 @@ export function SessionPopover({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                aria-label="Session details"
-                className="text-muted-foreground/50 hover:text-muted-foreground inline-flex shrink-0 items-center transition-colors duration-150"
+                // The count belongs in the label, not just the glyph: `aria-label`
+                // replaces the button's text, so a visible `+2` would be silent.
+                aria-label={hidden ? `Session details, ${overflowCount} more` : 'Session details'}
+                className="text-muted-foreground/50 hover:text-muted-foreground inline-flex shrink-0 items-center justify-center gap-0.5 transition-colors duration-150 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
               >
                 <MoreHorizontal className="size-4" />
+                {hidden && <span className="tabular-nums">+{overflowCount}</span>}
               </button>
             </TooltipTrigger>
           </ResponsivePopoverTrigger>
-          <TooltipContent side="top">Session details</TooltipContent>
+          <TooltipContent side="top">
+            {hidden ? `Session details — ${overflowCount} more` : 'Session details'}
+          </TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <ResponsivePopoverContent side="top" align="end" className="w-80 p-3" aria-label="Session">
         <ResponsivePopoverTitle>Session</ResponsivePopoverTitle>
 
-        {isMobile && urgentAction && (
+        {urgentAction && (
           <Button
             variant="secondary"
             className="mb-3 w-full"

@@ -14,6 +14,8 @@ interface AgentIdentityChipProps {
   agentEmoji?: string;
   /** Agent working directory path (enables the context menu actions). */
   agentPath?: string;
+  /** Show the avatar alone — the narrowest tier of the line's width budget. */
+  nameHidden?: boolean;
 }
 
 /**
@@ -28,6 +30,7 @@ export function AgentIdentityChip({
   agentColor,
   agentEmoji,
   agentPath,
+  nameHidden,
 }: AgentIdentityChipProps) {
   const navigate = useNavigate();
 
@@ -64,11 +67,18 @@ export function AgentIdentityChip({
             name={agentName}
             color={agentColor}
             emoji={agentEmoji}
+            nameHidden={nameHidden}
             onClick={handleOpenProfile}
           />
         </AgentChipContextMenu>
       ) : (
-        <AgentIdentity size="xs" name={agentName} color={agentColor} emoji={agentEmoji} />
+        <AgentIdentity
+          size="xs"
+          name={agentName}
+          color={agentColor}
+          emoji={agentEmoji}
+          nameHidden={nameHidden}
+        />
       )}
     </span>
   );

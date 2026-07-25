@@ -256,11 +256,4 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     category: 'Misc',
     keywords: ['celebration', 'confetti', 'overlay', 'task', 'complete', 'fireworks'],
   },
-  {
-    id: 'draghandle',
-    title: 'DragHandle',
-    page: 'chat',
-    category: 'Misc',
-    keywords: ['drag', 'handle', 'collapse', 'expand', 'toggle', 'pill'],
-  },
 ];

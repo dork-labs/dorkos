@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useShallow } from 'zustand/shallow';
 import type { SessionStatusEvent, ConnectionState, PermissionMode } from '@dorkos/shared/types';
-import { useIsMobile, useAppStore } from '@/layers/shared/model';
+import { useAppStore } from '@/layers/shared/model';
 import {
   useSessionStatus,
   useSessionChatStore,
@@ -29,8 +29,10 @@ import {
   isGitStatusOk,
   useStatusBarPins,
   useSessionPopoverShortcut,
+  useStatusBudget,
   gitPromotionState,
   selectPromotedItems,
+  applyStatusBudget,
   type SessionDiagnostics,
   type StatusPromotionContext,
 } from '@/layers/features/status';
@@ -40,7 +42,6 @@ import { useRuntimeChip } from '../../model/status/use-runtime-chip';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { buildStatusItemNodes } from './status-item-nodes';
-import { MobileStatusGestures } from './MobileStatusGestures';
 
 interface ChatStatusSectionProps {
   sessionId: string;
@@ -66,6 +67,10 @@ interface ChatStatusSectionProps {
  * decides visibility inline — that lives in the registry, so the same decision
  * can be measured, tested, and truncated.
  *
+ * The bar's own width is measured here and cut to a budget before anything is
+ * drawn, because the line never scrolls and never wraps: what the width cannot
+ * afford becomes a `+N` on the `⋯` instead of an item nobody can reach.
+ *
  * @param props - Session identity, streaming state, and the agent's identity.
  */
 export function ChatStatusSection({
@@ -78,7 +83,8 @@ export function ChatStatusSection({
   agentEmoji,
   agentPath,
 }: ChatStatusSectionProps) {
-  const isMobile = useIsMobile();
+  // The real width of the bar, not a viewport breakpoint — see `useStatusBudget`.
+  const { ref: barRef, budget } = useStatusBudget();
   // Resolved first so the client-known runtime can scope every runtime-aware
   // query below (status/model/auto-mode), even before the session has a
   // server-side row to resolve `sessionId` against.
@@ -200,6 +206,12 @@ export function ChatStatusSection({
     subagentCount: subagents?.length ?? 0,
   };
 
+  // The inline Compact action is the one thing the line gives up first: it costs a
+  // labelled button, and below the widest tier the Session panel offers it as a
+  // full-width button instead, so the fix is never lost — only relocated.
+  const inlineCompact = compactIntent.supported && budget.density === 'full';
+  const promotedCompactAction = compaction.visible && !inlineCompact;
+
   const nodes = buildStatusItemNodes({
     sessionId,
     agent: { name: agentName, color: agentColor, emoji: agentEmoji, path: agentPath },
@@ -212,16 +224,20 @@ export function ChatStatusSection({
     runtimeChip,
     contextPercent: displayContextPercent,
     contextUsage,
-    compact: compactIntent.supported
+    compact: inlineCompact
       ? { pending: compaction.pending, onCompact: compaction.onCompact }
       : null,
     usage,
     supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
     subagents,
     connectionState: syncConnectionState,
+    density: budget.density,
   });
 
-  const promoted = selectPromotedItems({ ctx: promotionContext, pins, nodes });
+  const { items, overflow } = applyStatusBudget(
+    selectPromotedItems({ ctx: promotionContext, pins, nodes }),
+    budget
+  );
 
   const diagnostics: SessionDiagnostics = {
     sessionId,
@@ -247,10 +263,13 @@ export function ChatStatusSection({
     clientVersion: serverConfig?.version ?? null,
   };
 
-  const statusLine = (
-    <div className="pt-2">
+  return (
+    // `barRef` measures this block, whose width comes from the composer around it
+    // and never from the line's own content — otherwise trimming the line would
+    // shrink the box that decides how much the line may hold.
+    <div ref={barRef} className="pt-2">
       <StatusLine
-        items={promoted}
+        items={items}
         trailing={
           <SessionPopover
             open={sessionOpen}
@@ -263,8 +282,9 @@ export function ChatStatusSection({
               onToggleRefresh: () => setEnableMessagePolling(!enableMessagePolling),
             }}
             promotionContext={promotionContext}
+            overflowCount={overflow}
             urgentAction={
-              compaction.visible
+              promotedCompactAction
                 ? {
                     label: `Compact conversation — ${compaction.percent}% full`,
                     onAction: compaction.onCompact,
@@ -289,7 +309,4 @@ export function ChatStatusSection({
       />
     </div>
   );
-
-  if (isMobile) return <MobileStatusGestures>{statusLine}</MobileStatusGestures>;
-  return statusLine;
 }

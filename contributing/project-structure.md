@@ -71,9 +71,9 @@ src/
 │   ├── features/        # Complete user-facing functionality
 │   │   ├── chat/        # ChatPanel, MessageList, streaming, useChatSession
 │   │   │   ├── ui/
-│   │   │   │   ├── input/    # ChatInput, ChatInputContainer, FileChipBar, AgentIdentityChip, QueuePanel
+│   │   │   │   ├── input/    # ChatInput, ChatInputContainer, FileChipBar, QueuePanel
 │   │   │   │   ├── message/  # AssistantMessageContent, StreamingText, ThinkingBlock, SubagentBlock
-│   │   │   │   ├── status/   # ChatStatusSection, ChatStatusStrip, DragHandle, inference themes
+│   │   │   │   ├── status/   # ChatStatusSection, AgentIdentityChip, ChatStatusStrip, inference themes
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
 │   │   │   │   └── tools/    # ToolCallCard, ToolApproval, QuestionPrompt, ElicitationPrompt
 │   │   │   ├── model/
