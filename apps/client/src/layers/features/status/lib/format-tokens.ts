@@ -27,8 +27,10 @@ export function formatTokens(tokens: number): string {
  *
  * So the figure gets shorter as the number gets bigger, the same way
  * {@link formatTokens} already handles the other unbounded quantity in this
- * slice. Anything below a billion dollars renders in seven characters, and the
- * exact amount is always in the Session panel.
+ * slice. Anything below a billion dollars renders in at most eight characters
+ * — `toFixed(1)` does not roll over at a band edge, so `$999,999.99` becomes
+ * `$1000.0k` rather than `$1.0M` — and the exact amount is always in the
+ * Session panel.
  *
  * @param usd - Session cost in dollars.
  */

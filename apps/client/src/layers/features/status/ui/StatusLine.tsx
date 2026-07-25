@@ -189,10 +189,11 @@ function StatusCluster({
               // floor does not reserve. That is safe only because the gradient
               // above never drives `git` near it (measured 96-180px), not because
               // the number is right for it. CSS cannot express "the width of my
-              // own incompressible parts" — `min-width: auto` computes to
-              // max-content here, since a `truncate` child still contributes its
-              // full text to min-content — so the honest options were a per-item
-              // declaration or a measured floor with this caveat written down.
+              // own incompressible parts" — `min-width: auto` resolves to
+              // min-content, and a `truncate` child still contributes its full
+              // text to that, which for `white-space: nowrap` equals max-content
+              // — so the honest options were a per-item declaration or a
+              // measured floor with this caveat written down.
               item.rigid ? 'shrink-0' : 'min-w-10',
               TAP_TARGET
             )}
