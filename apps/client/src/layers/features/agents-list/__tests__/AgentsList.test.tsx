@@ -134,6 +134,15 @@ const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): Topology
   return { ...base, ...overrides };
 };
 
+/** A last-seen timestamp, so no fixture accidentally reads as never-active. */
+const SEEN_AT = '2026-07-25T10:00:00.000Z';
+
+/** Group header rows rendered by the DataTable, in document order. */
+const groupHeaders = () =>
+  Array.from(document.querySelectorAll('[data-slot="data-table-group-header"]')).map(
+    (el) => el.textContent
+  );
+
 const multiNsAgents: TopologyAgent[] = [
   makeAgent({ id: '1', name: 'Agent A', namespace: 'web', projectPath: '/a' }),
   makeAgent({ id: '2', name: 'Agent B', namespace: 'web', projectPath: '/b' }),
@@ -175,20 +184,79 @@ describe('AgentsList', () => {
     expect(screen.getByText('Agent C')).toBeInTheDocument();
   });
 
-  it('does NOT group by namespace (flat table)', () => {
+  it('does NOT group by namespace', () => {
     render(<AgentsList agents={multiNsAgents} isLoading={false} />, {
       wrapper: createWrapper(),
     });
 
-    // All agents are in a flat table — no namespace group headers
+    // Grouping is by attention state, never by namespace.
     expect(screen.getByText('Agent A')).toBeInTheDocument();
     expect(screen.getByText('Agent C')).toBeInTheDocument();
-    // No namespace headers rendered as <h3>
-    const h3s = document.querySelectorAll('h3');
-    for (const h3 of h3s) {
-      expect(h3.textContent).not.toBe('web');
-      expect(h3.textContent).not.toBe('api');
-    }
+    expect(screen.queryByText('web')).not.toBeInTheDocument();
+    expect(screen.queryByText('api')).not.toBeInTheDocument();
+  });
+
+  it('groups rows by attention state, most urgent group first', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Idle One', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+          makeAgent({ id: '2', name: 'Busy One', healthStatus: 'active', lastSeenAt: SEEN_AT }),
+          makeAgent({
+            id: '3',
+            name: 'Gone One',
+            healthStatus: 'unreachable',
+            lastSeenAt: SEEN_AT,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Needs you1', 'Working1', 'Quiet1']);
+
+    // Row order follows the groups.
+    const rowText = screen
+      .getAllByRole('row')
+      .map((row) => row.textContent ?? '')
+      .join('|');
+    expect(rowText.indexOf('Gone One')).toBeLessThan(rowText.indexOf('Busy One'));
+    expect(rowText.indexOf('Busy One')).toBeLessThan(rowText.indexOf('Idle One'));
+  });
+
+  it('flattens the groups when the user picks a field sort', () => {
+    currentSearch = { sort: 'name:asc' };
+
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Idle One', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+          makeAgent({
+            id: '2',
+            name: 'Gone One',
+            healthStatus: 'unreachable',
+            lastSeenAt: SEEN_AT,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual([]);
+    expect(screen.getByText('Gone One')).toBeInTheDocument();
+    expect(screen.getByText('Idle One')).toBeInTheDocument();
+  });
+
+  it('labels the default order "Attention" in the sort menu', () => {
+    render(<AgentsList agents={multiNsAgents} isLoading={false} />, {
+      wrapper: createWrapper(),
+    });
+
+    expect(document.querySelector('[data-slot="filter-bar-sort"]')?.textContent).toContain(
+      'Attention'
+    );
   });
 
   it('renders the composable FilterBar with search input', () => {
@@ -275,7 +343,7 @@ describe('AgentsList', () => {
     expect(screen.getByText('Agent A')).toBeInTheDocument();
   });
 
-  it('renders status column with health indicators', () => {
+  it('says what an agent last did, with the time underneath', () => {
     render(
       <AgentsList
         agents={[
@@ -283,14 +351,8 @@ describe('AgentsList', () => {
             id: '1',
             name: 'Active Agent',
             healthStatus: 'active',
-            lastSeenAt: '2026-07-20T00:00:00.000Z',
-          }),
-          // A genuinely dormant agent carries an old last-seen timestamp.
-          makeAgent({
-            id: '2',
-            name: 'Stale Agent',
-            healthStatus: 'stale',
-            lastSeenAt: '2026-01-01T00:00:00.000Z',
+            lastSeenAt: SEEN_AT,
+            lastSeenEvent: 'response_complete',
           }),
         ]}
         isLoading={false}
@@ -298,11 +360,13 @@ describe('AgentsList', () => {
       { wrapper: createWrapper() }
     );
 
-    expect(screen.getByText('Active')).toBeInTheDocument();
-    expect(screen.getByText('Stale')).toBeInTheDocument();
+    expect(screen.getByText('Finished a reply')).toBeInTheDocument();
+    expect(screen.getByText('5m ago')).toBeInTheDocument();
+    // Never the raw event name.
+    expect(screen.queryByText('response_complete')).not.toBeInTheDocument();
   });
 
-  it('shows a never-active agent as "New", not "Stale"/"Never"', () => {
+  it('shows a never-active agent as unused, not "Stale"/"Never"', () => {
     render(
       <AgentsList
         // A brand-new agent: server health is stale, last-seen is null.
@@ -312,10 +376,47 @@ describe('AgentsList', () => {
       { wrapper: createWrapper() }
     );
 
-    // "New" appears in both the Status column and the Last Seen column.
-    expect(screen.getAllByText('New').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Not used yet')).toBeInTheDocument();
     expect(screen.queryByText('Stale')).not.toBeInTheDocument();
     expect(screen.queryByText('Never')).not.toBeInTheDocument();
+  });
+
+  it('shows the runtime and project under the agent name', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({
+            id: '1',
+            name: 'Alpha',
+            runtime: 'codex',
+            projectPath: '/home/kai/blintz/app',
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('blintz/app')).toBeInTheDocument();
+    expect(screen.getByText('· Codex')).toBeInTheDocument();
+  });
+
+  it('surfaces scheduled tasks, and stays silent when there are none', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Busy', lastSeenAt: SEEN_AT, taskCount: 7 }),
+          makeAgent({ id: '2', name: 'Solo', lastSeenAt: SEEN_AT, taskCount: 1 }),
+          makeAgent({ id: '3', name: 'None', lastSeenAt: SEEN_AT, taskCount: 0 }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('7 tasks')).toBeInTheDocument();
+    expect(screen.getByText('1 task')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 
   it('shows "No agents registered." when data is empty', () => {

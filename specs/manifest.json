@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260725-112204",
+      "slug": "agents-list-attention-order",
+      "title": "Agents list, ordered by attention",
+      "created": "2026-07-25",
+      "status": "specified"
+    },
+    {
       "id": "260725-014841",
       "slug": "multi-participant-message-list",
       "title": "Multi-participant message list — Slack-style identity, reactions, threads",

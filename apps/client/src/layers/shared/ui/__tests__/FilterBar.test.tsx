@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -93,6 +93,8 @@ describe('FilterBar', () => {
     mockUseIsMobile.mockReturnValue(false);
   });
 
+  afterEach(cleanup);
+
   it('renders search input with placeholder', () => {
     const state = createMockFilterState();
     render(
@@ -137,6 +139,34 @@ describe('FilterBar', () => {
 
     const trigger = screen.getByText(/Sort: Name/);
     expect(trigger).toBeInTheDocument();
+  });
+
+  it('sort dropdown falls back to defaultField when no sort is set', () => {
+    const state = createMockFilterState({ sortField: '' });
+    render(
+      <FilterBar state={state}>
+        <FilterBar.Sort options={SORT_OPTIONS} defaultField="name" />
+      </FilterBar>
+    );
+
+    expect(screen.getByText(/Sort: Name/)).toBeInTheDocument();
+  });
+
+  it('direction toggle acts on defaultField when no sort is set', async () => {
+    const state = createMockFilterState({ sortField: '' });
+    const user = userEvent.setup();
+
+    render(
+      <FilterBar state={state}>
+        <FilterBar.Sort options={SORT_OPTIONS} defaultField="name" />
+      </FilterBar>
+    );
+
+    await user.click(screen.getByRole('button', { name: /sort descending/i }));
+
+    expect(
+      (state as unknown as { setSort: ReturnType<typeof vi.fn> }).setSort
+    ).toHaveBeenCalledWith('name', 'desc');
   });
 
   it('search onChange calls filterState.set', async () => {

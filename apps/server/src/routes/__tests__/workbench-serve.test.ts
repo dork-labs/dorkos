@@ -106,7 +106,11 @@ describe('GET /api/workbench/serve/:token/*', () => {
 
   it('rejects a FORGED token (tampered signature) with 403', async () => {
     const token = validToken();
-    const forged = `${token.slice(0, -2)}xx`;
+    // Flip the final character to a guaranteed-different one. Overwriting with a
+    // fixed string instead (e.g. `xx`) is a ~1-in-4096 flake: when the real
+    // signature already ends that way, the "forged" token IS the valid one.
+    const last = token.slice(-1);
+    const forged = `${token.slice(0, -1)}${last === 'x' ? 'y' : 'x'}`;
     const res = await request(app).get(`/api/workbench/serve/${forged}/index.html`);
     expect(res.status).toBe(403);
   });
