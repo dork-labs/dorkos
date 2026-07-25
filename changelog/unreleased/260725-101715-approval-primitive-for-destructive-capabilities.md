@@ -9,7 +9,7 @@
 
 - Marketplace installs, uninstalls, and new packages requested by an outside agent now go through
   the same approval card as everything else, so there is one place to look and one way to answer.
-  You get 10 minutes to decide instead of 5 (DOR-447).
+  You get two hours to decide instead of 5 minutes (DOR-447).
 
 ### Security
 

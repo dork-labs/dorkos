@@ -6,8 +6,8 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ReactNode } from 'react';
-import { renderHook, cleanup, waitFor, act } from '@testing-library/react';
+import { useEffect, type ReactNode } from 'react';
+import { render, renderHook, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -68,6 +68,36 @@ describe('usePendingApprovals', () => {
       listPendingApprovals,
       ...renderHook(() => usePendingApprovals(), { wrapper: Wrapper }),
     };
+  }
+
+  /**
+   * Render the hook inside a probe that counts its own commits, so a spin is
+   * observable as a number rather than as a hung test. Counted from an effect
+   * rather than the render body: mutating anything during render is itself the
+   * impurity these rules exist to catch.
+   */
+  function renderRenderCountingProbe(initial: PendingApproval[]) {
+    const transport = createMockTransport({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: initial }),
+    });
+    const onCommit = vi.fn();
+    function Probe() {
+      usePendingApprovals();
+      useEffect(() => {
+        onCommit();
+      });
+      return null;
+    }
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}
+      >
+        <TransportProvider transport={transport}>
+          <Probe />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return { renderCount: () => onCommit.mock.calls.length };
   }
 
   it('subscribes to both approval events', () => {
@@ -192,6 +222,30 @@ describe('usePendingApprovals', () => {
         await vi.advanceTimersByTimeAsync(120_000);
       });
       expect(result.current.approvals).toEqual([]);
+    });
+
+    it('arms no timer for a deadline further out than setTimeout can express', async () => {
+      // `setTimeout` clamps any delay above 2^31-1 ms (about 24.8 days) to 1ms
+      // instead of rejecting it. A timer aimed 40 days out therefore fires at
+      // once, finds the row still live so the prune reports no change, and the
+      // early-fire re-arm above sends it round again a millisecond later — a spin
+      // in a widget the app shell mounts on EVERY route. Reachable with a correct
+      // server whenever the client clock is weeks behind it.
+      //
+      // Deliberately on REAL timers: fake timers do not emulate the clamp, so a
+      // fake-timer test cannot see this class of bug at all. The idle window is a
+      // sample, not a race — a spin renders hundreds of times inside it and a
+      // healthy hook renders none, so there is no margin to be flaky about.
+      const fortyDaysOut = new Date(Date.now() + 40 * 24 * 60 * 60 * 1000).toISOString();
+      const { renderCount } = renderRenderCountingProbe([
+        buildApproval({ expiresAt: fortyDaysOut }),
+      ]);
+
+      await waitFor(() => expect(renderCount()).toBeGreaterThan(1));
+      const settled = renderCount();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(renderCount() - settled).toBeLessThan(5);
     });
   });
 

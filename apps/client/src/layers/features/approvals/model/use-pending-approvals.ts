@@ -18,6 +18,19 @@ export const PENDING_APPROVALS_QUERY_KEY = ['approvals', 'pending'] as const;
  */
 const EXPIRY_SLACK_MS = 500;
 
+/**
+ * Longest delay `setTimeout` actually honors: 2^31 - 1 ms, about 24.8 days.
+ *
+ * Anything larger is silently clamped to 1ms by the platform rather than
+ * rejected, so a timer aimed further out fires immediately — which, combined
+ * with the early-fire re-arm below, would spin. Nothing a correct server writes
+ * gets near this (`APPROVAL_TTL_MS` is two hours), but `expiresAt` is an
+ * unbounded string on the wire and a client clock weeks BEHIND the server lands
+ * here directly: a VM restored from an old snapshot, a dead CMOS battery, a
+ * container with a bad clock.
+ */
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 /** What {@link usePendingApprovals} hands its consumers. */
 export interface PendingApprovalsState {
   /** Approvals waiting on a person, oldest first. */
@@ -136,13 +149,20 @@ export function usePendingApprovals(): PendingApprovalsState {
       pruneExpired(queryClient);
       return;
     }
+    // A deadline past what `setTimeout` can express needs no timer at all: no tab
+    // lives 25 days, and the mount-time read plus refetch-on-focus already
+    // correct the list. Arming one would be worse than useless — the platform
+    // clamps it to 1ms, it fires against a live row, prunes nothing, and the
+    // re-arm below sends it round again every millisecond.
+    if (delay > MAX_TIMEOUT_MS) return;
     const timer = setTimeout(() => {
       // A timer that fires EARLY (the clock stepped backwards, e.g. an NTP
       // correction) finds every approval still live, so the prune is a no-op and
       // leaves the cache reference identical — the same property that stops this
       // effect looping also stops it re-running, and with no re-run no timer is
       // armed and expiry dies for the whole queue. Re-arm explicitly. Safe from
-      // spinning because this only ever runs after a positive delay has elapsed.
+      // spinning because the guard above refuses the one case where a positive
+      // delay does NOT mean real time passes before this runs.
       if (!pruneExpired(queryClient)) setRearm((n) => n + 1);
     }, delay);
     return () => clearTimeout(timer);

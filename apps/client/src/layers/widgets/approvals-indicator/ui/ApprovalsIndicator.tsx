@@ -107,12 +107,21 @@ export function ApprovalsIndicator() {
 
       {!quiet && (
         <ResponsivePopover open={open} onOpenChange={setOpen}>
-          {/* Hover and press are carried by CSS (`hover:` / `active:`), not only by
-              the motion scale: the shell's `MotionConfig reducedMotion="user"`
-              drops transform animations, and somebody who asked for less motion
-              still has to be able to see that this is a button. No AnimatePresence
-              either — the widget unmounts its pill when the queue empties, so there
-              is no exit to play, only the entrance beat saying something arrived. */}
+          {/* Hover and press are carried by CSS, not only by the motion scale: the
+              shell's `MotionConfig reducedMotion="user"` drops transform
+              animations, and somebody who asked for less motion still has to be
+              able to see that this is a button.
+
+              The load-bearing part is the BORDER going 60% to full alpha. The
+              `hover:bg-*` / `active:bg-*` utilities replace `bg-status-warning-bg`
+              rather than layering over it, so they composite against the page and
+              only shift the fill a few values per channel (and in dark mode read
+              as a desaturation, not a lift). Keep the border change if you tune
+              this; the fill alone is not an affordance.
+
+              No AnimatePresence either — the widget unmounts its pill when the
+              queue empties, so there is no exit to play, only the entrance beat
+              saying something arrived. */}
           <ResponsivePopoverTrigger asChild>
             <motion.button
               type="button"
