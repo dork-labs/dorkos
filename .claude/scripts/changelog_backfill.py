@@ -247,9 +247,16 @@ def get_changed_fragment_names(since: str) -> set[str]:
     Raises on a git failure rather than guessing: silently widening the scope
     would blame the wrong author, and silently narrowing it would wave a defect
     through.
+
+    The pathspec is root-anchored (`:/`) on purpose. A bare `changelog/unreleased/`
+    resolves relative to the current directory, while `read_fragments` locates the
+    same directory from `get_vault_root()` — so running from a package directory,
+    which is routine in this monorepo, would report zero changed fragments and
+    demote the caller's own broken fragment to an untouched stray. That is this
+    mode failing open, which is precisely what the paragraph above refuses.
     """
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{since}..HEAD", "--", "changelog/unreleased/"],
+        ["git", "diff", "--name-only", f"{since}..HEAD", "--", ":/changelog/unreleased/"],
         capture_output=True,
         text=True,
     )
