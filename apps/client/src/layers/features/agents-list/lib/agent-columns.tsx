@@ -6,11 +6,12 @@
  * on it), and row actions.
  *
  * Runtime, Project, Status, and Sessions were columns of their own until DOR-459.
- * All four were near-constant per row, so each was a fixed label repeated down
- * the page — three of seven columns saying nothing. Runtime and project demoted
- * into the identity cell, sessions into the Activity cell's second line, and
- * health is now carried by the attention group a row sits in (plus the avatar's
- * health ring), which is a stronger read than the word "Stale" in a cell.
+ * The first three were near-constant per row, so each was a fixed label repeated
+ * down the page — three of seven columns saying nothing. Runtime and project
+ * demoted into the identity cell; sessions, which do change, folded into the
+ * Activity cell's second line beside the time they belong with. Health is now
+ * carried by the attention group a row sits in, plus the avatar's health ring,
+ * which is a stronger read than the word "Stale" in a cell.
  *
  * @module features/agents-list/lib/agent-columns
  */
