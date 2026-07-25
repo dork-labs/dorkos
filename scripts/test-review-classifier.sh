@@ -334,10 +334,13 @@ review_pr=464
 # materializes the file, and the prompt that tells the reviewer what to type — and
 # nothing at runtime notices if they drift. The failure mode is silent: every tool
 # call is denied, the reviewer falls back to summary-only or posts nothing, and the
-# check still goes green. So pin them to each other rather than to a literal, and
-# pin the two grants whose removal is the point of DOR-464.
+# check still goes green. So pin them to each other rather than to a literal.
 
-workflow=$repo_root/.github/workflows/claude-code-review.yml
+# REVIEW_WORKFLOW is the third override, alongside CLASSIFIER and REVIEW_GH: point
+# it at a mutated copy of the workflow to prove the fence below actually bites.
+# `REVIEW_WORKFLOW=/tmp/with-curl-added.yml bash scripts/test-review-classifier.sh`
+# should go red, and if it does not, the fence is decoration.
+workflow=${REVIEW_WORKFLOW:-$repo_root/.github/workflows/claude-code-review.yml}
 helper_dir=$(sed -n 's/^ *HELPER_DIR: *\(.*\)$/\1/p' "$workflow")
 helper_path="$helper_dir/review-gh.sh"
 
@@ -354,16 +357,60 @@ check "workflow: the materialize step writes that path" present \
 check "workflow: the prompt tells the reviewer that path" yes \
   "$([ "$(grep -cF "bash $helper_path" "$workflow")" -gt 1 ] && echo yes || echo no)"
 
-# The grants this change removed. Each was half of a working exfil: `Bash(gh ...)`
-# is a sink the model can re-aim, `Bash(grep:*)`/`Bash(rg:*)` is the
-# /proc/self/environ read that fed it.
-allowlist=$(grep -F -- '--allowedTools' "$workflow")
-for forbidden in 'Bash(gh ' 'Bash(grep:' 'Bash(rg:'; do
-  check "workflow: allow-list no longer grants $forbidden" absent \
-    "$(presence "$forbidden" "$allowlist")"
+# ── the allow-list is EXACTLY this, and nothing else ─────────────────────────
+#
+# READ THIS BEFORE CHANGING THE EXPECTED SET BELOW.
+#
+# This assertion is an allow-list, not a deny-list, and that is deliberate. The
+# first version of this fence listed the three grants DOR-464 removed and checked
+# they had not come back. That is false comfort: it would have waved through
+# `Bash(curl:*)`, `Bash(git config:*)` or `Bash(python:*)`, and — the reason it was
+# replaced — it did not notice that two grants ALREADY IN THE LIST,
+# `Bash(git log:*)` and `Bash(git show:*)`, were arbitrary command execution.
+# (`--output=<file>` writes `$HOME/.gitconfig`; git runs a `diff.external` driver
+# through `sh -c`; `git show --ext-diff` then executes it with the job's
+# environment. Reproduced on git 2.53.) A deny-list of yesterday's mistakes cannot
+# protect against tomorrow's; an exact set forces every future addition through a
+# deliberate, reviewed decision.
+#
+# So: adding, renaming or reordering ANY tool here fails this check, on purpose.
+# To add a grant, first show it cannot
+#   * execute a shell — no `--output`-style write that lands in a config a later
+#     command sources, no `-O`/pager/editor/driver hook, no `-c`/`--exec-path`,
+#     nothing that ends in `sh -c`;
+#   * read the process environment — no `--jq 'env.X'`, no `/proc/self/environ`;
+#   * reach the network — no host, hostname, URL or header it can be handed.
+# Then change the set here in the same commit, and say in the PR why the new grant
+# holds all three. The CONTAINMENT INVARIANT in the workflow header is the long
+# form of this rule.
+#
+# One `--allowedTools` FLAG only: a second one would smuggle grants past this
+# check, which is exactly how the dispatch-only `gh api` grant used to live here.
+# Anchored to the start of the line so the prose that discusses `--allowedTools` in
+# the comments above it is not miscounted as a grant.
+allowlist_lines=$(grep -cE '^[[:space:]]*--allowedTools "' "$workflow")
+check "workflow: exactly one --allowedTools flag" 1 "$allowlist_lines"
+
+expected_tools=$(
+  printf '%s\n' \
+    'mcp__github_inline_comment__create_inline_comment' \
+    "Bash(bash $helper_path:*)" \
+    'Read' \
+    'Grep' \
+    'Glob'
+)
+actual_tools=$(
+  sed -n 's/^[[:space:]]*--allowedTools "\([^"]*\)".*/\1/p' "$workflow" | tr ',' '\n'
+)
+check "workflow: allow-list is exactly the expected set" \
+  "$expected_tools" "$actual_tools"
+
+# Defence in depth for the `diff.external` route, asserted so it is not dropped by
+# accident. NOT the control — the control is that the set above grants no `git`.
+for pin in GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM; do
+  check "workflow: review step pins $pin" present \
+    "$(presence "$pin: /dev/null" "$(cat "$workflow")")"
 done
-check "workflow: allow-list still grants the native search tools" present \
-  "$(presence 'Read,Grep,Glob' "$allowlist")"
 
 total=$((pass + fail))
 if [ "$fail" -gt 0 ]; then

