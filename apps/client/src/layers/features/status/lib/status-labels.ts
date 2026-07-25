@@ -10,23 +10,15 @@
  * @module features/status/lib/status-labels
  */
 import type { ModelOption } from '@dorkos/shared/types';
+import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import { formatModelLabel } from '@/layers/entities/runtime';
 
-/**
- * The longest value a status item may render, in characters.
- *
- * Every label DorkOS writes fits: `Reconnecting`, `Accept Edits`, `Claude Code`.
- * The bound exists for the labels DorkOS does *not* write — a runtime's
- * permission-mode descriptor, a provider's model display name — so one verbose
- * string from a third party can never spend the whole bar.
- *
- * Deliberately counted in characters, not pixels: the composer's `text-xs` is
- * 1.25× larger below 768px and scales again with `--user-font-scale`, so a pixel
- * ceiling would be a lie at exactly the widths that matter. Pixels are the
- * browser's job — see {@link module:features/status/ui/StatusLine}, where a
- * value that still does not fit truncates with an ellipsis.
- */
-export const STATUS_VALUE_MAX_CHARS = 12;
+// The bound itself lives in `@dorkos/shared/constants`, not here: every label
+// DorkOS writes is expected to fit it outright (`Reconnecting`, `Accept Edits`,
+// `Claude Code`, `GPT-5.3 Codex`), and that promise is only worth anything if the
+// server's own model catalogs can be held to the same number. Pixels stay the
+// browser's job — see `features/status/ui/StatusLine`, where a value that still
+// does not fit truncates with an ellipsis.
 
 /**
  * Bound a status value to {@link STATUS_VALUE_MAX_CHARS}, marking the cut.

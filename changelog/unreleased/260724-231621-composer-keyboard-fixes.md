@@ -2,7 +2,7 @@
 
 - End a line with a backslash and press Enter to keep typing on the next line — the backslash disappears. It works anywhere in the message, not just at the end, and two backslashes in a row still send (DOR-452).
 - Option+Enter (Alt+Enter on Windows) now starts a new line instead of sending (DOR-452).
-- The keyboard shortcuts panel now lists what the message box does: new line, keep typing on the next line, and clear (DOR-452).
+- The keyboard shortcuts panel now lists what the message box does: new line, keep typing on the next line, clear, and what one Escape does first when several things could happen at once (DOR-452).
 
 ### Changed
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import { resolveStatusBudget, applyStatusBudget } from '../model/status-budget';
 import type { PromotedStatusItem } from '../model/promoted-items';
 import type { StatusBarItemKey } from '../model/status-bar-registry';
@@ -48,10 +49,15 @@ describe('resolveStatusBudget', () => {
     expect(budget.dropped).toEqual([]);
   });
 
-  it('buys another slot for every ~110px of extra width', () => {
-    expect(resolveStatusBudget(749).rightBudget).toBe(4);
-    expect(resolveStatusBudget(750).rightBudget).toBe(5);
-    expect(resolveStatusBudget(1200).rightBudget).toBe(9);
+  it('buys another slot for every full-label slot the extra width can pay for', () => {
+    // A slot is priced from STATUS_VALUE_MAX_CHARS (8px per bounded character, plus
+    // 20px of glyph, gap and separator), so these boundaries move with the bound —
+    // which is the point: a wider bound must buy fewer slots, not the same number
+    // of wider ones.
+    const slot = STATUS_VALUE_MAX_CHARS * 8 + 20;
+    expect(resolveStatusBudget(640 + slot - 1).rightBudget).toBe(4);
+    expect(resolveStatusBudget(640 + slot).rightBudget).toBe(5);
+    expect(resolveStatusBudget(640 + slot * 4).rightBudget).toBe(8);
   });
 
   it('drops the directory and keeps four slots between 440 and 640px', () => {

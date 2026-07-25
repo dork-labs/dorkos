@@ -119,6 +119,15 @@ export function useMessageQueue({
   // and flush all target the ACTIVE session only, so a queued message can never
   // land in another session.
   useEffect(() => {
+    // A space is a safe delimiter here even though a path may contain one: every
+    // session id is a `crypto.randomUUID()`, so the prefix is always exactly 36
+    // characters and the rest of the key is always the cwd. The split point is
+    // therefore fixed, and two distinct (sessionId, cwd) pairs cannot produce the
+    // same string however many spaces the path has.
+    // Previously `\x00`, which is unrepresentable in either component — but a NUL
+    // byte makes git treat this file as binary, so the whole queue rewrite showed
+    // as zero diff lines and no reviewer could read the riskiest change in the
+    // PR. A readable diff is worth more than a delimiter that cannot appear.
     const key = sessionId === null ? null : `${sessionId} ${selectedCwd ?? ''}`;
     if (trackedKeyRef.current !== key) {
       // Session/cwd changed — reset the tracker, the owed flush, and the editing

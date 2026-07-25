@@ -37,6 +37,7 @@
  *
  * @module features/status/model/status-budget
  */
+import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import type { PromotedStatusItem } from './promoted-items';
 import type { StatusBarItemKey } from './status-bar-registry';
 
@@ -86,13 +87,24 @@ const BUDGET_AVATAR = 2;
 const BUDGET_FULL_BASE = 4;
 
 /**
- * Measured cost of one more full-label right-cluster item: a 12px glyph, its
- * value, the 8px gap, and the separator — about 110px in the composer's `text-xs`
- * once the value is bounded (12 characters measure ~96px in Chromium at the
- * desktop text scale, plus ~20px for the middot and its gaps). This is what turns
- * the spec's "4+" into a real number instead of a guess.
+ * Measured advance width of one bounded status character in the composer's
+ * `text-xs`, in Chromium at the desktop text scale.
  */
-const FULL_SLOT_COST_PX = 110;
+const VALUE_CHAR_PX = 8;
+
+/** The item's 12px glyph, its 8px gap, and the middot separator with its own gaps. */
+const SLOT_CHROME_PX = 20;
+
+/**
+ * Measured cost of one more full-label right-cluster item — the glyph, its gap,
+ * the widest value the bound allows, and the separator. This is what turns the
+ * spec's "4+" into a real number instead of a guess.
+ *
+ * Derived from `STATUS_VALUE_MAX_CHARS` rather than written as a literal: the
+ * budget's whole claim is that a bounded value fits the slot it is charged for, so
+ * raising the character bound has to raise the price of a slot in the same edit.
+ */
+const FULL_SLOT_COST_PX = STATUS_VALUE_MAX_CHARS * VALUE_CHAR_PX + SLOT_CHROME_PX;
 
 /** No cap — the line has not been measured yet, so draw everything and clamp on the first observation. */
 const UNMEASURED_BUDGET = Number.POSITIVE_INFINITY;

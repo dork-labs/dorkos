@@ -36,6 +36,15 @@ These shortcuts work at any time.
       description: 'Toggle the right panel open or closed.',
       type: 'key',
     },
+  }}
+/>
+
+## Session
+
+While you have a session open. These need a session on screen, so they do nothing on the Agents, Tasks, or Marketplace pages.
+
+<TypeTable
+  type={{
     '⌘⇧. / Ctrl+Shift+.': {
       description:
         'Open the Session panel: everything about the current session, with a pin beside each row you can keep in the status line.',
@@ -51,7 +60,8 @@ While you are typing a message to your agent.
 <TypeTable
   type={{
     Enter: {
-      description: 'Send the message.',
+      description:
+        'Send the message. If your agent is still working, the message lines up to go next instead.',
       type: 'key',
     },
     'Shift+Enter': {
@@ -68,8 +78,15 @@ While you are typing a message to your agent.
       type: 'key',
     },
     Escape: {
-      description:
-        'Close the command or file list. If nothing is open and your agent is working, stop it.',
+      description: 'Close the command or file list.',
+      type: 'key',
+    },
+    'Escape (editing a lined-up message)': {
+      description: 'Stop editing and leave that message the way it was.',
+      type: 'key',
+    },
+    'Escape (agent working)': {
+      description: 'Stop your agent.',
       type: 'key',
     },
     'Escape twice': {
@@ -78,6 +95,8 @@ While you are typing a message to your agent.
     },
   }}
 />
+
+One Escape does the first thing in that list that applies, top to bottom: close a list if one is open, otherwise leave an edit, otherwise stop your agent. Clearing the box is last, and only when nothing above it applies.
 
 ## Command Palette
 

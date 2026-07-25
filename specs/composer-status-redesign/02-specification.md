@@ -1,7 +1,7 @@
 # Specification — Composer + Status Bar Redesign
 
 - **Work item:** DOR-452
-- **Spec id:** 260724-225225
+- **Spec id:** 260724-225642
 - **Design:** [04-design-decisions.md](./04-design-decisions.md) · session `.dork/visual-companion/99756-1784931237/`
 
 ## Goal

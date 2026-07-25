@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { STATUS_VALUE_MAX_CHARS } from '../lib/status-labels';
+import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import { ConnectionItem } from '../ui/ConnectionItem';
 
 afterEach(cleanup);

@@ -498,7 +498,7 @@ describe('PermissionModeItem', () => {
       );
 
       const trigger = screen.getByTestId('dropdown-trigger');
-      expect(trigger).toHaveTextContent('Bypass perm…');
+      expect(trigger).toHaveTextContent('Bypass permi…');
       expect(trigger).not.toHaveTextContent('Bypass permissions');
     });
 
