@@ -74,7 +74,7 @@ Each domain exports `capabilities: CapabilityDefinition[]` (operator domain from
 
 ### 2.3 MCP projection
 
-`registerCapabilitiesAsMcpTools(registry, server, transport)` replaces the hand-walk of the two descriptor tables: for each entry with an `mcp` surface on that server, register `toolName` with the entry's description, Zod input, and an adapter from `invoke` to the `CallToolResult` shape (the phase-1 result-wrapping conventions preserved, including `sanitizedConfigSnapshot` semantics inside handlers — redaction stays in `invoke`, per ADR 260723-013236). The descriptor tables' content migrates into `CapabilityDefinition`s; the tables are then deleted (no tolerated legacy). `readOnlyCarveOut: true` GENERATES membership in `READ_ONLY_MCP_TOOL_NAMES` (the hand list becomes derived + drift-guard flips to asserting equality with the registry).
+`registerCapabilitiesAsMcpTools(registry, server, transport)` replaces the hand-walk of the two descriptor tables: for each entry with an `mcp` surface on that server, register `toolName` with the entry's description, Zod input, and an adapter from `invoke` to the `CallToolResult` shape (the phase-1 result-wrapping conventions preserved, including `sanitizedConfigSnapshot` semantics inside handlers — redaction stays in `invoke`, per ADR 260723-013236, superseded 2026-07-25 by ADR 260725-152018: the redaction-inside-`invoke` placement this sentence relies on is unchanged, but the snapshot is now an allowlist rather than `getAll()` minus `SENSITIVE_CONFIG_KEYS`). The descriptor tables' content migrates into `CapabilityDefinition`s; the tables are then deleted (no tolerated legacy). `readOnlyCarveOut: true` GENERATES membership in `READ_ONLY_MCP_TOOL_NAMES` (the hand list becomes derived + drift-guard flips to asserting equality with the registry).
 
 ### 2.4 CLI projection
 
@@ -123,7 +123,7 @@ Single phase (this spec is itself phase 2 of the program); decomposition in `03-
 
 ## Related ADRs
 
-ADR 260723-013233 (CLI-first, registry commitment — this spec discharges it), 260723-013236 (redaction invariant — preserved inside invoke), 0227 (external MCP gating), ADR-0185 (knowledge injection — self-description pointer added).
+ADR 260723-013233 (CLI-first, registry commitment — this spec discharges it), 260723-013236 (redaction invariant — preserved inside invoke; superseded by 260725-152018, which keeps the placement and replaces the denylist with an allowlist), 0227 (external MCP gating), ADR-0185 (knowledge injection — self-description pointer added).
 
 ## References
 

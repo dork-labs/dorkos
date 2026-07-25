@@ -147,7 +147,30 @@ For **type changes** (e.g., `number` → `string`):
 
 **Every migration must be idempotent.** Guard every `store.set/delete` with `store.has()` or a type check so re-running the same migration (e.g., after corrupt-recovery) is safe.
 
-### 4. Document the field in `contributing/configuration.md`
+### 4. Classify the field for agent disclosure
+
+Edit `CONFIG_DISCLOSURE` in `apps/server/src/services/core/operator/config-disclosure.ts` and give the new leaf a verdict: `expose` or `withhold`.
+
+This is not optional bookkeeping. The `config_get` MCP tool carries `readOnlyCarveOut: true`, so on the default login-off posture it answers on `/mcp` with no credential at all, and its snapshot is built by copying only `expose` paths. The drift guard compares the table against every leaf of `UserConfigSchema` in both directions, so it stays red until you decide:
+
+```bash
+pnpm vitest run apps/server/src/services/core/operator/__tests__/config-disclosure.test.ts
+```
+
+That reads the schema **source**, not `packages/shared/dist/` — `apps/server/vitest.config.ts` aliases `@dorkos/shared/*` to `src/` precisely so a stale dist cannot turn this guard into a silent pass. No rebuild needed.
+
+```typescript
+// A plain preference: safe to hand to an agent.
+'server.timeout': 'expose',
+
+// A secret, or anything that names where a secret lives (an env var name, a
+// keychain entry, a file path). Withhold it.
+'someService.apiKey': 'withhold',
+```
+
+**Withhold anything that is a credential or points at one.** If callers legitimately need to know whether it is set up, add the path to `PRESENCE_FLAG_PATHS` in the same file: the projection then emits a boolean `<leafName>Configured` sibling instead of the value. Absolute paths are exposed on purpose (they are how the operator surface addresses agents and directories); see that module's doc comment for the reasoning before changing that line.
+
+### 5. Document the field in `contributing/configuration.md`
 
 Add a row to the Settings Reference table at the top of the file:
 
@@ -157,11 +180,11 @@ Add a row to the Settings Reference table at the top of the file:
 
 If the field warrants per-setting narrative (like `server.port` does), add a `### server.timeout` section with a `dorkos config set` example and any precedence notes.
 
-### 5. Mirror the doc to `docs/getting-started/configuration.mdx`
+### 6. Mirror the doc to `docs/getting-started/configuration.mdx`
 
 The `check-docs-changed.sh` hook will remind you at session-stop via the `configuration.md:config-manager|config-schema|packages/cli/` mapping. Do it inline. Find the same settings table in the MDX file and add the matching row.
 
-### 6. Add or update tests
+### 7. Add or update tests
 
 Edit `apps/server/src/services/core/__tests__/config-manager.test.ts`. Add an **upgrade-path test** that exercises the migration against a realistic stale-config blob:
 
@@ -189,7 +212,7 @@ Test both cases:
 - Stale config missing the field → migration runs, field is populated.
 - Fresh config → defaults handle it, no migration needed.
 
-### 7. Wire a CLI flag if applicable
+### 8. Wire a CLI flag if applicable
 
 If the new field needs to be controllable from the `dorkos` CLI, edit `packages/cli/src/cli.ts`. Follow the precedence rule documented in `contributing/configuration.md`: **CLI flag > env var > config > default**.
 

@@ -97,7 +97,7 @@ Single phase; decomposition in `03-tasks.json`.
 
 ## Related ADRs
 
-260723-050220 (invoke endpoint is the enforcement choke point — this spec discharges its "tier enforcement must target this endpoint first" consequence), 260723-013236 (redaction invariant extends to agent tokens), ADR-0304 (marketplace transaction; its confirmation seam migrates), eval-harness spec (DOR-357) Phase 5.
+260723-050220 (invoke endpoint is the enforcement choke point — this spec discharges its "tier enforcement must target this endpoint first" consequence), 260723-013236 (redaction invariant extends to agent tokens; superseded by 260725-152018), ADR-0304 (marketplace transaction; its confirmation seam migrates), eval-harness spec (DOR-357) Phase 5.
 
 ## References
 

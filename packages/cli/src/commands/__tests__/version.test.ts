@@ -21,7 +21,7 @@ vi.mock('../../lib/api-client.js', () => {
   return { ApiError, apiCall: vi.fn() };
 });
 
-import { apiCall } from '../../lib/api-client.js';
+import { apiCall, ApiError } from '../../lib/api-client.js';
 import { parseVersionArgs, runVersionCheck, runVersionDispatcher } from '../version.js';
 
 const apiCallMock = vi.mocked(apiCall);
@@ -88,6 +88,22 @@ describe('runVersionCheck', () => {
       source: 'cache',
     });
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('explains a 401 on stderr instead of silently claiming the server is down', async () => {
+    // A login-on instance answers 401, which is NOT the same as unreachable.
+    // Reporting only "not running" would hide the one thing the person can fix.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    apiCallMock.mockRejectedValue(
+      new ApiError(401, { error: 'This DorkOS instance has login turned on...' })
+    );
+
+    const code = await runVersionCheck('0.55.0', '/tmp/nope', true);
+
+    expect(code).toBe(0);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('This DorkOS instance has login turned on')
+    );
   });
 });
 

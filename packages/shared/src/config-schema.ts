@@ -1,3 +1,22 @@
+/**
+ * Persistent user-config schema. Zod is authoritative; `ConfigManager` bridges it
+ * to `conf` via `z.toJSONSchema`.
+ *
+ * **Keep this module free of module-level mutable state and of exports whose
+ * identity is compared** (`===`, `instanceof`, `Map`/`Set` keys, registry lookups).
+ * Zod schemas, derived constants, and pure functions only. `apps/server/vitest.config.ts`
+ * aliases this one subpath to source so the config-disclosure drift guard cannot
+ * read a stale `dist/`, and because `dist/schemas.js` reaches back here by a
+ * relative import that the alias does not rewrite, a test process can hold both
+ * the src and the dist copy of this module. Duplicated values are harmless;
+ * duplicated state or identity would not be.
+ *
+ * Adding a field? It also needs a disclosure verdict in `CONFIG_DISCLOSURE`
+ * (`apps/server/src/services/core/operator/config-disclosure.ts`) and a `conf`
+ * migration. See `contributing/configuration.md`.
+ *
+ * @module config-schema
+ */
 import { z } from 'zod';
 
 /** Sensitive fields that trigger a warning when set via CLI or API */

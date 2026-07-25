@@ -247,6 +247,24 @@ dorkos version --check --json     # Same, as JSON
 
 When no server is running, `dorkos version --check` still answers: it reports the CLI version and the last-known latest version from the local update-check cache.
 
+##### If your DorkOS asks you to sign in
+
+By default DorkOS has no login, and these commands just work. If you turned login on (Settings → Security), the server needs to know it is really you, so give the CLI an API key:
+
+1. In the cockpit, open Settings → Security → API keys and create a key. Copy it right away; it is shown once.
+2. Hand it to the CLI one of two ways:
+
+```bash
+export DORKOS_API_KEY=<your key>          # This shell only
+```
+
+```bash
+printf %s '<your key>' > ~/.dork/api-key  # Every shell, and agents you run
+chmod 600 ~/.dork/api-key                 # Keep it readable only by you
+```
+
+The key file is the better choice when your agents run `dorkos` commands themselves, because they inherit it without you exporting anything. If a command ever answers "this DorkOS instance has login turned on", that is the missing key talking.
+
 ### Config directory
 
 On first run, DorkOS creates `~/.dork/` for persistent storage:
@@ -254,6 +272,7 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
 <Files>
   <Folder name="~/.dork" defaultOpen>
     <File name="config.json" />
+    <File name="api-key" />
   </Folder>
 </Files>
 
@@ -272,6 +291,11 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
       type: 'string',
       description: 'Directory boundary for file access',
       default: 'Home directory',
+    },
+    DORKOS_API_KEY: {
+      type: 'string',
+      description:
+        'Your DorkOS API key, needed only when login is on. Falls back to ~/.dork/api-key',
     },
     TUNNEL_ENABLED: { type: 'boolean', description: 'Enable ngrok tunnel', default: 'false' },
     NGROK_AUTHTOKEN: { type: 'string', description: 'ngrok auth token (required for tunnels)' },

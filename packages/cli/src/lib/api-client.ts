@@ -6,6 +6,20 @@
  * then `~/.dork/config.json`, then the default. No retries — a single failed
  * call surfaces the underlying error so the caller can render it directly.
  *
+ * ## Credentials
+ *
+ * Every `/api/*` path is gated when the instance has login turned on
+ * (`config.auth.enabled`), and the only credentials that gate accepts are a
+ * Better Auth session cookie (browsers) or a personal API key as
+ * `Authorization: Bearer <key>`. The CLI has no cookie, so it presents a key,
+ * resolved by {@link resolveApiKey}: `DORKOS_API_KEY` first, then a key saved in
+ * `<dork home>/api-key`. Note the branch is on key PRESENCE, not on server state
+ * (which the CLI cannot know before it calls): with no key set up nothing is sent,
+ * and a key that IS set up rides along even to a login-off server, which ignores it.
+ *
+ * The agent identity token (`X-DorkOS-Agent`) is attribution, not authorization:
+ * it is resolved *after* the login gate, so it can never stand in for a key.
+ *
  * @module lib/api-client
  */
 import fs from 'node:fs';
@@ -14,6 +28,17 @@ import os from 'node:os';
 
 /** Default server port — kept in sync with `@dorkos/shared/constants`. */
 const DEFAULT_PORT = 4242;
+
+/** Env var holding the personal API key the CLI presents on gated `/api/*` calls. */
+const API_KEY_ENV_VAR = 'DORKOS_API_KEY';
+
+/**
+ * File under the dork home holding that same key, so it survives a new shell and
+ * so agent subprocesses (which inherit the server's env, not the person's) can
+ * reach a login-on instance. A sibling of `mcp-local-token`; the operator saves
+ * their key here once, owner-only.
+ */
+const API_KEY_FILE_NAME = 'api-key';
 
 /**
  * The HTTP error envelope returned by the marketplace routes. The router
@@ -34,6 +59,8 @@ export interface ApiErrorBody {
   status?: string;
   /** Plain-language explanation carried by a structured refusal. */
   message?: string;
+  /** Machine-readable error code, e.g. `AUTH_REQUIRED` from the login gate. */
+  code?: string;
 }
 
 /**
@@ -76,6 +103,12 @@ export function getServerBaseUrl(): string {
   return `http://localhost:${configPort ?? DEFAULT_PORT}`;
 }
 
+/** The DorkOS data directory: `DORK_HOME` when set, else `~/.dork`. */
+function resolveDorkHome(): string {
+  // eslint-disable-next-line no-restricted-syntax -- DORK_HOME is set imperatively by cli.ts after module load
+  return process.env.DORK_HOME || path.join(os.homedir(), '.dork');
+}
+
 /**
  * Read `server.port` from `~/.dork/config.json`. Returns `null` if the
  * file is missing, malformed, or has no numeric port set. Mirrors the
@@ -83,8 +116,7 @@ export function getServerBaseUrl(): string {
  * can evolve separately.
  */
 function readConfigPort(): number | null {
-  // eslint-disable-next-line no-restricted-syntax -- DORK_HOME is set imperatively by cli.ts after module load
-  const dorkHome = process.env.DORK_HOME || path.join(os.homedir(), '.dork');
+  const dorkHome = resolveDorkHome();
   try {
     const raw = fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf-8');
     const config = JSON.parse(raw) as { server?: { port?: unknown } };
@@ -117,13 +149,83 @@ function agentIdentityHeaders(): Record<string, string> {
   return token ? { 'X-DorkOS-Agent': token } : {};
 }
 
+/** Absolute path of the file the CLI reads a saved API key from. */
+function apiKeyFilePath(): string {
+  return path.join(resolveDorkHome(), API_KEY_FILE_NAME);
+}
+
+/**
+ * Resolve the personal API key the CLI presents on `/api/*` calls.
+ *
+ * Follows the CLI's config precedence (env var, then the dork home, then
+ * nothing). There is deliberately no config.json entry: raw secrets never live in
+ * `config.json` (ADR-0315), so the key sits in its own file instead.
+ *
+ * Returns `null` when no key is available, which is the normal case: with login
+ * off the server asks for no credential at all.
+ *
+ * @returns The trimmed key, or `null` when neither source has one.
+ */
+export function resolveApiKey(): string | null {
+  // eslint-disable-next-line no-restricted-syntax -- read at call time so a command can set it before dispatch
+  const fromEnv = process.env[API_KEY_ENV_VAR]?.trim();
+  if (fromEnv) return fromEnv;
+
+  try {
+    const fromFile = fs.readFileSync(apiKeyFilePath(), 'utf-8').trim();
+    if (fromFile) return fromFile;
+  } catch {
+    // Missing or unreadable: this source simply has no key.
+  }
+  return null;
+}
+
+/** The `Authorization` header when a key is available, else nothing. */
+function apiKeyHeaders(): Record<string, string> {
+  const key = resolveApiKey();
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
+/**
+ * Turn the login gate's bare `Unauthorized` into something a person can act on.
+ *
+ * A 401 from `/api/*` only ever means one thing: this instance has login turned
+ * on and the call carried no key the server accepts. Say that, and say where the
+ * key comes from.
+ *
+ * @param presentedKey - Whether the CLI actually sent a key (a rejected key and a
+ *   missing key need different advice).
+ * @returns The message to surface on stderr.
+ */
+function buildUnauthorizedMessage(presentedKey: boolean): string {
+  const where =
+    'Create one in the cockpit under Settings → Security → API keys, then either ' +
+    `set ${API_KEY_ENV_VAR}=<your key> or save the key in ${apiKeyFilePath()} ` +
+    '(and run `chmod 600` on it).';
+  if (presentedKey) {
+    return (
+      'This DorkOS instance did not accept your API key. It may have been revoked, ' +
+      `or it may belong to a different instance. ${where}`
+    );
+  }
+  return `This DorkOS instance has login turned on, so the CLI needs your API key. ${where}`;
+}
+
 /**
  * Make a JSON HTTP call against the DorkOS server.
  *
+ * Presents the personal API key from {@link resolveApiKey} as
+ * `Authorization: Bearer <key>` when one is available, so the same command works
+ * whether or not the instance has login turned on. A caller-supplied
+ * `Authorization` header still wins (it is merged last).
+ *
  * Throws an {@link ApiError} on non-2xx responses. The error carries the
  * full parsed body so callers can read structured fields like
- * `conflicts` (HTTP 409) or `errors` (HTTP 400). Throws a generic `Error`
- * with `code === 'ECONNREFUSED'` semantics if the server is unreachable.
+ * `conflicts` (HTTP 409) or `errors` (HTTP 400). A `401` gets its `error`
+ * rewritten to the actionable message from {@link buildUnauthorizedMessage} while
+ * keeping the server's `code`, because the gate's own body is just
+ * `Unauthorized`. Throws a generic `Error` with `code === 'ECONNREFUSED'`
+ * semantics if the server is unreachable.
  *
  * @param method - HTTP method (e.g. `'GET'`, `'POST'`).
  * @param apiPath - Path on the server (must start with `/`).
@@ -139,12 +241,23 @@ export async function apiCall<T>(
   headers?: Record<string, string>
 ): Promise<T> {
   const url = `${getServerBaseUrl()}${apiPath}`;
+  const keyHeaders = apiKeyHeaders();
+  // Whether this request carried any bearer credential at all — ours or a
+  // caller-supplied override (header names are case-insensitive over the wire).
+  const presentedKey =
+    'Authorization' in keyHeaders ||
+    Object.keys(headers ?? {}).some((name) => name.toLowerCase() === 'authorization');
 
   let res: Response;
   try {
     res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...agentIdentityHeaders(), ...headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...keyHeaders,
+        ...agentIdentityHeaders(),
+        ...headers,
+      },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
@@ -158,6 +271,9 @@ export async function apiCall<T>(
       parsed = (await res.json()) as ApiErrorBody;
     } catch {
       parsed = { error: res.statusText };
+    }
+    if (res.status === 401) {
+      parsed = { ...parsed, error: buildUnauthorizedMessage(presentedKey) };
     }
     throw new ApiError(res.status, parsed);
   }
