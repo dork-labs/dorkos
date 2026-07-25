@@ -14,7 +14,6 @@ import {
   RecentSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
-import type { Session, SessionSettings } from '@dorkos/shared/types';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { readManifest } from '@dorkos/shared/manifest';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
@@ -27,6 +26,7 @@ import {
   rekeyProjector,
   triggerTurn,
   applyTaskOriginOverlay,
+  overlayStoredSettings,
 } from '../services/session/index.js';
 import type { ResolveTaskOrigins } from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
@@ -41,23 +41,6 @@ import { getWorkspaceManager } from '../services/workspace/index.js';
 const vaultRoot = DEFAULT_CWD;
 
 const router = Router();
-
-/**
- * Overlay persisted per-session settings (ADR-0260) onto a transcript-derived
- * session so the store is the single source of truth for display — keeping the
- * session-list badge, the in-session toolbar, and runtime enforcement in sync.
- * Store wins; transcript-derived values remain the fallback for legacy sessions
- * with no stored row.
- *
- * @param target - The session object to mutate in place
- * @param stored - Persisted settings (only defined fields are applied)
- */
-function applyStoredSettings(target: Session, stored: SessionSettings): void {
-  if (stored.permissionMode !== undefined) target.permissionMode = stored.permissionMode;
-  if (stored.model !== undefined) target.model = stored.model;
-  if (stored.effort !== undefined) target.effort = stored.effort;
-  if (stored.fastMode !== undefined) target.fastMode = stored.fastMode;
-}
 
 // GET /api/sessions - List sessions aggregated across all registered runtimes
 // (ADR-0310). Responds with the { sessions, warnings? } envelope rather than a
@@ -82,12 +65,10 @@ router.get('/', async (req, res) => {
   const { sessions, warnings } = await aggregateSessionList({ runtimes, projectDir });
 
   const page = sessions.slice(0, limit);
-  // Overlay persisted settings (ADR-0260) in one batch query — no N+1.
-  const stored = runtimeRegistry.getSessionSettingsMany(page.map((s) => s.id));
-  for (const session of page) {
-    const settings = stored.get(session.id);
-    if (settings) applyStoredSettings(session, settings);
-  }
+  // Overlay persisted settings (ADR-0260) through the ONE shared resolver that
+  // `GET /:id` also uses, so the two endpoints cannot report different modes
+  // for one session (DOR-463).
+  overlayStoredSettings(page, runtimeRegistry);
   // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
   // catches direct-branch Pulse runs the transcript-head classifier can't see.
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
@@ -116,6 +97,9 @@ router.get('/recent', async (req, res) => {
     agentPaths,
     limit,
   });
+  // Same persisted-settings overlay as the other two session reads — a recent
+  // session is the same session, so it must not report a different mode.
+  overlayStoredSettings(sessions, runtimeRegistry);
   // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
   // catches direct-branch Pulse runs the transcript-head classifier can't see.
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
@@ -151,9 +135,12 @@ router.get('/:id', async (req, res) => {
   // the required field always reaches the wire.
   if (!session.runtime) session.runtime = runtime.type;
   // Overlay persisted settings (ADR-0260) so the toolbar reflects the operator's
-  // chosen mode/model/etc., not just what the transcript recorded.
-  const stored = await runtimeRegistry.getSessionSettings(internalSessionId);
-  if (stored) applyStoredSettings(session, stored);
+  // chosen mode/model/etc., not just what the transcript recorded. Same shared
+  // resolver (and therefore the same key) as the list endpoint above. The
+  // REQUESTED id is threaded through as a last-resort key: this is the one route
+  // that still accepts a retired id, and a row written before the runtime bound
+  // the alias lives under it.
+  overlayStoredSettings([session], runtimeRegistry, sessionId);
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
   applyTaskOriginOverlay([session], resolveTaskOrigins);
   res.json(session);

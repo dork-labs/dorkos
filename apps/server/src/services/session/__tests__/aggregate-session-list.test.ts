@@ -23,6 +23,57 @@ function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'updated
 }
 
 describe('aggregateSessionList', () => {
+  it('drops an id the runtime has RETIRED onto a different canonical id', async () => {
+    // A resume-as-new leaves the stale transcript on disk, so the adapter still
+    // lists it — but every single-session route resolves that id to the
+    // successor, so a row claiming to BE it would describe a session the client
+    // never gets when it opens that row (DOR-463). Invariant bought here: every
+    // id in a listing resolves to itself.
+    const runtime = new FakeAgentRuntime('fake');
+    runtime.listSessions.mockResolvedValue([
+      makeSession({ id: 'retired', updatedAt: '2026-01-02T00:00:00.000Z' }),
+      makeSession({ id: 'canonical', updatedAt: '2026-01-01T00:00:00.000Z' }),
+    ]);
+    runtime.getInternalSessionId.mockImplementation((id: string) =>
+      id === 'retired' ? 'canonical' : undefined
+    );
+
+    const { sessions } = await aggregateSessionList({ runtimes: [runtime], projectDir: '/p' });
+
+    expect(sessions.map((s) => s.id)).toEqual(['canonical']);
+  });
+
+  it('drops a retired id even when its successor is not in this listing', async () => {
+    // The successor may belong to another project's list; the row is still a
+    // lie about which session it opens, so it does not survive either.
+    const runtime = new FakeAgentRuntime('fake');
+    runtime.listSessions.mockResolvedValue([
+      makeSession({ id: 'retired', updatedAt: '2026-01-02T00:00:00.000Z' }),
+      makeSession({ id: 'plain', updatedAt: '2026-01-01T00:00:00.000Z' }),
+    ]);
+    runtime.getInternalSessionId.mockImplementation((id: string) =>
+      id === 'retired' ? 'elsewhere' : undefined
+    );
+
+    const { sessions } = await aggregateSessionList({ runtimes: [runtime], projectDir: '/p' });
+
+    expect(sessions.map((s) => s.id)).toEqual(['plain']);
+  });
+
+  it('keeps every session when the runtime reports no alias (the ordinary case)', async () => {
+    const runtime = new FakeAgentRuntime('fake');
+    runtime.listSessions.mockResolvedValue([
+      makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }),
+      makeSession({ id: 's2', updatedAt: '2026-01-01T00:00:00.000Z' }),
+    ]);
+    // Identity mapping must NOT be treated as a retirement.
+    runtime.getInternalSessionId.mockImplementation((id: string) => id);
+
+    const { sessions } = await aggregateSessionList({ runtimes: [runtime], projectDir: '/p' });
+
+    expect(sessions.map((s) => s.id)).toEqual(['s1', 's2']);
+  });
+
   it('merges sessions from every runtime, sorted by updatedAt descending', async () => {
     const a = new FakeAgentRuntime('fake-a');
     const b = new FakeAgentRuntime('fake-b');

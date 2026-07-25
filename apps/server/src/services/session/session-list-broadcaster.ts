@@ -23,6 +23,10 @@ import { SessionListEventSchema } from '@dorkos/shared/session-stream';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { eventFanOut } from '../core/event-fan-out.js';
 import { onProjectorStatusChange } from './session-state-projector.js';
+import {
+  overlayStoredSettings,
+  type SessionSettingsOverlayPort,
+} from './session-settings-overlay.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
 
@@ -44,6 +48,7 @@ export class SessionListBroadcaster {
   private iterators = new Set<AsyncIterator<SessionListEvent>>();
   private running = false;
   private unsubscribeStatus: (() => void) | undefined;
+  private settings: SessionSettingsOverlayPort | undefined;
 
   /**
    * Begin consuming every runtime's session-list stream and broadcasting the
@@ -61,10 +66,15 @@ export class SessionListBroadcaster {
    * discovery watcher covers every session that runtime can observe (SRV-I4).
    *
    * @param runtimes - All registered runtimes, e.g. `runtimeRegistry.listRuntimes()`.
+   * @param settings - Persisted-settings store used to overlay operator choices
+   *   onto every broadcast session (ADR-0260). Omit only where no store exists;
+   *   without it, upserts carry runtime-derived values and clients that refresh
+   *   their list from this stream will disagree with `GET /api/sessions`.
    */
-  start(runtimes: AgentRuntime[]): void {
+  start(runtimes: AgentRuntime[], settings?: SessionSettingsOverlayPort): void {
     if (this.running) return;
     this.running = true;
+    this.settings = settings;
 
     // Installed before (and independent of) the watchers: liveness must survive
     // watcher construction failures. Guarded so a failed start() followed by a
@@ -101,7 +111,7 @@ export class SessionListBroadcaster {
         continue;
       }
       this.iterators.add(iterator);
-      void this.consume(runtime.type, iterator);
+      void this.consume(runtime, iterator);
     }
 
     // Every subscription failed at construction (or no runtimes were given):
@@ -143,18 +153,18 @@ export class SessionListBroadcaster {
    * the server or the sibling runtimes' loops.
    */
   private async consume(
-    runtimeType: string,
+    runtime: AgentRuntime,
     iterator: AsyncIterator<SessionListEvent>
   ): Promise<void> {
     try {
       for (;;) {
         const { value, done } = await iterator.next();
         if (done || !this.running) break;
-        this.broadcast(value);
+        this.broadcast(value, runtime);
       }
     } catch (err) {
       logger.error('[SessionListBroadcaster] session-list subscription failed', {
-        runtime: runtimeType,
+        runtime: runtime.type,
         error: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -166,8 +176,54 @@ export class SessionListBroadcaster {
     }
   }
 
-  /** Validate an event against the schema and broadcast it, or drop+log if invalid. */
-  private broadcast(event: SessionListEvent): void {
+  /**
+   * Overlay persisted settings onto a `session_upserted` before it goes out.
+   *
+   * This stream — not `GET /api/sessions` — is what keeps a client's session
+   * list current: the cold-load query has no poll, so every later refresh of a
+   * row arrives here. An un-overlaid upsert therefore OVERWRITES the operator's
+   * stored permission mode in the client's cache with the runtime-derived one,
+   * which is the same disagreement DOR-463 fixed on the HTTP endpoints.
+   *
+   * Copies the session first. Adapters emit the object they hold — the Claude
+   * watcher pushes the very instance in its diff map (and in the transcript
+   * reader's mtime cache) — so overlaying in place would write display values
+   * into a runtime's own cached state and defeat its change suppression.
+   */
+  private withStoredSettings(event: SessionListEvent): SessionListEvent {
+    if (event.type !== 'session_upserted' || !this.settings) return event;
+    const session = { ...event.session };
+    try {
+      overlayStoredSettings([session], this.settings);
+    } catch (err) {
+      // Discovery must survive a settings-store failure: an un-overlaid row is
+      // stale, a dropped row is invisible. Prefer stale.
+      logger.warn('[SessionListBroadcaster] settings overlay failed; broadcasting as-is', {
+        sessionId: event.session.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return event;
+    }
+    return { ...event, session };
+  }
+
+  /**
+   * Validate an event against the schema and broadcast it, or drop+log if
+   * invalid.
+   *
+   * Validation runs FIRST and everything after it works on `parsed.data`. That
+   * ordering is load-bearing, not stylistic: a malformed event (e.g. a
+   * `session_upserted` with no `session`) reaches this method, and any step that
+   * touched the raw event's shape ahead of the gate would throw out of the
+   * caller's loop and kill that runtime's whole subscription — the exact failure
+   * the "one malformed event is dropped and logged" contract exists to prevent.
+   *
+   * @param event - The event to validate and fan out.
+   * @param runtime - The runtime that produced it, when it came from a
+   *   subscription. Absent for internally-minted events (the projector status
+   *   fan-out), which have no owning runtime and need no retirement check.
+   */
+  private broadcast(event: SessionListEvent, runtime?: AgentRuntime): void {
     const parsed = SessionListEventSchema.safeParse(event);
     if (!parsed.success) {
       logger.warn('[SessionListBroadcaster] dropping invalid session-list event', {
@@ -175,9 +231,21 @@ export class SessionListBroadcaster {
       });
       return;
     }
+    // Suppress an upsert for an id the runtime has RETIRED, matching
+    // `aggregateSessionList`'s drop. Both produce client-visible session rows,
+    // so if only one applied the rule they would disagree about whether a
+    // retired id may appear — the split derivation this change exists to close,
+    // one layer up. A `session_removed` for such an id is deliberately still
+    // forwarded: telling a client to drop a row it should not be holding is
+    // always safe.
+    if (parsed.data.type === 'session_upserted' && runtime) {
+      const canonical = runtime.getInternalSessionId(parsed.data.session.id);
+      if (canonical !== undefined && canonical !== parsed.data.session.id) return;
+    }
     // The SSE event name is the schema-constrained discriminator, so there is no
     // stringly-typed drift: clients filter on the same `type` values.
-    eventFanOut.broadcast(parsed.data.type, parsed.data);
+    const outgoing = this.withStoredSettings(parsed.data);
+    eventFanOut.broadcast(outgoing.type, outgoing);
   }
 }
 

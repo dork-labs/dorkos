@@ -231,6 +231,25 @@ export function runtimeConformance(
           expect(internal === undefined || typeof internal === 'string').toBe(true);
         }
       });
+
+      it('getInternalSessionId is IDEMPOTENT — a canonical id maps to itself', () => {
+        // Server-side callers resolve a session's canonical id by applying this
+        // once (`getInternalSessionId(id) ?? id`) and MUST be able to apply it to
+        // an already-resolved id without moving further. The persisted-settings
+        // overlay depends on it: the write path (PATCH) and every read path each
+        // resolve independently, and they converge on one key only because a
+        // second application is a no-op. An adapter that chained aliases
+        // (a -> b -> c) would silently split those keys apart and let two
+        // surfaces report different permission modes for one session (DOR-463).
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts());
+
+        for (const id of [sessionId, nextSessionId()]) {
+          const canonical = runtime.getInternalSessionId(id) ?? id;
+          expect(runtime.getInternalSessionId(canonical) ?? canonical).toBe(canonical);
+        }
+      });
     });
 
     describe('messaging', () => {

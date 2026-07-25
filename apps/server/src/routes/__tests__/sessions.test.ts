@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 // Mock boundary before importing app
@@ -36,10 +36,12 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     persistSessionRuntime: vi.fn(async () => {}),
     has: vi.fn(() => true),
     // Session-settings store (ADR-0260): default to "no persisted settings"
-    // so the route overlay is a no-op unless a test opts in.
+    // so the route overlay is a no-op unless a test opts in. Both GET endpoints
+    // read through `getSessionSettingsMany` via the shared overlay (DOR-463);
+    // `getSessionSettings` remains the single-id read used by /events.
     getSessionSettings: vi.fn(async () => null),
     saveSessionSettings: vi.fn(async () => {}),
-    getSessionSettingsMany: vi.fn(() => new Map()),
+    getSessionSettingsMany: vi.fn(() => new Map<string, SessionSettings>()),
   },
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
     constructor(
@@ -126,7 +128,7 @@ describe('Sessions Routes', () => {
     // across cases otherwise (clearAllMocks only clears call history).
     //
     // `mockReset()` before the default matters as much as the default itself:
-    // `clearAllMocks` does NOT drain a queued ONE-SHOT (`mockRejectedValueOnce`
+    // `clearAllMocks` does NOT drain a queued ONE-SHOT (`mockRejectedValueOnce`)
     // / `mockResolvedValueOnce`) implementation. An unconsumed one-shot survives
     // into a later test and fires against whatever request gets there first —
     // observed under load as a matched pair of failures, the test that queued it
@@ -245,9 +247,9 @@ describe('Sessions Routes', () => {
         permissionMode: 'default' as const,
         model: 'transcript-model',
       });
-      vi.mocked(runtimeRegistry.getSessionSettings).mockResolvedValue({
-        permissionMode: 'bypassPermissions',
-      });
+      vi.mocked(runtimeRegistry.getSessionSettingsMany).mockReturnValue(
+        new Map([[S1, { permissionMode: 'bypassPermissions' }]])
+      );
 
       const res = await request(server).get(`/api/sessions/${S1}`);
       expect(res.status).toBe(200);
