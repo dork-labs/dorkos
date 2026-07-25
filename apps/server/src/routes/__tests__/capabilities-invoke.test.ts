@@ -236,12 +236,33 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
     expect(approvals.listPending()).toHaveLength(0);
   });
 
-  it('leaves an unattributed caller exactly as it was before the gate existed', async () => {
+  it('gates a caller that presents NO identity, which is the bypass shape', async () => {
+    // `env -u DORKOS_AGENT_TOKEN dorkos call …` and a bare curl both arrive here
+    // with no identity, and sessionGate is a pass-through in the default local
+    // posture. Requiring less capability must not buy more permission.
     const res = await request(buildGatedApp())
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
+    expect(res.body.status).toBe('approval_required');
+    expect(destroyed).toEqual([]);
+    expect(approvals.listPending()[0].requestedBy).toBeUndefined();
+  });
+
+  it('lets an unidentified caller through once a person grants the approval', async () => {
+    const app = buildGatedApp();
+    const asked = await request(app)
+      .post('/api/capabilities/gated.destroy/invoke')
+      .send({ name: 'production' });
+    approvals.grant(asked.body.approvalId);
+
+    const retried = await request(app)
+      .post('/api/capabilities/gated.destroy/invoke')
+      .set('X-DorkOS-Approval', asked.body.approvalToken)
+      .send({ name: 'production' });
+
+    expect(retried.status).toBe(200);
     expect(destroyed).toEqual(['production']);
   });
 });

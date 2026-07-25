@@ -35,6 +35,9 @@
 - An approval covers one exact action, and the check happens before anything runs.
   An agent that changes even one detail of what it asked for has to ask again
   (DOR-448).
+- Hiding does not help. An agent that leaves its name off a request still cannot do
+  anything irreversible without your approval, and the card tells you plainly that
+  DorkOS does not know who asked (DOR-448).
 - When an agent presents an identity DorkOS does not accept, that now shows up in
   the debug log so you can see a shut-off agent still trying. The token itself is
   never written down (DOR-448).

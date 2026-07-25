@@ -81,7 +81,11 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
 
       // Parse here rather than inside the registry so the approval binds to the
       // input that will really execute (defaults applied, unknown keys stripped),
-      // not to whatever JSON arrived.
+      // not to whatever JSON arrived. `registry.invoke` parses it again, which is
+      // only safe while every destructive schema is parse-idempotent — asserted
+      // per destructive capability by the conformance suite, so a future
+      // non-idempotent `.transform()` fails there rather than quietly making the
+      // approval binding cover something other than what runs.
       const parsed = capability.input.parse(input);
       const header = req.headers[APPROVAL_TOKEN_HEADER];
       const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();

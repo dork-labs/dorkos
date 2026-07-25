@@ -88,17 +88,63 @@ describe('enforceCapabilityTier', () => {
     });
   }
 
-  describe('no identity', () => {
-    it('allows every tier, because identity is never required', () => {
-      for (const tier of ['observe', 'act', 'destructive'] as const) {
-        const decision = enforceCapabilityTier({
-          capability: capabilityAt(tier),
-          input: INPUT,
-          retryChannel: 'http-header',
-        });
-        expect(decision.outcome).toBe('allowed');
-      }
+  /** Run the gate with NO identity — the shape of `env -u DORKOS_AGENT_TOKEN …`. */
+  function enforceAnonymous(tier: CapabilityTier, approvalToken?: string) {
+    return enforceCapabilityTier({
+      capability: capabilityAt(tier),
+      input: INPUT,
+      ...(approvalToken ? { approvalToken } : {}),
+      retryChannel: 'http-header',
+    });
+  }
+
+  describe('an unidentified caller', () => {
+    it('reads and makes ordinary changes freely, so no honest flow breaks', () => {
+      // These are the calls spec §3.1 protected: external MCP clients and a human
+      // running `dorkos call`. They must be untouched.
+      expect(enforceAnonymous('observe').outcome).toBe('allowed');
+      expect(enforceAnonymous('act').outcome).toBe('allowed');
       expect(attempts).toHaveLength(0);
+    });
+
+    it('CANNOT run a destructive capability by simply not identifying itself', () => {
+      // The bypass this inversion closes: dropping DORKOS_AGENT_TOKEN needs less
+      // capability than the honest path, so it must not buy more permission.
+      const decision = enforceAnonymous('destructive');
+
+      expect(decision.outcome).toBe('approval_required');
+      if (decision.outcome !== 'approval_required') throw new Error('unreachable');
+      expect(decision.payload.reason).toBe('no_approval');
+      expect(approvals.listPending()).toHaveLength(1);
+    });
+
+    it('is named as unidentified on the card, not left blank or dressed up as an agent', () => {
+      enforceAnonymous('destructive');
+
+      const [pending] = approvals.listPending();
+      expect(pending.requestedBy).toBeUndefined();
+      expect(pending.summary).toContain('An unidentified caller');
+    });
+
+    it('is audited, so an anonymous reach for something irreversible leaves a trace', () => {
+      enforceAnonymous('destructive');
+
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0].identity).toBeUndefined();
+      expect(attempts[0].decision.outcome).toBe('approval_required');
+    });
+
+    it('goes through once a person grants the approval it was told to get', () => {
+      const asked = enforceAnonymous('destructive');
+      if (asked.outcome !== 'approval_required') throw new Error('unreachable');
+      approvals.grant(asked.payload.approvalId);
+
+      expect(enforceAnonymous('destructive', asked.payload.approvalToken).outcome).toBe('allowed');
+    });
+
+    it('has no ceiling to trip, so it is never refused unapprovably', () => {
+      const decision = enforceAnonymous('destructive');
+      expect(decision.outcome).not.toBe('denied');
     });
   });
 
@@ -318,6 +364,12 @@ describe('enforceCapabilityTier', () => {
 });
 
 describe('describeGatedAttempt', () => {
+  it('names an unidentified caller plainly', () => {
+    expect(describeGatedAttempt(capabilityAt('destructive'), { name: 'x' })).toBe(
+      'An unidentified caller wants to run "Demo destructive" with name: x'
+    );
+  });
+
   it('names the agent, the capability, and the arguments that decide the effect', () => {
     const summary = describeGatedAttempt(
       capabilityAt('destructive'),

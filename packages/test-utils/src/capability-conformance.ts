@@ -29,12 +29,12 @@
  * - the docs-projection registry exposes the SAME `http` surface set as the boot
  *   registry (a route can't appear in `/api/docs` that the running server never
  *   serves, or vice versa);
- * - EVERY adapter path an agent can reach a `destructive` capability through runs
- *   it past the tier gate first (spec `agent-trust` §3.2). The caller supplies one
- *   probe per path — the invoke route, the in-session MCP adapter, the external MCP
- *   adapter — and each must come back with an `approval_required` payload and no
- *   side effect. Miss a path and the gate is decoration; this is the check that
- *   says so.
+ * - EVERY adapter path a caller can reach a `destructive` capability through runs
+ *   it past the tier gate first (spec `agent-trust` §3.2) — for an identified agent
+ *   AND for a caller with no identity at all. The caller supplies one probe per
+ *   entry in {@link GATED_ADAPTER_PATHS} (three adapters x identified/anonymous),
+ *   and each must come back with an `approval_required` payload and no side effect.
+ *   Miss a path and the gate is decoration; this is the check that says so.
  *
  * ## Division of labor and the "test the test" seam
  *
@@ -66,13 +66,26 @@ import {
 const MCP_SERVERS: readonly McpServerId[] = ['in-session', 'external'];
 
 /**
- * Every adapter path an agent can reach a capability through, and therefore every
+ * Every adapter path a caller can reach a capability through, and therefore every
  * path that must consult the tier gate before invoking one.
  *
+ * Each path appears TWICE: once for an identified agent, once for a caller that
+ * presents no identity at all. The gate keys on the capability's TIER, not on
+ * whether the caller named itself, so a probe set that only covered the identified
+ * path would pass while `env -u DORKOS_AGENT_TOKEN dorkos call …` sailed through.
+ * The anonymous variants are what make that bypass a test failure.
+ *
  * Named rather than counted so a new surface is a deliberate edit here — adding an
- * adapter without adding its probe should be impossible to do quietly.
+ * adapter without adding its probes should be impossible to do quietly.
  */
-export const GATED_ADAPTER_PATHS = ['invoke-route', 'in-session-mcp', 'external-mcp'] as const;
+export const GATED_ADAPTER_PATHS = [
+  'invoke-route',
+  'invoke-route-anonymous',
+  'in-session-mcp',
+  'in-session-mcp-anonymous',
+  'external-mcp',
+  'external-mcp-anonymous',
+] as const;
 
 /** One adapter path that must enforce the tier gate. */
 export type GatedAdapterPath = (typeof GATED_ADAPTER_PATHS)[number];
@@ -92,8 +105,8 @@ export interface DestructiveGateProbeResult {
 }
 
 /**
- * Drive one destructive capability through one adapter path, end to end, with an
- * agent identity present and NO approval token.
+ * Drive one destructive capability through one adapter path, end to end, with NO
+ * approval token — and, for an `-anonymous` path, with no identity either.
  *
  * The probe owns its own fixture: seed a `destructive` capability whose handler
  * records that it ran, compose a registry with it, and call the real adapter.
@@ -185,8 +198,9 @@ export interface CapabilityConformanceFixtures {
   docsRegistry: Pick<ConformanceRegistry, 'capabilities'>;
   /**
    * One probe per {@link GATED_ADAPTER_PATHS} entry, each driving a `destructive`
-   * capability through that real adapter with an identity and no approval token.
-   * A missing key is itself a violation — see the module TSDoc.
+   * capability through that real adapter with no approval token — identified for
+   * the plain keys, anonymous for the `-anonymous` ones. A missing key is itself a
+   * violation, so neither path can be left unproven.
    */
   destructiveGateProbes: Partial<Record<GatedAdapterPath, DestructiveGateProbe>>;
 }

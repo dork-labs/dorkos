@@ -22,19 +22,29 @@
  * destructive capability permanently unreachable for that agent — not
  * approvable, refused, with a distinct payload saying so.
  *
- * ## Only identified callers are gated, and why that is not a loophole
+ * ## The TIER decides whether to gate. Identity only supplies the ceiling.
  *
- * A call with no resolved {@link AgentIdentity} runs exactly as it did before
- * this module existed. That is the spec's resolved open question (§3.1): identity
- * is never mandatory, because requiring it would break every external MCP client
- * and every human `dorkos call`. The gate therefore keys on identity.
+ * A caller that presents no {@link AgentIdentity} is still gated. This is the
+ * load-bearing asymmetry in the whole module, so it is worth stating why:
  *
- * The important surface cannot dodge it. In-session tools derive identity from
- * the session's working directory, not from anything the agent presents, so an
- * agent running inside DorkOS cannot become anonymous by withholding a token
- * (`createInSessionContextResolver`). Over HTTP an agent that drops its own
- * `X-DorkOS-Agent` header also drops its attribution, and the surfaces that
- * accept anonymous mutations are the ones transport auth already guards.
+ * The adversary this feature exists to stop is a prompt-injected or misaligned
+ * agent that has shell access. Keying the gate on identity PRESENCE would hand
+ * that agent a bypass needing strictly less capability than the honest path —
+ * `env -u DORKOS_AGENT_TOKEN dorkos call marketplace.uninstall …`, or a bare
+ * `curl`, since the CLI only attaches `X-DorkOS-Agent` when the token is in its
+ * env and `sessionGate` is a pass-through in the default local posture. The
+ * destructive operation would run, unapproved and unattributed.
+ *
+ * Spec §3.1's "absent identity = today's behavior" resolution is about
+ * ATTRIBUTION, and its stated rationale was not breaking external MCP clients or
+ * human CLI use. Those are `observe` and `act` calls, which this module lets
+ * straight through. Only `destructive` stops — and spec §Security is explicit
+ * that a modified client or skill must not be able to bypass enforcement.
+ *
+ * So identity, when present, does exactly two things: it narrows what the caller
+ * may reach (`tierCeiling`) and it names them on the approval card. Its absence
+ * costs the caller nothing except a name — the approval is still required, and
+ * the card says an unidentified caller asked.
  *
  * ## Fail closed
  *
@@ -177,10 +187,14 @@ export type TierEnforcementDecision =
 
 /** One gated attempt, for the audit trail. */
 export interface TierEnforcementAttempt {
-  /** The capability the agent tried to run. */
+  /** The capability the caller tried to run. */
   capability: CapabilityDefinition;
-  /** The agent that tried. */
-  identity: AgentIdentity;
+  /**
+   * The agent that tried, when it identified itself. Absent for an unidentified
+   * caller — which is still audited, because an anonymous attempt at something
+   * irreversible is exactly the event an operator most wants a record of.
+   */
+  identity?: AgentIdentity;
   /** What the gate decided — never `allowed` (allowed calls are audited on invoke). */
   decision: Extract<TierEnforcementDecision, { outcome: 'approval_required' | 'denied' }>;
 }
@@ -278,17 +292,21 @@ function renderValue(value: unknown): string {
  * Truncation is the approval service's job, so this stays readable rather than
  * arithmetic.
  *
+ * An unidentified caller is named as such rather than dressed up as an agent: a
+ * person deciding an irreversible action should be able to see that DorkOS does
+ * not know who asked.
+ *
  * @param capability - The capability being requested.
  * @param input - The parsed input the approval is bound to.
- * @param identity - The agent asking.
+ * @param identity - The agent asking, when it identified itself.
  * @returns The card summary.
  */
 export function describeGatedAttempt(
   capability: CapabilityDefinition,
   input: unknown,
-  identity: AgentIdentity
+  identity?: AgentIdentity
 ): string {
-  const who = identity.displayName || identity.agentPath;
+  const who = identity ? identity.displayName || identity.agentPath : 'An unidentified caller';
   const args =
     input && typeof input === 'object' && !Array.isArray(input)
       ? Object.entries(input as Record<string, unknown>)
@@ -299,8 +317,9 @@ export function describeGatedAttempt(
   return `${who} wants to run "${capability.title}"${detail}`;
 }
 
-/** The label an approval records for who asked. */
-function requesterLabel(identity: AgentIdentity): string {
+/** The label an approval records for who asked, or its absence for an anonymous one. */
+function requesterLabel(identity?: AgentIdentity): string | undefined {
+  if (!identity) return undefined;
   return identity.displayName || identity.agentPath;
 }
 
@@ -387,15 +406,21 @@ function denied(
 export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnforcementDecision {
   const { capability, identity, approvalToken, input, retryChannel } = request;
 
-  // No identity: today's behavior, untouched (see the module TSDoc).
-  if (!identity) return { outcome: 'allowed' };
-
+  // The TIER decides whether to gate — never whether the caller identified
+  // itself. Anything else is a bypass an agent with shell access can reach by
+  // dropping its own token (see the module TSDoc).
   const tier = capability.tier;
+
+  /** Attribution for the audit trail, omitted rather than nulled when anonymous. */
+  const attributed = identity ? { identity } : {};
 
   // Reading is free, and a ceiling never blocks reading.
   if (tier === 'observe') return { outcome: 'allowed' };
 
-  if (TIER_RANK[tier] > TIER_RANK[identity.tierCeiling]) {
+  // A ceiling only exists for a caller that identified itself. An anonymous
+  // caller has no ceiling to cap — it simply has no name, and the destructive
+  // gate below applies to it all the same.
+  if (identity && TIER_RANK[tier] > TIER_RANK[identity.tierCeiling]) {
     const payload = denied(
       capability,
       'tier_ceiling',
@@ -403,7 +428,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         `${CEILING_PHRASE[identity.tierCeiling]}. Nobody can approve this; the agent's own limit has to change first.`,
       { approvable: false }
     );
-    audit({ capability, identity, decision: { outcome: 'denied', payload } });
+    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   }
 
@@ -418,18 +443,19 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       `"${capability.title}" cannot be undone and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
       { approvable: false }
     );
-    audit({ capability, identity, decision: { outcome: 'denied', payload } });
+    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   }
 
   const binding = { capabilityId: capability.id, inputHash: hashApprovalInput(input) };
+  const requestedBy = requesterLabel(identity);
 
   /** Record a fresh request for THIS action and tell the caller how to retry. */
   const ask = (reason: ApprovalRequiredReason): TierEnforcementDecision => {
     const ticket = gate!.approvals.request({
       ...binding,
       summary: describeGatedAttempt(capability, input, identity),
-      requestedBy: requesterLabel(identity),
+      ...(requestedBy ? { requestedBy } : {}),
     });
     const payload: ApprovalRequiredPayload = {
       status: 'approval_required',
@@ -443,7 +469,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       message: approvalMessage(reason, capability.title),
       retry: retryGuidance(retryChannel),
     };
-    audit({ capability, identity, decision: { outcome: 'approval_required', payload } });
+    audit({ capability, ...attributed, decision: { outcome: 'approval_required', payload } });
     return { outcome: 'approval_required', payload };
   };
 
@@ -469,7 +495,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         message: approvalMessage('awaiting_decision', capability.title),
         retry: retryGuidance(retryChannel),
       };
-      audit({ capability, identity, decision: { outcome: 'approval_required', payload } });
+      audit({ capability, ...attributed, decision: { outcome: 'approval_required', payload } });
       return { outcome: 'approval_required', payload };
     }
 
@@ -482,7 +508,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
           : `A person refused this. Do not try again unless they ask for it.`,
         { approvable: true, approvalId: result.approvalId }
       );
-      audit({ capability, identity, decision: { outcome: 'denied', payload } });
+      audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
       return { outcome: 'denied', payload };
     }
 

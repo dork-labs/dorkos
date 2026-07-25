@@ -187,6 +187,11 @@ export async function invokeCapabilityAsMcpResult(
     if (capability) {
       // Parse before gating so the approval binds to the input that will really
       // execute, defaults and coercions included — not to the raw arguments.
+      // `registry.invoke` parses this value again, which is only safe while every
+      // destructive capability's schema is parse-idempotent. That is not left to
+      // luck: the conformance suite asserts it per destructive capability, so a
+      // schema that grows a non-idempotent `.transform()` fails there rather than
+      // silently hashing something other than what runs.
       const parsed = capability.input.parse(input);
       const decision = enforceCapabilityTier({
         capability,
@@ -197,8 +202,13 @@ export async function invokeCapabilityAsMcpResult(
       });
       if (decision.outcome !== 'allowed') return textResult(decision.payload);
 
+      // Build the context field by field rather than spreading the caller's
+      // object. The in-session resolver hands out ONE memoized context per
+      // session, so spreading it would forward whatever `approval` that shared
+      // object happened to carry on a call where the gate granted none. Only the
+      // adapter's own two facts may reach the handler.
       const data = await registry.invoke(id, parsed, {
-        ...context,
+        ...(context?.identity ? { identity: context.identity } : {}),
         ...(decision.approval ? { approval: decision.approval } : {}),
       });
       return textResult(data);

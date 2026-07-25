@@ -180,12 +180,60 @@ describe('invokeCapabilityAsMcpResult — tier enforcement', () => {
     expect(ran).toEqual([]);
   });
 
-  it('leaves an unattributed call exactly as it was before the gate existed', async () => {
+  it('gates a call with NO identity, so dropping a token is not a way around it', async () => {
     const result = await invokeCapabilityAsMcpResult(registry, 'gated.destroy', {
       name: 'production',
     });
+
+    expect(payloadOf(result).status).toBe('approval_required');
+    expect(ran).toEqual([]);
+  });
+
+  it('still lets an unidentified caller run an act capability untouched', async () => {
+    // The flows spec §3.1 protected — external MCP clients, human CLI — are all
+    // observe/act, and they must not notice this gate exists.
+    const result = await invokeCapabilityAsMcpResult(registry, 'gated.tidy', {
+      name: 'production',
+    });
+
     expect(payloadOf(result)).toEqual({ ok: true });
     expect(ran).toHaveLength(1);
+  });
+
+  it('lets an unidentified caller through on a granted retry', async () => {
+    const asked = payloadOf(
+      await invokeCapabilityAsMcpResult(registry, 'gated.destroy', { name: 'production' })
+    );
+    approvals.grant(asked.approvalId as string);
+
+    const result = await invokeCapabilityAsMcpResult(registry, 'gated.destroy', {
+      name: 'production',
+      approvalToken: asked.approvalToken as string,
+    });
+
+    expect(payloadOf(result)).toEqual({ ok: true });
+    expect(ran).toHaveLength(1);
+  });
+
+  it('never forwards an approval the gate did not grant, even from a reused context', async () => {
+    // The in-session resolver hands out ONE memoized context per session. If the
+    // adapter spread that shared object, a stale `approval` on it would reach the
+    // handler on a call the gate granted nothing for — and `preApproved` would
+    // skip a self-gating capability's own confirmation.
+    const poisoned = {
+      identity: AGENT,
+      approval: { approvalId: 'not-a-real-approval' },
+    } as CapabilityInvocationContext;
+
+    const result = await invokeCapabilityAsMcpResult(
+      registry,
+      'gated.tidy',
+      { name: 'production' },
+      poisoned
+    );
+
+    expect(payloadOf(result)).toEqual({ ok: true });
+    expect(ran[0].context.approval).toBeUndefined();
   });
 
   it('still reports an unknown capability id through the registry', async () => {

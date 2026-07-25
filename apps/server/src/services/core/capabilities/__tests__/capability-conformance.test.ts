@@ -173,7 +173,7 @@ const CLI_VERBS = ['agent', 'task', 'activity', 'capabilities', 'call', 'version
 // ── Destructive-gate probes: the three real adapter paths ──────────────────
 const { createCapabilitiesInvokeRouter } = await import('../../../../routes/capabilities-invoke.js');
 const { initCapabilityTierGate } = await import('../tier-enforcement.js');
-const { ApprovalService } = await import('../../approvals/index.js');
+const { ApprovalService, hashApprovalInput } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
 const PROBE_IDENTITY = {
@@ -192,6 +192,11 @@ const DESTRUCTIVE_TOOL = registry.get(DESTRUCTIVE_ID)!.surfaces.mcp!.toolName;
 /** The input every probe attempts, and that the approval would be bound to. */
 const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
 
+/** A schema-satisfying sample per destructive capability, for the idempotence check. */
+const DESTRUCTIVE_SAMPLE_INPUTS: Record<string, unknown> = {
+  [DESTRUCTIVE_ID]: DESTRUCTIVE_INPUT,
+};
+
 // Arm the gate over a real approval service on a throwaway database, exactly as
 // boot does — so the probes exercise the real request/consume path, not a stub.
 initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
@@ -208,61 +213,91 @@ async function probe(run: () => Promise<unknown>): Promise<DestructiveGateProbeR
   return { sideEffectHappened: uninstallReached, payload };
 }
 
+/**
+ * The invoke route with an identity on `res.locals` exactly where the real
+ * `resolveAgentIdentity` middleware puts it — or with none at all, which is what
+ * `env -u DORKOS_AGENT_TOKEN dorkos call …` and a bare curl look like from here.
+ */
+function routeProbe(identity?: typeof PROBE_IDENTITY) {
+  return () =>
+    probe(async () => {
+      const app = express();
+      app.use(express.json());
+      app.use((_req, res, next) => {
+        if (identity) res.locals.agentIdentity = identity;
+        next();
+      });
+      app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
+      const res = await request(app)
+        .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
+        .send(DESTRUCTIVE_INPUT);
+      expect(res.status).toBe(202);
+      return res.body;
+    });
+}
+
+/** The in-session `dorkos` server's real tool definition, identified or not. */
+function inSessionProbe(identity?: typeof PROBE_IDENTITY) {
+  return () =>
+    probe(async () => {
+      const tools = capabilityMcpTools(
+        registry,
+        'in-session',
+        identity ? async () => ({ identity }) : undefined
+      );
+      const tool = tools.find((t) => (t as { name: string }).name === DESTRUCTIVE_TOOL)!;
+      const handler = (
+        tool as unknown as {
+          handler: (
+            args: unknown,
+            extra: unknown
+          ) => Promise<{ content: { type: string; text?: string }[] }>;
+        }
+      ).handler;
+      return unwrapText(await handler(DESTRUCTIVE_INPUT, {}));
+    });
+}
+
+/** The external `/mcp` server's real registered tool callback, identified or not. */
+function externalProbe(identity?: typeof PROBE_IDENTITY) {
+  return () =>
+    probe(async () => {
+      const server = new McpServer({ name: 'gate-probe', version: '0.0.0' });
+      registerCapabilitiesAsMcpTools(
+        server,
+        registry,
+        'external',
+        identity ? { identity } : undefined
+      );
+      const registered = (
+        server as unknown as {
+          _registeredTools: Record<
+            string,
+            {
+              handler: (
+                args: unknown,
+                extra: unknown
+              ) => Promise<{ content: { type: string; text?: string }[] }>;
+            }
+          >;
+        }
+      )._registeredTools[DESTRUCTIVE_TOOL];
+      return unwrapText(await registered.handler(DESTRUCTIVE_INPUT, {}));
+    });
+}
+
 capabilityConformance(registry, {
   name: 'DorkOS capability registry — conformance (real registry)',
   destructiveGateProbes: {
-    // POST /api/capabilities/:id/invoke, with an identity on `res.locals` exactly
-    // as the real `resolveAgentIdentity` middleware puts it there.
-    'invoke-route': () =>
-      probe(async () => {
-        const app = express();
-        app.use(express.json());
-        app.use((_req, res, next) => {
-          res.locals.agentIdentity = PROBE_IDENTITY;
-          next();
-        });
-        app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-        const res = await request(app)
-          .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
-          .send(DESTRUCTIVE_INPUT);
-        expect(res.status).toBe(202);
-        return res.body;
-      }),
-
-    // The in-session `dorkos` server's real tool definition, invoked through the
-    // handler the Claude Agent SDK would call.
-    'in-session-mcp': () =>
-      probe(async () => {
-        const tools = capabilityMcpTools(registry, 'in-session', async () => ({
-          identity: PROBE_IDENTITY,
-        }));
-        const tool = tools.find((t) => (t as { name: string }).name === DESTRUCTIVE_TOOL)!;
-        const handler = (tool as unknown as { handler: (args: unknown, extra: unknown) => Promise<{ content: { type: string; text?: string }[] }> }).handler;
-        return unwrapText(await handler(DESTRUCTIVE_INPUT, {}));
-      }),
-
-    // The external `/mcp` server's real registered tool callback.
-    'external-mcp': () =>
-      probe(async () => {
-        const server = new McpServer({ name: 'gate-probe', version: '0.0.0' });
-        registerCapabilitiesAsMcpTools(server, registry, 'external', {
-          identity: PROBE_IDENTITY,
-        });
-        const registered = (
-          server as unknown as {
-            _registeredTools: Record<
-              string,
-              {
-                handler: (
-                  args: unknown,
-                  extra: unknown
-                ) => Promise<{ content: { type: string; text?: string }[] }>;
-              }
-            >;
-          }
-        )._registeredTools[DESTRUCTIVE_TOOL];
-        return unwrapText(await registered.handler(DESTRUCTIVE_INPUT, {}));
-      }),
+    // Identified agent on each adapter path…
+    'invoke-route': routeProbe(PROBE_IDENTITY),
+    'in-session-mcp': inSessionProbe(PROBE_IDENTITY),
+    'external-mcp': externalProbe(PROBE_IDENTITY),
+    // …and the same three with NO identity, which is the shape of the bypass an
+    // agent with shell access would reach for: drop the token, keep the effect.
+    'invoke-route-anonymous': routeProbe(),
+    'in-session-mcp-anonymous': inSessionProbe(),
+    'external-mcp-anonymous': externalProbe(),
   },
   registeredMcpToolNames: {
     'in-session': inSessionToolNames,
@@ -295,4 +330,33 @@ describe('capability conformance wiring', () => {
     expect(ids).toContain('marketplace.search');
     expect(ids).toContain('capabilities.list');
   });
+});
+
+/**
+ * Both choke points parse the input, gate on the parsed value, and hand that same
+ * value to `registry.invoke` — which parses it a second time. That is only safe
+ * while a destructive capability's schema is parse-idempotent: if `parse(parse(x))`
+ * ever differed from `parse(x)`, the approval would be bound to a hash of
+ * something other than what actually executes, and the whole binding guarantee
+ * would quietly evaporate.
+ *
+ * True today (every destructive input is a plain `z.object` of scalars), so this
+ * asserts it rather than assuming it: a schema that grows a non-idempotent
+ * `.transform()` fails HERE, at the boundary that depends on the property.
+ */
+describe('destructive capability input schemas are parse-idempotent', () => {
+  const destructive = registry.capabilities.filter((cap) => cap.tier === 'destructive');
+
+  it('has at least one destructive capability to check', () => {
+    expect(destructive.length).toBeGreaterThan(0);
+  });
+
+  for (const cap of destructive) {
+    it(`${cap.id}: parsing twice hashes the same as parsing once`, () => {
+      const sample = DESTRUCTIVE_SAMPLE_INPUTS[cap.id] ?? {};
+      const once = cap.input.parse(sample);
+      const twice = cap.input.parse(once);
+      expect(hashApprovalInput(twice)).toBe(hashApprovalInput(once));
+    });
+  }
 });

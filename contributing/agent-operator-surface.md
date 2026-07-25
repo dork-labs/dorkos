@@ -62,7 +62,7 @@ A `CapabilityDefinition` carries a `surfaces` object with three optional project
 
 Every capability declares a `tier`: `observe` (pure read), `act` (mutates local state), or `destructive` (deletes or unregisters). Since spec `agent-trust` §3.2 the tier is a **real gate**, not metadata.
 
-`enforceCapabilityTier` (`capabilities/tier-enforcement.ts`) runs at all three choke points BEFORE `registry.invoke` — the invoke route, and both MCP adapters via `invokeCapabilityAsMcpResult`. For a call that carries a resolved `AgentIdentity`:
+`enforceCapabilityTier` (`capabilities/tier-enforcement.ts`) runs at all three choke points BEFORE `registry.invoke` — the invoke route, and both MCP adapters via `invokeCapabilityAsMcpResult`. The **tier** decides whether to gate; identity is not part of that decision:
 
 | Tier          | What happens                                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -74,11 +74,27 @@ A gated call returns a structured `approval_required` payload — the same shape
 
 Three rules when working here:
 
-- **Hash the parsed input, never the raw body.** A choke point parses first, gates on the parsed value, then hands that same value to `registry.invoke`. Hashing anything else makes the binding meaningless.
+- **Hash the parsed input, never the raw body.** A choke point parses first, gates on the parsed value, then hands that same value to `registry.invoke` — which parses it again. That double parse is only safe while destructive schemas are parse-idempotent, so the conformance suite asserts exactly that, per destructive capability. A schema that grows a non-idempotent `.transform()` fails there rather than quietly binding the approval to something other than what runs.
 - **The token travels beside the input, never inside it** — otherwise it would change the hash it is checked against. `capabilityInputShape` adds the extra MCP argument for destructive tools; `splitApprovalToken` takes it back off.
-- **The gate fails closed.** Until `initCapabilityTierGate` runs at boot, a destructive call by an identified agent is refused (`enforcement_unavailable`), so a wiring mistake cannot silently open the gate.
+- **The gate fails closed.** Until `initCapabilityTierGate` runs at boot, a destructive call is refused (`enforcement_unavailable`), so a wiring mistake cannot silently open the gate.
 
-A call with NO resolved identity behaves exactly as it did before enforcement existed (spec §3.1's resolved open question: mandatory identity would break external MCP clients and human CLI use). The surface that matters cannot dodge this — in-session identity is derived from the session's working directory, not from anything the agent presents.
+### Identity is the ceiling, never the switch
+
+The gate deliberately does **not** key on identity presence. Keying on it would hand a prompt-injected agent with shell access a bypass needing strictly less capability than the honest path:
+
+```
+env -u DORKOS_AGENT_TOKEN dorkos call marketplace.uninstall --input '{"name":"x","purge":true}'
+```
+
+The CLI only attaches `X-DorkOS-Agent` when `DORKOS_AGENT_TOKEN` is in its env, and `sessionGate` is a pass-through in the default local (auth-disabled) posture — so an identity-keyed gate would let that purge run, unapproved and unattributed. A bare `curl` is the same shape.
+
+So an unidentified caller is gated too: same `approval_required`, same binding, and the card says "An unidentified caller wants to run …" with `requestedBy` absent rather than fabricated. Anonymous attempts are audited under `actorType: 'system'`, so the feed never implies DorkOS knows who asked.
+
+Spec §3.1's "absent identity = today's behavior" resolution is about **attribution**, and its rationale was not breaking external MCP clients or human CLI use. Those are `observe` and `act` calls, which pass untouched — the product cost is one Allow click for a human running `dorkos call` against a destructive capability, which is what spec §UX describes anyway. When identity IS present it does exactly two things: caps what the caller may reach (`tierCeiling`) and names them on the card.
+
+In-session identity is derived from the session's working directory rather than anything the agent presents, so an in-session agent cannot shed its ceiling by withholding a token either.
+
+Both anonymous and identified paths are covered by the same falsifiable mechanism: `GATED_ADAPTER_PATHS` lists each of the three adapters twice (`…` and `…-anonymous`), and a missing probe is itself a conformance violation.
 
 ### The external mutation gate
 
