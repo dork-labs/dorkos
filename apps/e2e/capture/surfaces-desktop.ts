@@ -563,10 +563,24 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
   await page.goto(url('/'));
   await page.getByText('Get Started', { exact: true }).first().click({ timeout: WAIT_MS });
   await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
-  // Everything past this point is the broken span described above.
-  await page.getByText('Skip setup', { exact: true }).first().click({ timeout: WAIT_MS });
-  await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
-  await sleep(800); // let the remaining candidate cards animate in
+  // Everything past this point is the broken span described above. Fail fast
+  // rather than driving into it: "Skip setup" dismisses the whole flow (DOR-472),
+  // so the candidate-card wait below can only ever time out, and it would burn a
+  // full WAIT_MS on each of this drive's two callers (still + loop) before
+  // reporting a failure that is already known to be deterministic.
+  //
+  // The two lines the fix needs are kept here, unreachable, so whoever closes
+  // DOR-472 has the recipe rather than having to rediscover it:
+  //
+  //   await page.getByText('Skip setup', { exact: true }).first().click({ timeout: WAIT_MS });
+  //   await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
+  //   await sleep(800); // let the remaining candidate cards animate in
+  throw new Error(
+    'agent-discovery drive is known-broken: "Skip setup" dismisses the whole onboarding ' +
+      'flow instead of one step (DOR-472), and Discovery now sits behind a real DorkBot ' +
+      'personality save whose sandbox safety is unverified. This shot carries forward its ' +
+      'last-known-good asset. See the block comment above this function.'
+  );
 }
 
 /**
