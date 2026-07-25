@@ -1,3 +1,9 @@
+---
+covers:
+  - "fix(approvals): deciding an approval needs a person, and the card cannot lie (DOR-428)"
+  - "fix(approvals): redact secrets before clamping, and stop anchoring the sweep (DOR-428)"
+---
+
 ### Security
 
 - An agent could approve its own request. When an agent asked to do something that cannot be undone, the reply carried the code needed to retry, and nothing stopped the agent from answering the request itself. Now the agent that asked, and anything holding that retry code, is refused, and the request keeps waiting for you (DOR-428)
