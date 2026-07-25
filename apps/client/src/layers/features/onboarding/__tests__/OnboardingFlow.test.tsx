@@ -11,6 +11,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
+import { mergeDialogSearch } from '@/layers/shared/model';
 import { onboardingStageSearchSchema } from '../model/onboarding-stage';
 
 const mockDismiss = vi.fn().mockResolvedValue(undefined);
@@ -68,6 +69,9 @@ import { OnboardingFlow } from '../ui/OnboardingFlow';
 // OnboardingFlow now syncs its stage to the `?onboarding=` search param, so it
 // must render inside a router. A single index route validates the same schema
 // the real root route uses, so `useSearch`/`useNavigate` behave as in the app.
+// The dialog params are merged in the way every real leaf route merges them
+// (`mergeDialogSearch`), so the skip-all toast's Settings deep link survives
+// validation here exactly as it does in the app.
 type HistoryActionType = 'PUSH' | 'REPLACE' | 'GO' | 'FORWARD' | 'BACK';
 
 function buildHarness(initialUrl: string, onComplete: () => void) {
@@ -75,7 +79,7 @@ function buildHarness(initialUrl: string, onComplete: () => void) {
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
-    validateSearch: zodValidator(onboardingStageSearchSchema),
+    validateSearch: zodValidator(mergeDialogSearch(onboardingStageSearchSchema)),
     component: () => <OnboardingFlow onComplete={onComplete} />,
   });
   const routeTree = rootRoute.addChildren([indexRoute]);
@@ -89,8 +93,9 @@ function buildHarness(initialUrl: string, onComplete: () => void) {
     return <RouterProvider router={router} />;
   }
   const readStage = () => (router.state.location.search as { onboarding?: string }).onboarding;
+  const readSettingsTab = () => (router.state.location.search as { settings?: string }).settings;
 
-  return { router, history, actions, Wrapper, readStage };
+  return { router, history, actions, Wrapper, readStage, readSettingsTab };
 }
 
 async function renderFlow(initialUrl = '/', onComplete = vi.fn()) {
@@ -234,5 +239,22 @@ describe('OnboardingFlow', () => {
     expect(mockDismiss).toHaveBeenCalled();
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
     await expectWayBackToast();
+  });
+
+  it("the skip-all toast's action deep-links Settings to the Replay setup control", async () => {
+    const harness = await renderFlow('/');
+    fireEvent.click(screen.getByText('Skip all setup welcome'));
+    await expectWayBackToast();
+
+    const [, options] = mockToast.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    // Labelled for the control it lands on, not for the dialog it opens.
+    expect(options.action.label).toBe('Replay setup');
+    act(() => options.action.onClick());
+    // `?settings=preferences` is what actually selects the tab holding "Replay
+    // setup" — landing on Appearance would be worse than the text alone.
+    await waitFor(() => expect(harness.readSettingsTab()).toBe('preferences'));
   });
 });
