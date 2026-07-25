@@ -30,6 +30,7 @@
 import type { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
 import type { CapabilityTier, CapabilitySurfaces } from '@dorkos/shared/capabilities';
+import type { CapabilityInvocationContext } from './registry.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -62,7 +63,12 @@ export interface CapabilityDeps {
  * `invoke` and their `output` schema (a `requires_confirmation` result carrying
  * a token, re-invoked with that token) — by design, there is no declarative
  * "needs confirmation" flag on the definition. The registry treats these as
- * ordinary capabilities; the trust boundary lives in the handler.
+ * ordinary capabilities; that trust boundary lives in the handler.
+ *
+ * The `tier` gate is the separate, declarative one, and it runs OUTSIDE the
+ * handler: every choke point calls `enforceCapabilityTier` before `invoke`
+ * (`tier-enforcement.ts`). A handler that also gates itself reads
+ * `context.approval` so the two never ask a person twice for one action.
  *
  * @template In - The Zod input schema type.
  * @template Out - The Zod output schema type.
@@ -83,7 +89,11 @@ export interface CapabilityDefinition<
    * reach for it, written for the agent that will decide to call it.
    */
   description: string;
-  /** Permission tier (declared now, enforced in phase 3). */
+  /**
+   * Permission tier. Enforced by `enforceCapabilityTier` at every choke point
+   * before this handler runs, so `destructive` really does mean "a person has to
+   * say yes first" (see `tier-enforcement.ts`).
+   */
   tier: CapabilityTier;
   /** Zod input contract; validated before `invoke`, projected as JSON Schema. */
   input: In;
@@ -98,9 +108,17 @@ export interface CapabilityDefinition<
    *
    * @param deps - The boot-time service-dependency bag.
    * @param input - The validated input (already parsed against {@link input}).
+   * @param context - Who is calling and what the tier gate already decided about
+   *   this exact call. Most handlers ignore it; a handler that runs its own
+   *   confirmation flow reads `context.approval` so a person who has ALREADY
+   *   approved this invocation at the choke point is not asked a second time.
    * @returns The plain typed output.
    */
-  invoke(deps: CapabilityDeps, input: z.infer<In>): Promise<z.infer<Out>>;
+  invoke(
+    deps: CapabilityDeps,
+    input: z.infer<In>,
+    context: CapabilityInvocationContext
+  ): Promise<z.infer<Out>>;
 }
 
 /**

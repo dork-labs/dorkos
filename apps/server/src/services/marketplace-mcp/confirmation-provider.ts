@@ -81,6 +81,34 @@ export interface ConfirmationRequest {
    */
   packageType?: string;
   preview?: PermissionPreview;
+  /**
+   * Opaque label for the agent that asked, shown on the approval card so an
+   * operator can see WHO wants this. Not part of the effect, so deliberately not
+   * bound into the approval hash — a different agent asking for the same install
+   * is the same install.
+   */
+  requestedBy?: string;
+}
+
+/**
+ * What a marketplace tool learns about the caller behind one invocation.
+ *
+ * Threaded from the capability invocation context (spec `agent-trust` §3.2), so
+ * the tools that already had a trust boundary of their own can cooperate with the
+ * tier gate in front of them instead of duplicating it.
+ */
+export interface MarketplaceConfirmationContext {
+  /** Label for the agent that asked, for the approval card. */
+  requestedBy?: string;
+  /**
+   * A person ALREADY approved this exact invocation at the capability tier gate,
+   * which spends an approval bound to the same arguments this handler is about to
+   * act on. The handler must not ask again: one action, one card.
+   *
+   * Only ever set for capabilities the tier gate actually gates (`destructive`),
+   * and only after {@link ApprovalService.consume} returned `granted`.
+   */
+  preApproved?: boolean;
 }
 
 /**
@@ -245,6 +273,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       capabilityId,
       inputHash,
       summary: summaryOf(req),
+      ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return { status: 'pending', token: ticket.token };
   }

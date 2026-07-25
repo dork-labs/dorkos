@@ -25,6 +25,7 @@ import type {
   CapabilityDomain,
 } from './capability-definition.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
+import type { GrantedApproval } from './tier-enforcement.js';
 
 /**
  * Request-scoped context for one capability invocation.
@@ -41,6 +42,15 @@ export interface CapabilityInvocationContext {
    * the normal case and changes nothing about how the call runs.
    */
   identity?: AgentIdentity;
+  /**
+   * The approval the tier gate spent to let this call through, when the call was
+   * gated (`destructive` tier) and a person granted it.
+   *
+   * Set by the choke point, never by a caller. A capability whose handler runs
+   * its own confirmation flow treats this as consent already given for this exact
+   * invocation, so the operator answers one card instead of two.
+   */
+  approval?: GrantedApproval;
 }
 
 /**
@@ -258,22 +268,25 @@ export function composeRegistry(
         throw new Error(`Capability registry: no capability registered for id "${id}".`);
       }
       const parsed = capability.input.parse(input);
+      // Always a real object, so a handler can read `context.approval` without
+      // guarding for an absent context on every call site.
+      const invocationContext = context ?? {};
 
       // No observer, or nothing to attribute: run the original path untouched
       // so an unattributed call stays byte-identical to before this seam
       // existed (spec §3.1 — absent identity is today's behavior).
-      if (!onInvocation || !context?.identity) {
-        return capability.invoke(deps, parsed);
+      if (!onInvocation || !invocationContext.identity) {
+        return capability.invoke(deps, parsed, invocationContext);
       }
 
       // Report the outcome either way: a failed attempt by a named agent is
       // exactly as interesting to an audit trail as a successful one.
       try {
-        const result = await capability.invoke(deps, parsed);
-        notify(onInvocation, capability, context, true);
+        const result = await capability.invoke(deps, parsed, invocationContext);
+        notify(onInvocation, capability, invocationContext, true);
         return result;
       } catch (err) {
-        notify(onInvocation, capability, context, false);
+        notify(onInvocation, capability, invocationContext, false);
         throw err;
       }
     },

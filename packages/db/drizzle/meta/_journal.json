@@ -225,6 +225,13 @@
       "when": 1784973456307,
       "tag": "0031_mushy_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1784979729686,
+      "tag": "0032_simple_mysterio",
+      "breakpoints": true
     }
   ]
 }

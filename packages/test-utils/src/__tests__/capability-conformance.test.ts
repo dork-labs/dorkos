@@ -7,6 +7,10 @@
  * route mismatch, an uncovered CLI verb, a too-short description) must produce a
  * violation in the right check group — proving the suite can genuinely fail.
  *
+ * The destructive-gate checker gets the same treatment: a probe whose adapter path
+ * skips the tier gate, one that returns an unstructured payload, and a missing probe
+ * must each be reported, so a real adapter that stops enforcing cannot pass.
+ *
  * The top-level `capabilityConformance(...)` call additionally proves the Vitest
  * wrapper registers green against the conformant baseline (including the async
  * `invoke` assertions).
@@ -15,9 +19,13 @@ import { describe, expect, it } from 'vitest';
 import {
   capabilityConformance,
   checkCapabilityConformance,
+  checkDestructiveGateConformance,
+  GATED_ADAPTER_PATHS,
   type CapabilityConformanceFixtures,
   type ConformanceCapability,
   type ConformanceRegistry,
+  type DestructiveGateProbe,
+  type GatedAdapterPath,
 } from '../capability-conformance.js';
 
 /** A long-enough model-facing description so the metadata check passes by default. */
@@ -61,9 +69,37 @@ function conformantRegistry(
   };
 }
 
+/** The payload a gate-honoring adapter path returns for an unapproved destructive call. */
+function approvalRequiredPayload() {
+  return {
+    status: 'approval_required',
+    capabilityId: 'demo.destroy',
+    capabilityTitle: 'Destroy demo',
+    tier: 'destructive',
+    approvalId: '01JZZZZZZZZZZZZZZZZZZZZZZZ',
+    approvalToken: 'deadbeefdeadbeefdeadbeefdeadbeef',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    reason: 'no_approval',
+    message: 'A person has to approve this first.',
+    retry: { channel: 'mcp-argument', field: 'approvalToken', instructions: 'Retry with the token.' },
+  };
+}
+
+/** A probe standing in for an adapter path that honors the gate. */
+const gateHonoringProbe: DestructiveGateProbe = async () => ({
+  sideEffectHappened: false,
+  payload: approvalRequiredPayload(),
+});
+
+/** Probes for every adapter path, all honoring the gate. */
+function conformantProbes(): Partial<Record<GatedAdapterPath, DestructiveGateProbe>> {
+  return Object.fromEntries(GATED_ADAPTER_PATHS.map((path) => [path, gateHonoringProbe]));
+}
+
 /** Fresh conformant fixtures matching {@link conformantRegistry}. */
 function conformantFixtures(registry: ConformanceRegistry): CapabilityConformanceFixtures {
   return {
+    destructiveGateProbes: conformantProbes(),
     registeredMcpToolNames: {
       'in-session': ['demo_list', 'demo_set'],
       external: ['demo_list', 'demo_set'],
@@ -184,5 +220,51 @@ describe('checkCapabilityConformance — seeded drift must fail', () => {
     const fixtures = conformantFixtures(registry);
     const violations = checkCapabilityConformance(registry, fixtures);
     expect(hasCheck(violations, 'metadata')).toBe(true);
+  });
+});
+
+describe('checkDestructiveGateConformance', () => {
+  it('passes when every adapter path returns approval_required and runs nothing', async () => {
+    expect(await checkDestructiveGateConformance(conformantProbes())).toEqual([]);
+  });
+
+  it('seeded drift: an adapter path that invokes the capability anyway', async () => {
+    const probes = conformantProbes();
+    // A path that "forgot" the gate: the handler ran and the caller got its output.
+    probes['external-mcp'] = async () => ({
+      sideEffectHappened: true,
+      payload: { ok: true },
+    });
+    const violations = await checkDestructiveGateConformance(probes);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations.every((v) => v.check === 'destructive-gate')).toBe(true);
+    expect(violations.some((v) => v.detail.includes('external-mcp'))).toBe(true);
+    expect(violations.some((v) => v.detail.includes('bypasses the tier gate'))).toBe(true);
+  });
+
+  it('seeded drift: a path that blocks the call but returns an unusable payload', async () => {
+    const probes = conformantProbes();
+    probes['invoke-route'] = async () => ({
+      sideEffectHappened: false,
+      payload: { error: 'nope' },
+    });
+    const violations = await checkDestructiveGateConformance(probes);
+    expect(violations.some((v) => v.detail.includes('approval_required payload'))).toBe(true);
+  });
+
+  it('seeded drift: an adapter path with no probe at all', async () => {
+    const probes = conformantProbes();
+    delete probes['in-session-mcp'];
+    const violations = await checkDestructiveGateConformance(probes);
+    expect(violations.some((v) => v.detail.includes('no probe supplied'))).toBe(true);
+  });
+
+  it('seeded drift: a probe that throws', async () => {
+    const probes = conformantProbes();
+    probes['invoke-route'] = async () => {
+      throw new Error('adapter blew up');
+    };
+    const violations = await checkDestructiveGateConformance(probes);
+    expect(violations.some((v) => v.detail.includes('adapter blew up'))).toBe(true);
   });
 });

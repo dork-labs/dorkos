@@ -28,7 +28,13 @@
  *   OpenAPI collision guard) and the projected route set is order-independent;
  * - the docs-projection registry exposes the SAME `http` surface set as the boot
  *   registry (a route can't appear in `/api/docs` that the running server never
- *   serves, or vice versa).
+ *   serves, or vice versa);
+ * - EVERY adapter path an agent can reach a `destructive` capability through runs
+ *   it past the tier gate first (spec `agent-trust` §3.2). The caller supplies one
+ *   probe per path — the invoke route, the in-session MCP adapter, the external MCP
+ *   adapter — and each must come back with an `approval_required` payload and no
+ *   side effect. Miss a path and the gate is decoration; this is the check that
+ *   says so.
  *
  * ## Division of labor and the "test the test" seam
  *
@@ -58,6 +64,43 @@ import {
 
 /** The MCP servers a conformance run inspects. */
 const MCP_SERVERS: readonly McpServerId[] = ['in-session', 'external'];
+
+/**
+ * Every adapter path an agent can reach a capability through, and therefore every
+ * path that must consult the tier gate before invoking one.
+ *
+ * Named rather than counted so a new surface is a deliberate edit here — adding an
+ * adapter without adding its probe should be impossible to do quietly.
+ */
+export const GATED_ADAPTER_PATHS = ['invoke-route', 'in-session-mcp', 'external-mcp'] as const;
+
+/** One adapter path that must enforce the tier gate. */
+export type GatedAdapterPath = (typeof GATED_ADAPTER_PATHS)[number];
+
+/** What one adapter path did when handed a destructive capability with no approval. */
+export interface DestructiveGateProbeResult {
+  /**
+   * Whether the capability's handler actually RAN. Must be false: a gate that
+   * returns the right payload after doing the damage is not a gate.
+   */
+  sideEffectHappened: boolean;
+  /**
+   * What the adapter handed back, unwrapped to plain JSON (MCP adapters wrap
+   * results in a text envelope; unwrap before returning it here).
+   */
+  payload: unknown;
+}
+
+/**
+ * Drive one destructive capability through one adapter path, end to end, with an
+ * agent identity present and NO approval token.
+ *
+ * The probe owns its own fixture: seed a `destructive` capability whose handler
+ * records that it ran, compose a registry with it, and call the real adapter.
+ *
+ * @returns Whether the handler ran, and the payload the adapter produced.
+ */
+export type DestructiveGateProbe = () => Promise<DestructiveGateProbeResult>;
 
 /**
  * A capability as the conformance suite reads it — the structural subset of the
@@ -140,6 +183,12 @@ export interface CapabilityConformanceFixtures {
    * does).
    */
   docsRegistry: Pick<ConformanceRegistry, 'capabilities'>;
+  /**
+   * One probe per {@link GATED_ADAPTER_PATHS} entry, each driving a `destructive`
+   * capability through that real adapter with an identity and no approval token.
+   * A missing key is itself a violation — see the module TSDoc.
+   */
+  destructiveGateProbes: Partial<Record<GatedAdapterPath, DestructiveGateProbe>>;
 }
 
 /** One conformance violation: the check that failed and a human-readable detail. */
@@ -355,6 +404,76 @@ export function checkCapabilityConformance(
   return violations;
 }
 
+/**
+ * Whether a payload is the tier gate's `approval_required` result: the status
+ * discriminator, an approval id a person can decide, and retry instructions a
+ * model can follow. Duck-typed so this suite stays free of a `@dorkos/server`
+ * import.
+ */
+function isApprovalRequiredPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const p = payload as Record<string, unknown>;
+  return (
+    p.status === 'approval_required' &&
+    typeof p.approvalId === 'string' &&
+    p.approvalId.length > 0 &&
+    typeof p.approvalToken === 'string' &&
+    p.approvalToken.length > 0 &&
+    typeof p.message === 'string' &&
+    typeof p.retry === 'object' &&
+    p.retry !== null &&
+    typeof (p.retry as Record<string, unknown>).instructions === 'string'
+  );
+}
+
+/**
+ * Run every destructive-gate probe and return all violations (empty means every
+ * adapter path enforces the gate). Async and separated from
+ * {@link checkCapabilityConformance} because it drives real adapters, and — like
+ * the structural checker — callable directly so a seeded bypass can be shown to
+ * FAIL this check ("test the test").
+ *
+ * @param probes - One probe per {@link GATED_ADAPTER_PATHS} entry.
+ * @returns Every violation found.
+ */
+export async function checkDestructiveGateConformance(
+  probes: Partial<Record<GatedAdapterPath, DestructiveGateProbe>>
+): Promise<ConformanceViolation[]> {
+  const violations: ConformanceViolation[] = [];
+  const add = (detail: string): void => void violations.push({ check: 'destructive-gate', detail });
+
+  for (const path of GATED_ADAPTER_PATHS) {
+    const probe = probes[path];
+    if (!probe) {
+      add(
+        `no probe supplied for the "${path}" adapter path, so nothing proves it enforces the tier gate`
+      );
+      continue;
+    }
+
+    let result: DestructiveGateProbeResult;
+    try {
+      result = await probe();
+    } catch (err) {
+      add(`${path}: probe threw instead of returning a gate decision — ${String(err)}`);
+      continue;
+    }
+
+    if (result.sideEffectHappened) {
+      add(
+        `${path}: the destructive capability RAN without an approval — this path bypasses the tier gate`
+      );
+    }
+    if (!isApprovalRequiredPayload(result.payload)) {
+      add(
+        `${path}: expected a structured approval_required payload (status, approvalId, approvalToken, message, retry.instructions), got ${JSON.stringify(result.payload)}`
+      );
+    }
+  }
+
+  return violations;
+}
+
 /** Group violations by their `check` for a readable per-check assertion. */
 function groupByCheck(violations: ConformanceViolation[]): Map<string, string[]> {
   const grouped = new Map<string, string[]>();
@@ -405,6 +524,15 @@ export function capabilityConformance(
           expect(details, details.join('\n')).toEqual([]);
         });
       }
+    });
+
+    describe('tier enforcement at every adapter path', () => {
+      it('destructive-gate: no path bypasses the gate', async () => {
+        const details = (await checkDestructiveGateConformance(fixtures.destructiveGateProbes)).map(
+          (v) => v.detail
+        );
+        expect(details, details.join('\n')).toEqual([]);
+      });
     });
 
     describe('invoke against fixtures', () => {

@@ -21,8 +21,9 @@
 
 /**
  * The ordered permission tiers a capability can declare, widest-blast-radius
- * last. Declared now, enforced in phase 3 — until then these are inert
- * metadata and must never be presented as an active permission gate.
+ * last. Enforced server-side at every agent-facing choke point (spec
+ * `agent-trust` §3.2): `observe` and `act` proceed, and a `destructive`
+ * capability reached by an identified agent needs a person's approval first.
  *
  * - `observe` — pure reads; no state mutation.
  * - `act` — mutates local state (config, agent manifests, installs).
@@ -149,7 +150,7 @@ export interface SerializedCapability {
   title: string;
   /** Model-facing description (ACI style — what it does, when to use it). */
   description: string;
-  /** Permission tier (inert metadata until phase 3). */
+  /** Permission tier. Enforced at the choke points, not advisory. */
   tier: CapabilityTier;
   /** Input contract as JSON Schema. */
   inputSchema: JsonSchema;

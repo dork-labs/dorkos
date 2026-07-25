@@ -7,6 +7,7 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { resolveAgentIdentity, getRequestAgentIdentity } from '../agent-identity.js';
+import { logger } from '../../lib/logger.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -16,7 +17,7 @@ const AGENT_PATH = '/projects/researcher';
 
 /** Minimal Express doubles — the middleware only touches headers and locals. */
 function makeReqRes(headers: Record<string, string | string[]> = {}) {
-  const req = { headers } as unknown as Request;
+  const req = { headers, path: '/api/capabilities/demo.thing/invoke' } as unknown as Request;
   const res = { locals: {} as Record<string, unknown> } as unknown as Response;
   const next = vi.fn() as unknown as NextFunction;
   return { req, res, next };
@@ -128,5 +129,60 @@ describe('resolveAgentIdentity', () => {
 
     expect(getRequestAgentIdentity(res)).toBeUndefined();
     expect(next).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * A presented token that resolves to nothing is what a revoked or expired agent
+ * looks like from the operator's side. Without a line in the log that agent
+ * silently degrades to "unattributed" forever, so the failure has to be visible —
+ * and the credential still must never be.
+ */
+describe('resolveAgentIdentity — unresolved token visibility', () => {
+  let service: AgentIdentityService;
+
+  beforeEach(() => {
+    resetAgentIdentityService();
+    service = initAgentIdentityService(createTestDb());
+    vi.mocked(logger.debug).mockClear();
+  });
+
+  afterEach(() => {
+    resetAgentIdentityService();
+  });
+
+  it('logs a digest prefix, never the token, when a revoked token is presented', async () => {
+    const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
+    await service.revoke(AGENT_PATH);
+    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+
+    await resolveAgentIdentity(req, res, next);
+
+    expect(getRequestAgentIdentity(res)).toBeUndefined();
+    expect(next).toHaveBeenCalledOnce();
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[agent-identity] Presented token did not resolve',
+      expect.objectContaining({ tokenDigestPrefix: expect.any(String) })
+    );
+
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logged).not.toContain(token);
+  });
+
+  it('says nothing when a token resolves', async () => {
+    const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
+    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+
+    await resolveAgentIdentity(req, res, next);
+
+    expect(logger.debug).not.toHaveBeenCalled();
+  });
+
+  it('says nothing when no token was presented at all', async () => {
+    const { req, res, next } = makeReqRes();
+
+    await resolveAgentIdentity(req, res, next);
+
+    expect(logger.debug).not.toHaveBeenCalled();
   });
 });

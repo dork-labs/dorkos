@@ -123,6 +123,41 @@ describe('PendingApprovalsSection', () => {
     expect(denyApproval).toHaveBeenCalledWith('01JZ0000000000000000000001', undefined);
   });
 
+  it('says so when the list cannot be read, rather than looking like silence', async () => {
+    // A failed fetch and "nothing waiting" render identically if this is missing,
+    // so a person can be shown an empty dashboard while an agent sits blocked.
+    renderSection({
+      listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+
+    expect(
+      await screen.findByText(/could not check whether anything is waiting/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('re-reads the list when Try again is clicked', async () => {
+    const listPendingApprovals = vi.fn().mockRejectedValue(new Error('offline'));
+    renderSection({ listPendingApprovals });
+
+    const button = await screen.findByRole('button', { name: 'Try again' });
+    listPendingApprovals.mockResolvedValue({ approvals: [buildApproval()] });
+    await userEvent.click(button);
+
+    expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
+  });
+
+  it('clamps a long summary so the answer buttons stay reachable', async () => {
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({
+        approvals: [buildApproval({ summary: 'Uninstall '.repeat(60) })],
+      }),
+    });
+
+    const summary = await screen.findByText(/^Uninstall Uninstall/);
+    expect(summary).toHaveClass('line-clamp-2');
+  });
+
   it('shows more than one waiting approval', async () => {
     renderSection({
       listPendingApprovals: vi.fn().mockResolvedValue({

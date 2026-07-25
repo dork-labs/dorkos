@@ -24,13 +24,18 @@
  *
  * @module services/core/capabilities/mcp-projection
  */
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type { CapabilityDefinition } from './capability-definition.js';
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
 import { CapabilityToolError } from './mcp-envelope.js';
+import {
+  APPROVAL_TOKEN_ARGUMENT,
+  enforceCapabilityTier,
+  splitApprovalToken,
+} from './tier-enforcement.js';
 
 /**
  * The capabilities the given MCP server advertises, in registration order —
@@ -53,11 +58,30 @@ export function capabilitiesForMcpServer(
  * capability declares `input` as a `z.object(...)`, so its `.shape` is the same
  * field map the phase-1 descriptors passed straight to `registerTool` / `tool`.
  *
+ * A `destructive` capability gains one extra advertised argument,
+ * `approvalToken`, which is how a retry carries the approval a person granted
+ * (spec `agent-trust` §3.2). It is deliberately NOT part of the capability's own
+ * input schema: the approval binds to a hash of the input, so a token carried
+ * inside the input would change the hash it is checked against. The choke point
+ * splits it back off before parsing ({@link splitApprovalToken}).
+ *
  * @param capability - The capability whose input schema to project.
  * @returns The field-map input schema for MCP tool registration.
  */
 export function capabilityInputShape(capability: CapabilityDefinition): z.ZodRawShape {
-  return (capability.input as z.ZodObject<z.ZodRawShape>).shape;
+  const shape = (capability.input as z.ZodObject<z.ZodRawShape>).shape;
+  if (capability.tier !== 'destructive') return shape;
+  return {
+    ...shape,
+    [APPROVAL_TOKEN_ARGUMENT]: z
+      .string()
+      .optional()
+      .describe(
+        'Approval token from a previous call that returned status:approval_required. ' +
+          'Omit on the first call. After the person approves in DorkOS, call again with ' +
+          'the SAME arguments plus this token.'
+      ),
+  };
 }
 
 /**
@@ -105,24 +129,41 @@ export function readOnlyCarveOutToolNames(
   return names;
 }
 
+/** Wrap a plain payload into the MCP text envelope both servers return. */
+function textResult(payload: unknown, isError = false): CallToolResult {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+    ...(isError ? { isError: true } : {}),
+  };
+}
+
 /**
  * Invoke a capability by id through the registry and re-wrap its plain result
  * into the MCP text envelope both servers return.
  *
- * The registry validates `args` against the capability's input schema, runs its
- * `invoke`, and returns plain data; this function serializes that data into a
- * text block. A {@link CapabilityToolError} — the handler's `isError` path,
- * re-raised at the plain-data seam — is caught and re-wrapped into the matching
- * `isError` envelope so the wire result is byte-equivalent to the phase-1
- * handler's. Any other throw (e.g. an input `ZodError`) propagates to the MCP
- * SDK, exactly as the descriptor registration did.
+ * This is the MCP half of the enforcement choke point (spec `agent-trust` §3.2):
+ * both MCP adapters funnel every tool call through here, so the tier gate runs
+ * ONCE, here, before `registry.invoke` — an adapter cannot forget it, and no
+ * capability handler can run ahead of it. A gated or refused call returns the
+ * gate's structured payload as an ordinary result (not `isError`): needing an
+ * approval is a step in a protocol, not a failure, which is exactly how the
+ * marketplace's `requires_confirmation` result has always behaved.
+ *
+ * The registry then validates the input, runs `invoke`, and returns plain data;
+ * this function serializes that data into a text block. A
+ * {@link CapabilityToolError} — the handler's `isError` path, re-raised at the
+ * plain-data seam — is caught and re-wrapped into the matching `isError` envelope
+ * so the wire result is byte-equivalent to the phase-1 handler's. Any other throw
+ * (e.g. an input `ZodError`) propagates to the MCP SDK, exactly as the descriptor
+ * registration did.
  *
  * @param registry - The composed capability registry.
  * @param id - The capability id to invoke.
- * @param args - Raw tool arguments from the MCP client.
+ * @param args - Raw tool arguments from the MCP client, optionally carrying an
+ *   `approvalToken` for a destructive retry.
  * @param context - Optional request-scoped context (the calling agent's
- *   identity, resolved from the `X-DorkOS-Agent` header). Omitting it invokes
- *   unattributed, exactly as before.
+ *   identity, resolved from the `X-DorkOS-Agent` header or the session's working
+ *   directory). Omitting it invokes unattributed, exactly as before.
  * @returns The MCP text-content result.
  */
 export async function invokeCapabilityAsMcpResult(
@@ -131,15 +172,42 @@ export async function invokeCapabilityAsMcpResult(
   args: unknown,
   context?: CapabilityInvocationContext
 ): Promise<CallToolResult> {
+  const capability = registry.get(id);
+  // Only a destructive tool advertises `approvalToken`, so only a destructive
+  // call has one to lift off — anything else gets its arguments through untouched
+  // rather than silently losing a field of that name.
+  const { approvalToken, input } =
+    capability?.tier === 'destructive'
+      ? splitApprovalToken(args)
+      : { approvalToken: undefined, input: args };
+
   try {
-    const data = await registry.invoke(id, args, context);
-    return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+    // An unknown id has no tier to enforce; hand it to the registry so the
+    // "no capability registered" error stays the single source of that message.
+    if (capability) {
+      // Parse before gating so the approval binds to the input that will really
+      // execute, defaults and coercions included — not to the raw arguments.
+      const parsed = capability.input.parse(input);
+      const decision = enforceCapabilityTier({
+        capability,
+        input: parsed,
+        ...(context?.identity ? { identity: context.identity } : {}),
+        ...(approvalToken ? { approvalToken } : {}),
+        retryChannel: 'mcp-argument',
+      });
+      if (decision.outcome !== 'allowed') return textResult(decision.payload);
+
+      const data = await registry.invoke(id, parsed, {
+        ...context,
+        ...(decision.approval ? { approval: decision.approval } : {}),
+      });
+      return textResult(data);
+    }
+
+    return textResult(await registry.invoke(id, input, context));
   } catch (err) {
     if (err instanceof CapabilityToolError) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(err.payload, null, 2) }],
-        isError: true,
-      };
+      return textResult(err.payload, true);
     }
     throw err;
   }

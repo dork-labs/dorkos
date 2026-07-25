@@ -43,7 +43,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { ulid } from 'ulidx';
 import { and, asc, eq, isNull, lt, approvals, type Db } from '@dorkos/db';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { APPROVAL_SUMMARY_MAX_LENGTH, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 
 /** How long an operator has to decide before a token stops being honored. */
@@ -150,6 +150,18 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
+/**
+ * Shorten a summary to what a card can hold.
+ *
+ * Enforced on the way IN rather than at render time: the cockpit parses stored
+ * rows against a schema that caps this length, so a long sentence has to become a
+ * short one here or the card would be dropped instead of shown.
+ */
+function clampSummary(summary: string): string {
+  if (summary.length <= APPROVAL_SUMMARY_MAX_LENGTH) return summary;
+  return `${summary.slice(0, APPROVAL_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
 /** A stored approval row, as Drizzle infers it. */
 type ApprovalRow = typeof approvals.$inferSelect;
 
@@ -211,7 +223,7 @@ export class ApprovalService {
       capabilityTitle: descriptor?.title ?? input.capabilityId,
       tier: descriptor?.tier ?? ('destructive' as const),
       inputHash: input.inputHash,
-      summary: input.summary,
+      summary: clampSummary(input.summary),
       requestedBy: input.requestedBy ?? null,
       state: 'pending' as const,
       denyReason: null,
@@ -251,10 +263,12 @@ export class ApprovalService {
   /**
    * Present a token for the action it was granted for.
    *
-   * Expiry is checked here, so a stale row is written off rather than honored
-   * even when no sweep has run. A token that resolves to a real approval for a
-   * DIFFERENT action reports `mismatched` and is deliberately left unspent — the
-   * approval stays available for what the operator actually allowed.
+   * Expiry is checked here — before the binding — so a stale row is written off
+   * rather than honored even when no sweep has run, and a caller learns that its
+   * token ran out of time instead of being sent chasing an argument mismatch. A
+   * live token that resolves to a real approval for a DIFFERENT action reports
+   * `mismatched` and is deliberately left unspent — the approval stays available
+   * for what the operator actually allowed.
    *
    * Spending is a conditional write, so two callers presenting the same token at
    * once cannot both be told `granted`: exactly one wins the row, the other reads
@@ -269,14 +283,17 @@ export class ApprovalService {
     if (!row) return { outcome: 'unknown' };
     if (row.consumedAt) return { outcome: 'consumed', approvalId: row.id };
 
-    if (row.capabilityId !== binding.capabilityId || row.inputHash !== binding.inputHash) {
-      return { outcome: 'mismatched', approvalId: row.id };
-    }
-
+    // Expiry is checked BEFORE the binding, so a stale token reports what is
+    // actually wrong with it. Told `mismatched` first, a caller would keep
+    // rebuilding its arguments to chase a token that had already run out of time.
     if (this.isExpired(row)) {
       if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
       broadcastApprovalResolved(row.id, 'expired');
       return { outcome: 'expired', approvalId: row.id };
+    }
+
+    if (row.capabilityId !== binding.capabilityId || row.inputHash !== binding.inputHash) {
+      return { outcome: 'mismatched', approvalId: row.id };
     }
 
     if (row.state === 'pending') {

@@ -30,12 +30,15 @@ available ids with \`dorkos capabilities\`. Output is always raw JSON on stdout.
 Options:
       --input <json>        Inline JSON input for the capability
       --input-file <path>   Read the JSON input from a file ('-' reads stdin)
+      --approval <token>    Approval token from a call that returned
+                            status:approval_required
       --json                Accepted for consistency (output is always JSON)
 
 Examples:
   dorkos call operator.check_update
   dorkos call operator.activity_list --input '{"limit":5}'
-  dorkos call operator.config_patch --input-file ./patch.json`;
+  dorkos call operator.config_patch --input-file ./patch.json
+  dorkos call marketplace.uninstall --input '{"name":"x"}' --approval <token>`;
 
 /** Parsed arguments for `dorkos call`. */
 export interface CallArgs {
@@ -43,6 +46,12 @@ export interface CallArgs {
   id: string;
   /** The parsed JSON input to send (defaults to `{}`). */
   input: unknown;
+  /**
+   * Approval token for a capability that cannot be undone. A first call returns
+   * `status:approval_required` with a token; once a person approves in DorkOS, the
+   * same call with this token goes through.
+   */
+  approvalToken?: string;
 }
 
 /** One capability entry from `GET /api/capabilities/catalog` (id is all we need). */
@@ -74,6 +83,7 @@ export function parseCallArgs(rawArgs: string[]): CallArgs {
       options: {
         input: { type: 'string' },
         'input-file': { type: 'string' },
+        approval: { type: 'string' },
         json: { type: 'boolean', default: false },
       },
       allowPositionals: true,
@@ -126,7 +136,12 @@ export function parseCallArgs(rawArgs: string[]): CallArgs {
     }
   }
 
-  return { id, input };
+  const approvalToken =
+    typeof values.approval === 'string' && values.approval.trim().length > 0
+      ? values.approval.trim()
+      : undefined;
+
+  return { id, input, ...(approvalToken ? { approvalToken } : {}) };
 }
 
 /**
@@ -156,14 +171,33 @@ export async function runCall(args: CallArgs): Promise<number> {
     const result = await apiCall<unknown>(
       'POST',
       `/api/capabilities/${encodeURIComponent(args.id)}/invoke`,
-      args.input
+      args.input,
+      args.approvalToken ? { 'X-DorkOS-Approval': args.approvalToken } : undefined
     );
     printJson(result);
-    return 0;
+    // The server accepted the request but a person has to approve it before
+    // anything happens, so this is not a success: the payload on stdout says what
+    // to do, and the exit code says the capability did not run.
+    return isAwaitingApproval(result) ? 1 : 0;
   } catch (err) {
     printCallError(err);
     return 1;
   }
+}
+
+/**
+ * Whether a result is the tier gate's "a person has to approve this first"
+ * payload rather than a capability's own output.
+ *
+ * @param result - The parsed response body.
+ * @returns True when the capability did not run because approval is pending.
+ */
+function isAwaitingApproval(result: unknown): boolean {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    (result as { status?: unknown }).status === 'approval_required'
+  );
 }
 
 /**

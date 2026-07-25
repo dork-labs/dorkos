@@ -19,13 +19,28 @@
  * `operator.config_patch`, `marketplace.install`, …) is therefore never reachable
  * through a tokenless path here; its posture matches the curated mutation routes.
  *
+ * ## The HTTP half of the tier gate
+ *
+ * On top of transport auth, this is one of the three enforcement choke points
+ * (spec `agent-trust` §3.2). Every dispatch runs
+ * {@link enforceCapabilityTier} before `registry.invoke`, so an agent calling a
+ * `destructive` capability gets `202` with an `approval_required` payload rather
+ * than the operation, and an agent whose tier ceiling forbids the call gets `403`.
+ * The retry carries its approval token in the `X-DorkOS-Approval` header, never in
+ * the body: the body IS the capability's input, and the approval is bound to a
+ * hash of that input.
+ *
  * @module routes/capabilities-invoke
  */
 import { Router } from 'express';
 import { z } from 'zod';
 
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
-import { CapabilityToolError } from '../services/core/capabilities/index.js';
+import {
+  APPROVAL_TOKEN_HEADER,
+  CapabilityToolError,
+  enforceCapabilityTier,
+} from '../services/core/capabilities/index.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { logger } from '../lib/logger.js';
 
@@ -47,7 +62,8 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
   router.post('/:id/invoke', async (req, res) => {
     const { id } = req.params;
 
-    if (!registry.get(id)) {
+    const capability = registry.get(id);
+    if (!capability) {
       return res
         .status(404)
         .json({ error: `Unknown capability: ${id}`, code: 'UNKNOWN_CAPABILITY' });
@@ -62,7 +78,34 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
       // (`X-DorkOS-Agent`). Absent one, this is `undefined` and the invocation
       // runs exactly as it did before identity existed.
       const identity = getRequestAgentIdentity(res);
-      const result = await registry.invoke(id, input, identity ? { identity } : undefined);
+
+      // Parse here rather than inside the registry so the approval binds to the
+      // input that will really execute (defaults applied, unknown keys stripped),
+      // not to whatever JSON arrived.
+      const parsed = capability.input.parse(input);
+      const header = req.headers[APPROVAL_TOKEN_HEADER];
+      const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
+
+      const decision = enforceCapabilityTier({
+        capability,
+        input: parsed,
+        ...(identity ? { identity } : {}),
+        ...(approvalToken ? { approvalToken } : {}),
+        retryChannel: 'http-header',
+      });
+      // 202: the request was recorded and is waiting on a person, so the caller
+      // should come back. 403: refused, and no retry will change that.
+      if (decision.outcome === 'approval_required') {
+        return res.status(202).json(decision.payload);
+      }
+      if (decision.outcome === 'denied') {
+        return res.status(403).json(decision.payload);
+      }
+
+      const result = await registry.invoke(id, parsed, {
+        ...(identity ? { identity } : {}),
+        ...(decision.approval ? { approval: decision.approval } : {}),
+      });
       return res.json(result);
     } catch (err) {
       // Input failed the capability's Zod input contract — a client error.

@@ -43,8 +43,9 @@ export const agentIdentityTokens = sqliteTable(
     displayName: text('display_name').notNull(),
 
     /**
-     * Highest capability tier this identity may reach. Declared now, enforced in
-     * a later task; `destructive` (unrestricted) matches today's trust posture.
+     * Highest capability tier this identity may reach, enforced at the capability
+     * choke points; `destructive` (unrestricted) is the default and matches the
+     * trust posture agents had before ceilings existed.
      */
     tierCeiling: text('tier_ceiling', {
       enum: ['observe', 'act', 'destructive'],
@@ -54,6 +55,19 @@ export const agentIdentityTokens = sqliteTable(
 
     /** When the token was minted. ISO 8601 UTC. */
     createdAt: text('created_at').notNull(),
+
+    /**
+     * When the token was last successfully presented, or null if never. ISO 8601
+     * UTC.
+     *
+     * Together with `createdAt` this is what makes a token expire: resolution
+     * refuses one that has been idle too long, or that is older than the absolute
+     * cap, without needing an expiry column to backfill (see
+     * `agent-identity-service.ts`). Written coarsely — only when the stored value
+     * is already stale — so a busy agent costs one write every few minutes, not
+     * one per request.
+     */
+    lastUsedAt: text('last_used_at'),
 
     /** When the token was revoked, or null while it is live. ISO 8601 UTC. */
     revokedAt: text('revoked_at'),

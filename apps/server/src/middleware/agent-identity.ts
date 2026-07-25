@@ -22,6 +22,7 @@
  */
 import type { Request, Response, NextFunction } from 'express';
 import {
+  agentTokenDigestPrefix,
   getAgentIdentityService,
   type AgentIdentity,
 } from '../services/core/agent-identity/agent-identity-service.js';
@@ -74,9 +75,20 @@ export async function resolveAgentIdentity(
   }
 
   try {
-    const identity = await service.resolve(token.trim());
+    const trimmed = token.trim();
+    const identity = await service.resolve(trimmed);
     if (identity) {
       res.locals.agentIdentity = identity;
+    } else {
+      // A token that goes nowhere is worth seeing: it is what a revoked or
+      // expired agent looks like from the operator's side, and without a line
+      // here that agent silently degrades to "unattributed" forever. The digest
+      // prefix makes repeat attempts by the SAME token recognizable; the token
+      // itself is never logged.
+      logger.debug('[agent-identity] Presented token did not resolve', {
+        tokenDigestPrefix: agentTokenDigestPrefix(trimmed),
+        path: req.path,
+      });
     }
   } catch (err) {
     // A resolution failure must never take the request down with it — the

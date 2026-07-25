@@ -27,6 +27,30 @@
  * which is also the semantics an operator wants — "this agent no longer acts as
  * itself" — rather than per-session bookkeeping they never see.
  *
+ * ## Tokens expire, and why by time rather than by session
+ *
+ * A token that never expires is a standing credential: one minted for a
+ * five-minute session last month would still act as that agent today, and once
+ * tiers are enforced against identity that is a real bypass surface, not a
+ * bookkeeping wart. Two clocks close it (see {@link TOKEN_IDLE_TTL_MS} and
+ * {@link TOKEN_ABSOLUTE_TTL_MS}): a token dies after a stretch of not being used,
+ * and dies outright once it is old enough, whichever comes first.
+ *
+ * Scoping tokens to the session they were minted for was the alternative, and it
+ * is weaker in practice. The mint seam runs at spawn, before a session id exists
+ * to bind to; sessions resume, fork, and are killed without any teardown hook
+ * that reliably fires, so "revoke when the session ends" would silently leak
+ * exactly the tokens it was meant to collect. A clock needs no event to fire.
+ *
+ * Expiry is a property of the BEARER path only. {@link AgentIdentityService.resolve}
+ * enforces it, because a presented secret is what expiry protects against.
+ * {@link AgentIdentityService.describeAgent} does not: it presents no secret (the
+ * caller is structurally the agent whose session it is) and exists to read the
+ * agent's recorded tier ceiling. Letting a stale clock erase an in-session
+ * agent's identity would silently turn OFF its tier ceiling, which is the
+ * opposite of what expiry is for. Revocation, the operator's actual off switch,
+ * applies to both.
+ *
  * @module services/core/agent-identity/agent-identity-service
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -35,6 +59,29 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
 /** Bytes of CSPRNG randomness behind a minted token (128 bits, per spec §3.1). */
 const TOKEN_BYTES = 16;
+
+/**
+ * How long a token may go unused before it stops resolving.
+ *
+ * Long enough that an agent picked back up after a weekend keeps its identity,
+ * short enough that tokens from sessions nobody remembers are already dead.
+ */
+export const TOKEN_IDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The hard ceiling on a token's life, however often it is used. Bounds how long
+ * any single minted secret can matter, even for an agent that never stops.
+ */
+export const TOKEN_ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How stale the recorded `lastUsedAt` must be before resolution rewrites it.
+ *
+ * Refreshing on every request would add a write to every attributed API call for
+ * no benefit — the idle window is measured in days, so minutes of drift cost
+ * nothing and a busy agent writes once per interval instead of once per call.
+ */
+const LAST_USED_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * A resolved agent identity — who is acting, and the highest tier they may
@@ -46,8 +93,9 @@ export interface AgentIdentity {
   /** Human-readable agent name, for Activity attribution labels. */
   displayName: string;
   /**
-   * Highest capability tier this identity may reach. Declared here and carried
-   * onto every request; enforcement lands in a later task (spec §3.2).
+   * Highest capability tier this identity may reach. Carried onto every request
+   * and enforced by `enforceCapabilityTier`: a ceiling below a capability's tier
+   * refuses the call outright, and no approval can lift it.
    */
   tierCeiling: CapabilityTier;
   /** When the presented token was minted. ISO 8601 UTC. */
@@ -62,8 +110,8 @@ export interface MintAgentTokenInput {
   displayName: string;
   /**
    * Highest tier the identity may reach. Defaults to `destructive`
-   * (unrestricted), which preserves today's trust posture — tokens exist to
-   * attribute, not yet to restrict.
+   * (unrestricted), so minting a token attributes an agent without narrowing what
+   * it may do; a lower ceiling is how an operator narrows it.
    */
   tierCeiling?: CapabilityTier;
 }
@@ -71,6 +119,45 @@ export interface MintAgentTokenInput {
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
 function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+/** How many digest characters identify a token in a log line. */
+const DIGEST_PREFIX_LENGTH = 8;
+
+/**
+ * A short, non-reversible label for a presented token, for logs.
+ *
+ * Operators need to tell "the same revoked agent keeps retrying" from "several
+ * different bad tokens", and that needs a stable handle. A digest prefix gives one
+ * without ever putting the credential in a log file: it cannot be presented, and
+ * eight hex characters of a SHA-256 digest identify nothing on their own.
+ *
+ * @param token - The presented token.
+ * @returns The first characters of its SHA-256 digest.
+ */
+export function agentTokenDigestPrefix(token: string): string {
+  return hashToken(token).slice(0, DIGEST_PREFIX_LENGTH);
+}
+
+/** A stored token row, as Drizzle infers it. */
+type AgentTokenRow = typeof agentIdentityTokens.$inferSelect;
+
+/**
+ * Whether a stored token has run out of time — idle too long, or simply too old.
+ *
+ * Reads both clocks off `createdAt`/`lastUsedAt` rather than a stored expiry, so
+ * tokens minted before expiry existed are covered by the same rule with no
+ * backfill: one that has not been used since before the idle window is already
+ * dead the moment this ships.
+ */
+function isTokenExpired(row: AgentTokenRow, now: number): boolean {
+  const createdAt = new Date(row.createdAt).getTime();
+  if (Number.isNaN(createdAt)) return true;
+  if (now - createdAt > TOKEN_ABSOLUTE_TTL_MS) return true;
+
+  const lastUsedAt = row.lastUsedAt ? new Date(row.lastUsedAt).getTime() : createdAt;
+  const lastActivity = Number.isNaN(lastUsedAt) ? createdAt : lastUsedAt;
+  return now - lastActivity > TOKEN_IDLE_TTL_MS;
 }
 
 /**
@@ -103,6 +190,7 @@ export class AgentIdentityService {
       displayName: input.displayName,
       tierCeiling: input.tierCeiling ?? 'destructive',
       createdAt: new Date().toISOString(),
+      lastUsedAt: null,
       revokedAt: null,
     });
     return token;
@@ -110,12 +198,14 @@ export class AgentIdentityService {
 
   /**
    * Resolve a presented token to the identity behind it, or `undefined` when it
-   * is unknown, malformed, or revoked.
+   * is unknown, malformed, revoked, or expired.
    *
    * Lookup is by hash, so an attacker with database read access still holds
    * nothing presentable. The final equality check runs through
    * {@link timingSafeEqual} so a caller cannot learn a valid digest by
-   * measuring how long a miss takes.
+   * measuring how long a miss takes. A token that still resolves has its
+   * `lastUsedAt` refreshed, which is what keeps a live agent's token alive (see
+   * the module TSDoc on expiry).
    *
    * @param token - The raw token from the `X-DorkOS-Agent` header.
    * @returns The resolved identity, or `undefined` when it does not resolve.
@@ -140,12 +230,41 @@ export class AgentIdentityService {
       return undefined;
     }
 
+    const now = Date.now();
+    if (isTokenExpired(row, now)) return undefined;
+
+    await this.touch(row, now);
+
     return {
       agentPath: row.agentPath,
       displayName: row.displayName,
       tierCeiling: row.tierCeiling,
       createdAt: row.createdAt,
     };
+  }
+
+  /**
+   * Refresh a live token's `lastUsedAt`, but only once the stored value is stale
+   * enough to be worth a write (see {@link LAST_USED_WRITE_INTERVAL_MS}).
+   *
+   * Failures are swallowed: attribution is a side channel, and a write that loses
+   * a race only costs the token a few minutes off a multi-day window.
+   *
+   * @param row - The resolved token row.
+   * @param now - The current epoch milliseconds.
+   */
+  private async touch(row: AgentTokenRow, now: number): Promise<void> {
+    const recorded = row.lastUsedAt ? new Date(row.lastUsedAt).getTime() : 0;
+    if (Number.isFinite(recorded) && now - recorded < LAST_USED_WRITE_INTERVAL_MS) return;
+
+    try {
+      await this.db
+        .update(agentIdentityTokens)
+        .set({ lastUsedAt: new Date(now).toISOString() })
+        .where(eq(agentIdentityTokens.tokenHash, row.tokenHash));
+    } catch {
+      // Deliberately ignored — see the TSDoc above.
+    }
   }
 
   /**
@@ -158,6 +277,11 @@ export class AgentIdentityService {
    * it is. Reading the stored record (rather than synthesizing one) means the
    * in-session path sees the SAME `tierCeiling` the token path would, so the two
    * surfaces cannot drift once that ceiling is enforced.
+   *
+   * Deliberately ignores token expiry, unlike {@link resolve}: nothing is being
+   * presented here, so there is no bearer secret to age out, and dropping the
+   * identity would drop the agent's tier ceiling along with it (see the module
+   * TSDoc). Revocation still applies — that is the operator's real off switch.
    *
    * @param agentPath - Absolute path to the agent's project directory.
    * @returns The agent's current identity, or `undefined` when it has no live token.
