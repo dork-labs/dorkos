@@ -123,9 +123,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
       setActiveForm: vi.fn(),
-      statusBarPins: [],
-      toggleStatusBarPin: vi.fn(),
-      resetStatusBarPins: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -151,6 +148,9 @@ vi.mock('@/layers/features/status', async (importOriginal) => ({
   AutoModeConfirmDialog: vi.fn(() => null),
   UsageRevealPopover: vi.fn(() => null),
   useGitStatus: vi.fn(() => ({ data: undefined })),
+  // Pins live in server config (`ui.statusBar.pins`); stub the bridge so this
+  // suite needs no query client or transport.
+  useStatusBarPins: () => ({ pins: [], toggle: vi.fn(), reset: vi.fn() }),
 }));
 
 vi.mock('../ui/tasks/TaskListPanel', () => ({

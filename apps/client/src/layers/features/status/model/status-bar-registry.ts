@@ -26,9 +26,12 @@ import {
   Users,
   UserRound,
 } from 'lucide-react';
+import { useCallback } from 'react';
 import type { ConnectionState, PermissionMode, UsageStatus } from '@dorkos/shared/types';
+import type { StatusBarPin } from '@dorkos/shared/config-schema';
+import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
-import { useAppStore } from '@/layers/shared/model';
+import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
 
 /** Union of every status line item key. */
 export type StatusBarItemKey =
@@ -86,7 +89,7 @@ export interface GitPromotionState {
 }
 
 /** The two things about a runtime that can make it news. */
-export interface RuntimePromotionState {
+interface RuntimePromotionState {
   /** Whether this is the server's default runtime. */
   isDefault: boolean;
   /** Whether the runtime can still be chosen (pre-first-message). */
@@ -361,18 +364,38 @@ export function isPinnable(item: StatusBarItemConfig): boolean {
 }
 
 /**
- * Bridge to the app store's pin list: the pinned keys plus the two actions that
- * change them. Unknown keys in storage are ignored by the selector, so a stale
- * localStorage entry from a removed item is harmless.
+ * Bridge to the server-persisted pin list (`ui.statusBar.pins`, DOR-431 →
+ * DOR-452): the pinned keys plus the two actions that change them.
+ *
+ * Pins are config, not `localStorage`, so the same items follow you between the
+ * desktop app, the browser, and Obsidian, and an agent can set them via
+ * `config_patch`. Both actions write the whole list — the config schema treats
+ * `pins` as one array and a PATCH replaces arrays wholesale.
+ *
+ * A pin whose key is no longer pinnable is ignored downstream rather than
+ * rejected, so removing an item from the registry cannot strand the line.
  */
 export function useStatusBarPins(): {
-  pins: readonly string[];
+  pins: readonly StatusBarPin[];
   toggle: (key: StatusBarItemKey) => void;
   reset: () => void;
 } {
-  const pins = useAppStore((s) => s.statusBarPins);
-  const toggle = useAppStore((s) => s.toggleStatusBarPin);
-  const reset = useAppStore((s) => s.resetStatusBarPins);
+  const { pins } = useStatusBarPrefs();
+  const { setPins } = useUpdateStatusBarPrefs();
+
+  const toggle = useCallback(
+    (key: StatusBarItemKey) => {
+      // Only pinnable keys can enter the list: the config enum would reject
+      // anything else, and the schema is the boundary worth trusting.
+      const pin = STATUS_BAR_PIN_KEYS.find((candidate) => candidate === key);
+      if (!pin) return;
+      setPins(pins.includes(pin) ? pins.filter((k) => k !== pin) : [...pins, pin]);
+    },
+    [pins, setPins]
+  );
+
+  const reset = useCallback(() => setPins([]), [setPins]);
+
   return { pins, toggle, reset };
 }
 

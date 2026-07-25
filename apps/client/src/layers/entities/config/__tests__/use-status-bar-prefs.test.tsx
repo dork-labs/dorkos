@@ -31,74 +31,62 @@ function createHarness(transport: Transport) {
 }
 
 describe('useStatusBarPrefs', () => {
-  it('returns the all-visible defaults when config has not loaded', () => {
+  it('returns the nothing-pinned default when config has not loaded', () => {
     const transport = createMockTransport({ getConfig: vi.fn().mockResolvedValue({}) });
     const { wrapper } = createHarness(transport);
     const { result } = renderHook(() => useStatusBarPrefs(), { wrapper });
     expect(result.current).toEqual(STATUS_BAR_PREFS_DEFAULTS);
+    expect(result.current.pins).toEqual([]);
   });
 
-  it('selects `ui.statusBar` from the loaded config', () => {
+  it('selects `ui.statusBar.pins` from the loaded config', () => {
     const transport = createMockTransport({ getConfig: vi.fn().mockResolvedValue({}) });
     const { queryClient, wrapper } = createHarness(transport);
-    queryClient.setQueryData(
-      configKeys.current(),
-      makeServerConfig({ ...STATUS_BAR_PREFS_DEFAULTS, git: false, model: false })
-    );
+    queryClient.setQueryData(configKeys.current(), makeServerConfig({ pins: ['git', 'usage'] }));
     const { result } = renderHook(() => useStatusBarPrefs(), { wrapper });
-    expect(result.current.git).toBe(false);
-    expect(result.current.model).toBe(false);
-    expect(result.current.cwd).toBe(true);
+    expect(result.current.pins).toEqual(['git', 'usage']);
   });
 });
 
 describe('useUpdateStatusBarPrefs', () => {
-  it('setVisibility PATCHes the single key and updates the cache optimistically', async () => {
+  it('setPins PATCHes the whole list and updates the cache optimistically', async () => {
     const transport = createMockTransport({ updateConfig: vi.fn().mockResolvedValue(undefined) });
     const { queryClient, wrapper } = createHarness(transport);
-    queryClient.setQueryData(configKeys.current(), makeServerConfig(STATUS_BAR_PREFS_DEFAULTS));
+    queryClient.setQueryData(configKeys.current(), makeServerConfig({ pins: [] }));
 
     const { result } = renderHook(() => useUpdateStatusBarPrefs(), { wrapper });
 
     act(() => {
-      result.current.setVisibility('git', false);
+      result.current.setPins(['git']);
     });
 
-    // Optimistic cache write (onMutate) flips only `git`.
+    // Optimistic cache write (onMutate).
     await waitFor(() =>
-      expect(queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar.git).toBe(
-        false
-      )
-    );
-    expect(queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar.cwd).toBe(
-      true
+      expect(
+        queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar.pins
+      ).toEqual(['git'])
     );
 
-    // A partial patch is sent (deep-merged server-side — no other key touched).
+    // A `pins`-only patch is sent: `PATCH /api/config` deep-merges objects and
+    // replaces arrays, so no other `ui` key is touched.
     await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(1));
-    expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { statusBar: { git: false } } });
+    expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { statusBar: { pins: ['git'] } } });
   });
 
-  it('reset PATCHes the full defaults section', async () => {
+  it('setPins([]) clears every pin in one write', async () => {
     const transport = createMockTransport({ updateConfig: vi.fn().mockResolvedValue(undefined) });
     const { queryClient, wrapper } = createHarness(transport);
-    queryClient.setQueryData(
-      configKeys.current(),
-      makeServerConfig({ ...STATUS_BAR_PREFS_DEFAULTS, cwd: false, git: false })
-    );
+    queryClient.setQueryData(configKeys.current(), makeServerConfig({ pins: ['cwd', 'git'] }));
 
     const { result } = renderHook(() => useUpdateStatusBarPrefs(), { wrapper });
 
     act(() => {
-      result.current.reset();
+      result.current.setPins([]);
     });
 
     await waitFor(() =>
-      expect(transport.updateConfig).toHaveBeenCalledWith({
-        ui: { statusBar: STATUS_BAR_PREFS_DEFAULTS },
-      })
+      expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { statusBar: { pins: [] } } })
     );
-    // Optimistic write restores every item to visible.
     await waitFor(() =>
       expect(queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar).toEqual(
         STATUS_BAR_PREFS_DEFAULTS
@@ -115,19 +103,19 @@ describe('useUpdateStatusBarPrefs', () => {
       updateConfig: vi.fn().mockReturnValue(pending),
     });
     const { queryClient, wrapper } = createHarness(transport);
-    queryClient.setQueryData(configKeys.current(), makeServerConfig(STATUS_BAR_PREFS_DEFAULTS));
+    queryClient.setQueryData(configKeys.current(), makeServerConfig({ pins: ['git'] }));
 
     const { result } = renderHook(() => useUpdateStatusBarPrefs(), { wrapper });
 
     act(() => {
-      result.current.setVisibility('cwd', false);
+      result.current.setPins([]);
     });
 
     // Optimistic state is applied while the write is in flight.
     await waitFor(() =>
-      expect(queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar.cwd).toBe(
-        false
-      )
+      expect(
+        queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar.pins
+      ).toEqual([])
     );
 
     await act(async () => {
@@ -137,9 +125,9 @@ describe('useUpdateStatusBarPrefs', () => {
 
     // Rolled back to the pre-mutation snapshot.
     await waitFor(() =>
-      expect(queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar.cwd).toBe(
-        true
-      )
+      expect(
+        queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.statusBar.pins
+      ).toEqual(['git'])
     );
   });
 });

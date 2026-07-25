@@ -77,11 +77,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      // `default` permissions are quiet by design; this suite drives the auto-mode
-      // confirmation from that item, so pin it into the line.
-      statusBarPins: ['permission'],
-      toggleStatusBarPin: vi.fn(),
-      resetStatusBarPins: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -123,6 +118,11 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     SubagentsItem: () => null,
     SessionPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
+    // `default` permissions are quiet by design; this suite drives the auto-mode
+    // confirmation from that item, so pin it into the line. Pins live in server
+    // config (`ui.statusBar.pins`); stub the bridge so this suite needs no query
+    // client or transport.
+    useStatusBarPins: () => ({ pins: ['permission'], toggle: vi.fn(), reset: vi.fn() }),
   };
 });
 

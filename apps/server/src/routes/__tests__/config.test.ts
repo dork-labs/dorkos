@@ -235,22 +235,11 @@ describe('GET /api/config', () => {
     expect(res.body.ui.shapes.autoFollowAgent).toBe(false);
   });
 
-  it('includes ui.statusBar visibility prefs, all visible by default (DOR-431)', async () => {
+  it('includes ui.statusBar pins, nothing pinned by default (DOR-431, DOR-452)', async () => {
     const res = await request(app).get('/api/config').expect(200);
 
     expect(res.body.ui.statusBar).toBeDefined();
-    expect(res.body.ui.statusBar).toEqual({
-      cwd: true,
-      git: true,
-      runtime: true,
-      model: true,
-      cache: true,
-      context: true,
-      usage: true,
-      permission: true,
-      sound: true,
-      polling: true,
-    });
+    expect(res.body.ui.statusBar).toEqual({ pins: [] });
   });
 });
 

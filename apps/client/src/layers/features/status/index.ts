@@ -27,7 +27,6 @@ export { isNewer, isFeatureUpdate } from './lib/version-compare';
 export { gitPromotionState, useStatusBarPins } from './model/status-bar-registry';
 export type { StatusBarItemKey, StatusPromotionContext } from './model/status-bar-registry';
 export { selectPromotedItems } from './model/promoted-items';
-export type { PromotedStatusItem } from './model/promoted-items';
 export { applyStatusBudget } from './model/status-budget';
 export type { StatusDensity } from './model/status-budget';
 export { useStatusBudget } from './model/use-status-budget';

@@ -2,12 +2,18 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ServerConfig } from '@dorkos/shared/types';
+import type { StatusBarPin } from '@dorkos/shared/config-schema';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 import { SessionPopover } from '../ui/SessionPopover';
 import type { SessionDiagnostics } from '../model/session-diagnostics';
 import type { StatusPromotionContext } from '../model/status-bar-registry';
-import { useAppStore } from '@/layers/shared/model';
 
 const toastSuccess = vi.fn();
 vi.mock('sonner', () => ({ toast: { success: (m: string) => toastSuccess(m) } }));
@@ -62,18 +68,46 @@ const controls = {
   onToggleRefresh: vi.fn(),
 };
 
-/** Render the panel open, with a stub trigger. */
-function renderPanel(props: Partial<Parameters<typeof SessionPopover>[0]> = {}) {
-  return render(
-    <SessionPopover
-      open
-      onOpenChange={vi.fn()}
-      diagnostics={diagnostics()}
-      controls={controls}
-      promotionContext={promotionContext()}
-      {...props}
-    />
+/**
+ * Pins live in server config (`ui.statusBar.pins`), so the panel needs a query
+ * client and a transport. Seeds the config cache with `pins` and hands back the
+ * transport so a pin click can be asserted as the PATCH it really is.
+ */
+function harness(pins: StatusBarPin[] = []) {
+  const transport = createMockTransport({ updateConfig: vi.fn().mockResolvedValue(undefined) });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  queryClient.setQueryData(configKeys.current(), {
+    ui: { statusBar: { pins } },
+  } as unknown as ServerConfig);
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
   );
+  return { transport, queryClient, wrapper };
+}
+
+/** Render the panel open, with a stub trigger. */
+function renderPanel(
+  props: Partial<Parameters<typeof SessionPopover>[0]> = {},
+  pins: StatusBarPin[] = []
+) {
+  const { transport, wrapper: Wrapper } = harness(pins);
+  const result = render(
+    <Wrapper>
+      <SessionPopover
+        open
+        onOpenChange={vi.fn()}
+        diagnostics={diagnostics()}
+        controls={controls}
+        promotionContext={promotionContext()}
+        {...props}
+      />
+    </Wrapper>
+  );
+  return { ...result, transport };
 }
 
 /** The rendered order of the Session group's rows, by registry key. */
@@ -87,7 +121,6 @@ function sessionRowOrder(): string[] {
 }
 
 beforeEach(() => {
-  useAppStore.setState({ statusBarPins: [] });
   mockIsMobile.mockReturnValue(false);
 });
 
@@ -99,15 +132,7 @@ afterEach(() => {
 describe('SessionPopover — the trigger', () => {
   it('renders one labelled `⋯` that asks to open the panel', () => {
     const onOpenChange = vi.fn();
-    render(
-      <SessionPopover
-        open={false}
-        onOpenChange={onOpenChange}
-        diagnostics={diagnostics()}
-        controls={controls}
-        promotionContext={promotionContext()}
-      />
-    );
+    renderPanel({ open: false, onOpenChange });
     const trigger = screen.getByRole('button', { name: 'Session details' });
     fireEvent.click(trigger);
     expect(onOpenChange).toHaveBeenCalledWith(true);
@@ -116,31 +141,13 @@ describe('SessionPopover — the trigger', () => {
   it('counts what the width budget could not fit, in the label as well as on screen', () => {
     // `aria-label` replaces a button's text, so a visible `+2` with no count in the
     // label would be honest to the eye and silent to a screen reader.
-    render(
-      <SessionPopover
-        open={false}
-        onOpenChange={vi.fn()}
-        diagnostics={diagnostics()}
-        controls={controls}
-        promotionContext={promotionContext()}
-        overflowCount={2}
-      />
-    );
+    renderPanel({ open: false, overflowCount: 2 });
     expect(screen.getByRole('button', { name: 'Session details, 2 more' })).toBeInTheDocument();
     expect(screen.getByText('+2')).toBeInTheDocument();
   });
 
   it('says nothing extra when the line fitted everything', () => {
-    render(
-      <SessionPopover
-        open={false}
-        onOpenChange={vi.fn()}
-        diagnostics={diagnostics()}
-        controls={controls}
-        promotionContext={promotionContext()}
-        overflowCount={0}
-      />
-    );
+    renderPanel({ open: false, overflowCount: 0 });
     expect(screen.getByRole('button', { name: 'Session details' })).toBeInTheDocument();
     expect(screen.queryByText(/^\+/)).not.toBeInTheDocument();
   });
@@ -210,29 +217,39 @@ describe('SessionPopover — pins', () => {
     expect(screen.queryByRole('button', { name: /Keep Cache/ })).toBeNull();
   });
 
-  it('writes the pin to the store when clicked', () => {
-    renderPanel();
+  it('saves the pin to server config when clicked', async () => {
+    // Config, not localStorage: the same pins follow you to the next client, and
+    // an agent can set them with `config_patch`.
+    const { transport } = renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Keep Usage & cost in the status bar' }));
-    expect(useAppStore.getState().statusBarPins).toEqual(['usage']);
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        ui: { statusBar: { pins: ['usage'] } },
+      })
+    );
   });
 
-  it('reflects an existing pin as pressed and offers to remove it', () => {
-    useAppStore.setState({ statusBarPins: ['git'] });
-    renderPanel();
+  it('reflects an existing pin as pressed and offers to remove it', async () => {
+    const { transport } = renderPanel({}, ['git']);
     const pin = screen.getByRole('button', { name: 'Stop keeping Git in the status bar' });
     expect(pin).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(pin);
-    expect(useAppStore.getState().statusBarPins).toEqual([]);
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { statusBar: { pins: [] } } })
+    );
   });
 
-  it('clears every pin from the footer, and offers nothing to clear when there are none', () => {
-    useAppStore.setState({ statusBarPins: ['git', 'usage'] });
-    renderPanel();
+  it('clears every pin from the footer, and offers nothing to clear when there are none', async () => {
+    const { transport } = renderPanel({}, ['git', 'usage']);
     const reset = screen.getByRole('button', { name: /Reset pins/ });
     expect(reset).toBeEnabled();
     fireEvent.click(reset);
-    expect(useAppStore.getState().statusBarPins).toEqual([]);
-    expect(screen.getByRole('button', { name: /Reset pins/ })).toBeDisabled();
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { statusBar: { pins: [] } } })
+    );
+    // The optimistic write lands before the server answers, so the button
+    // reports "nothing to clear" immediately.
+    await waitFor(() => expect(screen.getByRole('button', { name: /Reset pins/ })).toBeDisabled());
   });
 });
 

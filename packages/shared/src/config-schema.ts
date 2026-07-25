@@ -267,45 +267,63 @@ export type ShapeUserPrefs = z.infer<typeof ShapeUserPrefsSchema>;
 export const SHAPE_USER_PREFS_DEFAULTS: ShapeUserPrefs = ShapeUserPrefsSchema.parse({});
 
 /**
- * Person-scoped status-bar visibility preferences (`ui.statusBar`, DOR-431).
- * Each boolean toggles one status-bar item's visibility; all default `true`
- * (every item shown), matching the client's historical `localStorage` defaults.
- * Promoted from client `localStorage` into server config so the choices sync
- * across devices and an agent can flip them via `config_patch` (spec
- * agents-as-operators). The keys mirror the client's `StatusBarItemKey`
- * registry. The section holds no arrays, so a partial PATCH deep-merges cleanly
- * (one item can be toggled without round-tripping the whole object).
+ * Every status-line item a person is allowed to pin.
+ *
+ * Deliberately a closed set, not free strings: the list is agent-writable via
+ * `config_patch`, and an enum makes the legal values discoverable in the
+ * generated JSON/OpenAPI schema and rejects a typo at the boundary instead of
+ * persisting it. It mirrors the client registry's *pinnable* items — the Session
+ * group minus `cache`. Controls (`sound`, `polling`) are settings rather than
+ * status, and diagnostics rows are system-managed, so neither is pinnable; that
+ * exclusion is what stops pins from quietly becoming ten visibility toggles
+ * again. A client-side drift test keeps this enum and the registry in step.
+ */
+export const StatusBarPinSchema = z.enum([
+  'cwd',
+  'git',
+  'runtime',
+  'model',
+  'context',
+  'usage',
+  'permission',
+]);
+
+/** One pinnable status-line item key. */
+export type StatusBarPin = z.infer<typeof StatusBarPinSchema>;
+
+/**
+ * Every pinnable status-line item key, as a runtime array. Lets the client
+ * narrow an arbitrary registry key to a {@link StatusBarPin} without a cast, and
+ * gives the registry↔schema drift test something to compare against.
+ */
+export const STATUS_BAR_PIN_KEYS: readonly StatusBarPin[] = StatusBarPinSchema.options;
+
+/**
+ * Person-scoped status-bar preferences (`ui.statusBar`, DOR-431 → DOR-452).
+ *
+ * The status line is quiet by default: an item appears only when its promotion
+ * rule fires (it is actionable or anomalous) or when a person pinned it here.
+ * `pins` is therefore additive — it says "always show me this" — where the ten
+ * `boolean` visibility toggles this section originally held were subtractive
+ * ("hide this"). Pins live in server config rather than client `localStorage` so
+ * the choice syncs across devices and an agent can set it via `config_patch`
+ * (spec agents-as-operators).
+ *
+ * A `config_patch` replaces arrays wholesale, so patching `pins` sets the whole
+ * list — that is the intended semantics for a list of "keep these".
  */
 export const StatusBarPrefsSchema = z.object({
-  /** Show the current-working-directory item. */
-  cwd: z.boolean().default(true),
-  /** Show the git branch + change-count item. */
-  git: z.boolean().default(true),
-  /** Show the agent-runtime item. */
-  runtime: z.boolean().default(true),
-  /** Show the selected-model item. */
-  model: z.boolean().default(true),
-  /** Show the prompt-cache hit-rate item. */
-  cache: z.boolean().default(true),
-  /** Show the context-window utilization item. */
-  context: z.boolean().default(true),
-  /** Show the usage & cost item. */
-  usage: z.boolean().default(true),
-  /** Show the permission-mode selector item. */
-  permission: z.boolean().default(true),
-  /** Show the notification-sound toggle item. */
-  sound: z.boolean().default(true),
-  /** Show the background-polling toggle item. */
-  polling: z.boolean().default(true),
+  /** Status-line items to show even when their promotion rule would stay quiet. */
+  pins: z.array(StatusBarPinSchema).default([]),
 });
 
-/** Person-scoped status-bar visibility preferences (`ui.statusBar`). */
+/** Person-scoped status-bar preferences (`ui.statusBar`). */
 export type StatusBarPrefs = z.infer<typeof StatusBarPrefsSchema>;
 
 /**
- * Fully-defaulted {@link StatusBarPrefs} (every item visible). Parsed once so
- * the config route, the client selector, and the conf migration share one
- * canonical default.
+ * Fully-defaulted {@link StatusBarPrefs} (nothing pinned — the line speaks only
+ * when it has something to say). Parsed once so the config route, the client
+ * selector, and the conf migration share one canonical default.
  */
 export const STATUS_BAR_PREFS_DEFAULTS: StatusBarPrefs = StatusBarPrefsSchema.parse({});
 
@@ -362,19 +380,8 @@ export const UserConfigSchema = z.object({
         agentDefaults: {},
         autoFollowAgent: false,
       })),
-      /** Person-scoped status-bar visibility toggles (DOR-431). */
-      statusBar: StatusBarPrefsSchema.default(() => ({
-        cwd: true,
-        git: true,
-        runtime: true,
-        model: true,
-        cache: true,
-        context: true,
-        usage: true,
-        permission: true,
-        sound: true,
-        polling: true,
-      })),
+      /** Person-scoped status-line pins (DOR-431, DOR-452). */
+      statusBar: StatusBarPrefsSchema.default(() => ({ pins: [] })),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -394,18 +401,7 @@ export const UserConfigSchema = z.object({
         agentDefaults: {},
         autoFollowAgent: false,
       },
-      statusBar: {
-        cwd: true,
-        git: true,
-        runtime: true,
-        model: true,
-        cache: true,
-        context: true,
-        usage: true,
-        permission: true,
-        sound: true,
-        polling: true,
-      },
+      statusBar: { pins: [] },
     })),
   logging: LoggingConfigSchema.default(() => ({
     level: 'info' as const,

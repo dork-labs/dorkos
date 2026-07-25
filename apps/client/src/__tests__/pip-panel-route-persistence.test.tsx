@@ -133,16 +133,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   };
 });
 
-// AppShell also mounts useStatusBarLegacyMigration (DOR-431), which reads the
-// transport + query client. This isolated test provides neither, so no-op it.
-vi.mock('@/layers/entities/config', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
-  return {
-    ...actual,
-    useStatusBarLegacyMigration: () => {},
-  };
-});
-
 vi.mock('react-resizable-panels', () => ({
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   PanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,

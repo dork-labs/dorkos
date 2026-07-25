@@ -2,7 +2,7 @@
 
 - A **Session** panel behind the `⋯` at the end of the status line, on click or `Cmd+Shift+.`. It lists everything about the session with its live value — directory, git, runtime, model, context, cache, usage, permissions — plus sound and background refresh, and diagnostics: connection, how far the live link has caught up, how many messages are waiting, and the session id. On a phone it opens as a bottom sheet, most urgent first (DOR-452).
 - **Copy diagnostics** in the Session panel puts everything above on your clipboard as one block of readable JSON — the thing to paste into a bug report (DOR-452).
-- **Pin** any session row to keep it in the status line even when it has nothing to report, and **Reset pins** to clear them all (DOR-452).
+- **Pin** any session row to keep it in the status line even when it has nothing to report, and **Reset pins** to clear them all. Your pins are saved with the rest of your settings rather than in one browser, so they follow you to your other windows, the desktop app, and Obsidian — and you can just ask an agent to pin something for you (DOR-452).
 - When the conversation window passes 85% full, a one-click **Compact** appears right beside the percentage instead of on a row of its own (DOR-452).
 
 ### Changed
@@ -14,6 +14,7 @@
 ### Removed
 
 - The **Configure status bar** panel and the **Status Bar** tab in Settings are gone, along with their ten on/off switches and the right-click "Hide this item" menu. Pins in the Session panel replace them: one thing that adds, instead of ten that only ever subtract. Diagnostics rows deliberately have no pin (DOR-452).
+- **Heads up:** those ten show/hide choices are cleared, once, by this release — they are not carried over as pins. The two settings mean opposite things, so there is no honest way to convert one into the other: everything used to show unless you hid it, and now nothing shows unless it has something to say or you pinned it. Carrying "shown" over as "pinned" would have pinned all ten items for anyone who never touched the switches, which is exactly the noisy status bar this release removes. Pin what you want back from the Session panel (DOR-452).
 
 ### Fixed
 

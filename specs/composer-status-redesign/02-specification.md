@@ -189,9 +189,23 @@ Replace every breakpoint alignment flip with a fixed two-cluster layout — left
 
 ### 5.1 Pins replace toggles
 
-Replace the ten `showStatusBar*` booleans + setters with a single `statusBarPins: StatusBarItemKey[]` in the app store. These are **localStorage-backed** (`readBool`/`writeBool` in `app-store-helpers.ts`), _not_ `conf`-backed `~/.dork/config.json` — so **no Zod schema or config migration is required**. Drop the old keys; stale localStorage entries are harmless.
+Replace the ten `showStatusBar*` visibility booleans with a single `pins` list of `StatusBarItemKey`s. Pins live in **server config** at `ui.statusBar.pins` — the surface DOR-431 established for status-bar preferences — read with TanStack Query and written as a single-key `PATCH /api/config` with an optimistic update, following the `ui.sidebar` pattern exactly. So this **does** need a Zod schema change (in both `UserConfigSchema` and `ServerConfigSchema`) and a `conf` migration. See §5.1.1.
+
+Config, not `localStorage`, for three reasons: it is where main already put these preferences, `localStorage` does not sync across clients, and — the load-bearing one — an agent must be able to set pins via `config_patch`. Agent-controllability of every operator surface is the product thesis; pins must not regress it.
+
+The pin keys are enumerated in the schema rather than left as free strings, so an agent's `config_patch` is validated at the boundary and the legal values are discoverable in the generated JSON/OpenAPI schema. The enum is exactly the client's pinnable set (Session rows minus `cache`); a drift test keeps registry and schema in step, and the client ignores an unknown pin rather than failing on it.
 
 Semantics: a pinned item shows regardless of its promotion rule. **Pins raise priority but never bypass the mobile budget** — otherwise pinning five items recreates the overflow under a friendlier name.
+
+### 5.1.1 Collision with DOR-431, and the migration
+
+An earlier draft of this section asserted the ten `showStatusBar*` keys were localStorage-only and concluded that **no Zod or `conf` migration was required**. That premise was true when written and false by the time this shipped: `30ac9265d feat(client): status-bar preferences live in server config (DOR-431)` landed on `main` mid-build and moved those ten booleans into `ui.statusBar` (person-scoped, in both `UserConfigSchema` and `ServerConfigSchema`, surfaced on `GET /api/config`, with an append-only `0.57.0` migration and a one-time client lift out of `localStorage`). It also made the items agent-controllable on purpose. Pins were ported onto that surface rather than re-privatized.
+
+**The migration drops the ten booleans and seeds an empty pin list.** There is no faithful mapping: the semantics inverted deliberately, from visible-by-default-with-hide to silent-by-default-with-pin. Deriving pins from the old boolean values would hand anyone who left everything at its default ten pins — losing the entire redesign. This is a deliberate one-time reset, and the changelog says so plainly.
+
+It is keyed `0.57.0` (`migrateStatusBarToPins`), replacing DOR-431's `backfillStatusBarDefaults` body rather than appending a `0.58.0` after it. Editing that body is legitimate here and the append-only rule is not in play: `0.57.0` has never been tagged (v0.56.0 is the latest release), so no user has ever run it. Appending instead would be actively unsafe — the old body writes ten booleans, the new schema is a closed object requiring `pins`, and conf validates the whole store once migrations finish. A `0.58.0` key would not run on a release cut as 0.57.0, so the boolean write would survive into that final validation and hard-fail startup.
+
+Retiring DOR-431's `useStatusBarLegacyMigration` follows from the reset: there is nothing left to lift, and the existing `purgeOrphanedPreferenceKeys` already removes the ten `dorkos-show-status-bar-*` keys from any client that never ran DOR-431. Its agent-controllability coverage is kept — the `config-toggle` case in `packages/evals/src/suite/operate.ts` now asserts an agent pins `git` via `config_patch` instead of hiding it.
 
 ### 5.2 Session popover
 

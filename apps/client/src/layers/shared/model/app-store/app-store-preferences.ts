@@ -21,14 +21,7 @@ import {
   STORAGE_KEYS,
   FONT_SCALE_MAP,
 } from '@/layers/shared/lib';
-import {
-  readBool,
-  writeBool,
-  readStringList,
-  writeStringList,
-  BOOL_KEYS,
-  BOOL_DEFAULTS,
-} from './app-store-helpers';
+import { readBool, writeBool, BOOL_KEYS, BOOL_DEFAULTS } from './app-store-helpers';
 import type { AppState } from './app-store-types';
 
 // ---------------------------------------------------------------------------
@@ -50,16 +43,6 @@ export interface PreferencesSlice {
   setEnableTasksNotifications: (v: boolean) => void;
   enableMessagePolling: boolean;
   setEnableMessagePolling: (v: boolean) => void;
-
-  /**
-   * Status-line items the person has pinned, so they show even when their
-   * promotion rule would keep them quiet. Item keys are owned by
-   * `features/status` (its registry is the source of truth); the store persists
-   * them as opaque strings so the lowest layer stays free of feature types.
-   */
-  statusBarPins: string[];
-  toggleStatusBarPin: (key: string) => void;
-  resetStatusBarPins: () => void;
 
   fontSize: 'small' | 'medium' | 'large';
   setFontSize: (v: 'small' | 'medium' | 'large') => void;
@@ -129,20 +112,6 @@ export const createPreferencesSlice: StateCreator<
   setEnableMessagePolling: (v) => {
     writeBool(BOOL_KEYS.enableMessagePolling, v);
     set({ enableMessagePolling: v });
-  },
-
-  statusBarPins: readStringList(STORAGE_KEYS.STATUS_BAR_PINS, []),
-  toggleStatusBarPin: (key) =>
-    set((s) => {
-      const next = s.statusBarPins.includes(key)
-        ? s.statusBarPins.filter((k) => k !== key)
-        : [...s.statusBarPins, key];
-      writeStringList(STORAGE_KEYS.STATUS_BAR_PINS, next);
-      return { statusBarPins: next };
-    }),
-  resetStatusBarPins: () => {
-    writeStringList(STORAGE_KEYS.STATUS_BAR_PINS, []);
-    set({ statusBarPins: [] });
   },
 
   fontSize: (() => {

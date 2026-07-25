@@ -58,9 +58,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setPendingRuntime: vi.fn(),
       // A healthy cost and a 20%-full window are quiet by design; pin them so this
       // suite still asserts what it is about — snapshot hydration on cold mount.
-      statusBarPins: ['usage', 'context'],
-      toggleStatusBarPin: vi.fn(),
-      resetStatusBarPins: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -111,6 +108,9 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     ),
     SessionPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
+    // Pins live in server config (`ui.statusBar.pins`); stub the bridge so this
+    // suite needs no query client or transport.
+    useStatusBarPins: () => ({ pins: ['usage', 'context'], toggle: vi.fn(), reset: vi.fn() }),
     ConnectionItem: () => null,
     SubagentsItem: () => null,
   };

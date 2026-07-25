@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { STATUS_BAR_PIN_KEYS, STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   STATUS_BAR_REGISTRY,
   getGroupedRegistryItems,
@@ -215,6 +216,30 @@ describe('isPinnable', () => {
     expect(isPinnable(getStatusBarItem('sound')!)).toBe(false);
     expect(isPinnable(getStatusBarItem('polling')!)).toBe(false);
     expect(isPinnable(getStatusBarItem('cache')!)).toBe(false);
+  });
+});
+
+describe('registry ↔ `ui.statusBar.pins` config schema', () => {
+  // Pins are persisted in server config, where the schema enumerates the legal
+  // values so a `config_patch` from an agent is validated rather than guessed at.
+  // That makes the enum a second source of truth for "what is pinnable", and this
+  // is the guard that the two can never drift: rename or remove a pinnable item
+  // without touching the schema (and its migration) and this fails.
+  it('the pinnable registry items are exactly the schema pin enum', () => {
+    const pinnable = STATUS_BAR_REGISTRY.filter(isPinnable)
+      .map((item) => item.key)
+      .sort();
+    expect(pinnable).toEqual([...STATUS_BAR_PIN_KEYS].sort());
+  });
+
+  it('every schema pin key resolves to a registry item', () => {
+    for (const key of STATUS_BAR_PIN_KEYS) {
+      expect(getStatusBarItem(key)).toBeDefined();
+    }
+  });
+
+  it('nothing pinned is the schema default — the line starts quiet', () => {
+    expect(STATUS_BAR_PREFS_DEFAULTS.pins).toEqual([]);
   });
 });
 

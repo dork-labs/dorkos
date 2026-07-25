@@ -58,9 +58,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      statusBarPins: [],
-      toggleStatusBarPin: vi.fn(),
-      resetStatusBarPins: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -111,6 +108,9 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     ),
     SessionPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
+    // Pins live in server config (`ui.statusBar.pins`); stub the bridge so this
+    // suite needs no query client or transport.
+    useStatusBarPins: () => ({ pins: [], toggle: vi.fn(), reset: vi.fn() }),
     ConnectionItem: () => null,
     SubagentsItem: () => null,
   };

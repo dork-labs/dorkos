@@ -25,30 +25,6 @@ export function writeBool(key: string, v: boolean): void {
   } catch {}
 }
 
-/**
- * Read a list of strings from localStorage, dropping any non-string entries.
- * Returns `defaultValue` when the key is absent, unparseable, or not an array —
- * a corrupt value degrades to the default instead of throwing.
- */
-export function readStringList(key: string, defaultValue: string[]): string[] {
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored === null) return defaultValue;
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return defaultValue;
-    return parsed.filter((v): v is string => typeof v === 'string');
-  } catch {
-    return defaultValue;
-  }
-}
-
-/** Write a list of strings to localStorage with try/catch safety. */
-export function writeStringList(key: string, v: string[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(v));
-  } catch {}
-}
-
 export interface ContextFile {
   id: string;
   path: string;
@@ -85,8 +61,10 @@ export const BOOL_KEYS = {
  *
  * The ten `dorkos-show-status-bar-*` keys backed the per-item visibility
  * toggles. The status line is now quiet by default and promotes an item only
- * when it is actionable, so the ten booleans are one list of pins
- * (`dorkos-status-bar-pins`) that adds items rather than ten that subtract.
+ * when it is actionable, so those ten subtractive booleans became one additive
+ * list of pins — which lives in server config (`ui.statusBar.pins`), not here,
+ * so it syncs across clients. Purging the keys here covers a client that never
+ * ran the release that lifted them into config.
  */
 const ORPHANED_BOOL_KEYS = [
   'dorkos-enable-cross-client-sync',

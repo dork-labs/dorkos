@@ -60,7 +60,7 @@ Work item: DOR-452
 | Question                          | Decision                                                    | Rationale                                                                                             |
 | --------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Tier C item budget                | **3**                                                       | Two problems + one context item.                                                                      |
-| Pin persistence scope             | **Global**, not per-agent                                   | One localStorage key; no config migration. Per-agent is a future enhancement.                         |
+| Pin persistence scope             | **Global**, not per-agent                                   | One `ui.statusBar.pins` list in server config. Per-agent is a future enhancement.                     |
 | Hint rotation settling            | **Stop after 3 complete cycles**, persisted as one integer  | Self-limiting; no per-affordance tracking. A new user sees every hint 3× then it goes static forever. |
 | `"Press Esc twice to clear"` hint | **Dropped**, and the footgun fixed                          | Don't advertise a destructive no-undo path.                                                           |
 | Right-panel Session tab           | **Deferred**                                                | Popover + diagnostics rows + Copy diagnostics covers the need.                                        |

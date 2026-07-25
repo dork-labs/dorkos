@@ -32,9 +32,9 @@
  *   (`name`, `isSystem`) is unchanged.
  * - `activity-read`: the agent called `activity_list`, and the read-only
  *   summary mutated nothing in its workspace.
- * - `config-toggle`: the agent used `config_patch` and the `ui.statusBar.git`
- *   flag flipped to `false` in the sandbox `config.json` — a SCOPED edit, with
- *   every other status-bar preference left at its default.
+ * - `config-toggle`: the agent used `config_patch` and `ui.statusBar.pins` became
+ *   exactly `['git']` in the sandbox `config.json` — a SCOPED edit, with nothing
+ *   else pinned into the status line.
  * - `marketplace-search-and-install`: the agent used `marketplace_install`
  *   and the package tree materialized under the sandbox `DORK_HOME`.
  *
@@ -60,7 +60,6 @@ import {
   TRAIT_SECTION_END,
 } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { createDb, runMigrations, activityEvents } from '@dorkos/db';
 import type { EvalCase, EvalSandbox } from '../types.js';
 import {
@@ -275,42 +274,33 @@ export const activityReadCase: EvalCase = {
 const configPath = (sandbox: EvalSandbox): string => path.join(sandbox.dorkHome, 'config.json');
 
 /**
- * Whether the parsed `config.json` reflects a SURGICAL git-item hide: exactly
- * `ui.statusBar.git === false`, with every OTHER status-bar preference still at
- * its default (`STATUS_BAR_PREFS_DEFAULTS`, all `true`). This rejects an agent
- * that over-broadly flips ALL ten keys — a scoped edit is the behavior under
- * test, not "turn the whole status bar off". Sibling ABSENCE is allowed: after a
- * `config_patch` deep-merge the section may materialize either the full object
- * or only the patched key, and an absent sibling still resolves to its default —
- * so an absent sibling is treated as unchanged, while a sibling PRESENT at a
- * non-default value fails.
+ * Whether the parsed `config.json` reflects a SURGICAL git pin: `ui.statusBar.pins`
+ * is exactly `['git']`. This rejects an agent that over-broadly pins every item —
+ * a scoped edit is the behavior under test, not "put the whole status bar back".
+ * The section starts at its default (nothing pinned), so a lone `'git'` is an
+ * unambiguous, scoped change.
  *
  * @param value - The parsed `config.json` object.
  */
-function onlyGitItemHidden(value: unknown): boolean {
-  const statusBar = (value as { ui?: { statusBar?: Record<string, unknown> } }).ui?.statusBar;
-  if (!statusBar || statusBar.git !== false) return false;
-  const expected: Record<string, boolean> = { ...STATUS_BAR_PREFS_DEFAULTS, git: false };
-  return Object.entries(expected).every(([key, want]) => {
-    const got = statusBar[key];
-    // An absent sibling resolves to its default (unchanged); a present one must
-    // equal the expected value (git → false, every other key → its default).
-    return got === undefined || got === want;
-  });
+function onlyGitItemPinned(value: unknown): boolean {
+  const statusBar = (value as { ui?: { statusBar?: { pins?: unknown } } }).ui?.statusBar;
+  const pins = statusBar?.pins;
+  return Array.isArray(pins) && pins.length === 1 && pins[0] === 'git';
 }
 
 /**
- * `config-toggle` — the user asks (by intent, not by config key) to hide the git
- * status-bar item; the agent discovers the setting and flips it via
+ * `config-toggle` — the user asks (by intent, not by config key) to always see
+ * the git status-bar item; the agent discovers the setting and sets it via
  * `config_patch`. Asserts `config_patch` fired and the edit was SURGICAL —
- * `ui.statusBar.git === false` while every other status-bar preference stays at
- * its default. No seed: the items default to visible (`true`), so a lone `false`
- * on `git` is an unambiguous, scoped flip.
+ * `ui.statusBar.pins === ['git']` and nothing else pinned. No seed: the status
+ * line is quiet by default with nothing pinned, so a lone `'git'` is a scoped
+ * change.
  */
 export const configToggleCase: EvalCase = {
   id: 'config-toggle',
-  title: 'Config toggle — "hide the git info in my status bar" flips ui.statusBar.git',
-  prompt: 'Hide the git info in my status bar — I do not want to see the branch and change count.',
+  title: 'Config toggle — "always show the git info" sets ui.statusBar.pins',
+  prompt:
+    'Always show the git info in my status bar — I want the branch and change count there even when nothing is wrong.',
   runtimeTier: 'claude-code-cheap',
   costClass: 'cheap',
   tags: ['core'],
@@ -320,8 +310,8 @@ export const configToggleCase: EvalCase = {
     toolInvokedInStream('config_patch', 'the agent used config_patch to change a setting'),
     jsonFileMatches(
       configPath,
-      onlyGitItemHidden,
-      'ui.statusBar.git flipped to false in config.json, sibling prefs unchanged'
+      onlyGitItemPinned,
+      "ui.statusBar.pins set to ['git'] in config.json, nothing else pinned"
     ),
   ],
 };

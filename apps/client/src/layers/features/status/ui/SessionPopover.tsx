@@ -42,7 +42,7 @@ export interface SessionControls {
 }
 
 /** An action urgent enough to lead the panel on a phone, where the line has no room for it. */
-export interface SessionUrgentAction {
+interface SessionUrgentAction {
   /** Full-sentence button copy, e.g. "Compact conversation — 88% full". */
   label: string;
   /** Run the action. */
@@ -101,6 +101,9 @@ export function SessionPopover({
   const isMobile = useIsMobile();
   const { pins, toggle, reset } = useStatusBarPins();
   const groups = getGroupedRegistryItems();
+  // Widened to strings so an un-pinnable row (which has no pin control anyway)
+  // can be asked the question without narrowing its key first.
+  const pinned = new Set<string>(pins);
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(formatDiagnostics(diagnostics));
@@ -160,7 +163,7 @@ export function SessionPopover({
                   key={item.key}
                   item={item}
                   value={statusRowValue(item.key, diagnostics)}
-                  pinned={pins.includes(item.key)}
+                  pinned={pinned.has(item.key)}
                   onTogglePin={isPinnable(item) ? () => toggle(item.key) : null}
                   control={renderControl(item.key, controls)}
                 />

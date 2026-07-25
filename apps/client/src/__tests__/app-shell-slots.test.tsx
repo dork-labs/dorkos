@@ -144,17 +144,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   };
 });
 
-// AppShell also mounts useStatusBarLegacyMigration (DOR-431), which reads the
-// transport + query client. This isolated slot test provides neither, so no-op
-// the migration here.
-vi.mock('@/layers/entities/config', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
-  return {
-    ...actual,
-    useStatusBarLegacyMigration: () => {},
-  };
-});
-
 // ── Mock shared model hooks ──
 
 vi.mock('@/layers/shared/model/app-store', () => ({

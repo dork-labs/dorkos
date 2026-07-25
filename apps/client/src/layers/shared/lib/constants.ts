@@ -6,7 +6,6 @@ export const STORAGE_KEYS = {
   RECENT_CWDS: 'dorkos-recent-cwds',
   PICKER_VIEW: 'dorkos-picker-view',
   PLACEHOLDER_HINT_CYCLES: 'dorkos-placeholder-hint-cycles',
-  STATUS_BAR_PINS: 'dorkos-status-bar-pins',
   CANVAS_SESSIONS: 'dorkos-canvas-sessions',
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
