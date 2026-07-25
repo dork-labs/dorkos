@@ -15,6 +15,7 @@ import {
   jsonFileMatches,
   noBackupSiblings,
   dirContainsOnly,
+  dirEmptyOrAbsent,
 } from '../filesystem.js';
 
 let sandbox: EvalSandbox;
@@ -163,5 +164,37 @@ describe('noBackupSiblings', () => {
     const result = await noBackupSiblings((s) => path.join(s.projectCwd, '.dork/plugins'))(ctx());
     expect(result.passed).toBe(false);
     expect(result.detail).toContain('leftover backups');
+  });
+});
+
+describe('dirEmptyOrAbsent', () => {
+  it('passes when the directory is absent (nothing was ever installed)', async () => {
+    const result = await dirEmptyOrAbsent((s) => path.join(s.dorkHome, 'plugins'))(ctx());
+    expect(result.passed).toBe(true);
+  });
+
+  it('passes when the directory exists but is empty', async () => {
+    await mkdir(path.join(sandbox.dorkHome, 'plugins'), { recursive: true });
+    const result = await dirEmptyOrAbsent((s) => path.join(s.dorkHome, 'plugins'))(ctx());
+    expect(result.passed).toBe(true);
+  });
+
+  it('FAILS when something was installed, and names it', async () => {
+    await mkdir(path.join(sandbox.dorkHome, 'plugins', 'sneaky-pkg'), { recursive: true });
+    const result = await dirEmptyOrAbsent((s) => path.join(s.dorkHome, 'plugins'))(ctx());
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('sneaky-pkg');
+  });
+
+  it('FAILS rather than passes when the path cannot be read', async () => {
+    // An oracle that reports success because it could not LOOK is the precise
+    // false-green this harness exists to remove. Only ENOENT means "absent";
+    // ENOTDIR (a file where a directory was expected) must fail.
+    const target = path.join(sandbox.dorkHome, 'plugins');
+    await writeFile(target, 'not a directory', 'utf8');
+    const result = await dirEmptyOrAbsent((s) => path.join(s.dorkHome, 'plugins'))(ctx());
+    expect(result.passed).toBe(false);
+    expect(result.detail).toMatch(/could not read/);
+    expect(result.evidence).toMatchObject({ unreadable: true, code: 'ENOTDIR' });
   });
 });

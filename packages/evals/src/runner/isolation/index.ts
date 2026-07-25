@@ -9,3 +9,4 @@
 export * from './types.js';
 export * from './child-process-launcher.js';
 export * from './docker-launcher.js';
+export * from './netns-proxy.js';

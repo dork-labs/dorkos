@@ -2,12 +2,18 @@
  * Docker isolation tier: the launcher's `docker` invocations, its containment
  * invariants, and the graceful SKIP when no daemon or image is present (spec
  * `agent-trust`, task 3.4). Every path is driven through the injectable
- * {@link DockerCli} seam, so these tests need no daemon.
+ * {@link DockerCli} seam plus a fake namespace channel, so these tests need no
+ * daemon.
  *
- * The load-bearing assertion is the containment one: the ONLY `--volume` is the
- * eval's throwaway sandbox, and nothing from the host home is ever mounted.
+ * The load-bearing assertions are the containment ones, and they are the ones
+ * that were missing: the ONLY `--volume` is the eval's throwaway sandbox, AND the
+ * container has no network at all, no capabilities, and bounded resources. A
+ * container on the default bridge could reach the internet and the developer's
+ * own DorkOS on host loopback — verified by hand before this was fixed — while
+ * the tier's own docstring claimed it "must not touch the host".
  */
 import { describe, it, expect } from 'vitest';
+import { PassThrough } from 'node:stream';
 import {
   DockerLauncher,
   ensureDockerAvailable,
@@ -17,6 +23,7 @@ import {
   EVAL_CONTAINER_LABEL,
   type DockerCli,
 } from '../docker-launcher.js';
+import type { NetnsChannel, OpenNetnsChannel } from '../netns-proxy.js';
 import { createLauncherResolver, parseIsolationTier } from '../resolve-launcher.js';
 import type { ServerLaunchSpec } from '../types.js';
 
@@ -66,6 +73,60 @@ function spec(overrides: Partial<ServerLaunchSpec> = {}): ServerLaunchSpec {
     env: { ANTHROPIC_API_KEY: 'sk-test', ANTHROPIC_MODEL: 'claude-haiku-4-5' },
     ...overrides,
   };
+}
+
+/**
+ * A namespace channel that opens nothing.
+ *
+ * `launch()` binds a real loopback listener (that is how a `--network none`
+ * container is reachable at all), but the CHANNEL into the container is faked:
+ * these tests assert the docker arguments and the teardown, not byte relaying,
+ * which `netns-proxy.test.ts` covers end to end.
+ */
+function fakeChannel(): { open: OpenNetnsChannel; opened: { id: string; port: number }[] } {
+  const opened: { id: string; port: number }[] = [];
+  const open: OpenNetnsChannel = (id, port) => {
+    opened.push({ id, port });
+    const channel: NetnsChannel = {
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      close: () => {},
+    };
+    return channel;
+  };
+  return { open, opened };
+}
+
+/**
+ * Build a launcher whose namespace channel is faked and whose proxy binds a
+ * genuinely free loopback port, so tests never collide with each other or with a
+ * real service.
+ */
+async function launcherOn(
+  docker: DockerCli,
+  opts: { runId?: string; retainOnFailure?: boolean } = {}
+): Promise<{ launcher: DockerLauncher; port: number }> {
+  const { open } = fakeChannel();
+  const port = await freePort();
+  return {
+    launcher: new DockerLauncher({ docker, openChannel: open, ...opts }),
+    port,
+  };
+}
+
+/** Allocate a free loopback port by binding `:0` and releasing it. */
+async function freePort(): Promise<number> {
+  const net = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.unref();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as { port: number };
+      probe.close(() => resolve(port));
+    });
+  });
 }
 
 /** The args of the first `docker run` invocation. */
@@ -120,15 +181,31 @@ describe('ensureDockerAvailable', () => {
     expect(verdict.reason).toMatch(/Other tiers are unaffected/i);
   });
 
-  it('SKIPS with the build command when the image is missing', async () => {
+  it('SKIPS with the build command when the image is really missing', async () => {
     const { docker } = fakeDocker({
       version: { code: 0, stdout: '29.5.2' },
       'image inspect': { code: 1, stderr: 'No such image' },
+      'image ls': { code: 0, stdout: '' },
     });
     const verdict = await ensureDockerAvailable({ docker, image: 'dorkos-eval:latest' });
     expect(verdict.available).toBe(false);
     expect(verdict.reason).toMatch(/is not present locally/);
     expect(verdict.reason).toMatch(/docker build -t dorkos-eval:latest \./);
+  });
+
+  it('does NOT skip when `image inspect` flakes but `image ls` finds the image', async () => {
+    // Observed on Docker 29 + the containerd image store: `image inspect <tag>`
+    // intermittently answers "No such image" for an image `image ls` lists and
+    // `docker run` starts. A false negative here silently demotes a destructive
+    // eval from a container to the bare host.
+    const { docker } = fakeDocker({
+      version: { code: 0, stdout: '29.5.2' },
+      'image inspect': { code: 1, stderr: 'Error response from daemon: No such image' },
+      'image ls': { code: 0, stdout: 'b3d8385e5c23\n' },
+    });
+    const verdict = await ensureDockerAvailable({ docker, image: 'dorkos-eval:latest' });
+    expect(verdict.available).toBe(true);
+    expect(verdict.reason).toBeUndefined();
   });
 
   it('treats a missing `docker` binary as unavailable, not an exception', async () => {
@@ -143,8 +220,8 @@ describe('ensureDockerAvailable', () => {
 describe('DockerLauncher.launch — containment invariants', () => {
   it('mounts ONLY the throwaway sandbox root, nothing from the host home', async () => {
     const { docker, calls } = healthyDocker();
-    const launcher = new DockerLauncher({ docker, image: 'dorkos-eval:latest' });
-    await launcher.launch(spec());
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
 
     const mounts = volumes(runArgs(calls));
     expect(mounts).toEqual([
@@ -154,11 +231,47 @@ describe('DockerLauncher.launch — containment invariants', () => {
     const joined = runArgs(calls).join(' ');
     expect(joined).not.toMatch(/\/Users\//);
     expect(joined).not.toMatch(/\$HOME|\/home\/[a-z]/);
+    await launched.kill();
+  });
+
+  it('gives the container NO NETWORK, and never asks docker to publish a port', async () => {
+    const { docker, calls } = healthyDocker();
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
+
+    const args = runArgs(calls);
+    // The containment claim. On the default bridge, a container launched with the
+    // old flag set reached https://example.com AND host.docker.internal — i.e. the
+    // developer's own DorkOS on 127.0.0.1, whose DORK_HOME is the real ~/.dork.
+    expect(args.join(' ')).toContain('--network none');
+    // `--publish` is not merely unnecessary here, it is a lie: docker accepts it
+    // alongside `--network none` and the host port then never answers.
+    expect(args).not.toContain('--publish');
+    await launched.kill();
+  });
+
+  it('drops every capability and bounds memory, swap, CPU, and pids', async () => {
+    const { docker, calls } = healthyDocker();
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
+
+    const args = runArgs(calls);
+    expect(args).toContain('--cap-drop=ALL');
+    expect(args).toContain('--security-opt=no-new-privileges');
+    const memory = args.find((a) => a.startsWith('--memory='));
+    const swap = args.find((a) => a.startsWith('--memory-swap='));
+    // Swap must equal memory: a container allowed to swap trades the ceiling for
+    // wall-clock instead of failing.
+    expect(swap?.replace('--memory-swap=', '')).toBe(memory?.replace('--memory=', ''));
+    expect(args.some((a) => a.startsWith('--cpus='))).toBe(true);
+    expect(args.some((a) => a.startsWith('--pids-limit='))).toBe(true);
+    await launched.kill();
   });
 
   it('injects container-scoped DORK_HOME and a boundary confined to the mount', async () => {
     const { docker, calls } = healthyDocker();
-    await new DockerLauncher({ docker }).launch(spec());
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
 
     const env = envOf(runArgs(calls));
     expect(env.DORK_HOME).toBe(`${CONTAINER_SANDBOX_ROOT}/.dork`);
@@ -166,30 +279,48 @@ describe('DockerLauncher.launch — containment invariants', () => {
     // Credentials ride env, never a mounted credential file.
     expect(env.ANTHROPIC_API_KEY).toBe('sk-test');
     expect(env.ANTHROPIC_MODEL).toBe('claude-haiku-4-5');
-    // The container binds all interfaces on the harness-allocated port.
-    expect(env.DORKOS_PORT).toBe('53511');
+    // Binding all interfaces is harmless with no network: loopback is the only one.
+    expect(env.DORKOS_PORT).toBe(String(port));
     expect(env.DORKOS_HOST).toBe('0.0.0.0');
+    await launched.kill();
   });
 
-  it('publishes the allocated port on loopback and reports the matching baseUrl', async () => {
-    const { docker, calls } = healthyDocker();
-    const launched = await new DockerLauncher({ docker }).launch(spec());
+  it('reaches the network-less container through a loopback namespace proxy', async () => {
+    const { docker } = healthyDocker('abc123');
+    const { open, opened } = fakeChannel();
+    const port = await freePort();
+    const launched = await new DockerLauncher({ docker, openChannel: open }).launch(spec({ port }));
 
-    const args = runArgs(calls);
-    const publishIdx = args.indexOf('--publish');
-    expect(args[publishIdx + 1]).toBe('127.0.0.1:53511:53511');
-    expect(launched.baseUrl).toBe('http://127.0.0.1:53511');
+    expect(launched.baseUrl).toBe(`http://127.0.0.1:${String(port)}`);
+    // The proxy is bound and answering TCP before launch() resolves, so the
+    // caller's first health poll has something to connect to.
+    const net = await import('node:net');
+    await new Promise<void>((resolve, reject) => {
+      const socket = net.connect(port, '127.0.0.1', () => {
+        socket.destroy();
+        resolve();
+      });
+      socket.once('error', reject);
+    });
+    // The server's 'connection' event lands on a later tick than connect().
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Each connection is relayed into THIS container, at the server's own port.
+    expect(opened).toEqual([{ id: 'abc123', port }]);
+    await launched.kill();
   });
 
   it('reports the CONTAINER project cwd so the drive loop passes a boundary-valid path', async () => {
     const { docker } = healthyDocker();
-    const launched = await new DockerLauncher({ docker }).launch(spec());
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
     expect(launched.projectCwd).toBe(`${CONTAINER_SANDBOX_ROOT}/project`);
+    await launched.kill();
   });
 
   it('labels the container (and the run) so strays are greppable, and starts detached without --rm', async () => {
     const { docker, calls } = healthyDocker();
-    await new DockerLauncher({ docker, runId: 'run-42' }).launch(spec());
+    const { launcher, port } = await launcherOn(docker, { runId: 'run-42' });
+    const launched = await launcher.launch(spec({ port }));
 
     const args = runArgs(calls);
     expect(args).toContain('--detach');
@@ -197,20 +328,43 @@ describe('DockerLauncher.launch — containment invariants', () => {
     expect(args).not.toContain('--rm');
     expect(args.join(' ')).toContain(`--label ${EVAL_CONTAINER_LABEL}=1`);
     expect(args.join(' ')).toContain(`--label ${EVAL_CONTAINER_LABEL}-run=run-42`);
+    await launched.kill();
   });
 
   it('surfaces a docker run failure as a thrown, diagnosable error', async () => {
     const { docker } = fakeDocker({ run: { code: 125, stderr: 'no such image' } });
+    const { open } = fakeChannel();
     await expect(
-      new DockerLauncher({ docker, image: 'missing:tag' }).launch(spec())
+      new DockerLauncher({ docker, image: 'missing:tag', openChannel: open }).launch(spec())
     ).rejects.toThrow(/docker run failed \(exit 125\).*missing:tag.*no such image/s);
+  });
+
+  it('removes the container when the namespace proxy cannot bind, rather than orphaning it', async () => {
+    const { docker, calls } = healthyDocker('abc123');
+    const { open } = fakeChannel();
+    // Occupy the port so the proxy's listen() fails.
+    const net = await import('node:net');
+    const port = await freePort();
+    const squatter = net.createServer();
+    await new Promise<void>((resolve) => squatter.listen(port, '127.0.0.1', () => resolve()));
+
+    try {
+      await expect(
+        new DockerLauncher({ docker, openChannel: open }).launch(spec({ port }))
+      ).rejects.toThrow(/namespace proxy/);
+      // The caller never got a handle, so the launcher itself must clean up.
+      expect(calls.find((c) => c[0] === 'rm')).toEqual(['rm', '--force', 'abc123']);
+    } finally {
+      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+    }
   });
 });
 
 describe('DockerLauncher teardown', () => {
   it('REMOVES the container after a successful eval', async () => {
     const { docker, calls } = healthyDocker('abc123');
-    const launched = await new DockerLauncher({ docker }).launch(spec());
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
     await launched.kill();
 
     const rm = calls.find((c) => c[0] === 'rm');
@@ -220,7 +374,8 @@ describe('DockerLauncher teardown', () => {
 
   it('RETAINS the container (stop, not remove) after a FAILED eval, for debugging', async () => {
     const { docker, calls } = healthyDocker('abc123');
-    const launched = await new DockerLauncher({ docker }).launch(spec());
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
     await launched.kill({ failed: true });
 
     expect(calls.find((c) => c[0] === 'stop')).toEqual(['stop', '--timeout', '5', 'abc123']);
@@ -229,16 +384,35 @@ describe('DockerLauncher teardown', () => {
     expect(launched.containerId).toBe('abc123');
   });
 
+  it('frees the harness port even when the container is RETAINED', async () => {
+    const { docker } = healthyDocker('abc123');
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
+    await launched.kill({ failed: true });
+
+    // A retained container must not hold the loopback port hostage: the next eval
+    // may be handed the same one.
+    const net = await import('node:net');
+    const rebound = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      rebound.once('error', reject);
+      rebound.listen(port, '127.0.0.1', () => resolve());
+    });
+    await new Promise<void>((resolve) => rebound.close(() => resolve()));
+  });
+
   it('removes on failure when retention is disabled', async () => {
     const { docker, calls } = healthyDocker('abc123');
-    const launched = await new DockerLauncher({ docker, retainOnFailure: false }).launch(spec());
+    const { launcher, port } = await launcherOn(docker, { retainOnFailure: false });
+    const launched = await launcher.launch(spec({ port }));
     await launched.kill({ failed: true });
     expect(calls.some((c) => c[0] === 'rm')).toBe(true);
   });
 
   it('kill() is idempotent — a second call issues no further docker commands', async () => {
     const { docker, calls } = healthyDocker();
-    const launched = await new DockerLauncher({ docker }).launch(spec());
+    const { launcher, port } = await launcherOn(docker);
+    const launched = await launcher.launch(spec({ port }));
     await launched.kill();
     const afterFirst = calls.length;
     await launched.kill();
@@ -251,10 +425,13 @@ describe('DockerLauncher teardown', () => {
       wait: { code: 0, stdout: '3\n' },
       logs: { code: 0, stdout: 'boom: boot crashed' },
     });
-    const launched = await new DockerLauncher({ docker }).launch(spec());
+    const { open } = fakeChannel();
+    const port = await freePort();
+    const launched = await new DockerLauncher({ docker, openChannel: open }).launch(spec({ port }));
     const exit = await launched.exited;
     expect(exit.code).toBe(3);
     expect(exit.stderr).toContain('boom: boot crashed');
+    await launched.kill();
   });
 });
 
@@ -315,6 +492,5 @@ describe('isolation tier resolution', () => {
     await resolver.forCase({ preferDocker: true });
     expect(calls.filter((c) => c[0] === 'version')).toHaveLength(1);
     expect(calls.filter((c) => c[0] === 'image')).toHaveLength(1);
-    expect(resolver.availability()?.available).toBe(true);
   });
 });

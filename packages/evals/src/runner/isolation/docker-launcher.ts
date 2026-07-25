@@ -6,9 +6,44 @@
  * The child-process tier already gives per-eval isolation of DorkOS's own state
  * (a fresh sandbox `DORK_HOME`, its own port). What it cannot bound is what the
  * AGENT does: a real credentialed turn runs a real `claude` binary with real
- * file tools, and nothing stops it from writing outside the sandbox. This tier
- * closes that: the server and every tool it spawns live in a container whose
- * ONLY writable window onto the host is the throwaway sandbox directory.
+ * file tools, and nothing stops it from writing outside the sandbox, reaching the
+ * network, or reaching the developer's own DorkOS on loopback. This tier closes
+ * all three.
+ *
+ * ## What is actually contained (verified, not asserted)
+ *
+ * - **Filesystem**: exactly one bind mount, the throwaway sandbox (below).
+ * - **Network**: `--network none`. The container gets a loopback interface and
+ *   nothing else — no egress, and no route to the host, so an agent cannot reach
+ *   `127.0.0.1:4242` (a developer's real cockpit, whose `DORK_HOME` is the real
+ *   `~/.dork`) or exfiltrate the sandbox. Verified from a container launched with
+ *   this exact flag set: `https://example.com` and `host.docker.internal:11434`
+ *   are both unreachable, where on a default bridge both answered.
+ * - **Privileges**: `--cap-drop=ALL` + `--security-opt=no-new-privileges`.
+ * - **Resources**: `--memory` / `--memory-swap` (swap disabled) / `--pids-limit`
+ *   / `--cpus`, so a runaway turn cannot take the host down.
+ *
+ * NOT contained: the container's root filesystem is writable (no `--read-only`).
+ * A real agent turn writes outside the mount — the runtime's own caches and
+ * `$HOME` — and no credentialed run has verified which of those paths the `claude`
+ * binary needs, so adding `--read-only` would be an unverified claim that breaks
+ * the tier. That is a deliberate gap, not an oversight: the container is
+ * disposable, so a write to its own root fs dies with it.
+ *
+ * ## HOW THE HARNESS REACHES A `--network none` SERVER
+ *
+ * `--network none` and `--publish` are mutually exclusive in practice: docker
+ * ACCEPTS both, then the published host port simply never answers (verified —
+ * `curl` gets ECONNREFUSED while the in-container server logs `listening`). So
+ * containment and reachability cannot both come from docker's networking.
+ *
+ * They come from the network NAMESPACE instead: {@link startNetnsProxy} listens on
+ * the harness-allocated loopback port and, per TCP connection, relays bytes
+ * through `docker exec -i <container> node -e <relay>` — which runs INSIDE the
+ * container's namespace and connects to its loopback. Everything above the seam
+ * (`baseUrl`, health polling, the drive loop, SSE) is unchanged; verified end to
+ * end against the real eval image for both `GET /api/health` and a streaming
+ * `GET /api/events`. `node` is guaranteed present: it is the image's own runtime.
  *
  * ## What is (and is not) mounted
  *
@@ -47,7 +82,8 @@
  *
  * Uses the repo `Dockerfile`'s `runtime` target (the published product image:
  * the packed CLI on `PATH`, `ENTRYPOINT ["tini","--","dorkos"]`, binding
- * `0.0.0.0` with the in-container bind guard already opted out). The harness
+ * `0.0.0.0` with the in-container bind guard already opted out — harmless here,
+ * since `--network none` leaves loopback as the only interface). The harness
  * never builds it implicitly — building is minutes and would silently dominate a
  * run — so the image is resolved from `DORKOS_EVAL_IMAGE` (default
  * {@link DEFAULT_EVAL_IMAGE}) and must already exist. {@link ensureDockerAvailable}
@@ -58,15 +94,25 @@
  *
  * Containers are started detached WITHOUT `--rm` so a failed eval's container
  * and logs survive for debugging; {@link DockerLauncher.launch} removes the
- * container on `kill()` only when the eval succeeded. Every container carries a
- * `dorkos-eval=1` label plus the run id, so an interrupted harness leaves a
- * greppable, sweepable set (`docker ps -aq --filter label=dorkos-eval=1`).
+ * container on `kill()` only when the eval succeeded — and `runEval` asks for no
+ * retention at all on a QUARANTINED case, which fails by design every run and
+ * would otherwise leak a stopped container per run. Every container carries a
+ * `dorkos-eval=1` label plus the run id, so what a hard kill still leaves behind
+ * is greppable AND actually swept: `runner/interrupt.ts` disposes on `SIGINT` /
+ * `SIGTERM`, and `pnpm evals:sweep` (`runner/sweep.ts`) clears the rest.
  *
  * @module evals/runner/isolation/docker-launcher
  */
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { IsolationLauncher, LaunchedServer, ServerExit, ServerLaunchSpec } from './types.js';
+import {
+  startNetnsProxy,
+  execDockerChannel,
+  relayCeilingFor,
+  type NetnsProxy,
+  type OpenNetnsChannel,
+} from './netns-proxy.js';
 
 /** The image the docker tier boots when `DORKOS_EVAL_IMAGE` is unset. */
 export const DEFAULT_EVAL_IMAGE = 'dorkos-eval:latest';
@@ -85,6 +131,31 @@ const REMOVE_GRACE_MS = 10_000;
 
 /** How long (ms) to allow a `docker` CLI probe before treating it as unavailable. */
 const PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * Resource ceilings for one eval container. Generous enough for a real
+ * credentialed turn (a Node server plus the `claude` binary), tight enough that a
+ * runaway turn cannot take the developer's machine or a CI runner with it.
+ * `--memory-swap` equals `--memory`, which DISABLES swap — a container allowed to
+ * swap can blow past its memory ceiling in wall-clock cost instead of failing.
+ */
+const CONTAINER_LIMITS = {
+  /** Total memory (and, with swap disabled, the hard ceiling). */
+  memory: '4g',
+  /** CPU quota, as a fraction of host cores. */
+  cpus: '2',
+  /**
+   * Process/thread cap — a fork bomb's ceiling.
+   *
+   * COUPLED to the namespace proxy: every relay is a container process costing
+   * about `PIDS_PER_RELAY` pids from this same budget, alongside the server and
+   * the agent's own subprocesses. `relayCeilingFor` derives the proxy's
+   * concurrency cap from this number, so raising it raises that too and the two
+   * cannot silently drift apart. Lower it below `PIDS_RESERVED_FOR_WORKLOAD` and
+   * the proxy is squeezed to its floor of one connection.
+   */
+  pidsLimit: 512,
+} as const;
 
 /**
  * The seam through which this launcher shells out to `docker`, injectable so
@@ -154,10 +225,35 @@ export function resolveEvalImage(env?: Record<string, string | undefined>): stri
 }
 
 /**
+ * Whether `image` exists locally, asked two ways.
+ *
+ * `docker image inspect <tag>` is the direct question, but it is not reliable on
+ * its own: on Docker 29 with the containerd image store, tag resolution
+ * INTERMITTENTLY answers `No such image` for an image that `docker image ls`
+ * lists and `docker run` starts fine (observed repeatedly on macOS, in bursts
+ * right after container removals). A false "image missing" here silently demotes a
+ * destructive eval from a container to the bare host, so the cheap second opinion
+ * is worth its subprocess. Presence is claimed only if one of the two finds it.
+ *
+ * @param docker - The docker CLI seam.
+ * @param image - The image reference to look for.
+ * @returns True when either probe finds the image.
+ */
+async function imagePresent(docker: DockerCli, image: string): Promise<boolean> {
+  const inspect = await docker.run(['image', 'inspect', image], { timeoutMs: PROBE_TIMEOUT_MS });
+  if (inspect.code === 0) return true;
+  const listed = await docker.run(['image', 'ls', '--quiet', image], {
+    timeoutMs: PROBE_TIMEOUT_MS,
+  });
+  return listed.code === 0 && listed.stdout.trim() !== '';
+}
+
+/**
  * Probe whether the docker tier can run: the daemon must answer and the eval
- * image must already exist locally. Never throws and never builds anything — a
- * missing daemon or image is a SKIP with a clear message, not a hard failure
- * (the acceptance requirement for environments without docker).
+ * image must already exist locally (see {@link imagePresent}). Never throws and
+ * never builds anything — a missing daemon or image is a SKIP with a clear
+ * message, not a hard failure (the acceptance requirement for environments
+ * without docker).
  *
  * @param opts.docker - The docker CLI seam (defaults to {@link execDocker}).
  * @param opts.image - Image to require (defaults to {@link resolveEvalImage}).
@@ -182,8 +278,7 @@ export async function ensureDockerAvailable(
     };
   }
 
-  const inspect = await docker.run(['image', 'inspect', image], { timeoutMs: PROBE_TIMEOUT_MS });
-  if (inspect.code !== 0) {
+  if (!(await imagePresent(docker, image))) {
     return {
       available: false,
       image,
@@ -212,6 +307,12 @@ export interface DockerLauncherOptions {
    * Defaults to true; a successful eval always removes its container.
    */
   retainOnFailure?: boolean;
+  /**
+   * How the harness opens a byte channel into the container's network namespace
+   * (see `netns-proxy.ts`). Defaults to `docker exec`; injectable so the
+   * launcher's tests need no daemon.
+   */
+  openChannel?: OpenNetnsChannel;
 }
 
 /**
@@ -227,11 +328,12 @@ export class DockerLauncher implements IsolationLauncher {
   private readonly image: string;
   private readonly runId: string | undefined;
   private readonly retainOnFailure: boolean;
+  private readonly openChannel: OpenNetnsChannel;
 
   /**
    * Construct a docker launcher.
    *
-   * @param opts - Docker seam, image, run id, retention; see
+   * @param opts - Docker seam, image, run id, retention, namespace channel; see
    *   {@link DockerLauncherOptions}. Every field defaults, so
    *   `new DockerLauncher()` runs the resolved eval image through the real CLI.
    */
@@ -240,21 +342,26 @@ export class DockerLauncher implements IsolationLauncher {
     this.image = opts.image ?? resolveEvalImage();
     this.runId = opts.runId;
     this.retainOnFailure = opts.retainOnFailure ?? true;
+    this.openChannel = opts.openChannel ?? execDockerChannel;
   }
 
   /**
    * Start a container running the DorkOS server against the sandbox and return a
-   * {@link LaunchedServer}. Resolves as soon as the container is STARTED — the
-   * caller polls `/api/health` and watches `exited` for an early crash.
+   * {@link LaunchedServer}. Resolves as soon as the container is STARTED and the
+   * namespace proxy is listening — the caller polls `/api/health` and watches
+   * `exited` for an early crash.
    *
    * The sandbox root (the parent of `spec.dorkHome`) is bind-mounted at
    * {@link CONTAINER_SANDBOX_ROOT}; `DORK_HOME` and `DORKOS_BOUNDARY` are set to
    * container paths, and `projectCwd` carries the translated project directory
-   * back to the harness.
+   * back to the harness. The container runs with NO network, so `baseUrl` points
+   * at the host-side namespace proxy rather than a published port (see the module
+   * TSDoc and `netns-proxy.ts`).
    *
    * @param spec - The launch spec; see {@link ServerLaunchSpec}.
    * @returns The reachable, disposable launched-server handle.
-   * @throws {Error} If `docker run` fails to start the container.
+   * @throws {Error} If `docker run` fails to start the container, or the
+   *   host-side proxy cannot bind its loopback port.
    */
   async launch(spec: ServerLaunchSpec): Promise<LaunchedServer> {
     // The sandbox ROOT is the parent of dorkHome (`<root>/.dork`), and also
@@ -272,8 +379,10 @@ export class DockerLauncher implements IsolationLauncher {
       // reachable through the API.
       DORKOS_BOUNDARY: CONTAINER_SANDBOX_ROOT,
       DORKOS_PORT: String(spec.port),
-      // Bind all interfaces so the published port reaches the server; the
-      // container owns its network boundary, so opt out of the loopback guard.
+      // With `--network none` the container has ONLY loopback, so binding all
+      // interfaces binds nothing reachable from outside it — the namespace proxy
+      // connects from inside. These two are what the product image already sets;
+      // naming them keeps the boot legible rather than dependent on the image.
       DORKOS_HOST: '0.0.0.0',
       DORKOS_ALLOW_INSECURE_BIND: 'true',
     };
@@ -289,9 +398,25 @@ export class DockerLauncher implements IsolationLauncher {
       'run',
       '--detach',
       // No --rm: a failed eval's container + logs must survive for debugging.
-      // Publish onto the harness-allocated port on loopback only.
-      '--publish',
-      `${spec.host}:${spec.port}:${spec.port}`,
+      //
+      // NO NETWORK AT ALL. This is the containment claim: no egress, and no route
+      // to the host, so an agent turn cannot reach the developer's own DorkOS on
+      // loopback or ship the sandbox anywhere. There is deliberately no
+      // `--publish` — it does not work on a network-less container, and the
+      // harness reaches the server through the container's namespace instead
+      // (`netns-proxy.ts`).
+      '--network',
+      'none',
+      // Drop every Linux capability and forbid regaining any: an eval agent has
+      // no business with CAP_NET_RAW, CAP_CHOWN, or a setuid escalation.
+      '--cap-drop=ALL',
+      '--security-opt=no-new-privileges',
+      // Bound a runaway turn. `--memory-swap` == `--memory` disables swap, so the
+      // ceiling is real rather than something the container can trade for time.
+      `--memory=${CONTAINER_LIMITS.memory}`,
+      `--memory-swap=${CONTAINER_LIMITS.memory}`,
+      `--cpus=${CONTAINER_LIMITS.cpus}`,
+      `--pids-limit=${String(CONTAINER_LIMITS.pidsLimit)}`,
       // The ONLY host mount: the throwaway sandbox. No host home, ever.
       '--volume',
       `${sandboxRoot}:${CONTAINER_SANDBOX_ROOT}`,
@@ -327,10 +452,36 @@ export class DockerLauncher implements IsolationLauncher {
     // as an unhandledRejection (the promise itself never rejects by contract).
     void exited.catch(() => {});
 
+    // The only way into a `--network none` container: relay each host connection
+    // through the container's own namespace. Bound BEFORE returning, so the
+    // caller's first health poll has something to connect to.
+    let proxy: NetnsProxy;
+    try {
+      proxy = await startNetnsProxy({
+        host: spec.host,
+        port: spec.port,
+        containerId,
+        open: this.openChannel,
+        // Derived from THIS container's own pids budget, so the two constants
+        // cannot drift: the relays and the workload spend from one limit.
+        maxConcurrent: relayCeilingFor(CONTAINER_LIMITS.pidsLimit),
+      });
+    } catch (err) {
+      // A proxy that cannot bind leaves a running container behind unless we
+      // remove it here — the caller never got a handle to kill.
+      await this.docker.run(['rm', '--force', containerId], { timeoutMs: REMOVE_GRACE_MS });
+      throw new Error(
+        `Could not open the container namespace proxy on ${spec.host}:${String(spec.port)}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
     let disposed = false;
     const kill = async (opts: { failed?: boolean } = {}): Promise<void> => {
       if (disposed) return;
       disposed = true;
+      // Always close the proxy: its listener holds the harness-allocated port,
+      // which a retained container must not keep hostage.
+      await proxy.close();
       const retain = this.retainOnFailure && opts.failed === true;
       if (retain) {
         // Stop it but KEEP the container so `docker logs <id>` still works.
@@ -343,7 +494,7 @@ export class DockerLauncher implements IsolationLauncher {
     };
 
     return {
-      baseUrl: `http://${spec.host}:${spec.port}`,
+      baseUrl: proxy.baseUrl,
       // The container sees the sandbox at /eval, so the drive loop must use the
       // CONTAINER project path; oracles keep reading the host side of the mount.
       projectCwd: `${CONTAINER_SANDBOX_ROOT}/project`,

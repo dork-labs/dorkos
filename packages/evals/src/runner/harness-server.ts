@@ -17,8 +17,10 @@
  * this module polls
  * `/api/health` until it is ready. Because the process is out-of-band, that tier
  * gets REAL per-eval isolation (no shared singletons / env mutation), unlike the
- * serial-only in-process mode. The launcher is the seam a future `docker` tier
- * plugs into — see `isolation/types.ts`.
+ * serial-only in-process mode. The launcher is the seam the hardened `docker`
+ * tier plugs into — see `isolation/types.ts`. This module polls whatever
+ * `baseUrl` the launcher reports and never assumes the server is listening on the
+ * host directly (the docker tier's is not).
  *
  * @module evals/runner/harness-server
  */

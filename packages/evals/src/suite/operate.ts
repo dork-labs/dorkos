@@ -22,8 +22,9 @@
  * boots the in-process `test-mode` server for every core case. These four drive
  * their prompt against `TestModeRuntime` (no MCP tools), so their oracles fail —
  * but because they are `quarantined`, that failure never gates the run (see
- * `report/summary.ts` `runGateFailed`). The gate stays green; the cases are
- * exercised structurally.
+ * `report/summary.ts` `evaluateRunGate`). The gate stays green; the cases are
+ * exercised structurally, and the summary table reports each as
+ * `quarantined:fail` so nobody mistakes that for coverage.
  *
  * WHAT EACH ORACLE ASSERTS (side effects on the sandbox filesystem / the
  * collected tool stream — never assistant prose):
@@ -31,7 +32,8 @@
  *   persona was rewritten (markers intact), and its immutable identity
  *   (`name`, `isSystem`) is unchanged.
  * - `activity-read`: the agent called `activity_list`, and the read-only
- *   summary mutated nothing in its workspace.
+ *   summary mutated nothing — not in its workspace, and not in `DORK_HOME`
+ *   (see {@link readOnlyOracles} for what that does and does not cover).
  * - `config-toggle`: the agent used `config_patch` and `ui.statusBar.pins` became
  *   exactly `['git']` in the sandbox `config.json` — a SCOPED edit, with nothing
  *   else pinned into the status line.
@@ -67,8 +69,58 @@ import {
   jsonFileMatches,
   fileExists,
   dirContainsOnly,
+  dirEmptyOrAbsent,
+  noBackupSiblings,
 } from '../oracles/filesystem.js';
+import type { Oracle } from '../types.js';
 import { toolInvokedInStream } from '../oracles/stream.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared: what "read-only" has to mean
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the sandbox's install root — the `DORK_HOME` subtree a read-only turn
+ * must never create. The server does NOT make it at boot (verified against a
+ * booted eval sandbox, whose `DORK_HOME` held `agents`, `cache`, `config.json`,
+ * `dork.db`, `extensions`, `logs`, `marketplaces.json`, `personal-marketplace`,
+ * `relay`, `tasks` — and no `plugins`), so anything here means something was
+ * installed.
+ */
+const dorkHomePluginsRoot = (sandbox: EvalSandbox): string =>
+  path.join(sandbox.dorkHome, 'plugins');
+
+/**
+ * The oracles a READ-ONLY case uses to prove it changed no state.
+ *
+ * An empty project cwd is not enough on its own, and asserting only that was the
+ * gap: the workspace is not where a read-only turn would do damage — `DORK_HOME`
+ * is, because that is where installs, agents, and config live. `DORK_HOME` cannot
+ * be asserted whole (boot creates a dozen entries in it), so this asserts the two
+ * things a read-only turn can never legitimately produce there: an install tree,
+ * and a half-finished install/uninstall transaction's backup sibling.
+ *
+ * It does NOT prove `config.json` or `dork.db` are byte-unchanged — the server
+ * rewrites both while merely serving the turn — so a read-only case that must
+ * pin a specific setting still needs its own oracle for it.
+ *
+ * @param what - How the case describes its own read, for the oracle labels.
+ * @returns The shared read-only oracles.
+ */
+function readOnlyOracles(what: string): Oracle[] {
+  return [
+    dirContainsOnly(
+      (sandbox) => sandbox.projectCwd,
+      [],
+      `read-only: ${what} created nothing in the workspace`
+    ),
+    dirEmptyOrAbsent(dorkHomePluginsRoot, `read-only: ${what} installed nothing under DORK_HOME`),
+    noBackupSiblings(
+      (sandbox) => sandbox.dorkHome,
+      `read-only: ${what} left no half-finished transaction in DORK_HOME`
+    ),
+  ];
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // agent-self-edit
@@ -258,11 +310,7 @@ export const activityReadCase: EvalCase = {
   seed: seedActivityEvents,
   oracles: [
     toolInvokedInStream('activity_list', 'the agent queried the activity feed'),
-    dirContainsOnly(
-      (sandbox) => sandbox.projectCwd,
-      [],
-      'read-only: the summary created nothing in the workspace'
-    ),
+    ...readOnlyOracles('the summary'),
   ],
 };
 
@@ -492,11 +540,7 @@ export const capabilityDiscoveryCase: EvalCase = {
       'list_capabilities',
       'the agent discovered its capabilities via the catalog'
     ),
-    dirContainsOnly(
-      (sandbox) => sandbox.projectCwd,
-      [],
-      'read-only: discovering capabilities created nothing in the workspace'
-    ),
+    ...readOnlyOracles('discovering capabilities'),
   ],
 };
 

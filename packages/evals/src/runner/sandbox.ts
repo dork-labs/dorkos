@@ -15,8 +15,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { EvalSandbox } from '../types.js';
 
-/** Prefix for every sandbox temp directory, so a stray one is identifiable. */
-const SANDBOX_PREFIX = 'dorkos-evals-';
+/**
+ * Prefix for every sandbox temp directory, so a stray one is identifiable — and
+ * sweepable: `runner/sweep.ts` keys on this exact prefix, so nothing outside the
+ * harness can be deleted by the sweep.
+ */
+export const SANDBOX_PREFIX = 'dorkos-evals-';
 
 /** A live sandbox plus its teardown handle. */
 export interface Sandbox extends EvalSandbox {

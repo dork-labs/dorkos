@@ -19,6 +19,7 @@
     "lint:fix": "turbo lint -- --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "evals:sweep": "pnpm --filter @dorkos/evals run sweep",
     "knip": "knip",
     "knip:fix": "knip --fix",
     "docs:export-api": "tsx scripts/export-openapi.ts",

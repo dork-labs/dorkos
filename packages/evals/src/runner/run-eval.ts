@@ -19,8 +19,16 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
-import type { EvalCase, EvalResult, OracleContext, OracleResult, RuntimeTier } from '../types.js';
+import type {
+  EvalCase,
+  EvalResult,
+  IsolationRecord,
+  OracleContext,
+  OracleResult,
+  RuntimeTier,
+} from '../types.js';
 import { createSandbox } from './sandbox.js';
+import { onInterrupt } from './interrupt.js';
 import {
   startInProcessServer,
   startChildProcessServer,
@@ -73,6 +81,24 @@ function baseResult(evalCase: EvalCase, tier: RuntimeTier): EvalResult {
     quarantined: evalCase.quarantined ?? false,
     retried: false,
   };
+}
+
+/**
+ * The isolation this eval's server will actually run inside — recorded on the
+ * result, so a `preferDocker` case that silently degraded is legible in
+ * `results.json` rather than only in one line of stderr.
+ *
+ * `test-mode` always boots in-process and never consults a launcher; a
+ * credentialed run with no launcher is the child-process default; a launcher is
+ * whatever tier the resolver actually produced.
+ *
+ * @param tier - The runtime tier the run booted on.
+ * @param launcher - The launcher the resolver chose, if any.
+ * @returns The isolation to record.
+ */
+function isolationOf(tier: RuntimeTier, launcher?: IsolationLauncher): IsolationRecord {
+  if (tier === 'test-mode') return 'in-process';
+  return launcher?.id === 'docker' ? 'docker' : 'child-process';
 }
 
 /** Run every oracle against the context; ALL must pass. */
@@ -168,6 +194,14 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     return result;
   }
 
+  result.isolation = isolationOf(opts.tier, opts.launcher);
+
+  // A quarantined case fails BY DESIGN on `test-mode` (its oracles need real MCP
+  // tools), so honoring retain-on-failure for it would leak one sandbox — and,
+  // on the docker tier, one stopped container — per case per run, forever.
+  // Retention exists to debug a surprise; a quarantined red is not one.
+  const retainOnFailure = !(evalCase.quarantined ?? false);
+
   const sandbox = await createSandbox();
   let server: HarnessServer | undefined;
   let frames: SseFrame[] = [];
@@ -177,6 +211,13 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   // session lock instead of colliding (a `409 SESSION_LOCKED`) on a real runtime.
   const clientId = randomUUID();
   let failed = false;
+
+  // Ctrl-C mid-run must not leave a container running or a sandbox on disk. The
+  // handler disposes UNCONDITIONALLY (an interrupt is not a failure to debug).
+  const releaseInterrupt = onInterrupt(async () => {
+    await server?.dispose({ failed: false });
+    await sandbox.cleanup({ failed: false });
+  });
 
   try {
     // Seed the sandbox BEFORE the server boots or any turn runs — a case that
@@ -285,8 +326,10 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       oracleResults: result.oracleResults,
       rubricResult: result.rubricResult,
     });
-    await server?.dispose({ failed });
-    await sandbox.cleanup({ failed });
+    const retain = failed && retainOnFailure;
+    await server?.dispose({ failed: retain });
+    await sandbox.cleanup({ failed: retain });
+    releaseInterrupt();
   }
 
   return result;
