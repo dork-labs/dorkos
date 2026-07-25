@@ -23,6 +23,12 @@ vi.mock('../model/use-onboarding', () => ({
   })),
 }));
 
+// `dismiss()` hides the flow AND the getting-started card for good, so this
+// toast is the only visible route back into setup. Mocked (not asserted through
+// a real Toaster) so the assertion reads the exact description text.
+const { mockToast } = vi.hoisted(() => ({ mockToast: vi.fn() }));
+vi.mock('sonner', () => ({ toast: mockToast }));
+
 // Mock the surfaces to isolate OnboardingFlow's stage navigation.
 vi.mock('../ui/SystemRequirementsStep', () => ({
   SystemRequirementsStep: ({ onContinue }: { onContinue: () => void }) => (
@@ -92,6 +98,22 @@ async function renderFlow(initialUrl = '/', onComplete = vi.fn()) {
   render(<harness.Wrapper />);
   await waitFor(() => expect(harness.router.state.status).toBe('idle'));
   return { ...harness, onComplete };
+}
+
+/**
+ * Assert the skip-all toast fired and still names the route back into setup.
+ * Deleting the `toast(...)` call must turn both callers red — it is the only
+ * signpost a dismissed user gets.
+ */
+async function expectWayBackToast() {
+  await waitFor(() =>
+    expect(mockToast).toHaveBeenCalledWith(
+      'Setup skipped',
+      expect.objectContaining({
+        description: expect.stringContaining('Settings → Preferences'),
+      })
+    )
+  );
 }
 
 describe('OnboardingFlow', () => {
@@ -193,7 +215,7 @@ describe('OnboardingFlow', () => {
     expect(harness.actions).not.toContain('BACK');
   });
 
-  it('Skip all setup in the conversation dismisses and completes', async () => {
+  it('Skip all setup in the conversation dismisses, names the way back, and completes', async () => {
     const onComplete = vi.fn();
     await renderFlow('/', onComplete);
     fireEvent.click(screen.getByText('Get Started'));
@@ -202,13 +224,15 @@ describe('OnboardingFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Skip all setup' }));
     expect(mockDismiss).toHaveBeenCalled();
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
+    await expectWayBackToast();
   });
 
-  it('Skip all setup on welcome dismisses and completes', async () => {
+  it('Skip all setup on welcome dismisses, names the way back, and completes', async () => {
     const onComplete = vi.fn();
     await renderFlow('/', onComplete);
     fireEvent.click(screen.getByText('Skip all setup welcome'));
     expect(mockDismiss).toHaveBeenCalled();
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
+    await expectWayBackToast();
   });
 });
