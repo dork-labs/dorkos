@@ -203,8 +203,9 @@ export interface StatusBarItemConfig {
    */
   neverInLine?: true;
   /**
-   * Set when the item's value is a **number**, which means it renders whole or
-   * not at all: the row may not squeeze it, and it never abbreviates.
+   * Set when the item's value is a **number whose magnitude is the message** —
+   * a percentage, an amount of money. It renders whole or not at all: the row may
+   * not squeeze it, and it never abbreviates.
    *
    * The line's rule is that a width the budget got wrong degrades into an
    * ellipsis. That rule is right for a name and wrong for a number. `Bypass
@@ -215,6 +216,16 @@ export interface StatusBarItemConfig {
    * up. When even that is not enough, the honest outcome is for the width budget
    * to drop the item to the `⋯` — where the number is still exact — and the
    * browser guard fails loudly if it does not.
+   *
+   * Rigidity is expensive, so it is not for every number. `subagents` renders a
+   * count and was marked rigid for one round; measuring the cost said no. It is
+   * the quietest thing that can be on the row (severity 35), and protecting it
+   * meant the deficit had nowhere to go but `connection` — `Connection lost`, at
+   * severity 100 — which was cut to 24px, a dot and a sliver. Its glyph already
+   * says what it means without the number, so it gives way like a name and the
+   * exact tally stays in its tooltip and accessible name. The test in
+   * `status-bar-registry.test` is the list, and adding to it is a claim that the
+   * row can afford one more thing that will not move.
    */
   rigid?: true;
 }
@@ -347,7 +358,6 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'diagnostics',
     icon: Users,
-    rigid: true,
     promote: (ctx) => ctx.subagentsInFlight > 0,
     severity: (ctx) => (ctx.subagentsInFlight > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
   },

@@ -90,10 +90,15 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            // `min-w-0 shrink`, not `shrink-0`: the percent keeps its pixels, but
-            // the action beside it is a label and can give some up. Squeezed hard
-            // enough the label truncates and then leaves the glyph alone — still a
-            // 44px target, still named by `aria-label`.
+            // Shrinkable, though nothing squeezes it today: the registry marks
+            // this item rigid, so the row cannot compress the item at all and the
+            // label renders whole at every width. That is worth knowing rather
+            // than assuming — the percent plus this action is a 128px block that
+            // cannot give up a pixel, the largest single rigid demand in the row
+            // and the main reason `model` and `connection` are the ones paying at
+            // the `full` floor. The shrink stays because it is the honest fallback
+            // if that decision is ever revisited: a label may abbreviate, and the
+            // glyph alone is still a 44px target named by `aria-label`.
             className="bg-secondary text-muted-foreground hover:text-foreground hover:bg-muted inline-flex min-w-0 shrink items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw

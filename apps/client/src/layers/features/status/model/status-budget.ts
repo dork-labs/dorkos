@@ -96,7 +96,8 @@ const BUDGET_AVATAR = 2;
  *
  * Nor did it buy legibility. Measured on the crowded 640px row, four slots leave
  * five values truncated and three slots leave five values truncated — the same
- * five, ~2x wider each. The pressure at that floor comes from the LEFT cluster
+ * five, 1.1x to 1.4x wider each (permission 41 → 58, connection 51 → 72, git
+ * 168 → 183). The pressure at that floor comes from the LEFT cluster
  * (identity + directory + a 20-character branch is ~320px of a 630px content
  * box), which no right-cluster count can relieve. Whole readings at the `full`
  * floor are a density question, not a budget one.

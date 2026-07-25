@@ -41,7 +41,7 @@ export function SubagentsItem({ running }: SubagentsItemProps) {
           aria-label={`${running.length} subagent${running.length === 1 ? '' : 's'} running`}
         >
           <Users className="size-(--size-icon-xs) shrink-0" />
-          <span className="tabular-nums">{running.length}</span>
+          <span className="truncate tabular-nums">{running.length}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">

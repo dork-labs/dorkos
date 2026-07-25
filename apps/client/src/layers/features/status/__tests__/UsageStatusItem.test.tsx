@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import type { UsageStatus } from '@dorkos/shared/types';
 import { UsageStatusItem, hasRenderableUsage } from '../ui/UsageStatusItem';
 
@@ -123,4 +124,27 @@ describe('UsageStatusItem — the figure never abbreviates', () => {
       expect(container.firstElementChild?.className).toContain('shrink-0');
     });
   }
+});
+
+describe('UsageStatusItem — the one value with no upper bound', () => {
+  it('draws a cost that fits the bound every other value is held to', () => {
+    render(<UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 99999.99 }} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByText('$99999.99')).toBeInTheDocument();
+  });
+
+  it('steps aside instead of drawing a figure too long for a slot', () => {
+    // Every other value in the line is a percent, a small count, or a name held to
+    // `STATUS_VALUE_MAX_CHARS`. A cost has no ceiling, and a rigid item cannot
+    // truncate its way out of one — so it renders nothing and the amount lands on
+    // the `⋯`, still exact. `selectPromotedItems` drops a null node, and a pin is
+    // what makes this reachable: it bypasses `promote` entirely (DOR-461 review).
+    const { container } = render(
+      <UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 12345678901.99 }} />,
+      { wrapper: Wrapper }
+    );
+    expect(`$${(12345678901.99).toFixed(2)}`.length).toBeGreaterThan(STATUS_VALUE_MAX_CHARS);
+    expect(container).toBeEmptyDOMElement();
+  });
 });

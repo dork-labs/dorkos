@@ -1,4 +1,5 @@
 import { Gauge, DollarSign } from 'lucide-react';
+import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import type { UsageStatus } from '@dorkos/shared/types';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -125,6 +126,14 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
   // signal. Rendered only when a cost is present (parent gate).
   if (usage.costUsd == null) return null;
   const costLabel = `$${usage.costUsd.toFixed(2)}`;
+  // The only value in the line with unbounded magnitude — every other one is a
+  // percent, a name held to `STATUS_VALUE_MAX_CHARS`, or a small count. A rigid
+  // item cannot truncate its way out of a figure that outgrows its slot, so it
+  // steps aside instead: a `null` node never enters the line (see
+  // `selectPromotedItems`), which lands the amount on the `⋯` where it is still
+  // exact. Today only a pin can reach this branch — `promote` never fires for
+  // pay-as-you-go, but a pin bypasses `promote` entirely (DOR-461 review).
+  if (costLabel.length > STATUS_VALUE_MAX_CHARS) return null;
 
   if (!usage.detail) {
     return (
