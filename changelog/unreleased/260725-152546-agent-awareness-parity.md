@@ -1,7 +1,7 @@
 ### Added
 
 - Your agents in Codex and OpenCode sessions now know who they are and what they can do. They get the same DorkOS briefing Claude Code agents get: their own name and personality, their safety rules, and the commands for listing and running DorkOS actions. Codex agents also get an identity, so what they change shows up under their name in Activity (DOR-428)
-- Your own agent can now ask a running DorkOS what is going on: which sessions are open, which agents exist, which skills are installed, and what it is allowed to do. Outside tools could already ask; your agent could not (DOR-428)
+- Your own agent in a Claude Code session can now ask a running DorkOS what is going on: which sessions are open, which agents exist, which skills are installed, and what it is allowed to do. Outside tools could already ask; your agent could not. Codex and OpenCode sessions do not have this yet (DOR-428)
 
 ### Changed
 

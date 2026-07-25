@@ -44,12 +44,18 @@ scanning the whole feed.
 
 ## Your own actions show up here
 
-When you run a capability that changes something, DorkOS records it against you
-with \`actorType: agent\` and event type \`capability.invoked\` (or
-\`capability.failed\`). Filter with \`--actor agent\` to review what agents have
-been doing. Attribution needs the identity token DorkOS puts in your session's
-environment: if your session has none, your calls are recorded without a name
-rather than being blocked.
+When DorkOS knows which agent you are, running a capability that changes
+something records an event against you: \`actorType: agent\`, with event type
+\`capability.invoked\` or \`capability.failed\`. Filter with \`--actor agent\` to
+review what agents have been doing.
+
+DorkOS knows who you are in two ways: inside a Claude Code session it reads your
+identity from the session's working directory, and from a shell it reads the
+identity token in your environment. When neither applies, your calls still run
+normally, but NOTHING is recorded for them: there is no nameless entry, there is
+no entry. OpenCode sessions are always in this position today. So never tell the
+user to look in the feed for something you just did unless you know your session
+is attributed. Say what you did instead.
 
 ## Summarizing well
 

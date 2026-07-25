@@ -13,8 +13,13 @@ A task (also called a schedule) runs an agent on a cron timer, or on demand.
 DorkOS runs tasks in the background; you set them up and read their history.
 
 The \`tasks_*\` tools are registered straight onto the MCP server, so they do NOT
-appear in \`dorkos capabilities\` and \`dorkos call\` cannot reach them. From a Codex
-or OpenCode session, the \`dorkos task\` verbs below are the way in.
+appear in \`dorkos capabilities\` and \`dorkos call\` cannot reach them. The CLI
+covers only part of the surface: \`dorkos task list|create|trigger|runs\` exist,
+and there is NO \`dorkos task update\` or \`dorkos task delete\`. So a session
+without the \`tasks_*\` tools (Codex, OpenCode) can read, create, and run tasks,
+but cannot edit, disable, or delete one. If the user asks for that from such a
+session, say plainly that it has to be done from the DorkOS Tasks page or a
+Claude Code session, rather than reaching for a command that does not exist.
 
 ## List tasks and their runs
 
@@ -47,7 +52,10 @@ This is the tasks scheduler's own gate. It is not the capability approval flow i
 operating-dorkos: there is no \`approvalToken\` to retry with, and nothing for you
 to do except tell the user and wait.
 
-## Edit or disable a task
+## Edit or disable a task (tools only, no CLI)
+
+Both of these are MCP tools with no \`dorkos task\` equivalent. Without the
+\`tasks_*\` tools in your session there is no way to do either.
 
 - Tool: \`tasks_update\` with the schedule \`id\` and any of \`name\`, \`prompt\`, \`cron\`,
   \`enabled\` (true/false to turn it on or off), \`timezone\`, \`maxRuntime\`

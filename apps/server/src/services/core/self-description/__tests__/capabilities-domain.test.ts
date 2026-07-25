@@ -125,10 +125,33 @@ describe('list_capabilities surface', () => {
       );
     });
 
-    it('names the families that are absent, so the model knows where to look', () => {
+    /**
+     * Asserted against the REGISTRY, not against the description's own wording.
+     *
+     * A `toContain('task')` check is a one-way ratchet: once the task, relay, and
+     * mesh domains migrate onto the registry the caveat becomes false, and a
+     * wording assertion would keep passing and preserve it. That is the exact
+     * inverse of the instruction on the domain itself, which says to DELETE the
+     * caveat at migration rather than reword it. So the test binds the two
+     * together: naming a family in the description is only correct while that
+     * family is genuinely absent from the registry, and migrating one turns this
+     * red on purpose.
+     */
+    it('only names families that really are absent from the registry', () => {
       const text = description().toLowerCase();
-      for (const family of ['task', 'relay', 'mesh']) {
+      const registeredDomains = new Set(
+        composeDorkOsCapabilityRegistry({
+          logger: noopLogger,
+          operatorDeps: {} as McpToolDeps,
+        }).capabilities.map((c) => c.id.split('.')[0])
+      );
+
+      const namedAsAbsent = ['task', 'relay', 'mesh'];
+      for (const family of namedAsAbsent) {
         expect(text).toContain(family);
+        // If this fails, the family migrated onto the registry: delete it from the
+        // description's caveat (and from this list), do not reword the caveat.
+        expect(registeredDomains).not.toContain(family);
       }
       expect(text).toContain('tool list');
     });

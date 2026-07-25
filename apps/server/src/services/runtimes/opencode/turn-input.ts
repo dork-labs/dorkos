@@ -68,6 +68,23 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
  * `systemPromptAppend` for the same reason it does in the Claude adapter: who the
  * agent is comes before what this particular turn was scheduled to do.
  *
+ * ## The cost this trades, and the channel that probably fixes it
+ *
+ * Claude gets this block on `systemPrompt.append`, which is cacheable and sent
+ * once. Here it rides a `parts` entry, so it lands in the persisted conversation
+ * and is re-sent verbatim every turn. Measured against the real DorkBot workspace
+ * that is roughly 2.2 KB (~550 tokens) duplicated per turn, with a schema ceiling
+ * near 6.6 KB. The `<gen_ui>` block above accepts the same deal but is compact by
+ * design; this one is not.
+ *
+ * Unlike Codex, OpenCode HAS an unused channel for exactly this:
+ * `SessionPromptData.body.system?: string` (`@opencode-ai/sdk` types.gen.d.ts:2253).
+ * Moving the block there is likely both correct and cheaper, but it is a behavior
+ * change to how OpenCode persists and replays a session, so it belongs in its own
+ * change with its own verification rather than riding along here. Shipped as-is
+ * because an agent that does not know its own safety boundaries or how to reach its
+ * capabilities is the worse failure.
+ *
  * @param content - The user's message, passed through pristine
  * @param opts - Per-turn options carrying systemPromptAppend/additionalContext
  * @param agentContext - The runtime-neutral DorkOS context blocks, or `''`/omitted

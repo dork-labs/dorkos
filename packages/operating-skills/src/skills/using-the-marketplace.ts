@@ -75,7 +75,10 @@ means present the same token later, and \`status: "denied"\` means stop.
 By default uninstall keeps \`.dork/data/\` and \`.dork/secrets.json\`; \`purge: true\`
 removes them, which is a bigger action and worth saying out loud.
 
-- CLI: \`dorkos uninstall <name>\`.
+\`dorkos uninstall <name>\` exists, but it is the PERSON's path: it does not go
+through the approval gate. Use \`marketplace_uninstall\` and wait for the approval
+rather than shelling out to the CLI to avoid it. Reaching for the ungated path
+because the gated one asked you to wait is exactly the thing not to do.
 
 ## Manage sources
 

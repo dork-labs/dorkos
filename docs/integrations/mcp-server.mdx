@@ -144,7 +144,7 @@ Most tools return plain text content, matching the underlying handler. A handful
 
 ## Resources
 
-Alongside tools, the server registers six read-only `dorkos://` resources: three list views and three id-scoped templates.
+Alongside tools, the server registers seven read-only `dorkos://` resources: four list views and three id-scoped templates.
 
 | URI                      | Kind     | Returns                                                                                                                                              |
 | ------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -154,6 +154,7 @@ Alongside tools, the server registers six read-only `dorkos://` resources: three
 | `dorkos://agents/{id}`   | Template | A single agent manifest (`.dork/agent.json` content) by agent ULID.                                                                                  |
 | `dorkos://skills`        | List     | Authored skills under the server's default project's `.agents/skills`: name, description, kind only.                                                 |
 | `dorkos://skills/{name}` | Template | Full `SKILL.md` frontmatter and body for one skill, by name.                                                                                         |
+| `dorkos://capabilities`  | List     | The live capability catalog: id, title, description, permission tier, input/output schema, and surfaces for everything you can invoke by id.         |
 
 Session and skill resources are scoped to the server's default working directory; the external surface has no per-request `cwd` parameter to key on. Both list resources are the complete enumeration, so the item templates aren't re-listed separately. A client reads them once it already has an id or name.
 
