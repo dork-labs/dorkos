@@ -33,7 +33,27 @@ import { parseNativeCommand } from './registry';
  *   unsupported compact), so the caller keeps the composer text on `false`
  *   instead of wiping it.
  */
-export type NativeCommandResult = { handled: false } | { handled: true; ran: boolean };
+export type NativeCommandResult =
+  | { handled: false }
+  | {
+      handled: true;
+      ran: boolean;
+      /**
+       * Present only for a command whose action completes ASYNCHRONOUSLY —
+       * today the runtime-fulfilled `compact` intent (a trigger-only 202) and
+       * `/rename` (an optimistic mutation). Resolves to whether the action was
+       * actually accepted.
+       *
+       * Without it, `ran: true` overstates: it means "the dispatch started",
+       * and a caller that treats a QUEUED command as spent on that basis loses
+       * the message when the trigger is then refused — the `SESSION_LOCKED`
+       * race this whole change is about (DOR-480). A caller holding an undo
+       * (the queue's `restore`) must settle it on this, not on `ran` alone.
+       * Absent for commands that finish synchronously, where `ran` is the whole
+       * answer. Never rejects.
+       */
+      confirmed?: Promise<boolean>;
+    };
 
 /**
  * The active runtime's support for the runtime-fulfilled `compact` intent,
@@ -73,6 +93,33 @@ function splitSlashCommand(content: string): { token: string; rest: string } | n
   const match = /^\/(\S+)([\s\S]*)$/.exec(content.trim());
   if (!match) return null;
   return { token: match[1], rest: match[2].trim() };
+}
+
+/**
+ * Whether `content` is something the send funnel handles ITSELF rather than
+ * sending to the runtime — a native command or any canonical command intent.
+ *
+ * Deliberately broader than {@link parseNativeCommand}, which matches only
+ * client-native commands and pointedly skips the runtime-fulfilled `compact`
+ * intent so the funnel can dispatch it. Any caller asking "will the funnel
+ * swallow this?" must use THIS: gating on `parseNativeCommand` let `/compact`
+ * and every alias of it through, and a `/compact` that reaches the queue flushes
+ * without starting a turn, so the streaming→idle pump never re-arms and
+ * everything behind it strands (DOR-480).
+ *
+ * Pure — recognition only, never execution, so a caller can ask the question
+ * without `/clear` navigating away as a side effect. Slightly broad in one
+ * direction: `tryRun` only intercepts `compact` when the host injected the
+ * runtime's support, so with no support wired this answers `true` for something
+ * that would in fact fall through. Callers use it to WARN, never to refuse.
+ *
+ * @param content - Composer content (trimmed or not).
+ */
+export function isNativeCommandContent(content: string): boolean {
+  const slash = splitSlashCommand(content);
+  if (!slash) return false;
+  if (resolveCommandIntent(slash.token)) return true;
+  return parseNativeCommand(content.trim()) !== null;
 }
 
 /**
@@ -118,12 +165,21 @@ export function useNativeCommands(
         // that accept compaction guidance receive them verbatim. Shared with the
         // proactive compaction chip (DOR-112) so a failed dispatch always shows
         // the same toast on both surfaces.
-        void dispatchCompactIntent(transport, sessionId, slash.rest || undefined);
-        return { handled: true, ran: true };
+        //
+        // The promise is HANDED BACK rather than dropped: this returns before it
+        // settles, so `ran: true` alone would tell a queued `/compact` it was
+        // spent even when the trigger came back `SESSION_LOCKED` and no
+        // compaction ever happened. `dispatchCompactIntent` swallows its own
+        // errors and resolves to a boolean, so this never rejects.
+        const confirmed = dispatchCompactIntent(transport, sessionId, slash.rest || undefined);
+        return { handled: true, ran: true, confirmed };
       }
 
       const parsed = parseNativeCommand(content);
       if (!parsed) return { handled: false };
+      // Set by an executor whose action outlives `run()` — see `confirmed` on
+      // NativeCommandResult for why a caller cannot trust `ran` alone there.
+      let confirmed: Promise<boolean> | undefined;
       // Build the executor context here (only when a command actually runs).
       // `renameMutate` and `transport` are stable references, so `tryRun` only
       // changes when the active session or the injected deps change.
@@ -134,10 +190,20 @@ export function useNativeCommands(
           // Confirm only on success: the shared rename capability rolls the
           // title back and shows an error toast on failure, so firing the
           // success toast optimistically would double-toast a failed rename.
-          renameMutate(
-            { sessionId, title },
-            { onSuccess: () => toast.success(`Renamed session to "${title}"`) }
-          );
+          // These per-call callbacks run ALONGSIDE the mutation's own (which
+          // owns the rollback + failure toast); they only settle `confirmed`.
+          confirmed = new Promise<boolean>((resolve) => {
+            renameMutate(
+              { sessionId, title },
+              {
+                onSuccess: () => {
+                  toast.success(`Renamed session to "${title}"`);
+                  resolve(true);
+                },
+                onError: () => resolve(false),
+              }
+            );
+          });
         },
         notify: (message, kind) =>
           kind === 'error' ? toast.error(message) : toast.success(message),
@@ -147,7 +213,7 @@ export function useNativeCommands(
         // React, so the executor toggles it imperatively.
         focusUsageSurface: () => useUsageReveal.getState().reveal(),
       });
-      return { handled: true, ran };
+      return { handled: true, ran, ...(confirmed ? { confirmed } : {}) };
     },
     [renameMutate, transport, sessionId, startFreshSession, compact]
   );

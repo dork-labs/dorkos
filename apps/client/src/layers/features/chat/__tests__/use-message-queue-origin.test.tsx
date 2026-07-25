@@ -401,6 +401,85 @@ describe('queue → submit — a refused trigger never destroys the message (DOR
     expect(useSessionStreamStore.getState().getSession('s1').queuedMessages).toHaveLength(0);
   });
 
+  it('a queued /compact whose trigger is refused comes back to the queue', async () => {
+    // `ran: true` only means the dispatch STARTED — `/compact` is trigger-only
+    // (202) and `tryRun` returns before it settles. Treating the message as
+    // spent on that basis lost it exactly when the lock refused the trigger:
+    // the compaction never happened AND the message was gone (DOR-480).
+    const runCommandIntent = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('Session locked'), { code: 'SESSION_LOCKED' }));
+    const transport = createMockTransport({ postMessage: vi.fn(), runCommandIntent });
+
+    const { result, rerender } = renderHook(
+      ({ status }) => {
+        const chat = useChatSession('s1', {
+          compactIntent: { supported: true, runtimeLabel: 'Claude Code' },
+        });
+        const queue = useMessageQueue({
+          ...baseQueueOptions,
+          status,
+          sessionId: 's1',
+          onFlush: chat.submitContent,
+        });
+        return { chat, queue };
+      },
+      { initialProps: { status: 'streaming' as ChatStatus }, wrapper: createWrapper(transport) }
+    );
+    await waitFor(() => expect(result.current.chat.status).toBe('idle'));
+
+    act(() => {
+      useSessionStreamStore.getState().enqueueMessage('s1', '/compact');
+    });
+    await act(async () => {
+      rerender({ status: 'idle' as ChatStatus });
+    });
+
+    await waitFor(() => expect(runCommandIntent).toHaveBeenCalledWith('s1', 'compact', undefined));
+    await waitFor(() => {
+      expect(
+        useSessionStreamStore
+          .getState()
+          .getSession('s1')
+          .queuedMessages.map((m) => m.content)
+      ).toEqual(['/compact']);
+    });
+  });
+
+  it('a queued /compact that IS accepted stays spent', async () => {
+    // The converse — a command that genuinely ran must not be re-queued, or it
+    // would fire again on every subsequent edge.
+    const runCommandIntent = vi.fn().mockResolvedValue(undefined);
+    const transport = createMockTransport({ postMessage: vi.fn(), runCommandIntent });
+
+    const { result, rerender } = renderHook(
+      ({ status }) => {
+        const chat = useChatSession('s1', {
+          compactIntent: { supported: true, runtimeLabel: 'Claude Code' },
+        });
+        const queue = useMessageQueue({
+          ...baseQueueOptions,
+          status,
+          sessionId: 's1',
+          onFlush: chat.submitContent,
+        });
+        return { chat, queue };
+      },
+      { initialProps: { status: 'streaming' as ChatStatus }, wrapper: createWrapper(transport) }
+    );
+    await waitFor(() => expect(result.current.chat.status).toBe('idle'));
+
+    act(() => {
+      useSessionStreamStore.getState().enqueueMessage('s1', '/compact');
+    });
+    await act(async () => {
+      rerender({ status: 'idle' as ChatStatus });
+    });
+
+    await waitFor(() => expect(runCommandIntent).toHaveBeenCalledTimes(1));
+    expect(useSessionStreamStore.getState().getSession('s1').queuedMessages).toHaveLength(0);
+  });
+
   it('a queued flush that fails for any other reason is also put back', async () => {
     // A dead network is the same data-loss shape: the composer never held this
     // text, so dropping it leaves nowhere to recover it from.

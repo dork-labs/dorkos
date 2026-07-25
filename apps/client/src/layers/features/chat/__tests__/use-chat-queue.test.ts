@@ -434,11 +434,45 @@ describe('useChatQueue — a refused send leaves the edit exactly as it was (DOR
 });
 
 describe('useChatQueue — a native command cannot reach the queue by the edit door', () => {
-  it('refuses to save an edit that is a native command, keeping the text', () => {
-    // `handleQueue` runs the native funnel at enqueue time; the edit paths did
-    // not, so a rewrite could put one in the queue — where it flushes without
-    // starting a turn and the streaming→idle pump never re-arms.
-    const { result } = renderHook(() => useHarness());
+  let ranWith: string[] = [];
+  beforeEach(() => {
+    ranWith = [];
+  });
+
+  /**
+   * A harness whose native funnel claims anything slash-shaped and records it —
+   * standing in for the real `tryRun`, which recognizes both client-native
+   * commands and every canonical intent (including the runtime-fulfilled
+   * `/compact` that `parseNativeCommand` skips).
+   */
+  function useCommandHarness(ran = true) {
+    const [input, setInput] = useState('');
+    const chatInputRef = useRef<ChatInputHandle | null>(null);
+    const queue = useChatQueue({
+      input,
+      setInput,
+      status: 'streaming',
+      sessionBusy: false,
+      sessionId: SESSION_ID,
+      selectedCwd: '/dir',
+      onFlush: vi.fn(),
+      tryNativeCommand: (content: string) => {
+        if (!content.startsWith('/')) return { handled: false };
+        ranWith.push(content);
+        return { handled: true, ran };
+      },
+      chatInputRef,
+    });
+    return { input, setInput, ...queue };
+  }
+
+  it('RUNS a command typed into the edit box instead of queueing it', () => {
+    // `handleQueue` runs the funnel at enqueue time; the edit paths did not, so a
+    // rewrite could put one in the queue — where it flushes without starting a
+    // turn and the pump never re-arms. Refusing was the first fix and was a dead
+    // end (Escape lost the text, every correction was refused again), so an edit
+    // that becomes a command now means what typing it fresh means.
+    const { result } = renderHook(() => useCommandHarness(true));
 
     act(() => result.current.setInput('run the tests'));
     act(() => result.current.handleQueue());
@@ -447,15 +481,33 @@ describe('useChatQueue — a native command cannot reach the queue by the edit d
 
     act(() => result.current.handleQueueSaveEdit());
 
-    // Nothing saved, nothing lost, and the cursor stays put so the operator can
-    // correct it in place.
+    expect(ranWith).toContain('/rename my session');
+    // The row keeps what it had — a command is not a message — and the edit ends.
     expect(queuedIn(SESSION_ID)).toEqual(['run the tests']);
-    expect(result.current.input).toBe('/rename my session');
-    expect(result.current.editingIndex).toBe(0);
+    expect(result.current.editingIndex).toBeNull();
+    expect(result.current.input).toBe('');
   });
 
-  it('still saves an edit that merely mentions a slash word', () => {
-    const { result } = renderHook(() => useHarness());
+  it('keeps a REJECTED command in the composer so it can be fixed in place', () => {
+    // The recovery that did not exist under the refuse-based guard: the text
+    // stays, the cursor stays, and a corrected form runs on the next Enter.
+    const { result } = renderHook(() => useCommandHarness(false));
+
+    act(() => result.current.setInput('run the tests'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.setInput('half-written thought'));
+    act(() => result.current.handleQueueEdit(result.current.queue[0].id));
+    act(() => result.current.setInput('/rename'));
+
+    act(() => result.current.handleQueueSaveEdit());
+
+    expect(result.current.input).toBe('/rename');
+    expect(result.current.editingIndex).toBe(0);
+    expect(queuedIn(SESSION_ID)).toEqual(['run the tests']);
+  });
+
+  it('still saves an edit the funnel does not claim', () => {
+    const { result } = renderHook(() => useCommandHarness());
 
     act(() => result.current.setInput('run the tests'));
     act(() => result.current.handleQueue());
@@ -465,5 +517,25 @@ describe('useChatQueue — a native command cannot reach the queue by the edit d
     act(() => result.current.handleQueueSaveEdit());
 
     expect(queuedIn(SESSION_ID)).toEqual(['explain what /rename does']);
+  });
+
+  it('routes /compact to the funnel — the intent the client-native parser skips', () => {
+    // THE bug in the first guard: it gated on `parseNativeCommand`, which
+    // deliberately does not match the runtime-fulfilled compact intent, so
+    // `/compact` (and every alias) saved straight to the head of the queue,
+    // dispatched at flush, started no turn, and stranded everything behind it.
+    const { result } = renderHook(() => useCommandHarness(true));
+
+    act(() => result.current.setInput('run the tests'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.setInput('second'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.handleQueueEdit(result.current.queue[0].id));
+    act(() => result.current.setInput('/compact'));
+
+    act(() => result.current.handleQueueSaveEdit());
+
+    expect(ranWith).toContain('/compact');
+    expect(queuedIn(SESSION_ID)).toEqual(['run the tests', 'second']);
   });
 });

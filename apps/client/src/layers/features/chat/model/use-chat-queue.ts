@@ -4,8 +4,9 @@ import { toast } from 'sonner';
 import { useSessionChatStore, useSessionStreamStore } from '@/layers/entities/session';
 import { useMessageQueue } from './use-message-queue';
 import type { QueueItem, QueueFlushOptions } from './use-message-queue';
-import { parseNativeCommand } from './native-commands';
+import { isNativeCommandContent } from './native-commands';
 import type { NativeCommandResult } from './native-commands';
+import { sessionContextKey } from '../lib/session-context-key';
 import type { ChatStatus } from './chat-types';
 import type { ChatInputHandle } from '../ui/input/ChatInput';
 
@@ -83,14 +84,13 @@ export function useChatQueue({
   // Draft ref preserves the user's in-progress composition when they navigate into the queue
   const draftRef = useRef('');
 
-  // The composer's context key: EXACTLY the `(sessionId, cwd)` pair
-  // `useMessageQueue` scopes the editing cursor to (see its own note on why a
-  // space is a safe delimiter for a UUID-prefixed key). Everything that has to
-  // move in lockstep with that cursor keys off this, not off `sessionId` alone —
-  // a coarser key reopens the duplicate send, because a cwd-only change would
-  // reset the cursor while leaving the queued item's body sitting in the
-  // composer, indistinguishable from a draft (DOR-480).
-  const contextKey = `${sessionId} ${selectedCwd ?? ''}`;
+  // The composer's context key — the SAME function `useMessageQueue` scopes the
+  // editing cursor with. Everything that has to move in lockstep with that
+  // cursor keys off this, not off `sessionId` alone: a coarser key reopens the
+  // duplicate send, because a cwd-only change would reset the cursor while
+  // leaving the queued item's body in the composer, indistinguishable from a
+  // draft (DOR-480). Sharing the function is what keeps the two byte-identical.
+  const contextKey = sessionContextKey(sessionId, selectedCwd);
 
   // The draft is context-scoped: clear it on a switch so a composition parked
   // while editing session A's queue can never be restored into session B's input
@@ -112,19 +112,25 @@ export function useChatQueue({
    * the cursor — the write half of edit-in-place. An emptied composer is not a
    * delete: the item keeps the content it had.
    *
-   * Unlike {@link handleQueueSaveEdit} this does NOT refuse a native command.
-   * Refusing here would silently discard the rewrite, which is the very loss
-   * edit-in-place exists to prevent — and it is safe to accept one, because a
-   * queued native command that gets rejected at flush time is now restored to the
-   * queue rather than destroyed (DOR-480), and one that runs is recoverable with
-   * the row's Send-now control. Saving is an explicit "commit this"; navigating
-   * away is not, so only the explicit one is worth interrupting.
+   * Unlike {@link handleQueueSaveEdit} this does NOT run a native command — it
+   * commits one into the queue and says so. Running `/clear` because someone
+   * pressed ArrowUp would be a genuine surprise, and refusing would silently
+   * discard the rewrite, which is the very loss edit-in-place exists to prevent.
+   * Committing is safe: a queued command rejected at flush time is restored
+   * rather than destroyed (DOR-480), and the row keeps its Send-now control. But
+   * it is not obvious — the row quietly becomes something that will FIRE rather
+   * than send — so it gets a toast, since navigating away carries no other
+   * signal the way pressing Enter does.
    */
   const commitEditInPlace = useCallback(() => {
     const editingId = messageQueue.editingId;
     if (editingId === null) return;
     const trimmed = input.trim();
-    if (trimmed) messageQueue.updateQueued(editingId, trimmed);
+    if (!trimmed) return;
+    messageQueue.updateQueued(editingId, trimmed);
+    if (isNativeCommandContent(trimmed)) {
+      toast.warning('Saved as a command — it will run, not send, when its turn comes');
+    }
   }, [input, messageQueue]);
 
   // Context-switch handoff (DOR-480). The editing cursor is component state
@@ -207,20 +213,30 @@ export function useChatQueue({
     if (messageQueue.editingId === null) return;
     const trimmed = input.trim();
     if (!trimmed) return;
-    // `handleQueue` keeps native commands out of the queue at enqueue time, but
-    // an edit can rewrite a queued message INTO one and reach the queue by the
-    // back door — and a queued native command flushes without starting a turn,
-    // so the streaming→idle pump never re-arms and everything behind it waits.
-    // Refuse the save and keep the composer text exactly as typed; the operator
-    // can run it with Escape-then-Enter or correct it in place. Parsed, never
-    // executed: saving an edit must not fire `/clear` as a side effect.
-    if (parseNativeCommand(trimmed)) {
-      toast.error('A command like this runs right away — it cannot wait in the queue');
+    // A command must not enter the queue: it flushes without starting a turn, so
+    // the streaming→idle pump never re-arms and everything behind it strands.
+    // `handleQueue` handles that at enqueue time by RUNNING it instead, and an
+    // edit that turns a message into a command means the same thing, so it gets
+    // the same treatment. Refusing looked safer and was a dead end: Escape swaps
+    // in the parked draft (losing the command that was just typed) and every
+    // corrected form was refused again, so the only exits destroyed text
+    // (DOR-480). Uses `tryNativeCommand` — the funnel's own recognizer — because
+    // it catches the runtime-fulfilled `/compact` intent that the client-native
+    // parser deliberately skips, which is exactly the one that stranded a queue.
+    const native = tryNativeCommand(trimmed);
+    if (native.handled) {
+      // It ran: the queued row keeps the content it already had, and the edit is
+      // over. A REJECTED command keeps its text and the cursor, so it can be
+      // fixed in place and re-submitted — the recovery that used to not exist.
+      if (native.ran) {
+        messageQueue.cancelEditing();
+        setInput(draftRef.current);
+      }
       return;
     }
     messageQueue.saveEditing(trimmed);
     setInput(draftRef.current);
-  }, [input, messageQueue, setInput]);
+  }, [input, messageQueue, setInput, tryNativeCommand]);
 
   const handleQueueCancelEdit = useCallback(() => {
     messageQueue.cancelEditing();

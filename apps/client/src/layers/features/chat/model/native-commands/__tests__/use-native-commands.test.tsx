@@ -7,8 +7,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
-import { useNativeCommands } from '../use-native-commands';
+import { useNativeCommands, isNativeCommandContent } from '../use-native-commands';
 import { useUsageReveal } from '../../use-usage-reveal';
+import { parseNativeCommand } from '../registry';
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -64,7 +65,9 @@ describe('useNativeCommands', () => {
     act(() => {
       outcome = result.current.tryRun('/rename Foo');
     });
-    expect(outcome).toEqual({ handled: true, ran: true });
+    // `confirmed` rides along because the rename is an optimistic mutation that
+    // outlives `tryRun` — `ran: true` here only means "the write was fired".
+    expect(outcome).toEqual({ handled: true, ran: true, confirmed: expect.any(Promise) });
     await waitFor(() =>
       expect(transport.updateSession).toHaveBeenCalledWith('s1', { title: 'Foo' }, '/repo')
     );
@@ -182,7 +185,10 @@ describe('useNativeCommands', () => {
       act(() => {
         outcome = result.current.tryRun('/compress');
       });
-      expect(outcome).toEqual({ handled: true, ran: true });
+      // `confirmed` rides along because the dispatch is trigger-only (202) and
+      // returns before it settles — `ran: true` here only means "it was fired".
+      // A caller holding an undo must settle on this, not on `ran`.
+      expect(outcome).toEqual({ handled: true, ran: true, confirmed: expect.any(Promise) });
       expect(transport.runCommandIntent).toHaveBeenCalledWith('s1', 'compact', undefined);
       expect(transport.postMessage).not.toHaveBeenCalled();
     });
@@ -238,5 +244,37 @@ describe('useNativeCommands', () => {
       expect(result.current.tryRun('/compress')).toEqual({ handled: false });
       expect(transport.runCommandIntent).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('isNativeCommandContent — what the funnel will swallow (DOR-480)', () => {
+  // The predicate a caller needs when asking "would this be intercepted rather
+  // than sent?". Gating on `parseNativeCommand` instead let `/compact` through,
+  // and a `/compact` that reaches the queue flushes without starting a turn, so
+  // the pump never re-arms and everything behind it strands.
+  it('recognizes the runtime-fulfilled compact intent and its aliases', () => {
+    expect(isNativeCommandContent('/compact')).toBe(true);
+    expect(isNativeCommandContent('/compact focus on the API changes')).toBe(true);
+    expect(isNativeCommandContent('/compress')).toBe(true);
+    expect(isNativeCommandContent('/summarize')).toBe(true);
+  });
+
+  it('recognizes client-native commands and their cross-agent aliases', () => {
+    for (const content of ['/rename Foo', '/clear', '/new', '/context', '/usage']) {
+      expect(isNativeCommandContent(content)).toBe(true);
+    }
+  });
+
+  it('leaves ordinary prose and unknown slash words alone', () => {
+    expect(isNativeCommandContent('explain what /rename does')).toBe(false);
+    expect(isNativeCommandContent('run the tests')).toBe(false);
+    expect(isNativeCommandContent('/not-a-real-command')).toBe(false);
+    expect(isNativeCommandContent('')).toBe(false);
+  });
+
+  it('is strictly broader than the client-native parser it replaced', () => {
+    // The exact gap that caused the bug, pinned so it cannot silently return.
+    expect(parseNativeCommand('/compact')).toBeNull();
+    expect(isNativeCommandContent('/compact')).toBe(true);
   });
 });

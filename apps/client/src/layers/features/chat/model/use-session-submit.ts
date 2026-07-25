@@ -183,10 +183,22 @@ export function useSessionSubmit({
           // (DOR-480). Put it back. Restoring is idempotent, so a later edge that
           // flushes it again just returns it again, and the row stays on screen
           // with its Send-now control until the text is corrected.
-          // A command that RAN is deliberately not restored: it did the thing the
-          // operator asked for, so the message is consumed, and re-queueing it
-          // would run it on every subsequent edge.
-          if (!native.ran) opts.restoreQueued?.();
+          //
+          // A command that RAN is not restored — it did what was asked, so the
+          // message is consumed and re-queueing would re-run it on every edge.
+          // But `ran` is only "the dispatch started" for a command that finishes
+          // asynchronously: a queued `/compact` refused by the session lock would
+          // otherwise be spent with no compaction and nothing to recover. Settle
+          // those on `confirmed` instead, so "it ran" has to be true before the
+          // message is treated as gone.
+          if (!native.ran) {
+            opts.restoreQueued?.();
+          } else if (native.confirmed && opts.restoreQueued) {
+            const restoreQueued = opts.restoreQueued;
+            void native.confirmed.then((accepted) => {
+              if (!accepted) restoreQueued();
+            });
+          }
           if (clearInput && native.ran) setInput('');
           return;
         }
