@@ -203,12 +203,14 @@
     },
     {
       "guide": "agent-operator-surface.md",
-      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, how to add a tool/verb, phase-2 registry",
+      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb",
       "patterns": [
         "services/core/operator/",
-        "external-mcp/operator-tools",
+        "services/core/capabilities/",
+        "services/core/approvals/",
+        "services/core/agent-identity/",
         "external-mcp/tool-security",
-        "marketplace-tool-descriptors",
+        "packages/evals/src/suite/governance",
         "packages/cli/src/commands/(agent",
         "task",
         "activity",
@@ -414,6 +416,26 @@
       "doc": "docs/guides/tool-approval.mdx",
       "description": "Tool approval user guide",
       "patterns": ["interactive-handlers", "apps/client/src/layers/features/chat/"]
+    },
+    {
+      "doc": "docs/guides/operating-dorkos.mdx",
+      "description": "What an agent can do for you in DorkOS, in plain language",
+      "patterns": [
+        "services/core/capabilities/",
+        "services/core/operator/",
+        "packages/cli/src/commands/(agent",
+        "task",
+        "activity)"
+      ]
+    },
+    {
+      "doc": "docs/guides/action-approvals.mdx",
+      "description": "Approvals for actions that can't be undone: the card, single use, expiry, attribution",
+      "patterns": [
+        "services/core/approvals/",
+        "capabilities/tier-enforcement",
+        "apps/client/src/layers/features/approvals/"
+      ]
     },
     {
       "doc": "docs/guides/agents.mdx",
