@@ -57,6 +57,9 @@ export const DORKBOT_ONBOARDING_LINES = {
     'First: how should I sound? Pick a personality. You can change it any time in settings.',
   /** Honest error line when saving personality traits fails (Beat 1). */
   saveError: "I couldn't save that. Try again?",
+  /** Reply when the user skips the personality step without picking one (Beat 1). */
+  personalitySkip:
+    'Sticking with my default voice then. You can change it any time in my settings.',
   /** Consent question before any filesystem scan runs (Beat 2). */
   discoveryPrompt: 'Want me to look around this machine for projects and agents you already have?',
   /** Shown while the consented scan is running (Beat 2). */

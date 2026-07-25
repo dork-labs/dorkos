@@ -1,11 +1,12 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { Plus, Clock, Radio } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
-import { HoverBorderGradient } from '@/layers/shared/ui';
+import { Button, HoverBorderGradient } from '@/layers/shared/ui';
 
 interface WelcomeStepProps {
   onGetStarted: () => void;
-  onSkip: () => void;
+  /** Called when the user leaves setup entirely (dismisses the whole flow). */
+  onSkipAll: () => void;
 }
 
 const HEADING_WORDS = ['Welcome', 'to', 'DorkOS'];
@@ -22,7 +23,7 @@ const PREVIEW_ITEMS = [
  * Sets context before the user enters the FTUE flow with a word-by-word
  * heading animation and a preview of what's coming.
  */
-export function WelcomeStep({ onGetStarted, onSkip }: WelcomeStepProps) {
+export function WelcomeStep({ onGetStarted, onSkipAll }: WelcomeStepProps) {
   const reducedMotion = useReducedMotion();
 
   return (
@@ -104,12 +105,13 @@ export function WelcomeStep({ onGetStarted, onSkip }: WelcomeStepProps) {
         <HoverBorderGradient className="px-6 py-2" duration={1.2} onClick={onGetStarted}>
           Get Started
         </HoverBorderGradient>
-        <button
-          onClick={onSkip}
-          className="text-muted-foreground hover:text-foreground text-sm transition-colors"
-        >
-          Skip setup
-        </button>
+        {/* Whole-flow exit, worded AND styled the same here as in the conversation
+            nav bar so "skip" always means the same thing in this flow (DOR-472).
+            A shadcn ghost button rather than a bare one: it keeps the quiet
+            tertiary look and inherits the flow's keyboard focus ring. */}
+        <Button variant="ghost" size="sm" onClick={onSkipAll} className="text-muted-foreground">
+          Skip all setup
+        </Button>
       </motion.div>
     </div>
   );
