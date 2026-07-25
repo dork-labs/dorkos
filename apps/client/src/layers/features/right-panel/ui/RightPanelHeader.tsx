@@ -128,6 +128,9 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
   );
 }
 
+/** Breathing room left beside a tab that had to be scrolled into view. */
+const REVEAL_MARGIN_PX = 8;
+
 /**
  * The segmented tab control, which scrolls rather than clipping.
  *
@@ -140,6 +143,15 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
  * The fade is drawn ONLY when something is actually behind it (ADR
  * 260725-004456: the status line's old fade advertised items that could not be
  * reached at all, which is worse than no affordance).
+ *
+ * **The selected tab is always brought into view.** Clicking a tab scrolls it in
+ * for free, because a click focuses it and the browser reveals what it focuses —
+ * so nothing that a person operates by hand ever showed the bug. Everything else
+ * does: a tab activated by a server `ui_command` (the agent opening the canvas),
+ * by a restored per-agent layout, or by the panel being dragged narrower left the
+ * selected tab cut off at the edge with its label half-drawn, and the fade over it
+ * reads as a smudge on the pill rather than as "there is more this way"
+ * (DOR-471). So the reveal is explicit rather than borrowed from focus.
  *
  * @param props - The visible contributions, the active tab, and the roving-tab props builder.
  * @param props.contributions - The visible panel contributions, in tab order.
@@ -156,6 +168,7 @@ function TabStrip({
   getTabProps: (id: string) => RovingTabProps;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const tablistRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ start: false, end: false });
 
   const measure = useCallback(() => {
@@ -168,16 +181,65 @@ function TabStrip({
     setEdges((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
   }, []);
 
-  // Re-measure on any width change — the panel is resizable and its tab set
-  // changes with the route — and once more when the tab count itself changes.
-  useEffect(() => {
-    measure();
+  /**
+   * Scroll the least distance that puts the selected tab fully inside the strip.
+   *
+   * The tab is found by its stable DOM id rather than by `aria-selected`, so the
+   * reveal cannot silently no-op: a route or transport change can leave
+   * `activeTab` pointing at a contribution that is momentarily not rendered (see
+   * {@link RightPanelContainer}), and during that frame no tab carries
+   * `aria-selected="true"` at all. Keyed on the id, the effect below simply runs
+   * again when the tab set that made it renderable changes.
+   */
+  const selectedTab = useCallback((): HTMLElement | null => {
     const el = scrollerRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
+    if (!el || !activeTab) return null;
+    return el.querySelector<HTMLElement>(`#${CSS.escape(rightPanelTabDomId(activeTab))}`);
+  }, [activeTab]);
+
+  const revealActiveTab = useCallback(() => {
+    const el = scrollerRef.current;
+    const tab = selectedTab();
+    if (!el || !tab) return;
+    const box = el.getBoundingClientRect();
+    const rect = tab.getBoundingClientRect();
+    const pastEnd = rect.right - box.right;
+    const pastStart = box.left - rect.left;
+    // Only one can be positive unless the tab is wider than the strip, in which
+    // case its start is the half worth showing — that is where the label is.
+    if (pastStart > 0) el.scrollLeft -= pastStart + REVEAL_MARGIN_PX;
+    else if (pastEnd > 0) el.scrollLeft += pastEnd + REVEAL_MARGIN_PX;
+  }, [selectedTab]);
+
+  // Re-measure on any size change, and re-reveal with it: the panel is resizable,
+  // so a strip that fitted a moment ago can leave the selected tab behind an edge.
+  //
+  // Three boxes are observed, because they answer different parts of the question.
+  // The scroller gives `clientWidth`. The tablist inside it is what `scrollWidth`
+  // measures, and it can change on its own — a late web font, a contribution
+  // renaming its tab — with the scroll box the same size. And the selected tab
+  // itself is the box the reveal exists to keep on screen: anything that moves or
+  // resizes it (a sibling tab widening as its label resolves) invalidates a scroll
+  // position that was correct when it was set, which is what left the reveal one
+  // tab's width short of the edge.
+  //
+  // Keyed on the tab ids, not their count: a route change can swap one
+  // contribution for another and leave the count alone, and that is exactly when
+  // the strip's content width changes underneath a stale reading.
+  const tabIds = contributions.map((c) => c.id).join(',');
+  useEffect(() => {
+    const onLayoutChange = () => {
+      revealActiveTab();
+      measure();
+    };
+    onLayoutChange();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(onLayoutChange);
+    for (const el of [scrollerRef.current, tablistRef.current, selectedTab()]) {
+      if (el) observer.observe(el);
+    }
     return () => observer.disconnect();
-  }, [measure, contributions.length]);
+  }, [measure, revealActiveTab, selectedTab, tabIds]);
 
   return (
     <div className="relative min-w-0 flex-1">
@@ -192,6 +254,7 @@ function TabStrip({
         className="-my-1 overflow-x-auto overflow-y-hidden py-1"
       >
         <div
+          ref={tablistRef}
           className="bg-accent/60 inline-flex gap-0.5 rounded-lg p-0.5"
           role="tablist"
           aria-label="Right panel tabs"

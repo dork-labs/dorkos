@@ -284,3 +284,104 @@ describe('RightPanelHeader — a tab strip that scrolls instead of clipping', ()
     }
   });
 });
+
+describe('RightPanelHeader — the selected tab is never left behind an edge', () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    mockActiveRightPanelTab = null;
+  });
+
+  /** The scroll container the tablist sits inside. */
+  function scroller(): HTMLElement {
+    return screen.getByRole('tablist').parentElement!;
+  }
+
+  /** A rect with only the horizontal edges the reveal reads. */
+  function rect(left: number, right: number): DOMRect {
+    return {
+      left,
+      right,
+      width: right - left,
+      x: left,
+      y: 0,
+      top: 0,
+      bottom: 0,
+      height: 0,
+    } as DOMRect;
+  }
+
+  /**
+   * Put the selected tab `right - box.right` past the strip's end.
+   *
+   * jsdom has no layout, so the two boxes the reveal compares are stubbed: the
+   * scroll box (the only element that contains a tablist) and whichever tab is
+   * selected.
+   */
+  function layOutSelectedTabPastTheEnd() {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      if (this.getAttribute('role') === 'tab' && this.getAttribute('aria-selected') === 'true') {
+        return rect(500, 580);
+      }
+      if (this.querySelector('[role="tablist"]')) return rect(0, 340);
+      return rect(0, 0);
+    });
+  }
+
+  it('scrolls a tab activated without a click into view', () => {
+    // A click reveals the tab for free — the browser scrolls what it focuses — so
+    // the bug only ever showed on the paths that do not click: a server
+    // `ui_command` opening the canvas, a restored per-agent layout, or the panel
+    // being dragged narrower. The active tab stayed cut off at the edge (DOR-471).
+    mockActiveRightPanelTab = 'terminal';
+    layOutSelectedTabPastTheEnd();
+    renderHeader(
+      ['agent', 'files', 'canvas', 'terminal', 'session', 'pulse'].map((id) => makeContribution(id))
+    );
+
+    // The least scroll that clears the edge, plus the reveal margin.
+    expect(scroller().scrollLeft).toBe(580 - 340 + 8);
+  });
+
+  it('leaves the scroll position alone when the selected tab already fits', () => {
+    mockActiveRightPanelTab = 'agent';
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      if (this.getAttribute('role') === 'tab' && this.getAttribute('aria-selected') === 'true') {
+        return rect(10, 90);
+      }
+      if (this.querySelector('[role="tablist"]')) return rect(0, 340);
+      return rect(0, 0);
+    });
+    renderHeader([makeContribution('agent'), makeContribution('files')]);
+
+    expect(scroller().scrollLeft).toBe(0);
+  });
+
+  it('watches the tablist as well as the scroll box', () => {
+    // `clientWidth` comes from the scroll box, but `scrollWidth` is the tablist —
+    // and the tablist can change size on its own (a late web font, a contribution
+    // renaming its tab) while the box does not, which would leave the fades
+    // reporting a strip that no longer exists.
+    const observed: Element[] = [];
+    const original = global.ResizeObserver;
+    global.ResizeObserver = class {
+      observe(el: Element) {
+        observed.push(el);
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+
+    try {
+      renderHeader([makeContribution('agent'), makeContribution('files')]);
+      expect(observed).toContain(screen.getByRole('tablist'));
+      expect(observed).toContain(scroller());
+    } finally {
+      global.ResizeObserver = original;
+    }
+  });
+});
