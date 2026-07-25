@@ -116,13 +116,17 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
     // 1. Confirmation gate — fires BEFORE any disk write. This is the trust
     //    boundary: external agents cannot create files on the user's machine
     //    without explicit approval (or `MARKETPLACE_AUTO_APPROVE=1`).
+    // `type` decides the shape of what lands on disk, so it is bound too; the
+    // rest of the args are metadata inside the package the user is creating.
+    const confirmationRequest = {
+      packageName: args.name,
+      marketplace: PERSONAL_MARKETPLACE_NAME,
+      operation: 'create-package' as const,
+      packageType: args.type,
+    };
     const confirmation = args.confirmationToken
-      ? await deps.confirmationProvider.resolveToken(args.confirmationToken)
-      : await deps.confirmationProvider.requestInstallConfirmation({
-          packageName: args.name,
-          marketplace: PERSONAL_MARKETPLACE_NAME,
-          operation: 'create-package',
-        });
+      ? await deps.confirmationProvider.resolveToken(args.confirmationToken, confirmationRequest)
+      : await deps.confirmationProvider.requestInstallConfirmation(confirmationRequest);
 
     if (confirmation.status === 'pending') {
       return jsonContent({

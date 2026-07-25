@@ -97,13 +97,20 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
     // 1. Resolve confirmation. A supplied token comes from a previous
     //    `requires_confirmation` response — never issue a fresh request when
     //    the agent is resuming an out-of-band flow.
+    // Every value that reaches `uninstallFlow.uninstall()` below rides in the
+    // confirmation request, so the approval is bound to this exact effect —
+    // notably `purge`, the difference between a reversible uninstall and one
+    // that deletes the package's saved data and secrets.
+    const confirmationRequest = {
+      packageName: args.name,
+      marketplace: 'installed',
+      operation: 'uninstall' as const,
+      purge: args.purge ?? false,
+      ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
+    };
     const confirmation = args.confirmationToken
-      ? await deps.confirmationProvider.resolveToken(args.confirmationToken)
-      : await deps.confirmationProvider.requestInstallConfirmation({
-          packageName: args.name,
-          marketplace: 'installed',
-          operation: 'uninstall',
-        });
+      ? await deps.confirmationProvider.resolveToken(args.confirmationToken, confirmationRequest)
+      : await deps.confirmationProvider.requestInstallConfirmation(confirmationRequest);
 
     if (confirmation.status === 'pending') {
       return jsonContent({

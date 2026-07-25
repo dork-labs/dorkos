@@ -109,15 +109,22 @@ async function resolveConfirmation(
   args: InstallToolArgs,
   preview: PreviewResult
 ): Promise<ConfirmationResult> {
-  if (args.confirmationToken) {
-    return deps.confirmationProvider.resolveToken(args.confirmationToken);
-  }
-  return deps.confirmationProvider.requestInstallConfirmation({
+  // `marketplace` and `projectPath` ride along verbatim because both reach
+  // `installer.install()` after the gate. Neither is defaulted here: an absent
+  // marketplace searches every enabled source (first match wins) while a named
+  // one pins resolution, so substituting a default would both mis-describe the
+  // card and let a retry that omits the field pass a binding built from it.
+  const req = {
     packageName: args.name,
-    marketplace: args.marketplace ?? 'dorkos-community',
-    operation: 'install',
+    ...(args.marketplace !== undefined && { marketplace: args.marketplace }),
+    operation: 'install' as const,
+    ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
     preview: preview.preview,
-  });
+  };
+  if (args.confirmationToken) {
+    return deps.confirmationProvider.resolveToken(args.confirmationToken, req);
+  }
+  return deps.confirmationProvider.requestInstallConfirmation(req);
 }
 
 /**

@@ -77,6 +77,11 @@ import {
   AgentListQuerySchema,
 } from '@dorkos/shared/mesh-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
+import {
+  PendingApprovalsResponseSchema,
+  DenyApprovalBodySchema,
+  ApprovalDecisionResponseSchema,
+} from '@dorkos/shared/approval-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from './self-description/dorkos-registry.js';
 import {
@@ -2476,6 +2481,99 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Account detached (or already absent)' },
+  },
+});
+
+// --- Approvals (spec `agent-trust` §3.3) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/approvals/pending',
+  tags: ['Approvals'],
+  summary: 'List approvals waiting on a person',
+  description:
+    'Approvals an agent has requested and nobody has decided yet, oldest first. Expired requests ' +
+    'are excluded, and no response here ever carries token material.',
+  responses: {
+    200: {
+      description: 'Pending approvals',
+      content: { 'application/json': { schema: PendingApprovalsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/approvals/{id}/grant',
+  tags: ['Approvals'],
+  summary: 'Allow the requested action',
+  description:
+    'Grants a pending approval so the requester can spend its token once, on exactly the ' +
+    'capability and input the approval is bound to. Deciding is the human half of the gate: a ' +
+    'caller that presents an agent identity (`X-DorkOS-Agent`) is refused, so an agent cannot ' +
+    'answer its own request.',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Approval granted',
+      content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+    },
+    403: {
+      description: 'Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such approval',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Already decided',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    410: {
+      description: 'Expired before it was decided',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/approvals/{id}/deny',
+  tags: ['Approvals'],
+  summary: 'Refuse the requested action',
+  description:
+    'Denies a pending approval, with an optional reason the requester sees. As with grant, a ' +
+    'caller that presents an agent identity (`X-DorkOS-Agent`) is refused.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: DenyApprovalBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Approval denied',
+      content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+    },
+    403: {
+      description: 'Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    400: {
+      description: 'Invalid body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such approval',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Already decided',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    410: {
+      description: 'Expired before it was decided',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 

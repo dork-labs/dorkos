@@ -9,6 +9,10 @@
       "types": "./src/capabilities.ts",
       "default": "./dist/capabilities.js"
     },
+    "./approval-schemas": {
+      "types": "./src/approval-schemas.ts",
+      "default": "./dist/approval-schemas.js"
+    },
     "./schemas": {
       "types": "./src/schemas.ts",
       "default": "./dist/schemas.js"

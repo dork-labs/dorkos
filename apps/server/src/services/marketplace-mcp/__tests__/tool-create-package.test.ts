@@ -14,6 +14,29 @@ import {
   TokenConfirmationProvider,
 } from '../confirmation-provider.js';
 import type { ConfirmationProvider, ConfirmationResult } from '../confirmation-provider.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../core/approvals/index.js';
+
+/**
+ * A token provider over a fresh approval store, plus the two things the cockpit
+ * does with a pending approval. Decisions go through the store by approval id —
+ * the provider has no decide-by-token path, because the agent holds the token.
+ */
+function buildTokenProvider() {
+  const approvals = new ApprovalService(createTestDb());
+  return {
+    provider: new TokenConfirmationProvider(approvals),
+    /** Grant every pending approval, the way the cockpit's Allow button does. */
+    grantPending: () => {
+      for (const pending of approvals.listPending()) approvals.grant(pending.approvalId);
+    },
+    /** Deny every pending approval, with an optional reason. */
+    denyPending: (reason?: string) => {
+      for (const pending of approvals.listPending()) approvals.deny(pending.approvalId, reason);
+    },
+  };
+}
+
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import type { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
@@ -106,7 +129,7 @@ describe('createCreatePackageHandler', () => {
   });
 
   it('returns requires_confirmation and writes nothing on first call (token flow)', async () => {
-    const provider = new TokenConfirmationProvider();
+    const { provider: provider } = buildTokenProvider();
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
     );
@@ -129,7 +152,7 @@ describe('createCreatePackageHandler', () => {
   });
 
   it('writes scaffolded files after the user approves the issued token', async () => {
-    const provider = new TokenConfirmationProvider();
+    const { provider: provider, grantPending } = buildTokenProvider();
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
     );
@@ -142,7 +165,7 @@ describe('createCreatePackageHandler', () => {
     const { payload: pendingPayload } = parseResult(first);
     const token = pendingPayload.confirmationToken as string;
 
-    provider.approve(token);
+    grantPending();
 
     const second = await handler({
       name: 'approved-pkg',
@@ -165,7 +188,7 @@ describe('createCreatePackageHandler', () => {
   });
 
   it('returns declined and writes nothing when the user declines the token', async () => {
-    const provider = new TokenConfirmationProvider();
+    const { provider: provider, denyPending } = buildTokenProvider();
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
     );
@@ -177,7 +200,7 @@ describe('createCreatePackageHandler', () => {
     });
     const token = parseResult(first).payload.confirmationToken as string;
 
-    provider.decline(token, 'no thanks');
+    denyPending('no thanks');
 
     const second = await handler({
       name: 'declined-pkg',
@@ -393,11 +416,12 @@ describe('createCreatePackageHandler', () => {
       packageName: 'auto-approved',
       marketplace: PERSONAL_MARKETPLACE_NAME,
       operation: 'create-package',
+      packageType: 'plugin',
     });
   });
 
   it('passes the resolved token through resolveToken when confirmationToken is provided', async () => {
-    const provider = new TokenConfirmationProvider();
+    const { provider: provider, grantPending } = buildTokenProvider();
     const resolveSpy = vi.spyOn(provider, 'resolveToken');
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
@@ -409,7 +433,7 @@ describe('createCreatePackageHandler', () => {
       description: 'Token-routed package.',
     });
     const token = parseResult(first).payload.confirmationToken as string;
-    provider.approve(token);
+    grantPending();
 
     await handler({
       name: 'token-routed',
@@ -418,7 +442,14 @@ describe('createCreatePackageHandler', () => {
       confirmationToken: token,
     });
 
-    expect(resolveSpy).toHaveBeenCalledWith(token);
+    // The token alone is not enough: resolving restates the operation so the
+    // approval can be checked against what is about to run.
+    expect(resolveSpy).toHaveBeenCalledWith(token, {
+      packageName: 'token-routed',
+      marketplace: PERSONAL_MARKETPLACE_NAME,
+      operation: 'create-package',
+      packageType: 'agent',
+    });
   });
 
   it('logs a warning but still returns created when registerInPersonalMarketplace fails', async () => {

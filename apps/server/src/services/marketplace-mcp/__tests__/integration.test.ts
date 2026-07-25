@@ -51,6 +51,29 @@ import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { registerMarketplaceTools } from './register-marketplace-tools.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../core/approvals/index.js';
+
+/**
+ * A token provider over a fresh approval store, plus the two things the cockpit
+ * does with a pending approval. Decisions go through the store by approval id —
+ * the provider has no decide-by-token path, because the agent holds the token.
+ */
+function buildTokenProvider() {
+  const approvals = new ApprovalService(createTestDb());
+  return {
+    provider: new TokenConfirmationProvider(approvals),
+    /** Grant every pending approval, the way the cockpit's Allow button does. */
+    grantPending: () => {
+      for (const pending of approvals.listPending()) approvals.grant(pending.approvalId);
+    },
+    /** Deny every pending approval, with an optional reason. */
+    denyPending: (reason?: string) => {
+      for (const pending of approvals.listPending()) approvals.deny(pending.approvalId, reason);
+    },
+  };
+}
+
 import {
   ensurePersonalMarketplace,
   personalMarketplaceRoot,
@@ -344,6 +367,9 @@ describe('marketplace-mcp integration', () => {
   let installer: ReturnType<typeof buildStubInstaller>;
   let uninstallFlow: ReturnType<typeof buildStubUninstallFlow>;
   let confirmationProvider: TokenConfirmationProvider;
+  /** Decide every pending marketplace approval the way the cockpit does. */
+  let grantPending: () => void;
+  let denyPending: (reason?: string) => void;
   let sourceManager: MarketplaceSourceManager;
   let logger: Logger;
 
@@ -368,7 +394,7 @@ describe('marketplace-mcp integration', () => {
 
     installer = buildStubInstaller();
     uninstallFlow = buildStubUninstallFlow();
-    confirmationProvider = new TokenConfirmationProvider();
+    ({ provider: confirmationProvider, grantPending, denyPending } = buildTokenProvider());
 
     server = new McpServer({ name: 'dorkos-marketplace-test', version: '1.0.0' });
     registerMarketplaceTools(
@@ -492,12 +518,12 @@ describe('marketplace-mcp integration', () => {
       message: string;
     }>(first);
     expect(firstPayload.status).toBe('requires_confirmation');
-    expect(firstPayload.confirmationToken).toMatch(/[0-9a-f-]{36}/);
+    expect(firstPayload.confirmationToken).toMatch(/^[0-9a-f]{32}$/);
     expect(firstPayload.preview).toBeDefined();
     expect(installer.install).not.toHaveBeenCalled();
 
     // Out-of-band approval — simulates the DorkOS UI clicking Approve.
-    confirmationProvider.approve(firstPayload.confirmationToken);
+    grantPending();
 
     // Second call: re-call with the token. The handler must NOT request a
     // fresh confirmation; it must resolve the token and proceed with the
@@ -529,7 +555,7 @@ describe('marketplace-mcp integration', () => {
     });
     const { confirmationToken } = parsePayload<{ confirmationToken: string }>(first);
 
-    confirmationProvider.decline(confirmationToken, 'no thanks');
+    denyPending('no thanks');
 
     const second = await callTool(server, 'marketplace_install', {
       name: 'sentry-monitor',
@@ -554,7 +580,7 @@ describe('marketplace-mcp integration', () => {
     expect(firstPayload.status).toBe('requires_confirmation');
     expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
 
-    confirmationProvider.approve(firstPayload.confirmationToken);
+    grantPending();
 
     const second = await callTool(server, 'marketplace_uninstall', {
       name: 'sentry-monitor',
@@ -586,7 +612,7 @@ describe('marketplace-mcp integration', () => {
     );
     await expect(access(expectedPackagePath)).rejects.toThrow();
 
-    confirmationProvider.approve(firstPayload.confirmationToken);
+    grantPending();
 
     const second = await callTool(server, 'marketplace_create_package', {
       name: 'my-skill-pack',

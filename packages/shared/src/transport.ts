@@ -94,6 +94,7 @@ import type {
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
+import type { ApprovalDecisionResponse, PendingApprovalsResponse } from './approval-schemas.js';
 import type {
   AggregatedPackage,
   PackageFilter,
@@ -1415,6 +1416,30 @@ export interface Transport {
    * @param name - Source name. Will be URL-encoded.
    */
   removeMarketplaceSource(name: string): Promise<void>;
+
+  // --- Approvals (spec `agent-trust` §3.3) ---
+
+  /**
+   * List approvals an agent has requested and nobody has decided yet, oldest
+   * first. Expired requests are excluded and no token material is returned.
+   */
+  listPendingApprovals(): Promise<PendingApprovalsResponse>;
+
+  /**
+   * Allow a pending approval, letting the requester spend its token once on
+   * exactly the action it was granted for.
+   *
+   * @param approvalId - The approval's id, from {@link listPendingApprovals}.
+   */
+  grantApproval(approvalId: string): Promise<ApprovalDecisionResponse>;
+
+  /**
+   * Refuse a pending approval.
+   *
+   * @param approvalId - The approval's id, from {@link listPendingApprovals}.
+   * @param reason - Optional note the requester sees instead of a bare refusal.
+   */
+  denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse>;
 
   // --- Shapes (DOR-355) ---
 

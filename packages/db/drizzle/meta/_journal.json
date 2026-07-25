@@ -218,6 +218,13 @@
       "when": 1784930972769,
       "tag": "0030_zippy_lyja",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1784973456307,
+      "tag": "0031_mushy_radioactive_man",
+      "breakpoints": true
     }
   ]
 }

@@ -14,10 +14,18 @@
  * 3. {@link InAppConfirmationProvider} — for in-process callers that wire a
  *    callback to the existing `InstallConfirmationDialog` from spec 03.
  *
+ * ## These are wrappers, not a mechanism
+ *
+ * The token state machine lives in `services/core/approvals` (spec
+ * `agent-trust` §3.3) — one approval primitive shared with capability tier
+ * enforcement, so an operator sees marketplace installs and every other gated
+ * action on the same cockpit card. This module only translates between that
+ * primitive and the `ConfirmationResult` shape the marketplace tools speak.
+ *
  * @module services/marketplace-mcp/confirmation-provider
  */
-import { randomUUID } from 'node:crypto';
 import type { PermissionPreview } from '../marketplace/types.js';
+import { hashApprovalInput, type ApprovalService } from '../core/approvals/index.js';
 
 /** The kind of mutation a confirmation request is gating. */
 export type ConfirmationOperation = 'install' | 'uninstall' | 'create-package';
@@ -35,11 +43,43 @@ export type ConfirmationResult =
   | { status: 'declined'; reason?: string }
   | { status: 'pending'; token: string };
 
-/** Payload for {@link ConfirmationProvider.requestInstallConfirmation}. */
+/**
+ * Payload for {@link ConfirmationProvider.requestInstallConfirmation}.
+ *
+ * Every field except `preview` is part of what the user actually agreed to, so
+ * every field except `preview` is hashed into the approval's binding (see
+ * {@link bindingOf}). Adding a field that reaches the mutation without adding it
+ * here would let a retry change the effect the user approved.
+ */
 export interface ConfirmationRequest {
   packageName: string;
-  marketplace: string;
+  /**
+   * Which marketplace to act in. Absent means "search every enabled
+   * marketplace, first match wins" — a materially different resolution from any
+   * named source, so absence is bound as absence and never defaulted to a source
+   * name the caller did not pin.
+   */
+  marketplace?: string;
   operation: ConfirmationOperation;
+  /**
+   * Uninstall only: also delete the package's saved data and secrets. This is
+   * the difference between a reversible uninstall and an irreversible one, so it
+   * is both shown to the user and bound into the approval.
+   */
+  purge?: boolean;
+  /**
+   * Install/uninstall only: the project whose scope is being changed. Absent
+   * means the global scope. Bound so an approval for one project cannot be
+   * redirected at another.
+   */
+  projectPath?: string;
+  /**
+   * Create-package only: the kind of package being scaffolded, which decides the
+   * shape of what lands on disk. Free-text metadata (description, author,
+   * categories) is deliberately NOT bound — it changes what the package says
+   * about itself, not what happens to the user's machine.
+   */
+  packageType?: string;
   preview?: PermissionPreview;
 }
 
@@ -63,15 +103,27 @@ export interface ConfirmationProvider {
    * Look up a previously issued confirmation token. Used when an external MCP
    * client re-calls `marketplace_install` after the user approved out-of-band.
    *
+   * The caller must restate what it is about to do: an approval is bound to one
+   * exact action, so a token granted for installing A is refused when presented
+   * for installing B — or for the same package with a different marketplace,
+   * project, or purge flag.
+   *
    * @param token - The token previously returned via `pending`.
+   * @param req - The operation the caller is about to run. Must describe the same
+   *   action the token was issued for, field for field.
    */
-  resolveToken(token: string): Promise<ConfirmationResult>;
+  resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
 }
 
 /**
  * Confirmation provider that always returns `approved`. Used when
  * `process.env.MARKETPLACE_AUTO_APPROVE === '1'` or in unit tests that want
  * to skip the confirmation gate entirely.
+ *
+ * Auto-approval short-circuits the primitive rather than auto-granting through
+ * it: writing a row per call would flood the cockpit and the Activity feed with
+ * approvals nobody ever saw, in exactly the CI and eval runs the flag exists to
+ * keep quiet.
  */
 export class AutoApproveConfirmationProvider implements ConfirmationProvider {
   /**
@@ -89,114 +141,143 @@ export class AutoApproveConfirmationProvider implements ConfirmationProvider {
   }
 }
 
-/** Internal record tracking a single in-flight confirmation request. */
-interface PendingConfirmation {
-  token: string;
-  packageName: string;
-  marketplace: string;
-  operation: ConfirmationOperation;
-  createdAt: number;
-  resolvedTo?: 'approved' | 'declined';
-  declineReason?: string;
+/** Capability id each marketplace operation is gated as. */
+const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
+  install: 'marketplace.install',
+  uninstall: 'marketplace.uninstall',
+  'create-package': 'marketplace.create_package',
+};
+
+/**
+ * The action a marketplace confirmation is bound to.
+ *
+ * Every value that reaches the mutation after the gate is hashed here, because
+ * the binding is the whole guarantee: the user consented to one specific effect,
+ * and a retry that changes any of these is a different effect. `purge` is the
+ * sharpest case — approving a reversible uninstall must never license one that
+ * deletes `.dork/data/` and `.dork/secrets.json`.
+ *
+ * Deliberately excludes the permission preview: the preview is derived (a fresh
+ * resolve can legitimately produce different file lists) while these fields are
+ * what the user actually agreed to.
+ *
+ * @param req - The confirmation request.
+ * @returns The canonical subset an approval binds to.
+ */
+function bindingOf(req: ConfirmationRequest): { capabilityId: string; inputHash: string } {
+  return {
+    capabilityId: CAPABILITY_IDS[req.operation],
+    inputHash: hashApprovalInput({
+      packageName: req.packageName,
+      // Absence is bound as absence: an unnamed marketplace searches every
+      // enabled source, which is not the same effect as a pinned one.
+      marketplace: req.marketplace ?? null,
+      operation: req.operation,
+      purge: req.purge ?? false,
+      projectPath: req.projectPath ?? null,
+      packageType: req.packageType ?? null,
+    }),
+  };
+}
+
+/** Where an operation lands, for the card: a named project or the global scope. */
+function scopeOf(req: ConfirmationRequest): string {
+  return req.projectPath ? ` in ${req.projectPath}` : '';
 }
 
 /**
- * Confirmation provider that issues short-lived (5 minute), single-use,
- * scoped tokens for external MCP clients.
+ * Plain-language summary of a pending marketplace operation, for the card.
+ *
+ * Says only what the request actually pins. An install with no marketplace named
+ * really does search every enabled source, so the card says that rather than
+ * naming a default the code does not apply.
+ */
+function summaryOf(req: ConfirmationRequest): string {
+  switch (req.operation) {
+    case 'install':
+      return `Install "${req.packageName}" from ${req.marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
+    case 'uninstall':
+      return req.purge
+        ? `Uninstall "${req.packageName}"${scopeOf(req)} and delete its saved data and secrets`
+        : `Uninstall "${req.packageName}"${scopeOf(req)}, keeping its saved data`;
+    case 'create-package':
+      return `Create the ${req.packageType ?? 'new'} package "${req.packageName}" in ${req.marketplace ?? 'your personal marketplace'}`;
+  }
+}
+
+/**
+ * Confirmation provider that issues single-use, action-scoped tokens for
+ * external MCP clients, backed by {@link ApprovalService}.
  *
  * Flow:
- * 1. The agent calls `marketplace_install`; the provider returns
- *    `{ status: 'pending', token }`.
- * 2. The user opens the DorkOS UI and clicks Approve or Decline; the host
- *    forwards that decision via {@link approve} / {@link decline}.
- * 3. The agent re-calls the tool, which calls {@link resolveToken}; on the
- *    first call after a decision, the entry is removed from the pending map
- *    (single-use).
+ * 1. The agent calls `marketplace_install`; the provider records an approval and
+ *    returns `{ status: 'pending', token }`.
+ * 2. The approval appears on the operator's cockpit card, and they decide it by
+ *    approval id through `POST /api/approvals/:id/grant|deny`. There is
+ *    deliberately no decide-by-token path: the agent holds the token, so one
+ *    would let a requester approve its own request.
+ * 3. The agent re-calls the tool, which calls {@link resolveToken}; the first
+ *    call after a decision spends the token, so a replay reports declined.
  *
- * Tokens that are never resolved expire after exactly 5 minutes. The expiry
- * check uses a strict `>` comparison so a resolve at the boundary is still
- * considered pending.
+ * Tokens that are never resolved expire on the primitive's window
+ * (`APPROVAL_TTL_MS`), and expiry is checked when the token is presented — a
+ * stale approval can never be honored.
  */
 export class TokenConfirmationProvider implements ConfirmationProvider {
-  /** Time-to-live for an issued token, in milliseconds (5 minutes). */
-  private readonly ttlMs = 5 * 60 * 1000;
-
-  /** In-memory map of issued, unresolved tokens. */
-  private readonly pending = new Map<string, PendingConfirmation>();
+  /**
+   * Build the provider over the shared approval primitive.
+   *
+   * @param approvals - The approval service that owns the token lifecycle.
+   */
+  constructor(private readonly approvals: ApprovalService) {}
 
   /**
-   * Issue a new pending confirmation token. The returned token must be passed
-   * back to {@link resolveToken} after the user has approved or declined
-   * out-of-band.
+   * Record a pending approval and return the token the agent retries with.
+   *
+   * The card's title and tier are resolved from the capability registry by
+   * `ApprovalService`, not stated here — a requester cannot describe itself.
    *
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
-    const token = randomUUID();
-    this.pending.set(token, {
-      token,
-      packageName: req.packageName,
-      marketplace: req.marketplace,
-      operation: req.operation,
-      createdAt: Date.now(),
+    const { capabilityId, inputHash } = bindingOf(req);
+    const ticket = this.approvals.request({
+      capabilityId,
+      inputHash,
+      summary: summaryOf(req),
     });
-    return { status: 'pending', token };
+    return { status: 'pending', token: ticket.token };
   }
 
   /**
-   * Mark a previously issued token as approved. Called by the DorkOS UI when
-   * the user clicks Approve. A no-op for unknown tokens.
-   *
-   * @param token - The token returned by {@link requestInstallConfirmation}.
-   */
-  approve(token: string): void {
-    const entry = this.pending.get(token);
-    if (entry) entry.resolvedTo = 'approved';
-  }
-
-  /**
-   * Mark a previously issued token as declined. Called by the DorkOS UI when
-   * the user clicks Decline. A no-op for unknown tokens.
-   *
-   * @param token - The token returned by {@link requestInstallConfirmation}.
-   * @param reason - Optional human-readable explanation.
-   */
-  decline(token: string, reason?: string): void {
-    const entry = this.pending.get(token);
-    if (entry) {
-      entry.resolvedTo = 'declined';
-      entry.declineReason = reason;
-    }
-  }
-
-  /**
-   * Resolve a previously issued token to its current status. After the first
-   * resolution to `approved` or `declined` (or after expiry), the entry is
-   * removed from the pending map — every subsequent call returns
-   * `{ status: 'declined', reason: 'Unknown or expired token' }`.
+   * Resolve a previously issued token against the operation the caller is about
+   * to run. A decided token is spent by this call, so every later attempt reports
+   * `Unknown or expired token`; a token issued for a different package or
+   * operation is refused without being spent.
    *
    * @param token - The token previously returned via `pending`.
+   * @param req - The operation the caller is about to run.
    */
-  async resolveToken(token: string): Promise<ConfirmationResult> {
-    const entry = this.pending.get(token);
-    if (!entry) return { status: 'declined', reason: 'Unknown or expired token' };
-
-    if (Date.now() - entry.createdAt > this.ttlMs) {
-      this.pending.delete(token);
-      return { status: 'declined', reason: 'Token expired' };
+  async resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult> {
+    const result = this.approvals.consume(token, bindingOf(req));
+    switch (result.outcome) {
+      case 'granted':
+        return { status: 'approved' };
+      case 'pending':
+        return { status: 'pending', token };
+      case 'denied':
+        return { status: 'declined', ...(result.reason ? { reason: result.reason } : {}) };
+      case 'expired':
+        return { status: 'declined', reason: 'Token expired' };
+      case 'mismatched':
+        return {
+          status: 'declined',
+          reason: 'This approval was granted for a different action',
+        };
+      case 'consumed':
+      case 'unknown':
+        return { status: 'declined', reason: 'Unknown or expired token' };
     }
-
-    if (entry.resolvedTo === 'approved') {
-      this.pending.delete(token);
-      return { status: 'approved' };
-    }
-
-    if (entry.resolvedTo === 'declined') {
-      this.pending.delete(token);
-      return { status: 'declined', reason: entry.declineReason };
-    }
-
-    return { status: 'pending', token };
   }
 }
 

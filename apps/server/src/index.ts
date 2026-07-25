@@ -123,7 +123,6 @@ import {
   TokenConfirmationProvider,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
-import { setMarketplaceConfirmationProvider } from './services/marketplace-mcp/confirmation-registry.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
 import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
@@ -135,6 +134,8 @@ import {
   initAgentIdentityService,
   createCapabilityAttributionObserver,
 } from './services/core/agent-identity/index.js';
+import { ApprovalService } from './services/core/approvals/index.js';
+import { createApprovalsRouter } from './routes/approvals.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import type { CapabilityRegistry } from './services/core/capabilities/index.js';
@@ -905,6 +906,31 @@ async function start() {
   // those closures are defined, so it cannot be a `const` initialized in place.
   // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
   let capabilityRegistry: CapabilityRegistry | undefined;
+
+  // Approval primitive (spec `agent-trust` §3.3) — one instance, injected into
+  // the marketplace confirmation provider and the approvals router so they share
+  // a single token lifecycle. Built after `capabilityRegistry` is declared so
+  // `describeCapability` can read it lazily: the card's title and tier come from
+  // the registry rather than from whoever is asking, and the registry is composed
+  // from the very domains that request approvals (a static import would cycle).
+  // The sweep drops rows whose window closed over a day ago; expiry itself is
+  // enforced whenever a token is presented, never by this call.
+  const approvalService = new ApprovalService(db, {
+    describeCapability: (capabilityId) => {
+      const capability = capabilityRegistry?.get(capabilityId);
+      return capability ? { title: capability.title, tier: capability.tier } : undefined;
+    },
+  });
+  try {
+    const purged = approvalService.purgeExpired();
+    if (purged > 0) {
+      logger.info(`[Approvals] Purged ${purged} long-expired approval records`);
+    }
+  } catch (err) {
+    logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   // Connector registry + the per-account → session tool-server binder, created
   // up front (both need only `db`) so the MCP factory closure can inject a
   // session's attached connector accounts as named MCP tool servers alongside
@@ -1245,6 +1271,10 @@ async function start() {
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
 
+  // Approvals — always available. The cockpit lists what is waiting on a person
+  // and records their decision (spec `agent-trust` §3.3).
+  app.use('/api/approvals', createApprovalsRouter(approvalService));
+
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
   app.locals.activityService = activityService;
@@ -1537,14 +1567,13 @@ async function start() {
 
     // Build the confirmation provider that gates marketplace mutation tools.
     // `MARKETPLACE_AUTO_APPROVE=1` selects the auto-approve provider for CI
-    // and tests; everything else uses the token provider, which issues
-    // out-of-band tokens that the DorkOS UI resolves via the
-    // `POST /api/marketplace/confirmations/:token` route.
+    // and tests; everything else uses the token provider, which records an
+    // approval the operator decides from the cockpit's approval card
+    // (`POST /api/approvals/:id/grant|deny`).
     const confirmationProvider: ConfirmationProvider =
       env.MARKETPLACE_AUTO_APPROVE === '1'
         ? new AutoApproveConfirmationProvider()
-        : new TokenConfirmationProvider();
-    setMarketplaceConfirmationProvider(confirmationProvider);
+        : new TokenConfirmationProvider(approvalService);
 
     marketplaceMcpDeps = {
       dorkHome,
