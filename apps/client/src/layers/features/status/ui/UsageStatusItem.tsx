@@ -80,6 +80,18 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
  * subscription sessions with no utilization yet, render cost primary. The
  * primary metric flips by `kind` so the two numbers are never both primary.
  *
+ * Every branch renders a **number** — a utilization percent or a dollar figure —
+ * so the registry marks this item {@link StatusBarItemConfig.rigid} and the row
+ * never squeezes it. `shrink-0` here says the same thing one level down: a
+ * `$12.4…` or a `7…` is not the same fact in fewer letters, it is a different
+ * amount, and the honest failure is for the width budget to drop the whole item
+ * to the `⋯` where the figure is still exact.
+ *
+ * This is the third item that carried `shrink-0` with nothing beside it able to
+ * give way (DOR-461 review). The other two were fixed by making them shrinkable,
+ * because they had a label to spend; this one has only the number, so it is the
+ * row that has to stop asking.
+ *
  * @param props - The usage descriptor to render.
  */
 export function UsageStatusItem({ usage }: UsageStatusItemProps) {

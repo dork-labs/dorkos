@@ -86,8 +86,12 @@ export interface StatusPromotionContext {
    * definition of the wallpaper this line exists to remove (DOR-462). Running
    * subagents come from the turn's `subagent_update` events instead, so the item
    * appears while work is delegated and leaves when it finishes.
+   *
+   * Deliberately not called `runningSubagentCount`: {@link SessionDiagnostics} has
+   * a field by that name which the SERVER projects, and the two can legitimately
+   * disagree. This one is the client's own fold of the turn it is watching.
    */
-  runningSubagentCount: number;
+  subagentsInFlight: number;
 }
 
 /** The two things about a working tree that can make it news. */
@@ -198,6 +202,21 @@ export interface StatusBarItemConfig {
    * they can never be news.
    */
   neverInLine?: true;
+  /**
+   * Set when the item's value is a **number**, which means it renders whole or
+   * not at all: the row may not squeeze it, and it never abbreviates.
+   *
+   * The line's rule is that a width the budget got wrong degrades into an
+   * ellipsis. That rule is right for a name and wrong for a number. `Bypass
+   * permi…` is the same fact in fewer letters; `8…` is a *different number* —
+   * an 88%-full context window reading as 8% is wrong by 10×, which is worse
+   * than the item not being there at all (DOR-461 review). So a rigid item keeps
+   * its pixels and the deficit lands on the items that can honestly give some
+   * up. When even that is not enough, the honest outcome is for the width budget
+   * to drop the item to the `⋯` — where the number is still exact — and the
+   * browser guard fails loudly if it does not.
+   */
+  rigid?: true;
 }
 
 /** Human-readable labels for each popover group, used as section headers. */
@@ -284,6 +303,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: BarChart3,
+    rigid: true,
     promote: (ctx) => ctx.contextPercent !== null && ctx.contextPercent >= CONTEXT_PROMOTE_PERCENT,
     severity: (ctx) => {
       if (ctx.contextPercent === null) return SEVERITY.QUIET;
@@ -299,6 +319,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Gauge,
+    rigid: true,
     promote: (ctx) => ctx.usage?.state === 'warning' || ctx.usage?.state === 'exhausted',
     severity: (ctx) => {
       if (ctx.usage?.state === 'exhausted') return SEVERITY.USAGE_EXHAUSTED;
@@ -326,8 +347,9 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'diagnostics',
     icon: Users,
-    promote: (ctx) => ctx.runningSubagentCount > 0,
-    severity: (ctx) => (ctx.runningSubagentCount > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
+    rigid: true,
+    promote: (ctx) => ctx.subagentsInFlight > 0,
+    severity: (ctx) => (ctx.subagentsInFlight > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
   },
   {
     key: 'connection',

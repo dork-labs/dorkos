@@ -181,7 +181,7 @@ export function ChatStatusSection({
             canSelect: runtimeChip.canSelect,
           },
     usage,
-    runningSubagentCount: runningSubagents.length,
+    subagentsInFlight: runningSubagents.length,
   };
 
   // The inline Compact action is the one thing the line gives up first: it costs a

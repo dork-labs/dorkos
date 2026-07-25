@@ -86,16 +86,23 @@ export function StatusLine({ items, trailing }: StatusLineProps) {
  * *visible* list, so an item that hides and comes back can never reappear
  * carrying a leading separator.
  *
- * `min-w-0` on each wrapper is what lets a squeezed cluster push the squeeze into
- * the item, where a `truncate` turns it into an ellipsis. It also means the row
- * can hand an item less width than its content needs — so **every item has to be
- * able to shrink**, all the way down its own tree. One `display: block` wrapper
- * without `min-w-0` anywhere in that chain, or one `shrink-0` on a part that
- * could have given way, and the item renders at full width inside a narrower box
- * and paints over its neighbour: that is DOR-461, in two items at once. The
- * browser guard for it is `apps/e2e/tests/chat/status-line-fit.spec.ts`, which
- * measures painted extents rather than the row's `scrollWidth` — an
- * `overflow-hidden` row can never report its own overflow.
+ * **Numbers keep their pixels; names give them up.** A wrapper is `min-w-0`, so a
+ * squeezed cluster pushes the squeeze into the item where a `truncate` turns it
+ * into an ellipsis — which is honest for a name (`Bypass permi…` is the same fact
+ * in fewer letters) and a lie for a number (`8…` is not 88%). So an item the
+ * registry marks {@link StatusBarItemConfig.rigid} is `shrink-0` instead: the row
+ * cannot squeeze it, and the deficit lands on the items that can honestly absorb
+ * it.
+ *
+ * Either way the item must be able to give up whatever the row asks of it, all
+ * the way down its own tree. One `display: block` wrapper without `min-w-0`
+ * anywhere in that chain, or one `shrink-0` on a part that could have given way,
+ * and a shrinkable item renders at full width inside a narrower box and paints
+ * over its neighbour — that is DOR-461, in three items. And a rigid item that the
+ * budget should have dropped overflows its *cluster* instead. Both are caught the
+ * same way, by `apps/e2e/tests/chat/status-line-fit.spec.ts`, which measures
+ * painted extents rather than the row's `scrollWidth` — an `overflow-hidden` row
+ * can never report its own overflow.
  *
  * @internal
  */
@@ -118,7 +125,11 @@ function StatusCluster({
             animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
             exit={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
             transition={ITEM_TRANSITION}
-            className={cn('inline-flex min-w-0 items-center gap-2', TAP_TARGET)}
+            className={cn(
+              'inline-flex items-center gap-2',
+              item.rigid ? 'shrink-0' : 'min-w-0',
+              TAP_TARGET
+            )}
           >
             {index > 0 && <StatusLineSeparator />}
             {item.node}

@@ -23,10 +23,11 @@ interface GitStatusItemProps {
    * 235px, where a slot is priced at 13 characters (`STATUS_VALUE_MAX_CHARS`).
    * The whole width budget rests on the claim that items are roughly one size, so
    * the one item that ignored the bound squeezed everything beside it (DOR-461).
-   * Compact keeps what makes the item news — the branch, ahead/behind, and the
-   * fact that the tree is dirty is why it promoted at all — and drops the exact
-   * counts and the project key, both of which the tooltip and the Session panel
-   * still carry in full.
+   * Compact keeps what makes the item news — the branch, ahead/behind, and a dot
+   * for "there are uncommitted changes", since a dirty tree is half of why this
+   * item promotes at all and dropping it made a dirty repo and a clean one on the
+   * same branch identical. What it drops is the exact counts and the project key,
+   * which the tooltip carries in full.
    */
   compact?: boolean;
 }
@@ -62,6 +63,9 @@ export function GitStatusItem({ data, workspace, compact }: GitStatusItemProps) 
   if (workspace) {
     const ports = derivePorts(workspace.portBase);
     const tipParts = [
+      // The project key is in here because compact stops drawing it, and this is
+      // the only other place it appears anywhere in the client.
+      `${workspace.key} · ${workspace.projectKey}`,
       `${workspace.branch ?? data.branch} · ${workspace.provider}`,
       data.ahead > 0 ? `↑${data.ahead}` : '',
       data.behind > 0 ? `↓${data.behind}` : '',
@@ -82,9 +86,12 @@ export function GitStatusItem({ data, workspace, compact }: GitStatusItemProps) 
         {workspace.pinned && (
           <Pin className="text-muted-foreground size-(--size-icon-xs) shrink-0" />
         )}
-        {totalChanges > 0 && !compact && (
-          <span className="text-muted-foreground shrink-0">· {changeLabel}</span>
-        )}
+        {totalChanges > 0 &&
+          (compact ? (
+            <DirtyDot label={changeLabel} />
+          ) : (
+            <span className="text-muted-foreground shrink-0">· {changeLabel}</span>
+          ))}
       </span>
     );
   }
@@ -115,9 +122,34 @@ export function GitStatusItem({ data, workspace, compact }: GitStatusItemProps) 
         </span>
       )}
 
-      {totalChanges > 0 && !compact && (
-        <span className="text-muted-foreground shrink-0">· {changeLabel}</span>
-      )}
+      {totalChanges > 0 &&
+        (compact ? (
+          <DirtyDot label={changeLabel} />
+        ) : (
+          <span className="text-muted-foreground shrink-0">· {changeLabel}</span>
+        ))}
     </span>
+  );
+}
+
+/**
+ * The one bit of the change count that survives a narrow bar: that there is one.
+ *
+ * A dirty tree is half of what makes this item news (`dirty || !onDefaultBranch`),
+ * so dropping the count wholesale left a dirty repo and a clean one on the same
+ * feature branch rendering identically. Four pixels say the same thing, and the
+ * exact tally is in the tooltip and the Session panel.
+ *
+ * @param props - The full change label, used as the accessible name.
+ * @internal
+ */
+function DirtyDot({ label }: { label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className="bg-muted-foreground/70 size-1 shrink-0 rounded-full"
+    />
   );
 }

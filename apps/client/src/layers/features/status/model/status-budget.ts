@@ -78,38 +78,30 @@ const TIER_FULL_MIN_PX = 640;
 const TIER_COMPACT_MIN_PX = 440;
 const TIER_IDENTITY_MIN_PX = 340;
 
-/**
- * Right-cluster slots at each tier: two problems plus one item of context, and
- * only two once the line is down to an avatar.
- *
- * `compact` used to sell a fourth, and measuring its floor says it never had the
- * pixels: 220px of right cluster against 268px of four short-label items and
- * their separators. The deficit landed on the one item that will not truncate
- * honestly, so an 88%-full context window read `8…` (DOR-461). What separates
- * the tiers is how much each item *says*, not how many get to speak — which is
- * why the count barely moves while the density does.
- */
-const BUDGET_COMPACT = 3;
+/** Right-cluster slots at each tier. Three at `identity`: two problems plus one item of context. */
+const BUDGET_COMPACT = 4;
 const BUDGET_IDENTITY = 3;
 const BUDGET_AVATAR = 2;
 
 /**
  * The `full` tier's floor — the spec's "4+", which grows with the width above it.
  *
- * Three, not the four this shipped with. The floor has to pay for the whole left
- * cluster (this is the only tier that keeps the directory), the `⋯`, and the gap
- * between the clusters before it may sell a right-cluster slot — measured at the
- * 640px floor, ~360px of the row's 630px content box. What is left buys three
- * full-label items, and a fourth was the line writing a cheque the width could
- * not honour: every value in the row truncated at once, and two items that could
- * not shrink painted over their neighbours instead (DOR-461).
+ * This was briefly cut to three while fixing DOR-461, on the argument that the
+ * floor could not afford a fourth full-label item. Measurement says otherwise, and
+ * says something worse: the cut was hiding a broken item rather than paying for a
+ * real one. `UsageStatusItem` could neither shrink nor be shrunk, and three slots
+ * kept it under the `⋯` in the fixtures being measured; at four it came back into
+ * the visible set and painted over its neighbour. With that item fixed, four is
+ * overlap-free at every tier floor, so the reduction bought nothing it claimed to.
  *
- * A healthy session promotes one or two right-cluster items, so this changes
- * nothing about a calm line. It only decides what a *degraded* session does with
- * a narrow bar, and there the trade is three whole readings plus one more on the
- * `⋯` instead of four truncated ones — which is the redesign's whole argument.
+ * Nor did it buy legibility. Measured on the crowded 640px row, four slots leave
+ * five values truncated and three slots leave five values truncated — the same
+ * five, ~2x wider each. The pressure at that floor comes from the LEFT cluster
+ * (identity + directory + a 20-character branch is ~320px of a 630px content
+ * box), which no right-cluster count can relieve. Whole readings at the `full`
+ * floor are a density question, not a budget one.
  */
-const BUDGET_FULL_BASE = 3;
+const BUDGET_FULL_BASE = 4;
 
 /**
  * Measured advance width of one bounded status character in the composer's

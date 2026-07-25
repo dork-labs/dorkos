@@ -20,7 +20,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionMode: 'default',
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
-    runningSubagentCount: 0,
+    subagentsInFlight: 0,
     ...overrides,
   };
 }
@@ -127,7 +127,7 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
   });
 
   it('promotes subagents once one is actually running', () => {
-    expect(promotedKeys(restingContext({ runningSubagentCount: 1 }))).toContain('subagents');
+    expect(promotedKeys(restingContext({ subagentsInFlight: 1 }))).toContain('subagents');
   });
 
   it('stays quiet about subagents a session merely could call', () => {
@@ -137,12 +137,31 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     // which is 0 on a resting session, so the item has nothing to say.
     expect(promotedKeys(restingContext())).not.toContain('subagents');
     expect(severityOf('subagents', restingContext())).toBe(
-      severityOf('subagents', restingContext({ runningSubagentCount: 0 }))
+      severityOf('subagents', restingContext({ subagentsInFlight: 0 }))
     );
   });
 
   it('keeps the directory out when it is unresolved', () => {
     expect(promotedKeys(restingContext({ cwd: null }))).not.toContain('cwd');
+  });
+});
+
+describe('STATUS_BAR_REGISTRY — numbers are rigid', () => {
+  it('marks exactly the items whose value is a number', () => {
+    // The row may squeeze a name into an ellipsis, because `Bypass permi…` is the
+    // same fact in fewer letters. It may not do that to a number: `8…` reads as 8%
+    // when the window is 88% full (DOR-461 review). Anything added here has to be
+    // a number, and any number added to the line has to be added here — the
+    // alternative is an item that renders outside its own box, which is how all
+    // three of these were found.
+    const rigid = STATUS_BAR_REGISTRY.filter((i) => i.rigid).map((i) => i.key);
+    expect(rigid).toEqual(['context', 'usage', 'subagents']);
+  });
+
+  it('leaves every label-bearing item free to truncate', () => {
+    for (const key of ['agent', 'cwd', 'git', 'runtime', 'model', 'permission', 'connection']) {
+      expect(getStatusBarItem(key as StatusBarItemKey)?.rigid).toBeUndefined();
+    }
   });
 });
 
@@ -159,7 +178,7 @@ describe('STATUS_BAR_REGISTRY — severity ranking', () => {
       ['permission', restingContext({ permissionMode: 'bypassPermissions' })],
       ['context', restingContext({ contextPercent: 74 })],
       ['permission', restingContext({ permissionMode: 'plan' })],
-      ['subagents', restingContext({ runningSubagentCount: 2 })],
+      ['subagents', restingContext({ subagentsInFlight: 2 })],
       ['runtime', restingContext({ runtime: { isDefault: false, canSelect: false } })],
       ['git', restingContext({ git: { dirty: true, onDefaultBranch: true } })],
       ['model', restingContext()],
@@ -176,7 +195,7 @@ describe('STATUS_BAR_REGISTRY — severity ranking', () => {
     // A delegated turn is news; a number heading for a ceiling is a problem. When
     // one slot is left the problem takes it. Ranked at 60, subagents took that
     // slot and put the usage warning under the `⋯` (DOR-462).
-    const subagents = severityOf('subagents', restingContext({ runningSubagentCount: 3 }));
+    const subagents = severityOf('subagents', restingContext({ subagentsInFlight: 3 }));
     const usageWarning = severityOf(
       'usage',
       restingContext({ usage: { kind: 'subscription', state: 'warning' } })

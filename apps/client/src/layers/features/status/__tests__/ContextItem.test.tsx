@@ -169,16 +169,20 @@ describe('ContextItem — every part can give up pixels except the number', () =
     expect(button.className).not.toContain('shrink-0');
     expect(button.querySelector('span.truncate')).not.toBeNull();
     expect(percentSpan('91%').parentElement!.className).toContain('shrink-0');
+    expect(percentSpan('91%').className).not.toContain('truncate');
   });
 
-  it('makes the percent itself shrinkable when it is alone in the item', () => {
-    // With no action beside it there is nothing else to give, and an item that
-    // cannot shrink at all overflows its box. So the number truncates instead —
-    // the full reading is in the Session panel either way.
-    render(<ContextItem percent={88} />, { wrapper: Wrapper });
-    const value = percentSpan('88%');
-    expect(value.className).toContain('truncate');
-    expect(value.parentElement!.className).toContain('min-w-0');
-    expect(value.parentElement!.className).not.toContain('shrink-0');
+  it('never truncates the percent, with or without the action beside it', () => {
+    // `88%` cut to `8…` is not the same fact in fewer letters, it is a different
+    // number — wrong by 10x, and worse than the item not being there (DOR-461
+    // review). The registry marks this item rigid so the row cannot squeeze it;
+    // the absence of a `truncate` is the same promise one level down.
+    for (const compact of [null, { pending: false, onCompact: vi.fn() }]) {
+      cleanup();
+      render(<ContextItem percent={88} compact={compact} />, { wrapper: Wrapper });
+      const value = percentSpan('88%');
+      expect(value.className).not.toContain('truncate');
+      expect(value.parentElement!.className).toContain('shrink-0');
+    }
   });
 });

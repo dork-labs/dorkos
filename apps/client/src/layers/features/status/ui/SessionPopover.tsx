@@ -111,6 +111,11 @@ export function SessionPopover({
             <TooltipTrigger asChild>
               <button
                 type="button"
+                // Identity for the browser guard, which measures this anchor
+                // alongside the items to prove nothing paints over it. Matching it
+                // by `aria-label` meant a copy edit could silently drop it from the
+                // measurement (DOR-461 review).
+                data-testid="status-reveal"
                 // The count belongs in the label, not just the glyph: `aria-label`
                 // replaces the button's text, so a visible `+2` would be silent.
                 aria-label={hidden ? `Session details, ${overflowCount} more` : 'Session details'}

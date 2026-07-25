@@ -17,9 +17,15 @@ afterEach(() => {
 function item(
   key: StatusBarItemKey,
   cluster: 'left' | 'right' = 'right',
-  severity = 0
+  severity = 0,
+  rigid = false
 ): PromotedStatusItem {
-  return { key, cluster, severity, pinned: false, node: <span>{key} content</span> };
+  return { key, cluster, severity, pinned: false, rigid, node: <span>{key} content</span> };
+}
+
+/** The wrapper the row draws around one item — where the shrink decision lands. */
+function wrapper(key: StatusBarItemKey): HTMLElement {
+  return screen.getByTestId(`status-item-${key}`);
 }
 
 describe('StatusLine', () => {
@@ -103,6 +109,28 @@ describe('StatusLine', () => {
       expect(screen.getByTestId('status-item-agent')).toBeInTheDocument();
       expect(screen.queryByTestId('status-item-cwd')).not.toBeInTheDocument();
       expect(screen.queryByTestId('status-item-model')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('numbers keep their pixels; names give them up', () => {
+    it('lets a name-bearing item be squeezed, so its value can truncate', () => {
+      render(<StatusLine items={[item('permission')]} />);
+      expect(wrapper('permission').className).toContain('min-w-0');
+      expect(wrapper('permission').className).not.toContain('shrink-0');
+    });
+
+    it('refuses to squeeze an item whose value is a number', () => {
+      // `88%` truncated to `8…` is not the same fact in fewer letters, it is a
+      // different number — so the row must not be able to ask (DOR-461 review).
+      render(<StatusLine items={[item('context', 'right', 90, true)]} />);
+      expect(wrapper('context').className).toContain('shrink-0');
+      expect(wrapper('context').className).not.toContain('min-w-0');
+    });
+
+    it('applies the decision per item, not per row', () => {
+      render(<StatusLine items={[item('context', 'right', 90, true), item('connection')]} />);
+      expect(wrapper('context').className).toContain('shrink-0');
+      expect(wrapper('connection').className).toContain('min-w-0');
     });
   });
 

@@ -48,26 +48,24 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
     severity === 'critical' ? 'text-red-500' : severity === 'warning' ? 'text-amber-500' : '';
   const showCompact = compact != null && displayPercent >= CONTEXT_ACTION_PERCENT;
 
-  // The percent is the news, so it gives up pixels last. While the Compact action
-  // is beside it that action absorbs the squeeze, and the number stays whole.
-  // Alone in the item there is nothing else to give — so it becomes shrinkable
-  // and truncates, rather than rendering at full width inside a narrower box and
-  // painting over the item beside it (DOR-461). The full reading is always in the
-  // Session panel.
+  // The percent never abbreviates. The registry marks this item `rigid`, so the
+  // row cannot squeeze it in the first place — and if it ever does, `88%` must
+  // still not degrade to `8…`, which is a different number rather than the same
+  // one in fewer letters (DOR-461 review). The Compact action beside it is a
+  // label, so that one may give way.
   const badge = (
     <span
       // `aria-label`, not a wrapper: an extra box between the tooltip trigger and
-      // this one would need its own copy of the rigid/shrinkable decision above.
+      // this one is another place for a stray `min-w-0` to squeeze the number.
       aria-label={contextUsage ? 'Context window usage' : undefined}
       className={cn(
-        'inline-flex items-center gap-1',
-        showCompact ? 'shrink-0' : 'min-w-0 shrink',
+        'inline-flex shrink-0 items-center gap-1',
         contextUsage && 'cursor-default',
         colorClass
       )}
     >
       <Layers className="size-(--size-icon-xs) shrink-0" />
-      <span className="truncate">{displayPercent}%</span>
+      <span>{displayPercent}%</span>
     </span>
   );
 
@@ -92,12 +90,10 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            // `min-w-0 shrink`, not `shrink-0`: the percent is the news and keeps
-            // its pixels, but the action beside it has to be able to give some up.
-            // With both halves unshrinkable the item could not fit a squeezed box
-            // at all and painted the button over the item beside it (DOR-461).
-            // Squeezed hard enough the label truncates and then leaves the glyph
-            // alone — still a 44px target, still named by `aria-label`.
+            // `min-w-0 shrink`, not `shrink-0`: the percent keeps its pixels, but
+            // the action beside it is a label and can give some up. Squeezed hard
+            // enough the label truncates and then leaves the glyph alone — still a
+            // 44px target, still named by `aria-label`.
             className="bg-secondary text-muted-foreground hover:text-foreground hover:bg-muted inline-flex min-w-0 shrink items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw

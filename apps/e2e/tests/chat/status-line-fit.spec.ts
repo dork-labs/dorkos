@@ -35,6 +35,24 @@ const WIDTHS = [900, 520, 375, 330] as const;
 /** Sub-pixel layout rounding is not an overlap. */
 const OVERLAP_SLACK_PX = 0.5;
 
+/**
+ * The tier floors the playground draws its rows at, widest first — kept in step
+ * with `TIER_WIDTHS` in `dev/showcases/status-line-showcase-data`.
+ *
+ * Asserted rather than assumed: widening a showcase box would otherwise leave
+ * this file green while it quietly stopped measuring the floors, which are the
+ * only widths where an over-promising budget shows up at all.
+ */
+const TIER_FLOOR_WIDTHS = [640, 440, 340, 320] as const;
+
+/** The demo box draws a 1px border either side of the row it is sizing. */
+const ROW_WIDTH_SLACK_PX = 2;
+
+/** The tier floor a measured row was drawn at, or `null` if it is not at one. */
+function tierFloorOf(rowWidth: number): number | null {
+  return TIER_FLOOR_WIDTHS.find((w) => Math.abs(w - rowWidth) <= ROW_WIDTH_SLACK_PX) ?? null;
+}
+
 /** Longer than `StatusLine`'s 200ms item transition, so a reading lands after it. */
 const ITEM_SETTLE_MS = 250;
 
@@ -61,6 +79,8 @@ interface MeasuredItem {
 interface MeasuredLine {
   /** Zero-based index of the line on the page (a playground page has several). */
   index: number;
+  /** The row's own measured width — which tier floor this reading was taken at. */
+  rowWidth: number;
   /** Every settled item plus the trailing anchor, ordered by cluster then position. */
   items: MeasuredItem[];
 }
@@ -108,9 +128,10 @@ async function measureStatusLines(page: Page): Promise<MeasuredLine[]> {
 
     return [...document.querySelectorAll('[data-testid="status-line"]')].map((line, index) => ({
       index,
+      rowWidth: Math.round(line.getBoundingClientRect().width),
       items: [
         ...line.querySelectorAll<HTMLElement>(
-          '[data-testid^="status-item-"], [aria-label^="Session details"]'
+          '[data-testid^="status-item-"], [data-testid="status-reveal"]'
         ),
       ]
         .filter((el) => {
@@ -121,7 +142,7 @@ async function measureStatusLines(page: Page): Promise<MeasuredLine[]> {
           const box = el.getBoundingClientRect();
           const painted = paintedExtent(el);
           return {
-            testid: el.getAttribute('data-testid') ?? 'status-reveal',
+            testid: el.getAttribute('data-testid')!,
             cluster: clusterIndexOf(line, el),
             boxLeft: box.left,
             boxRight: box.right,
@@ -197,7 +218,7 @@ function expectNoOverlap(lines: MeasuredLine[]) {
 
 /** The `⋯` — the anchor for everything the width budget dropped. */
 function revealTrigger(page: Page): Locator {
-  return page.locator('[data-testid="status-line"] button[aria-label^="Session details"]');
+  return page.locator('[data-testid="status-line"] [data-testid="status-reveal"]');
 }
 
 test.describe('Chat — status line fits its row @integration', () => {
@@ -304,13 +325,30 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
     await expect(page.locator('[data-testid="status-item-context"]').first()).toBeVisible();
 
     const lines = await measureSettledStatusLines(page);
-    // A vacuous pass is the failure mode this whole file exists to remove: assert
-    // the degraded rows really are carrying a crowded line before believing them.
+    // A vacuous pass is the failure mode this whole file exists to remove, and
+    // there are three ways to get one. Too few rows; rows that are not crowded;
+    // and rows measured at some width that is not a tier floor, which is the one
+    // width where a budget can be caught over-promising. All three fail loudly.
     expect(lines.length).toBeGreaterThanOrEqual(MIN_ROWS);
     expect(
       Math.max(...lines.map((line) => line.items.length)),
       'the degraded rows must carry a crowded line'
     ).toBeGreaterThanOrEqual(7);
+    const floors = lines.map((line) => tierFloorOf(line.rowWidth));
+    expect(
+      lines.filter((line, i) => floors[i] === null).map((line) => line.rowWidth),
+      'every row must be drawn at a tier floor'
+    ).toEqual([]);
+    expect(
+      [...new Set(floors)].sort((a, b) => b! - a!),
+      'every tier floor must be among the rows measured'
+    ).toEqual([...TIER_FLOOR_WIDTHS]);
+    // The `⋯` is measured too: it is the one thing the line may never drop, so an
+    // item painting over it is exactly as bad as an item painting over an item.
+    expect(
+      lines.every((line) => line.items.some((i) => i.testid === 'status-reveal')),
+      'the reveal anchor must be in every measured row'
+    ).toBe(true);
 
     expectNoOverlap(lines);
   });

@@ -16,7 +16,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionMode: 'default',
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
-    runningSubagentCount: 0,
+    subagentsInFlight: 0,
     ...overrides,
   };
 }
@@ -140,6 +140,27 @@ describe('selectPromotedItems — pins', () => {
   });
 });
 
+describe('selectPromotedItems — rigidity travels with the item', () => {
+  it('marks the number-bearing items so the row knows not to squeeze them', () => {
+    // The row draws what it is handed and decides nothing, so "this value is a
+    // number" has to arrive as data (DOR-461 review).
+    const items = selectPromotedItems({
+      ctx: restingContext({
+        contextPercent: 91,
+        usage: { kind: 'subscription', utilization: 0.99, state: 'exhausted' },
+        permissionMode: 'plan',
+      }),
+      pins: [],
+      nodes: allNodes(),
+    });
+    const rigid = Object.fromEntries(items.map((i) => [i.key, i.rigid]));
+    expect(rigid.context).toBe(true);
+    expect(rigid.usage).toBe(true);
+    expect(rigid.permission).toBe(false);
+    expect(rigid.model).toBe(false);
+  });
+});
+
 describe('selectPromotedItems — a degraded session', () => {
   it('promotes every signal that has something to say, ranked for a budget', () => {
     const items = selectPromotedItems({
@@ -149,7 +170,7 @@ describe('selectPromotedItems — a degraded session', () => {
         permissionMode: 'plan',
         runtime: { isDefault: false, canSelect: false },
         git: { dirty: true, onDefaultBranch: false },
-        runningSubagentCount: 3,
+        subagentsInFlight: 3,
         usage: { kind: 'subscription', utilization: 0.95, state: 'exhausted' },
       }),
       pins: [],

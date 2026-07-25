@@ -20,24 +20,37 @@ interface SubagentsItemProps {
  * what put a permanent "12 agents" in the line (DOR-462). The catalogue lives in
  * the Session panel under "Available" instead.
  *
+ * The value is the bare count beside the glyph — `2`, not `2 running` — which is
+ * the same shape every other number in the line takes (`▤ 88%`, `$1.23`). It also
+ * keeps the number safe: a value with a word after it truncates that word first
+ * and the digits last, so `12 running` can reach `1…` and read as one subagent
+ * when there are twelve. Two characters cannot. The word is in the tooltip and in
+ * the accessible name, where a narrow row cannot cut it.
+ *
  * @param props - The running subagents.
  */
 export function SubagentsItem({ running }: SubagentsItemProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        {/* Deliberately unnamed: `role="status"` is a live region, so a screen
-            reader announces the CONTENT as the count changes. */}
-        <span className="inline-flex min-w-0 items-center gap-1" role="status">
+        {/* No `role="status"`: the row itself is already `aria-live="polite"`
+            (see `StatusLine`), and a live region inside a live region can
+            announce the same change twice. */}
+        <span
+          className="inline-flex min-w-0 items-center gap-1"
+          aria-label={`${running.length} subagent${running.length === 1 ? '' : 's'} running`}
+        >
           <Users className="size-(--size-icon-xs) shrink-0" />
-          <span className="truncate">{running.length} running</span>
+          <span className="tabular-nums">{running.length}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">
         <ul className="space-y-1">
           {running.map((subagent) => (
             <li key={subagent.taskId}>
-              <span className="font-medium">{subagent.description ?? subagent.taskId}</span>
+              {/* Never the raw `taskId` — a runtime that sends no description should
+                  cost the reader a vague line, not a piece of DorkOS's plumbing. */}
+              <span className="font-medium">{subagent.description ?? 'Working…'}</span>
               <p className="text-muted-foreground text-[10px] leading-tight">
                 {subagent.toolUses ?? 0} tool{subagent.toolUses === 1 ? '' : 's'}
                 {subagent.lastToolName ? ` · last ${subagent.lastToolName}` : ''}

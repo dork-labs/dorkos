@@ -34,6 +34,7 @@ import {
   DEGRADED,
   DEGRADED_ON_DEFAULT,
   HEALTHY,
+  RATE_LIMITED,
   SAMPLED_WIDTHS,
   TIER_WIDTHS,
   type StatusScenario,
@@ -203,6 +204,17 @@ export function StatusLineShowcases() {
         </ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
           <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={640} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Rate limited — the three loudest signals are the three that draw
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <div className="space-y-5">
+            {TIER_WIDTHS.map((width) => (
+              <BudgetedLine key={width} scenario={RATE_LIMITED} width={width} />
+            ))}
+          </div>
         </ShowcaseDemo>
 
         <ShowcaseLabel>What every width affords</ShowcaseLabel>

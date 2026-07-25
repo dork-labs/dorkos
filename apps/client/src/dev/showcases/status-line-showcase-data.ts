@@ -84,6 +84,14 @@ const USAGE_WARNING: UsageStatus = {
   state: 'warning',
 };
 
+const USAGE_EXHAUSTED: UsageStatus = {
+  kind: 'subscription',
+  utilization: 1,
+  windowLabel: '5-hour window',
+  costUsd: 9.84,
+  state: 'exhausted',
+};
+
 /**
  * Two subagents mid-flight. The item counts what is RUNNING, not what the runtime
  * could call — a catalogue never changes, so counting it says nothing (DOR-462).
@@ -207,7 +215,7 @@ export const HEALTHY: StatusScenario = {
     permissionMode: 'default',
     runtime: { isDefault: true, canSelect: false },
     usage: USAGE_OK,
-    runningSubagentCount: 0,
+    subagentsInFlight: 0,
   },
   input: {
     sessionId: 'showcase-healthy',
@@ -246,7 +254,7 @@ export const DEGRADED: StatusScenario = {
     permissionMode: 'bypassPermissions',
     runtime: { isDefault: false, canSelect: false },
     usage: USAGE_WARNING,
-    runningSubagentCount: RUNNING_SUBAGENTS.length,
+    subagentsInFlight: RUNNING_SUBAGENTS.length,
   },
   input: {
     sessionId: 'showcase-degraded',
@@ -291,6 +299,38 @@ export const DEGRADED_ON_DEFAULT: StatusScenario = {
     runtime: 'claude-code',
     model: 'claude-opus-4-6',
     effort: null,
+  },
+};
+
+/**
+ * Rate-limited: the connection is down, the window is nearly full, and the
+ * subscription has hit its ceiling — with permissions left at their default.
+ *
+ * That last detail is the whole point of having this scenario as well as
+ * {@link DEGRADED}. Severity puts `connection` (100), `context` (90) and `usage`
+ * (80) at the top, so those three are exactly what a three-slot budget draws —
+ * whereas DEGRADED's `bypassPermissions` (70) outranks a usage *warning* (50) and
+ * pushes the usage item under the `⋯`, where its width can never be wrong. The
+ * usage item is the one that shipped unable to shrink or be shrunk (DOR-461
+ * review), and this is the row that puts it on screen beside its neighbours.
+ */
+export const RATE_LIMITED: StatusScenario = {
+  label: 'Rate limited — connection lost, context critical, subscription exhausted',
+  ctx: {
+    ...DEGRADED.ctx,
+    permissionMode: 'default',
+    usage: USAGE_EXHAUSTED,
+  },
+  input: {
+    ...DEGRADED.input,
+    sessionId: 'showcase-rate-limited',
+    status: { ...DEGRADED_STATUS, permissionMode: 'default' },
+    usage: USAGE_EXHAUSTED,
+  },
+  diagnostics: {
+    ...DEGRADED_DIAGNOSTICS,
+    permissionMode: 'default',
+    usage: USAGE_EXHAUSTED,
   },
 };
 
