@@ -157,6 +157,8 @@ export const GENERIC_EVENTS = [
   'relay_dead_letter',
   'task_run_failed',
   'mesh_liveness_changed',
+  'approval_pending',
+  'approval_resolved',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

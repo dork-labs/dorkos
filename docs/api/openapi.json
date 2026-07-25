@@ -4688,6 +4688,98 @@
           }
         }
       },
+      "PendingApprovalsResponse": {
+        "type": "object",
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingApproval"
+            }
+          }
+        },
+        "required": [
+          "approvals"
+        ]
+      },
+      "PendingApproval": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "capabilityTitle": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approvalId",
+          "capabilityId",
+          "capabilityTitle",
+          "tier",
+          "summary",
+          "requestedAt",
+          "expiresAt"
+        ]
+      },
+      "ApprovalDecisionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "denied"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "approvalId",
+          "outcome"
+        ]
+      },
+      "DenyApprovalBody": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      },
       "ActorType": {
         "type": "string",
         "enum": [
@@ -11021,6 +11113,168 @@
         "responses": {
           "204": {
             "description": "Account detached (or already absent)"
+          }
+        }
+      }
+    },
+    "/api/approvals/pending": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "List approvals waiting on a person",
+        "description": "Approvals an agent has requested and nobody has decided yet, oldest first. Expired requests are excluded, and no response here ever carries token material.",
+        "responses": {
+          "200": {
+            "description": "Pending approvals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingApprovalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/grant": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Allow the requested action",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approval granted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired before it was decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/deny": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Refuse the requested action",
+        "description": "Denies a pending approval, with an optional reason the requester sees.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyApprovalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired before it was decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

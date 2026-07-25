@@ -109,15 +109,16 @@ async function resolveConfirmation(
   args: InstallToolArgs,
   preview: PreviewResult
 ): Promise<ConfirmationResult> {
-  if (args.confirmationToken) {
-    return deps.confirmationProvider.resolveToken(args.confirmationToken);
-  }
-  return deps.confirmationProvider.requestInstallConfirmation({
+  const req = {
     packageName: args.name,
     marketplace: args.marketplace ?? 'dorkos-community',
-    operation: 'install',
+    operation: 'install' as const,
     preview: preview.preview,
-  });
+  };
+  if (args.confirmationToken) {
+    return deps.confirmationProvider.resolveToken(args.confirmationToken, req);
+  }
+  return deps.confirmationProvider.requestInstallConfirmation(req);
 }
 
 /**

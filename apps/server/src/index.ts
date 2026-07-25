@@ -135,6 +135,8 @@ import {
   initAgentIdentityService,
   createCapabilityAttributionObserver,
 } from './services/core/agent-identity/index.js';
+import { initApprovalService } from './services/core/approvals/index.js';
+import { createApprovalsRouter } from './routes/approvals.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import type { CapabilityRegistry } from './services/core/capabilities/index.js';
@@ -318,6 +320,22 @@ async function start() {
   // `createApp()`, whose `resolveAgentIdentity` middleware reaches this
   // singleton lazily (it has no database handle in scope, same as `getAuth`).
   initAgentIdentityService(db);
+
+  // Approval primitive (spec `agent-trust` §3.3) — initialized here so the
+  // marketplace confirmation providers and the approvals router share one
+  // token lifecycle. The sweep drops rows whose window closed over a day ago;
+  // expiry itself is enforced whenever a token is presented, never by this call.
+  const approvalService = initApprovalService(db);
+  try {
+    const purged = approvalService.purgeExpired();
+    if (purged > 0) {
+      logger.info(`[Approvals] Purged ${purged} long-expired approval records`);
+    }
+  } catch (err) {
+    logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
@@ -1245,6 +1263,10 @@ async function start() {
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
 
+  // Approvals — always available. The cockpit lists what is waiting on a person
+  // and records their decision (spec `agent-trust` §3.3).
+  app.use('/api/approvals', createApprovalsRouter(approvalService));
+
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
   app.locals.activityService = activityService;
@@ -1543,7 +1565,7 @@ async function start() {
     const confirmationProvider: ConfirmationProvider =
       env.MARKETPLACE_AUTO_APPROVE === '1'
         ? new AutoApproveConfirmationProvider()
-        : new TokenConfirmationProvider();
+        : new TokenConfirmationProvider(approvalService);
     setMarketplaceConfirmationProvider(confirmationProvider);
 
     marketplaceMcpDeps = {

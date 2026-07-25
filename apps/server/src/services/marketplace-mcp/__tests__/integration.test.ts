@@ -51,6 +51,17 @@ import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { registerMarketplaceTools } from './register-marketplace-tools.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../core/approvals/index.js';
+
+/**
+ * Build a token provider over a fresh in-memory approval store. The provider is
+ * a thin wrapper over the shared approval primitive, which owns the lifecycle.
+ */
+function buildTokenProvider(): TokenConfirmationProvider {
+  return new TokenConfirmationProvider(new ApprovalService(createTestDb()));
+}
+
 import {
   ensurePersonalMarketplace,
   personalMarketplaceRoot,
@@ -368,7 +379,7 @@ describe('marketplace-mcp integration', () => {
 
     installer = buildStubInstaller();
     uninstallFlow = buildStubUninstallFlow();
-    confirmationProvider = new TokenConfirmationProvider();
+    confirmationProvider = buildTokenProvider();
 
     server = new McpServer({ name: 'dorkos-marketplace-test', version: '1.0.0' });
     registerMarketplaceTools(
@@ -492,7 +503,7 @@ describe('marketplace-mcp integration', () => {
       message: string;
     }>(first);
     expect(firstPayload.status).toBe('requires_confirmation');
-    expect(firstPayload.confirmationToken).toMatch(/[0-9a-f-]{36}/);
+    expect(firstPayload.confirmationToken).toMatch(/^[0-9a-f]{32}$/);
     expect(firstPayload.preview).toBeDefined();
     expect(installer.install).not.toHaveBeenCalled();
 

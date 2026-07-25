@@ -13,6 +13,17 @@ import {
   type ConfirmationRequest,
   type ConfirmationResult,
 } from '../confirmation-provider.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../core/approvals/index.js';
+
+/**
+ * Build a token provider over a fresh in-memory approval store. The provider is
+ * a thin wrapper over the shared approval primitive, which owns the lifecycle.
+ */
+function buildTokenProvider(): TokenConfirmationProvider {
+  return new TokenConfirmationProvider(new ApprovalService(createTestDb()));
+}
+
 
 /**
  * In-memory `ConfirmationProvider` test double. Tests can pre-program the
@@ -157,7 +168,7 @@ describe('createUninstallHandler — in-app approve happy path', () => {
 
 describe('createUninstallHandler — token resume flow', () => {
   it('returns requires_confirmation + token on first call from external client', async () => {
-    const tokenProvider = new TokenConfirmationProvider();
+    const tokenProvider = buildTokenProvider();
     const uninstallFlow = createStubUninstallFlow({
       result: uninstallResult({ packageName: 'sentry' }),
     });
@@ -173,14 +184,14 @@ describe('createUninstallHandler — token resume flow', () => {
       message: string;
     }>(result);
     expect(payload.status).toBe('requires_confirmation');
-    expect(payload.confirmationToken).toMatch(/[0-9a-f-]{36}/);
+    expect(payload.confirmationToken).toMatch(/^[0-9a-f]{32}$/);
     expect(payload.message).toContain('confirmationToken');
     // The flow must NOT have been invoked yet — the user still has to approve.
     expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
   });
 
   it('proceeds with uninstall when re-called with an approved token', async () => {
-    const tokenProvider = new TokenConfirmationProvider();
+    const tokenProvider = buildTokenProvider();
     const uninstallFlow = createStubUninstallFlow({
       result: uninstallResult({ packageName: 'sentry', removedFiles: 3 }),
     });
@@ -249,7 +260,7 @@ describe('createUninstallHandler — declined', () => {
   });
 
   it('returns declined when a token resolves to declined', async () => {
-    const tokenProvider = new TokenConfirmationProvider();
+    const tokenProvider = buildTokenProvider();
     const uninstallFlow = createStubUninstallFlow({
       result: uninstallResult({ packageName: 'sentry' }),
     });

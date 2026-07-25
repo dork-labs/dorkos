@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
 import {
   AutoApproveConfirmationProvider,
   TokenConfirmationProvider,
@@ -6,6 +7,7 @@ import {
   type ConfirmationResult,
   type InAppConfirmationCallback,
 } from '../confirmation-provider.js';
+import { ApprovalService } from '../../core/approvals/index.js';
 import type { PermissionPreview } from '../../marketplace/types.js';
 
 /** Build an empty PermissionPreview useful for plumbing tests. */
@@ -68,7 +70,9 @@ describe('TokenConfirmationProvider', () => {
   let provider: TokenConfirmationProvider;
 
   beforeEach(() => {
-    provider = new TokenConfirmationProvider();
+    // A fresh in-memory approval store per test: the provider is a thin wrapper
+    // over the shared primitive, which owns the token lifecycle.
+    provider = new TokenConfirmationProvider(new ApprovalService(createTestDb()));
   });
 
   afterEach(() => {
@@ -80,9 +84,8 @@ describe('TokenConfirmationProvider', () => {
       const result = await provider.requestInstallConfirmation(buildRequest());
       expect(result.status).toBe('pending');
       if (result.status === 'pending') {
-        expect(result.token).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-        );
+        // 128 bits of CSPRNG randomness, hex — an opaque secret, not an id.
+        expect(result.token).toMatch(/^[0-9a-f]{32}$/);
       }
     });
 
@@ -99,7 +102,7 @@ describe('TokenConfirmationProvider', () => {
 
   describe('resolveToken', () => {
     it('returns declined for an unknown token', async () => {
-      const result = await provider.resolveToken('not-a-real-token');
+      const result = await provider.resolveToken('not-a-real-token', buildRequest());
       expect(result).toEqual({
         status: 'declined',
         reason: 'Unknown or expired token',
@@ -110,7 +113,7 @@ describe('TokenConfirmationProvider', () => {
       const issued = await provider.requestInstallConfirmation(buildRequest());
       if (issued.status !== 'pending') throw new Error('expected pending');
 
-      const resolved = await provider.resolveToken(issued.token);
+      const resolved = await provider.resolveToken(issued.token, buildRequest());
       expect(resolved).toEqual({ status: 'pending', token: issued.token });
     });
 
@@ -120,11 +123,11 @@ describe('TokenConfirmationProvider', () => {
 
       provider.approve(issued.token);
 
-      const first = await provider.resolveToken(issued.token);
+      const first = await provider.resolveToken(issued.token, buildRequest());
       expect(first).toEqual({ status: 'approved' });
 
       // Single-use: a second resolve must NOT return approved.
-      const second = await provider.resolveToken(issued.token);
+      const second = await provider.resolveToken(issued.token, buildRequest());
       expect(second).toEqual({
         status: 'declined',
         reason: 'Unknown or expired token',
@@ -137,11 +140,11 @@ describe('TokenConfirmationProvider', () => {
 
       provider.decline(issued.token, 'user said no');
 
-      const first = await provider.resolveToken(issued.token);
+      const first = await provider.resolveToken(issued.token, buildRequest());
       expect(first).toEqual({ status: 'declined', reason: 'user said no' });
 
       // Single-use: a second resolve must NOT return declined-with-reason.
-      const second = await provider.resolveToken(issued.token);
+      const second = await provider.resolveToken(issued.token, buildRequest());
       expect(second).toEqual({
         status: 'declined',
         reason: 'Unknown or expired token',
@@ -154,40 +157,40 @@ describe('TokenConfirmationProvider', () => {
 
       provider.decline(issued.token);
 
-      const result = await provider.resolveToken(issued.token);
+      const result = await provider.resolveToken(issued.token, buildRequest());
       expect(result.status).toBe('declined');
       if (result.status === 'declined') {
         expect(result.reason).toBeUndefined();
       }
     });
 
-    it('expires tokens after exactly 5 minutes and removes them on resolve', async () => {
+    it('expires tokens after exactly 10 minutes and retires them on resolve', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-04-07T00:00:00.000Z'));
 
       const issued = await provider.requestInstallConfirmation(buildRequest());
       if (issued.status !== 'pending') throw new Error('expected pending');
 
-      // Just under the boundary (4m 59.999s) — still pending.
-      vi.setSystemTime(new Date('2026-04-07T00:04:59.999Z'));
-      const stillPending = await provider.resolveToken(issued.token);
+      // Just under the boundary (9m 59.999s) — still pending.
+      vi.setSystemTime(new Date('2026-04-07T00:09:59.999Z'));
+      const stillPending = await provider.resolveToken(issued.token, buildRequest());
       expect(stillPending.status).toBe('pending');
 
-      // Exactly 5 minutes is NOT expired (`> ttlMs` is the spec).
-      vi.setSystemTime(new Date('2026-04-07T00:05:00.000Z'));
-      const atBoundary = await provider.resolveToken(issued.token);
+      // Exactly the TTL is NOT expired (`> expiresAt` is the rule).
+      vi.setSystemTime(new Date('2026-04-07T00:10:00.000Z'));
+      const atBoundary = await provider.resolveToken(issued.token, buildRequest());
       expect(atBoundary.status).toBe('pending');
 
       // Just past the boundary — expired.
-      vi.setSystemTime(new Date('2026-04-07T00:05:00.001Z'));
-      const expired = await provider.resolveToken(issued.token);
+      vi.setSystemTime(new Date('2026-04-07T00:10:00.001Z'));
+      const expired = await provider.resolveToken(issued.token, buildRequest());
       expect(expired).toEqual({
         status: 'declined',
         reason: 'Token expired',
       });
 
       // Token is removed after expiry resolution.
-      const followup = await provider.resolveToken(issued.token);
+      const followup = await provider.resolveToken(issued.token, buildRequest());
       expect(followup).toEqual({
         status: 'declined',
         reason: 'Unknown or expired token',
@@ -196,7 +199,7 @@ describe('TokenConfirmationProvider', () => {
 
     it('treats approve() on an unknown token as a no-op', async () => {
       provider.approve('ghost-token');
-      const result = await provider.resolveToken('ghost-token');
+      const result = await provider.resolveToken('ghost-token', buildRequest());
       expect(result).toEqual({
         status: 'declined',
         reason: 'Unknown or expired token',
@@ -205,11 +208,52 @@ describe('TokenConfirmationProvider', () => {
 
     it('treats decline() on an unknown token as a no-op', async () => {
       provider.decline('ghost-token', 'never existed');
-      const result = await provider.resolveToken('ghost-token');
+      const result = await provider.resolveToken('ghost-token', buildRequest());
       expect(result).toEqual({
         status: 'declined',
         reason: 'Unknown or expired token',
       });
+    });
+
+    it('refuses an approved token presented for a different package', async () => {
+      const issued = await provider.requestInstallConfirmation(
+        buildRequest({ packageName: 'harmless-plugin' })
+      );
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      provider.approve(issued.token);
+
+      // The confused-deputy case: consent was for one package, the retry names
+      // another. The approval must not transfer.
+      const redirected = await provider.resolveToken(
+        issued.token,
+        buildRequest({ packageName: 'something-else' })
+      );
+      expect(redirected).toEqual({
+        status: 'declined',
+        reason: 'This approval was granted for a different package or operation',
+      });
+
+      // Refusing a mismatch must not spend the approval — the package the user
+      // actually approved still installs.
+      const asApproved = await provider.resolveToken(
+        issued.token,
+        buildRequest({ packageName: 'harmless-plugin' })
+      );
+      expect(asApproved).toEqual({ status: 'approved' });
+    });
+
+    it('refuses an approved token presented for a different operation', async () => {
+      const issued = await provider.requestInstallConfirmation(
+        buildRequest({ operation: 'install' })
+      );
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      provider.approve(issued.token);
+
+      const redirected = await provider.resolveToken(
+        issued.token,
+        buildRequest({ operation: 'uninstall' })
+      );
+      expect(redirected.status).toBe('declined');
     });
   });
 });

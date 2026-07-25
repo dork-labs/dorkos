@@ -37,6 +37,17 @@ import {
   setMarketplaceConfirmationProvider,
   clearMarketplaceConfirmationProvider,
 } from '../../services/marketplace-mcp/confirmation-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../services/core/approvals/index.js';
+
+/**
+ * Build a token provider over a fresh in-memory approval store. The provider is
+ * a thin wrapper over the shared approval primitive, which owns the lifecycle.
+ */
+function buildTokenProvider(): TokenConfirmationProvider {
+  return new TokenConfirmationProvider(new ApprovalService(createTestDb()));
+}
+
 import { createMarketplaceRouter } from '../marketplace.js';
 
 /**
@@ -93,7 +104,7 @@ describe('POST /api/marketplace/confirmations/:token', () => {
   });
 
   it('returns 400 when the body is missing the action field', async () => {
-    setMarketplaceConfirmationProvider(new TokenConfirmationProvider());
+    setMarketplaceConfirmationProvider(buildTokenProvider());
 
     const res = await request(app).post('/api/marketplace/confirmations/some-token').send({});
 
@@ -103,7 +114,7 @@ describe('POST /api/marketplace/confirmations/:token', () => {
   });
 
   it('returns 400 when the action is not approve or decline', async () => {
-    setMarketplaceConfirmationProvider(new TokenConfirmationProvider());
+    setMarketplaceConfirmationProvider(buildTokenProvider());
 
     const res = await request(app)
       .post('/api/marketplace/confirmations/some-token')
@@ -135,7 +146,7 @@ describe('POST /api/marketplace/confirmations/:token', () => {
   });
 
   it('approves the token via the provider when action=approve', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     const approveSpy = vi.spyOn(provider, 'approve');
     setMarketplaceConfirmationProvider(provider);
 
@@ -150,7 +161,7 @@ describe('POST /api/marketplace/confirmations/:token', () => {
   });
 
   it('declines the token via the provider when action=decline', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     const declineSpy = vi.spyOn(provider, 'decline');
     setMarketplaceConfirmationProvider(provider);
 
@@ -165,7 +176,7 @@ describe('POST /api/marketplace/confirmations/:token', () => {
   });
 
   it('declines the token without a reason when reason is omitted', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     const declineSpy = vi.spyOn(provider, 'decline');
     setMarketplaceConfirmationProvider(provider);
 
@@ -178,16 +189,17 @@ describe('POST /api/marketplace/confirmations/:token', () => {
   });
 
   it('round-trips a real approve through resolveToken', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     setMarketplaceConfirmationProvider(provider);
 
     // Issue a real token through the provider so we can verify the route's
     // approve call actually flips the resolution state end-to-end.
-    const issued = await provider.requestInstallConfirmation({
+    const confirmationRequest = {
       packageName: 'sample-plugin',
       marketplace: 'dorkos-community',
-      operation: 'install',
-    });
+      operation: 'install' as const,
+    };
+    const issued = await provider.requestInstallConfirmation(confirmationRequest);
     expect(issued.status).toBe('pending');
     if (issued.status !== 'pending') throw new Error('expected pending');
 
@@ -196,19 +208,20 @@ describe('POST /api/marketplace/confirmations/:token', () => {
       .send({ action: 'approve' });
     expect(res.status).toBe(200);
 
-    const resolved = await provider.resolveToken(issued.token);
+    const resolved = await provider.resolveToken(issued.token, confirmationRequest);
     expect(resolved.status).toBe('approved');
   });
 
   it('round-trips a real decline through resolveToken with the reason intact', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     setMarketplaceConfirmationProvider(provider);
 
-    const issued = await provider.requestInstallConfirmation({
+    const confirmationRequest = {
       packageName: 'sample-plugin',
       marketplace: 'dorkos-community',
-      operation: 'install',
-    });
+      operation: 'install' as const,
+    };
+    const issued = await provider.requestInstallConfirmation(confirmationRequest);
     if (issued.status !== 'pending') throw new Error('expected pending');
 
     const res = await request(app)
@@ -216,7 +229,7 @@ describe('POST /api/marketplace/confirmations/:token', () => {
       .send({ action: 'decline', reason: 'looks sketchy' });
     expect(res.status).toBe(200);
 
-    const resolved = await provider.resolveToken(issued.token);
+    const resolved = await provider.resolveToken(issued.token, confirmationRequest);
     expect(resolved.status).toBe('declined');
     if (resolved.status === 'declined') {
       expect(resolved.reason).toBe('looks sketchy');

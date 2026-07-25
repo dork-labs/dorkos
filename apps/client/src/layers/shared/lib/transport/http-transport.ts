@@ -21,6 +21,7 @@ import { createWorkspaceMethods } from './workspace-methods';
 import { createCloudMethods } from './cloud-methods';
 import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
+import { createApprovalMethods } from './approval-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -45,7 +46,8 @@ export interface HttpTransport
     ReturnType<typeof createWorkspaceMethods>,
     ReturnType<typeof createCloudMethods>,
     ReturnType<typeof createTerminalMethods>,
-    ReturnType<typeof createFeedbackMethods> {}
+    ReturnType<typeof createFeedbackMethods>,
+    ReturnType<typeof createApprovalMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -73,7 +75,8 @@ export class HttpTransport implements Transport {
       createWorkspaceMethods(baseUrl),
       createCloudMethods(baseUrl),
       createTerminalMethods(baseUrl),
-      createFeedbackMethods(baseUrl)
+      createFeedbackMethods(baseUrl),
+      createApprovalMethods(baseUrl)
     );
   }
 }

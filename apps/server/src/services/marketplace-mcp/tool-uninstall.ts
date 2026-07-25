@@ -97,13 +97,14 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
     // 1. Resolve confirmation. A supplied token comes from a previous
     //    `requires_confirmation` response — never issue a fresh request when
     //    the agent is resuming an out-of-band flow.
+    const confirmationRequest = {
+      packageName: args.name,
+      marketplace: 'installed',
+      operation: 'uninstall' as const,
+    };
     const confirmation = args.confirmationToken
-      ? await deps.confirmationProvider.resolveToken(args.confirmationToken)
-      : await deps.confirmationProvider.requestInstallConfirmation({
-          packageName: args.name,
-          marketplace: 'installed',
-          operation: 'uninstall',
-        });
+      ? await deps.confirmationProvider.resolveToken(args.confirmationToken, confirmationRequest)
+      : await deps.confirmationProvider.requestInstallConfirmation(confirmationRequest);
 
     if (confirmation.status === 'pending') {
       return jsonContent({

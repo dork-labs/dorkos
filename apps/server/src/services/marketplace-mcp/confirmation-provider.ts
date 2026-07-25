@@ -14,10 +14,18 @@
  * 3. {@link InAppConfirmationProvider} — for in-process callers that wire a
  *    callback to the existing `InstallConfirmationDialog` from spec 03.
  *
+ * ## These are wrappers, not a mechanism
+ *
+ * The token state machine lives in `services/core/approvals` (spec
+ * `agent-trust` §3.3) — one approval primitive shared with capability tier
+ * enforcement, so an operator sees marketplace installs and every other gated
+ * action on the same cockpit card. This module only translates between that
+ * primitive and the `ConfirmationResult` shape the marketplace tools speak.
+ *
  * @module services/marketplace-mcp/confirmation-provider
  */
-import { randomUUID } from 'node:crypto';
 import type { PermissionPreview } from '../marketplace/types.js';
+import { hashApprovalInput, type ApprovalService } from '../core/approvals/index.js';
 
 /** The kind of mutation a confirmation request is gating. */
 export type ConfirmationOperation = 'install' | 'uninstall' | 'create-package';
@@ -63,15 +71,26 @@ export interface ConfirmationProvider {
    * Look up a previously issued confirmation token. Used when an external MCP
    * client re-calls `marketplace_install` after the user approved out-of-band.
    *
+   * The caller must restate what it is about to do: an approval is bound to one
+   * package and one operation, so a token granted for installing A is refused
+   * when presented for installing B.
+   *
    * @param token - The token previously returned via `pending`.
+   * @param req - The operation the caller is about to run. Must describe the
+   *   same package and operation the token was issued for.
    */
-  resolveToken(token: string): Promise<ConfirmationResult>;
+  resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
 }
 
 /**
  * Confirmation provider that always returns `approved`. Used when
  * `process.env.MARKETPLACE_AUTO_APPROVE === '1'` or in unit tests that want
  * to skip the confirmation gate entirely.
+ *
+ * Auto-approval short-circuits the primitive rather than auto-granting through
+ * it: writing a row per call would flood the cockpit and the Activity feed with
+ * approvals nobody ever saw, in exactly the CI and eval runs the flag exists to
+ * keep quiet.
  */
 export class AutoApproveConfirmationProvider implements ConfirmationProvider {
   /**
@@ -89,114 +108,142 @@ export class AutoApproveConfirmationProvider implements ConfirmationProvider {
   }
 }
 
-/** Internal record tracking a single in-flight confirmation request. */
-interface PendingConfirmation {
-  token: string;
-  packageName: string;
-  marketplace: string;
-  operation: ConfirmationOperation;
-  createdAt: number;
-  resolvedTo?: 'approved' | 'declined';
-  declineReason?: string;
+/** Capability id each marketplace operation is gated as. */
+const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
+  install: 'marketplace.install',
+  uninstall: 'marketplace.uninstall',
+  'create-package': 'marketplace.create_package',
+};
+
+/** Human-facing title each marketplace operation shows on the approval card. */
+const TITLES: Record<ConfirmationOperation, string> = {
+  install: 'Install a marketplace package',
+  uninstall: 'Uninstall a marketplace package',
+  'create-package': 'Create a marketplace package',
+};
+
+/**
+ * The action a marketplace confirmation is bound to. Deliberately excludes the
+ * permission preview: the preview is derived (a fresh resolve can legitimately
+ * produce different file lists) while the package, marketplace, and operation
+ * are what the user actually agreed to.
+ *
+ * @param req - The confirmation request.
+ * @returns The canonical subset an approval binds to.
+ */
+function bindingOf(req: ConfirmationRequest): { capabilityId: string; inputHash: string } {
+  return {
+    capabilityId: CAPABILITY_IDS[req.operation],
+    inputHash: hashApprovalInput({
+      packageName: req.packageName,
+      marketplace: req.marketplace,
+      operation: req.operation,
+    }),
+  };
+}
+
+/** Plain-language summary of a pending marketplace operation, for the card. */
+function summaryOf(req: ConfirmationRequest): string {
+  switch (req.operation) {
+    case 'install':
+      return `Install "${req.packageName}" from ${req.marketplace}`;
+    case 'uninstall':
+      return `Uninstall "${req.packageName}"`;
+    case 'create-package':
+      return `Create the package "${req.packageName}" in ${req.marketplace}`;
+  }
 }
 
 /**
- * Confirmation provider that issues short-lived (5 minute), single-use,
- * scoped tokens for external MCP clients.
+ * Confirmation provider that issues single-use, action-scoped tokens for
+ * external MCP clients, backed by {@link ApprovalService}.
  *
  * Flow:
- * 1. The agent calls `marketplace_install`; the provider returns
- *    `{ status: 'pending', token }`.
- * 2. The user opens the DorkOS UI and clicks Approve or Decline; the host
- *    forwards that decision via {@link approve} / {@link decline}.
- * 3. The agent re-calls the tool, which calls {@link resolveToken}; on the
- *    first call after a decision, the entry is removed from the pending map
- *    (single-use).
+ * 1. The agent calls `marketplace_install`; the provider records an approval and
+ *    returns `{ status: 'pending', token }`.
+ * 2. The user sees the approval card in DorkOS and clicks Approve or Decline;
+ *    the host forwards that decision via {@link approve} / {@link decline}.
+ * 3. The agent re-calls the tool, which calls {@link resolveToken}; the first
+ *    call after a decision spends the token, so a replay reports declined.
  *
- * Tokens that are never resolved expire after exactly 5 minutes. The expiry
- * check uses a strict `>` comparison so a resolve at the boundary is still
- * considered pending.
+ * Tokens that are never resolved expire on the primitive's window
+ * (`APPROVAL_TTL_MS`), and expiry is checked when the token is presented — a
+ * stale approval can never be honored.
  */
 export class TokenConfirmationProvider implements ConfirmationProvider {
-  /** Time-to-live for an issued token, in milliseconds (5 minutes). */
-  private readonly ttlMs = 5 * 60 * 1000;
-
-  /** In-memory map of issued, unresolved tokens. */
-  private readonly pending = new Map<string, PendingConfirmation>();
+  /**
+   * Build the provider over the shared approval primitive.
+   *
+   * @param approvals - The approval service that owns the token lifecycle.
+   */
+  constructor(private readonly approvals: ApprovalService) {}
 
   /**
-   * Issue a new pending confirmation token. The returned token must be passed
-   * back to {@link resolveToken} after the user has approved or declined
-   * out-of-band.
+   * Record a pending approval and return the token the agent retries with.
    *
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
-    const token = randomUUID();
-    this.pending.set(token, {
-      token,
-      packageName: req.packageName,
-      marketplace: req.marketplace,
-      operation: req.operation,
-      createdAt: Date.now(),
+    const { capabilityId, inputHash } = bindingOf(req);
+    const ticket = this.approvals.request({
+      capabilityId,
+      inputHash,
+      summary: summaryOf(req),
+      capabilityTitle: TITLES[req.operation],
     });
-    return { status: 'pending', token };
+    return { status: 'pending', token: ticket.token };
   }
 
   /**
-   * Mark a previously issued token as approved. Called by the DorkOS UI when
+   * Mark the approval behind a token as granted. Called by the DorkOS UI when
    * the user clicks Approve. A no-op for unknown tokens.
    *
    * @param token - The token returned by {@link requestInstallConfirmation}.
    */
   approve(token: string): void {
-    const entry = this.pending.get(token);
-    if (entry) entry.resolvedTo = 'approved';
+    this.approvals.decideByToken(token, 'granted');
   }
 
   /**
-   * Mark a previously issued token as declined. Called by the DorkOS UI when
+   * Mark the approval behind a token as denied. Called by the DorkOS UI when
    * the user clicks Decline. A no-op for unknown tokens.
    *
    * @param token - The token returned by {@link requestInstallConfirmation}.
    * @param reason - Optional human-readable explanation.
    */
   decline(token: string, reason?: string): void {
-    const entry = this.pending.get(token);
-    if (entry) {
-      entry.resolvedTo = 'declined';
-      entry.declineReason = reason;
-    }
+    this.approvals.decideByToken(token, 'denied', reason);
   }
 
   /**
-   * Resolve a previously issued token to its current status. After the first
-   * resolution to `approved` or `declined` (or after expiry), the entry is
-   * removed from the pending map — every subsequent call returns
-   * `{ status: 'declined', reason: 'Unknown or expired token' }`.
+   * Resolve a previously issued token against the operation the caller is about
+   * to run. A decided token is spent by this call, so every later attempt reports
+   * `Unknown or expired token`; a token issued for a different package or
+   * operation is refused without being spent.
    *
    * @param token - The token previously returned via `pending`.
+   * @param req - The operation the caller is about to run.
    */
-  async resolveToken(token: string): Promise<ConfirmationResult> {
-    const entry = this.pending.get(token);
-    if (!entry) return { status: 'declined', reason: 'Unknown or expired token' };
-
-    if (Date.now() - entry.createdAt > this.ttlMs) {
-      this.pending.delete(token);
-      return { status: 'declined', reason: 'Token expired' };
+  async resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult> {
+    const result = this.approvals.consume(token, bindingOf(req));
+    switch (result.outcome) {
+      case 'granted':
+        return { status: 'approved' };
+      case 'pending':
+        return { status: 'pending', token };
+      case 'denied':
+        return { status: 'declined', ...(result.reason ? { reason: result.reason } : {}) };
+      case 'expired':
+        return { status: 'declined', reason: 'Token expired' };
+      case 'mismatched':
+        return {
+          status: 'declined',
+          reason: 'This approval was granted for a different package or operation',
+        };
+      case 'consumed':
+      case 'unknown':
+        return { status: 'declined', reason: 'Unknown or expired token' };
     }
-
-    if (entry.resolvedTo === 'approved') {
-      this.pending.delete(token);
-      return { status: 'approved' };
-    }
-
-    if (entry.resolvedTo === 'declined') {
-      this.pending.delete(token);
-      return { status: 'declined', reason: entry.declineReason };
-    }
-
-    return { status: 'pending', token };
   }
 }
 

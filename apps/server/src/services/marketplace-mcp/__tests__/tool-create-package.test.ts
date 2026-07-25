@@ -14,6 +14,17 @@ import {
   TokenConfirmationProvider,
 } from '../confirmation-provider.js';
 import type { ConfirmationProvider, ConfirmationResult } from '../confirmation-provider.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../core/approvals/index.js';
+
+/**
+ * Build a token provider over a fresh in-memory approval store. The provider is
+ * a thin wrapper over the shared approval primitive, which owns the lifecycle.
+ */
+function buildTokenProvider(): TokenConfirmationProvider {
+  return new TokenConfirmationProvider(new ApprovalService(createTestDb()));
+}
+
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import type { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
@@ -106,7 +117,7 @@ describe('createCreatePackageHandler', () => {
   });
 
   it('returns requires_confirmation and writes nothing on first call (token flow)', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
     );
@@ -129,7 +140,7 @@ describe('createCreatePackageHandler', () => {
   });
 
   it('writes scaffolded files after the user approves the issued token', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
     );
@@ -165,7 +176,7 @@ describe('createCreatePackageHandler', () => {
   });
 
   it('returns declined and writes nothing when the user declines the token', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
     );
@@ -397,7 +408,7 @@ describe('createCreatePackageHandler', () => {
   });
 
   it('passes the resolved token through resolveToken when confirmationToken is provided', async () => {
-    const provider = new TokenConfirmationProvider();
+    const provider = buildTokenProvider();
     const resolveSpy = vi.spyOn(provider, 'resolveToken');
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
@@ -418,7 +429,13 @@ describe('createCreatePackageHandler', () => {
       confirmationToken: token,
     });
 
-    expect(resolveSpy).toHaveBeenCalledWith(token);
+    // The token alone is not enough: resolving restates the operation so the
+    // approval can be checked against what is about to run.
+    expect(resolveSpy).toHaveBeenCalledWith(token, {
+      packageName: 'token-routed',
+      marketplace: PERSONAL_MARKETPLACE_NAME,
+      operation: 'create-package',
+    });
   });
 
   it('logs a warning but still returns created when registerInPersonalMarketplace fails', async () => {
