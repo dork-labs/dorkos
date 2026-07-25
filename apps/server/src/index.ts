@@ -1280,7 +1280,7 @@ async function start() {
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
-  app.use('/api/approvals', createApprovalsRouter(approvalService));
+  app.use('/api/approvals', createApprovalsRouter(approvalService, { activity: activityService }));
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));

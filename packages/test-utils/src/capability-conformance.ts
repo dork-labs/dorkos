@@ -24,6 +24,11 @@
  *   near-miss can never recur);
  * - every `readOnlyCarveOut` tool is `observe`-tier (tier ↔ carve-out
  *   consistency);
+ * - every `destructive` capability declares `approvalDisplayFields`, so the fields
+ *   its approval card shows are an explicit choice rather than "whatever the input
+ *   happened to contain" — the summary is broadcast on the global event stream and
+ *   readable by agents through `GET /api/approvals/pending`, and the only
+ *   destructive capability today has a `confirmationToken` input field;
  * - no two capabilities collide on an `http` method+path (the reverse-direction
  *   OpenAPI collision guard) and the projected route set is order-independent;
  * - the docs-projection registry exposes the SAME `http` surface set as the boot
@@ -35,6 +40,11 @@
  *   entry in {@link GATED_ADAPTER_PATHS} (three adapters x identified/anonymous),
  *   and each must come back with an `approval_required` payload and no side effect.
  *   Miss a path and the gate is decoration; this is the check that says so.
+ * - the caller that was told to ask CANNOT answer: {@link ApprovalDecisionProbe}
+ *   drives the real invoke route to obtain a pending approval and then the real
+ *   decide endpoint as that same caller, which must be refused with the approval
+ *   left undecided. A gate whose requester can grant its own request is not a gate,
+ *   and that is exactly the defect this probe exists to keep closed.
  *
  * ## Division of labor and the "test the test" seam
  *
@@ -115,6 +125,38 @@ export interface DestructiveGateProbeResult {
  */
 export type DestructiveGateProbe = () => Promise<DestructiveGateProbeResult>;
 
+/** What the real decide endpoint did when the REQUESTER tried to answer itself. */
+export interface ApprovalDecisionProbeResult {
+  /** HTTP status the decide endpoint answered with. Must be a refusal (>= 400). */
+  status: number;
+  /**
+   * Whether the approval actually ended up decided — read back from the approval
+   * service, not inferred from the status. Must be false: a 403 that recorded the
+   * grant anyway would be worse than an honest 200.
+   */
+  approvalDecided: boolean;
+}
+
+/**
+ * Drive `POST /api/approvals/:id/grant` as the caller that just asked.
+ *
+ * The invariant this encodes: **a caller that can reach
+ * `POST /api/capabilities/:id/invoke` must not be able to reach
+ * `POST /api/approvals/:id/grant`.** The probe should obtain a real pending
+ * approval through the real invoke route, then call the real decide route carrying
+ * what that caller holds (its agent token if it has one, and the approval token the
+ * 202 handed it) — and nothing a person in the cockpit would carry.
+ *
+ * Note the honest limit, spelled out in
+ * `services/core/approvals/decision-authority.ts`: with local login disabled a
+ * credential-free request from an adversary with shell access is
+ * indistinguishable from the cockpit's, so this probe pins what IS enforceable —
+ * the requester cannot decide — rather than pretending to pin more.
+ *
+ * @returns The status and whether the approval was left undecided.
+ */
+export type ApprovalDecisionProbe = () => Promise<ApprovalDecisionProbeResult>;
+
 /**
  * A capability as the conformance suite reads it — the structural subset of the
  * server's `CapabilityDefinition` the checks touch (its Zod schemas and `invoke`
@@ -132,6 +174,8 @@ export interface ConformanceCapability {
   tier: CapabilityTier;
   /** The surfaces this capability projects onto. */
   surfaces: CapabilitySurfaces;
+  /** Input fields the approval card may show. Required on `destructive` entries. */
+  approvalDisplayFields?: readonly string[];
 }
 
 /**
@@ -203,6 +247,12 @@ export interface CapabilityConformanceFixtures {
    * violation, so neither path can be left unproven.
    */
   destructiveGateProbes: Partial<Record<GatedAdapterPath, DestructiveGateProbe>>;
+  /**
+   * Probe proving the requester cannot decide its own approval; see
+   * {@link ApprovalDecisionProbe}. Required — an absent probe is itself a
+   * violation, because "nobody checked" is how the bypass shipped the first time.
+   */
+  requesterDecideProbe: ApprovalDecisionProbe;
 }
 
 /** One conformance violation: the check that failed and a human-readable detail. */
@@ -385,6 +435,25 @@ export function checkCapabilityConformance(
     }
   }
 
+  // ── Scope add (1b): a destructive card's fields are chosen, not inherited ─
+  for (const cap of caps) {
+    if (cap.tier !== 'destructive') continue;
+    if (!cap.approvalDisplayFields) {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" is tier "destructive" but declares no approvalDisplayFields, so its ` +
+          `approval card shows every input field it happens to have — and that card is broadcast to ` +
+          `every cockpit and readable by agents`
+      );
+    } else if (cap.approvalDisplayFields.length === 0) {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" declares an EMPTY approvalDisplayFields, so a person would be asked ` +
+          `to approve an irreversible action with none of its arguments shown`
+      );
+    }
+  }
+
   // ── Scope add (2): OpenAPI reverse collision + deterministic ordering ────
   const bootKeys = httpKeys(caps);
   const seen = new Set<string>();
@@ -488,6 +557,55 @@ export async function checkDestructiveGateConformance(
   return violations;
 }
 
+/**
+ * Run the requester-cannot-decide probe and return all violations (empty means the
+ * decide endpoint refused the requester and left the approval alone). Separated and
+ * exported like the gate checker so a seeded bypass can be shown to FAIL it.
+ *
+ * @param probe - The probe, or `undefined` when the caller supplied none.
+ * @returns Every violation found.
+ */
+export async function checkDecisionAuthorityConformance(
+  probe: ApprovalDecisionProbe | undefined
+): Promise<ConformanceViolation[]> {
+  const violations: ConformanceViolation[] = [];
+  const add = (detail: string): void =>
+    void violations.push({ check: 'decision-authority', detail });
+
+  if (!probe) {
+    return [
+      {
+        check: 'decision-authority',
+        detail:
+          'no requesterDecideProbe supplied, so nothing proves the caller that asked for an ' +
+          'approval cannot also grant it',
+      },
+    ];
+  }
+
+  let result: ApprovalDecisionProbeResult;
+  try {
+    result = await probe();
+  } catch (err) {
+    add(`probe threw instead of returning a decide outcome — ${String(err)}`);
+    return violations;
+  }
+
+  if (result.status < 400) {
+    add(
+      `the decide endpoint answered ${result.status} to the caller that asked for the approval; ` +
+        `a requester must be refused, or it can approve its own destructive call`
+    );
+  }
+  if (result.approvalDecided) {
+    add(
+      'the approval was DECIDED by the caller that requested it — the human half of the gate is optional'
+    );
+  }
+
+  return violations;
+}
+
 /** Group violations by their `check` for a readable per-check assertion. */
 function groupByCheck(violations: ConformanceViolation[]): Map<string, string[]> {
   const grouped = new Map<string, string[]>();
@@ -506,6 +624,7 @@ const CHECK_GROUPS = [
   'cli-surface',
   'read-only-carve-out',
   'tier-carve-out',
+  'approval-card-fields',
   'openapi-collision',
   'docs-boot-parity',
 ] as const;
@@ -545,6 +664,13 @@ export function capabilityConformance(
         const details = (await checkDestructiveGateConformance(fixtures.destructiveGateProbes)).map(
           (v) => v.detail
         );
+        expect(details, details.join('\n')).toEqual([]);
+      });
+
+      it('decision-authority: the caller that asked cannot grant its own approval', async () => {
+        const details = (
+          await checkDecisionAuthorityConformance(fixtures.requesterDecideProbe)
+        ).map((v) => v.detail);
         expect(details, details.join('\n')).toEqual([]);
       });
     });

@@ -20,7 +20,9 @@
  *
  * An identity's `tierCeiling` caps all of it. A ceiling of `act` makes every
  * destructive capability permanently unreachable for that agent — not
- * approvable, refused, with a distinct payload saying so.
+ * approvable, refused, with a distinct payload saying so. An unidentified caller
+ * is capped too, at {@link DEFAULT_ANONYMOUS_TIER_CEILING} — see "the ceiling is
+ * not an escape hatch" below.
  *
  * ## The TIER decides whether to gate. Identity only supplies the ceiling.
  *
@@ -46,6 +48,23 @@
  * costs the caller nothing except a name — the approval is still required, and
  * the card says an unidentified caller asked.
  *
+ * ## The ceiling is not an escape hatch either
+ *
+ * The first implementation compared a capability's tier against a ceiling ONLY
+ * when an identity was present, which quietly rebuilt the same bypass one level
+ * up: an agent capped at `act` was refused outright (`tier_ceiling`, not
+ * approvable), and the SAME agent after `unset DORKOS_AGENT_TOKEN` got the
+ * approvable path instead. Presenting a credential strictly cost privilege.
+ *
+ * Every caller now has a ceiling. An unidentified one is capped at
+ * {@link DEFAULT_ANONYMOUS_TIER_CEILING}, overridable at boot via
+ * {@link CapabilityTierGateOptions.anonymousTierCeiling}. The default is
+ * `destructive`, so today's behavior is unchanged — but the two paths are now
+ * comparable, and lowering the anonymous ceiling can only ever tighten things.
+ * Nothing sets a per-agent ceiling below `destructive` yet (`mint()` defaults to
+ * unrestricted), which is exactly why the mechanism is fixed now, while nothing
+ * depends on it.
+ *
  * ## Fail closed
  *
  * The gate is initialized once at boot with the approval service
@@ -60,7 +79,16 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
 import type { CapabilityDefinition } from './capability-definition.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
-import { hashApprovalInput, type ApprovalService } from '../approvals/index.js';
+import {
+  hashApprovalInput,
+  redactSecretsInText,
+  renderRequesterLabel,
+  summaryFields,
+  type ApprovalConsumeResult,
+  type ApprovalService,
+  type ApprovalTicket,
+} from '../approvals/index.js';
+import { logger } from '../../../lib/logger.js';
 
 /** Where a retry carries its approval token, per surface. */
 export type ApprovalRetryChannel = 'mcp-argument' | 'http-header';
@@ -133,13 +161,20 @@ export interface ApprovalRequiredPayload {
 /**
  * Why a call was refused outright rather than queued for approval.
  *
- * - `tier_ceiling` — the agent's own ceiling forbids this tier. No approval can
- *   unlock it; only changing the agent's ceiling can.
+ * - `tier_ceiling` — the caller's ceiling forbids this tier. No approval can
+ *   unlock it; only changing that ceiling can.
  * - `operator_denied` — a person said no to this exact action.
  * - `enforcement_unavailable` — the gate was never wired to an approval service,
  *   so there is nobody to ask. Refused rather than allowed (see the module TSDoc).
+ * - `input_not_bindable` — the input cannot be canonicalized without losing
+ *   information, so no approval could honestly cover it. Refused, because an
+ *   approval bound to a hash that ignores part of the action is worse than none.
  */
-export type TierDeniedReason = 'tier_ceiling' | 'operator_denied' | 'enforcement_unavailable';
+export type TierDeniedReason =
+  | 'tier_ceiling'
+  | 'operator_denied'
+  | 'enforcement_unavailable'
+  | 'input_not_bindable';
 
 /** The result a refused caller receives instead of the capability's output. */
 export interface TierDeniedPayload {
@@ -228,7 +263,26 @@ export interface CapabilityTierGateOptions {
    * gate swallows anything it does.
    */
   onAttempt?: (attempt: TierEnforcementAttempt) => void;
+  /**
+   * The ceiling applied to a caller that presented no identity. Defaults to
+   * {@link DEFAULT_ANONYMOUS_TIER_CEILING} (`destructive`, i.e. no extra
+   * restriction), so wiring this is how an operator makes anonymous callers
+   * strictly LESS privileged than named ones. It can only ever tighten: an
+   * anonymous destructive call still needs an approval at `destructive`.
+   */
+  anonymousTierCeiling?: CapabilityTier;
 }
+
+/**
+ * The ceiling an unidentified caller is capped at when boot does not say
+ * otherwise.
+ *
+ * `destructive` means "no extra restriction", which keeps today's behavior
+ * byte-identical — the point of naming it is that anonymous and identified
+ * callers now travel the SAME comparison, so dropping a credential can never
+ * widen what a caller may reach.
+ */
+export const DEFAULT_ANONYMOUS_TIER_CEILING: CapabilityTier = 'destructive';
 
 /** Boot-wired gate state. See the module TSDoc on failing closed. */
 let gate: CapabilityTierGateOptions | undefined;
@@ -273,24 +327,24 @@ const CEILING_PHRASE: Record<CapabilityTier, string> = {
 };
 
 /**
- * Render one input value for the operator's card: short, plain, and never a raw
- * JSON blob for a nested structure nobody can read at a glance.
- */
-function renderValue(value: unknown): string {
-  if (typeof value === 'boolean') return value ? 'yes' : 'no';
-  if (value === null || value === undefined) return 'not set';
-  if (typeof value === 'string' || typeof value === 'number') return String(value);
-  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`;
-  return 'details';
-}
-
-/**
  * The plain sentence a person reads on the approval card.
  *
  * Says who asked, what they want to run (the registry's title, never the
- * requester's own words), and the top-level arguments that decide what it does.
- * Truncation is the approval service's job, so this stays readable rather than
- * arithmetic.
+ * requester's own words), and the arguments that decide what it does.
+ *
+ * ## The requester cannot forge this sentence
+ *
+ * Everything caller-controlled — argument values AND the agent's own display name
+ * — is rendered through `services/core/approvals/approval-summary.ts`, which
+ * quotes strings, caps each value, and strips anything token-shaped. Review
+ * reproduced the attack this closes: `{ name: 'pkg, purge: no', purge: true }` used
+ * to render a fake `purge: no` before the real `purge: yes`, and padding the
+ * injected value pushed the true one out of the card's clamp. Read that module
+ * before changing the rendering.
+ *
+ * Which fields appear is the capability's own declaration
+ * (`approvalDisplayFields`), so a field like `confirmationToken` never reaches a
+ * card, an event, or the agent-readable pending list.
  *
  * An unidentified caller is named as such rather than dressed up as an agent: a
  * person deciding an irreversible action should be able to see that DorkOS does
@@ -306,21 +360,22 @@ export function describeGatedAttempt(
   input: unknown,
   identity?: AgentIdentity
 ): string {
-  const who = identity ? identity.displayName || identity.agentPath : 'An unidentified caller';
-  const args =
-    input && typeof input === 'object' && !Array.isArray(input)
-      ? Object.entries(input as Record<string, unknown>)
-          .map(([key, value]) => `${key}: ${renderValue(value)}`)
-          .join(', ')
-      : '';
-  const detail = args ? ` with ${args}` : '';
-  return `${who} wants to run "${capability.title}"${detail}`;
+  const who = identity
+    ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
+    : 'An unidentified caller ';
+  const fields = summaryFields(input, capability.approvalDisplayFields);
+  const detail = fields.length
+    ? ` with ${fields.map(({ field, value }) => `${field}: ${value}`).join(', ')}`
+    : '';
+  // The title comes from the registry, so it needs no escaping — but the whole
+  // sentence gets the secret sweep anyway, because this string is broadcast.
+  return redactSecretsInText(`${who}wants to run "${capability.title}"${detail}`);
 }
 
 /** The label an approval records for who asked, or its absence for an anonymous one. */
 function requesterLabel(identity?: AgentIdentity): string | undefined {
   if (!identity) return undefined;
-  return identity.displayName || identity.agentPath;
+  return renderRequesterLabel(identity.displayName || identity.agentPath);
 }
 
 /** Retry instructions for the surface the call arrived on. */
@@ -417,15 +472,23 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // Reading is free, and a ceiling never blocks reading.
   if (tier === 'observe') return { outcome: 'allowed' };
 
-  // A ceiling only exists for a caller that identified itself. An anonymous
-  // caller has no ceiling to cap — it simply has no name, and the destructive
-  // gate below applies to it all the same.
-  if (identity && TIER_RANK[tier] > TIER_RANK[identity.tierCeiling]) {
+  // EVERY caller has a ceiling. An unidentified one gets the anonymous default,
+  // so dropping a credential cannot move a caller onto a more permissive path
+  // (see "the ceiling is not an escape hatch either" in the module TSDoc).
+  const ceiling =
+    identity?.tierCeiling ?? gate?.anonymousTierCeiling ?? DEFAULT_ANONYMOUS_TIER_CEILING;
+  if (TIER_RANK[tier] > TIER_RANK[ceiling]) {
+    const limitedParty = identity
+      ? 'this agent is limited to'
+      : 'callers that do not identify themselves are limited to';
+    const changeWhat = identity
+      ? "the agent's own limit has to change first"
+      : "DorkOS's limit for unidentified callers has to change first";
     const payload = denied(
       capability,
       'tier_ceiling',
-      `"${capability.title}" ${TIER_PHRASE[tier]}, and this agent is limited to ` +
-        `${CEILING_PHRASE[identity.tierCeiling]}. Nobody can approve this; the agent's own limit has to change first.`,
+      `"${capability.title}" ${TIER_PHRASE[tier]}, and ${limitedParty} ` +
+        `${CEILING_PHRASE[ceiling]}. Nobody can approve this; ${changeWhat}.`,
       { approvable: false }
     );
     audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
@@ -447,16 +510,67 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     return { outcome: 'denied', payload };
   }
 
-  const binding = { capabilityId: capability.id, inputHash: hashApprovalInput(input) };
+  /**
+   * Refuse a destructive call the gate cannot honestly process, and audit the
+   * refusal. Used for both an unbindable input and a failing approval store.
+   */
+  const refuse = (reason: TierDeniedReason, message: string): TierEnforcementDecision => {
+    const payload = denied(capability, reason, message, { approvable: false });
+    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
+    return { outcome: 'denied', payload };
+  };
+
+  // An input that cannot be canonicalized without losing information cannot be
+  // bound, and an approval whose hash ignores part of the action is worse than no
+  // approval at all — so refuse instead of asking about something inexact.
+  let binding: { capabilityId: string; inputHash: string };
+  try {
+    binding = { capabilityId: capability.id, inputHash: hashApprovalInput(input) };
+  } catch (err) {
+    logger.error('[capabilities] destructive input could not be bound to an approval', {
+      capabilityId: capability.id,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return refuse(
+      'input_not_bindable',
+      `"${capability.title}" cannot be undone, and DorkOS cannot describe this exact call well enough ` +
+        `to ask anyone about it, so it was refused.`
+    );
+  }
+
   const requestedBy = requesterLabel(identity);
+
+  /**
+   * Audit a destructive attempt the approval store itself could not process.
+   *
+   * The throw propagates (the caller's surface turns it into a 500 and the
+   * capability does not run), but the attempt must not vanish: "the database was
+   * down while an agent reached for something irreversible" is exactly the line an
+   * operator needs, and it used to be lost because the throw jumped past `audit`.
+   */
+  const auditStoreFailure = (): void => {
+    const payload = denied(
+      capability,
+      'enforcement_unavailable',
+      `"${capability.title}" cannot be undone and DorkOS could not record an approval request for it, so it was refused.`,
+      { approvable: false }
+    );
+    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
+  };
 
   /** Record a fresh request for THIS action and tell the caller how to retry. */
   const ask = (reason: ApprovalRequiredReason): TierEnforcementDecision => {
-    const ticket = gate!.approvals.request({
-      ...binding,
-      summary: describeGatedAttempt(capability, input, identity),
-      ...(requestedBy ? { requestedBy } : {}),
-    });
+    let ticket: ApprovalTicket;
+    try {
+      ticket = gate!.approvals.request({
+        ...binding,
+        summary: describeGatedAttempt(capability, input, identity),
+        ...(requestedBy ? { requestedBy } : {}),
+      });
+    } catch (err) {
+      auditStoreFailure();
+      throw err;
+    }
     const payload: ApprovalRequiredPayload = {
       status: 'approval_required',
       capabilityId: capability.id,
@@ -475,7 +589,13 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
 
   if (!approvalToken) return ask('no_approval');
 
-  const result = gate.approvals.consume(approvalToken, binding);
+  let result: ApprovalConsumeResult;
+  try {
+    result = gate.approvals.consume(approvalToken, binding);
+  } catch (err) {
+    auditStoreFailure();
+    throw err;
+  }
   switch (result.outcome) {
     case 'granted':
       return { outcome: 'allowed', approval: { approvalId: result.approvalId } };

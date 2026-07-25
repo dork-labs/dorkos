@@ -9,7 +9,10 @@
  *
  * The destructive-gate checker gets the same treatment: a probe whose adapter path
  * skips the tier gate, one that returns an unstructured payload, and a missing probe
- * must each be reported, so a real adapter that stops enforcing cannot pass.
+ * must each be reported, so a real adapter that stops enforcing cannot pass. So does
+ * the decision-authority checker: a decide endpoint that answers 200 to the
+ * requester, one that refuses but records the decision anyway, and a missing probe
+ * must each be reported.
  *
  * The top-level `capabilityConformance(...)` call additionally proves the Vitest
  * wrapper registers green against the conformant baseline (including the async
@@ -24,6 +27,8 @@ import {
   type CapabilityConformanceFixtures,
   type ConformanceCapability,
   type ConformanceRegistry,
+  checkDecisionAuthorityConformance,
+  type ApprovalDecisionProbe,
   type DestructiveGateProbe,
   type GatedAdapterPath,
 } from '../capability-conformance.js';
@@ -81,7 +86,11 @@ function approvalRequiredPayload() {
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     reason: 'no_approval',
     message: 'A person has to approve this first.',
-    retry: { channel: 'mcp-argument', field: 'approvalToken', instructions: 'Retry with the token.' },
+    retry: {
+      channel: 'mcp-argument',
+      field: 'approvalToken',
+      instructions: 'Retry with the token.',
+    },
   };
 }
 
@@ -96,10 +105,17 @@ function conformantProbes(): Partial<Record<GatedAdapterPath, DestructiveGatePro
   return Object.fromEntries(GATED_ADAPTER_PATHS.map((path) => [path, gateHonoringProbe]));
 }
 
+/** A probe standing in for a decide endpoint that refuses the requester. */
+const requesterRefusedProbe: ApprovalDecisionProbe = async () => ({
+  status: 403,
+  approvalDecided: false,
+});
+
 /** Fresh conformant fixtures matching {@link conformantRegistry}. */
 function conformantFixtures(registry: ConformanceRegistry): CapabilityConformanceFixtures {
   return {
     destructiveGateProbes: conformantProbes(),
+    requesterDecideProbe: requesterRefusedProbe,
     registeredMcpToolNames: {
       'in-session': ['demo_list', 'demo_set'],
       external: ['demo_list', 'demo_set'],
@@ -213,6 +229,36 @@ describe('checkCapabilityConformance — seeded drift must fail', () => {
     expect(hasCheck(violations, 'cli-surface')).toBe(true);
   });
 
+  it('approval-card fields: a destructive capability with no declared display fields', () => {
+    const destroy: ConformanceCapability = {
+      id: 'demo.destroy',
+      title: 'Destroy demo',
+      description: OK_DESCRIPTION,
+      tier: 'destructive',
+      surfaces: { mcp: { toolName: 'demo_destroy', servers: ['external'] } },
+    };
+    const registry = conformantRegistry([observeCapability(), actCapability(), destroy]);
+    const fixtures = conformantFixtures(registry);
+    fixtures.registeredMcpToolNames = {
+      'in-session': ['demo_list', 'demo_set'],
+      external: ['demo_list', 'demo_set', 'demo_destroy'],
+    };
+    const violations = checkCapabilityConformance(registry, fixtures);
+    expect(hasCheck(violations, 'approval-card-fields')).toBe(true);
+
+    // Declaring them clears it.
+    destroy.approvalDisplayFields = ['target'];
+    expect(hasCheck(checkCapabilityConformance(registry, fixtures), 'approval-card-fields')).toBe(
+      false
+    );
+
+    // An empty declaration is its own violation: a card with no arguments at all.
+    destroy.approvalDisplayFields = [];
+    expect(hasCheck(checkCapabilityConformance(registry, fixtures), 'approval-card-fields')).toBe(
+      true
+    );
+  });
+
   it('metadata: a description too short to be model-facing', () => {
     const obs = observeCapability();
     obs.description = 'too short';
@@ -266,5 +312,50 @@ describe('checkDestructiveGateConformance', () => {
     };
     const violations = await checkDestructiveGateConformance(probes);
     expect(violations.some((v) => v.detail.includes('adapter blew up'))).toBe(true);
+  });
+});
+
+describe('checkDecisionAuthorityConformance', () => {
+  it('passes when the requester is refused and the approval stays undecided', async () => {
+    expect(await checkDecisionAuthorityConformance(requesterRefusedProbe)).toEqual([]);
+  });
+
+  it('seeded bypass: the decide endpoint answers 200 to the caller that asked', async () => {
+    const violations = await checkDecisionAuthorityConformance(async () => ({
+      status: 200,
+      approvalDecided: true,
+    }));
+    expect(violations.length).toBe(2);
+    expect(violations.every((v) => v.check === 'decision-authority')).toBe(true);
+    expect(violations.some((v) => v.detail.includes('approve its own destructive call'))).toBe(
+      true
+    );
+    expect(violations.some((v) => v.detail.includes('human half of the gate is optional'))).toBe(
+      true
+    );
+  });
+
+  it('seeded bypass: refused with a 403 but the decision was recorded anyway', async () => {
+    const violations = await checkDecisionAuthorityConformance(async () => ({
+      status: 403,
+      approvalDecided: true,
+    }));
+    expect(violations.some((v) => v.detail.includes('human half of the gate is optional'))).toBe(
+      true
+    );
+  });
+
+  it('seeded drift: no probe at all', async () => {
+    const violations = await checkDecisionAuthorityConformance(undefined);
+    expect(violations.some((v) => v.detail.includes('no requesterDecideProbe supplied'))).toBe(
+      true
+    );
+  });
+
+  it('seeded drift: a probe that throws', async () => {
+    const violations = await checkDecisionAuthorityConformance(async () => {
+      throw new Error('router blew up');
+    });
+    expect(violations.some((v) => v.detail.includes('router blew up'))).toBe(true);
   });
 });

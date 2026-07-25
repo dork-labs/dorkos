@@ -33,7 +33,10 @@ Either way you get the same card, and it holds everything you need to decide:
 
 <Steps>
   <Step>
-    **Read what would run.** The sentence on the card comes from DorkOS, not from the agent.
+    **Read what would run.** The sentence on the card is written by DorkOS, not by the agent. The
+    name of the action comes from DorkOS itself, and anything the agent supplied is shown in quotes,
+    so an agent cannot word the card to look like something else. For anything that cannot be
+    undone, the whole sentence is shown, never cut short.
   </Step>
   <Step>
     **Click Allow** to let it through. Nothing runs on its own at that point: the agent has to ask
@@ -81,11 +84,32 @@ An agent can tell DorkOS who it is, and most do. One that doesn't is still stopp
 
 This also holds for the command line. Running an agent outside DorkOS, or dropping its identity, does not get past the question.
 
+## The agent that asked cannot answer
+
+Saying yes is your half of this. An agent that asks for something is never allowed to answer its own request, and neither is anything else that holds the retry code DorkOS handed the agent. Both get refused, and the request stays on your dashboard, waiting.
+
+<Callout type="warn">
+  **What this protects, and what it doesn't.** With **Require login** off (the default), DorkOS
+  runs as you on your own machine, and anything else running as you looks exactly the same to it.
+  So the question stops mistakes, and it stops an agent that follows the rules but was talked into
+  something it shouldn't do. It does not stop a program that already has full run of your computer
+  and is deliberately pretending to be you. Nothing on the same machine can, with no password in
+  the way.
+
+Turn on **Require login** (Settings, under Security) and that changes: answering a request then
+needs a real account, and a program with no account cannot answer at all. If you run agents you
+don't fully trust, or you reach DorkOS from another device, turn it on.
+
+</Callout>
+
+Either way, every yes and every no lands in your activity feed. With login required, it says which account answered. Without it, the feed says the answer came from this machine and that DorkOS could not check who gave it, so an approval you never clicked is something you can find.
+
 ## Approvals are used once, and they expire
 
 - **One approval, one action.** Saying yes to removing one package does not say yes to removing another, or to the same one with different options. If a detail changes, DorkOS asks again.
 - **Used once.** After an approval is spent it stops working. A second attempt needs a second yes.
 - **Two hours.** If nobody answers in two hours, the request runs out and the agent has to ask again. Two hours is long enough that a meeting or a school run does not kill the request, and short enough that you are never asked to approve something you read about yesterday.
+- **No secrets on the card.** DorkOS shows only the details a capability says a person needs, and it hides anything that looks like a password or a code. Cards are visible to your agents, so nothing private goes on one.
 
 You don't have to babysit the card. Whatever the agent does next, the action itself does not run until you answer.
 

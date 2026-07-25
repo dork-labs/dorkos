@@ -2509,9 +2509,12 @@ registry.registerPath({
   summary: 'Allow the requested action',
   description:
     'Grants a pending approval so the requester can spend its token once, on exactly the ' +
-    'capability and input the approval is bound to. Deciding is the human half of the gate: a ' +
-    'caller that presents an agent identity (`X-DorkOS-Agent`) is refused, so an agent cannot ' +
-    'answer its own request.',
+    'capability and input the approval is bound to. Deciding is the human half of the gate, and it ' +
+    'needs proof of a person rather than the absence of proof of a machine: a caller presenting an ' +
+    'agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in ' +
+    'every posture, and when local login is enabled an authenticated user is required. With login ' +
+    'disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is ' +
+    'recorded in the Activity feed with the posture it was made under.',
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
@@ -2519,7 +2522,13 @@ registry.registerPath({
       content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
     },
     403: {
-      description: 'Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)',
+      description:
+        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
@@ -2543,8 +2552,9 @@ registry.registerPath({
   tags: ['Approvals'],
   summary: 'Refuse the requested action',
   description:
-    'Denies a pending approval, with an optional reason the requester sees. As with grant, a ' +
-    'caller that presents an agent identity (`X-DorkOS-Agent`) is refused.',
+    'Denies a pending approval, with an optional reason the requester sees. Who may decide is ' +
+    'exactly as for grant: no agent identity, no approval token, and an authenticated user when ' +
+    'local login is enabled.',
   request: {
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: DenyApprovalBodySchema } } },
@@ -2555,7 +2565,13 @@ registry.registerPath({
       content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
     },
     403: {
-      description: 'Refused: only a person may decide an approval (`AGENT_CANNOT_DECIDE`)',
+      description:
+        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     400: {

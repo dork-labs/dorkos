@@ -23,6 +23,7 @@ import { ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
 import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
+import { createApprovalsRouter } from '../approvals.js';
 import { createCapabilitiesCatalogRouter } from '../capabilities-catalog.js';
 import capabilitiesMatrixRouter from '../capabilities.js';
 
@@ -264,5 +265,68 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
 
     expect(retried.status).toBe(200);
     expect(destroyed).toEqual(['production']);
+  });
+
+  describe('the requester cannot decide its own request', () => {
+    /**
+     * Both REAL routers on one app, exactly as boot mounts them, with local login
+     * OFF — the default posture, so the refusal cannot depend on accounts.
+     */
+    function buildFullApp(identity?: AgentIdentity) {
+      const registry = composeRegistry([gateDomain()], { logger: noopLogger });
+      const app = express();
+      app.use(express.json());
+      app.use((_req, res, next) => {
+        if (identity) res.locals.agentIdentity = identity;
+        next();
+      });
+      app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
+      app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
+      return app;
+    }
+
+    it('breaks the reproduced three-step self-approval chain', async () => {
+      // Step 1: ask. The 202 hands the caller BOTH the approval id and its token.
+      const app = buildFullApp();
+      const asked = await request(app)
+        .post('/api/capabilities/gated.destroy/invoke')
+        .send({ name: 'production' });
+      expect(asked.status).toBe(202);
+      const { approvalId, approvalToken } = asked.body;
+
+      // Step 2: grant it as the caller that asked. This used to answer 200 because
+      // the check keyed on the PRESENCE of an agent identity, so omitting a header
+      // was all it took.
+      const selfGrant = await request(app)
+        .post(`/api/approvals/${approvalId}/grant`)
+        .set('X-DorkOS-Approval', approvalToken)
+        .send();
+      expect(selfGrant.status).toBe(403);
+      expect(selfGrant.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+
+      // Step 3: retry. Still waiting on a person, and nothing was destroyed.
+      const retried = await request(app)
+        .post('/api/capabilities/gated.destroy/invoke')
+        .set('X-DorkOS-Approval', approvalToken)
+        .send({ name: 'production' });
+      expect(retried.status).toBe(202);
+      expect(retried.body.reason).toBe('awaiting_decision');
+      expect(destroyed).toEqual([]);
+      expect(approvals.listPending()).toHaveLength(1);
+    });
+
+    it('breaks it for an identified agent too, even without the token header', async () => {
+      const app = buildFullApp(AGENT);
+      const asked = await request(app)
+        .post('/api/capabilities/gated.destroy/invoke')
+        .send({ name: 'production' });
+
+      const selfGrant = await request(app)
+        .post(`/api/approvals/${asked.body.approvalId}/grant`)
+        .send();
+      expect(selfGrant.status).toBe(403);
+      expect(selfGrant.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(destroyed).toEqual([]);
+    });
   });
 });

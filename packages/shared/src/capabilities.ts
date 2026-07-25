@@ -188,7 +188,17 @@ export interface CapabilityCatalog {
  * meaningful); only object keys are sorted. Pure and dependency-free so any
  * surface can recompute or verify a version.
  *
- * @param value - Any JSON-serializable value.
+ * ## Plain data only
+ *
+ * Canonicalization rebuilds every object from its own enumerable keys, which
+ * bypasses `toJSON` and sees nothing inside a `Set` or `Map`. So a `Date` loses
+ * its instant and `new Set(['a'])` serializes the same as `new Set(['b'])`. That
+ * is fine for the catalog (plain serialized schemas) and NOT fine for anything
+ * security-relevant: `hashApprovalInput` therefore rejects non-plain values
+ * before calling this, rather than hashing a value it would silently flatten.
+ *
+ * @param value - Any plain JSON value. Dates, Sets, Maps, and class instances
+ *   lose information here; do not pass them.
  * @returns A stable JSON string with all object keys sorted.
  */
 export function stableStringify(value: unknown): string {

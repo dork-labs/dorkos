@@ -147,14 +147,29 @@ describe('PendingApprovalsSection', () => {
     expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
   });
 
-  it('clamps a long summary so the answer buttons stay reachable', async () => {
+  it('never clamps the summary of an action that cannot be undone', async () => {
+    // Truncating the consequence is a product defect, and it was an exploitable
+    // one: padding an injected argument used to push the real `purge: yes` out of
+    // the clamped two lines. The server caps each value and the whole sentence, so
+    // showing a destructive summary in full is bounded.
     renderSection({
       listPendingApprovals: vi.fn().mockResolvedValue({
-        approvals: [buildApproval({ summary: 'Uninstall '.repeat(60) })],
+        approvals: [buildApproval({ tier: 'destructive', summary: 'Uninstall '.repeat(40) })],
       }),
     });
 
     const summary = await screen.findByText(/^Uninstall Uninstall/);
+    expect(summary).not.toHaveClass('line-clamp-2');
+  });
+
+  it('still clamps a long summary for a routine change, where length is just noise', async () => {
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({
+        approvals: [buildApproval({ tier: 'act', summary: 'Update '.repeat(60) })],
+      }),
+    });
+
+    const summary = await screen.findByText(/^Update Update/);
     expect(summary).toHaveClass('line-clamp-2');
   });
 
@@ -171,6 +186,41 @@ describe('PendingApprovalsSection', () => {
 
     expect(await screen.findByText(/2 more requests are waiting/)).toBeInTheDocument();
     expect(document.querySelectorAll('[data-slot="approval-card"]')).toHaveLength(6);
+  });
+
+  it('sizes its layout from the container, not the viewport', async () => {
+    // The card renders both in this dashboard section (~824px of content) and in a
+    // narrow header panel (~424px). A viewport `sm:flex-row` went horizontal in
+    // both, and in the narrow one the row left the truncated capabilityTitle about
+    // 160px — the worst thing to truncate on an irreversible action.
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+
+    await screen.findByText('Uninstall a marketplace package');
+    const card = document.querySelector('[data-slot="approval-card"]')!;
+
+    expect(card.className).toContain('@container/approval');
+    expect(card.className).toContain('@[34rem]/approval:flex-row');
+    // No viewport breakpoint may decide this layout.
+    expect(card.className).not.toMatch(/(?:^|\s)(?:sm|md|lg):flex-row/);
+  });
+
+  it('styles itself from theme tokens, so it matches in light, dark, and Obsidian', async () => {
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+
+    await screen.findByText('Uninstall a marketplace package');
+    const card = document.querySelector('[data-slot="approval-card"]')!;
+    const badge = screen.getByText('Cannot be undone');
+
+    expect(card.className).toContain('border-status-warning-border');
+    expect(badge.className).toContain('border-destructive/30');
+    // Raw palette classes drift against the tokenized surfaces around them.
+    for (const el of [card, badge]) {
+      expect(el.className).not.toMatch(/\b(?:amber|red)-\d{3}\b/);
+    }
   });
 
   it('shows more than one waiting approval', async () => {

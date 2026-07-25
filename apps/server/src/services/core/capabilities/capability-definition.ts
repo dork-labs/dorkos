@@ -102,6 +102,23 @@ export interface CapabilityDefinition<
   /** The MCP / CLI / HTTP surfaces this capability projects onto. */
   surfaces: CapabilitySurfaces;
   /**
+   * The input fields the approval card may show, as dotted paths, in the order a
+   * person should read them.
+   *
+   * An allowlist rather than a redaction list, because the failure it prevents is
+   * a field nobody thought about reaching a card. The summary is broadcast on the
+   * global event stream and returned by `GET /api/approvals/pending`, which agents
+   * can read — so `marketplace.uninstall`'s own `confirmationToken` field, whose
+   * description tells a model to re-call with a token, would otherwise publish a
+   * live secret to every connected cockpit.
+   *
+   * Declare this on any `destructive` capability. Omitting it is safe but blunt:
+   * every top-level field is shown except those whose NAME says secret
+   * (`approval-summary.ts`), and a nested object renders as an unhelpful
+   * `details` — naming `options.purge` here fixes that.
+   */
+  approvalDisplayFields?: readonly string[];
+  /**
    * Execute the capability against the injected dependencies, returning PLAIN
    * typed output (see the module-level "result-wrapping seam" note — transport
    * adapters own envelope shaping; redaction stays here).

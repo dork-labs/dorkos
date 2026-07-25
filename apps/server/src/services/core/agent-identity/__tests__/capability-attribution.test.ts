@@ -35,6 +35,16 @@ function buildRegistry(activityService: ActivityService): CapabilityRegistry {
             invoke: async () => ({ ok: true }),
           }),
           defineCapability({
+            id: 'demo.destroy',
+            title: 'Destroy a thing',
+            description: 'Cannot be undone.',
+            tier: 'destructive',
+            input: z.object({}),
+            output: z.object({ ok: z.boolean() }),
+            surfaces: {},
+            invoke: async () => ({ ok: true }),
+          }),
+          defineCapability({
             id: 'demo.explode',
             title: 'Explode',
             description: 'Throws.',
@@ -121,6 +131,77 @@ describe('capability attribution', () => {
 
   it('writes nothing when a context is supplied without an identity', async () => {
     await registry.invoke('demo.read', {}, {});
+    await flush();
+
+    expect(db.select().from(activityEvents).all()).toHaveLength(0);
+  });
+
+  // ── …except for an irreversible action, which is ALWAYS recorded ───────────
+
+  it('records an anonymous DESTRUCTIVE invocation that succeeded', async () => {
+    // The defect this closes: the tier gate does not audit calls it allows (it
+    // defers to this observer), and this observer used to bail on a missing
+    // identity — so an anonymous destructive call that RAN produced a
+    // `capability.approval_required` line and then silence about the irreversible
+    // thing that happened.
+    await registry.invoke('demo.destroy', {}, { approval: { approvalId: 'appr_1' } });
+    await flush();
+
+    const rows = db.select().from(activityEvents).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      // `system`, not a nameless agent: the feed must not imply DorkOS knows who.
+      actorType: 'system',
+      actorId: null,
+      actorLabel: 'Unidentified caller',
+      eventType: 'capability.invoked',
+      resourceId: 'demo.destroy',
+    });
+    expect(JSON.parse(rows[0].metadata!)).toEqual({
+      capabilityId: 'demo.destroy',
+      tier: 'destructive',
+      approvalId: 'appr_1',
+    });
+  });
+
+  it('records an anonymous DESTRUCTIVE invocation that failed', async () => {
+    await expect(registry.invoke('demo.explode', {})).rejects.toThrow('boom');
+    await flush();
+
+    const rows = db.select().from(activityEvents).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorType: 'system',
+      actorLabel: 'Unidentified caller',
+      eventType: 'capability.failed',
+      resourceId: 'demo.explode',
+    });
+  });
+
+  it('still writes nothing for an anonymous act-tier call, which would just be noise', async () => {
+    const actOnly = composeRegistry(
+      [
+        {
+          name: 'demo',
+          capabilities: [
+            defineCapability({
+              id: 'demo.change',
+              title: 'Change a thing',
+              description: 'Changes something reversible.',
+              tier: 'act',
+              input: z.object({}),
+              output: z.object({ ok: z.boolean() }),
+              surfaces: {},
+              invoke: async () => ({ ok: true }),
+            }),
+          ],
+        },
+      ],
+      { logger: noopLogger },
+      createCapabilityAttributionObserver(new ActivityService(db))
+    );
+
+    await actOnly.invoke('demo.change', {});
     await flush();
 
     expect(db.select().from(activityEvents).all()).toHaveLength(0);

@@ -120,6 +120,51 @@ describe('TokenConfirmationProvider', () => {
     });
   });
 
+  describe('a request DorkOS cannot bind', () => {
+    /**
+     * A value canonicalization would flatten. `hashApprovalInput` refuses these,
+     * because an approval bound to a hash that ignores part of the action is worse
+     * than no approval at all.
+     */
+    const unbindable = () =>
+      ({ ...buildRequest(), projectPath: new Date(0) }) as unknown as Parameters<
+        TokenConfirmationProvider['requestInstallConfirmation']
+      >[0];
+
+    it('declines instead of throwing, so the caller is not handed an opaque 500', async () => {
+      const result = await provider.requestInstallConfirmation(unbindable());
+
+      expect(result.status).toBe('declined');
+      if (result.status !== 'declined') throw new Error('unreachable');
+      // Names the offending field, so whoever wrote the schema can fix it.
+      expect(result.reason).toContain('projectPath');
+      // And nothing is waiting on a person for an action DorkOS cannot describe.
+      expect(approvals.listPending()).toHaveLength(0);
+    });
+
+    it('declines a retry it cannot bind, without spending anything', async () => {
+      const issued = await provider.requestInstallConfirmation(buildRequest());
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const result = await provider.resolveToken(issued.token, unbindable());
+      expect(result.status).toBe('declined');
+
+      // The real approval survives for the action it was actually granted for.
+      expect((await provider.resolveToken(issued.token, buildRequest())).status).toBe('approved');
+    });
+
+    it('still propagates an unrelated failure rather than swallowing it as declined', async () => {
+      vi.spyOn(approvals, 'request').mockImplementation(() => {
+        throw new Error('database is locked');
+      });
+
+      await expect(provider.requestInstallConfirmation(buildRequest())).rejects.toThrow(
+        'database is locked'
+      );
+    });
+  });
+
   describe('resolveToken', () => {
     it('returns declined for an unknown token', async () => {
       const result = await provider.resolveToken('not-a-real-token', buildRequest());

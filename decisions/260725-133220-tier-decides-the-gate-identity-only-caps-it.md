@@ -33,3 +33,12 @@ We will gate on the capability's declared tier alone. `observe` passes; `act` pa
 
 - A human running `dorkos call` against a destructive capability now answers an approval card, a step they did not previously face.
 - The three-choke-point list in the conformance fixture is hand-maintained; a genuinely new non-MCP adapter still needs someone to add its two probes. Moving the gate inside `registry.invoke` would fix this structurally but needs a trusted-caller concept for human-initiated internal callers first.
+
+## Errata (2026-07-25)
+
+Two places kept the very inversion this decision removed, both found by adversarial review after the ADR was accepted:
+
+1. **The ceiling was identity-keyed.** `TIER_RANK[tier] > TIER_RANK[identity.tierCeiling]` only ran when an identity was present, so an agent capped at `act` was refused unapprovably while the same agent with `DORKOS_AGENT_TOKEN` unset reached the approvable path instead. Presenting a credential strictly cost privilege. Every caller now has a ceiling: an unidentified one is capped at `anonymousTierCeiling` (default `destructive`, so behavior is unchanged today), which makes the two paths comparable. The sentence above, "an anonymous caller has no ceiling to cap", was wrong and is superseded by this paragraph.
+2. **Deciding was identity-keyed.** `POST /api/approvals/:id/grant` refused a caller that PRESENTED an agent identity and allowed everyone else, so omitting one header let a requester grant its own approval. Who may decide is now `resolveDecisionAuthority`: proof of an authenticated person when `auth.enabled` is true, and in the default login-off posture (`local-trust`) a refusal of any caller presenting an agent identity or an approval token, plus an Activity record naming the posture. That posture's honest limit — a credential-free caller with shell access is indistinguishable from the cockpit — is documented in `services/core/approvals/decision-authority.ts` and in `docs/guides/action-approvals.mdx`, not papered over.
+
+The conformance suite gained `requesterDecideProbe` (the caller that asked cannot grant), so the second one is now falsifiable per PR the way the three-choke-point probes already were.
