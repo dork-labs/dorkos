@@ -11,6 +11,7 @@ import {
   STATUS_BAR_REGISTRY,
   isPinnable,
   type StatusBarCluster,
+  type StatusBarItemConfig,
   type StatusBarItemKey,
   type StatusPromotionContext,
 } from './status-bar-registry';
@@ -32,6 +33,13 @@ export interface PromotedStatusItem {
    * never exempts it from a width budget.
    */
   pinned: boolean;
+  /**
+   * True when the item's value is a number, so the row must render it whole or
+   * not at all — see {@link StatusBarItemConfig.rigid}. Carried through as data
+   * rather than baked into the node, because it is the *row* that has to stop
+   * squeezing it, and the row draws what it is handed.
+   */
+  rigid: boolean;
   /** The rendered item. */
   node: ReactNode;
 }
@@ -92,6 +100,7 @@ export function selectPromotedItems({
       cluster: item.cluster,
       severity: item.severity(ctx),
       pinned,
+      rigid: item.rigid === true,
       node,
     });
   }

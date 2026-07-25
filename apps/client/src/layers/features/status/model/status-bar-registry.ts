@@ -76,8 +76,22 @@ export interface StatusPromotionContext {
   runtime: RuntimePromotionState | null;
   /** Runtime-neutral usage descriptor, or `null` when the session has none. */
   usage: UsageStatus | null;
-  /** How many subagents this session has available. */
-  subagentCount: number;
+  /**
+   * How many subagents this session has **in flight right now** — never how many
+   * it could call.
+   *
+   * The distinction is the whole item. `getSubagents()` returns the runtime's
+   * catalogue of agent types, which for Claude Code is a fixed list that is never
+   * empty, so a rule reading it promoted the item on every session forever — the
+   * definition of the wallpaper this line exists to remove (DOR-462). Running
+   * subagents come from the turn's `subagent_update` events instead, so the item
+   * appears while work is delegated and leaves when it finishes.
+   *
+   * Deliberately not called `runningSubagentCount`: {@link SessionDiagnostics} has
+   * a field by that name which the SERVER projects, and the two can legitimately
+   * disagree. This one is the client's own fold of the turn it is watching.
+   */
+  subagentsInFlight: number;
 }
 
 /** The two things about a working tree that can make it news. */
@@ -137,10 +151,19 @@ const SEVERITY = {
   CONTEXT_CRITICAL: 90,
   USAGE_EXHAUSTED: 80,
   PERMISSION_BYPASS: 70,
-  SUBAGENTS_RUNNING: 60,
   CONTEXT_WARNING: 50,
   USAGE_WARNING: 50,
   PERMISSION_ELEVATED: 40,
+  /**
+   * Work is being delegated — news, but never a problem, so it sits below every
+   * warning and above the configuration facts.
+   *
+   * It shipped at 60, above both warnings, which meant a session that was running
+   * a subagent AND approaching its usage limit spent a scarce slot on the
+   * subagent and put the limit under the `⋯` (DOR-462). Nothing about a healthy
+   * delegation outranks a number heading for a ceiling.
+   */
+  SUBAGENTS_RUNNING: 35,
   RUNTIME_NON_DEFAULT: 30,
   GIT_DIRTY: 20,
   MODEL: 10,
@@ -179,6 +202,38 @@ export interface StatusBarItemConfig {
    * they can never be news.
    */
   neverInLine?: true;
+  /**
+   * Set when the item's value is a **number whose magnitude is the message** —
+   * a percentage, an amount of money. It renders whole or not at all: the row may
+   * not squeeze it, and it never abbreviates.
+   *
+   * The line's rule is that a width the budget got wrong degrades into an
+   * ellipsis. That rule is right for a name and wrong for a number. `Bypass
+   * permi…` is the same fact in fewer letters; `8…` is a *different number* —
+   * an 88%-full context window reading as 8% is wrong by 10×, which is worse
+   * than the item not being there at all (DOR-461 review). So a rigid item keeps
+   * its pixels and the deficit lands on the items that can honestly give some
+   * up. When even that is not enough, the honest outcome is for the width budget
+   * to drop the item to the `⋯` — where the number is still exact — and the
+   * browser guard fails loudly if it does not.
+   *
+   * Rigidity is expensive, so it is not for every number — but an item with no
+   * compressible part has no other honest option. `subagents` is glyph plus
+   * digits: there is no label to abbreviate, so a row that squeezes it can only
+   * take digits away, and `12` losing one reads as `1`, confidently and wrongly.
+   *
+   * It went both ways before this settled. Rigid at its old `N running` width
+   * (77px) it was the quietest item on the row holding pixels that `connection` —
+   * severity 100 — then had to give up, and `connection` measured 24px. The
+   * inversion was the width, not the rigidity: as a bare count the item is ~36px,
+   * which is what its shrink floor already reserved, so protecting it costs the
+   * row nothing it was not already spending. The word moved to the tooltip and
+   * the accessible name, where a narrow row cannot cut it.
+   *
+   * The test in `status-bar-registry.test` is the list, and adding to it is a
+   * claim that the row can afford one more thing that will not move.
+   */
+  rigid?: true;
 }
 
 /** Human-readable labels for each popover group, used as section headers. */
@@ -265,6 +320,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: BarChart3,
+    rigid: true,
     promote: (ctx) => ctx.contextPercent !== null && ctx.contextPercent >= CONTEXT_PROMOTE_PERCENT,
     severity: (ctx) => {
       if (ctx.contextPercent === null) return SEVERITY.QUIET;
@@ -280,6 +336,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Gauge,
+    rigid: true,
     promote: (ctx) => ctx.usage?.state === 'warning' || ctx.usage?.state === 'exhausted',
     severity: (ctx) => {
       if (ctx.usage?.state === 'exhausted') return SEVERITY.USAGE_EXHAUSTED;
@@ -303,12 +360,13 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'subagents',
     label: 'Subagents',
-    description: 'Helper agents this session can call',
+    description: 'Helper agents working on this turn',
     cluster: 'right',
     group: 'diagnostics',
     icon: Users,
-    promote: (ctx) => ctx.subagentCount > 0,
-    severity: (ctx) => (ctx.subagentCount > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
+    rigid: true,
+    promote: (ctx) => ctx.subagentsInFlight > 0,
+    severity: (ctx) => (ctx.subagentsInFlight > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
   },
   {
     key: 'connection',

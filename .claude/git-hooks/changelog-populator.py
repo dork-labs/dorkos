@@ -289,6 +289,23 @@ def quote_yaml_scalar(value: str) -> str:
     return f'"{escaped}"'
 
 
+def read_yaml_scalar(value: str) -> str:
+    """Read back a `covers:` item, whichever way it was quoted.
+
+    The hook writes double-quoted scalars; Prettier rewrites them to single
+    quotes the first time it formats the fragment. Comparing rendered strings
+    therefore stopped matching as soon as a hand-written fragment had been
+    committed once, and the hook minted a duplicate on every later commit even
+    though the fragment declared the subject (DOR-461 review, twice).
+    """
+    text = value.strip()
+    for quote in ('"', "'"):
+        if len(text) >= 2 and text.startswith(quote) and text.endswith(quote):
+            body = text[1:-1]
+            return body.replace('\\"', '"').replace("\\\\", "\\") if quote == '"' else body
+    return text
+
+
 def render_fragment(section: str, entry: str, subject: str) -> str:
     """Render fragment contents: a `covers:` declaration, then the entry."""
     return (
@@ -311,7 +328,8 @@ def already_recorded(unreleased_dir: Path, entry: str, subject: str) -> bool:
     fresh clone). Two keys are checked, either of which is enough:
 
     - the `covers:` declaration for this commit's subject — the durable key,
-      unaffected by anyone rewriting the fragment's prose;
+      unaffected by anyone rewriting the fragment's prose, or by the quote style
+      Prettier settles on when it formats the file;
     - the exact entry line — the legacy key, which still catches fragments
       written before declarations existed.
 
@@ -321,10 +339,14 @@ def already_recorded(unreleased_dir: Path, entry: str, subject: str) -> bool:
     if not unreleased_dir.is_dir():
         return False
     entry_target = entry.strip()
-    claim_target = f"- {quote_yaml_scalar(subject)}"
     for frag in unreleased_dir.glob("*.md"):
         for line in frag.read_text(encoding="utf-8").split("\n"):
-            if line.strip() in (entry_target, claim_target):
+            stripped = line.strip()
+            if stripped == entry_target:
+                return True
+            # Compare the subject itself, not a rendering of it: the quote style
+            # of a committed fragment is Prettier's to choose, not ours.
+            if stripped.startswith("- ") and read_yaml_scalar(stripped[2:]) == subject:
                 return True
     return False
 

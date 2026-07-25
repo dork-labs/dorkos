@@ -22,6 +22,10 @@ export { useRuntimeChip, useResolvedSessionRuntime } from './model/use-runtime-c
 export type { RuntimeChipState, ResolvedSessionRuntime } from './model/use-runtime-chip';
 export { useSessionPopoverShortcut } from './model/use-session-popover-shortcut';
 export { isNewer, isFeatureUpdate } from './lib/version-compare';
+// Exported because "running" is a distinction every reader of a fold has to make
+// before it may say the word — the fold keeps terminal rows on purpose. The
+// composer needs it to decide whether the subagents item has anything to say.
+export { partitionSubagents } from './lib/fold-active-subagents';
 // `lib/status-labels` is deliberately NOT re-exported: like `lib/model-menu-tiers`,
 // it is the slice's own presentation rule, consumed only by the items in this
 // folder. Publishing it would invite a caller outside the line to bound a value

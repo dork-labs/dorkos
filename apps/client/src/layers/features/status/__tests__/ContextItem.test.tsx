@@ -148,3 +148,41 @@ describe('ContextItem — the inline Compact action', () => {
     expect(screen.getByLabelText('Compacting conversation…')).toBeInTheDocument();
   });
 });
+
+describe('ContextItem — every part can give up pixels except the number', () => {
+  /** The percent reading, whatever the surrounding markup is. */
+  function percentSpan(text: string): HTMLElement {
+    return screen.getByText(text);
+  }
+
+  it('lets the Compact action absorb the squeeze and keeps the percent whole', () => {
+    // The row can hand an item less width than its content needs, so something in
+    // the item has to be shrinkable. Both halves shipped `shrink-0`, so the item
+    // rendered 39px wider than its box and painted over the item beside it
+    // (DOR-461). The action gives way; the number does not.
+    render(<ContextItem percent={91} compact={{ pending: false, onCompact: vi.fn() }} />, {
+      wrapper: Wrapper,
+    });
+    const button = screen.getByTestId('compaction-chip');
+    expect(button.className).toContain('min-w-0');
+    expect(button.className).toContain('shrink');
+    expect(button.className).not.toContain('shrink-0');
+    expect(button.querySelector('span.truncate')).not.toBeNull();
+    expect(percentSpan('91%').parentElement!.className).toContain('shrink-0');
+    expect(percentSpan('91%').className).not.toContain('truncate');
+  });
+
+  it('never truncates the percent, with or without the action beside it', () => {
+    // `88%` cut to `8…` is not the same fact in fewer letters, it is a different
+    // number — wrong by 10x, and worse than the item not being there (DOR-461
+    // review). The registry marks this item rigid so the row cannot squeeze it;
+    // the absence of a `truncate` is the same promise one level down.
+    for (const compact of [null, { pending: false, onCompact: vi.fn() }]) {
+      cleanup();
+      render(<ContextItem percent={88} compact={compact} />, { wrapper: Wrapper });
+      const value = percentSpan('88%');
+      expect(value.className).not.toContain('truncate');
+      expect(value.parentElement!.className).toContain('shrink-0');
+    }
+  });
+});

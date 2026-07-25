@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import { GitStatusItem } from '../ui/GitStatusItem';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 
@@ -31,6 +31,8 @@ const dirtyStatus: GitStatusResponse = {
 };
 
 const errorStatus: GitStatusError = { error: 'not_git_repo' };
+
+afterEach(cleanup);
 
 describe('GitStatusItem', () => {
   it('renders branch name for clean repo', () => {
@@ -113,5 +115,33 @@ describe('GitStatusItem', () => {
     expect(el).toBeDefined();
     expect(el.title).toContain('main');
     expect(el.title).toContain('clean');
+  });
+});
+
+describe('GitStatusItem — compact', () => {
+  it('drops the change count below the widest tier', () => {
+    // This item was the only one that never received the density flag, so it was
+    // the widest thing in the line (235px against a slot priced at 13 characters)
+    // and squeezed everything beside it (DOR-461). The count stays in the tooltip.
+    render(<GitStatusItem data={dirtyStatus} compact />);
+    expect(screen.queryByText(/changes?/)).toBeNull();
+    expect(screen.getByText('feature/my-b…')).toBeDefined();
+  });
+
+  it('keeps ahead and behind, which are why the item is news', () => {
+    render(<GitStatusItem data={{ ...dirtyStatus, ahead: 4, behind: 7 }} compact />);
+    expect(screen.getByText('4')).toBeDefined();
+    expect(screen.getByText('7')).toBeDefined();
+  });
+
+  it('bounds the branch to the same character count every other value is held to', () => {
+    render(<GitStatusItem data={{ ...cleanStatus, branch: 'release/2026-07-canary' }} compact />);
+    expect(screen.getByText('release/2026…')).toBeDefined();
+  });
+
+  it('still says everything at the widest tier', () => {
+    render(<GitStatusItem data={dirtyStatus} />);
+    expect(screen.getByText('feature/my-branch')).toBeDefined();
+    expect(screen.getByText(/6 changes/)).toBeDefined();
   });
 });

@@ -17,9 +17,15 @@ afterEach(() => {
 function item(
   key: StatusBarItemKey,
   cluster: 'left' | 'right' = 'right',
-  severity = 0
+  severity = 0,
+  rigid = false
 ): PromotedStatusItem {
-  return { key, cluster, severity, pinned: false, node: <span>{key} content</span> };
+  return { key, cluster, severity, pinned: false, rigid, node: <span>{key} content</span> };
+}
+
+/** The wrapper the row draws around one item — where the shrink decision lands. */
+function wrapper(key: StatusBarItemKey): HTMLElement {
+  return screen.getByTestId(`status-item-${key}`);
 }
 
 describe('StatusLine', () => {
@@ -103,6 +109,77 @@ describe('StatusLine', () => {
       expect(screen.getByTestId('status-item-agent')).toBeInTheDocument();
       expect(screen.queryByTestId('status-item-cwd')).not.toBeInTheDocument();
       expect(screen.queryByTestId('status-item-model')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('numbers keep their pixels; names give them up', () => {
+    it('lets a name-bearing item be squeezed, so its value can truncate', () => {
+      render(<StatusLine items={[item('permission')]} />);
+      expect(wrapper('permission').className).toContain('min-w-10');
+      expect(wrapper('permission').className).not.toContain('shrink-0');
+    });
+
+    it('refuses to squeeze an item whose value is a number', () => {
+      // `88%` truncated to `8…` is not the same fact in fewer letters, it is a
+      // different number — so the row must not be able to ask (DOR-461 review).
+      render(<StatusLine items={[item('context', 'right', 90, true)]} />);
+      expect(wrapper('context').className).toContain('shrink-0');
+      expect(wrapper('context').className).not.toContain('min-w-10');
+    });
+
+    it('applies the decision per item, not per row', () => {
+      render(<StatusLine items={[item('context', 'right', 90, true), item('connection')]} />);
+      expect(wrapper('context').className).toContain('shrink-0');
+      expect(wrapper('connection').className).toContain('min-w-10');
+    });
+
+    it('floors a shrinkable item at the width of what cannot shrink inside it', () => {
+      // Squeezed below its separator and glyph, an item renders ~23px of content
+      // in a 0px box and paints into its neighbour — the same defect from the
+      // other end (DOR-461 review).
+      render(<StatusLine items={[item('model'), item('connection')]} />);
+      expect(wrapper('model').className).toContain('min-w-10');
+      expect(wrapper('model').className).not.toContain('min-w-0');
+    });
+  });
+
+  describe('the least urgent item pays first', () => {
+    it('gives the loudest item the smallest share of a deficit', () => {
+      // Flexbox's default is "everyone at once, in proportion to width", which took
+      // the pixels back from the most urgent thing on the row — the budget's own
+      // ordering, inverted at the last step (DOR-461 review).
+      render(
+        <StatusLine items={[item('connection', 'right', 100), item('permission', 'right', 70)]} />
+      );
+      const loudest = Number(wrapper('connection').style.flexShrink);
+      const quieter = Number(wrapper('permission').style.flexShrink);
+      expect(loudest).toBeGreaterThan(0);
+      expect(quieter).toBeGreaterThan(loudest);
+    });
+
+    it('ranks within a cluster, so the same item can pay first or last', () => {
+      const { unmount } = render(
+        <StatusLine items={[item('model', 'right', 10), item('cwd', 'right', 5)]} />
+      );
+      expect(Number(wrapper('model').style.flexShrink)).toBeLessThan(
+        Number(wrapper('cwd').style.flexShrink)
+      );
+      unmount();
+
+      render(<StatusLine items={[item('model', 'right', 10), item('connection', 'right', 100)]} />);
+      expect(Number(wrapper('model').style.flexShrink)).toBeGreaterThan(
+        Number(wrapper('connection').style.flexShrink)
+      );
+    });
+
+    it('never asks a rigid item to pay', () => {
+      render(
+        <StatusLine
+          items={[item('context', 'right', 90, true), item('connection', 'right', 100)]}
+        />
+      );
+      expect(wrapper('context').style.flexShrink).toBe('');
+      expect(wrapper('context').className).toContain('shrink-0');
     });
   });
 

@@ -62,6 +62,13 @@ export function AgentIdentityChip({
           onOpenProfile={handleOpenProfile}
           onNewSession={handleNewSession}
         >
+          {/* `max-w-full` is what makes the name truncate instead of overflowing.
+              The context menu wraps the identity in a `display: block` span of
+              Radix's own, so the identity is an inline-level box there rather than
+              a flex item — and an inline box shrinks only to its min-content,
+              which for a nowrap name is the whole name. It drew 22px past the box
+              the row gave it, over the directory beside it (DOR-461). Capped at
+              its container, the name's own `truncate` takes over. */}
           <AgentIdentity
             size="xs"
             name={agentName}
@@ -69,6 +76,7 @@ export function AgentIdentityChip({
             emoji={agentEmoji}
             nameHidden={nameHidden}
             onClick={handleOpenProfile}
+            className="max-w-full"
           />
         </AgentChipContextMenu>
       ) : (
@@ -78,6 +86,7 @@ export function AgentIdentityChip({
           color={agentColor}
           emoji={agentEmoji}
           nameHidden={nameHidden}
+          className="max-w-full"
         />
       )}
     </span>

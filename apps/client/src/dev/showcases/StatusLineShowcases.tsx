@@ -33,7 +33,9 @@ import {
   AGENT,
   DEGRADED,
   DEGRADED_ON_DEFAULT,
+  DELEGATING,
   HEALTHY,
+  RATE_LIMITED,
   SAMPLED_WIDTHS,
   TIER_WIDTHS,
   type StatusScenario,
@@ -205,6 +207,26 @@ export function StatusLineShowcases() {
           <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={640} />
         </ShowcaseDemo>
 
+        <ShowcaseLabel>Delegating — twelve subagents, drawn as a whole number</ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <div className="space-y-5">
+            {TIER_WIDTHS.map((width) => (
+              <BudgetedLine key={width} scenario={DELEGATING} width={width} />
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Rate limited — the three loudest signals are the three that draw
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <div className="space-y-5">
+            {TIER_WIDTHS.map((width) => (
+              <BudgetedLine key={width} scenario={RATE_LIMITED} width={width} />
+            ))}
+          </div>
+        </ShowcaseDemo>
+
         <ShowcaseLabel>What every width affords</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
           <BudgetTable />
@@ -218,22 +240,23 @@ export function StatusLineShowcases() {
         </p>
         <p className="text-muted-foreground text-xs">
           The 640px rows are the <code>full</code> tier at its floor holding everything that can
-          promote, and the crowding there is the budget over-promising, not a prediction exactly
-          spent. Measured on the 640px row above: the agent chip runs ~22px past its own box and the
-          context item — the 88% plus the inline Compact action — runs ~39px past its, so each
-          paints over the item beside it. The item&apos;s own box knows (<code>scrollWidth</code>{' '}
-          128 against <code>clientWidth</code> 89); its cluster and the row report that everything
-          fits. The row is what the e2e spec measures, which is why no test catches this:{' '}
-          <code>scrollWidth ≤ clientWidth</code> on an <code>overflow-hidden</code> row with two
-          shrinkable clusters and a truncation on every value holds whether the content fit or was
-          absorbed.
+          promote — the tightest the widest tier ever gets. It used to be the tightest by more than
+          it admitted: the agent chip rendered ~22px past its own box and the context item ~39px
+          past its, each painting over the item beside it, because neither could shrink (DOR-461).
+          Both can now, so a width the budget over-promised degrades into an ellipsis. The row
+          itself was never able to report that — <code>scrollWidth ≤ clientWidth</code> holds on an{' '}
+          <code>overflow-hidden</code> row with shrinkable clusters whether the content fit or was
+          absorbed — so the guard is geometric instead:{' '}
+          <code>apps/e2e/tests/chat/status-line-fit.spec.ts</code> measures these rows and fails
+          when two items&apos; painted extents intersect.
         </p>
         <p className="text-muted-foreground text-xs">
           The single row under the second heading is the same 640px carrying the longest permission
           label DorkOS ships. A slot is priced at 13 characters (<code>STATUS_VALUE_MAX_CHARS</code>
           ) and this tier draws the label whole, so <code>Bypass permissions</code> at 18 takes a
-          92px slot where Codex&apos;s <code>Full access</code> takes 63. Both defects are in the
-          shipped budget rather than in this showcase, and DOR-461 tracks the fix.
+          92px slot where Codex&apos;s <code>Full access</code> takes 63 — which is why the floor
+          sells three right-cluster slots rather than four, and reports the rest on the{' '}
+          <code>⋯</code>.
         </p>
       </PlaygroundSection>
 

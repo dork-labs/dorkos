@@ -8,10 +8,14 @@
  *
  * @module dev/showcases/status-line-showcase-data
  */
-import type { GitStatusResponse, SubagentInfo, UsageStatus } from '@dorkos/shared/types';
+import type { GitStatusResponse, UsageStatus } from '@dorkos/shared/types';
 import type { SessionStatusData } from '@/layers/entities/session';
 import { gitPromotionState } from '@/layers/features/status';
-import type { SessionDiagnostics, StatusPromotionContext } from '@/layers/features/status';
+import type {
+  ActiveSubagent,
+  SessionDiagnostics,
+  StatusPromotionContext,
+} from '@/layers/features/status';
 import type { StatusItemNodesInput } from '@/layers/features/chat/ui/status/status-item-nodes';
 import type { RuntimeChipState } from '@/layers/features/status';
 
@@ -80,9 +84,42 @@ const USAGE_WARNING: UsageStatus = {
   state: 'warning',
 };
 
-const SUBAGENTS: SubagentInfo[] = [
-  { name: 'Explore', description: 'Read-only search agent' },
-  { name: 'code-reviewer', description: 'Reviews completed work' },
+const USAGE_EXHAUSTED: UsageStatus = {
+  kind: 'subscription',
+  utilization: 1,
+  windowLabel: '5-hour window',
+  costUsd: 9.84,
+  state: 'exhausted',
+};
+
+/**
+ * Two subagents mid-flight. The item counts what is RUNNING, not what the runtime
+ * could call — a catalogue never changes, so counting it says nothing (DOR-462).
+ */
+const RUNNING_SUBAGENTS: ActiveSubagent[] = Array.from({ length: 12 }, (_, i) => ({
+  taskId: `task-${i}`,
+  status: 'running' as const,
+  description: `Explore the ${i}th call site`,
+  toolUses: i,
+  lastToolName: 'Grep',
+}));
+
+/** Kept only so the shape above stays readable beside a hand-written example. */
+const _EXAMPLE_SUBAGENT_SHAPE: ActiveSubagent[] = [
+  {
+    taskId: 'task-explore-1',
+    status: 'running',
+    description: 'Search the codebase for status-line callers',
+    toolUses: 7,
+    lastToolName: 'Grep',
+  },
+  {
+    taskId: 'task-review-1',
+    status: 'running',
+    description: 'Review the budget change',
+    toolUses: 2,
+    lastToolName: 'Read',
+  },
 ];
 
 const HEALTHY_STATUS: SessionStatusData = {
@@ -167,8 +204,8 @@ const DEGRADED_DIAGNOSTICS: SessionDiagnostics = {
   lastEventAt: null,
   queueDepth: 2,
   subagents: [],
-  activeSubagents: [],
-  runningSubagentCount: 0,
+  activeSubagents: RUNNING_SUBAGENTS,
+  runningSubagentCount: RUNNING_SUBAGENTS.length,
   clientVersion: '0.57.0',
 };
 
@@ -187,7 +224,7 @@ export const HEALTHY: StatusScenario = {
     permissionMode: 'default',
     runtime: { isDefault: true, canSelect: false },
     usage: USAGE_OK,
-    subagentCount: 0,
+    subagentsInFlight: 0,
   },
   input: {
     sessionId: 'showcase-healthy',
@@ -204,7 +241,7 @@ export const HEALTHY: StatusScenario = {
     compact: null,
     usage: USAGE_OK,
     supportsCostTracking: true,
-    subagents: [],
+    runningSubagents: [],
     connectionState: 'connected',
   },
   diagnostics: HEALTHY_DIAGNOSTICS,
@@ -214,7 +251,7 @@ export const HEALTHY: StatusScenario = {
  * Everything going wrong at once — the state the width budget exists for. The
  * live link is down, the context window is nearly full, permissions are bypassed,
  * the runtime is not the default, the tree is dirty on a feature branch, usage is
- * near its ceiling, and two subagents are available.
+ * near its ceiling, and two subagents are still running.
  */
 export const DEGRADED: StatusScenario = {
   label: 'Degraded — connection lost, context critical, bypass permissions, non-default runtime',
@@ -226,7 +263,7 @@ export const DEGRADED: StatusScenario = {
     permissionMode: 'bypassPermissions',
     runtime: { isDefault: false, canSelect: false },
     usage: USAGE_WARNING,
-    subagentCount: SUBAGENTS.length,
+    subagentsInFlight: RUNNING_SUBAGENTS.length,
   },
   input: {
     sessionId: 'showcase-degraded',
@@ -243,7 +280,7 @@ export const DEGRADED: StatusScenario = {
     compact: null,
     usage: USAGE_WARNING,
     supportsCostTracking: true,
-    subagents: SUBAGENTS,
+    runningSubagents: RUNNING_SUBAGENTS,
     connectionState: 'disconnected',
   },
   diagnostics: DEGRADED_DIAGNOSTICS,
@@ -272,6 +309,68 @@ export const DEGRADED_ON_DEFAULT: StatusScenario = {
     model: 'claude-opus-4-6',
     effort: null,
   },
+};
+
+/**
+ * Rate-limited: the connection is down, the window is nearly full, and the
+ * subscription has hit its ceiling — with permissions left at their default.
+ *
+ * That last detail is the whole point of having this scenario as well as
+ * {@link DEGRADED}. Severity puts `connection` (100), `context` (90) and `usage`
+ * (80) at the top, so those three are exactly what a three-slot budget draws —
+ * whereas DEGRADED's `bypassPermissions` (70) outranks a usage *warning* (50) and
+ * pushes the usage item under the `⋯`, where its width can never be wrong. The
+ * usage item is the one that shipped unable to shrink or be shrunk (DOR-461
+ * review), and this is the row that puts it on screen beside its neighbours.
+ */
+export const RATE_LIMITED: StatusScenario = {
+  label: 'Rate limited — connection lost, context critical, subscription exhausted',
+  ctx: {
+    ...DEGRADED.ctx,
+    permissionMode: 'default',
+    usage: USAGE_EXHAUSTED,
+  },
+  input: {
+    ...DEGRADED.input,
+    sessionId: 'showcase-rate-limited',
+    status: { ...DEGRADED_STATUS, permissionMode: 'default' },
+    usage: USAGE_EXHAUSTED,
+  },
+  diagnostics: {
+    ...DEGRADED_DIAGNOSTICS,
+    permissionMode: 'default',
+    usage: USAGE_EXHAUSTED,
+  },
+};
+
+/**
+ * A turn that has delegated work, with one number beside it.
+ *
+ * The row where the subagents item is actually drawn: two rigid items is the most
+ * the right cluster accepts, so a session that is also rate-limited pushes this
+ * one under the `⋯` (see `MAX_RIGID_ITEMS`). Twelve running on purpose — a
+ * two-digit count is the case that can be drawn wrong, and was: squeezed to its
+ * floor it rendered `1`, with the ellipsis clipped off, reading as one subagent
+ * out of twelve (DOR-461 review).
+ */
+export const DELEGATING: StatusScenario = {
+  label: 'Delegating — a nearly-full window and twelve subagents running',
+  ctx: {
+    ...DEGRADED.ctx,
+    connectionState: 'connected',
+    permissionMode: 'default',
+    runtime: { isDefault: true, canSelect: false },
+    usage: USAGE_OK,
+  },
+  input: {
+    ...DEGRADED.input,
+    sessionId: 'showcase-delegating',
+    status: { ...DEGRADED_STATUS, permissionMode: 'default' },
+    runtimeChip: DEFAULT_RUNTIME_CHIP,
+    usage: USAGE_OK,
+    connectionState: 'connected',
+  },
+  diagnostics: { ...DEGRADED_DIAGNOSTICS, connectionState: 'connected', usage: USAGE_OK },
 };
 
 /**

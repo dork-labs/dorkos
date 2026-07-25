@@ -78,12 +78,46 @@ const TIER_FULL_MIN_PX = 640;
 const TIER_COMPACT_MIN_PX = 440;
 const TIER_IDENTITY_MIN_PX = 340;
 
-/** Right-cluster slots at each tier. Three at `identity`: two problems plus one item of context. */
-const BUDGET_COMPACT = 4;
+/**
+ * Right-cluster slots at each tier. Three at `identity`: two problems plus one
+ * item of context.
+ *
+ * `compact` is three as well, and getting there took three attempts and a
+ * retraction. It was cut to three once on the argument that four never fitted,
+ * which turned out to be hiding an item that could neither shrink nor be shrunk
+ * (`UsageStatusItem`); with that fixed, four measured clean and the cut was
+ * reverted. It is three again now for a reason that survives measurement: at the
+ * 438px floor a fourth item puts the cluster 8-16px past its box and the last
+ * one under the `⋯`, whichever item takes the slot and whatever floor the
+ * shrinkable ones are given. Three items plus their separators come to ~193px
+ * inside a ~245px cluster; four cannot be made to fit.
+ *
+ * `full` keeps four — measured clean at its own floor, and cutting it there buys
+ * no legibility (see {@link BUDGET_FULL_BASE}).
+ */
+const BUDGET_COMPACT = 3;
 const BUDGET_IDENTITY = 3;
 const BUDGET_AVATAR = 2;
 
-/** The `full` tier's floor — the spec's "4+", which grows with the width above it. */
+/**
+ * The `full` tier's floor — the spec's "4+", which grows with the width above it.
+ *
+ * This was briefly cut to three while fixing DOR-461, on the argument that the
+ * floor could not afford a fourth full-label item. Measurement says otherwise, and
+ * says something worse: the cut was hiding a broken item rather than paying for a
+ * real one. `UsageStatusItem` could neither shrink nor be shrunk, and three slots
+ * kept it under the `⋯` in the fixtures being measured; at four it came back into
+ * the visible set and painted over its neighbour. With that item fixed, four is
+ * overlap-free at every tier floor, so the reduction bought nothing it claimed to.
+ *
+ * Nor did it buy legibility. Measured on the crowded 640px row, four slots leave
+ * five values truncated and three slots leave five values truncated — the same
+ * five, 1.1x to 1.4x wider each (permission 41 → 58, connection 51 → 72, git
+ * 168 → 183). The pressure at that floor comes from the LEFT cluster
+ * (identity + directory + a 20-character branch is ~320px of a 630px content
+ * box), which no right-cluster count can relieve. Whole readings at the `full`
+ * floor are a density question, not a budget one.
+ */
 const BUDGET_FULL_BASE = 4;
 
 /**
@@ -156,11 +190,31 @@ function byUrgency(a: PromotedStatusItem, b: PromotedStatusItem): number {
 }
 
 /**
+ * How many items that refuse to shrink the right cluster will accept.
+ *
+ * The slot count rests on items being compressible — the module's opening
+ * argument is that a count only works while the things counted are about one
+ * size, and a shrinkable item makes that true by giving width back under
+ * pressure. A rigid item (see {@link StatusBarItemConfig.rigid}) cannot, so past
+ * a point the count is writing cheques the row cannot honour: measured at the
+ * 438px compact floor, a fourth slot holding a third rigid item put the cluster
+ * 16px over its box and the last item under the `⋯`.
+ *
+ * Two is what the narrowest tier that sells four slots can hold: ~102px of rigid
+ * content plus separators leaves room for a compressible item at its floor inside
+ * a ~190px cluster. The third is not lost — it is the honest part of the `+N`,
+ * where its number is still exact.
+ */
+const MAX_RIGID_ITEMS = 2;
+
+/**
  * Fit the promoted set into a measured budget.
  *
  * Slots are won by urgency but rendered in registry order: what survives is what
  * is most likely to be a real problem, while positions stay put as numbers cross
  * their thresholds — nothing shuffles under the finger that is reaching for it.
+ * Rigid items are taken in the same order and capped at {@link MAX_RIGID_ITEMS},
+ * so the one that gives way is always the least urgent of them.
  *
  * The left cluster is trimmed by density rather than by count, and those drops are
  * deliberately **not** counted in `overflow`. Saying less about where you are is
@@ -176,12 +230,14 @@ export function applyStatusBudget(
 ): BudgetedStatusLine {
   const dropped = new Set<StatusBarItemKey>(budget.dropped);
   const right = items.filter((item) => item.cluster === 'right');
-  const kept = new Set(
-    [...right]
-      .sort(byUrgency)
-      .slice(0, budget.rightBudget)
-      .map((item) => item.key)
-  );
+  const kept = new Set<StatusBarItemKey>();
+  let rigidKept = 0;
+  for (const item of [...right].sort(byUrgency)) {
+    if (kept.size >= budget.rightBudget) break;
+    if (item.rigid && rigidKept >= MAX_RIGID_ITEMS) continue;
+    if (item.rigid) rigidKept += 1;
+    kept.add(item.key);
+  }
 
   return {
     items: items.filter((item) =>

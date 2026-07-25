@@ -82,9 +82,65 @@ export function StatusLine({ items, trailing }: StatusLineProps) {
 }
 
 /**
+ * How much more width each step down the urgency order gives up.
+ *
+ * Steep on purpose. Flexbox shares a deficit in proportion to these factors, so a
+ * shallow gradient still takes a slice out of the most urgent item, which is the
+ * thing being fixed. At 8x per step the quietest item has given up essentially
+ * everything before the next one is asked for a pixel, which is the behaviour the
+ * budget's own ordering implies.
+ */
+const SHRINK_STEP = 8;
+
+/**
+ * The flex-shrink factor for one item, from its place in its cluster's urgency
+ * order: `1` for the loudest, `SHRINK_STEP` for the next, and so on down.
+ *
+ * @param item - The item being drawn.
+ * @param urgencyOrder - The cluster's item keys, most urgent first.
+ * @internal
+ */
+function shrinkFactorFor(item: PromotedStatusItem, urgencyOrder: readonly string[]): number {
+  return SHRINK_STEP ** Math.max(0, urgencyOrder.indexOf(item.key));
+}
+
+/**
  * One cluster of items. Separator placement is derived from position in the
  * *visible* list, so an item that hides and comes back can never reappear
  * carrying a leading separator.
+ *
+ * **Numbers keep their pixels; names give them up.** A wrapper is `min-w-0`, so a
+ * squeezed cluster pushes the squeeze into the item where a `truncate` turns it
+ * into an ellipsis — which is honest for a name (`Bypass permi…` is the same fact
+ * in fewer letters) and a lie for a number (`8…` is not 88%). So an item the
+ * registry marks {@link StatusBarItemConfig.rigid} is `shrink-0` instead: the row
+ * cannot squeeze it, and the deficit lands on the items that can honestly absorb
+ * it.
+ *
+ * **The least urgent item pays first.** Deciding who *may* shrink is only half the
+ * question; the other half is who actually does, and flexbox's default answer is
+ * "everyone at once, in proportion to their width". That inverted the whole
+ * design at the last step: measured at the 438px compact floor, `connection` —
+ * `Connection lost`, the loudest signal the line has at severity 100 — was cut to
+ * 24px, a glyph and a sliver, while `subagents` at severity 35 kept every pixel
+ * because it happened to be rigid. The budget picks by urgency and the layout
+ * then took the pixels back from the most urgent thing on the row.
+ *
+ * So each non-rigid item is handed a shrink factor from its rank in the cluster's
+ * own urgency order, {@link SHRINK_STEP}x per step down. The quietest item gives
+ * up its width first and the loudest gives up last — and what the quietest item
+ * gives up is always one tap away under the `⋯`. Severity is already on the item
+ * as data, so nothing new has to be plumbed to know this.
+ *
+ * Either way the item must be able to give up whatever the row asks of it, all
+ * the way down its own tree. One `display: block` wrapper without `min-w-0`
+ * anywhere in that chain, or one `shrink-0` on a part that could have given way,
+ * and a shrinkable item renders at full width inside a narrower box and paints
+ * over its neighbour — that is DOR-461, in three items. And a rigid item that the
+ * budget should have dropped overflows its *cluster* instead. Both are caught the
+ * same way, by `apps/e2e/tests/chat/status-line-fit.spec.ts`, which measures
+ * painted extents rather than the row's `scrollWidth` — an `overflow-hidden` row
+ * can never report its own overflow.
  *
  * @internal
  */
@@ -95,6 +151,10 @@ function StatusCluster({
   items: readonly PromotedStatusItem[];
   className?: string;
 }) {
+  // Loudest first. Ties keep registry order — the sort is stable, and the line's
+  // positions must not shuffle under the finger reaching for them.
+  const urgencyOrder = [...items].sort((a, b) => b.severity - a.severity).map((i) => i.key);
+
   return (
     <div className={cn('flex items-center gap-2', className)}>
       <AnimatePresence initial={false} mode="popLayout">
@@ -102,12 +162,41 @@ function StatusCluster({
           <motion.div
             key={item.key}
             data-testid={`status-item-${item.key}`}
+            // Published for the browser guard: an item whose value is a number
+            // must never be drawn partly, and a partly-drawn number is not an
+            // overlap, so the guard cannot infer this from geometry alone.
+            data-rigid={item.rigid ? 'true' : undefined}
             layout="position"
             initial={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
             animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
             exit={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
             transition={ITEM_TRANSITION}
-            className={cn('inline-flex min-w-0 items-center gap-2', TAP_TARGET)}
+            // A number, not a class: the factor is computed from this cluster's
+            // urgency order, and Tailwind cannot see a class name it did not read
+            // in the source.
+            style={item.rigid ? undefined : { flexShrink: shrinkFactorFor(item, urgencyOrder) }}
+            className={cn(
+              'inline-flex items-center gap-2',
+              // A floor, not `min-w-0`: the separator and the glyph inside the
+              // wrapper are `shrink-0`, so an item squeezed below them renders
+              // ~23px of content in a 0px box and paints into its neighbour — the
+              // very defect this file exists to prevent, reintroduced from the
+              // other end.
+              //
+              // 40px is measured, not derived, and it does not cover every item:
+              // `GitStatusItem` at full density carries an incompressible
+              // `· 12 changes` plus two ahead/behind groups, ~150px that this
+              // floor does not reserve. That is safe only because the gradient
+              // above never drives `git` near it (measured 96-180px), not because
+              // the number is right for it. CSS cannot express "the width of my
+              // own incompressible parts" — `min-width: auto` resolves to
+              // min-content, and a `truncate` child still contributes its full
+              // text to that, which for `white-space: nowrap` equals max-content
+              // — so the honest options were a per-item declaration or a
+              // measured floor with this caveat written down.
+              item.rigid ? 'shrink-0' : 'min-w-10',
+              TAP_TARGET
+            )}
           >
             {index > 0 && <StatusLineSeparator />}
             {item.node}

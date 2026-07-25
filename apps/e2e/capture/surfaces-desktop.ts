@@ -247,24 +247,18 @@ async function seedRightPanelSplit(page: Page, rightPct: number): Promise<void> 
 }
 
 /**
- * Canvas right-panel split (founder art direction: the document needs a
- * genuinely readable column, not a sliver — 58% ≈ 742px at the 1280px capture
+ * Canvas right-panel split (founder art direction: chat keeps the wider column,
+ * the document gets a genuinely readable one — 45% ≈ 576px at the 1280px capture
  * viewport).
  *
- * Widened from 45% after the Session tab (DOR-460) brought the /session tab
- * strip to six contributions: at 45% the strip's own `[data-slot=right-panel-
- * header]` scroller measured a 116px deficit (scrollWidth over clientWidth),
- * clipping the active Canvas tab's label with no visible scroll-fade cue — a
- * real product bug (the fade element renders per `edges.end`, but is not
- * visually perceptible against the active tab's own background). 58% is the
- * narrowest split with zero deficit (measured via a throwaway capture-side
- * probe, not a shots.ts registry change), so every tab shows in full. It also
- * lands the main content column at ~538px — inside the status line's
- * `compact` tier (440–640px) rather than skirting the `full` tier's 640px
- * floor, where DOR-461 lives — so this side-steps that bug too instead of
- * trading one visible defect for the other.
+ * This was 58% for one release, to dodge two product bugs rather than shoot them:
+ * the six-tab strip left the active Canvas tab's label clipped at 45% (DOR-471),
+ * and the composer's status line landed on the `full` tier's 640px floor where
+ * items painted over each other (DOR-461). Both are fixed — the strip now scrolls
+ * the selected tab into view, and no status item can render outside its own box —
+ * so the split is back where the art direction wanted it.
  */
-const CANVAS_PANEL_PCT = 58;
+const CANVAS_PANEL_PCT = 45;
 
 /** Drive the canvas open beside chat (shared by the still and the loop). */
 async function driveCanvasOpen(page: Page): Promise<void> {

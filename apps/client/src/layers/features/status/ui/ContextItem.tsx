@@ -48,9 +48,23 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
     severity === 'critical' ? 'text-red-500' : severity === 'warning' ? 'text-amber-500' : '';
   const showCompact = compact != null && displayPercent >= CONTEXT_ACTION_PERCENT;
 
+  // The percent never abbreviates. The registry marks this item `rigid`, so the
+  // row cannot squeeze it in the first place — and if it ever does, `88%` must
+  // still not degrade to `8…`, which is a different number rather than the same
+  // one in fewer letters (DOR-461 review). The Compact action beside it is a
+  // label, so that one may give way.
   const badge = (
-    <span className={cn('inline-flex shrink-0 items-center gap-1', colorClass)}>
-      <Layers className="size-(--size-icon-xs)" />
+    <span
+      // `aria-label`, not a wrapper: an extra box between the tooltip trigger and
+      // this one is another place for a stray `min-w-0` to squeeze the number.
+      aria-label={contextUsage ? 'Context window usage' : undefined}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1',
+        contextUsage && 'cursor-default',
+        colorClass
+      )}
+    >
+      <Layers className="size-(--size-icon-xs) shrink-0" />
       <span>{displayPercent}%</span>
     </span>
   );
@@ -76,13 +90,22 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="bg-secondary text-muted-foreground hover:text-foreground hover:bg-muted inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60"
+            // Shrinkable, though nothing squeezes it today: the registry marks
+            // this item rigid, so the row cannot compress the item at all and the
+            // label renders whole at every width. That is worth knowing rather
+            // than assuming — the percent plus this action is a 128px block that
+            // cannot give up a pixel, the largest single rigid demand in the row
+            // and the main reason `model` and `connection` are the ones paying at
+            // the `full` floor. The shrink stays because it is the honest fallback
+            // if that decision is ever revisited: a label may abbreviate, and the
+            // glyph alone is still a 44px target named by `aria-label`.
+            className="bg-secondary text-muted-foreground hover:text-foreground hover:bg-muted inline-flex min-w-0 shrink items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw
               aria-hidden="true"
               className={cn('size-(--size-icon-xs) shrink-0', compact.pending && 'animate-spin')}
             />
-            Compact
+            <span className="truncate">Compact</span>
           </motion.button>
         )}
       </AnimatePresence>
@@ -103,11 +126,7 @@ function ContextBreakdown({ usage, children }: { usage: ContextUsage; children: 
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex shrink-0 cursor-default" aria-label="Context window usage">
-          {children}
-        </span>
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">
         <div className="space-y-1.5">
           <div className="text-xs font-medium">

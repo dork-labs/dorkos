@@ -81,10 +81,12 @@ export function ConnectionItem({ connectionState, compact }: ConnectionItemProps
   return (
     <HoverCard openDelay={200}>
       <HoverCardTrigger asChild>
-        {/* Deliberately unnamed: `role="status"` is a live region, so a screen
-            reader announces the CONTENT. An `aria-label` here would have it read
-            the long label and then the short one. */}
-        <span className="flex min-w-0 cursor-default items-center gap-1.5 text-xs" role="status">
+        {/* No `role="status"`, and deliberately unnamed. The row itself is already
+            `aria-live="polite"` (see `StatusLine`), so a live region here would be
+            one inside another and could announce the same change twice; and an
+            `aria-label` would have a reader announce the long label and then the
+            short one it replaces. The hover card carries the full sentence. */}
+        <span className="flex min-w-0 cursor-default items-center gap-1.5 text-xs">
           <span
             className={cn(
               'size-1.5 shrink-0 rounded-full',

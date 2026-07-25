@@ -69,4 +69,14 @@ describe('GitStatusItem — workspace indicator', () => {
     render(<GitStatusItem data={{ error: 'not_git_repo' }} workspace={null} />);
     expect(screen.getByText('No repo')).toBeInTheDocument();
   });
+
+  it('keeps the workspace key and drops the rest below the widest tier', () => {
+    // The identity is why the item is there; the project and the change count are
+    // detail the tooltip and the Session panel already carry. Saying all of it made
+    // this the widest item in the line and squeezed its neighbours (DOR-461).
+    render(<GitStatusItem data={gitOk} workspace={workspace} compact />);
+    expect(screen.getByText('DOR-84')).toBeInTheDocument();
+    expect(screen.queryByText('· core')).not.toBeInTheDocument();
+    expect(screen.queryByText('· 3 changes')).not.toBeInTheDocument();
+  });
 });
