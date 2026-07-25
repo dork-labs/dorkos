@@ -42,13 +42,23 @@ Example: `260707-231643-fragment-based-changelog.md`.
 
 ## Fragment body
 
-No frontmatter. One or more [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) category
-headings — `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`,
-`### Security` — each followed by markdown bullets. One fragment may carry more than one
-category. Write bullets per the `writing-changelogs` skill: imperative, user-focused, with
-references like `(DOR-123)` or `(#42)` where they exist.
+Optional `covers:` frontmatter (see below), then one or more
+[Keep a Changelog](https://keepachangelog.com/en/1.0.0/) category headings: `### Added`,
+`### Changed`, `### Deprecated`, `### Removed`, `### Fixed`, `### Security`, each followed by
+markdown bullets. One fragment may carry more than one category. Write bullets per the
+`writing-changelogs` skill: imperative, user-focused, with references like `(DOR-123)` or
+`(#42)` where they exist.
 
+<!-- The double quotes below are load-bearing: verbatim what the post-commit hook writes.
+     Prettier rewrites quotes inside an embedded fence, hence the ignore. -->
+<!-- prettier-ignore -->
 ```markdown
+---
+covers:
+  - "feat(notify): Telegram notification on turn completion (DOR-123)"
+  - "fix(chat): drop of final streamed token (#42)"
+---
+
 ### Added
 
 - Get a Telegram message when your agent finishes a turn (DOR-123)
@@ -58,6 +68,94 @@ references like `(DOR-123)` or `(#42)` where they exist.
 - Stop dropping the final token of a streamed reply (#42)
 ```
 
+## `covers:` — which commits this fragment covers
+
+The PR check (`.claude/scripts/changelog_backfill.py --check`, run by the
+`changelog-fragment-check` workflow) has to answer one question: does every user-facing commit
+on this branch have a fragment? `covers:` is how a fragment answers it, as a plain statement of
+fact.
+
+This matters because the two things we ask of a fragment used to fight each other. A fragment's
+bullets are meant to be rewritten for a person, while commit subjects are developer shorthand.
+The check used to guess at coverage by comparing the two word for word, so polishing a bullet
+was the most common way to turn CI red. With `covers:` the two are independent: **rewrite the
+prose however you like, and leave the frontmatter alone.**
+
+Each item under `covers:` is one of three things, told apart by its shape:
+
+| Item           | Means                                           |
+| -------------- | ----------------------------------------------- |
+| `"feat(x): …"` | a commit, named by its exact subject line       |
+| `a1b2c3d`      | a commit, named by its SHA (7 to 40 characters) |
+| `"#412"`       | every commit in pull request 412                |
+
+Quote subjects and `#` items. A commit subject contains `: `, which YAML would otherwise read
+as a key, and `#` starts a YAML comment. A bare SHA needs no quotes.
+
+**You usually write none of this.** The `post-commit` hook fills in `covers:` with the commit's
+subject when it mints the fragment. Things worth knowing:
+
+- **One fragment, several commits.** List every subject. This is the normal shape for a feature
+  that landed over three commits and deserves one entry.
+- **A whole PR.** `- "#412"` covers every commit in PR 412. Use it when a PR is one change from
+  a user's point of view and splitting it per commit would be noise. Two things to know. Only
+  the CI run knows the PR number, so a local `--check` ignores `#` items: local runs are the
+  stricter ones. And a PR-level claim is never silent. The passing check names every commit that
+  rode in on it, because a blanket claim asserts those changes need no changelog prose at all.
+  If what you actually want is "this whole PR needs no changelog", the honest tool is the
+  `skip-changelog` label, not a blanket claim.
+- **The hook declares the subject, not the SHA,** because it amends the fragment into the commit
+  and that changes the commit's SHA. A commit can never contain its own SHA, and a rebase would
+  rewrite it anyway. Subjects survive both. Write a SHA yourself when you are covering a commit
+  that already exists.
+- **A squash-merge does not break a subject claim.** GitHub appends ` (#412)` when it squashes,
+  so a trailing PR reference is ignored on both sides of the comparison. The claim you wrote
+  before merging still matches the commit that landed.
+- **A stale declaration is not an error.** If nothing in `covers:` matches a commit on the
+  branch (after a rebase, say, or once the PR has merged and the fragment is waiting for
+  release), the fragment falls back to the old word-comparison behaviour. Declarations only ever
+  add coverage, so a stale one can never turn a passing check red.
+- **A fragment with no `covers:` still works.** Every fragment written before this existed keeps
+  passing on the word-comparison fallback.
+- **Do not claim a commit this check ignores.** Once any of a fragment's claims matches
+  something, that fragment stops falling back to word comparison. So a `covers:` line pointing
+  at a `chore:` or `docs:` commit quietly costs the fragment its fallback, and the change it was
+  really written for can end up reported as uncovered. The failure message calls this out when
+  it happens.
+- **A broken `covers:` block fails the check.** Get the delimiters wrong (no closing `---`, for
+  instance) and the claim lines land in the fragment body, where a raw commit subject would
+  match almost any similar commit and pass this check forever. So a malformed fragment is
+  refused outright, with the file name and what to correct, rather than guessed at. A
+  well-formed fragment starts on line 1 with `---`, then `covers:` and its items, then a closing
+  `---`, then the `### Category` body. See "who gets blamed" below for which run refuses it.
+
+When the check fails, it prints the commit it could not account for, the exact line to paste
+into an existing fragment, and the exact file and frontmatter for a new one. Follow it
+literally. If the change genuinely is not user-facing, label the PR `skip-changelog` instead.
+
+### Who gets blamed for a broken fragment
+
+The PR job asks two separate questions, on purpose, because they have different answers and
+different owners:
+
+| Question                                        | Scope                       | `skip-changelog`? |
+| ----------------------------------------------- | --------------------------- | ----------------- |
+| **Validity**: is each `covers:` block readable? | only fragments the PR wrote | no bypass         |
+| **Coverage**: is every commit claimed?          | the PR's whole commit range | bypassed          |
+
+A broken fragment is a defect whether or not your PR owes a changelog entry, so `skip-changelog`
+does not wave it through: its declaration gets ignored, meaning it claims nothing, so leaving it
+on main would hand the next author a red they cannot explain. Equally, a broken fragment
+someone else already merged is **not your problem**. The check only fails on fragments your own
+branch touched. A stray one is named as a `NOTE:` on the passing run, so it still gets noticed
+without charging you for it.
+
+**Locally, a bare `python3 .claude/scripts/changelog_backfill.py --check` (or `--validate`)
+deliberately checks everything on disk.** That is the stricter, more useful signal when you are
+the one looking. So if a local run flags a fragment you did not write, that is expected and CI
+will not repeat it: CI narrows validity to your diff. Note also that the narrowing compares
+committed state, so a fragment you have written but not yet committed reads as untouched.
+
 ## How fragments get created
 
 - **Automatically.** The `post-commit` hook (`.claude/git-hooks/changelog-populator.py`,
@@ -65,12 +163,15 @@ references like `(DOR-123)` or `(#42)` where they exist.
   conventional-commit subject: `feat:` → `### Added`, `fix:` → `### Fixed`,
   `refactor:`/`perf:` → `### Changed`. `docs:`/`style:`/`test:`/`build:`/`ci:`/`chore:`/
   `Merge`/`Revert` are skipped — not user-facing by default (hand-author a fragment when
-  such a change genuinely affects users). The fragment is written and staged into the same
-  commit; it dedupes so an amend or rebase never doubles an entry.
+  such a change genuinely affects users). It also fills in `covers:` with the commit's subject.
+  The fragment is written and staged into the same commit; it dedupes so an amend or rebase
+  never doubles an entry.
 - **By hand.** For anything the hook can't phrase well — or a change that spans multiple
   categories — write the fragment yourself. Curate the hook's fragment before opening a PR:
   rewrite it for a user, split or merge categories, add a reference. A good curated fragment
-  is worth more than a raw commit-subject line.
+  is worth more than a raw commit-subject line. Rewriting the prose is always safe; when you
+  merge two fragments into one, move the losing fragment's `covers:` items across so the
+  commits stay accounted for.
 
 **A PR with user-facing changes should include a fragment.** Never edit `CHANGELOG.md`'s
 `[Unreleased]` section — it no longer holds entries.
@@ -105,7 +206,8 @@ embed, and runs `capture:archive` for exactly those before the release commit.
 
 1. Collect all fragments, sorted by filename (chronological).
 2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed,
-   Security), merge every bullet from every fragment under a single heading.
+   Security), merge every bullet from every fragment under a single heading. `covers:`
+   frontmatter is build metadata for the PR check: it never reaches `CHANGELOG.md`.
 3. Write that as `## [X.Y.Z] - YYYY-MM-DD` at the top of `CHANGELOG.md`.
 4. Delete the compiled fragment files in the release commit.
 5. Keep the 10 most recent versions in `CHANGELOG.md`; move any older section (with its

@@ -194,7 +194,7 @@ Calculate the next version directly from the current VERSION and proceed to Phas
 
 Agent prompt — instruct it to:
 
-1. Read every fragment in `changelog/unreleased/` (each file holds one or more `### Category` sections with bullets), noting which categories have content across all fragments.
+1. Read every fragment in `changelog/unreleased/` (each file holds one or more `### Category` sections with bullets, optionally preceded by `covers:` frontmatter that is PR-check metadata, never changelog content), noting which categories have content across all fragments.
 2. Run `git log [last_tag]..HEAD --oneline`; count commits by conventional type; look for `BREAKING CHANGE` / `!` markers.
 3. Apply detection rules — **MAJOR**: changelog contains "Breaking" or `### Removed` has content, or commits have breaking markers. **MINOR**: `### Added` has content or `feat:` commits exist. **PATCH**: only fixes/chores/docs.
 4. Rewrite each changelog entry to be user-friendly (what users can DO, imperative verbs, benefits — e.g. "Open files in Obsidian without manual vault setup", not "Add obsidian_manager.py for auto vault registration").
@@ -310,7 +310,7 @@ Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) an
 Compile every fragment in `changelog/unreleased/` into a new version section (see `changelog/README.md` for the semantics):
 
 1. Collect all fragments, sorted by filename (chronological).
-2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed, Security), merge every bullet from every fragment under a single `### Category` heading.
+2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed, Security), merge every bullet from every fragment under a single `### Category` heading. **Never compile a fragment's `covers:` frontmatter** — it declares which commits the fragment covers for the PR check and is not changelog content.
 3. Insert that as `## [X.Y.Z] - YYYY-MM-DD` (today's date) directly below the `## [Unreleased]` note at the top of `CHANGELOG.md`. Leave the `## [Unreleased]` heading + its "add a fragment" HTML comment in place.
 4. **Delete the compiled fragment files** (`git rm changelog/unreleased/*.md`) so `changelog/unreleased/` holds only `.gitkeep`.
 5. **Refresh the `[Unreleased]` link-reference** at the bottom of `CHANGELOG.md` to point at the new release: `[Unreleased]: https://github.com/dork-labs/dorkos/compare/vX.Y.Z...HEAD`.

@@ -35,9 +35,12 @@ A PR with user-facing changes must include a **changelog fragment** under
 `changelog/unreleased/` — one file per change (`<YYMMDD-HHMMSS>-<slug>.md`; see
 `changelog/README.md`). The `post-commit` hook usually writes one from your commit subject;
 **verify it exists and curate it** (rewrite for a user, fix the category, add a `(#PR)` ref)
-before opening the PR. Write one by hand if the hook skipped it or phrased it poorly. **Do
-NOT edit `CHANGELOG.md`'s `[Unreleased]` section** — it no longer holds entries; only
-`/system:release` writes `CHANGELOG.md`.
+before opening the PR. Rewriting the prose is always safe: the PR check reads the fragment's
+`covers:` frontmatter, not its wording. Write one by hand if the hook skipped it or phrased it
+poorly, and give it a `covers:` line naming the commit. If you merge two fragments into one,
+move the losing fragment's `covers:` items across. **Do NOT edit `CHANGELOG.md`'s
+`[Unreleased]` section** — it no longer holds entries; only `/system:release` writes
+`CHANGELOG.md`.
 
 ## Opening the PR
 
