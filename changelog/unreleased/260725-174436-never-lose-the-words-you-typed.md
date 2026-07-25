@@ -3,6 +3,7 @@ covers:
   - 'fix(chat): never lose the words you typed in the composer (DOR-480)'
   - 'fix(chat): close the last ways a composer message could still be lost (DOR-480)'
   - 'fix(chat): a command typed into the queue runs instead of stranding it (DOR-480)'
+  - 'fix(chat): a queued /rename always settles, even if the composer goes away (DOR-480)'
 ---
 
 ### Fixed

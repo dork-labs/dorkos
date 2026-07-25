@@ -74,6 +74,38 @@ describe('useNativeCommands', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Renamed session to "Foo"'));
   });
 
+  it('settles /rename even when the composer unmounts before the mutation lands', async () => {
+    // React Query drops a mutation's PER-CALL onSuccess/onError if the component
+    // unmounts first. Building `confirmed` from those left a queued `/rename`
+    // neither restored nor confirmed — permanent limbo, holding its restore
+    // closure forever (DOR-480). The mutation's own promise always settles.
+    // Under the per-call implementation this assertion never resolves at all.
+    const { result, unmount } = setup('s1', '/repo');
+    let confirmed: Promise<boolean> | undefined;
+    act(() => {
+      const outcome = result.current.tryRun('/rename Foo');
+      if (outcome.handled) confirmed = outcome.confirmed;
+    });
+    expect(confirmed).toBeInstanceOf(Promise);
+
+    unmount();
+
+    await expect(confirmed).resolves.toBe(true);
+  });
+
+  it('reports a failed /rename as not confirmed rather than leaving it pending', async () => {
+    vi.mocked(transport.updateSession).mockRejectedValue(new Error('boom'));
+    const { result } = setup('s1', '/repo');
+    let confirmed: Promise<boolean> | undefined;
+    act(() => {
+      const outcome = result.current.tryRun('/rename Foo');
+      if (outcome.handled) confirmed = outcome.confirmed;
+    });
+
+    // `false`, never a rejection — the caller's undo runs off a resolved value.
+    await expect(confirmed).resolves.toBe(false);
+  });
+
   it('only shows the success toast after the rename succeeds, never on a failure', async () => {
     // Finding 2/7: the success toast moved into the mutation's onSuccess. A
     // rejected updateSession rolls the title back and surfaces an error toast —

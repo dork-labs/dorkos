@@ -195,9 +195,17 @@ export function useSessionSubmit({
             opts.restoreQueued?.();
           } else if (native.confirmed && opts.restoreQueued) {
             const restoreQueued = opts.restoreQueued;
-            void native.confirmed.then((accepted) => {
-              if (!accepted) restoreQueued();
-            });
+            // The rejection arm is not defensive padding: without it "never
+            // rejects" is a convention two producers happen to honour rather
+            // than something the call site can rely on. Treating an unexpected
+            // rejection as "not confirmed" is also the right default — it puts
+            // the message back instead of silently eating it.
+            void native.confirmed.then(
+              (accepted) => {
+                if (!accepted) restoreQueued();
+              },
+              () => restoreQueued()
+            );
           }
           if (clearInput && native.ran) setInput('');
           return;

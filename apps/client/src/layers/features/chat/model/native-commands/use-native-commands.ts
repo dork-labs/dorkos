@@ -50,7 +50,15 @@ export type NativeCommandResult =
        * race this whole change is about (DOR-480). A caller holding an undo
        * (the queue's `restore`) must settle it on this, not on `ran` alone.
        * Absent for commands that finish synchronously, where `ran` is the whole
-       * answer. Never rejects.
+       * answer. Never rejects, and always settles — including when the composer
+       * unmounts first, which is why it must come from the action's own promise
+       * rather than from a per-call React Query callback.
+       *
+       * OBLIGATION for anyone adding an executor: if its action outlives
+       * `tryRun` — a request, a mutation, anything awaited — it MUST set this.
+       * Nothing in the type system enforces that; omitting it silently reverts
+       * the queue to treating "dispatch started" as "message delivered", which
+       * is the exact bug this field exists to close.
        */
       confirmed?: Promise<boolean>;
     };
@@ -138,7 +146,7 @@ export function useNativeCommands(
   sessionId: string | null,
   deps: NativeCommandDeps = {}
 ) {
-  const { mutate: renameMutate } = useRenameSession(cwd);
+  const { mutateAsync: renameMutate } = useRenameSession(cwd);
   const transport = useTransport();
   const { startFreshSession, compact } = deps;
 
@@ -187,23 +195,23 @@ export function useNativeCommands(
         sessionId,
         renameSession: (title) => {
           if (!sessionId) return; // guarded by the executor; narrows the type here
-          // Confirm only on success: the shared rename capability rolls the
-          // title back and shows an error toast on failure, so firing the
-          // success toast optimistically would double-toast a failed rename.
-          // These per-call callbacks run ALONGSIDE the mutation's own (which
-          // owns the rollback + failure toast); they only settle `confirmed`.
-          confirmed = new Promise<boolean>((resolve) => {
-            renameMutate(
-              { sessionId, title },
-              {
-                onSuccess: () => {
-                  toast.success(`Renamed session to "${title}"`);
-                  resolve(true);
-                },
-                onError: () => resolve(false),
-              }
-            );
-          });
+          // Settle from the MUTATION's own promise, not from per-call
+          // `onSuccess`/`onError`: React Query drops those when the component
+          // unmounts before the mutation lands, so a queued `/rename` whose
+          // composer went away was left neither restored nor confirmed —
+          // permanent limbo, holding its `restoreQueued` closure forever
+          // (DOR-480). `mutateAsync`'s promise is the mutation's own and always
+          // settles. The rejection arm is what makes this safe to leave
+          // unawaited. Confirm the toast only on success: the shared rename
+          // capability already rolls the title back and toasts on failure, so
+          // an optimistic success toast would double-toast a failed rename.
+          confirmed = renameMutate({ sessionId, title }).then(
+            () => {
+              toast.success(`Renamed session to "${title}"`);
+              return true;
+            },
+            () => false
+          );
         },
         notify: (message, kind) =>
           kind === 'error' ? toast.error(message) : toast.success(message),
