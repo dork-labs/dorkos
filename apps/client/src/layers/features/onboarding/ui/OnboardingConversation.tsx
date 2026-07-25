@@ -247,7 +247,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
                     {DORKBOT_ONBOARDING_LINES.saveError}
                   </p>
                 )}
-                <div className="flex justify-center">
+                <div className="flex flex-wrap justify-center gap-2">
                   <Button
                     size="sm"
                     onClick={() => convo.confirmPersonality(traits)}
@@ -255,6 +255,18 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
                     data-testid="confirm-personality"
                   >
                     {confirmLabel}
+                  </Button>
+                  {/* Per-beat skip, mirroring the discovery beat's "Not now":
+                      moves on one beat without saving traits. Disabled while a
+                      save is in flight so both paths can't advance at once. */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={convo.skipPersonality}
+                    disabled={convo.saving}
+                    data-testid="skip-personality"
+                  >
+                    Skip this step
                   </Button>
                 </div>
               </div>

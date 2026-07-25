@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import type { RuntimeConnectSlot } from '@/layers/entities/runtime';
 import { useOnboarding } from '../model/use-onboarding';
 import { useOnboardingStage } from '../model/use-onboarding-stage';
@@ -26,7 +27,9 @@ interface OnboardingFlowProps {
  * personality and looks around with the user, then dissolves into a real session
  * on the user's first message. There is no finish screen.
  *
- * @param onComplete - Called when onboarding finishes (dissolve or skip).
+ * @param onComplete - Called when onboarding ends: the conversation dissolves
+ *   into a real session, or the user leaves setup entirely. Skipping a single
+ *   step stays inside the flow and never calls this.
  * @param renderRuntimeConnect - App-shell slot for the terminal-free connect flow.
  */
 export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingFlowProps) {
@@ -43,8 +46,15 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
     startOnboarding();
   }, [startOnboarding]);
 
+  // Leaving setup entirely. Skipping a single step never lands here — each beat
+  // skips itself (DOR-472). The toast is the way back: `dismiss()` hides the
+  // flow and the getting-started card for good, so without it a person who
+  // leaves has no visible route back in.
   const handleSkipAll = useCallback(async () => {
     await dismiss();
+    toast('Setup skipped', {
+      description: 'You can walk through it again from Settings → Preferences.',
+    });
     onComplete();
   }, [dismiss, onComplete]);
 
@@ -60,7 +70,7 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
     return (
       <div className="bg-background h-full w-full overflow-y-auto">
         <div className="flex min-h-full w-full items-center justify-center p-4">
-          <WelcomeStep onGetStarted={goToRequirements} onSkip={handleSkipAll} />
+          <WelcomeStep onGetStarted={goToRequirements} onSkipAll={handleSkipAll} />
         </div>
       </div>
     );
@@ -81,7 +91,7 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
 
   return (
     <div className="bg-background flex h-full w-full flex-col">
-      <OnboardingNavBar onBack={backToRequirements} onSkip={handleSkipAll} />
+      <OnboardingNavBar onBack={backToRequirements} onSkipAll={handleSkipAll} />
       <div className="min-h-0 flex-1">
         <OnboardingConversation onComplete={onComplete} />
       </div>

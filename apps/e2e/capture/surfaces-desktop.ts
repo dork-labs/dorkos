@@ -529,58 +529,39 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
 }
 
 /**
- * Drive the onboarding wizard to the agent-discovery step and let the real
+ * Drive the onboarding conversation to the agent-discovery beat and let the real
  * unified scanner sweep the seeded projects tree until the mixed-harness
  * candidates are on screen. Requires onboarding to be un-dismissed first.
  *
- * KNOWN BROKEN as of DOR-460/DOR-459 (2026-07-25): reaching Discovery requires
- * a rewrite this pass didn't take on, so `agent-discovery` currently records
- * via a local, uncommitted override of the last-known-good asset rather than
- * a real capture. Left broken deliberately rather than patched around:
+ * Two things shape this drive, both from the conversational redesign
+ * (ADR 260722-111314/111315) that left it broken between DOR-460 and DOR-472:
  *
- * - The Requirements step's ready-state CTA now reads "Meet DorkBot" (its
- *   `onboarding-get-started` testid predates that copy) — fixed below.
- * - Past Requirements, onboarding is no longer a step wizard but a scripted
- *   DorkBot conversation (ADR 260722-111314): the nav bar's only control is
- *   "Skip setup", which now calls `dismiss()` and exits onboarding entirely
- *   (verified live) — there is no more per-step skip to jump past the
- *   conversation into Discovery.
- * - Discovery is now an inline beat *inside* that conversation, gated behind
- *   confirming DorkBot's personality first (the `confirm-personality` CTA,
- *   `OnboardingConversation.tsx`). That confirm is a real, non-idempotent
- *   write of DorkBot's traits — the same write the pre-redesign comment here
- *   warned wrote "under the DorkOS home, outside the capture-world boundary."
- *   Nothing in this pass confirmed that write is confined to the sandboxed
- *   `DORK_HOME` in the current code path, and given the scan-boundary privacy
- *   incident this skill's Staging Knobs section already documents, driving
- *   through it speculatively is the wrong call. Fix by either confirming that
- *   write is sandbox-safe and scripting the personality beat here, or adding a
- *   dedicated skip-to-Discovery seam for capture, not by guessing.
+ * - **It routes past the personality beat by skipping it, never by confirming
+ *   it.** DOR-472 gave that beat a real "Skip this step" control
+ *   (`skip-personality`), which advances one beat and — unlike
+ *   `confirm-personality` — writes no traits. So this drive never touches
+ *   DorkBot's on-disk manifest, the write whose confinement to the sandboxed
+ *   `DORK_HOME` was never confirmed and which is why the previous pass refused
+ *   to drive through here.
+ * - **Discovery is consent-first**, so the scan starts on "Sure, look around",
+ *   not on arrival at the beat.
+ *
+ * Verified in a real browser through the consent chips (DOR-472). The candidate
+ * wait after consent is the pre-redesign recipe, carried forward unchanged: it
+ * depends on the seeded `DISCOVERY_PROJECTS` tree, not on the flow. If it ever
+ * times out, `attempt` records the failure and the shot keeps its last asset.
  */
 async function driveOnboardingDiscovery(page: Page): Promise<void> {
   // With onboarding un-dismissed the wizard replaces the app shell entirely,
   // so the boot signal is the welcome screen itself.
   await page.goto(url('/'));
   await page.getByText('Get Started', { exact: true }).first().click({ timeout: WAIT_MS });
+  // The ready-state CTA reads "Meet DorkBot"; its testid predates that copy.
   await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
-  // Everything past this point is the broken span described above. Fail fast
-  // rather than driving into it: "Skip setup" dismisses the whole flow (DOR-472),
-  // so the candidate-card wait below can only ever time out, and it would burn a
-  // full WAIT_MS on each of this drive's two callers (still + loop) before
-  // reporting a failure that is already known to be deterministic.
-  //
-  // The two lines the fix needs are kept here, unreachable, so whoever closes
-  // DOR-472 has the recipe rather than having to rediscover it:
-  //
-  //   await page.getByText('Skip setup', { exact: true }).first().click({ timeout: WAIT_MS });
-  //   await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
-  //   await sleep(800); // let the remaining candidate cards animate in
-  throw new Error(
-    'agent-discovery drive is known-broken: "Skip setup" dismisses the whole onboarding ' +
-      'flow instead of one step (DOR-472), and Discovery now sits behind a real DorkBot ' +
-      'personality save whose sandbox safety is unverified. This shot carries forward its ' +
-      'last-known-good asset. See the block comment above this function.'
-  );
+  await page.getByTestId('skip-personality').click({ timeout: WAIT_MS });
+  await page.getByText('Sure, look around', { exact: true }).click({ timeout: WAIT_MS });
+  await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
+  await sleep(800); // let the remaining candidate cards animate in
 }
 
 /**

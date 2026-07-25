@@ -33,10 +33,16 @@ vi.mock('../ui/SystemRequirementsStep', () => ({
 }));
 
 vi.mock('../ui/WelcomeStep', () => ({
-  WelcomeStep: ({ onGetStarted, onSkip }: { onGetStarted: () => void; onSkip: () => void }) => (
+  WelcomeStep: ({
+    onGetStarted,
+    onSkipAll,
+  }: {
+    onGetStarted: () => void;
+    onSkipAll: () => void;
+  }) => (
     <div data-testid="welcome-step">
       <button onClick={onGetStarted}>Get Started</button>
-      <button onClick={onSkip}>Skip setup welcome</button>
+      <button onClick={onSkipAll}>Skip all setup welcome</button>
     </div>
   ),
 }));
@@ -145,14 +151,16 @@ describe('OnboardingFlow', () => {
     expect(await screen.findByTestId('welcome-step')).toBeTruthy();
   });
 
-  it('the conversation nav bar has Back and Skip setup, and no step dots', async () => {
+  it('the conversation nav bar names its whole-flow exit honestly, and has no step dots', async () => {
     await renderFlow('/');
     fireEvent.click(screen.getByText('Get Started'));
     fireEvent.click(await screen.findByText('Continue'));
     await screen.findByTestId('conversation');
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Skip setup' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Skip all setup' })).toBeTruthy();
+    // The ambiguous wordings that read as "skip this step" (DOR-472) are gone.
     expect(screen.queryByText('Skip', { exact: true })).toBeNull();
+    expect(screen.queryByText('Skip setup', { exact: true })).toBeNull();
   });
 
   it('the in-UI Back pops the forward push (no phantom history entry)', async () => {
@@ -185,21 +193,21 @@ describe('OnboardingFlow', () => {
     expect(harness.actions).not.toContain('BACK');
   });
 
-  it('Skip setup in the conversation dismisses and completes', async () => {
+  it('Skip all setup in the conversation dismisses and completes', async () => {
     const onComplete = vi.fn();
     await renderFlow('/', onComplete);
     fireEvent.click(screen.getByText('Get Started'));
     fireEvent.click(await screen.findByText('Continue'));
     await screen.findByTestId('conversation');
-    fireEvent.click(screen.getByRole('button', { name: 'Skip setup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Skip all setup' }));
     expect(mockDismiss).toHaveBeenCalled();
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
   });
 
-  it('Skip setup on welcome dismisses and completes', async () => {
+  it('Skip all setup on welcome dismisses and completes', async () => {
     const onComplete = vi.fn();
     await renderFlow('/', onComplete);
-    fireEvent.click(screen.getByText('Skip setup welcome'));
+    fireEvent.click(screen.getByText('Skip all setup welcome'));
     expect(mockDismiss).toHaveBeenCalled();
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
   });

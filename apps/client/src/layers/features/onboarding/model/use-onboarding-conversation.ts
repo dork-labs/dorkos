@@ -167,6 +167,11 @@ export interface OnboardingConversation {
   fastForward: () => void;
   /** Save the chosen traits and advance; surfaces `saveError` on failure. */
   confirmPersonality: (traits: Traits) => void;
+  /**
+   * Skip the personality beat: keep DorkBot's default voice (no traits are
+   * written) and advance one beat, to discovery.
+   */
+  skipPersonality: () => void;
   /** Consent to the discovery scan (the caller starts the actual scan). */
   consentDiscovery: () => void;
   /** Decline the scan and move on. */
@@ -248,6 +253,19 @@ export function useOnboardingConversation(
       .catch(() => dispatch({ type: 'save-error' }));
   }, []);
 
+  // Skipping is a per-beat move, not an exit: nothing is saved, the step is
+  // recorded as skipped, and the conversation carries on at the next beat. The
+  // caller disables this while a save is in flight so the two paths can't both
+  // advance out of the personality beat.
+  const skipPersonality = useCallback(() => {
+    portsRef.current.skipStep('meet-dorkbot');
+    dispatch({
+      type: 'goto-beat',
+      beatId: 'discovery',
+      extraLines: [DORKBOT_ONBOARDING_LINES.personalitySkip],
+    });
+  }, []);
+
   const consentDiscovery = useCallback(() => dispatch({ type: 'discovery-scanning' }), []);
 
   const declineDiscovery = useCallback(() => {
@@ -309,6 +327,7 @@ export function useOnboardingConversation(
     beginConversation,
     fastForward,
     confirmPersonality,
+    skipPersonality,
     consentDiscovery,
     declineDiscovery,
     reportDiscoveryResults,

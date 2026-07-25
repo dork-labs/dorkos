@@ -69,6 +69,42 @@ describe('useOnboardingConversation', () => {
     expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.discoveryPrompt);
   });
 
+  it('skipping personality advances one beat without writing traits (DOR-472)', async () => {
+    const ports = makePorts();
+    const { result } = renderHook(() => useOnboardingConversation(ports));
+    act(() => result.current.beginConversation());
+    await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
+
+    act(() => result.current.skipPersonality());
+
+    // One beat forward, not out of the conversation.
+    await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
+    expect(result.current.beatId).toBe('discovery');
+    expect(ports.saveTraits).not.toHaveBeenCalled();
+    expect(ports.completeStep).not.toHaveBeenCalled();
+    expect(ports.skipStep).toHaveBeenCalledWith('meet-dorkbot');
+    expect(ports.completeOnboarding).not.toHaveBeenCalled();
+    expect(ports.onDissolve).not.toHaveBeenCalled();
+    expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.personalitySkip);
+    expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.discoveryPrompt);
+  });
+
+  it('skipping both beats in turn reaches the handoff (never an exit)', async () => {
+    const ports = makePorts();
+    const { result } = renderHook(() => useOnboardingConversation(ports));
+    act(() => result.current.beginConversation());
+    await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
+
+    act(() => result.current.skipPersonality());
+    await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
+    act(() => result.current.declineDiscovery());
+
+    await waitFor(() => expect(result.current.beatId).toBe('handoff'));
+    expect(result.current.composerEnabled).toBe(true);
+    expect(ports.completeOnboarding).toHaveBeenCalledTimes(1);
+    expect(ports.onDissolve).not.toHaveBeenCalled();
+  });
+
   it('surfaces a save error and does not advance when saving fails', async () => {
     const ports = makePorts({ saveTraits: vi.fn().mockRejectedValue(new Error('nope')) });
     const { result } = renderHook(() => useOnboardingConversation(ports));

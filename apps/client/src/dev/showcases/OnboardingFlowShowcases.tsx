@@ -191,11 +191,11 @@ function WelcomeStepShowcase() {
   return (
     <PlaygroundSection
       title="WelcomeStep"
-      description="Initial welcome screen with word-by-word heading animation, preview items, and Get Started / Skip actions."
+      description="Initial welcome screen with word-by-word heading animation, preview items, and Get Started / Skip all setup actions."
     >
       <ShowcaseDemo responsive>
         <div className="flex min-h-[400px] items-center justify-center">
-          <WelcomeStep onGetStarted={noop} onSkip={noop} />
+          <WelcomeStep onGetStarted={noop} onSkipAll={noop} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -208,10 +208,10 @@ function OnboardingNavBarShowcase() {
   return (
     <PlaygroundSection
       title="OnboardingNavBar"
-      description="The conversation's slim nav bar — Back to the ready gate and Skip setup. No step dots (a conversation is not a dotted wizard)."
+      description="The conversation's slim nav bar — Back to the ready gate and Skip all setup (the whole-flow exit; single steps skip themselves). No step dots (a conversation is not a dotted wizard)."
     >
       <ShowcaseDemo>
-        <OnboardingNavBar onBack={noop} onSkip={noop} />
+        <OnboardingNavBar onBack={noop} onSkipAll={noop} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );
