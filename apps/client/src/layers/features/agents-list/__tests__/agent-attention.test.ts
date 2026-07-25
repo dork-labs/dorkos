@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   ATTENTION_GROUP_DISPLAY,
   ATTENTION_GROUP_ORDER,
+  ONBOARDING_GRACE_MS,
   compareAgentAttention,
+  isPastOnboardingGrace,
   resolveAgentAttention,
   sortAgentsByAttention,
   type AgentAttentionRow,
@@ -12,20 +14,50 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** A quiet agent: seen yesterday, no schedule, no sessions. */
+/** A quiet agent: seen yesterday, no schedule, no chats, long since registered. */
 function agent(overrides: Partial<AgentAttentionRow> = {}): AgentAttentionRow {
   return {
     name: 'agent',
     healthStatus: 'inactive',
     lastSeenAt: '2026-07-24T12:00:00.000Z',
     taskCount: 0,
-    sessionCount: 0,
+    chatState: 'inactive',
+    isPastOnboardingGrace: true,
     ...overrides,
   };
 }
 
 const group = (row: AgentAttentionRow) => resolveAgentAttention(row).group;
 const names = (rows: AgentAttentionRow[]) => rows.map((r) => r.name);
+
+// ---------------------------------------------------------------------------
+// isPastOnboardingGrace
+// ---------------------------------------------------------------------------
+
+describe('isPastOnboardingGrace', () => {
+  const now = Date.parse('2026-07-25T12:00:00.000Z');
+
+  it('is false for an agent registered moments ago', () => {
+    expect(isPastOnboardingGrace('2026-07-25T11:59:00.000Z', now)).toBe(false);
+  });
+
+  it('is false right up to the grace boundary and true at it', () => {
+    const justInside = new Date(now - ONBOARDING_GRACE_MS + 1000).toISOString();
+    const exactly = new Date(now - ONBOARDING_GRACE_MS).toISOString();
+    expect(isPastOnboardingGrace(justInside, now)).toBe(false);
+    expect(isPastOnboardingGrace(exactly, now)).toBe(true);
+  });
+
+  it('is true for an agent registered months ago', () => {
+    expect(isPastOnboardingGrace('2026-01-01T00:00:00.000Z', now)).toBe(true);
+  });
+
+  it('treats an unparseable registration date as old rather than new', () => {
+    // It cannot prove the agent is fresh, and the rule it gates only fires
+    // alongside 24h+ of silence.
+    expect(isPastOnboardingGrace('not-a-date', now)).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // resolveAgentAttention
@@ -36,52 +68,97 @@ describe('resolveAgentAttention', () => {
     expect(group(agent({ healthStatus: 'unreachable' }))).toBe('needs-you');
   });
 
-  it('puts an unreachable agent in "needs you" even while sessions are open', () => {
-    expect(group(agent({ healthStatus: 'unreachable', sessionCount: 3 }))).toBe('needs-you');
+  it('puts an unreachable agent in "needs you" even while chats are live', () => {
+    expect(group(agent({ healthStatus: 'unreachable', chatState: 'active' }))).toBe('needs-you');
   });
 
   it('puts an unreachable agent in "needs you" even when it looks brand new', () => {
     expect(group(agent({ healthStatus: 'unreachable', lastSeenAt: null }))).toBe('needs-you');
   });
 
+  it('puts an agent whose chat is blocked in "needs you"', () => {
+    expect(group(agent({ healthStatus: 'inactive', chatState: 'needs-attention' }))).toBe(
+      'needs-you'
+    );
+  });
+
   it('puts a stale agent with scheduled tasks in "needs you"', () => {
     expect(group(agent({ healthStatus: 'stale', taskCount: 4 }))).toBe('needs-you');
   });
 
-  it('ranks unreachable above stale-with-a-schedule', () => {
-    const unreachable = resolveAgentAttention(agent({ healthStatus: 'unreachable' }));
+  it('ranks unreachable above a blocked chat, and both above a silent schedule', () => {
+    const gone = resolveAgentAttention(agent({ healthStatus: 'unreachable' }));
+    const blocked = resolveAgentAttention(agent({ chatState: 'needs-attention' }));
     const silent = resolveAgentAttention(agent({ healthStatus: 'stale', taskCount: 9 }));
-    expect(unreachable.group).toBe(silent.group);
-    expect(unreachable.severity).toBeGreaterThan(silent.severity);
+    expect([gone.group, blocked.group, silent.group]).toEqual([
+      'needs-you',
+      'needs-you',
+      'needs-you',
+    ]);
+    expect(gone.severity).toBeGreaterThan(blocked.severity);
+    expect(blocked.severity).toBeGreaterThan(silent.severity);
   });
 
   it('leaves a stale agent with no scheduled tasks quiet', () => {
     expect(group(agent({ healthStatus: 'stale', taskCount: 0 }))).toBe('quiet');
   });
 
-  it('leaves a never-active agent quiet even with scheduled tasks attached', () => {
+  it('leaves a just-registered agent quiet even with scheduled tasks attached', () => {
     // A DorkBot created seconds ago in onboarding is stale with a null
-    // last-seen. Flagging it would make a fresh install look broken.
-    expect(group(agent({ healthStatus: 'stale', lastSeenAt: null, taskCount: 2 }))).toBe('quiet');
+    // last-seen, and its first scheduled run may not have come due. Flagging it
+    // would make a fresh install look broken.
+    expect(
+      group(
+        agent({
+          healthStatus: 'stale',
+          lastSeenAt: null,
+          taskCount: 2,
+          isPastOnboardingGrace: false,
+        })
+      )
+    ).toBe('quiet');
   });
 
-  it('puts an agent with open sessions in "working"', () => {
-    expect(group(agent({ healthStatus: 'inactive', sessionCount: 1 }))).toBe('working');
+  it('flags a long-registered agent that has NEVER reported while carrying schedules', () => {
+    // Registration age, not "has been seen before", is the discriminator: an
+    // agent registered months ago that never reports while schedules keep coming
+    // due is exactly the quietly-failing case, and a last-seen check would hide
+    // it in Quiet forever.
+    expect(
+      group(
+        agent({
+          healthStatus: 'stale',
+          lastSeenAt: null,
+          taskCount: 3,
+          isPastOnboardingGrace: true,
+        })
+      )
+    ).toBe('needs-you');
+  });
+
+  it('puts an agent with live chats in "working"', () => {
+    expect(group(agent({ healthStatus: 'inactive', chatState: 'active' }))).toBe('working');
   });
 
   it('puts an agent seen within the hour in "working"', () => {
     expect(group(agent({ healthStatus: 'active' }))).toBe('working');
   });
 
-  it('ranks an agent with open sessions above one merely seen recently', () => {
-    const inSession = resolveAgentAttention(agent({ healthStatus: 'active', sessionCount: 1 }));
-    const seenOnly = resolveAgentAttention(agent({ healthStatus: 'active', sessionCount: 0 }));
-    expect(inSession.group).toBe('working');
-    expect(inSession.severity).toBeGreaterThan(seenOnly.severity);
+  it('ranks an agent with live chats above one merely seen recently', () => {
+    const inChat = resolveAgentAttention(agent({ healthStatus: 'active', chatState: 'active' }));
+    const seenOnly = resolveAgentAttention(agent({ healthStatus: 'active', chatState: 'idle' }));
+    expect(inChat.group).toBe('working');
+    expect(inChat.severity).toBeGreaterThan(seenOnly.severity);
   });
 
-  it('leaves an idle agent with nothing scheduled and nothing open quiet', () => {
+  it('leaves an idle agent with nothing scheduled and nothing live quiet', () => {
     expect(group(agent({ healthStatus: 'inactive' }))).toBe('quiet');
+  });
+
+  it('gives a merely idle or dormant chat history no pull of its own', () => {
+    for (const chatState of ['idle', 'inactive', 'fresh'] as const) {
+      expect(group(agent({ healthStatus: 'inactive', chatState }))).toBe('quiet');
+    }
   });
 
   it('does not promote an agent for having scheduled tasks alone', () => {
@@ -104,11 +181,44 @@ describe('resolveAgentAttention', () => {
     expect(resolveAgentAttention(dorkbot)).toEqual(resolveAgentAttention(other));
   });
 
-  it('covers every health status without a schedule or a session', () => {
+  it('covers every health status without a schedule or a live chat', () => {
     expect(group(agent({ healthStatus: 'active', lastSeenAt: null }))).toBe('working');
     expect(group(agent({ healthStatus: 'inactive', lastSeenAt: null }))).toBe('quiet');
     expect(group(agent({ healthStatus: 'stale', lastSeenAt: null }))).toBe('quiet');
     expect(group(agent({ healthStatus: 'unreachable', lastSeenAt: null }))).toBe('needs-you');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fleet-wide behaviour — the property a per-page session count could not have
+// ---------------------------------------------------------------------------
+
+describe('attention across a whole fleet', () => {
+  it('reaches "working" for more than one agent at a time', () => {
+    // The regression this pins: chat state used to come from a session list
+    // scoped to the selected working directory, so at most ONE row in the fleet
+    // could ever be in a chat. Working has to be populable fleet-wide.
+    const rows = [
+      agent({ name: 'a', healthStatus: 'inactive', chatState: 'active' }),
+      agent({ name: 'b', healthStatus: 'inactive', chatState: 'active' }),
+      agent({ name: 'c', healthStatus: 'inactive', chatState: 'inactive' }),
+    ];
+    expect(rows.map(group)).toEqual(['working', 'working', 'quiet']);
+  });
+
+  it('never lets a chat signal outrank a genuine heartbeat by accident', () => {
+    // Both are Working; the live chat leads. What must NOT happen is a stale
+    // agent with an old chat history outranking one that checked in this hour.
+    const chattyButSilent = agent({
+      name: 'chatty',
+      healthStatus: 'stale',
+      chatState: 'inactive',
+    });
+    const heartbeat = agent({ name: 'beating', healthStatus: 'active', chatState: 'inactive' });
+    expect(names(sortAgentsByAttention([chattyButSilent, heartbeat]))).toEqual([
+      'beating',
+      'chatty',
+    ]);
   });
 });
 
@@ -203,10 +313,19 @@ describe('sortAgentsByAttention', () => {
       agent({ name: 'w1', healthStatus: 'active' }),
       agent({ name: 'q2', healthStatus: 'stale' }),
       agent({ name: 'n2', healthStatus: 'stale', taskCount: 1 }),
-      agent({ name: 'w2', healthStatus: 'inactive', sessionCount: 2 }),
+      agent({ name: 'w2', healthStatus: 'inactive', chatState: 'active' }),
+      agent({ name: 'n3', chatState: 'needs-attention' }),
     ];
     const groups = sortAgentsByAttention(rows).map(group);
-    expect(groups).toEqual(['needs-you', 'needs-you', 'working', 'working', 'quiet', 'quiet']);
+    expect(groups).toEqual([
+      'needs-you',
+      'needs-you',
+      'needs-you',
+      'working',
+      'working',
+      'quiet',
+      'quiet',
+    ]);
     // Each group appears as one uninterrupted run, which is what lets the table
     // emit a header wherever the key changes.
     const runs = groups.filter((value, index) => value !== groups[index - 1]);

@@ -7,6 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
+import type { AttentionState } from '@/layers/entities/session';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -15,10 +16,16 @@ import { TooltipProvider } from '@/layers/shared/ui';
 // Mocks — URL search state is simulated via a mutable record.
 // ---------------------------------------------------------------------------
 
+/**
+ * Fleet-wide chat state per project path. Set per test; anything absent reads as
+ * 'fresh' (no chats), the same default the component applies.
+ */
+let chatStates: Record<string, AttentionState> = {};
+
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  // Keep the real selectAgentSessions — only the data hook is stubbed.
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
-  useSessions: () => ({ sessions: [], isLoading: false }),
+  useAgentAttentionMap: (paths: string[]) =>
+    Object.fromEntries(paths.map((path) => [path, chatStates[path] ?? 'fresh'])),
 }));
 
 let currentSearch: Record<string, string | undefined> = {};
@@ -119,7 +126,9 @@ const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): Topology
     capabilities: [],
     behavior: { responseMode: 'always' },
     namespace: overrides.namespace,
-    registeredAt: new Date().toISOString(),
+    // Registered a month ago, so silence means something. Tests that care about
+    // the onboarding grace override this.
+    registeredAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     registeredBy: 'user',
     personaEnabled: true,
     enabledToolGroups: {},
@@ -156,6 +165,7 @@ const multiNsAgents: TopologyAgent[] = [
 afterEach(() => {
   cleanup();
   currentSearch = {};
+  chatStates = {};
 });
 
 describe('AgentsList', () => {
@@ -223,6 +233,112 @@ describe('AgentsList', () => {
       .join('|');
     expect(rowText.indexOf('Gone One')).toBeLessThan(rowText.indexOf('Busy One'));
     expect(rowText.indexOf('Busy One')).toBeLessThan(rowText.indexOf('Idle One'));
+  });
+
+  it('populates "Working" for several agents at once, across different folders', () => {
+    // The regression this pins. Chat state used to be counted from
+    // `useSessions()`, which lists only the SELECTED working directory, so at
+    // most one row in the fleet could ever reach Working and the rule was dead
+    // for every other agent. Neither of these two folders is "the" selected one.
+    chatStates = { '/b': 'active', '/c': 'active' };
+
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Quiet One', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+          makeAgent({
+            id: '2',
+            name: 'Chatting B',
+            projectPath: '/b',
+            healthStatus: 'inactive',
+            lastSeenAt: SEEN_AT,
+          }),
+          makeAgent({
+            id: '3',
+            name: 'Chatting C',
+            projectPath: '/c',
+            healthStatus: 'inactive',
+            lastSeenAt: SEEN_AT,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Working2', 'Quiet1']);
+  });
+
+  it('never tells you a chat is open, because it cannot know that', () => {
+    chatStates = { '/1': 'active' };
+
+    render(
+      <AgentsList
+        agents={[makeAgent({ id: '1', name: 'Chatty', lastSeenAt: SEEN_AT })]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(document.body.textContent).not.toMatch(/session/i);
+  });
+
+  it('puts an agent whose chat is blocked in "Needs you" and says so', () => {
+    chatStates = { '/1': 'needs-attention' };
+
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({ id: '1', name: 'Blocked', healthStatus: 'inactive', lastSeenAt: SEEN_AT }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Needs you1']);
+    expect(screen.getByText('A chat needs you')).toBeInTheDocument();
+  });
+
+  it('flags a long-registered agent that never reports while schedules keep coming due', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({
+            id: '1',
+            name: 'Silent Scheduler',
+            healthStatus: 'stale',
+            lastSeenAt: null,
+            taskCount: 3,
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Needs you1']);
+  });
+
+  it('leaves a just-registered agent quiet even with schedules attached', () => {
+    render(
+      <AgentsList
+        agents={[
+          makeAgent({
+            id: '1',
+            name: 'Fresh DorkBot',
+            healthStatus: 'stale',
+            lastSeenAt: null,
+            taskCount: 3,
+            registeredAt: new Date().toISOString(),
+          }),
+        ]}
+        isLoading={false}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(groupHeaders()).toEqual(['Quiet1']);
   });
 
   it('flattens the groups when the user picks a field sort', () => {

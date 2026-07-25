@@ -88,6 +88,9 @@ describe('DataTable grouping', () => {
 
     const header = document.querySelector('[data-slot="data-table-group-header"] th');
     expect(header).toHaveAttribute('colspan', '2');
+    // Rowgroup scope is delimited by <tbody>, and every group shares one here,
+    // so claiming it would make all the headers name the same rowgroup.
+    expect(header).not.toHaveAttribute('scope');
   });
 
   it('renders no group headers when there is no data', () => {

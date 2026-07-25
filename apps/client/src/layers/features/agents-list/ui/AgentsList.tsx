@@ -2,7 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
-import { useSessions, selectAgentSessions } from '@/layers/entities/session';
+import { useAgentAttentionMap } from '@/layers/entities/session';
 import { applySortAndFilter } from '@/layers/shared/lib';
 import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
@@ -16,7 +16,7 @@ import {
   agentSortOptions,
   ATTENTION_SORT_FIELD,
 } from '../lib/agent-filter-schema';
-import { sortAgentsByAttention } from '../lib/agent-attention';
+import { isPastOnboardingGrace, sortAgentsByAttention } from '../lib/agent-attention';
 import type { AgentTableRow } from '../lib/agent-columns';
 import { AgentEmptyFilterState } from './AgentEmptyFilterState';
 import { AgentFleetTable } from './AgentFleetTable';
@@ -42,8 +42,6 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     debounce: { search: 200 },
   });
 
-  const { sessions } = useSessions();
-
   // Derive dynamic namespace options from the agent list
   const namespaceOptions = useMemo(
     () => [...new Set(agents.map((a) => a.namespace).filter((ns): ns is string => Boolean(ns)))],
@@ -54,7 +52,7 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const isAttentionOrder = !filterState.sortField || filterState.sortField === ATTENTION_SORT_FIELD;
 
   // Filter first. Attention order is applied after enrichment below, because it
-  // reads the session count that only the enriched row carries.
+  // reads the chat state and registration age that only the enriched row carries.
   const filteredAgents = useMemo(
     () =>
       isAttentionOrder
@@ -66,14 +64,17 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     [agents, isAttentionOrder, filterState.values, filterState.sortField, filterState.sortDirection]
   );
 
-  // Compute session counts per agent — canonical membership rule (DOR-203).
-  const sessionCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const agent of agents) {
-      counts[agent.id] = selectAgentSessions(sessions, agent.projectPath ?? null).length;
-    }
-    return counts;
-  }, [agents, sessions]);
+  // Fleet-wide chat state per agent folder. `useAgentAttentionMap` is the app's
+  // single source of per-agent "does this need my eyes?" truth (DOR-339): live
+  // session lifecycle off the global event stream, joined with cross-agent
+  // session recency from `/api/sessions/recent`. It has to be this and not a
+  // count off `useSessions()` — that list is scoped to the selected working
+  // directory, so a per-row count would be zero for every agent but one.
+  const projectPaths = useMemo(
+    () => agents.map((a) => a.projectPath).filter((path): path is string => Boolean(path)),
+    [agents]
+  );
+  const chatStates = useAgentAttentionMap(projectPaths);
 
   // Fetch config once for default-agent badge
   const { data: config } = useQuery({
@@ -86,13 +87,16 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const tableData: AgentTableRow[] = useMemo(() => {
     const rows = filteredAgents.map((agent) => ({
       ...agent,
-      sessionCount: sessionCounts[agent.id] ?? 0,
+      // An agent with no project folder can hold no chats at all — exact-cwd
+      // membership (DOR-203) has nothing to match — which is what 'fresh' means.
+      chatState: (agent.projectPath ? chatStates[agent.projectPath] : undefined) ?? 'fresh',
+      isPastOnboardingGrace: isPastOnboardingGrace(agent.registeredAt),
       isDefault: config?.agents?.defaultAgent === agent.name,
     }));
     return isAttentionOrder ? sortAgentsByAttention(rows, filterState.sortDirection) : rows;
   }, [
     filteredAgents,
-    sessionCounts,
+    chatStates,
     config?.agents?.defaultAgent,
     isAttentionOrder,
     filterState.sortDirection,

@@ -180,7 +180,14 @@ function DataTable<TData, TValue>({
                       data-slot="data-table-group-header"
                       className="bg-muted/40 hover:bg-muted/40"
                     >
-                      <TableHead scope="rowgroup" colSpan={visibleColumnCount} className="h-8">
+                      {/*
+                        No `scope`: rowgroup scope is delimited by `<tbody>`, and
+                        every group here lives in the same one, so all the headers
+                        would claim the same rowgroup. A `<th colSpan>` alone in
+                        its row already reads as that row's header, which is what
+                        it is.
+                      */}
+                      <TableHead colSpan={visibleColumnCount} className="h-8">
                         {groupBy?.header(groupKey, groupCounts.get(groupKey) ?? 0)}
                       </TableHead>
                     </TableRow>

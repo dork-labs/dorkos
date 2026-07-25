@@ -8,16 +8,18 @@
  * Runtime, Project, Status, and Sessions were columns of their own until DOR-459.
  * The first three were near-constant per row, so each was a fixed label repeated
  * down the page — three of seven columns saying nothing. Runtime and project
- * demoted into the identity cell; sessions, which do change, folded into the
- * Activity cell's second line beside the time they belong with. Health is now
- * carried by the attention group a row sits in, plus the avatar's health ring,
- * which is a stronger read than the word "Stale" in a cell.
+ * demoted into the identity cell. Sessions went away entirely: the count behind
+ * it was a lifetime transcript count for one selected folder, so it was neither
+ * "open" nor fleet-wide. Chat state now reaches the page through the attention
+ * group a row sits in. Health is carried the same way, plus the avatar's health
+ * ring, which is a stronger read than the word "Stale" in a cell.
  *
  * @module features/agents-list/lib/agent-columns
  */
 import type { ColumnDef } from '@tanstack/react-table';
 import { MessageSquare, Settings, Star } from 'lucide-react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
+import type { AttentionState } from '@/layers/entities/session';
 import { Badge, Button } from '@/layers/shared/ui';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
@@ -29,8 +31,13 @@ import { agentActivityDisplay } from './agent-activity-display';
 // ---------------------------------------------------------------------------
 
 export interface AgentTableRow extends TopologyAgent {
-  /** Number of active sessions for this agent's project path. */
-  sessionCount: number;
+  /**
+   * Fleet-wide state of the chats under this agent's folder, from
+   * `useAgentAttentionMap`.
+   */
+  chatState: AttentionState;
+  /** Whether the agent is old enough for silence to be meaningful. */
+  isPastOnboardingGrace: boolean;
   /** Whether this agent is the default agent. */
   isDefault: boolean;
 }
@@ -58,6 +65,10 @@ function shortProjectPath(path: string | undefined): string | null {
  * The project leads because it is what distinguishes one agent from another,
  * while a fleet usually runs one or two runtimes; on a phone the runtime drops
  * off entirely rather than truncating the project that identifies the agent.
+ *
+ * Every responsive decision on this table hangs off `md` (768px), the same
+ * breakpoint `DataTable`'s `meta.hideOnMobile` uses, so the identity line and
+ * the column set always change together.
  */
 function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void }) {
   const { color, emoji } = resolveAgentVisual(row);
@@ -78,7 +89,7 @@ function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void 
         </span>
         <span className="text-muted-foreground block truncate text-xs">
           {project ?? runtime}
-          {project && <span className="hidden sm:inline"> · {runtime}</span>}
+          {project && <span className="hidden md:inline"> · {runtime}</span>}
         </span>
       </span>
       {row.isDefault && (
@@ -86,10 +97,10 @@ function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void 
         // there would squeeze the name it is meant to label.
         <Badge
           variant="outline"
-          className="shrink-0 text-[10px] max-sm:border-0 max-sm:px-0 max-sm:py-0"
+          className="shrink-0 text-[10px] max-md:border-0 max-md:px-0 max-md:py-0"
         >
-          <Star className="size-2.5 fill-current sm:mr-0.5" />
-          <span className="sr-only sm:not-sr-only">Default</span>
+          <Star className="size-2.5 fill-current md:mr-0.5" />
+          <span className="sr-only md:not-sr-only">Default</span>
         </Badge>
       )}
     </button>
@@ -133,7 +144,7 @@ export function createAgentColumns(
     {
       accessorKey: 'name',
       header: 'Agent',
-      meta: { headClassName: 'w-[42%] sm:w-[38%]', cellClassName: 'overflow-hidden' },
+      meta: { headClassName: 'w-[42%] md:w-[38%]', cellClassName: 'overflow-hidden' },
       cell: ({ row }) => (
         <IdentityCell
           row={row.original}
@@ -172,7 +183,12 @@ export function createAgentColumns(
     {
       id: 'actions',
       header: '',
-      meta: { headClassName: 'w-[76px]' },
+      // Under `table-fixed` this width is the whole budget, and `TableHead`'s
+      // `px-2` / `TableCell`'s `p-2` take 16px of it. Two `size-8` buttons plus
+      // the 4px gap need 68px of content box, so anything under 84px pushes the
+      // first button out through the cell's left edge and into the Activity
+      // column's border. 88px keeps a little air.
+      meta: { headClassName: 'w-[88px]' },
       cell: ({ row }) => {
         const agent = row.original;
         return (

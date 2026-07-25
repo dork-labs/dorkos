@@ -25,7 +25,11 @@ function row(overrides: Partial<AgentTableRow> & { id: string; name: string }): 
     taskCount: 0,
     lastSeenAt: minutesAgo(4),
     lastSeenEvent: 'response_complete',
-    sessionCount: 0,
+    // No chats running under this folder. Real rows read this from
+    // `useAgentAttentionMap`; every mock here is registered a month ago, so
+    // silence means something.
+    chatState: 'inactive',
+    isPastOnboardingGrace: true,
     isDefault: false,
     ...overrides,
   };
@@ -58,17 +62,29 @@ const FLEET: AgentTableRow[] = [
   }),
   row({
     id: '3',
+    name: 'refactor',
+    displayName: 'Refactor',
+    icon: '🧹',
+    runtime: 'codex',
+    healthStatus: 'inactive',
+    lastSeenAt: minutesAgo(70),
+    lastSeenEvent: 'MCP_tool_call',
+    // A chat under this folder is waiting on an approval, or stopped on an error.
+    chatState: 'needs-attention',
+  }),
+  row({
+    id: '4',
     name: 'dorkbot',
     displayName: 'DorkBot',
     icon: '🤖',
     projectPath: '/Users/kai/code/dork-os/dorkos',
-    sessionCount: 2,
+    chatState: 'active',
     taskCount: 7,
     isDefault: true,
     isSystem: true,
   }),
   row({
-    id: '4',
+    id: '5',
     name: 'blintz',
     displayName: 'Blintz',
     icon: '🦞',
@@ -78,13 +94,19 @@ const FLEET: AgentTableRow[] = [
     lastSeenEvent: 'message_sent',
   }),
   row({
-    id: '5',
+    id: '6',
     name: 'fresh',
     displayName: 'Fresh Agent',
     icon: '🥚',
     healthStatus: 'stale',
     lastSeenAt: null,
     lastSeenEvent: null,
+    chatState: 'fresh',
+    // Registered seconds ago in onboarding, with schedules whose first run has
+    // not come due. Stays Quiet, so a fresh install never looks broken.
+    registeredAt: minutesAgo(1),
+    isPastOnboardingGrace: false,
+    taskCount: 2,
   }),
 ];
 
@@ -118,7 +140,11 @@ export function AgentFleetShowcases() {
       <ShowcaseLabel>Nothing needs you</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <AgentFleetTable
-          rows={FLEET.filter((r) => r.healthStatus === 'active' || r.healthStatus === 'inactive')}
+          rows={FLEET.filter(
+            (r) =>
+              (r.healthStatus === 'active' || r.healthStatus === 'inactive') &&
+              r.chatState !== 'needs-attention'
+          )}
           grouped
           callbacks={NOOP_CALLBACKS}
         />
