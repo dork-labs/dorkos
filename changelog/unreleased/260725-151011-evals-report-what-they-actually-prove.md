@@ -1,3 +1,8 @@
+---
+covers:
+  - "feat(evals): make the eval harness prove the approval gate, not perform it (DOR-449)"
+---
+
 ### Fixed
 
 - Our safety tests now say plainly how much they checked. The summary used to print the word "quarantined" next to a test and "0 failed" at the bottom, even when six of seven checks had failed. Each test now shows its real result, and the last line says how many tests could actually fail the run (DOR-449)
