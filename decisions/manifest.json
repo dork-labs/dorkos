@@ -2822,6 +2822,33 @@
       "created": "2026-07-23",
       "extractedFrom": "capability-registry",
       "specSlug": "capability-registry"
+    },
+    {
+      "id": "260725-133220",
+      "slug": "tier-decides-the-gate-identity-only-caps-it",
+      "title": "The action's tier decides the gate; identity only caps it",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260725-133221",
+      "slug": "approvals-bind-to-the-exact-action-shown",
+      "title": "An approval binds to the exact action the person saw",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260725-133222",
+      "slug": "eval-isolation-and-cadence-are-infrastructure",
+      "title": "Eval isolation is a container, and eval cadence is opt-in",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
     }
   ]
 }

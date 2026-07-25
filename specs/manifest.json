@@ -20,7 +20,7 @@
       "slug": "agent-trust",
       "title": "Agent trust — identity, capability tiers, approvals, isolated evals",
       "created": "2026-07-23",
-      "status": "specified",
+      "status": "implemented",
       "project": "Agents as First-Class Operators"
     },
     {
