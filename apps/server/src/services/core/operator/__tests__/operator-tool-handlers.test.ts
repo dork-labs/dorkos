@@ -288,6 +288,101 @@ describe('config_patch', () => {
 });
 
 /**
+ * The escalation this guard exists to close (DOR-488).
+ *
+ * `operator.config_patch` is tier `act`, so nothing asks a person before it runs.
+ * With no write allowlist, an agent could call
+ * `config_patch({ auth: { enabled: false } })` and take the instance out of the
+ * logged-in posture. That posture is where deciding an approval requires an
+ * authenticated user, so the ungated write was a path from inside the capability
+ * surface to removing the precondition that makes every destructive approval
+ * enforceable.
+ *
+ * Each case asserts the STORE, not just the response: a refusal that still wrote
+ * would be worse than no refusal at all.
+ */
+describe('config_patch posture guard', () => {
+  /** A store in the posture the guard protects: login on. */
+  function loggedInStore(): Record<string, unknown> {
+    return { version: 1, auth: { enabled: true }, ui: { theme: 'dark' } };
+  }
+
+  it('refuses to turn login off, and leaves the config alone', async () => {
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({ patch: { auth: { enabled: false } } });
+
+    // The posture is unchanged. Asserted FIRST and on the store, because a
+    // refusal that still wrote would be worse than no refusal at all.
+    expect(mocks.configStore.auth).toEqual({ enabled: true });
+
+    expect(result.isError).toBe(true);
+    const payload = parsePayload<{ error: string; code: string; paths: string[] }>(result);
+    expect(payload.code).toBe('operator_only_config');
+    expect(payload.paths).toEqual(['auth.enabled']);
+  });
+
+  it('refuses the whole patch when a posture change rides behind a real one', async () => {
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({
+      patch: { ui: { theme: 'light' }, auth: { enabled: false } },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(mocks.configStore.auth).toEqual({ enabled: true });
+    // No partial write: the legitimate half did not land either.
+    expect(mocks.configStore.ui).toEqual({ theme: 'dark' });
+  });
+
+  it('refuses every other posture-bearing area too', async () => {
+    const cases: { patch: Record<string, unknown>; expected: string[] }[] = [
+      { patch: { tunnel: { enabled: true } }, expected: ['tunnel.enabled'] },
+      { patch: { mcp: { apiKey: 'agent-chosen' } }, expected: ['mcp.apiKey'] },
+      { patch: { server: { boundary: '/' } }, expected: ['server.boundary'] },
+      { patch: { providers: { anthropic: 'file:/tmp/key' } }, expected: ['providers'] },
+      {
+        patch: { runtimes: { codex: { binaryPath: '/tmp/evil.sh' } } },
+        expected: ['runtimes.codex.binaryPath'],
+      },
+      { patch: { telemetry: { aiMetadata: true } }, expected: ['telemetry.aiMetadata'] },
+      { patch: { cloud: { instanceToken: 'attacker' } }, expected: ['cloud.instanceToken'] },
+      { patch: { extensions: { enabled: ['anything'] } }, expected: ['extensions.enabled'] },
+    ];
+
+    for (const { patch, expected } of cases) {
+      mocks.configStore = loggedInStore();
+      const result = await createConfigPatchHandler()({ patch });
+
+      expect(result.isError, JSON.stringify(patch)).toBe(true);
+      const payload = parsePayload<{ paths: string[] }>(result);
+      expect(payload.paths, JSON.stringify(patch)).toEqual(expected);
+      // Nothing at all was written.
+      expect(mocks.configStore, JSON.stringify(patch)).toEqual(loggedInStore());
+    }
+  });
+
+  it('tells the model what it may not change and what to do instead', async () => {
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({ patch: { auth: { enabled: false } } });
+    const payload = parsePayload<{ message: string }>(result);
+
+    expect(payload.message).toContain('auth.enabled');
+    expect(payload.message).toMatch(/ask the person/i);
+  });
+
+  it('still lets ordinary preferences through', async () => {
+    // The guard must not turn the capability into a brick.
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({
+      patch: { ui: { theme: 'light' }, logging: { level: 'debug' } },
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect((mocks.configStore.ui as { theme: string }).theme).toBe('light');
+    expect(mocks.configStore.auth).toEqual({ enabled: true });
+  });
+});
+
+/**
  * The agent identity token (spec `agent-trust` §3.1) is delivered to a spawned
  * session through `DORKOS_AGENT_TOKEN` in its process env, so the agent holding
  * it can present it back to DorkOS. It must never round-trip into a tool RESULT,
