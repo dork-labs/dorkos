@@ -29,6 +29,7 @@ import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
+import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { resolveTrustedOrigins } from './lib/trusted-origins.js';
 import { testControlRouter } from './routes/test-control.js';
@@ -140,6 +141,14 @@ export function createApp() {
   // API routes so it also covers the `/mcp` mount added later on this same app
   // in `index.ts`. Zero-overhead pass-through when login is disabled.
   app.use(sessionGate);
+
+  // Agent identity — resolves an `X-DorkOS-Agent` token onto
+  // `res.locals.agentIdentity` so capability invocations can be attributed to
+  // the agent that made them. Mounted AFTER `sessionGate` (which owns the
+  // auth decision) and before the routes, app-wide so it also covers the `/mcp`
+  // mount added later in `index.ts`. Never rejects: a request without a token
+  // behaves exactly as it does today.
+  app.use(resolveAgentIdentity);
 
   // API routes
   app.use('/api/sessions', sessionRoutes);

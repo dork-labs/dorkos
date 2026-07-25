@@ -24,6 +24,7 @@ import {
   composeRegistry,
   type CapabilityDeps,
   type CapabilityDomain,
+  type CapabilityInvocationObserver,
   type CapabilityRegistry,
 } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
@@ -38,15 +39,21 @@ import { capabilitiesDomain } from './capabilities-domain.js';
  *   operator domain; `marketplaceDeps` includes the marketplace domain; the
  *   self-description domain is always included. The composed registry is written
  *   back onto `deps.registry`.
+ * @param onInvocation - Optional observer called after every invocation. Boot
+ *   passes the Activity attribution observer so an identified agent's calls are
+ *   recorded in the feed (spec `agent-trust` §3.1); omitted in unit tests.
  * @returns The frozen, ready-to-serve registry.
  */
-export function composeDorkOsCapabilityRegistry(deps: CapabilityDeps): CapabilityRegistry {
+export function composeDorkOsCapabilityRegistry(
+  deps: CapabilityDeps,
+  onInvocation?: CapabilityInvocationObserver
+): CapabilityRegistry {
   const domains: CapabilityDomain[] = [];
   if (deps.operatorDeps) domains.push(operatorDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   domains.push(capabilitiesDomain);
 
-  const registry = composeRegistry(domains, deps);
+  const registry = composeRegistry(domains, deps, onInvocation);
   // Back-write the composed registry so `capabilities.list` can serialize it.
   // Done immediately after composition, before any request is served — this is
   // the late-binding half of the self-reference.

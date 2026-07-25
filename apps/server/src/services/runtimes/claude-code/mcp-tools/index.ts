@@ -19,6 +19,7 @@ import { getUiTools } from './ui-tools.js';
 import { getDevtoolsTools } from './devtools-tools.js';
 import { getExtensionTools } from './extension-tools.js';
 import { capabilityMcpTools } from './capability-mcp-tools.js';
+import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import type { CapabilityRegistry } from '../../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
@@ -163,7 +164,11 @@ export function createDorkOsToolServer(
       ...getUiTools(deps, session),
       ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
       ...getExtensionTools(deps),
-      ...capabilityMcpTools(capabilityRegistry, 'in-session'),
+      ...capabilityMcpTools(
+        capabilityRegistry,
+        'in-session',
+        createInSessionContextResolver(session?.cwd)
+      ),
     ],
   });
 }

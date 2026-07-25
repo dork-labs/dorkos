@@ -8,7 +8,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   readManifest: vi.fn(),
@@ -247,6 +247,54 @@ describe('config_patch', () => {
     expect(payload.details?.length).toBeGreaterThan(0);
     // The invalid value must not have been persisted.
     expect(mocks.configStore.server).toBeUndefined();
+  });
+});
+
+/**
+ * The agent identity token (spec `agent-trust` §3.1) is delivered to a spawned
+ * session through `DORKOS_AGENT_TOKEN` in its process env, so the agent holding
+ * it can present it back to DorkOS. It must never round-trip into a tool RESULT,
+ * which lands in the model's context and the persisted transcript — the same
+ * invariant ADR 260723-013236 established for sensitive config keys, extended to
+ * the one credential that reaches an agent by design.
+ *
+ * These guard the config surfaces specifically: they are the tools that dump a
+ * broad snapshot, so they are where an env-echoing regression would surface.
+ */
+describe('agent identity token redaction', () => {
+  const SENTINEL = 'dorkos-agent-token-sentinel-value';
+
+  beforeEach(() => {
+    vi.stubEnv('DORKOS_AGENT_TOKEN', SENTINEL);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('never leaks DORKOS_AGENT_TOKEN through config_get', async () => {
+    mocks.configStore = secretBearingStore();
+    const result = await createConfigGetHandler()();
+
+    expect(result.content[0].text).not.toContain(SENTINEL);
+    expect(result.content[0].text).not.toContain('DORKOS_AGENT_TOKEN');
+  });
+
+  it('never leaks DORKOS_AGENT_TOKEN through the config_patch echo', async () => {
+    mocks.configStore = secretBearingStore();
+    const result = await createConfigPatchHandler()({ patch: { ui: { theme: 'light' } } });
+
+    expect(result.content[0].text).not.toContain(SENTINEL);
+    expect(result.content[0].text).not.toContain('DORKOS_AGENT_TOKEN');
+  });
+
+  it('still redacts it when the token is mistakenly written into config', async () => {
+    // Defense in depth: the token has no config home, but if a future surface
+    // ever parks it in one, `config_get` must not hand it to the model.
+    mocks.configStore = { ...secretBearingStore(), mcp: { apiKey: SENTINEL, enabled: true } };
+    const result = await createConfigGetHandler()();
+
+    expect(result.content[0].text).not.toContain(SENTINEL);
   });
 });
 

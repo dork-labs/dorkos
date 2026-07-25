@@ -15,7 +15,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
-import type { CapabilityRegistry } from '../capabilities/index.js';
+import type { CapabilityInvocationContext, CapabilityRegistry } from '../capabilities/index.js';
 import {
   capabilitiesForMcpServer,
   capabilityInputShape,
@@ -36,11 +36,15 @@ import {
  * @param registry - The composed capability registry.
  * @param transport - Which server's tool surface to project (defaults to
  *   `external`).
+ * @param context - Optional request-scoped context. The external server is
+ *   rebuilt per request, so this carries the calling agent's resolved identity
+ *   and every tool handler registered here invokes under it.
  */
 export function registerCapabilitiesAsMcpTools(
   server: McpServer,
   registry: CapabilityRegistry,
-  transport: McpServerId = 'external'
+  transport: McpServerId = 'external',
+  context?: CapabilityInvocationContext
 ): void {
   for (const capability of capabilitiesForMcpServer(registry, transport)) {
     const mcp = capability.surfaces.mcp;
@@ -53,7 +57,7 @@ export function registerCapabilitiesAsMcpTools(
         annotations: deriveMcpAnnotations(capability),
       },
       async (args: Record<string, unknown>) =>
-        invokeCapabilityAsMcpResult(registry, capability.id, args)
+        invokeCapabilityAsMcpResult(registry, capability.id, args, context)
     );
   }
 }

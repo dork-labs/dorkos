@@ -37,6 +37,10 @@ describe('Database Migrations', () => {
       'account',
       'activity_events',
       'agent_denials',
+      // Hashed per-agent identity tokens, keyed on the stable agentPath so the
+      // mesh reconciler's rebuild-from-files cannot orphan them
+      // (agent-trust spec §3.1, migration 0030).
+      'agent_identity_tokens',
       'agents',
       'apikey',
       'codex_threads',

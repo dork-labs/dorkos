@@ -24,6 +24,42 @@ import type {
   CapabilityDeps,
   CapabilityDomain,
 } from './capability-definition.js';
+import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
+
+/**
+ * Request-scoped context for one capability invocation.
+ *
+ * Threaded from whichever transport adapter received the call (the invoke
+ * route, an MCP server) down to the registry, which is the single choke point
+ * every surface funnels through — so attribution is recorded once, here, rather
+ * than duplicated into every capability handler.
+ */
+export interface CapabilityInvocationContext {
+  /**
+   * The agent behind this call, when one presented a resolved identity token.
+   * `undefined` means the human operator or an unattributed client, which is
+   * the normal case and changes nothing about how the call runs.
+   */
+  identity?: AgentIdentity;
+}
+
+/**
+ * Observer invoked after each capability invocation, for attribution and audit.
+ *
+ * Kept as an injected hook rather than a direct `ActivityService` dependency so
+ * this module stays domain-free (see the module TSDoc on the dependency-free
+ * spine). Boot wires it to the Activity feed; tests can assert on it directly.
+ * It must never throw — {@link composeRegistry} does not guard the call site
+ * beyond swallowing rejections, and an audit failure must not fail the call.
+ */
+export type CapabilityInvocationObserver = (event: {
+  /** The capability that ran. */
+  capability: CapabilityDefinition;
+  /** The context the transport adapter supplied. */
+  context: CapabilityInvocationContext;
+  /** Whether the handler completed without throwing. */
+  ok: boolean;
+}) => void;
 
 /**
  * The immutable runtime registry produced by {@link composeRegistry}. Holds the
@@ -47,11 +83,13 @@ export interface CapabilityRegistry {
    *
    * @param id - The capability id to invoke.
    * @param input - Raw input; parsed against the capability's `input` schema.
+   * @param context - Optional request-scoped context (the calling agent's
+   *   identity). Omitting it invokes exactly as before, unattributed.
    * @returns The capability's plain output.
    * @throws If no capability is registered under `id`, or if `input` fails
    *   schema validation (a `ZodError`).
    */
-  invoke(id: string, input: unknown): Promise<unknown>;
+  invoke(id: string, input: unknown, context?: CapabilityInvocationContext): Promise<unknown>;
   /**
    * Produce the serializable catalog: every capability with its Zod schemas
    * converted to JSON Schema, a fresh `generatedAt`, and a stable
@@ -79,6 +117,25 @@ export function serializeCapability(capability: CapabilityDefinition): Serialize
     outputSchema: z.toJSONSchema(capability.output),
     surfaces: capability.surfaces,
   };
+}
+
+/**
+ * Call an invocation observer, swallowing anything it throws.
+ *
+ * Attribution is a side channel: it must never turn a successful capability
+ * call into a failed one, nor mask the handler's own error with its own.
+ */
+function notify(
+  observer: CapabilityInvocationObserver,
+  capability: CapabilityDefinition,
+  context: CapabilityInvocationContext,
+  ok: boolean
+): void {
+  try {
+    observer({ capability, context, ok });
+  } catch {
+    // Deliberately ignored — see the TSDoc above.
+  }
 }
 
 /**
@@ -113,12 +170,15 @@ export function computeCatalogVersion(capabilities: readonly SerializedCapabilit
  *
  * @param domains - The service domains contributing capabilities.
  * @param deps - The boot-time service-dependency bag captured by the registry.
+ * @param onInvocation - Optional observer called after every invocation, for
+ *   attribution and audit. Omitted in tests and in the docs-only composer.
  * @returns The frozen, ready-to-serve registry.
  * @throws If any of the structural conflicts above is detected.
  */
 export function composeRegistry(
   domains: readonly CapabilityDomain[],
-  deps: CapabilityDeps
+  deps: CapabilityDeps,
+  onInvocation?: CapabilityInvocationObserver
 ): CapabilityRegistry {
   const byId = new Map<string, CapabilityDefinition>();
   const mcpToolNames = new Map<string, string>();
@@ -192,13 +252,30 @@ export function composeRegistry(
     get(id) {
       return byId.get(id);
     },
-    async invoke(id, input) {
+    async invoke(id, input, context) {
       const capability = byId.get(id);
       if (!capability) {
         throw new Error(`Capability registry: no capability registered for id "${id}".`);
       }
       const parsed = capability.input.parse(input);
-      return capability.invoke(deps, parsed);
+
+      // No observer, or nothing to attribute: run the original path untouched
+      // so an unattributed call stays byte-identical to before this seam
+      // existed (spec §3.1 — absent identity is today's behavior).
+      if (!onInvocation || !context?.identity) {
+        return capability.invoke(deps, parsed);
+      }
+
+      // Report the outcome either way: a failed attempt by a named agent is
+      // exactly as interesting to an audit trail as a successful one.
+      try {
+        const result = await capability.invoke(deps, parsed);
+        notify(onInvocation, capability, context, true);
+        return result;
+      } catch (err) {
+        notify(onInvocation, capability, context, false);
+        throw err;
+      }
     },
     catalog() {
       if (!serializedCache) {

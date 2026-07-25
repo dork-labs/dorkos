@@ -26,6 +26,7 @@ import { z } from 'zod';
 
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import { CapabilityToolError } from '../services/core/capabilities/index.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -57,7 +58,11 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
     const input = req.body ?? {};
 
     try {
-      const result = await registry.invoke(id, input);
+      // Attribute the call when the caller presented a resolved agent token
+      // (`X-DorkOS-Agent`). Absent one, this is `undefined` and the invocation
+      // runs exactly as it did before identity existed.
+      const identity = getRequestAgentIdentity(res);
+      const result = await registry.invoke(id, input, identity ? { identity } : undefined);
       return res.json(result);
     } catch (err) {
       // Input failed the capability's Zod input contract — a client error.
