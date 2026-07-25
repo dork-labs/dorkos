@@ -11,6 +11,16 @@ export interface PendingApprovalsState {
   approvals: PendingApproval[];
   /** True only on the very first load, before any answer has arrived. */
   isLoading: boolean;
+  /**
+   * True when the list could not be read.
+   *
+   * This is NOT the same as "nothing is waiting", and the difference matters: an
+   * agent blocked on an approval it can never get would otherwise show a person a
+   * completely empty dashboard.
+   */
+  isError: boolean;
+  /** Retry the list read. */
+  retry: () => void;
 }
 
 /**
@@ -26,7 +36,7 @@ export function usePendingApprovals(): PendingApprovalsState {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: PENDING_APPROVALS_QUERY_KEY,
     queryFn: () => transport.listPendingApprovals(),
   });
@@ -52,5 +62,10 @@ export function usePendingApprovals(): PendingApprovalsState {
     void queryClient.invalidateQueries({ queryKey: PENDING_APPROVALS_QUERY_KEY });
   });
 
-  return { approvals: data?.approvals ?? [], isLoading };
+  return {
+    approvals: data?.approvals ?? [],
+    isLoading,
+    isError,
+    retry: () => void refetch(),
+  };
 }

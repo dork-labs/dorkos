@@ -53,6 +53,10 @@ import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalService } from '../../core/approvals/index.js';
+import {
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+} from '../../core/capabilities/index.js';
 
 /**
  * A token provider over a fresh approval store, plus the two things the cockpit
@@ -62,6 +66,7 @@ import { ApprovalService } from '../../core/approvals/index.js';
 function buildTokenProvider() {
   const approvals = new ApprovalService(createTestDb());
   return {
+    approvals,
     provider: new TokenConfirmationProvider(approvals),
     /** Grant every pending approval, the way the cockpit's Allow button does. */
     grantPending: () => {
@@ -394,7 +399,15 @@ describe('marketplace-mcp integration', () => {
 
     installer = buildStubInstaller();
     uninstallFlow = buildStubUninstallFlow();
-    ({ provider: confirmationProvider, grantPending, denyPending } = buildTokenProvider());
+    const tokenProvider = buildTokenProvider();
+    confirmationProvider = tokenProvider.provider;
+    grantPending = tokenProvider.grantPending;
+    denyPending = tokenProvider.denyPending;
+    // Arm the capability tier gate over the SAME approval store, exactly as boot
+    // does. `marketplace.uninstall` is destructive, so it now meets this gate
+    // before its own confirmation flow — and one `grantPending()` decides
+    // whichever of the two actually asked (spec `agent-trust` §3.2).
+    initCapabilityTierGate({ approvals: tokenProvider.approvals });
 
     server = new McpServer({ name: 'dorkos-marketplace-test', version: '1.0.0' });
     registerMarketplaceTools(
@@ -430,6 +443,7 @@ describe('marketplace-mcp integration', () => {
   });
 
   afterEach(async () => {
+    resetCapabilityTierGate();
     vi.restoreAllMocks();
     await rm(dorkHome, { recursive: true, force: true });
     await rm(communityRoot, { recursive: true, force: true });
@@ -573,24 +587,49 @@ describe('marketplace-mcp integration', () => {
   });
 
   // ── Scenario 6 ───────────────────────────────────────────────────────────
-  it('uninstall → token round-trip: pending → approve → uninstalled', async () => {
+  // `marketplace_uninstall` is the one `destructive` capability, so the tier gate
+  // meets it first and its `approval_required` payload is what the caller sees.
+  // Crucially the operator answers ONCE: the granted approval rides the invocation
+  // context into the handler, which then skips its own confirmation rather than
+  // putting a second card up for the same uninstall.
+  it('uninstall → tier gate: approval_required → approve → uninstalled, one decision', async () => {
     const first = await callTool(server, 'marketplace_uninstall', { name: 'sentry-monitor' });
     expect(first.isError).toBeUndefined();
-    const firstPayload = parsePayload<{ status: string; confirmationToken: string }>(first);
-    expect(firstPayload.status).toBe('requires_confirmation');
+    const firstPayload = parsePayload<{
+      status: string;
+      approvalToken: string;
+      retry: { field: string };
+    }>(first);
+    expect(firstPayload.status).toBe('approval_required');
+    expect(firstPayload.retry.field).toBe('approvalToken');
     expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
 
     grantPending();
 
     const second = await callTool(server, 'marketplace_uninstall', {
       name: 'sentry-monitor',
-      confirmationToken: firstPayload.confirmationToken,
+      approvalToken: firstPayload.approvalToken,
     });
     expect(second.isError).toBeUndefined();
     const payload = parsePayload<{ status: string; package: { name: string } }>(second);
     expect(payload.status).toBe('uninstalled');
     expect(payload.package.name).toBe('sentry-monitor');
     expect(uninstallFlow.uninstall).toHaveBeenCalledTimes(1);
+  });
+
+  it('uninstall → the tier gate refuses to run it without an approval at all', async () => {
+    const first = await callTool(server, 'marketplace_uninstall', { name: 'sentry-monitor' });
+    expect(parsePayload<{ status: string }>(first).status).toBe('approval_required');
+
+    // Never granted: retrying with the token changes nothing, and nothing runs.
+    const retry = await callTool(server, 'marketplace_uninstall', {
+      name: 'sentry-monitor',
+      approvalToken: parsePayload<{ approvalToken: string }>(first).approvalToken,
+    });
+    const payload = parsePayload<{ status: string; reason: string }>(retry);
+    expect(payload.status).toBe('approval_required');
+    expect(payload.reason).toBe('awaiting_decision');
+    expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
   });
 
   // ── Scenario 7 ───────────────────────────────────────────────────────────

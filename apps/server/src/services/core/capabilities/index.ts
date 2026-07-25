@@ -19,6 +19,25 @@ export {
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,
 } from './registry.js';
+export {
+  enforceCapabilityTier,
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+  splitApprovalToken,
+  describeGatedAttempt,
+  APPROVAL_TOKEN_ARGUMENT,
+  APPROVAL_TOKEN_HEADER,
+  type ApprovalRequiredPayload,
+  type ApprovalRequiredReason,
+  type ApprovalRetryChannel,
+  type CapabilityTierGateOptions,
+  type GrantedApproval,
+  type TierDeniedPayload,
+  type TierDeniedReason,
+  type TierEnforcementAttempt,
+  type TierEnforcementDecision,
+  type TierEnforcementRequest,
+} from './tier-enforcement.js';
 export { readOnlyCarveOutToolNames } from './mcp-projection.js';
 export { registerCapabilitiesInOpenApi } from './openapi-projection.js';
 export { CapabilityToolError, unwrapMcpEnvelope, type McpTextEnvelope } from './mcp-envelope.js';

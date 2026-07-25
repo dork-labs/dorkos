@@ -16,6 +16,16 @@ import { CAPABILITY_TIERS } from './capabilities.js';
 extendZodWithOpenApi(z);
 
 /**
+ * Longest summary an approval card will ever hold.
+ *
+ * A card has to be readable at a glance, and a requester supplies the sentence —
+ * so the length is capped where it is stored rather than trusted at render time.
+ * `ApprovalService.request` truncates to this, so a long summary shortens instead
+ * of producing a row the cockpit cannot parse.
+ */
+export const APPROVAL_SUMMARY_MAX_LENGTH = 500;
+
+/**
  * An approval waiting on a person: what would run, why, and who asked. This is
  * exactly what the cockpit's approval card renders.
  */
@@ -30,7 +40,7 @@ export const PendingApprovalSchema = z
     /** Permission tier of the capability being requested. */
     tier: z.enum(CAPABILITY_TIERS),
     /** One plain sentence describing what would happen. */
-    summary: z.string(),
+    summary: z.string().max(APPROVAL_SUMMARY_MAX_LENGTH),
     /** Opaque label for who asked, when the request carried one. */
     requestedBy: z.string().optional(),
     /** When the request was made. ISO 8601 UTC. */

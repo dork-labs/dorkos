@@ -34,7 +34,10 @@ import {
 } from '../marketplace/marketplace-installer.js';
 import type { InstallResult } from '../marketplace/types.js';
 
-import type { ConfirmationResult } from './confirmation-provider.js';
+import type {
+  ConfirmationResult,
+  MarketplaceConfirmationContext,
+} from './confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 
 /**
@@ -107,8 +110,13 @@ function errorContent(err: unknown, code: string, extras: Record<string, unknown
 async function resolveConfirmation(
   deps: MarketplaceMcpDeps,
   args: InstallToolArgs,
-  preview: PreviewResult
+  preview: PreviewResult,
+  context?: MarketplaceConfirmationContext
 ): Promise<ConfirmationResult> {
+  // A person already approved this exact invocation at the capability tier gate;
+  // asking again would be a second card for one action.
+  if (context?.preApproved) return { status: 'approved' };
+
   // `marketplace` and `projectPath` ride along verbatim because both reach
   // `installer.install()` after the gate. Neither is defaulted here: an absent
   // marketplace searches every enabled source (first match wins) while a named
@@ -120,6 +128,7 @@ async function resolveConfirmation(
     operation: 'install' as const,
     ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
     preview: preview.preview,
+    ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
   };
   if (args.confirmationToken) {
     return deps.confirmationProvider.resolveToken(args.confirmationToken, req);
@@ -134,10 +143,11 @@ async function resolveConfirmation(
  *
  * @param deps - Marketplace MCP dependency bundle (provides `installer` and
  *   `confirmationProvider`).
- * @returns An MCP tool handler accepting {@link InstallToolArgs}.
+ * @returns An MCP tool handler accepting {@link InstallToolArgs} and an optional
+ *   caller context.
  */
 export function createInstallHandler(deps: MarketplaceMcpDeps) {
-  return async (args: InstallToolArgs) => {
+  return async (args: InstallToolArgs, context?: MarketplaceConfirmationContext) => {
     // 1. Build the preview FIRST so resolve/fetch/validation errors short-
     //    circuit before any user prompt or disk mutation. The preview is
     //    also what the confirmation provider hands to the UI so the user
@@ -156,7 +166,7 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
     // 2. Resolve confirmation. A supplied token comes from a previous
     //    `requires_confirmation` response — never issue a fresh request when
     //    the agent is resuming an out-of-band flow.
-    const confirmation = await resolveConfirmation(deps, args, preview);
+    const confirmation = await resolveConfirmation(deps, args, preview, context);
 
     if (confirmation.status === 'pending') {
       return jsonContent({

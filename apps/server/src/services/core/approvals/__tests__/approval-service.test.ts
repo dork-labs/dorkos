@@ -8,6 +8,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { approvals, eq, type Db } from '@dorkos/db';
+import {
+  APPROVAL_SUMMARY_MAX_LENGTH,
+  PendingApprovalSchema,
+} from '@dorkos/shared/approval-schemas';
 import { ApprovalService, APPROVAL_TTL_MS } from '../approval-service.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 import { eventFanOut } from '../../event-fan-out.js';
@@ -372,5 +376,73 @@ describe('ApprovalService', () => {
         db.select().from(approvals).where(eq(approvals.id, fresh.approvalId)).get()
       ).toBeDefined();
     });
+  });
+});
+
+/**
+ * Two properties the cockpit and the tier gate depend on: an expired token
+ * reports that it expired even when its binding is wrong, and a summary always
+ * fits the card that has to render it.
+ */
+describe('ApprovalService — reporting and card limits', () => {
+  let db: Db;
+  let service: ApprovalService;
+
+  beforeEach(() => {
+    db = createTestDb();
+    service = new ApprovalService(db);
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('reports expired, not mismatched, for a stale token with the wrong binding', () => {
+    vi.useFakeTimers();
+    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
+    service.grant(ticket.approvalId);
+
+    vi.advanceTimersByTime(APPROVAL_TTL_MS + 1000);
+
+    // Both things are wrong with this presentation. The caller needs to hear the
+    // one it cannot fix by rebuilding its arguments.
+    expect(service.consume(ticket.token, OTHER_BINDING)).toEqual({
+      outcome: 'expired',
+      approvalId: ticket.approvalId,
+    });
+  });
+
+  it('still reports mismatched for a LIVE token with the wrong binding', () => {
+    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
+    service.grant(ticket.approvalId);
+
+    expect(service.consume(ticket.token, OTHER_BINDING)).toEqual({
+      outcome: 'mismatched',
+      approvalId: ticket.approvalId,
+    });
+    // Left unspent: the approval stays available for what was actually allowed.
+    expect(service.consume(ticket.token, BINDING).outcome).toBe('granted');
+  });
+
+  it('shortens a summary too long for a card instead of storing an unrenderable row', () => {
+    const ticket = service.request({
+      ...BINDING,
+      summary: 'x'.repeat(APPROVAL_SUMMARY_MAX_LENGTH + 200),
+    });
+
+    const [pending] = service.listPending();
+    expect(pending.approvalId).toBe(ticket.approvalId);
+    expect(pending.summary.length).toBe(APPROVAL_SUMMARY_MAX_LENGTH);
+    // Parses against the schema the cockpit uses — the point of the cap.
+    expect(PendingApprovalSchema.safeParse(pending).success).toBe(true);
+  });
+
+  it('leaves a summary that already fits exactly as written', () => {
+    service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor", keeping its saved data' });
+    expect(service.listPending()[0].summary).toBe(
+      'Uninstall "sentry-monitor", keeping its saved data'
+    );
   });
 });

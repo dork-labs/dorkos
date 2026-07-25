@@ -59,7 +59,9 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
             {TIER_LABEL[approval.tier]}
           </Badge>
         </div>
-        <p className="text-muted-foreground mt-0.5 text-xs">{approval.summary}</p>
+        {/* Clamped: the summary is written by whoever asked, and a long one must
+            not push the Allow buttons off a small screen. */}
+        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">{approval.summary}</p>
         <div className="mt-1.5 flex min-w-0 items-center gap-2">
           <RequestingAgent requestedBy={approval.requestedBy} />
           <span className="text-muted-foreground shrink-0 text-xs tabular-nums">

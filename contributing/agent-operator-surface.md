@@ -43,6 +43,9 @@ Everything above used to be hand-registered (a descriptor here, a CLI handler th
 | Catalog route                                 | `apps/server/src/routes/capabilities-catalog.ts`                                  |
 | CLI: `capabilities` / `call`                  | `packages/cli/src/commands/{capabilities,call}.ts`                                |
 | CLI: operator verbs                           | `packages/cli/src/commands/{agent,task,activity,version}.ts`                      |
+| Tier enforcement (the gate)                   | `apps/server/src/services/core/capabilities/tier-enforcement.ts`                  |
+| Approval primitive                            | `apps/server/src/services/core/approvals/approval-service.ts`                     |
+| Agent identity + token expiry                 | `apps/server/src/services/core/agent-identity/agent-identity-service.ts`          |
 | Conformance suite                             | `packages/test-utils/src/capability-conformance.ts`                               |
 
 ## How a capability projects
@@ -55,9 +58,43 @@ A `CapabilityDefinition` carries a `surfaces` object with three optional project
 
 `composeDorkOsCapabilityRegistry` folds every domain into one immutable registry at boot and throws on any structural conflict (a duplicate id, a duplicate tool name, a duplicate CLI verb, a duplicate HTTP route, or an id not prefixed with its domain). The two MCP adapters and the OpenAPI projection then read that one registry, so a capability appears on every surface it declares with zero extra wiring.
 
-### Permission tiers
+### Permission tiers are enforced
 
-Every capability declares a `tier`: `observe` (pure read), `act` (mutates local state), or `destructive` (deletes or unregisters). Tiers are **inert metadata today**: phase 3 will enforce them. Do not present a tier as an active permission gate anywhere user-facing.
+Every capability declares a `tier`: `observe` (pure read), `act` (mutates local state), or `destructive` (deletes or unregisters). Since spec `agent-trust` §3.2 the tier is a **real gate**, not metadata.
+
+`enforceCapabilityTier` (`capabilities/tier-enforcement.ts`) runs at all three choke points BEFORE `registry.invoke` — the invoke route, and both MCP adapters via `invokeCapabilityAsMcpResult`. The **tier** decides whether to gate; identity is not part of that decision:
+
+| Tier          | What happens                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `observe`     | Runs. Reading is free.                                                                                             |
+| `act`         | Runs, audited by the attribution observer at the registry choke point.                                              |
+| `destructive` | Does NOT run without an approval a person granted, bound to this capability id AND a hash of this exact input.      |
+
+A gated call returns a structured `approval_required` payload — the same shape family as the marketplace's `requires_confirmation`, so an agent already knows the dance — carrying a fresh pending approval id, a one-time token, and retry instructions naming the channel for that surface (the `approvalToken` MCP argument, or the `X-DorkOS-Approval` header / `dorkos call --approval`). The identity's `tierCeiling` caps everything: a ceiling of `act` makes destructive capabilities permanently unreachable for that agent, refused with `approvable: false` rather than queued for an approval nobody could grant. Refused and pending attempts emit Activity events (`capability.denied`, `capability.approval_required`), so an audit trail records what an agent TRIED, not only what it did.
+
+Three rules when working here:
+
+- **Hash the parsed input, never the raw body.** A choke point parses first, gates on the parsed value, then hands that same value to `registry.invoke` — which parses it again. That double parse is only safe while destructive schemas are parse-idempotent, so the conformance suite asserts exactly that, per destructive capability. A schema that grows a non-idempotent `.transform()` fails there rather than quietly binding the approval to something other than what runs.
+- **The token travels beside the input, never inside it** — otherwise it would change the hash it is checked against. `capabilityInputShape` adds the extra MCP argument for destructive tools; `splitApprovalToken` takes it back off.
+- **The gate fails closed.** Until `initCapabilityTierGate` runs at boot, a destructive call is refused (`enforcement_unavailable`), so a wiring mistake cannot silently open the gate.
+
+### Identity is the ceiling, never the switch
+
+The gate deliberately does **not** key on identity presence. Keying on it would hand a prompt-injected agent with shell access a bypass needing strictly less capability than the honest path:
+
+```
+env -u DORKOS_AGENT_TOKEN dorkos call marketplace.uninstall --input '{"name":"x","purge":true}'
+```
+
+The CLI only attaches `X-DorkOS-Agent` when `DORKOS_AGENT_TOKEN` is in its env, and `sessionGate` is a pass-through in the default local (auth-disabled) posture — so an identity-keyed gate would let that purge run, unapproved and unattributed. A bare `curl` is the same shape.
+
+So an unidentified caller is gated too: same `approval_required`, same binding, and the card says "An unidentified caller wants to run …" with `requestedBy` absent rather than fabricated. Anonymous attempts are audited under `actorType: 'system'`, so the feed never implies DorkOS knows who asked.
+
+Spec §3.1's "absent identity = today's behavior" resolution is about **attribution**, and its rationale was not breaking external MCP clients or human CLI use. Those are `observe` and `act` calls, which pass untouched — the product cost is one Allow click for a human running `dorkos call` against a destructive capability, which is what spec §UX describes anyway. When identity IS present it does exactly two things: caps what the caller may reach (`tierCeiling`) and names them on the card.
+
+In-session identity is derived from the session's working directory rather than anything the agent presents, so an in-session agent cannot shed its ceiling by withholding a token either.
+
+Both anonymous and identified paths are covered by the same falsifiable mechanism: `GATED_ADAPTER_PATHS` lists each of the three adapters twice (`…` and `…-anonymous`), and a missing probe is itself a conformance violation.
 
 ### The external mutation gate
 
@@ -69,7 +106,7 @@ Redaction, confirmation-token flows, and identity guards live inside `invoke` (o
 
 - **`operator.update_agent`** routes through `agent-updater.ts`, the same service behind `PATCH /api/agents/current`. The slug (`name`) is immutable and system agents (DorkBot) reject identity changes.
 - **`operator.config_patch`** routes through `config-patch.ts` (deep-merge, arrays replace) and the same Zod validation as `PATCH /api/config`.
-- **`marketplace.install` / `marketplace.uninstall` / `marketplace.create_package`** keep their confirmation-token state machine inside the handler, unchanged across both servers.
+- **`marketplace.install` / `marketplace.uninstall` / `marketplace.create_package`** keep their confirmation-token state machine inside the handler, unchanged across both servers. They now also read the invocation context: `requestedBy` names the asking agent on the card, and `preApproved` tells `marketplace.uninstall` (the one `destructive` capability) that the tier gate already spent a person's approval for these exact arguments — without it, one uninstall would put two cards in front of the operator.
 
 ## The CLI surface
 
@@ -119,7 +156,8 @@ A `cli` surface declares the verb name, but the curated verb handler is still a 
 - `READ_ONLY_MCP_TOOL_NAMES`, restricted to capability tools, equals the registry's own `readOnlyCarveOut` derivation;
 - every `readOnlyCarveOut` tool is `observe`-tier;
 - no two capabilities collide on an OpenAPI route;
-- the docs projection serves the same routes as the boot registry.
+- the docs projection serves the same routes as the boot registry;
+- **every adapter path enforces the tier gate.** `destructiveGateProbes` supplies one probe per path (`invoke-route`, `in-session-mcp`, `external-mcp`); each drives the real adapter against a `destructive` capability with an identity and no token, and must come back with an `approval_required` payload and no side effect. A missing probe is itself a violation, so adding a fourth agent-facing surface without gating it cannot pass quietly.
 
 The structural checks live in a pure `checkCapabilityConformance` that returns a list of violations, so the suite is itself falsifiable: `packages/test-utils/src/__tests__/capability-conformance.test.ts` seeds drifts (a missing projection, a carve-out on a mutating tool, an OpenAPI collision) and proves each produces a violation. If you add a capability and forget a surface, this suite goes red before review.
 

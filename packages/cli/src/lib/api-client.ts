@@ -26,6 +26,14 @@ export interface ApiErrorBody {
   conflicts?: unknown[];
   errors?: unknown[];
   details?: unknown;
+  /**
+   * Discriminator on structured refusals that are not "errors" in the usual
+   * sense — notably the capability tier gate's `denied` payload, which explains in
+   * plain words why an agent was not allowed to run something.
+   */
+  status?: string;
+  /** Plain-language explanation carried by a structured refusal. */
+  message?: string;
 }
 
 /**
@@ -45,7 +53,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly body: ApiErrorBody
   ) {
-    super(body.error ?? `HTTP ${status}`);
+    super(body.error ?? body.message ?? `HTTP ${status}`);
     this.name = 'ApiError';
   }
 }
@@ -120,16 +128,23 @@ function agentIdentityHeaders(): Record<string, string> {
  * @param method - HTTP method (e.g. `'GET'`, `'POST'`).
  * @param apiPath - Path on the server (must start with `/`).
  * @param body - Optional request body to JSON-encode.
+ * @param headers - Extra request headers, merged last so a caller can add a
+ *   one-off header (e.g. an approval token) without touching the defaults.
  * @returns The parsed JSON response body.
  */
-export async function apiCall<T>(method: string, apiPath: string, body?: unknown): Promise<T> {
+export async function apiCall<T>(
+  method: string,
+  apiPath: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<T> {
   const url = `${getServerBaseUrl()}${apiPath}`;
 
   let res: Response;
   try {
     res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...agentIdentityHeaders() },
+      headers: { 'Content-Type': 'application/json', ...agentIdentityHeaders(), ...headers },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (err) {

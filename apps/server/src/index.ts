@@ -133,12 +133,16 @@ import { composeDorkOsCapabilityRegistry } from './services/core/self-descriptio
 import {
   initAgentIdentityService,
   createCapabilityAttributionObserver,
+  createCapabilityGateAuditObserver,
 } from './services/core/agent-identity/index.js';
 import { ApprovalService } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
-import type { CapabilityRegistry } from './services/core/capabilities/index.js';
+import {
+  initCapabilityTierGate,
+  type CapabilityRegistry,
+} from './services/core/capabilities/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
@@ -1628,6 +1632,17 @@ async function start() {
     },
     createCapabilityAttributionObserver(activityService)
   );
+  // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval
+  // primitive and the Activity feed exist. Every choke point — this app's invoke
+  // route, the in-session MCP adapter, the external `/mcp` adapter — calls
+  // `enforceCapabilityTier` before the registry runs anything, so a `destructive`
+  // capability reached by an identified agent needs a person's yes first. Until
+  // this call the gate refuses such invocations rather than allowing them, so a
+  // wiring mistake here fails loudly instead of silently opening the gate.
+  initCapabilityTierGate({
+    approvals: approvalService,
+    onAttempt: createCapabilityGateAuditObserver(activityService),
+  });
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a
   // different, client-facing contract; the registry catalog lives one segment

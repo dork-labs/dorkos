@@ -80,9 +80,14 @@ describe('runCall', () => {
     const code = await runCall({ id: 'test.echo', input: { msg: 'hi' } });
     expect(code).toBe(0);
     expect(apiCallMock).toHaveBeenNthCalledWith(1, 'GET', '/api/capabilities/catalog');
-    expect(apiCallMock).toHaveBeenNthCalledWith(2, 'POST', '/api/capabilities/test.echo/invoke', {
-      msg: 'hi',
-    });
+    expect(apiCallMock).toHaveBeenNthCalledWith(
+      2,
+      'POST',
+      '/api/capabilities/test.echo/invoke',
+      { msg: 'hi' },
+      // No approval token presented, so no approval header is attached.
+      undefined
+    );
     const printed = writeSpy.mock.calls.at(-1)?.[0] as string;
     expect(JSON.parse(printed)).toEqual({ echoed: 'hi' });
   });
@@ -110,5 +115,65 @@ describe('runCall', () => {
     const code = await runCall({ id: 'test.echo', input: {} });
     expect(code).toBe(1);
     expect(apiCallMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `--approval` completes the dance for a capability that cannot be undone
+ * (spec `agent-trust` §3.2): a first call comes back saying a person has to
+ * approve, and the retry carries the token in the header the payload names.
+ */
+describe('runCall — approval flow', () => {
+  it('sends the approval token as a header when --approval is passed', async () => {
+    apiCallMock.mockResolvedValueOnce({ capabilities: [{ id: 'test.destroy' }] });
+    apiCallMock.mockResolvedValueOnce({ destroyed: 'thing' });
+
+    const code = await runCall({
+      id: 'test.destroy',
+      input: { name: 'thing' },
+      approvalToken: 'abc123',
+    });
+
+    expect(code).toBe(0);
+    expect(apiCallMock).toHaveBeenNthCalledWith(
+      2,
+      'POST',
+      '/api/capabilities/test.destroy/invoke',
+      { name: 'thing' },
+      { 'X-DorkOS-Approval': 'abc123' }
+    );
+  });
+
+  it('prints the approval_required payload and reports that nothing ran', async () => {
+    apiCallMock.mockResolvedValueOnce({ capabilities: [{ id: 'test.destroy' }] });
+    const payload = {
+      status: 'approval_required',
+      approvalId: '01JZ',
+      approvalToken: 'abc123',
+      message: 'A person has to approve this first.',
+    };
+    apiCallMock.mockResolvedValueOnce(payload);
+
+    const code = await runCall({ id: 'test.destroy', input: { name: 'thing' } });
+
+    // Non-zero, because the capability did NOT run — but the payload is still on
+    // stdout so an agent can read the token and retry.
+    expect(code).toBe(1);
+    expect(process.stdout.write).toHaveBeenCalledWith(`${JSON.stringify(payload, null, 2)}\n`);
+  });
+
+  it('parses --approval off the command line', () => {
+    expect(parseCallArgs(['test.destroy', '--approval', ' abc123 '])).toEqual({
+      id: 'test.destroy',
+      input: {},
+      approvalToken: 'abc123',
+    });
+  });
+
+  it('ignores an empty --approval value', () => {
+    expect(parseCallArgs(['test.destroy', '--approval', '  '])).toEqual({
+      id: 'test.destroy',
+      input: {},
+    });
   });
 });

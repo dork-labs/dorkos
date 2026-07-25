@@ -383,3 +383,58 @@ describe('createUninstallHandler — purge flag', () => {
     );
   });
 });
+
+/**
+ * Cooperation with the capability tier gate (spec `agent-trust` §3.2).
+ *
+ * `marketplace.uninstall` is the one `destructive` capability in the registry, so
+ * the gate in front of it may already hold a person's yes for these exact
+ * arguments. When it does, this handler must NOT run its own confirmation flow —
+ * otherwise one uninstall puts two cards in front of the operator.
+ */
+describe('createUninstallHandler — tier gate cooperation', () => {
+  it('skips its own confirmation when the gate already got approval for this call', async () => {
+    const provider = new FakeConfirmationProvider();
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'sentry-monitor' }),
+    });
+    const handler = createUninstallHandler(createStubDeps({ confirmationProvider: provider, uninstallFlow }));
+
+    const result = await handler({ name: 'sentry-monitor' }, { preApproved: true });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('uninstalled');
+    expect(uninstallFlow.uninstall).toHaveBeenCalledOnce();
+    // Not a second card: the provider was never consulted.
+    expect(provider.requestInstallConfirmation).not.toHaveBeenCalled();
+    expect(provider.resolveToken).not.toHaveBeenCalled();
+  });
+
+  it('names the requesting agent on its own card when the gate did not pre-approve', async () => {
+    const provider = new FakeConfirmationProvider();
+    provider.requestInstallConfirmation.mockResolvedValue({ status: 'pending', token: 't' });
+    const handler = createUninstallHandler(
+      createStubDeps({
+        confirmationProvider: provider,
+        uninstallFlow: createStubUninstallFlow({}),
+      })
+    );
+
+    await handler({ name: 'sentry-monitor' }, { requestedBy: 'DorkBot' });
+
+    expect(provider.requestInstallConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedBy: 'DorkBot' })
+    );
+  });
+
+  it('still gates a call with no context at all', async () => {
+    const provider = new FakeConfirmationProvider();
+    provider.requestInstallConfirmation.mockResolvedValue({ status: 'pending', token: 't' });
+    const uninstallFlow = createStubUninstallFlow({});
+    const handler = createUninstallHandler(createStubDeps({ confirmationProvider: provider, uninstallFlow }));
+
+    const result = await handler({ name: 'sentry-monitor' });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('requires_confirmation');
+    expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+  });
+});
