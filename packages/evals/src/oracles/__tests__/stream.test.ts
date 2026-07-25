@@ -9,6 +9,7 @@ import type { OracleContext } from '../../types.js';
 import {
   toolInvokedInStream,
   toolResultContains,
+  toolResultPayloads,
   uiCommandEmitted,
   uiActionTriggerObserved,
 } from '../stream.js';
@@ -86,6 +87,40 @@ describe('toolResultContains', () => {
     const frames = [toolResult('marketplace_search', '{"matches":[]}')];
     const result = await toolResultContains('marketplace_search', 'acme-notes')(ctx(frames));
     expect(result.passed).toBe(false);
+  });
+});
+
+describe('toolResultPayloads', () => {
+  it('parses every JSON result the tool returned, in stream order', () => {
+    const frames = [
+      toolResult('marketplace_uninstall', JSON.stringify({ status: 'approval_required' }, null, 2)),
+      toolResult('marketplace_uninstall', JSON.stringify({ status: 'uninstalled' }, null, 2)),
+      toolResult('other_tool', JSON.stringify({ status: 'ignored' })),
+    ];
+    const { payloads, unparsed } = toolResultPayloads(frames, 'marketplace_uninstall');
+    expect(payloads).toEqual([{ status: 'approval_required' }, { status: 'uninstalled' }]);
+    expect(unparsed).toEqual([]);
+  });
+
+  it('recovers the JSON object when a runtime wrapped the result in text', () => {
+    const frames = [
+      toolResult('marketplace_uninstall', '[Resource from dorkos] {"status":"approval_required"}'),
+    ];
+    const { payloads } = toolResultPayloads(frames, 'marketplace_uninstall');
+    expect(payloads).toEqual([{ status: 'approval_required' }]);
+  });
+
+  it('reports a non-JSON result as unparsed rather than dropping it silently', () => {
+    const frames = [toolResult('marketplace_uninstall', 'Uninstalled the package for you.')];
+    const { payloads, unparsed } = toolResultPayloads(frames, 'marketplace_uninstall');
+    expect(payloads).toEqual([]);
+    expect(unparsed).toEqual(['Uninstalled the package for you.']);
+  });
+
+  it('returns nothing when the tool never produced a result', () => {
+    expect(
+      toolResultPayloads([toolCall('marketplace_uninstall')], 'marketplace_uninstall')
+    ).toEqual({ payloads: [], unparsed: [] });
   });
 });
 

@@ -5,6 +5,11 @@
  * "return-value" oracle, for `marketplace-search`, which writes no state). These
  * read the tool/command frames, never assistant prose.
  *
+ * {@link toolResultPayloads} is the shared primitive for a case whose outcome
+ * lives in the STRUCTURE of a tool result rather than a substring — the
+ * governance case has to tell one gating payload apart from another, which a
+ * `contains` check cannot do.
+ *
  * @module evals/oracles/stream
  */
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
@@ -80,6 +85,70 @@ export function toolResultContains(toolName: string, needle: string, label?: str
       detail: passed ? undefined : `no ${toolName} tool_result contained "${needle}"`,
     };
   };
+}
+
+/** Longest prefix of an unparsable result kept as failure evidence. */
+const UNPARSED_EVIDENCE_CHARS = 200;
+
+/** Parsed and unparsable `tool_result` texts for one tool, in stream order. */
+export interface ToolResultPayloads {
+  /** Result texts that parsed as JSON. */
+  payloads: unknown[];
+  /** Result texts that did NOT parse as JSON, truncated for evidence. */
+  unparsed: string[];
+}
+
+/**
+ * Parse one result text into a JSON value, tolerating surrounding text.
+ *
+ * A capability's MCP result is `JSON.stringify(payload, null, 2)`, but the text a
+ * runtime records around it is not guaranteed to be exactly that string (the
+ * claude-code mapper, for example, prefixes an embedded-resource marker onto a
+ * `ui://` result). So a strict parse is tried first, then the outermost
+ * `{ … }` span. Returns `undefined` when neither yields JSON.
+ */
+function parseResultJson(text: string): unknown | undefined {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Fall through to the embedded-object attempt.
+  }
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) return undefined;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Every `tool_result` payload `toolName` returned, parsed as JSON.
+ *
+ * Use this when an outcome is decided by the SHAPE of a result rather than a
+ * substring of it — two different gating protocols can both mention the same
+ * words, and only their fields tell them apart. Callers own the discrimination;
+ * this only collects and parses.
+ *
+ * @param frames - The collected SSE frames.
+ * @param toolName - The tool whose results to collect.
+ * @returns The parsed payloads plus any result text that was not JSON.
+ */
+export function toolResultPayloads(frames: SseFrame[], toolName: string): ToolResultPayloads {
+  const texts = framesOfType(frames, 'tool_result')
+    .filter((f) => (f.data as ToolFrameData).toolName === toolName)
+    .map((f) => (f.data as ToolFrameData).result)
+    .filter((r): r is string => typeof r === 'string' && r.length > 0);
+
+  const payloads: unknown[] = [];
+  const unparsed: string[] = [];
+  for (const text of texts) {
+    const parsed = parseResultJson(text);
+    if (parsed === undefined) unparsed.push(text.slice(0, UNPARSED_EVIDENCE_CHARS));
+    else payloads.push(parsed);
+  }
+  return { payloads, unparsed };
 }
 
 /**
