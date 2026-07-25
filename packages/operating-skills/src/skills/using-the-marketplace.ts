@@ -6,13 +6,17 @@ export const usingTheMarketplace: OperatingSkill = {
   description:
     'Use when finding, inspecting, installing, or removing a DorkOS marketplace package ' +
     '(agent, plugin, skill pack, or adapter), or managing marketplace sources. Covers search, ' +
-    'the install confirmation flow, and listing what is installed.',
+    'the install confirmation flow, the uninstall approval flow, and listing what is installed.',
   body: `# Using the marketplace
 
 The marketplace distributes installable packages: agents, plugins, skill packs,
 and adapters. You can search it, inspect a package, and install or remove one.
 
-## Find a package
+Every operation here is a capability, so each one is also reachable by id with
+\`dorkos call marketplace.<verb> --input '<json>'\` from any runtime. Run
+\`dorkos capabilities\` for the live list and each entry's tier.
+
+## Find a package (tier: observe)
 
 - Search: \`marketplace_search\` with \`query\` (free text) and optional \`type\`
   (\`agent\`/\`plugin\`/\`skill-pack\`/\`adapter\`), \`category\`, \`tags\`, or \`marketplace\`.
@@ -21,26 +25,29 @@ and adapters. You can search it, inspect a package, and install or remove one.
 - Details: \`marketplace_get\` with a package \`name\` returns its manifest, README,
   and metadata.
 
-## See what is installed
+## See what is installed (tier: observe)
 
 - Tool: \`marketplace_list_installed\` (filter by \`type\`). One entry per install
   across scopes, tagged \`global\` / \`agent-local\` / \`override\`.
 - Sources: \`marketplace_list_marketplaces\` lists configured sources with their
   enabled flag and package counts.
 
-## Install a package
+## Install a package (tier: act)
 
-### In-session (Claude Code): the confirmation flow
+### In-session: the confirmation flow
 
-\`marketplace_install\` requires user confirmation and installs in two steps:
+\`marketplace_install\` runs its own confirmation handshake, which is NOT the
+approval flow described in operating-dorkos. Watch for these exact field names:
 
 1. Call \`marketplace_install\` with the package \`name\`. It returns
    \`status: requires_confirmation\` and a \`confirmationToken\`.
 2. Tell the user what will be installed and wait for them to approve in DorkOS.
    Then call \`marketplace_install\` again WITH the \`confirmationToken\` to complete.
 
-Never skip the confirmation step — it is the trust boundary for putting code on
+Never skip the confirmation step. It is the trust boundary for putting code on
 the user's machine.
+
+\`marketplace_create_package\` (below) uses the same \`confirmationToken\` handshake.
 
 ### From the CLI (any runtime)
 
@@ -49,11 +56,38 @@ the running server. Use \`--marketplace\` to disambiguate when several sources
 carry the same package name, or \`--source\` for an explicit Git / marketplace.json
 URL.
 
-## Remove a package
+## Remove a package (tier: destructive)
 
-- Tool: \`marketplace_uninstall\` (also confirmation-gated). By default it keeps
-  \`.dork/data/\` and \`.dork/secrets.json\`; pass \`purge: true\` to remove them.
-- CLI: \`dorkos uninstall <name>\`.
+Removing a package cannot be undone, so it is gated on a person's approval and
+returns the APPROVAL payload, not a \`confirmationToken\`. Two gated paths, pick the
+one your session has:
+
+- **In-session tool:** \`marketplace_uninstall\`, retried with an \`approvalToken\`
+  argument.
+- **Any runtime, from a shell:** \`dorkos call marketplace.uninstall --input
+  '{"name":"<pkg>"}'\`, retried with \`--approval <token>\`. This is the gated path
+  for a Codex or OpenCode session, which has no \`marketplace_uninstall\` tool.
+
+Either way:
+
+1. Call it with \`name\` (and \`purge: true\` only if the user asked to delete saved
+   data). It comes back with \`status: approval_required\`, an \`approvalId\`, and an
+   \`approvalToken\`.
+2. Tell the user what would be removed and that an approval card is waiting for
+   them in DorkOS. Wait for their answer.
+3. Call again with the SAME arguments plus the token. Changing any argument,
+   \`purge\` included, invalidates the approval.
+
+Read \`reason\` and \`status\` as operating-dorkos describes: \`awaiting_decision\`
+means present the same token later, and \`status: "denied"\` means stop.
+
+By default uninstall keeps \`.dork/data/\` and \`.dork/secrets.json\`; \`purge: true\`
+removes them, which is a bigger action and worth saying out loud.
+
+\`dorkos uninstall <name>\` also exists, but it is the PERSON's path and it does NOT
+go through the approval gate. Do not use it as an agent, and above all do not
+reach for it because the gated path asked you to wait: use one of the two gated
+paths above. \`dorkos call marketplace.uninstall\` is the shell one.
 
 ## Manage sources
 
@@ -61,16 +95,17 @@ URL.
   new marketplace source; \`refresh\` re-fetches its catalog; \`validate\` checks a
   source or package on disk.
 
-## Scaffold your own package
+## Scaffold your own package (tier: act)
 
 \`marketplace_create_package\` scaffolds a new package under
 \`~/.dork/personal-marketplace/packages/<name>/\` and registers it in the personal
-marketplace. It is confirmation-gated. Publishing to a public marketplace is a
-separate step that is not part of this flow.
+marketplace. It uses the \`confirmationToken\` handshake described above. Publishing
+to a public marketplace is a separate step that is not part of this flow.
 
 ## Rule
 
 Installing, uninstalling, and scaffolding all change the user's system. State
-plainly what you are about to do, get the confirmation the tool asks for, then
-report what landed.`,
+plainly what you are about to do, complete whichever gate the tool asks for
+(\`confirmationToken\` for install and scaffold, \`approvalToken\` for uninstall),
+then report what landed.`,
 };

@@ -1,19 +1,20 @@
 /**
  * Registers the `dorkos://sessions` and `dorkos://sessions/{id}` MCP
- * resources against a live `McpServer` instance. Split out of
- * `mcp-server.ts` — see `core-tools.ts` in this directory for why.
+ * resources against a live `McpServer` instance: the external `/mcp` server and
+ * the in-session `dorkos` tool server alike (see `index.ts` in this directory).
  *
  * Mirrors `GET /api/sessions` (ADR-0310): sessions are aggregated across
  * every registered runtime via `aggregateSessionList`, degrading per
- * runtime instead of failing the whole read. Both resources are scoped to
- * `deps.defaultCwd` — the external MCP server has no per-request `cwd`
- * parameter to key on, so it reads the server's own default project the
- * same way `get_session_count`/`get_agent` do when called without an
- * explicit scope. Session content is metadata only (id, title, runtime,
- * cwd, updatedAt) — transcripts and message bodies are never included; a
- * client that needs those still calls `GET /api/sessions/:id/messages`.
+ * runtime instead of failing the whole read. Both resources are scoped to the
+ * `projectDir` the caller supplies: the session's own working directory
+ * in-session, and `deps.defaultCwd` on the external surface, which has no
+ * per-request `cwd` parameter to key on and so reads the server's own default
+ * project the same way `get_session_count`/`get_agent` do. Session content is
+ * metadata only (id, title, runtime, cwd, updatedAt): transcripts and message
+ * bodies are never included; a client that needs those still calls
+ * `GET /api/sessions/:id/messages`.
  *
- * @module services/core/external-mcp/session-resources
+ * @module services/core/mcp-resources/session-resources
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -64,27 +65,31 @@ function requireRuntimeRegistry(deps: McpToolDeps): RuntimeRegistry {
 /**
  * Register `dorkos://sessions` and `dorkos://sessions/{id}` against `server`.
  *
- * @param server - The external `McpServer` instance to register resources against.
+ * @param server - The `McpServer` instance to register resources against.
  * @param deps - Shared MCP tool dependencies.
+ * @param projectDir - Absolute directory the reads are scoped to.
  */
-export function registerSessionResources(server: McpServer, deps: McpToolDeps): void {
+export function registerSessionResources(
+  server: McpServer,
+  deps: McpToolDeps,
+  projectDir: string
+): void {
   server.registerResource(
     'sessions',
     'dorkos://sessions',
     {
       title: 'Sessions',
       description:
-        'Sessions across every registered runtime (claude-code, codex, opencode), scoped to the ' +
-        "server's default working directory. Degrades per runtime — a backend that fails or times " +
-        'out contributes a warning instead of failing the whole read. Metadata only, no transcript ' +
-        'or message content.',
+        'Sessions across every registered runtime (claude-code, codex, opencode) in this project ' +
+        'directory. Degrades per runtime: a backend that fails or times out contributes a warning ' +
+        'instead of failing the whole read. Metadata only, no transcript or message content.',
       mimeType: 'application/json',
     },
     async () => {
       const registry = requireRuntimeRegistry(deps);
       const { sessions, warnings } = await aggregateSessionList({
         runtimes: registry.listRuntimes(),
-        projectDir: deps.defaultCwd,
+        projectDir,
       });
       return jsonResourceContents(
         'dorkos://sessions',
@@ -106,8 +111,8 @@ export function registerSessionResources(server: McpServer, deps: McpToolDeps): 
     {
       title: 'Session',
       description:
-        'Metadata for a single session by id (id, title, runtime, cwd, updatedAt) — not the ' +
-        "transcript or message content. Resolved against the server's default working directory.",
+        'Metadata for a single session by id (id, title, runtime, cwd, updatedAt), not the ' +
+        'transcript or message content. Resolved against this project directory.',
       mimeType: 'application/json',
     },
     async (uri, { id }) => {
@@ -118,7 +123,7 @@ export function registerSessionResources(server: McpServer, deps: McpToolDeps): 
       try {
         const runtime = await registry.resolveForSession(sessionId);
         const internalId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-        session = await runtime.getSession(deps.defaultCwd, internalId);
+        session = await runtime.getSession(projectDir, internalId);
         if (session && !session.runtime) session.runtime = runtime.type;
       } catch {
         // Unregistered/unresolvable runtime for this id — treat the same as

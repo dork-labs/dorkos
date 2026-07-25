@@ -13,6 +13,10 @@ The one idea that explains the rest is the **Capability Registry**. A service do
 
 CLI operator verbs (`dorkos agent`, `task`, `activity`, `version`) remain the runtime-portable path, because MCP injection only reaches claude-code and Codex/OpenCode agents cannot receive it. The generic `dorkos call <capability-id>` reaches every capability by id, so an agent on any runtime can actuate DorkOS after discovering the catalog. See [The CLI surface](#the-cli-surface).
 
+The catalog is NOT the whole tool list, and `list_capabilities` says so in its own description. Roughly two dozen tools (agent, task, relay, mesh, binding, trace, extension, devtools, UI) are still hand-registered on the MCP servers with no registry entry, so they appear in an agent's tool list and are unreachable by `dorkos call`. That caveat is load-bearing: an earlier description promised "everything you can do", which let an obedient model conclude it could not manage tasks. Delete the caveat when those domains migrate, not before.
+
+Knowing what you can do is the other half of the surface: see [The awareness surface](#the-awareness-surface).
+
 Everything above used to be hand-registered (a descriptor here, a CLI handler there, a `tool-security` entry). Phase 2 replaced that with the registry, so forgetting a surface is no longer possible: a single declaration lights them all up, and the [conformance suite](#the-conformance-suite) fails CI if a projection ever drifts. The [Phase 1 history](#phase-1-history) note at the end records what changed.
 
 **Pair this guide with:**
@@ -43,6 +47,9 @@ Everything above used to be hand-registered (a descriptor here, a CLI handler th
 | Catalog route                                 | `apps/server/src/routes/capabilities-catalog.ts`                                  |
 | CLI: `capabilities` / `call`                  | `packages/cli/src/commands/{capabilities,call}.ts`                                |
 | CLI: operator verbs                           | `packages/cli/src/commands/{agent,task,activity,version}.ts`                      |
+| Runtime-neutral context blocks                | `apps/server/src/services/runtimes/shared/agent-context.ts`                       |
+| `dorkos://` resources (both MCP servers)      | `apps/server/src/services/core/mcp-resources/`                                    |
+| Identity token env seam                       | `apps/server/src/services/core/agent-identity/agent-token-env.ts`                 |
 | Tier enforcement (the gate)                   | `apps/server/src/services/core/capabilities/tier-enforcement.ts`                  |
 | Approval primitive                            | `apps/server/src/services/core/approvals/approval-service.ts`                     |
 | Agent identity + token expiry                 | `apps/server/src/services/core/agent-identity/agent-identity-service.ts`          |
@@ -121,6 +128,24 @@ Redaction, confirmation-token flows, and identity guards live inside `invoke` (o
 - **`operator.config_patch`** routes through `config-patch.ts` (deep-merge, arrays replace) and the same Zod validation as `PATCH /api/config`.
 - **`operator.config_get`** (and `config_patch`'s echo) returns `sanitizedConfigSnapshot()`, which is a **classification allowlist**, not a denylist: `config-disclosure.ts` marks every leaf of `UserConfigSchema` `expose` or `withhold`, and only `expose` paths are copied. It has to be an allowlist because `config_get` carries `readOnlyCarveOut: true` and therefore answers with no credential in login-off mode; a denylist ships every newly added secret-bearing field by default, which is how `mcp.apiKey` once reached this surface. Withheld: the four `SENSITIVE_CONFIG_KEYS`, every credential reference (`providers`, `runtimes.codex.credentialRef`), and `cloud.linkedAccountLabel`. Each of those becomes a boolean `…Configured` flag (or `providersConfigured`, the provider ids). Absolute paths stay exposed deliberately: they are how the surface addresses work. **If you add a config field, add its verdict**: the drift guard in `__tests__/config-disclosure.test.ts` compares the table against the live schema in both directions and fails until you do.
 - **`marketplace.install` / `marketplace.uninstall` / `marketplace.create_package`** keep their confirmation-token state machine inside the handler, unchanged across both servers. They now also read the invocation context: `requestedBy` names the asking agent on the card, and `preApproved` tells `marketplace.uninstall` (the one `destructive` capability) that the tier gate already spent a person's approval for these exact arguments — without it, one uninstall would put two cards in front of the operator.
+
+## The awareness surface
+
+Actuation is only half of it: an agent also has to know what it is and what it can reach. Two pieces carry that, and both are shared across runtimes rather than owned by one adapter.
+
+**The context blocks.** `runtimes/shared/agent-context.ts` builds the runtime-neutral system-prompt append: `<agent_identity>`, `<agent_persona>`, `<agent_safety_boundaries>`, `<dorkos_context>` (which names `dorkos capabilities` and `dorkos call`), and `<env>`. Every adapter delivers it through whatever channel its backend actually has:
+
+| Runtime     | Channel                                                | Identity token                                                 |
+| ----------- | ------------------------------------------------------ | -------------------------------------------------------------- |
+| claude-code | `systemPrompt.append` (cacheable), after its tool docs | Per-turn `DORKOS_AGENT_TOKEN` in the SDK subprocess env        |
+| codex       | Prompt prefix (`buildCodexPrompt`)                     | Per-turn `DORKOS_AGENT_TOKEN` via a turn-scoped `Codex` client |
+| opencode    | `synthetic` text part (`buildOpenCodeParts`)           | **None**, see below                                            |
+
+Runtime-SPECIFIC tool documentation (`<relay_tools>`, `<mesh_tools>`, `<ui_tools>`, ...) deliberately stays in the Claude adapter's `context-builder.ts`: those blocks teach in-session MCP tools only that runtime is given.
+
+**OpenCode has no identity, and that is a backend limit rather than an omission.** The sidecar is one process shared by every session (ADR-0308) with its environment fixed at spawn, and neither `session.promptAsync` nor session creation carries per-session environment. The only channel that exists is the prompt, and putting a bearer token there would publish it into the model's context and the transcript, which is exactly what `agent-token-env.ts` exists to avoid. So an OpenCode agent's `dorkos call` runs unattributed and uncapped by a tier ceiling. Closing it needs a per-session sidecar or an upstream per-request env seam.
+
+**The resources.** `dorkos://sessions`, `dorkos://agents`, `dorkos://skills`, and `dorkos://capabilities` answer "what is the state of my world?". They are registered from ONE place, `registerDorkOsResources` (`services/core/mcp-resources/`), which both MCP servers call. Registering them on only one server is how the surface drifted before: for two phases they were external-only, so a third-party MCP client could ask a running DorkOS what sessions were open and the user's own agent could not. `DORKOS_RESOURCE_URIS` plus the parity test in that directory is the drift guard.
 
 ## The CLI surface
 

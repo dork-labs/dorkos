@@ -1,4 +1,3 @@
-import os from 'node:os';
 import type {
   AdditionalContextEntry,
   GitStatusData,
@@ -6,21 +5,12 @@ import type {
   RelayContextData,
 } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { readManifest } from '@dorkos/shared/manifest';
-import {
-  extractCustomProse,
-  buildSoulContent,
-  TRAIT_SECTION_START,
-} from '@dorkos/shared/convention-files';
-import { readConventionFile } from '@dorkos/shared/convention-files-io';
-import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { env } from '../../../../env.js';
-import { SERVER_VERSION } from '../../../../lib/version.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import { configManager } from '../../../core/config-manager.js';
 import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
+import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -370,8 +360,15 @@ async function buildPeerAgentsBlock(
  * Build a system prompt append string containing runtime context.
  *
  * Structured for optimal Claude prompt caching — static tool documentation blocks
- * come first (never change), followed by semi-static agent identity (changes only
- * on manifest edit), then stable environment metadata.
+ * come first (never change), followed by the runtime-neutral agent identity and
+ * environment blocks from {@link buildAgentContextAppend} (which change only on
+ * manifest edit or server restart).
+ *
+ * This function owns only the Claude-SPECIFIC half: documentation for the
+ * in-session MCP tools this runtime is given. Everything a Codex or OpenCode
+ * agent also needs (identity, persona, safety boundaries, `<dorkos_context>`,
+ * `<env>`) lives in `runtimes/shared/agent-context.ts` and is shared with those
+ * adapters rather than duplicated.
  *
  * Dynamic context (git status, peer agents, relay connections, UI state) is
  * intentionally excluded — those are available on-demand via tool calls or
@@ -393,8 +390,9 @@ export async function buildSystemPromptAppend(
   const uiBlock = buildUiToolsBlock();
   const genUiBlock = GEN_UI_CONTEXT;
 
-  // Semi-static blocks (async — reads files, but content stable between agent config changes)
-  const results = await Promise.allSettled([buildAgentBlock(cwd), buildEnvBlock(cwd)]);
+  // Runtime-neutral identity + env (async: reads files, but content is stable
+  // between agent config changes)
+  const agentContext = await buildAgentContextAppend(cwd);
 
   return [
     // 1. Static tool documentation — fully cacheable, never changes
@@ -405,9 +403,7 @@ export async function buildSystemPromptAppend(
     uiBlock,
     genUiBlock,
     // 2. Semi-static identity + env — changes only on agent config or server restart
-    ...results
-      .filter((r) => r.status === 'fulfilled' && r.value)
-      .map((r) => (r as PromiseFulfilledResult<string>).value),
+    agentContext,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -531,115 +527,8 @@ function formatRelayContext(data: RelayContextData): string {
   return lines.join('\n');
 }
 
-/**
- * Build the `<env>` block with system and DorkOS metadata.
- *
- * All values here are stable for the lifetime of the server process.
- * Dynamic values (date, git status, UI state) are intentionally excluded
- * to maximize Claude's prompt cache hit rate — the SDK's own system prompt
- * already injects the current date.
- */
-async function buildEnvBlock(cwd: string): Promise<string> {
-  const lines = [
-    `Working directory: ${cwd}`,
-    `Product: DorkOS`,
-    `Version: ${SERVER_VERSION}`,
-    `Port: ${env.DORKOS_PORT}`,
-    `Platform: ${os.platform()}`,
-    `OS Version: ${os.release()}`,
-    `Node.js: ${process.version}`,
-    `Hostname: ${os.hostname()}`,
-  ];
-
-  return `<env>\n${lines.join('\n')}\n</env>`;
-}
-
-/**
- * Build agent identity, persona, and safety boundary blocks from `.dork/` convention files.
- *
- * Reads `agent.json` for identity data and trait values, `SOUL.md` for personality,
- * and `NOPE.md` for safety boundaries. Falls back to the legacy `persona` field
- * when no SOUL.md exists (pre-migration agents).
- *
- * Injection order: identity -> persona (SOUL.md) -> safety boundaries (NOPE.md).
- *
- * @param cwd - Working directory to check for agent manifest and convention files
- * @returns XML block string, or empty string if no manifest
- */
-async function buildAgentBlock(cwd: string): Promise<string> {
-  const manifest = await readManifest(cwd);
-  if (!manifest) return '';
-
-  // Zod v4 + openapi extension drops persona fields from inferred type
-  const { persona, personaEnabled, traits, conventions } = manifest as {
-    persona?: string;
-    personaEnabled?: boolean;
-    traits?: Record<string, number>;
-    conventions?: { soul?: boolean; nope?: boolean; dorkosKnowledge?: boolean };
-  };
-
-  // --- Identity block ---
-  const identityLines = [
-    `Name: ${manifest.name}`,
-    `ID: ${manifest.id}`,
-    manifest.description && `Description: ${manifest.description}`,
-    manifest.capabilities.length > 0 && `Capabilities: ${manifest.capabilities.join(', ')}`,
-  ].filter(Boolean);
-
-  const blocks = [`<agent_identity>\n${identityLines.join('\n')}\n</agent_identity>`];
-
-  // --- Persona block (SOUL.md or legacy persona) ---
-  const soulEnabled = conventions?.soul !== false;
-
-  if (soulEnabled) {
-    let soulContent = await readConventionFile(cwd, 'SOUL.md');
-
-    if (soulContent) {
-      // If SOUL.md has a trait section, regenerate it with current trait values
-      if (soulContent.includes(TRAIT_SECTION_START)) {
-        const customProse = extractCustomProse(soulContent);
-        const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
-        soulContent = buildSoulContent(traitBlock, customProse);
-      }
-      blocks.push(`<agent_persona>\n${soulContent}\n</agent_persona>`);
-    } else if (personaEnabled !== false && persona) {
-      // Legacy fallback: use persona field
-      blocks.push(`<agent_persona>\n${persona}\n</agent_persona>`);
-    }
-  }
-
-  // --- Safety boundaries block (NOPE.md) ---
-  const nopeEnabled = conventions?.nope !== false;
-
-  if (nopeEnabled) {
-    const nopeContent = await readConventionFile(cwd, 'NOPE.md');
-    if (nopeContent) {
-      blocks.push(`<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`);
-    }
-  }
-
-  // --- DorkOS knowledge block (default ON) ---
-  if (conventions?.dorkosKnowledge !== false) {
-    blocks.push(buildDorkosContextBlock());
-  }
-
-  return blocks.join('\n\n');
-}
-
-/** Build the `<dorkos_context>` block with platform overview and doc links. */
-function buildDorkosContextBlock(): string {
-  return `<dorkos_context>
-DorkOS is the operating system for autonomous AI agents.
-Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
-Run \`dorkos capabilities\` or call the list_capabilities tool to see everything you can do here.
-Documentation: https://dorkos.ai/llms.txt
-Full docs: https://dorkos.ai/docs
-</dorkos_context>`;
-}
-
 /** @internal Exported for testing only. */
 export {
-  buildAgentBlock as _buildAgentBlock,
   buildRelayToolsBlock as _buildRelayToolsBlock,
   buildMeshToolsBlock as _buildMeshToolsBlock,
   buildAdapterToolsBlock as _buildAdapterToolsBlock,

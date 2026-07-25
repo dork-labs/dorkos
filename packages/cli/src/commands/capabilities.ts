@@ -20,9 +20,16 @@ import { printError, printJson, renderTable } from '../lib/operator-output.js';
 /** Help text for `dorkos capabilities` (`--help`), rendered by the `cli.ts` interceptor. */
 export const CAPABILITIES_HELP = `Usage: dorkos capabilities [options]
 
-List everything you can do in this DorkOS — the live capability catalog from the
-running server (id, tier, title). This is the CLI form of the list_capabilities
-tool and the dorkos://capabilities resource.
+List the capabilities you can invoke by id with 'dorkos call': the live catalog
+from the running server (id, tier, title). This is the CLI form of the
+list_capabilities tool and the dorkos://capabilities resource.
+
+Agent, task, relay, mesh, binding, extension, and UI tools live on the MCP
+servers rather than the capability registry, so they are not in this catalog and
+'dorkos call' cannot reach them. Only some have a CLI path: agent reads map to
+'dorkos agent list|show', and tasks to 'dorkos task list|create|trigger|runs'
+(no update or delete). Relay, mesh, binding, extension, and UI have no CLI verb
+today, so from a Codex or OpenCode session they cannot be reached at all.
 
 Options:
       --json   Print the raw catalog JSON instead of a table

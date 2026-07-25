@@ -39,10 +39,12 @@ vi.mock('../config-manager.js', () => ({
   },
 }));
 
+// The agent-identity/env half of the append moved to `runtimes/shared/` so Codex
+// and OpenCode get it too; the Claude adapter keeps only its tool documentation.
+import { _buildAgentBlock } from '../../runtimes/shared/agent-context.js';
 import {
   buildSystemPromptAppend,
   renderContextEntry,
-  _buildAgentBlock,
   _buildRelayToolsBlock,
   _buildMeshToolsBlock,
   _buildAdapterToolsBlock,

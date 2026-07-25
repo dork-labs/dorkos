@@ -1,11 +1,11 @@
 /**
  * Registers the `dorkos://skills` and `dorkos://skills/{name}` MCP resources
- * against a live `McpServer` instance. Split out of `mcp-server.ts` — see
- * `core-tools.ts` in this directory for why.
+ * against a live `McpServer` instance: the external `/mcp` server and the
+ * in-session `dorkos` tool server alike (see `index.ts` in this directory).
  *
- * Both resources are scoped to `deps.defaultCwd` (the server's default
- * project, same scoping convention as the session resources) and read
- * `<cwd>/.agents/skills` — the canonical authored-skill directory both
+ * Both resources are scoped to the caller-supplied `projectDir` (same scoping
+ * convention as the session resources) and read
+ * `<projectDir>/.agents/skills`, the canonical authored-skill directory both
  * Claude Code (via its `.claude/skills` projection) and Codex/OpenCode read.
  * This mirrors the scan the Codex runtime already performs to build its
  * slash-command palette (`services/runtimes/codex/scan-skill-commands.ts`):
@@ -13,7 +13,7 @@
  * `SKILL.md` against `SkillFrontmatterSchema`. Unparseable or unreadable
  * skills are skipped rather than failing the whole read.
  *
- * @module services/core/external-mcp/skill-resources
+ * @module services/core/mcp-resources/skill-resources
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -23,7 +23,6 @@ import { z } from 'zod';
 import { scanSkillDirs, AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
 import { SkillFrontmatterSchema, SKILL_FILENAME, type SkillFrontmatter } from '@dorkos/skills';
 import { parseSkillFile, type ParsedSkill } from '@dorkos/skills/parser';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { logger } from '../../../lib/logger.js';
 import { firstVar, jsonResourceContents, resourceNotFound } from './resource-helpers.js';
 
@@ -103,23 +102,22 @@ async function listWorkspaceSkills(cwd: string): Promise<ParsedSkill<SkillFrontm
 /**
  * Register `dorkos://skills` and `dorkos://skills/{name}` against `server`.
  *
- * @param server - The external `McpServer` instance to register resources against.
- * @param deps - Shared MCP tool dependencies.
+ * @param server - The `McpServer` instance to register resources against.
+ * @param projectDir - Absolute directory whose `.agents/skills` is scanned.
  */
-export function registerSkillResources(server: McpServer, deps: McpToolDeps): void {
+export function registerSkillResources(server: McpServer, projectDir: string): void {
   server.registerResource(
     'skills',
     'dorkos://skills',
     {
       title: 'Skills',
       description:
-        "Authored skills discovered under .agents/skills in the server's default working " +
-        'directory. Name and description only — read dorkos://skills/{name} for the full ' +
-        'SKILL.md body.',
+        'Authored skills discovered under .agents/skills in this project directory. Name and ' +
+        'description only. Read dorkos://skills/{name} for the full SKILL.md body.',
       mimeType: 'application/json',
     },
     async () => {
-      const skills = await listWorkspaceSkills(deps.defaultCwd);
+      const skills = await listWorkspaceSkills(projectDir);
       return jsonResourceContents(
         'dorkos://skills',
         SkillListResourceSchema.parse({
@@ -146,7 +144,7 @@ export function registerSkillResources(server: McpServer, deps: McpToolDeps): vo
     },
     async (uri, { name }) => {
       const skillName = firstVar(name);
-      const skills = await listWorkspaceSkills(deps.defaultCwd);
+      const skills = await listWorkspaceSkills(projectDir);
       const skill = skills.find((s) => s.name === skillName);
       if (!skill) resourceNotFound(`Skill not found: ${skillName}`);
       const detail: SkillDetailResource = { name: skill.name, meta: skill.meta, body: skill.body };

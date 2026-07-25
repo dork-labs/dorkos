@@ -21,7 +21,11 @@ import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
-import { capabilitiesDomain, capabilityCatalogSchema } from '../capabilities-domain.js';
+import {
+  capabilitiesDomain,
+  capabilityCatalogSchema,
+  UNREGISTERED_TOOL_FAMILIES,
+} from '../capabilities-domain.js';
 import { composeDorkOsCapabilityRegistry } from '../dorkos-registry.js';
 
 const stubOperatorDeps = {} as McpToolDeps;
@@ -97,6 +101,93 @@ describe('list_capabilities surface', () => {
     expect(cap?.surfaces.mcp?.readOnlyCarveOut).toBe(true);
     expect(cap?.tier).toBe('observe');
     expect(cap?.surfaces.http).toEqual({ method: 'get', path: '/api/capabilities/catalog' });
+  });
+
+  /**
+   * The description is a model-facing interface, and while it is not exhaustive it
+   * must not claim to be. Around two dozen DorkOS tools (tasks, relay, mesh,
+   * binding, extension, UI) are hand-registered on the MCP servers with no registry
+   * entry, so an earlier description that said this listed "everything you can do"
+   * and to "call this first to discover what actions and tools are available" gave
+   * an obedient model a false premise: it sees no `tasks_*` entry and concludes it
+   * cannot manage tasks. These assertions fail if that overclaim comes back.
+   */
+  describe('its description does not overclaim', () => {
+    const description = () =>
+      capabilitiesDomain.capabilities.find((c) => c.id === 'capabilities.list')!.description;
+
+    it('never claims to list everything the agent can do', () => {
+      const text = description().toLowerCase();
+      expect(text).not.toContain('everything you can do');
+      expect(text).not.toContain('all the tools');
+    });
+
+    it('says the catalog is not the full tool list', () => {
+      // Any wording is fine as long as the caveat is present and negative.
+      expect(description()).toMatch(
+        /not the full list|not the whole|do not appear|rather than in/i
+      );
+    });
+
+    /**
+     * Asserted against the REGISTRY, not against the description's own wording.
+     *
+     * A wording-only check (`toContain('task')`) is a one-way ratchet: once those
+     * domains migrate onto the registry the caveat becomes false, and the assertion
+     * keeps passing and preserves it. That is the exact inverse of the instruction
+     * on the domain itself, which says to DELETE the caveat at migration rather
+     * than reword it. So the test binds the two together: naming a family is only
+     * correct while it is genuinely absent from the composed registry.
+     *
+     * The list is NOT restated here. It comes from the same exported
+     * `UNREGISTERED_TOOL_FAMILIES` the description is built from, so the prose and
+     * the guard cannot drift, and every family the description claims is absent is
+     * covered rather than an arbitrary three of them. The entries are domain
+     * prefixes (`tasks`, not `task`) precisely because that is what a migrated
+     * capability id would carry: an earlier version of this test compared `'task'`
+     * by exact `Set` membership and therefore could never have caught the `tasks`
+     * domain migrating, which is the family the original defect was about.
+     */
+    it('only names families that really are absent from the registry', () => {
+      const text = description().toLowerCase();
+      const registeredDomains = new Set(
+        composeDorkOsCapabilityRegistry({
+          logger: noopLogger,
+          operatorDeps: {} as McpToolDeps,
+        }).capabilities.map((c) => c.id.split('.')[0])
+      );
+
+      expect(UNREGISTERED_TOOL_FAMILIES.length).toBeGreaterThan(0);
+      for (const family of UNREGISTERED_TOOL_FAMILIES) {
+        // The description really does name it...
+        expect(text).toContain(family);
+        // ...and it really is absent. If this fails, the family migrated onto the
+        // registry: drop it from UNREGISTERED_TOOL_FAMILIES, which removes it from
+        // the description too. Do not reword the caveat.
+        expect(registeredDomains).not.toContain(family);
+      }
+      expect(text).toContain('tool list');
+    });
+
+    it('does not name a family that IS on the registry (the agent overclaim)', () => {
+      // `operator.update_agent` and `operator.agents_recent_activity` are catalog
+      // entries with tiers, and `managing-agents` teaches
+      // `dorkos call operator.update_agent`. So a bare "agent" in the absent list
+      // would be its own overclaim, one surface further out.
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('agent');
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('operator');
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('marketplace');
+    });
+
+    it('points at the universal actuation path by name', () => {
+      expect(description()).toContain('dorkos call');
+    });
+
+    it('is written without em-dashes (repo-wide ban on model-facing prose)', () => {
+      for (const cap of capabilitiesDomain.capabilities) {
+        expect(cap.description).not.toContain('—');
+      }
+    });
   });
 });
 

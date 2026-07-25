@@ -146,7 +146,7 @@ describe('CodexRuntime', () => {
       expect(checks).toEqual(SATISFIED_CHECKS);
     });
 
-    it('never sets CodexOptions.env and only passes codexPathOverride when configured', () => {
+    it('never sets env on the boot client, and only passes codexPathOverride when configured', () => {
       makeRuntime();
       makeRuntime({ binaryPath: '/opt/custom/codex' });
 
@@ -186,10 +186,28 @@ describe('CodexRuntime', () => {
       });
     });
 
-    it('never sets env', () => {
+    it('omits env unless extraEnv is given', () => {
       expect(
         buildCodexOptions('/bin/codex', 'http://127.0.0.1:4242/codex-ui-mcp')
       ).not.toHaveProperty('env');
+      expect(buildCodexOptions('/bin/codex', undefined, {})).not.toHaveProperty('env');
+    });
+
+    it('spreads the parent environment back in when extraEnv is given', () => {
+      // Setting `env` at all stops the SDK inheriting process.env, so a
+      // token-carrying client must reconstruct it or lose PATH/HOME/CODEX_HOME.
+      vi.stubEnv('DORKOS_BUILD_OPTIONS_PROBE', 'inherited');
+      try {
+        const env = buildCodexOptions(null, undefined, { DORKOS_AGENT_TOKEN: 'deadbeef' })
+          .env as Record<string, string>;
+        expect(env.DORKOS_AGENT_TOKEN).toBe('deadbeef');
+        expect(env.DORKOS_BUILD_OPTIONS_PROBE).toBe('inherited');
+        expect(env.PATH ?? env.Path).toBeDefined();
+        // Nothing unset leaks through as the string "undefined".
+        expect(Object.values(env).every((v) => typeof v === 'string')).toBe(true);
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 

@@ -44,6 +44,7 @@ import type {
   SessionSettings,
 } from '@dorkos/shared/types';
 import type {
+  AgentRegistryPort,
   AgentRuntime,
   RuntimeCapabilities,
   DependencyCheck,
@@ -66,6 +67,8 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
+import { buildAgentContextAppend } from '../shared/agent-context.js';
+import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
 import { checkCodexDependencies } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { CodexSessionRegistry } from './session-registry.js';
@@ -121,17 +124,46 @@ export interface CodexRuntimeOptions {
  * `codexPathOverride` is set only when a binary path is configured (otherwise
  * the SDK resolves its own vendored binary). `config.mcp_servers.dorkos_ui` is
  * added only when a UI MCP URL is provided, registering the scoped
- * `control_ui` server so Codex agents can open the canvas. `env` is
- * deliberately NEVER set — see the constructor note.
+ * `control_ui` server so Codex agents can open the canvas.
+ *
+ * `extraEnv` is the ONLY reason to set `CodexOptions.env`: when provided the SDK
+ * stops inheriting `process.env` wholesale, so this function spreads the parent
+ * environment back in explicitly (see {@link inheritedEnv}) before layering the
+ * extra keys on top. Omit it and `env` stays unset, which is the SDK's own
+ * inherit-everything path.
  *
  * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
  * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
+ * @param extraEnv - Extra environment entries for the `codex exec` subprocess
+ *   (the agent's identity token). Omitted or empty leaves `env` unset.
  */
-export function buildCodexOptions(binaryPath?: string | null, mcpUiUrl?: string): CodexOptions {
+export function buildCodexOptions(
+  binaryPath?: string | null,
+  mcpUiUrl?: string,
+  extraEnv?: Record<string, string>
+): CodexOptions {
+  const hasExtraEnv = extraEnv !== undefined && Object.keys(extraEnv).length > 0;
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
     ...(mcpUiUrl ? { config: { mcp_servers: { [CODEX_UI_MCP_SERVER]: { url: mcpUiUrl } } } } : {}),
+    ...(hasExtraEnv ? { env: { ...inheritedEnv(), ...extraEnv } } : {}),
   };
+}
+
+/**
+ * The parent environment as a `Record<string, string>`, dropping unset keys.
+ *
+ * Reproduces exactly what the Codex SDK does when `CodexOptions.env` is absent,
+ * so passing this plus one extra key is equivalent to inheritance plus that key,
+ * never a narrowed environment that loses PATH, HOME, or CODEX_HOME.
+ */
+function inheritedEnv(): Record<string, string> {
+  const result: Record<string, string> = {};
+  // eslint-disable-next-line no-restricted-syntax -- full env needed for the codex subprocess to inherit PATH/HOME/CODEX_HOME
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) result[key] = value;
+  }
+  return result;
 }
 
 /**
@@ -141,6 +173,16 @@ export class CodexRuntime implements AgentRuntime {
   readonly type = 'codex' as const;
 
   private readonly codex: Codex;
+  /** Kept so a turn that carries an identity token can build its own client. */
+  private readonly binaryPath: string | null | undefined;
+  /** Kept for the same reason as {@link binaryPath}. */
+  private readonly mcpUiUrl: string | undefined;
+  /**
+   * The agent registry, when the composition root injected it. Used only to
+   * decide whether this turn's working directory hosts a registered agent: the
+   * same guard the Claude adapter applies before minting an identity token.
+   */
+  private meshCore: AgentRegistryPort | undefined;
   private readonly threadMap: CodexThreadMap;
   /** Floor of the turn cwd resolution chain — see {@link CodexRuntimeOptions.defaultCwd}. */
   private readonly defaultCwd: string;
@@ -167,10 +209,40 @@ export class CodexRuntime implements AgentRuntime {
   constructor(options: CodexRuntimeOptions) {
     this.threadMap = options.threadMap;
     this.defaultCwd = options.defaultCwd ?? DEFAULT_CWD;
-    // NEVER set CodexOptions.env: when provided the subprocess does NOT
-    // inherit process.env (PATH/HOME/CODEX_HOME would all vanish). Omitting
-    // it inherits everything — NOTES.md §Additional live-verified facts.
+    this.binaryPath = options.binaryPath;
+    this.mcpUiUrl = options.mcpUiUrl;
+    // Set no `env` here: when provided the subprocess does NOT inherit
+    // process.env (PATH/HOME/CODEX_HOME would all vanish). Omitting it inherits
+    // everything (NOTES.md §Additional live-verified facts). A turn that mints an
+    // identity token builds its own client instead (see `clientForTurn`), where
+    // the parent environment is spread back in explicitly.
     this.codex = new Codex(buildCodexOptions(options.binaryPath, options.mcpUiUrl));
+  }
+
+  /**
+   * Accept the agent registry so a turn can tell whether its working directory
+   * hosts a registered agent (the identity-token guard).
+   *
+   * @param meshCore - The agent registry port from the composition root.
+   */
+  setMeshCore(meshCore: AgentRegistryPort): void {
+    this.meshCore = meshCore;
+  }
+
+  /**
+   * The `Codex` client for one turn.
+   *
+   * Returns the shared boot-time client, whose subprocess inherits `process.env`
+   * untouched, unless this turn carries an agent identity token, in which case a
+   * turn-scoped client is built so the token reaches `codex exec` through its
+   * environment and nowhere else. Constructing a client is cheap next to spawning
+   * the model subprocess: it resolves the binary path and stores options.
+   *
+   * @param tokenEnv - The identity-token env fragment, `{}` when unattributed.
+   */
+  private clientForTurn(tokenEnv: Record<string, string>): Codex {
+    if (Object.keys(tokenEnv).length === 0) return this.codex;
+    return new Codex(buildCodexOptions(this.binaryPath, this.mcpUiUrl, tokenEnv));
   }
 
   // --- Session lifecycle ---
@@ -397,18 +469,36 @@ export class CodexRuntime implements AgentRuntime {
     // the durable row. A no-op before the first bind — the setThreadId below
     // carries the first turn's metadata with the row instead.
     this.persistSessionMetadata(sessionId);
+
+    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
+    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
+    // Codex agent knows who it is and how to reach its capabilities.
+    const agentContext = await buildAgentContextAppend(cwd);
+
+    // Mint this session's agent identity token when this cwd hosts a registered
+    // agent. It rides the subprocess env, never the prompt, so it stays a
+    // credential for the `dorkos` commands the agent runs rather than text in its
+    // context and transcript (spec `agent-trust` §3.1). `{}` leaves the turn
+    // unattributed, exactly as before.
+    const meshAgent = this.meshCore?.getByPath(cwd);
+    const agentTokenEnv = await resolveAgentTokenEnv(
+      meshAgent ? cwd : undefined,
+      meshAgent?.name ?? undefined
+    );
+
     const threadOptions = projectThreadOptions(settings, cwd);
+    const client = this.clientForTurn(agentTokenEnv);
     const thread =
       boundThreadId !== undefined
-        ? this.codex.resumeThread(boundThreadId, threadOptions)
-        : this.codex.startThread(threadOptions);
+        ? client.resumeThread(boundThreadId, threadOptions)
+        : client.startThread(threadOptions);
 
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
     const ctx = createCodexEventContext(sessionId);
     let bound = boundThreadId !== undefined;
     try {
-      const { events } = await thread.runStreamed(buildCodexPrompt(content, opts), {
+      const { events } = await thread.runStreamed(buildCodexPrompt(content, opts, agentContext), {
         signal: controller.signal,
       });
       for await (const event of mapCodexThread(events, ctx)) {

@@ -200,9 +200,17 @@ the runtime's docs until then.
 - `--experimental-json` (the flag the SDK passes) is accepted at 0.142.5 and emits the same
   stream as the help-documented `--json`.
 - `CodexOptions.env` gotcha: when set, the subprocess does **not** inherit `process.env`
-  (dist source) — if 2.5 ever sets it, it must pass PATH/HOME/CODEX_HOME explicitly.
-  Omitting it inherits everything (and the SDK then injects
+  (dist source). Omitting it inherits everything (and the SDK then injects
   `CODEX_INTERNAL_ORIGINATOR_OVERRIDE=codex_sdk_ts`).
+  **The adapter now DOES set it, on one path only** (DOR-428): a turn whose working
+  directory hosts a registered agent builds a turn-scoped `Codex` client carrying that
+  agent's `DORKOS_AGENT_TOKEN`, because `ThreadOptions` has no env field and the boot
+  client is shared by every session. `inheritedEnv()` in `codex-runtime.ts` reproduces the
+  SDK's own inheritance loop (`Object.entries(process.env)`, skipping `undefined`) and the
+  token is layered on top, so PATH/HOME/CODEX_HOME survive; `prependPathDirs` still runs
+  afterwards inside the SDK. A turn with no registered agent, or one where minting fails,
+  keeps using the shared boot client with `env` unset. Verified live against
+  `@openai/codex-sdk` dist: `CodexExec.run` uses `envOverride` wholesale when present.
 - `CodexOptions.codexPathOverride` is where `runtimes.codex.binaryPath` config wires in;
   when unset the SDK resolves its **own vendored binary** from `@openai/codex` optional
   deps — it does not search PATH. So execution does not strictly require a system `codex`

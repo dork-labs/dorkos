@@ -25,8 +25,19 @@ export interface OperatingSkill {
  * The pack content version. Bump this (integer, monotonic) whenever any skill
  * body or description changes so the seeder re-writes unmodified on-disk copies.
  * User-modified copies are never overwritten regardless of version.
+ *
+ * History:
+ * - 1: initial pack (spec `agents-as-operators` §1.5).
+ * - 2: capability self-description pointer (spec `capability-registry` §2.2).
+ * - 3: permission tiers, the `approval_required` handshake, and `dorkos call`.
+ *   Version 2 taught a pre-approval world: it never mentioned tiers, approvals,
+ *   or the universal `dorkos call` path, and it told agents to look for
+ *   `requires_confirmation` on `marketplace_uninstall`, which now returns the
+ *   approval payload instead. Same round corrected the `config_patch` shape (the
+ *   required `patch` wrapper) and the `ui.statusBar` example (a `pins` list, not
+ *   per-item booleans).
  */
-export const OPERATING_SKILLS_VERSION = 2;
+export const OPERATING_SKILLS_VERSION = 3;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

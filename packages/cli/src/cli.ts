@@ -479,7 +479,7 @@ Commands:
   agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   activity             Show the activity feed (--actor|--category|--type|--limit)
-  capabilities         List everything you can do here (--json for raw catalog)
+  capabilities         List capabilities you can invoke by id (--json for raw catalog)
   call <capability-id> Invoke any capability by id (--input <json>; prints JSON)
   version --check      Show server + latest version (falls back to local cache)
   harness sync         Project agent files across harnesses (--check|--fix)

@@ -23,6 +23,7 @@ import { createInSessionContextResolver } from '../../../core/agent-identity/ind
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import type { CapabilityRegistry } from '../../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
+import { registerDorkOsResources } from '../../../core/mcp-resources/index.js';
 import { logger } from '../../../../lib/logger.js';
 
 // Re-export types and handlers for external consumers
@@ -114,6 +115,12 @@ export {
  * `index.ts` call site (the per-query factory closure reads a binding populated
  * later in boot), so a relay-disabled instance simply omits those tools.
  *
+ * The read-only `dorkos://` resources (sessions, agents, skills, capabilities)
+ * are registered through the shared {@link registerDorkOsResources}, so this
+ * server answers "what is the state of my world?" with the same four resources the
+ * external `/mcp` server exposes. Session and skill reads are scoped to the
+ * session's own working directory here, not the server's default project.
+ *
  * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.)
  * @param session - Per-query session for UI tool event emission and state access
  * @param sessionId - Per-query trigger session id (DevTools read fallback)
@@ -149,7 +156,7 @@ export function createDorkOsToolServer(
       operatorDeps: deps,
       ...(marketplaceDeps && { marketplaceDeps }),
     });
-  return createSdkMcpServer({
+  const server = createSdkMcpServer({
     name: 'dorkos',
     version: '1.0.0',
     tools: [
@@ -171,4 +178,17 @@ export function createDorkOsToolServer(
       ),
     ],
   });
+
+  // The read-only `dorkos://` resources: the same registration the external
+  // `/mcp` server performs, scoped to THIS session's project rather than the
+  // server's default. `createSdkMcpServer` hands back a real `McpServer` that it
+  // has not connected yet, so resources can be registered on it here.
+  registerDorkOsResources(
+    server.instance,
+    deps,
+    capabilityRegistry,
+    session?.cwd ?? deps.defaultCwd
+  );
+
+  return server;
 }
