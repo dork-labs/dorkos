@@ -100,6 +100,17 @@ name: claude-code-review
 # when a comment here asserted that silent egress was gone while two grants in the
 # list were arbitrary code execution.
 #
+# WHAT THE HARNESS DOES NOT FENCE, recorded here rather than left to be discovered:
+# the review step's `env:` map. The fence covers every flag the CLI is started
+# with, but not the environment it is started in, and the environment is another
+# way to change what the reviewer can do — `NODE_OPTIONS: --require
+# ${{ github.workspace }}/scripts/pwn.js` would load PR-authored code into the CLI
+# process and passes the suite untouched. That is the same shape as the HELPER_DIR
+# repoint the fence now catches: a value pointing back into the PR-authored
+# checkout. Fencing every env var is impractical and deliberately not attempted, so
+# treat any edit to that map as security-relevant and review it as such — in
+# particular, no value there should ever resolve inside `${{ github.workspace }}`.
+#
 # KNOWN BLIND SPOT — a PR with merge conflicts gets NO review, and no red check
 # either (DOR-457). GitHub builds the test-merge ref (`refs/pull/N/merge`) before
 # it creates a `pull_request` workflow run; when the PR conflicts with its base
@@ -569,13 +580,8 @@ jobs:
             To search the tree and read files, use the Grep, Glob and Read tools.
             That helper is the ONLY shell command you have: there is no `gh`, no
             `grep`, no `rg`, no `git`, no `ls`. Do not spend turns rediscovering
-            that — Grep and Glob cover every search this review needs.
-
-            One trap worth knowing before the dangling-reference sweep: a search
-            with no path does NOT descend into dot-directories, so `.github/`,
-            `.claude/` and `.husky/` come back empty even when they contain the
-            token. Whenever a sweep matters, repeat it with an explicit path for
-            each of those directories.
+            that — Grep and Glob cover every search this review needs, dot-
+            directories included, in a single pass.
 
             First, read REVIEW.md and AGENTS.md at the repository root and apply
             them in full, including REVIEW.md's "How to review" process, the

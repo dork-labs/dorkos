@@ -98,16 +98,13 @@ hooks, commands, or scripts:
 - Search more than one token form: the package (`@scope/x`), the directory
   (`packages/x`), and the bare name (`x-thing`). A reference often survives under a
   token you did not think to search.
-- **Search dot-directories by naming them.** A tree-wide search does not descend
-  into `.github/`, `.claude/`, `.husky/` and the like — ripgrep skips hidden
-  directories unless told otherwise, so a bare search silently returns zero hits
-  from them. That is exactly where workflow files, agent rules, skills and hooks
-  live, and this list names them, so run the sweep a second time with an explicit
-  path for each: `.github`, `.claude`, and any other dot-directory the removed
-  identifier could plausibly appear in. A sweep that skipped them is not a sweep.
 - This whole sweep is a search over the working tree, so the Grep and Glob tools are
-  enough for it. In the `claude-code-review` workflow they are all you have: that
-  job grants no shell beyond one fixed-shape GitHub helper.
+  enough for it — including `.github/`, `.claude/` and the other dot-directories
+  above, which Grep descends into, so one pass covers them. (A bare `rg` would not:
+  ripgrep skips hidden directories unless asked. If your harness searches that way
+  rather than through the Grep tool, name those directories explicitly.) In the
+  `claude-code-review` workflow the Grep and Glob tools are all you have: that job
+  grants no shell beyond one fixed-shape GitHub helper.
 - Every surviving reference to a removed thing is a finding: 🟡 at least, 🔴 if a
   runtime, build, or CI path resolves it.
 

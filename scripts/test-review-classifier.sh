@@ -474,6 +474,43 @@ expected_denied=$(
 check "workflow: deny-list is exactly the expected set" \
   "$expected_denied" "$(tools_of --disallowedTools)"
 
+# The flags that carry a bare value rather than a quoted list. `--setting-sources`
+# is the one that matters and the reason this check exists: pinning the flag NAME
+# left `user` -> `user,project,local` passing, and by the measurement recorded
+# beside claude_args that value makes the CLI load the checkout's
+# `.claude/settings.json`, `.claude/settings.local.json` and `.mcp.json` and act on
+# them — hooks, env vars, apiKeyHelper, project MCP servers — BEFORE any tool
+# gating. That is upstream of everything the allow-list controls, and it silently
+# removes one of the two independent controls over `.mcp.json` the workflow says it
+# wants. `--max-turns` is pinned to its wiring, not to a number: the budget lives in
+# the workflow-level env vars, so tuning it does not disturb this.
+value_of() {
+  printf '%s\n' "$claude_args" | sed -n "s/^[[:space:]]*$1 //p"
+}
+check "workflow: --setting-sources value is exactly 'user'" \
+  user "$(value_of --setting-sources)"
+# shellcheck disable=SC2016
+check "workflow: --max-turns is wired to the PR-size step" \
+  '${{ steps.pr-size.outputs.max_turns }}' "$(value_of --max-turns)"
+
+# Backstop. The checks above name the flags that exist today and give legible
+# failures; this one covers the flag nobody has invented yet, including its value.
+# Without it, every future flag would need someone to remember to add a check —
+# which is the same "guard the specific thing" mistake that produced two rounds of
+# bypasses. Yes, it duplicates the lists above; the duplication is what makes a
+# failure say WHICH part changed instead of just "the block differs".
+# The `${{ ... }}` below is a literal GitHub Actions expression, not shell.
+# shellcheck disable=SC2016
+expected_claude_args=$(
+  printf '%s\n' \
+    "            --allowedTools \"$(printf '%s' "$expected_tools" | tr '\n' ',')\"" \
+    "            --disallowedTools \"$(printf '%s' "$expected_denied" | tr '\n' ',')\"" \
+    '            --setting-sources user' \
+    '            --max-turns ${{ steps.pr-size.outputs.max_turns }}'
+)
+check "workflow: the whole claude_args block is exactly this" \
+  "$expected_claude_args" "$claude_args"
+
 # 3. Where the helper comes from. `${{ runner.temp }}` is outside the checkout;
 # `${{ github.workspace }}` IS the checkout. A function rather than an inline
 # `case`, because a case pattern's `)` inside `$( )` is a parse error.
