@@ -1,8 +1,8 @@
 /**
- * Shared helpers for the external MCP server's `dorkos://` resources
- * (`session-resources.ts`, `agent-resources.ts`, `skill-resources.ts`).
+ * Shared helpers for the `dorkos://` MCP resources (`session-resources.ts`,
+ * `agent-resources.ts`, `skill-resources.ts`, `capabilities-resource.ts`).
  *
- * @module services/core/external-mcp/resource-helpers
+ * @module services/core/mcp-resources/resource-helpers
  */
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';

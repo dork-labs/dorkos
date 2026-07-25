@@ -82,22 +82,35 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
 
 /**
  * Assemble the prompt for one turn. Codex exec's ONLY input channel is the
- * prompt string (ThreadOptions has no system-prompt field at 0.142.5), so
- * `systemPromptAppend` (e.g. Tasks scheduler context) and the
- * additional-context bag are prepended as a prefix, with the user's `content`
- * last and byte-for-byte unmutated — the EventLog records the pristine
- * `content` via the turn_start userMessage, so injected context never renders
- * as user-authored text.
+ * prompt string (ThreadOptions has no system-prompt field at 0.142.5), so the
+ * runtime-neutral DorkOS context, `systemPromptAppend` (e.g. Tasks scheduler
+ * context), and the additional-context bag are prepended as a prefix, with the
+ * user's `content` last and byte-for-byte unmutated: the EventLog records the
+ * pristine `content` via the turn_start userMessage, so injected context never
+ * renders as user-authored text.
  *
  * The static `<gen_ui>` teaching block leads every prompt: Codex has no
  * cacheable system-prompt channel, so the generative-UI syntax must be taught
  * inline on each turn (compact by design).
  *
+ * `agentContext` carries the blocks every runtime shares: `<agent_identity>`,
+ * `<agent_persona>`, `<agent_safety_boundaries>`, `<dorkos_context>`, `<env>`
+ * (`runtimes/shared/agent-context.ts`). It precedes the caller's
+ * `systemPromptAppend` for the same reason it does in the Claude adapter: who the
+ * agent is comes before what this particular turn was scheduled to do.
+ *
  * @param content - The user's message, passed through pristine
  * @param opts - Per-turn options carrying systemPromptAppend/additionalContext
+ * @param agentContext - The runtime-neutral DorkOS context blocks, or `''`/omitted
+ *   when the working directory hosts no agent manifest
  */
-export function buildCodexPrompt(content: string, opts?: MessageOpts): string {
+export function buildCodexPrompt(
+  content: string,
+  opts?: MessageOpts,
+  agentContext?: string
+): string {
   const blocks: string[] = [GEN_UI_CONTEXT];
+  if (agentContext) blocks.push(agentContext);
   if (opts?.systemPromptAppend) blocks.push(opts.systemPromptAppend);
   for (const entry of opts?.additionalContext ?? []) blocks.push(renderContextEntry(entry));
   blocks.push(content);

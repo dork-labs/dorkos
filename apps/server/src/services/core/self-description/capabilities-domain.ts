@@ -122,6 +122,21 @@ export const capabilityCatalogSchema = z.object({
  * the `list_capabilities` tool on both MCP servers and — through its `http`
  * surface — the `GET /api/capabilities/catalog` route. Its `invoke` returns the
  * live catalog of the composed registry.
+ *
+ * ## The description says what the catalog covers, and what it does not
+ *
+ * The catalog covers exactly the capabilities composed onto the registry (operator,
+ * marketplace, and this one). Roughly two dozen further DorkOS tools (the agent,
+ * task, relay, mesh, binding, trace, extension, devtools, and UI families) are
+ * still hand-registered on the MCP servers and have no registry entry, so they are
+ * absent here. The earlier description told the model this was "everything you can
+ * do" and to "call this first to discover what actions and tools are available",
+ * which is a false premise an obedient model reasons correctly from: it sees no
+ * task or relay entry and concludes it cannot manage tasks or message another
+ * agent. The wording is therefore scoped to what the catalog is (the by-id,
+ * tier-carrying surface) and points at the tool list for the rest. The honest fix
+ * ends when those domains migrate onto the registry, at which point the catalog
+ * really is exhaustive and this caveat should be deleted, not reworded.
  */
 export const capabilitiesDomain: CapabilityDomain = {
   name: 'capabilities',
@@ -130,10 +145,14 @@ export const capabilitiesDomain: CapabilityDomain = {
       id: 'capabilities.list',
       title: 'List capabilities',
       description:
-        'List everything you can do in this DorkOS: the live, versioned catalog of every ' +
-        'capability the registry exposes, each with its id, title, description, permission tier, ' +
-        'input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. ' +
-        'Call this first to discover what actions and tools are available before reaching for a specific one.',
+        'List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every ' +
+        'entry on the capability registry, each with its id, title, description, permission tier ' +
+        '(observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, ' +
+        "HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. " +
+        'This is NOT the full list of DorkOS tools: agent, task, relay, mesh, binding, extension, ' +
+        'and UI tools are registered directly on the MCP server, so they appear in your own tool ' +
+        'list rather than in this catalog and carry no permission tier. Call this to find out what ' +
+        'is invocable by capability id and at what tier; look at your tool list for the rest.',
       tier: 'observe',
       input: z.object({}),
       output: capabilityCatalogSchema,

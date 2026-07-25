@@ -1,16 +1,16 @@
 /**
  * Registers the `dorkos://agents` and `dorkos://agents/{id}` MCP resources
- * against a live `McpServer` instance. Split out of `mcp-server.ts` — see
- * `core-tools.ts` in this directory for why.
+ * against a live `McpServer` instance: the external `/mcp` server and the
+ * in-session `dorkos` tool server alike (see `index.ts` in this directory).
  *
  * Reuses `MeshCore` — the same dependency and the same `AgentManifest` shape
- * the `mesh_list`/`mesh_inspect` external MCP tools already expose
- * (`mesh-tools.ts`), so these resources add a read surface, not new data: an
+ * the `mesh_list`/`mesh_inspect` MCP tools already expose, so these resources add
+ * a read surface, not new data: an
  * `AgentManifest` never carries a filesystem path (see
  * `packages/shared/src/mesh-schemas.ts`), so no cwd/project-path exposure is
  * introduced here beyond what `mesh_list`/`mesh_inspect` already return.
  *
- * @module services/core/external-mcp/agent-resources
+ * @module services/core/mcp-resources/agent-resources
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -33,7 +33,7 @@ const AgentListResourceSchema = z.object({
 /** Guard that returns the injected `MeshCore` or throws a clear "not available" error. */
 function requireMeshCore(deps: McpToolDeps): NonNullable<McpToolDeps['meshCore']> {
   if (!deps.meshCore) {
-    resourceUnavailable('Mesh is not enabled — agent resources are unavailable.');
+    resourceUnavailable('Mesh is not enabled, so agent resources are unavailable.');
   }
   return deps.meshCore;
 }
@@ -41,7 +41,7 @@ function requireMeshCore(deps: McpToolDeps): NonNullable<McpToolDeps['meshCore']
 /**
  * Register `dorkos://agents` and `dorkos://agents/{id}` against `server`.
  *
- * @param server - The external `McpServer` instance to register resources against.
+ * @param server - The `McpServer` instance to register resources against.
  * @param deps - Shared MCP tool dependencies.
  */
 export function registerAgentResources(server: McpServer, deps: McpToolDeps): void {

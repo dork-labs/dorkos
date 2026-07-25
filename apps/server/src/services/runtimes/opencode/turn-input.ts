@@ -54,18 +54,32 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
 
 /**
  * Assemble the `parts` array for one turn: an optional `synthetic` context
- * part (system-prompt append + the additional-context bag) followed by the
- * user's `content`, byte-for-byte unmutated in its own part — the EventLog
- * records the pristine `content` via the turn_start userMessage, and the
- * synthetic flag keeps the injected block out of rendered history. The static
- * `<gen_ui>` teaching block leads the synthetic part so the generative-UI syntax
- * is taught on every turn (OpenCode has no cacheable system-prompt channel here).
+ * part (the runtime-neutral DorkOS context + system-prompt append + the
+ * additional-context bag) followed by the user's `content`, byte-for-byte
+ * unmutated in its own part: the EventLog records the pristine `content` via the
+ * turn_start userMessage, and the synthetic flag keeps the injected block out of
+ * rendered history. The static `<gen_ui>` teaching block leads the synthetic part
+ * so the generative-UI syntax is taught on every turn (OpenCode has no cacheable
+ * system-prompt channel here).
+ *
+ * `agentContext` carries the blocks every runtime shares: `<agent_identity>`,
+ * `<agent_persona>`, `<agent_safety_boundaries>`, `<dorkos_context>`, `<env>`
+ * (`runtimes/shared/agent-context.ts`). It precedes the caller's
+ * `systemPromptAppend` for the same reason it does in the Claude adapter: who the
+ * agent is comes before what this particular turn was scheduled to do.
  *
  * @param content - The user's message, passed through pristine
  * @param opts - Per-turn options carrying systemPromptAppend/additionalContext
+ * @param agentContext - The runtime-neutral DorkOS context blocks, or `''`/omitted
+ *   when the working directory hosts no agent manifest
  */
-export function buildOpenCodeParts(content: string, opts?: MessageOpts): OpenCodeTextPartInput[] {
+export function buildOpenCodeParts(
+  content: string,
+  opts?: MessageOpts,
+  agentContext?: string
+): OpenCodeTextPartInput[] {
   const blocks: string[] = [GEN_UI_CONTEXT];
+  if (agentContext) blocks.push(agentContext);
   if (opts?.systemPromptAppend) blocks.push(opts.systemPromptAppend);
   for (const entry of opts?.additionalContext ?? []) blocks.push(renderContextEntry(entry));
 

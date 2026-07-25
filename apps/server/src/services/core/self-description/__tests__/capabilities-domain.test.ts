@@ -98,6 +98,51 @@ describe('list_capabilities surface', () => {
     expect(cap?.tier).toBe('observe');
     expect(cap?.surfaces.http).toEqual({ method: 'get', path: '/api/capabilities/catalog' });
   });
+
+  /**
+   * The description is a model-facing interface, and while it is not exhaustive it
+   * must not claim to be. Around two dozen DorkOS tools (tasks, relay, mesh,
+   * binding, extension, UI) are hand-registered on the MCP servers with no registry
+   * entry, so an earlier description that said this listed "everything you can do"
+   * and to "call this first to discover what actions and tools are available" gave
+   * an obedient model a false premise: it sees no `tasks_*` entry and concludes it
+   * cannot manage tasks. These assertions fail if that overclaim comes back.
+   */
+  describe('its description does not overclaim', () => {
+    const description = () =>
+      capabilitiesDomain.capabilities.find((c) => c.id === 'capabilities.list')!.description;
+
+    it('never claims to list everything the agent can do', () => {
+      const text = description().toLowerCase();
+      expect(text).not.toContain('everything you can do');
+      expect(text).not.toContain('all the tools');
+    });
+
+    it('says the catalog is not the full tool list', () => {
+      // Any wording is fine as long as the caveat is present and negative.
+      expect(description()).toMatch(
+        /not the full list|not the whole|do not appear|rather than in/i
+      );
+    });
+
+    it('names the families that are absent, so the model knows where to look', () => {
+      const text = description().toLowerCase();
+      for (const family of ['task', 'relay', 'mesh']) {
+        expect(text).toContain(family);
+      }
+      expect(text).toContain('tool list');
+    });
+
+    it('points at the universal actuation path by name', () => {
+      expect(description()).toContain('dorkos call');
+    });
+
+    it('is written without em-dashes (repo-wide ban on model-facing prose)', () => {
+      for (const cap of capabilitiesDomain.capabilities) {
+        expect(cap.description).not.toContain('—');
+      }
+    });
+  });
 });
 
 describe('isError round-trip through the registry', () => {

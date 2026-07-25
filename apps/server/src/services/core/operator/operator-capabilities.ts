@@ -227,11 +227,12 @@ export const operatorDomain: CapabilityDomain = {
         'settings — only do it when the user has asked for the change. Arrays replace (not merge); invalid values are rejected.',
       tier: 'act',
       input: z.object({
-        patch: z
-          .record(z.string(), z.unknown())
-          .describe(
-            'Partial config to deep-merge, e.g. { "ui": { "sidebar": { "collapsed": true } } }'
-          ),
+        patch: z.record(z.string(), z.unknown()).describe(
+          // Keep this example a field that actually exists: `ui.sidebar` has no
+          // `collapsed` (the earlier example's key), and `ui.statusBar` is a
+          // `pins` list rather than per-item booleans (DOR-452).
+          'Partial config to deep-merge, e.g. { "ui": { "sidebar": { "recentsCollapsed": true } } }'
+        ),
       }),
       output: z.unknown(),
       surfaces: {

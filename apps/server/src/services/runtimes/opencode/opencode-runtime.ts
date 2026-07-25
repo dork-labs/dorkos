@@ -63,6 +63,7 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
+import { buildAgentContextAppend } from '../shared/agent-context.js';
 import { checkOpenCodeDependencies, getConnectedOpenCodeProvider } from './check-dependencies.js';
 import { detectOllama } from './ollama.js';
 import {
@@ -249,12 +250,19 @@ export class OpenCodeRuntime implements AgentRuntime {
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
 
+    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
+    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so an
+    // OpenCode agent knows who it is and how to reach its capabilities. It rides
+    // the `synthetic` part with the rest of the injected prefix, so it never
+    // renders as user-authored text.
+    const agentContext = await buildAgentContextAppend(cwd);
+
     yield* this.runOpenCodeTurn(sessionId, cwd, opts?.title, async (client, ocSessionId) => {
       const model = parseModelSelection(settings.model);
       const prompted = await client.session.promptAsync({
         path: { id: ocSessionId },
         body: {
-          parts: buildOpenCodeParts(content, opts),
+          parts: buildOpenCodeParts(content, opts, agentContext),
           ...(model !== undefined ? { model } : {}),
         },
       });

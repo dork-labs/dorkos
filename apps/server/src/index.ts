@@ -765,10 +765,13 @@ async function start() {
     });
     logger.info('[Mesh] MeshCore initialized');
 
-    // Provide MeshCore to runtime for per-session manifest lookup and peer agents context
-    // Only ClaudeCodeRuntime exposes setMeshCore — skip in test mode.
-    if (claudeRuntime) {
-      claudeRuntime.setMeshCore(meshCore);
+    // Provide MeshCore to every registered runtime that can use it: per-session
+    // manifest lookup, peer-agents context, and the guard that decides whether a
+    // turn's working directory hosts a registered agent worth minting an identity
+    // token for. `setMeshCore` is an optional DI setter on `AgentRuntime`, so a
+    // runtime that has no use for it (test-mode, opencode) simply has none.
+    for (const runtime of runtimeRegistry.listRuntimes()) {
+      runtime.setMeshCore?.(meshCore);
     }
 
     // Run startup reconciliation (non-fatal)

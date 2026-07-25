@@ -1,8 +1,8 @@
 /**
  * Registers the `dorkos://capabilities` MCP resource against a live `McpServer`
- * instance (spec `capability-registry`, task 2.3). Split out of `mcp-server.ts`
- * alongside the other `dorkos://` resources — see `skill-resources.ts` for the
- * pattern.
+ * instance (spec `capability-registry`, task 2.3): the external `/mcp` server
+ * and the in-session `dorkos` tool server alike (see `index.ts` in this
+ * directory).
  *
  * The resource returns the live self-description catalog: the same
  * {@link CapabilityRegistry.catalog} payload the `list_capabilities` tool and the
@@ -12,7 +12,7 @@
  * (not just a tool) lets an MCP client pin it into context without spending a
  * tool call.
  *
- * @module services/core/external-mcp/capabilities-resource
+ * @module services/core/mcp-resources/capabilities-resource
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -23,7 +23,7 @@ import { jsonResourceContents } from './resource-helpers.js';
  * Register `dorkos://capabilities` against `server`, serving the registry's live
  * catalog.
  *
- * @param server - The external `McpServer` instance to register the resource against.
+ * @param server - The `McpServer` instance to register the resource against.
  * @param registry - The composed capability registry whose catalog is served.
  */
 export function registerCapabilitiesResource(
