@@ -4,13 +4,14 @@ description: Ask an agent to create agents, schedule tasks, install packages, ch
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
-import { Callout } from 'fumadocs-ui/components/callout';
 
 # Your Agents Can Operate DorkOS
 
-Your agents don't just write code. They can run DorkOS for you. Ask in plain language, and an agent can set up new agents, put work on a schedule, add tools from the marketplace, change your settings, and tell you what's been happening: the same things you'd click through in the app.
+Your agents don't just write code. They can run DorkOS for you. Ask in plain language, and an agent can set up new agents, put work on a schedule, add tools from the marketplace, change your settings, and tell you what's been happening.
 
-You stay in charge. An agent only does these things when you ask, and the bigger ones (like changing your settings or installing a package) happen on your say-so, not on a whim.
+This is a slice of the app, not all of it. Agents reach the parts listed below. They cannot open a session for you, set up a workspace, connect a runtime, or run git. Those stay yours to do by hand.
+
+You stay in charge of what lands. Adding or removing a marketplace package always puts a card in front of you first. Smaller edits, like changing a setting or renaming an agent, go through without a card, and they land in your activity feed after the fact. When DorkOS knows which agent asked, the feed says so by name.
 
 ## What you can ask for
 
@@ -46,23 +47,26 @@ Every new agent you create comes with a set of built-in skills that teach it how
 
 ## A few things to know
 
-- **Your agent is happy to edit itself.** It can adjust its own name, personality, and notes. Before it edits a _different_ agent, it checks with you first.
-- **Some agents are protected.** Built-in agents like DorkBot keep their identity, so an agent can't rename or impersonate them.
-- **Settings changes need your intent.** An agent changes your settings only when you ask for the change, never as a side effect.
-- **Installing shows you first.** When an agent installs a marketplace package, you see what it's about to do and confirm before anything lands.
-- **Anything that can't be undone waits for you.** Removing a package, for example. DorkOS puts a card on your dashboard and does nothing until you answer. See [Action Approvals](/docs/guides/action-approvals).
+- **Your agent is happy to edit itself.** It can adjust its own name, personality, and notes. It's told to check with you before editing a _different_ agent, which is instruction, not a lock: DorkOS does not stop it. Watch your activity feed if you have agents you don't want touched.
+- **Some agents are protected.** Built-in agents like DorkBot keep their identity, and this one _is_ enforced: an agent can't rename or impersonate them, however it asks.
+- **Settings changes are not gated.** An agent is told to change your settings only when you ask, but nothing blocks it, so a setting can change without a card. The change shows up in your activity feed.
+- **Marketplace changes wait for you.** Installing a package, removing one, or creating a new one all put a card in front of you. Nothing lands until you answer. See [Action Approvals](/docs/guides/action-approvals).
 
 ## Doing it from the command line
 
-If you run agents in a terminal (including runtimes that don't plug into DorkOS's in-app tools), the same actions are available as `dorkos` commands. They talk to your running DorkOS, and every one takes `--json` for clean, scriptable output.
+Codex and OpenCode agents don't get DorkOS's in-app tools, so the `dorkos` command line is how they reach DorkOS. It works the same for you in a terminal. These commands talk to your running DorkOS, and every one takes `--json` for clean, scriptable output.
 
 ```bash
+dorkos capabilities               # Ask DorkOS what it can be told to do
+dorkos call operator.check_update # Run one of those by name
 dorkos agent list                 # See your agents
 dorkos task list                  # See your scheduled tasks
 dorkos task trigger <id>          # Run a task now
 dorkos activity --limit 20        # Read recent activity
 dorkos version --check            # Compare your version to the latest
 ```
+
+`dorkos capabilities` is the useful one for an agent: it asks your running DorkOS for a current list of the actions it accepts by name, so the agent doesn't have to guess from docs that may be out of date. `dorkos call` then runs any of them. That list is not every tool DorkOS has, and it says so, so an agent knows to look at its own tools for the rest.
 
 If you turned login on, give the CLI an API key first, or these commands will tell you they need one: see [If your DorkOS asks you to sign in](/docs/guides/cli-usage#if-your-dorkos-asks-you-to-sign-in).
 
@@ -81,6 +85,6 @@ See the [CLI reference](/docs/guides/cli-usage#operator-commands) for every comm
     What agents are and how to create and shape them.
   </Card>
   <Card title="Action Approvals" href="/docs/guides/action-approvals">
-    How DorkOS asks you first before anything that can't be undone.
+    How DorkOS asks you first before an agent adds or removes a package.
   </Card>
 </Cards>
