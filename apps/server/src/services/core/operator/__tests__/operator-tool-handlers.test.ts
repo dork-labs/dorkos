@@ -158,19 +158,32 @@ describe('activity_list', () => {
   });
 });
 
-/** A schema-valid config store that also carries every SENSITIVE_CONFIG_KEYS value. */
+/**
+ * A schema-valid config store carrying every secret AND every credential
+ * reference, so the snapshot assertions cover both classes the disclosure
+ * allowlist withholds (`config-disclosure.ts`).
+ */
 function secretBearingStore(): Record<string, unknown> {
   return {
     version: 1,
     tunnel: { authtoken: 'ngrok-secret', auth: 'basic-secret', domain: 'my.example.com' },
     mcp: { apiKey: 'mcp-secret-key', enabled: true },
-    cloud: { instanceToken: 'cloud-secret-token', instanceName: 'my-box' },
+    cloud: {
+      instanceToken: 'cloud-secret-token',
+      instanceName: 'my-box',
+      linkedAccountLabel: 'secret-person@example.com',
+    },
+    runtimes: {
+      default: 'claude-code',
+      codex: { enabled: true, credentialRef: 'file:/home/me/.dork/secret-codex-key' },
+    },
+    providers: { anthropic: 'file:/home/me/.dork/secret-anthropic-key' },
     ui: { theme: 'dark' },
   };
 }
 
 describe('config_get', () => {
-  it('returns the config snapshot with sensitive keys redacted', async () => {
+  it('returns an allowlisted snapshot: no secrets, no credential references', async () => {
     mocks.configStore = secretBearingStore();
     const handler = createConfigGetHandler();
     const result = await handler();
@@ -179,24 +192,48 @@ describe('config_get', () => {
     const payload = parsePayload<{
       version: number;
       ui: { theme: string };
-      tunnel: { authtoken?: string; auth?: string; domain?: string };
-      mcp: { apiKey?: string; enabled?: boolean };
-      cloud: { instanceToken?: string; instanceName?: string };
+      tunnel: { authtoken?: string; auth?: string; domain?: string; authtokenConfigured?: boolean };
+      mcp: { apiKey?: string; enabled?: boolean; apiKeyConfigured?: boolean };
+      cloud: { instanceToken?: string; instanceName?: string; linkedAccountLabel?: string };
+      runtimes: { codex: { credentialRef?: string; credentialRefConfigured?: boolean } };
+      providers?: Record<string, string>;
+      providersConfigured?: string[];
     }>(result);
 
-    // Non-sensitive values survive.
+    // Exposed values survive.
     expect(payload.version).toBe(1);
     expect(payload.ui.theme).toBe('dark');
     expect(payload.tunnel.domain).toBe('my.example.com');
     expect(payload.mcp.enabled).toBe(true);
     expect(payload.cloud.instanceName).toBe('my-box');
 
-    // Every SENSITIVE_CONFIG_KEYS value is stripped.
+    // Secrets are gone.
     expect(payload.tunnel.authtoken).toBeUndefined();
     expect(payload.tunnel.auth).toBeUndefined();
     expect(payload.mcp.apiKey).toBeUndefined();
     expect(payload.cloud.instanceToken).toBeUndefined();
-    // The raw secret string appears nowhere in the serialized payload.
+    // So are the credential references that locate secrets, and the account label.
+    expect(payload.providers).toBeUndefined();
+    expect(payload.runtimes.codex.credentialRef).toBeUndefined();
+    expect(payload.cloud.linkedAccountLabel).toBeUndefined();
+
+    // Presence is still legible without the values.
+    expect(payload.tunnel.authtokenConfigured).toBe(true);
+    expect(payload.mcp.apiKeyConfigured).toBe(true);
+    expect(payload.runtimes.codex.credentialRefConfigured).toBe(true);
+    expect(payload.providersConfigured).toEqual(['anthropic']);
+
+    // No withheld value appears anywhere in the serialized payload.
+    expect(result.content[0].text).not.toMatch(/secret/);
+  });
+
+  it('withholds the same fields from the config_patch echo', async () => {
+    // `config_patch` echoes the post-write snapshot through the same projection,
+    // so a write must not become a read-around of the allowlist.
+    mocks.configStore = secretBearingStore();
+    const result = await createConfigPatchHandler()({ patch: { ui: { theme: 'light' } } });
+
+    expect(result.isError).toBeUndefined();
     expect(result.content[0].text).not.toMatch(/secret/);
   });
 });
@@ -255,7 +292,8 @@ describe('config_patch', () => {
  * session through `DORKOS_AGENT_TOKEN` in its process env, so the agent holding
  * it can present it back to DorkOS. It must never round-trip into a tool RESULT,
  * which lands in the model's context and the persisted transcript — the same
- * invariant ADR 260723-013236 established for sensitive config keys, extended to
+ * invariant ADR 260723-013236 established for sensitive config keys (superseded by
+ * 260725-152018), extended to
  * the one credential that reaches an agent by design.
  *
  * These guard the config surfaces specifically: they are the tools that dump a

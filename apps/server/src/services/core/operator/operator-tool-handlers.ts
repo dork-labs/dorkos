@@ -160,10 +160,10 @@ export function createActivityListHandler(deps: McpToolDeps) {
 }
 
 /**
- * `config_get` — return the user config snapshot with sensitive keys redacted
- * (via {@link sanitizedConfigSnapshot}). Secrets like `mcp.apiKey` must never
- * reach the tokenless external `/mcp` surface or the model's context, mirroring
- * what `GET /api/config` omits.
+ * `config_get` — return the allowlisted user config snapshot (via
+ * {@link sanitizedConfigSnapshot}). Neither a secret nor a credential reference
+ * may reach the tokenless external `/mcp` surface or the model's context; the
+ * projection in `config-disclosure.ts` is the authority on what does.
  *
  * @returns The bound handler (no deps; reads the config singleton).
  */

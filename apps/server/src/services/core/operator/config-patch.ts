@@ -12,44 +12,29 @@ import {
   type UserConfig,
 } from '@dorkos/shared/config-schema';
 import { configManager } from '../config-manager.js';
+import { projectDisclosedConfig } from './config-disclosure.js';
 
 /** Keys that must be filtered during deep merge to prevent prototype pollution. */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
- * A deep clone of the full user config with every {@link SENSITIVE_CONFIG_KEYS}
- * dot-path stripped out.
+ * The user-config snapshot an untrusted caller is allowed to read: the curated
+ * projection defined by {@link projectDisclosedConfig}.
  *
  * Use this for any surface that returns config to an untrusted or persisted
  * context — the operator `config_get` / `config_patch` MCP tool results, which
  * reach the tokenless external `/mcp` carve-out and land in the model's
- * tool-result context and the session transcript. The raw
- * `ConfigManager.getAll()` carries secrets (`tunnel.authtoken`, `tunnel.auth`,
- * `mcp.apiKey`, `cloud.instanceToken`) that `GET /api/config` deliberately never
- * dumps; a leaked `mcp.apiKey` alone unlocks the entire mutating MCP surface.
+ * tool-result context and the session transcript.
  *
- * Iterates the canonical exported {@link SENSITIVE_CONFIG_KEYS} constant (never
- * a hand-copied list) so a newly added sensitive key is redacted automatically.
+ * It is an **allowlist**, not `getAll()` minus a denylist: only fields explicitly
+ * classified `expose` in `config-disclosure.ts` are copied, so a newly added
+ * config field is withheld until someone classifies it (and the drift guard fails
+ * the build until they do). See that module for what is withheld and why.
  *
  * @returns A fresh object safe to serialize to an untrusted caller.
  */
 export function sanitizedConfigSnapshot(): Record<string, unknown> {
-  const clone = structuredClone(configManager.getAll()) as Record<string, unknown>;
-  for (const dotPath of SENSITIVE_CONFIG_KEYS) {
-    const parts = dotPath.split('.');
-    let node: Record<string, unknown> | undefined = clone;
-    // Walk to the parent of the leaf, bailing if any segment is missing or not a
-    // plain object (the key simply isn't present to redact).
-    for (let i = 0; i < parts.length - 1 && node; i++) {
-      const next: unknown = node[parts[i]!];
-      node =
-        next !== null && typeof next === 'object' && !Array.isArray(next)
-          ? (next as Record<string, unknown>)
-          : undefined;
-    }
-    if (node) delete node[parts[parts.length - 1]!];
-  }
-  return clone;
+  return projectDisclosedConfig(configManager.getAll() as unknown as Record<string, unknown>);
 }
 
 /**

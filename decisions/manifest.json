@@ -2800,10 +2800,11 @@
       "id": "260723-013236",
       "slug": "redact-sensitive-config-keys-from-agent-facing-tool-results",
       "title": "Sensitive config keys are redacted from every agent-facing tool result",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-23",
       "extractedFrom": "agents-as-operators",
-      "specSlug": "agents-as-operators"
+      "specSlug": "agents-as-operators",
+      "supersededBy": "260725-152018"
     },
     {
       "id": "260723-050219",
@@ -2849,6 +2850,15 @@
       "created": "2026-07-25",
       "extractedFrom": "agent-trust",
       "specSlug": "agent-trust"
+    },
+    {
+      "id": "260725-152018",
+      "slug": "agent-facing-config-snapshot-is-an-allowlist",
+      "title": "The agent-facing config snapshot is an allowlist, not a denylist",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agents-as-operators",
+      "specSlug": "agents-as-operators"
     }
   ]
 }
