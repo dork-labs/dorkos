@@ -1,0 +1,46 @@
+name: scripts-test
+
+# Runs the shell-script fixture suites under scripts/.
+#
+# These have no package to belong to, so `pnpm verify`'s affected-only turbo run
+# ignores them: a change touching only `scripts/` resolves to 0 affected packages.
+# `pnpm verify` does call `pnpm test:scripts` first, but that is a local habit, not
+# a guarantee — nothing in the pre-push gate or in any other workflow runs it. The
+# suite it covers (scripts/test-review-classifier.sh) decides what the automated PR
+# reviewer TELLS you when it fails, and DOR-457 was that message being confidently
+# wrong twice, so it needs a gate that does not depend on someone remembering.
+#
+# No Node or pnpm setup: the suite needs only bash, jq and iconv, all present on
+# ubuntu-latest. Skipping the toolchain keeps this job a few seconds.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/scripts-test.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/scripts-test.yml'
+
+# Opt into Node 24 for JavaScript-based actions (checkout) ahead of GitHub's
+# Sept 2026 cutoff for the Node 20 runtime.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+concurrency:
+  group: scripts-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Review-failure classifier fixtures
+        run: bash scripts/test-review-classifier.sh

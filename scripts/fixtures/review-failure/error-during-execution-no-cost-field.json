@@ -1,0 +1,19 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "error_during_execution",
+    "is_error": true,
+    "duration_ms": 1204,
+    "num_turns": 1,
+    "errors": ["MCP server github_inline_comment failed to start"],
+    "session_id": "a1b2c3",
+    "permission_denials": []
+  }
+]

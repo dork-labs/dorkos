@@ -1,0 +1,21 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 463738,
+    "duration_api_ms": 441002,
+    "num_turns": 56,
+    "total_cost_usd": 3.7177638,
+    "result": "Posted 1 important finding and 3 nits.",
+    "session_id": "a1b2c3",
+    "permission_denials": []
+  }
+]

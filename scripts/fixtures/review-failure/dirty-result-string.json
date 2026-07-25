@@ -1,0 +1,20 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": true,
+    "duration_ms": 501,
+    "num_turns": 1,
+    "total_cost_usd": 0,
+    "result": "Error: request failed.\n\nAuth token `sk-ant-api03-AAAABBBBCCCCDDDDEEEE` and ghs_1111222233334444 rejected — retry later. 你好世界 你好世界 你好世界",
+    "session_id": "a1b2c3",
+    "permission_denials": []
+  }
+]

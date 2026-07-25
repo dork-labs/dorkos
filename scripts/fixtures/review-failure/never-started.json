@@ -1,0 +1,21 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": true,
+    "duration_ms": 495,
+    "duration_api_ms": 402,
+    "num_turns": 1,
+    "total_cost_usd": 0,
+    "result": "Claude AI usage limit reached|1753500000",
+    "session_id": "a1b2c3",
+    "permission_denials": []
+  }
+]
