@@ -40,7 +40,7 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
     permissionMode: 'plan',
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
-    subagentCount: 0,
+    runningSubagentCount: 0,
     ...overrides,
   };
 }

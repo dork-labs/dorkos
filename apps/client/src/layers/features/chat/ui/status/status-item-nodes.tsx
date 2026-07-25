@@ -5,7 +5,6 @@ import type {
   GitStatusError,
   GitStatusResponse,
   PermissionMode,
-  SubagentInfo,
   UpdateSessionRequest,
   UsageStatus,
 } from '@dorkos/shared/types';
@@ -22,6 +21,7 @@ import {
   hasRenderableUsage,
   ConnectionItem,
   SubagentsItem,
+  type ActiveSubagent,
   type ContextCompactAction,
   type StatusBarItemKey,
   type StatusDensity,
@@ -59,8 +59,11 @@ export interface StatusItemNodesInput {
   usage: UsageStatus | null;
   /** Whether the runtime declares it can track cost. */
   supportsCostTracking: boolean;
-  /** Subagents available to this session. */
-  subagents: SubagentInfo[] | undefined;
+  /**
+   * The subagents this turn has in flight — the `running` half of the fold, never
+   * the runtime's catalogue of callable agent types (DOR-462).
+   */
+  runningSubagents: readonly ActiveSubagent[];
   /** Live-sync connection state. */
   connectionState: ConnectionState;
   /**
@@ -111,7 +114,9 @@ export function buildStatusItemNodes(
   if (status.cwd) nodes.cwd = <CwdItem cwd={status.cwd} />;
 
   if (input.gitStatus) {
-    nodes.git = <GitStatusItem data={input.gitStatus} workspace={input.workspace} />;
+    nodes.git = (
+      <GitStatusItem data={input.gitStatus} workspace={input.workspace} compact={compactItems} />
+    );
   }
 
   if (runtimeChip.runtime !== null) {
@@ -169,8 +174,8 @@ export function buildStatusItemNodes(
     nodes.usage = <UsageStatusItem usage={input.usage} />;
   }
 
-  if (input.subagents && input.subagents.length > 0) {
-    nodes.subagents = <SubagentsItem subagents={input.subagents} />;
+  if (input.runningSubagents.length > 0) {
+    nodes.subagents = <SubagentsItem running={input.runningSubagents} />;
   }
 
   nodes.connection = (

@@ -78,13 +78,38 @@ const TIER_FULL_MIN_PX = 640;
 const TIER_COMPACT_MIN_PX = 440;
 const TIER_IDENTITY_MIN_PX = 340;
 
-/** Right-cluster slots at each tier. Three at `identity`: two problems plus one item of context. */
-const BUDGET_COMPACT = 4;
+/**
+ * Right-cluster slots at each tier: two problems plus one item of context, and
+ * only two once the line is down to an avatar.
+ *
+ * `compact` used to sell a fourth, and measuring its floor says it never had the
+ * pixels: 220px of right cluster against 268px of four short-label items and
+ * their separators. The deficit landed on the one item that will not truncate
+ * honestly, so an 88%-full context window read `8…` (DOR-461). What separates
+ * the tiers is how much each item *says*, not how many get to speak — which is
+ * why the count barely moves while the density does.
+ */
+const BUDGET_COMPACT = 3;
 const BUDGET_IDENTITY = 3;
 const BUDGET_AVATAR = 2;
 
-/** The `full` tier's floor — the spec's "4+", which grows with the width above it. */
-const BUDGET_FULL_BASE = 4;
+/**
+ * The `full` tier's floor — the spec's "4+", which grows with the width above it.
+ *
+ * Three, not the four this shipped with. The floor has to pay for the whole left
+ * cluster (this is the only tier that keeps the directory), the `⋯`, and the gap
+ * between the clusters before it may sell a right-cluster slot — measured at the
+ * 640px floor, ~360px of the row's 630px content box. What is left buys three
+ * full-label items, and a fourth was the line writing a cheque the width could
+ * not honour: every value in the row truncated at once, and two items that could
+ * not shrink painted over their neighbours instead (DOR-461).
+ *
+ * A healthy session promotes one or two right-cluster items, so this changes
+ * nothing about a calm line. It only decides what a *degraded* session does with
+ * a narrow bar, and there the trade is three whole readings plus one more on the
+ * `⋯` instead of four truncated ones — which is the redesign's whole argument.
+ */
+const BUDGET_FULL_BASE = 3;
 
 /**
  * Measured advance width of one bounded status character in the composer's

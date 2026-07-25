@@ -42,10 +42,15 @@ describe('resolveStatusBudget', () => {
     }
   });
 
-  it('gives full labels and at least four right-cluster slots from 640px', () => {
+  it('gives full labels and three right-cluster slots at the 640px floor', () => {
+    // Three, not four (DOR-461): the floor pays for the whole left cluster — this
+    // is the only tier that keeps the directory — plus the `⋯` and the gap between
+    // the clusters before it may sell a slot, and a fourth full-label item was
+    // ~106px more than the row had. The bar showed it by truncating every value at
+    // once and letting two items paint over their neighbours.
     const budget = resolveStatusBudget(640);
     expect(budget.density).toBe('full');
-    expect(budget.rightBudget).toBe(4);
+    expect(budget.rightBudget).toBe(3);
     expect(budget.dropped).toEqual([]);
   });
 
@@ -55,16 +60,16 @@ describe('resolveStatusBudget', () => {
     // which is the point: a wider bound must buy fewer slots, not the same number
     // of wider ones.
     const slot = STATUS_VALUE_MAX_CHARS * 8 + 20;
-    expect(resolveStatusBudget(640 + slot - 1).rightBudget).toBe(4);
-    expect(resolveStatusBudget(640 + slot).rightBudget).toBe(5);
-    expect(resolveStatusBudget(640 + slot * 4).rightBudget).toBe(8);
+    expect(resolveStatusBudget(640 + slot - 1).rightBudget).toBe(3);
+    expect(resolveStatusBudget(640 + slot).rightBudget).toBe(4);
+    expect(resolveStatusBudget(640 + slot * 4).rightBudget).toBe(7);
   });
 
-  it('drops the directory and keeps four slots between 440 and 640px', () => {
+  it('drops the directory and keeps three slots between 440 and 640px', () => {
     for (const width of [440, 639]) {
       const budget = resolveStatusBudget(width);
       expect(budget.density).toBe('compact');
-      expect(budget.rightBudget).toBe(4);
+      expect(budget.rightBudget).toBe(3);
       expect(budget.dropped).toEqual(['cwd']);
     }
   });
@@ -109,7 +114,7 @@ describe('applyStatusBudget — truncation per tier', () => {
     expect(overflow).toBe(0);
   });
 
-  it('keeps the four loudest signals at a desktop width', () => {
+  it('keeps the three loudest signals at the widest tier', () => {
     const { items, overflow } = applyStatusBudget(degradedLine(), resolveStatusBudget(640));
     expect(items.map((i) => i.key)).toEqual([
       'agent',
@@ -117,23 +122,15 @@ describe('applyStatusBudget — truncation per tier', () => {
       'git',
       'context',
       'usage',
-      'subagents',
       'connection',
     ]);
-    expect(overflow).toBe(3);
+    expect(overflow).toBe(4);
   });
 
-  it('drops the directory and four right-cluster slots survive at a tablet width', () => {
+  it('drops the directory and three right-cluster slots survive at a tablet width', () => {
     const { items, overflow } = applyStatusBudget(degradedLine(), resolveStatusBudget(500));
-    expect(items.map((i) => i.key)).toEqual([
-      'agent',
-      'git',
-      'context',
-      'usage',
-      'subagents',
-      'connection',
-    ]);
-    expect(overflow).toBe(3);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'git', 'context', 'usage', 'connection']);
+    expect(overflow).toBe(4);
   });
 
   it('leaves identity plus three signals on a phone', () => {

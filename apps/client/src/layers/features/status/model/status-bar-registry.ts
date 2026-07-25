@@ -76,8 +76,18 @@ export interface StatusPromotionContext {
   runtime: RuntimePromotionState | null;
   /** Runtime-neutral usage descriptor, or `null` when the session has none. */
   usage: UsageStatus | null;
-  /** How many subagents this session has available. */
-  subagentCount: number;
+  /**
+   * How many subagents this session has **in flight right now** — never how many
+   * it could call.
+   *
+   * The distinction is the whole item. `getSubagents()` returns the runtime's
+   * catalogue of agent types, which for Claude Code is a fixed list that is never
+   * empty, so a rule reading it promoted the item on every session forever — the
+   * definition of the wallpaper this line exists to remove (DOR-462). Running
+   * subagents come from the turn's `subagent_update` events instead, so the item
+   * appears while work is delegated and leaves when it finishes.
+   */
+  runningSubagentCount: number;
 }
 
 /** The two things about a working tree that can make it news. */
@@ -137,10 +147,19 @@ const SEVERITY = {
   CONTEXT_CRITICAL: 90,
   USAGE_EXHAUSTED: 80,
   PERMISSION_BYPASS: 70,
-  SUBAGENTS_RUNNING: 60,
   CONTEXT_WARNING: 50,
   USAGE_WARNING: 50,
   PERMISSION_ELEVATED: 40,
+  /**
+   * Work is being delegated — news, but never a problem, so it sits below every
+   * warning and above the configuration facts.
+   *
+   * It shipped at 60, above both warnings, which meant a session that was running
+   * a subagent AND approaching its usage limit spent a scarce slot on the
+   * subagent and put the limit under the `⋯` (DOR-462). Nothing about a healthy
+   * delegation outranks a number heading for a ceiling.
+   */
+  SUBAGENTS_RUNNING: 35,
   RUNTIME_NON_DEFAULT: 30,
   GIT_DIRTY: 20,
   MODEL: 10,
@@ -303,12 +322,12 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'subagents',
     label: 'Subagents',
-    description: 'Helper agents this session can call',
+    description: 'Helper agents working on this turn',
     cluster: 'right',
     group: 'diagnostics',
     icon: Users,
-    promote: (ctx) => ctx.subagentCount > 0,
-    severity: (ctx) => (ctx.subagentCount > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
+    promote: (ctx) => ctx.runningSubagentCount > 0,
+    severity: (ctx) => (ctx.runningSubagentCount > 0 ? SEVERITY.SUBAGENTS_RUNNING : SEVERITY.QUIET),
   },
   {
     key: 'connection',

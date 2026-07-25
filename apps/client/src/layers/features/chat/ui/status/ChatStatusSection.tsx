@@ -4,7 +4,6 @@ import { useAppStore } from '@/layers/shared/model';
 import {
   useSessionStatus,
   useSessionChatStore,
-  useSubagents,
   useModels,
   useHasConfirmedAuto,
 } from '@/layers/entities/session';
@@ -26,6 +25,7 @@ import {
   useStatusBarPins,
   useSessionPopoverShortcut,
   useStatusBudget,
+  partitionSubagents,
   gitPromotionState,
   selectPromotedItems,
   applyStatusBudget,
@@ -105,8 +105,11 @@ export function ChatStatusSection({
 
   const { data: gitStatus } = useGitStatus(status.cwd);
   const workspace = useWorkspaceForSession(status.cwd);
-  const { data: subagents } = useSubagents(sessionId);
   const { data: runtimeCaps } = useRuntimeCapabilities();
+
+  // Running, not available: the fold keeps a row per subagent for the whole turn,
+  // terminal ones included, so "in the list" never means "in flight" (DOR-462).
+  const runningSubagents = partitionSubagents(diagnostics.activeSubagents).running;
 
   // Per-model gating for the 'auto' permission mode, scoped by the chip runtime
   // so a pre-launch Codex session gates on Codex's models.
@@ -178,7 +181,7 @@ export function ChatStatusSection({
             canSelect: runtimeChip.canSelect,
           },
     usage,
-    subagentCount: subagents?.length ?? 0,
+    runningSubagentCount: runningSubagents.length,
   };
 
   // The inline Compact action is the one thing the line gives up first: it costs a
@@ -209,7 +212,7 @@ export function ChatStatusSection({
       : null,
     usage,
     supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
-    subagents,
+    runningSubagents,
     connectionState: syncConnectionState,
     density: budget.density,
   });

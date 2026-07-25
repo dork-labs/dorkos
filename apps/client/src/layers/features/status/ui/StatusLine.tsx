@@ -86,6 +86,17 @@ export function StatusLine({ items, trailing }: StatusLineProps) {
  * *visible* list, so an item that hides and comes back can never reappear
  * carrying a leading separator.
  *
+ * `min-w-0` on each wrapper is what lets a squeezed cluster push the squeeze into
+ * the item, where a `truncate` turns it into an ellipsis. It also means the row
+ * can hand an item less width than its content needs — so **every item has to be
+ * able to shrink**, all the way down its own tree. One `display: block` wrapper
+ * without `min-w-0` anywhere in that chain, or one `shrink-0` on a part that
+ * could have given way, and the item renders at full width inside a narrower box
+ * and paints over its neighbour: that is DOR-461, in two items at once. The
+ * browser guard for it is `apps/e2e/tests/chat/status-line-fit.spec.ts`, which
+ * measures painted extents rather than the row's `scrollWidth` — an
+ * `overflow-hidden` row can never report its own overflow.
+ *
  * @internal
  */
 function StatusCluster({

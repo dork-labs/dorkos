@@ -16,7 +16,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionMode: 'default',
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
-    subagentCount: 0,
+    runningSubagentCount: 0,
     ...overrides,
   };
 }
@@ -149,7 +149,7 @@ describe('selectPromotedItems — a degraded session', () => {
         permissionMode: 'plan',
         runtime: { isDefault: false, canSelect: false },
         git: { dirty: true, onDefaultBranch: false },
-        subagentCount: 3,
+        runningSubagentCount: 3,
         usage: { kind: 'subscription', utilization: 0.95, state: 'exhausted' },
       }),
       pins: [],
@@ -169,11 +169,14 @@ describe('selectPromotedItems — a degraded session', () => {
       'connection',
     ]);
 
-    // What Part 6 will keep first when the bar cannot fit ten items.
+    // What the budget keeps first when the bar cannot fit ten items: the two
+    // things that are wrong, then the window filling up. Three running subagents
+    // are news but not a problem, so they wait behind all of them (DOR-462).
     const byUrgency = items
       .filter((i) => i.cluster === 'right')
       .sort((a, b) => b.severity - a.severity)
       .map((i) => i.key);
-    expect(byUrgency.slice(0, 3)).toEqual(['connection', 'usage', 'subagents']);
+    expect(byUrgency.slice(0, 3)).toEqual(['connection', 'usage', 'context']);
+    expect(byUrgency.indexOf('subagents')).toBeGreaterThan(byUrgency.indexOf('usage'));
   });
 });

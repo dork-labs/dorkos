@@ -20,7 +20,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionMode: 'default',
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
-    subagentCount: 0,
+    runningSubagentCount: 0,
     ...overrides,
   };
 }
@@ -126,8 +126,19 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     expect(promotedKeys(restingContext())).not.toContain('usage');
   });
 
-  it('promotes subagents once there is at least one', () => {
-    expect(promotedKeys(restingContext({ subagentCount: 1 }))).toContain('subagents');
+  it('promotes subagents once one is actually running', () => {
+    expect(promotedKeys(restingContext({ runningSubagentCount: 1 }))).toContain('subagents');
+  });
+
+  it('stays quiet about subagents a session merely could call', () => {
+    // The rule used to read `getSubagents()` — the runtime's catalogue of agent
+    // types, a fixed non-empty list for Claude Code — so the item promoted on
+    // every session forever (DOR-462). The context now carries the running count,
+    // which is 0 on a resting session, so the item has nothing to say.
+    expect(promotedKeys(restingContext())).not.toContain('subagents');
+    expect(severityOf('subagents', restingContext())).toBe(
+      severityOf('subagents', restingContext({ runningSubagentCount: 0 }))
+    );
   });
 
   it('keeps the directory out when it is unresolved', () => {
@@ -138,17 +149,17 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
 describe('STATUS_BAR_REGISTRY — severity ranking', () => {
   it('ranks the degraded state exactly as specified, highest first', () => {
     // The order the mobile budget fills slots in: connection lost, context at the
-    // ceiling, usage exhausted, keys-handed-over permissions, running subagents,
-    // context merely warning, elevated permissions, non-default runtime, dirty
+    // ceiling, usage exhausted, keys-handed-over permissions, context merely
+    // warning, elevated permissions, running subagents, non-default runtime, dirty
     // git, model, directory.
     const ranked: [StatusBarItemKey, StatusPromotionContext][] = [
       ['connection', restingContext({ connectionState: 'disconnected' })],
       ['context', restingContext({ contextPercent: 88 })],
       ['usage', restingContext({ usage: { kind: 'subscription', state: 'exhausted' } })],
       ['permission', restingContext({ permissionMode: 'bypassPermissions' })],
-      ['subagents', restingContext({ subagentCount: 2 })],
       ['context', restingContext({ contextPercent: 74 })],
       ['permission', restingContext({ permissionMode: 'plan' })],
+      ['subagents', restingContext({ runningSubagentCount: 2 })],
       ['runtime', restingContext({ runtime: { isDefault: false, canSelect: false } })],
       ['git', restingContext({ git: { dirty: true, onDefaultBranch: true } })],
       ['model', restingContext()],
@@ -159,6 +170,27 @@ describe('STATUS_BAR_REGISTRY — severity ranking', () => {
     for (let i = 1; i < scores.length; i++) {
       expect(scores[i]).toBeLessThan(scores[i - 1]);
     }
+  });
+
+  it('never lets running subagents outrank a usage or context warning', () => {
+    // A delegated turn is news; a number heading for a ceiling is a problem. When
+    // one slot is left the problem takes it. Ranked at 60, subagents took that
+    // slot and put the usage warning under the `⋯` (DOR-462).
+    const subagents = severityOf('subagents', restingContext({ runningSubagentCount: 3 }));
+    const usageWarning = severityOf(
+      'usage',
+      restingContext({ usage: { kind: 'subscription', state: 'warning' } })
+    );
+    const contextWarning = severityOf('context', restingContext({ contextPercent: 74 }));
+    const elevated = severityOf('permission', restingContext({ permissionMode: 'plan' }));
+
+    expect(subagents).toBeLessThan(usageWarning);
+    expect(subagents).toBeLessThan(contextWarning);
+    expect(subagents).toBeLessThan(elevated);
+    // Still above the configuration facts — it is news, just never a problem.
+    expect(subagents).toBeGreaterThan(
+      severityOf('runtime', restingContext({ runtime: { isDefault: false, canSelect: false } }))
+    );
   });
 
   it('ties a warning-level usage with a warning-level context', () => {

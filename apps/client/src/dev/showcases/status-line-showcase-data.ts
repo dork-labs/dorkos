@@ -8,10 +8,14 @@
  *
  * @module dev/showcases/status-line-showcase-data
  */
-import type { GitStatusResponse, SubagentInfo, UsageStatus } from '@dorkos/shared/types';
+import type { GitStatusResponse, UsageStatus } from '@dorkos/shared/types';
 import type { SessionStatusData } from '@/layers/entities/session';
 import { gitPromotionState } from '@/layers/features/status';
-import type { SessionDiagnostics, StatusPromotionContext } from '@/layers/features/status';
+import type {
+  ActiveSubagent,
+  SessionDiagnostics,
+  StatusPromotionContext,
+} from '@/layers/features/status';
 import type { StatusItemNodesInput } from '@/layers/features/chat/ui/status/status-item-nodes';
 import type { RuntimeChipState } from '@/layers/features/status';
 
@@ -80,9 +84,25 @@ const USAGE_WARNING: UsageStatus = {
   state: 'warning',
 };
 
-const SUBAGENTS: SubagentInfo[] = [
-  { name: 'Explore', description: 'Read-only search agent' },
-  { name: 'code-reviewer', description: 'Reviews completed work' },
+/**
+ * Two subagents mid-flight. The item counts what is RUNNING, not what the runtime
+ * could call — a catalogue never changes, so counting it says nothing (DOR-462).
+ */
+const RUNNING_SUBAGENTS: ActiveSubagent[] = [
+  {
+    taskId: 'task-explore-1',
+    status: 'running',
+    description: 'Search the codebase for status-line callers',
+    toolUses: 7,
+    lastToolName: 'Grep',
+  },
+  {
+    taskId: 'task-review-1',
+    status: 'running',
+    description: 'Review the budget change',
+    toolUses: 2,
+    lastToolName: 'Read',
+  },
 ];
 
 const HEALTHY_STATUS: SessionStatusData = {
@@ -167,8 +187,8 @@ const DEGRADED_DIAGNOSTICS: SessionDiagnostics = {
   lastEventAt: null,
   queueDepth: 2,
   subagents: [],
-  activeSubagents: [],
-  runningSubagentCount: 0,
+  activeSubagents: RUNNING_SUBAGENTS,
+  runningSubagentCount: RUNNING_SUBAGENTS.length,
   clientVersion: '0.57.0',
 };
 
@@ -187,7 +207,7 @@ export const HEALTHY: StatusScenario = {
     permissionMode: 'default',
     runtime: { isDefault: true, canSelect: false },
     usage: USAGE_OK,
-    subagentCount: 0,
+    runningSubagentCount: 0,
   },
   input: {
     sessionId: 'showcase-healthy',
@@ -204,7 +224,7 @@ export const HEALTHY: StatusScenario = {
     compact: null,
     usage: USAGE_OK,
     supportsCostTracking: true,
-    subagents: [],
+    runningSubagents: [],
     connectionState: 'connected',
   },
   diagnostics: HEALTHY_DIAGNOSTICS,
@@ -214,7 +234,7 @@ export const HEALTHY: StatusScenario = {
  * Everything going wrong at once — the state the width budget exists for. The
  * live link is down, the context window is nearly full, permissions are bypassed,
  * the runtime is not the default, the tree is dirty on a feature branch, usage is
- * near its ceiling, and two subagents are available.
+ * near its ceiling, and two subagents are still running.
  */
 export const DEGRADED: StatusScenario = {
   label: 'Degraded — connection lost, context critical, bypass permissions, non-default runtime',
@@ -226,7 +246,7 @@ export const DEGRADED: StatusScenario = {
     permissionMode: 'bypassPermissions',
     runtime: { isDefault: false, canSelect: false },
     usage: USAGE_WARNING,
-    subagentCount: SUBAGENTS.length,
+    runningSubagentCount: RUNNING_SUBAGENTS.length,
   },
   input: {
     sessionId: 'showcase-degraded',
@@ -243,7 +263,7 @@ export const DEGRADED: StatusScenario = {
     compact: null,
     usage: USAGE_WARNING,
     supportsCostTracking: true,
-    subagents: SUBAGENTS,
+    runningSubagents: RUNNING_SUBAGENTS,
     connectionState: 'disconnected',
   },
   diagnostics: DEGRADED_DIAGNOSTICS,
