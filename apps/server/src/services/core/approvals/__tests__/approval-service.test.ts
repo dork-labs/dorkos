@@ -46,8 +46,6 @@ describe('ApprovalService', () => {
       ...BINDING,
       summary: 'Uninstall "sentry-monitor"',
       requestedBy,
-      capabilityTitle: 'Uninstall a marketplace package',
-      tier: 'destructive',
     });
   }
 
@@ -82,7 +80,8 @@ describe('ApprovalService', () => {
       expect(broadcast).toHaveBeenCalledWith('approval_pending', {
         approvalId: ticket.approvalId,
         capabilityId: 'marketplace.uninstall',
-        capabilityTitle: 'Uninstall a marketplace package',
+        // No registry lookup is wired here, so the title falls back to the id.
+        capabilityTitle: 'marketplace.uninstall',
         tier: 'destructive',
         summary: 'Uninstall "sentry-monitor"',
         requestedBy: 'ops-agent',
@@ -112,6 +111,7 @@ describe('ApprovalService', () => {
       expect(service.consume(ticket.token, BINDING)).toEqual({
         outcome: 'pending',
         approvalId: ticket.approvalId,
+        expiresAt: ticket.expiresAt,
       });
     });
 
@@ -125,7 +125,10 @@ describe('ApprovalService', () => {
         capabilityId: 'marketplace.uninstall',
         requestedBy: 'dorkbot',
       });
-      expect(service.consume(ticket.token, BINDING)).toEqual({ outcome: 'consumed' });
+      expect(service.consume(ticket.token, BINDING)).toEqual({
+        outcome: 'consumed',
+        approvalId: ticket.approvalId,
+      });
     });
 
     it('reports denied once, with the reason, then consumed', () => {
@@ -137,7 +140,10 @@ describe('ApprovalService', () => {
         approvalId: ticket.approvalId,
         reason: 'not today',
       });
-      expect(service.consume(ticket.token, BINDING)).toEqual({ outcome: 'consumed' });
+      expect(service.consume(ticket.token, BINDING)).toEqual({
+        outcome: 'consumed',
+        approvalId: ticket.approvalId,
+      });
     });
 
     it('omits the reason when a denial gave none', () => {
@@ -212,7 +218,10 @@ describe('ApprovalService', () => {
         approvalId: second.approvalId,
       });
       // Written off, so a later presentation cannot be honored either.
-      expect(service.consume(second.token, BINDING)).toEqual({ outcome: 'consumed' });
+      expect(service.consume(second.token, BINDING)).toEqual({
+        outcome: 'consumed',
+        approvalId: second.approvalId,
+      });
     });
 
     it('broadcasts approval_resolved when a token is spent', () => {
@@ -277,29 +286,47 @@ describe('ApprovalService', () => {
 
       vi.setSystemTime(new Date(Date.now() + APPROVAL_TTL_MS + 1));
       expect(service.grant(ticket.approvalId)).toBe('expired');
-      expect(service.consume(ticket.token, BINDING)).toEqual({ outcome: 'consumed' });
+      expect(service.consume(ticket.token, BINDING)).toEqual({
+        outcome: 'consumed',
+        approvalId: ticket.approvalId,
+      });
     });
   });
 
-  describe('decideByToken', () => {
-    it('grants the approval a token belongs to', () => {
-      const ticket = requestOne();
-      expect(service.decideByToken(ticket.token, 'granted')).toBeUndefined();
-      expect(service.consume(ticket.token, BINDING).outcome).toBe('granted');
-    });
+  describe('the card is described by the registry, not by the requester', () => {
+    it('takes the title and tier from the capability registry', () => {
+      const described = new ApprovalService(db, {
+        describeCapability: (id) =>
+          id === 'marketplace.install'
+            ? { title: 'Install a marketplace package', tier: 'act' }
+            : undefined,
+      });
 
-    it('denies with a reason the requester sees', () => {
-      const ticket = requestOne();
-      service.decideByToken(ticket.token, 'denied', 'looks sketchy');
-      expect(service.consume(ticket.token, BINDING)).toEqual({
-        outcome: 'denied',
-        approvalId: ticket.approvalId,
-        reason: 'looks sketchy',
+      described.request({
+        capabilityId: 'marketplace.install',
+        inputHash: BINDING.inputHash,
+        summary: 'Install "sentry-monitor"',
+      });
+
+      expect(described.listPending()[0]).toMatchObject({
+        capabilityTitle: 'Install a marketplace package',
+        tier: 'act',
       });
     });
 
-    it('reports unknown for a token nobody issued', () => {
-      expect(service.decideByToken('nope', 'granted')).toBe('unknown');
+    it('over-warns rather than under-warns on an id the registry does not know', () => {
+      const described = new ApprovalService(db, { describeCapability: () => undefined });
+
+      described.request({
+        capabilityId: 'someone.invented_this',
+        inputHash: BINDING.inputHash,
+        summary: 'Do something unrecognized',
+      });
+
+      expect(described.listPending()[0]).toMatchObject({
+        capabilityTitle: 'someone.invented_this',
+        tier: 'destructive',
+      });
     });
   });
 

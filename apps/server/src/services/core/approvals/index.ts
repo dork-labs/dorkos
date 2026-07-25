@@ -2,19 +2,19 @@
  * The approval primitive — one mechanism for "ask the person first"
  * (spec `agent-trust` §3.3).
  *
+ * There is no module-level singleton here: every consumer (the marketplace
+ * confirmation provider, the approvals router, and tier enforcement next) takes
+ * the service by injection from the one instance `index.ts` builds at boot.
+ *
+ * The barrel carries what consumers actually import. The service's own result and
+ * option types are reachable from `./approval-service.js` and get re-exported
+ * here when something outside this directory names them.
+ *
  * @module services/core/approvals
  */
 export {
   ApprovalService,
   APPROVAL_TTL_MS,
-  initApprovalService,
-  getApprovalService,
-  resetApprovalService,
-  type ApprovalRequestInput,
-  type ApprovalTicket,
-  type ApprovalBinding,
-  type ApprovalConsumeResult,
   type ApprovalDecisionFailure,
 } from './approval-service.js';
 export { hashApprovalInput } from './approval-input-hash.js';
-export { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';

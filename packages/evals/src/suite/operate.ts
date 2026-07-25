@@ -432,9 +432,8 @@ async function seedMarketplaceFixture(sandbox: EvalSandbox): Promise<void> {
  * installs it. Asserts `marketplace_install` fired and the package tree
  * materialized under the sandbox `DORK_HOME`. Sets `MARKETPLACE_AUTO_APPROVE=1`
  * on the credentialed server so the headless agent's install completes without
- * the out-of-band human approval POST the interactive confirmation-token flow
- * otherwise requires — the confirmation provider is still exercised, just
- * auto-approved.
+ * the cockpit approval a person otherwise has to grant (spec `agent-trust` §3.3)
+ * — the confirmation provider is still exercised, just auto-approved.
  */
 export const marketplaceInstallCase: EvalCase = {
   id: 'marketplace-search-and-install',

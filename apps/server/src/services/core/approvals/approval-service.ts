@@ -32,10 +32,10 @@
  *
  * ## Synchronous by design
  *
- * Every method is synchronous. The store is better-sqlite3, which is
- * synchronous anyway, and callers like the marketplace UI route decide a token
- * and immediately expect the next read to see it — an unawaited promise there
- * would be a race. Callers may still `await` these results harmlessly.
+ * Every method is synchronous. The store is better-sqlite3, which is synchronous
+ * anyway, and a decision must be visible to the very next read — the cockpit
+ * grants, then re-lists; enforcement consumes, then acts. An unawaited promise in
+ * either seam would be a race. Callers may still `await` these results harmlessly.
  *
  * @module services/core/approvals/approval-service
  */
@@ -65,10 +65,42 @@ export interface ApprovalRequestInput {
    * caller has. Never interpreted here, only shown on the card.
    */
   requestedBy?: string;
-  /** Human-facing capability title. Defaults to the capability id. */
-  capabilityTitle?: string;
-  /** Permission tier being requested. Defaults to `destructive`. */
-  tier?: CapabilityTier;
+}
+
+/**
+ * How the service learns a capability's human-facing title and permission tier.
+ *
+ * Deliberately NOT part of {@link ApprovalRequestInput}: if a requester could
+ * state its own tier, an `act` operation could dress itself as `destructive` to
+ * scare an operator, or a `destructive` one could soften itself to look routine.
+ * The card's identity region is derived from the capability registry, which is
+ * the single source of truth every other agent-facing surface is generated from,
+ * so it cannot be spoofed by whoever is asking.
+ *
+ * Injected as a function rather than a registry import because the registry is
+ * composed from the very domains that request approvals — a static import would
+ * close a cycle, and the registry is composed later in boot than this service.
+ *
+ * Deliberately not exported: it is the shape of one option, and no consumer needs
+ * to name it.
+ *
+ * @param capabilityId - The capability id to describe.
+ * @returns Its title and tier, or `undefined` when the registry has no such id.
+ */
+type CapabilityDescriptorLookup = (
+  capabilityId: string
+) => { title: string; tier: CapabilityTier } | undefined;
+
+/** Construction options for {@link ApprovalService}. */
+export interface ApprovalServiceOptions {
+  /** How long an operator has to decide. Defaults to {@link APPROVAL_TTL_MS}. */
+  ttlMs?: number;
+  /**
+   * Resolves a capability's title and tier for the card. Omitted in tests and in
+   * boots without a registry, where an unknown id falls back to its own id and
+   * the most cautious tier.
+   */
+  describeCapability?: CapabilityDescriptorLookup;
 }
 
 /** What a requester gets back: an id to watch, and a token to retry with. */
@@ -106,10 +138,10 @@ export interface ApprovalBinding {
  */
 export type ApprovalConsumeResult =
   | { outcome: 'granted'; approvalId: string; capabilityId: string; requestedBy?: string }
-  | { outcome: 'pending'; approvalId: string }
+  | { outcome: 'pending'; approvalId: string; expiresAt: string }
   | { outcome: 'denied'; approvalId: string; reason?: string }
   | { outcome: 'expired'; approvalId: string }
-  | { outcome: 'consumed' }
+  | { outcome: 'consumed'; approvalId: string }
   | { outcome: 'unknown' }
   | { outcome: 'mismatched'; approvalId: string };
 
@@ -144,16 +176,26 @@ export class ApprovalService {
    * Build the service over a database handle.
    *
    * @param db - The DorkOS database handle.
-   * @param ttlMs - How long an operator has to decide. Defaults to
-   *   {@link APPROVAL_TTL_MS}; overridable so tests need not sleep.
+   * @param options - TTL and capability-descriptor overrides; see
+   *   {@link ApprovalServiceOptions}.
    */
   constructor(
     private readonly db: Db,
-    private readonly ttlMs: number = APPROVAL_TTL_MS
+    private readonly options: ApprovalServiceOptions = {}
   ) {}
+
+  /** How long an operator has to decide on a request this service records. */
+  private get ttlMs(): number {
+    return this.options.ttlMs ?? APPROVAL_TTL_MS;
+  }
 
   /**
    * Record a request for approval and announce it to the cockpit.
+   *
+   * The title and tier on the card come from the capability registry, never from
+   * the requester (see {@link CapabilityDescriptorLookup}). An id the registry
+   * does not know falls back to the id itself and the most cautious tier, so an
+   * unrecognized capability over-warns rather than under-warns.
    *
    * @param input - What is being asked, and who is asking.
    * @returns The approval id and the one-time token for the retry.
@@ -161,12 +203,13 @@ export class ApprovalService {
   request(input: ApprovalRequestInput): ApprovalTicket {
     const token = randomBytes(TOKEN_BYTES).toString('hex');
     const now = Date.now();
+    const descriptor = this.options.describeCapability?.(input.capabilityId);
     const row = {
       id: ulid(),
       tokenHash: hashToken(token),
       capabilityId: input.capabilityId,
-      capabilityTitle: input.capabilityTitle ?? input.capabilityId,
-      tier: input.tier ?? ('destructive' as const),
+      capabilityTitle: descriptor?.title ?? input.capabilityId,
+      tier: descriptor?.tier ?? ('destructive' as const),
       inputHash: input.inputHash,
       summary: input.summary,
       requestedBy: input.requestedBy ?? null,
@@ -206,33 +249,16 @@ export class ApprovalService {
   }
 
   /**
-   * Record a decision against whichever approval a token belongs to.
-   *
-   * The marketplace UI knows the token rather than the approval id (the agent
-   * showed the person the token it received), so this is the seam that flow
-   * decides through. Unknown tokens are reported, never thrown.
-   *
-   * @param token - The token the requester was handed.
-   * @param decision - Yes or no.
-   * @param reason - Optional note, meaningful for a denial.
-   * @returns Why the call failed, or `undefined` when the decision was recorded.
-   */
-  decideByToken(
-    token: string,
-    decision: 'granted' | 'denied',
-    reason?: string
-  ): ApprovalDecisionFailure | undefined {
-    const row = this.findByToken(token);
-    if (!row) return 'unknown';
-    return this.decide(row.id, decision, reason);
-  }
-
-  /**
    * Present a token for the action it was granted for.
    *
    * Expiry is checked here, so a stale row is written off rather than honored
    * even when no sweep has run. A token that resolves to a real approval for a
-   * DIFFERENT action reports `mismatched` and is deliberately left unspent.
+   * DIFFERENT action reports `mismatched` and is deliberately left unspent — the
+   * approval stays available for what the operator actually allowed.
+   *
+   * Spending is a conditional write, so two callers presenting the same token at
+   * once cannot both be told `granted`: exactly one wins the row, the other reads
+   * `consumed`.
    *
    * @param token - The token the requester was handed.
    * @param binding - The capability and input hash the caller is about to run.
@@ -241,21 +267,23 @@ export class ApprovalService {
   consume(token: string, binding: ApprovalBinding): ApprovalConsumeResult {
     const row = this.findByToken(token);
     if (!row) return { outcome: 'unknown' };
-    if (row.consumedAt) return { outcome: 'consumed' };
+    if (row.consumedAt) return { outcome: 'consumed', approvalId: row.id };
 
     if (row.capabilityId !== binding.capabilityId || row.inputHash !== binding.inputHash) {
       return { outcome: 'mismatched', approvalId: row.id };
     }
 
     if (this.isExpired(row)) {
-      this.markConsumed(row.id);
+      if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
       broadcastApprovalResolved(row.id, 'expired');
       return { outcome: 'expired', approvalId: row.id };
     }
 
-    if (row.state === 'pending') return { outcome: 'pending', approvalId: row.id };
+    if (row.state === 'pending') {
+      return { outcome: 'pending', approvalId: row.id, expiresAt: row.expiresAt };
+    }
 
-    this.markConsumed(row.id);
+    if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
     broadcastApprovalResolved(row.id, 'consumed');
 
     if (row.state === 'denied') {
@@ -337,13 +365,22 @@ export class ApprovalService {
     return Date.now() > new Date(row.expiresAt).getTime();
   }
 
-  /** Stamp a row as spent, which is what makes a token single-use. */
-  private markConsumed(approvalId: string): void {
-    this.db
+  /**
+   * Stamp a row as spent, which is what makes a token single-use.
+   *
+   * Conditional on the row still being unspent, so the write itself decides the
+   * race between two concurrent presentations of one token.
+   *
+   * @param approvalId - ULID of the approval to spend.
+   * @returns True when this call spent it; false when somebody already had.
+   */
+  private markConsumed(approvalId: string): boolean {
+    const result = this.db
       .update(approvals)
       .set({ consumedAt: new Date().toISOString() })
-      .where(eq(approvals.id, approvalId))
+      .where(and(eq(approvals.id, approvalId), isNull(approvals.consumedAt)))
       .run();
+    return result.changes === 1;
   }
 
   /**
@@ -363,20 +400,28 @@ export class ApprovalService {
     if (!row) return 'unknown';
     if (row.consumedAt || row.state !== 'pending') return 'not_pending';
     if (this.isExpired(row)) {
-      this.markConsumed(row.id);
-      broadcastApprovalResolved(row.id, 'expired');
+      if (this.markConsumed(row.id)) broadcastApprovalResolved(row.id, 'expired');
       return 'expired';
     }
 
-    this.db
+    const result = this.db
       .update(approvals)
       .set({
         state: decision,
         decidedAt: new Date().toISOString(),
         denyReason: decision === 'denied' ? (reason ?? null) : null,
       })
-      .where(eq(approvals.id, approvalId))
+      // Conditional on the row still being pending and unspent, so two operators
+      // clicking at once cannot both record a decision.
+      .where(
+        and(
+          eq(approvals.id, approvalId),
+          eq(approvals.state, 'pending'),
+          isNull(approvals.consumedAt)
+        )
+      )
       .run();
+    if (result.changes !== 1) return 'not_pending';
 
     broadcastApprovalResolved(approvalId, decision);
     return undefined;
@@ -391,38 +436,3 @@ export class ApprovalService {
  * - `expired` — the decision window closed; the approval is written off.
  */
 export type ApprovalDecisionFailure = 'unknown' | 'not_pending' | 'expired';
-
-/**
- * The process-wide service, initialized at boot. Mirrors the agent-identity
- * module's singleton so seams with no database handle in scope — the marketplace
- * confirmation providers, the approvals router — can reach it lazily.
- */
-let service: ApprovalService | undefined;
-
-/**
- * Initialize the process-wide approval service.
- *
- * @param db - The DorkOS database handle.
- * @returns The initialized service.
- */
-export function initApprovalService(db: Db): ApprovalService {
-  service = new ApprovalService(db);
-  return service;
-}
-
-/**
- * The process-wide approval service, or `undefined` when it was never
- * initialized (unit tests that build the app without a database). Callers must
- * treat `undefined` as "approvals are unavailable" and refuse the gated action
- * rather than letting it through.
- *
- * @returns The service, or `undefined`.
- */
-export function getApprovalService(): ApprovalService | undefined {
-  return service;
-}
-
-/** Reset the singleton. Test-only seam, mirroring the agent-identity module. */
-export function resetApprovalService(): void {
-  service = undefined;
-}

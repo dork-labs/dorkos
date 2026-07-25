@@ -52,8 +52,6 @@ import {
   type AgentScopeRef,
   type InstalledPackage,
 } from '../services/marketplace/installed-scanner.js';
-import { getMarketplaceConfirmationProvider } from '../services/marketplace-mcp/confirmation-registry.js';
-import { TokenConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 
 /**
@@ -149,18 +147,6 @@ const PruneCacheBodySchema = z.object({
   keepLastN: z.number().int().nonnegative().optional(),
 });
 
-/**
- * Body schema for `POST /api/marketplace/confirmations/:token`.
- *
- * Used by the DorkOS UI when a user clicks Approve / Decline in the install
- * confirmation dialog for an externally-initiated marketplace install. The
- * `reason` field is only meaningful for declines and is capped at 1024 chars.
- */
-const ConfirmationActionBodySchema = z.object({
-  action: z.enum(['approve', 'decline']),
-  reason: z.string().max(1024).optional(),
-});
-
 /** Query schema for `GET /api/marketplace/packages/:name`. */
 const GetPackageQuerySchema = z.object({
   marketplace: z.string().optional(),
@@ -217,8 +203,6 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  * - `POST /packages/:name/install` — install a package
  * - `POST /packages/:name/uninstall` — uninstall a package
  * - `POST /packages/:name/update` — advisory update check (with `apply: true` option)
- * - `POST /confirmations/:token` — resolve an out-of-band confirmation token
- *   issued by the marketplace MCP install/uninstall tools (UI Approve/Decline)
  *
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).
@@ -559,41 +543,6 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
     }
-  });
-
-  // POST /confirmations/:token -- resolve an out-of-band confirmation token
-  //
-  // The marketplace MCP install/uninstall tools issue short-lived tokens via
-  // `TokenConfirmationProvider` when invoked by external agents. The DorkOS
-  // UI calls this endpoint when the user clicks Approve/Decline in the
-  // existing install confirmation dialog. The route is intentionally
-  // restricted to the token-based provider — `AutoApproveConfirmationProvider`
-  // has nothing to confirm and the in-app provider returns synchronously, so
-  // both are reported as 409 to surface the misconfiguration loudly.
-  router.post('/confirmations/:token', (req, res) => {
-    const parsed = ConfirmationActionBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
-
-    const provider = getMarketplaceConfirmationProvider();
-    if (!provider) {
-      return res.status(503).json({ error: 'Confirmation provider not available' });
-    }
-
-    if (!(provider instanceof TokenConfirmationProvider)) {
-      return res.status(409).json({ error: 'Server not configured for out-of-band confirmations' });
-    }
-
-    const { token } = req.params;
-    if (parsed.data.action === 'approve') {
-      provider.approve(token);
-    } else {
-      provider.decline(token, parsed.data.reason);
-    }
-    return res.json({ ok: true });
   });
 
   // POST /packages/:name/update -- advisory update check (pass apply:true to apply)

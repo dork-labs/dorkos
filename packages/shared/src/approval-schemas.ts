@@ -63,31 +63,6 @@ export const APPROVAL_OUTCOMES = ['granted', 'denied', 'expired', 'consumed'] as
 /** How a pending approval ended. */
 export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
 
-/**
- * The `approval_pending` global event: a new approval is waiting. The payload is
- * the pending approval itself, so a listening cockpit can render the card
- * without a follow-up fetch.
- */
-export const ApprovalPendingEventSchema = PendingApprovalSchema.openapi('ApprovalPendingEvent');
-
-/** The `approval_pending` global event payload. */
-export type ApprovalPendingEvent = z.infer<typeof ApprovalPendingEventSchema>;
-
-/** The `approval_resolved` global event: a pending approval is no longer pending. */
-export const ApprovalResolvedEventSchema = z
-  .object({
-    /** ULID of the approval that ended. */
-    approvalId: z.string(),
-    /** How it ended. */
-    outcome: z.enum(APPROVAL_OUTCOMES),
-    /** When it ended. ISO 8601 UTC. */
-    resolvedAt: z.string(),
-  })
-  .openapi('ApprovalResolvedEvent');
-
-/** The `approval_resolved` global event payload. */
-export type ApprovalResolvedEvent = z.infer<typeof ApprovalResolvedEventSchema>;
-
 /** Request body of `POST /api/approvals/:id/deny`. */
 export const DenyApprovalBodySchema = z
   .object({

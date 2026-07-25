@@ -182,8 +182,8 @@ export interface EvalCase extends EvalCaseMeta {
    * ignores it (it reads no such flags). A case sets this when its product path
    * needs a server-level switch the default boot does not provide — e.g. the
    * marketplace install eval sets `MARKETPLACE_AUTO_APPROVE=1` so a headless
-   * agent's `marketplace_install` completes without the out-of-band human
-   * approval POST the interactive confirmation-token flow otherwise requires.
+   * agent's `marketplace_install` completes without the cockpit approval a
+   * person otherwise has to grant (spec `agent-trust` §3.3).
    */
   serverEnv?: Record<string, string>;
   /**

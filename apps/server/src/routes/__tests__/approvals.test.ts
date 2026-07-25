@@ -8,8 +8,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { ApprovalService, APPROVAL_TTL_MS } from '../../services/core/approvals/index.js';
-import { hashApprovalInput } from '../../services/core/approvals/index.js';
+import {
+  ApprovalService,
+  APPROVAL_TTL_MS,
+  hashApprovalInput,
+} from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { createApprovalsRouter } from '../approvals.js';
 
@@ -24,7 +27,14 @@ describe('approvals routes', () => {
   let app: express.Express;
 
   beforeEach(() => {
-    approvals = new ApprovalService(createTestDb());
+    // A stand-in for the capability registry the real boot injects — the card's
+    // title and tier are derived, never stated by the requester.
+    approvals = new ApprovalService(createTestDb(), {
+      describeCapability: (id) =>
+        id === 'marketplace.uninstall'
+          ? { title: 'Uninstall a marketplace package', tier: 'destructive' }
+          : undefined,
+    });
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     app = express();
     app.use(express.json());
@@ -42,7 +52,6 @@ describe('approvals routes', () => {
       ...BINDING,
       summary: 'Uninstall "sentry-monitor"',
       requestedBy: 'dorkbot',
-      capabilityTitle: 'Uninstall a marketplace package',
     });
   }
 
@@ -147,6 +156,56 @@ describe('approvals routes', () => {
       const res = await request(app).post('/api/approvals/01JZZZZZZZZZZZZZZZZZZZZZZZ/deny').send();
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('UNKNOWN_APPROVAL');
+    });
+  });
+
+  describe('only a person may decide', () => {
+    /** The same router, reached by a caller carrying a resolved agent identity. */
+    function agentApp(): express.Express {
+      const built = express();
+      built.use(express.json());
+      built.use((_req, res, next) => {
+        res.locals.agentIdentity = {
+          agentPath: '/Users/dev/agents/dorkbot',
+          displayName: 'DorkBot',
+          tierCeiling: 'destructive',
+          createdAt: new Date().toISOString(),
+        };
+        next();
+      });
+      built.use('/api/approvals', createApprovalsRouter(approvals));
+      return built;
+    }
+
+    it('403s a grant that arrives with an agent identity', async () => {
+      const ticket = requestOne();
+
+      const res = await request(agentApp())
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send();
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      // Untouched: the token still cannot be spent.
+      expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+    });
+
+    it('403s a deny that arrives with an agent identity', async () => {
+      const ticket = requestOne();
+
+      const res = await request(agentApp()).post(`/api/approvals/${ticket.approvalId}/deny`).send();
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+    });
+
+    it('still lets an agent read what is pending — only deciding is blocked', async () => {
+      requestOne();
+
+      const res = await request(agentApp()).get('/api/approvals/pending');
+
+      expect(res.status).toBe(200);
+      expect(res.body.approvals).toHaveLength(1);
     });
   });
 

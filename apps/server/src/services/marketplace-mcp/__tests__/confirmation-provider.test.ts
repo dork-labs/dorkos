@@ -29,6 +29,9 @@ function buildRequest(
     packageName: string;
     marketplace: string;
     operation: 'install' | 'uninstall' | 'create-package';
+    purge: boolean;
+    projectPath: string;
+    packageType: string;
     preview: PermissionPreview;
   }> = {}
 ) {
@@ -36,6 +39,9 @@ function buildRequest(
     packageName: overrides.packageName ?? 'code-review-suite',
     marketplace: overrides.marketplace ?? 'dorkos-community',
     operation: overrides.operation ?? ('install' as const),
+    ...(overrides.purge !== undefined && { purge: overrides.purge }),
+    ...(overrides.projectPath !== undefined && { projectPath: overrides.projectPath }),
+    ...(overrides.packageType !== undefined && { packageType: overrides.packageType }),
     preview: overrides.preview ?? buildPreview(),
   };
 }
@@ -68,12 +74,26 @@ describe('AutoApproveConfirmationProvider', () => {
 
 describe('TokenConfirmationProvider', () => {
   let provider: TokenConfirmationProvider;
+  let approvals: ApprovalService;
 
   beforeEach(() => {
     // A fresh in-memory approval store per test: the provider is a thin wrapper
     // over the shared primitive, which owns the token lifecycle.
-    provider = new TokenConfirmationProvider(new ApprovalService(createTestDb()));
+    approvals = new ApprovalService(createTestDb());
+    provider = new TokenConfirmationProvider(approvals);
   });
+
+  /**
+   * Decide every pending approval the way the cockpit does — by approval id
+   * through the store. The provider deliberately exposes no decide-by-token
+   * path, because the agent is the one holding the token.
+   */
+  function decidePending(decision: 'granted' | 'denied', reason?: string): void {
+    for (const pending of approvals.listPending()) {
+      if (decision === 'granted') approvals.grant(pending.approvalId);
+      else approvals.deny(pending.approvalId, reason);
+    }
+  }
 
   afterEach(() => {
     vi.useRealTimers();
@@ -117,11 +137,11 @@ describe('TokenConfirmationProvider', () => {
       expect(resolved).toEqual({ status: 'pending', token: issued.token });
     });
 
-    it('returns approved after approve() is called and consumes the token (single-use)', async () => {
+    it('returns approved once the approval is granted, then consumes it (single-use)', async () => {
       const issued = await provider.requestInstallConfirmation(buildRequest());
       if (issued.status !== 'pending') throw new Error('expected pending');
 
-      provider.approve(issued.token);
+      decidePending('granted');
 
       const first = await provider.resolveToken(issued.token, buildRequest());
       expect(first).toEqual({ status: 'approved' });
@@ -134,11 +154,11 @@ describe('TokenConfirmationProvider', () => {
       });
     });
 
-    it('returns declined after decline() is called and consumes the token (single-use)', async () => {
+    it('returns declined once the approval is denied, then consumes it (single-use)', async () => {
       const issued = await provider.requestInstallConfirmation(buildRequest());
       if (issued.status !== 'pending') throw new Error('expected pending');
 
-      provider.decline(issued.token, 'user said no');
+      decidePending('denied', 'user said no');
 
       const first = await provider.resolveToken(issued.token, buildRequest());
       expect(first).toEqual({ status: 'declined', reason: 'user said no' });
@@ -151,11 +171,11 @@ describe('TokenConfirmationProvider', () => {
       });
     });
 
-    it('returns declined for a token decline()d without a reason', async () => {
+    it('returns declined without a reason when the denial gave none', async () => {
       const issued = await provider.requestInstallConfirmation(buildRequest());
       if (issued.status !== 'pending') throw new Error('expected pending');
 
-      provider.decline(issued.token);
+      decidePending('denied');
 
       const result = await provider.resolveToken(issued.token, buildRequest());
       expect(result.status).toBe('declined');
@@ -197,30 +217,12 @@ describe('TokenConfirmationProvider', () => {
       });
     });
 
-    it('treats approve() on an unknown token as a no-op', async () => {
-      provider.approve('ghost-token');
-      const result = await provider.resolveToken('ghost-token', buildRequest());
-      expect(result).toEqual({
-        status: 'declined',
-        reason: 'Unknown or expired token',
-      });
-    });
-
-    it('treats decline() on an unknown token as a no-op', async () => {
-      provider.decline('ghost-token', 'never existed');
-      const result = await provider.resolveToken('ghost-token', buildRequest());
-      expect(result).toEqual({
-        status: 'declined',
-        reason: 'Unknown or expired token',
-      });
-    });
-
     it('refuses an approved token presented for a different package', async () => {
       const issued = await provider.requestInstallConfirmation(
         buildRequest({ packageName: 'harmless-plugin' })
       );
       if (issued.status !== 'pending') throw new Error('expected pending');
-      provider.approve(issued.token);
+      decidePending('granted');
 
       // The confused-deputy case: consent was for one package, the retry names
       // another. The approval must not transfer.
@@ -242,12 +244,66 @@ describe('TokenConfirmationProvider', () => {
       expect(asApproved).toEqual({ status: 'approved' });
     });
 
+    it('refuses an uninstall approval escalated to a purging uninstall', async () => {
+      // The data-loss case: the card said "keeping its saved data", so the token
+      // must not license the variant that deletes .dork/data/ and secrets.json.
+      const issued = await provider.requestInstallConfirmation(
+        buildRequest({ operation: 'uninstall', packageName: 'sentry-monitor', purge: false })
+      );
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const escalated = await provider.resolveToken(
+        issued.token,
+        buildRequest({ operation: 'uninstall', packageName: 'sentry-monitor', purge: true })
+      );
+      expect(escalated).toEqual({
+        status: 'declined',
+        reason: 'This approval was granted for a different package or operation',
+      });
+
+      // The approval the user actually gave is untouched and still spendable.
+      const asApproved = await provider.resolveToken(
+        issued.token,
+        buildRequest({ operation: 'uninstall', packageName: 'sentry-monitor', purge: false })
+      );
+      expect(asApproved).toEqual({ status: 'approved' });
+    });
+
+    it('refuses an approval redirected at a different project', async () => {
+      const issued = await provider.requestInstallConfirmation(
+        buildRequest({ projectPath: '/Users/dev/projects/alpha' })
+      );
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const redirected = await provider.resolveToken(
+        issued.token,
+        buildRequest({ projectPath: '/Users/dev/projects/beta' })
+      );
+      expect(redirected.status).toBe('declined');
+    });
+
+    it('refuses a create-package approval retried for a different package type', async () => {
+      const issued = await provider.requestInstallConfirmation(
+        buildRequest({ operation: 'create-package', packageType: 'agent' })
+      );
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const swapped = await provider.resolveToken(
+        issued.token,
+        buildRequest({ operation: 'create-package', packageType: 'plugin' })
+      );
+      expect(swapped.status).toBe('declined');
+    });
+
     it('refuses an approved token presented for a different operation', async () => {
       const issued = await provider.requestInstallConfirmation(
         buildRequest({ operation: 'install' })
       );
       if (issued.status !== 'pending') throw new Error('expected pending');
-      provider.approve(issued.token);
+      decidePending('granted');
 
       const redirected = await provider.resolveToken(
         issued.token,

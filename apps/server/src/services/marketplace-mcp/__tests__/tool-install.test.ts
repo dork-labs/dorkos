@@ -27,11 +27,23 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalService } from '../../core/approvals/index.js';
 
 /**
- * Build a token provider over a fresh in-memory approval store. The provider is
- * a thin wrapper over the shared approval primitive, which owns the lifecycle.
+ * A token provider over a fresh approval store, plus the two things the cockpit
+ * does with a pending approval. Decisions go through the store by approval id —
+ * the provider has no decide-by-token path, because the agent holds the token.
  */
-function buildTokenProvider(): TokenConfirmationProvider {
-  return new TokenConfirmationProvider(new ApprovalService(createTestDb()));
+function buildTokenProvider() {
+  const approvals = new ApprovalService(createTestDb());
+  return {
+    provider: new TokenConfirmationProvider(approvals),
+    /** Grant every pending approval, the way the cockpit's Allow button does. */
+    grantPending: () => {
+      for (const pending of approvals.listPending()) approvals.grant(pending.approvalId);
+    },
+    /** Deny every pending approval, with an optional reason. */
+    denyPending: (reason?: string) => {
+      for (const pending of approvals.listPending()) approvals.deny(pending.approvalId, reason);
+    },
+  };
 }
 
 /**
@@ -317,7 +329,7 @@ describe('createInstallHandler — in-app approve happy path', () => {
 
 describe('createInstallHandler — token resume flow', () => {
   it('returns requires_confirmation + token + preview on first call from external client', async () => {
-    const tokenProvider = buildTokenProvider();
+    const { provider: tokenProvider } = buildTokenProvider();
     const installer = createStubInstaller({
       preview: previewResult({
         name: 'sentry',
@@ -348,7 +360,7 @@ describe('createInstallHandler — token resume flow', () => {
   });
 
   it('proceeds with install when re-called with an approved token', async () => {
-    const tokenProvider = buildTokenProvider();
+    const { provider: tokenProvider, grantPending } = buildTokenProvider();
     const installer = createStubInstaller({
       preview: previewResult({ name: 'sentry' }),
       install: installResult({ packageName: 'sentry', version: '2.0.0' }),
@@ -361,7 +373,7 @@ describe('createInstallHandler — token resume flow', () => {
     const { confirmationToken } = parseToolPayload<{ confirmationToken: string }>(first);
 
     // Out-of-band approval (simulates the DorkOS UI clicking Approve).
-    tokenProvider.approve(confirmationToken);
+    grantPending();
 
     // Second call → handler must use the token, NOT issue a new request.
     const requestSpy = vi.spyOn(tokenProvider, 'requestInstallConfirmation');
@@ -417,7 +429,7 @@ describe('createInstallHandler — declined', () => {
   });
 
   it('returns declined when a token resolves to declined', async () => {
-    const tokenProvider = buildTokenProvider();
+    const { provider: tokenProvider, denyPending } = buildTokenProvider();
     const installer = createStubInstaller({
       preview: previewResult({ name: 'sentry' }),
       install: installResult({ packageName: 'sentry' }),
@@ -427,7 +439,7 @@ describe('createInstallHandler — declined', () => {
 
     const first = await handler({ name: 'sentry' });
     const { confirmationToken } = parseToolPayload<{ confirmationToken: string }>(first);
-    tokenProvider.decline(confirmationToken, 'Changed my mind');
+    denyPending('Changed my mind');
 
     const second = await handler({ name: 'sentry', confirmationToken });
     const payload = parseToolPayload<{ status: string; reason: string }>(second);

@@ -43,11 +43,37 @@ export type ConfirmationResult =
   | { status: 'declined'; reason?: string }
   | { status: 'pending'; token: string };
 
-/** Payload for {@link ConfirmationProvider.requestInstallConfirmation}. */
+/**
+ * Payload for {@link ConfirmationProvider.requestInstallConfirmation}.
+ *
+ * Every field except `preview` is part of what the user actually agreed to, so
+ * every field except `preview` is hashed into the approval's binding (see
+ * {@link bindingOf}). Adding a field that reaches the mutation without adding it
+ * here would let a retry change the effect the user approved.
+ */
 export interface ConfirmationRequest {
   packageName: string;
   marketplace: string;
   operation: ConfirmationOperation;
+  /**
+   * Uninstall only: also delete the package's saved data and secrets. This is
+   * the difference between a reversible uninstall and an irreversible one, so it
+   * is both shown to the user and bound into the approval.
+   */
+  purge?: boolean;
+  /**
+   * Install/uninstall only: the project whose scope is being changed. Absent
+   * means the global scope. Bound so an approval for one project cannot be
+   * redirected at another.
+   */
+  projectPath?: string;
+  /**
+   * Create-package only: the kind of package being scaffolded, which decides the
+   * shape of what lands on disk. Free-text metadata (description, author,
+   * categories) is deliberately NOT bound — it changes what the package says
+   * about itself, not what happens to the user's machine.
+   */
+  packageType?: string;
   preview?: PermissionPreview;
 }
 
@@ -115,18 +141,18 @@ const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
   'create-package': 'marketplace.create_package',
 };
 
-/** Human-facing title each marketplace operation shows on the approval card. */
-const TITLES: Record<ConfirmationOperation, string> = {
-  install: 'Install a marketplace package',
-  uninstall: 'Uninstall a marketplace package',
-  'create-package': 'Create a marketplace package',
-};
-
 /**
- * The action a marketplace confirmation is bound to. Deliberately excludes the
- * permission preview: the preview is derived (a fresh resolve can legitimately
- * produce different file lists) while the package, marketplace, and operation
- * are what the user actually agreed to.
+ * The action a marketplace confirmation is bound to.
+ *
+ * Every value that reaches the mutation after the gate is hashed here, because
+ * the binding is the whole guarantee: the user consented to one specific effect,
+ * and a retry that changes any of these is a different effect. `purge` is the
+ * sharpest case — approving a reversible uninstall must never license one that
+ * deletes `.dork/data/` and `.dork/secrets.json`.
+ *
+ * Deliberately excludes the permission preview: the preview is derived (a fresh
+ * resolve can legitimately produce different file lists) while these fields are
+ * what the user actually agreed to.
  *
  * @param req - The confirmation request.
  * @returns The canonical subset an approval binds to.
@@ -138,19 +164,29 @@ function bindingOf(req: ConfirmationRequest): { capabilityId: string; inputHash:
       packageName: req.packageName,
       marketplace: req.marketplace,
       operation: req.operation,
+      purge: req.purge ?? false,
+      projectPath: req.projectPath ?? null,
+      packageType: req.packageType ?? null,
     }),
   };
+}
+
+/** Where an operation lands, for the card: a named project or the global scope. */
+function scopeOf(req: ConfirmationRequest): string {
+  return req.projectPath ? ` in ${req.projectPath}` : '';
 }
 
 /** Plain-language summary of a pending marketplace operation, for the card. */
 function summaryOf(req: ConfirmationRequest): string {
   switch (req.operation) {
     case 'install':
-      return `Install "${req.packageName}" from ${req.marketplace}`;
+      return `Install "${req.packageName}" from ${req.marketplace}${scopeOf(req)}`;
     case 'uninstall':
-      return `Uninstall "${req.packageName}"`;
+      return req.purge
+        ? `Uninstall "${req.packageName}"${scopeOf(req)} and delete its saved data and secrets`
+        : `Uninstall "${req.packageName}"${scopeOf(req)}, keeping its saved data`;
     case 'create-package':
-      return `Create the package "${req.packageName}" in ${req.marketplace}`;
+      return `Create the ${req.packageType ?? 'new'} package "${req.packageName}" in ${req.marketplace}`;
   }
 }
 
@@ -161,8 +197,10 @@ function summaryOf(req: ConfirmationRequest): string {
  * Flow:
  * 1. The agent calls `marketplace_install`; the provider records an approval and
  *    returns `{ status: 'pending', token }`.
- * 2. The user sees the approval card in DorkOS and clicks Approve or Decline;
- *    the host forwards that decision via {@link approve} / {@link decline}.
+ * 2. The approval appears on the operator's cockpit card, and they decide it by
+ *    approval id through `POST /api/approvals/:id/grant|deny`. There is
+ *    deliberately no decide-by-token path: the agent holds the token, so one
+ *    would let a requester approve its own request.
  * 3. The agent re-calls the tool, which calls {@link resolveToken}; the first
  *    call after a decision spends the token, so a replay reports declined.
  *
@@ -181,6 +219,9 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
   /**
    * Record a pending approval and return the token the agent retries with.
    *
+   * The card's title and tier are resolved from the capability registry by
+   * `ApprovalService`, not stated here — a requester cannot describe itself.
+   *
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
@@ -189,30 +230,8 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       capabilityId,
       inputHash,
       summary: summaryOf(req),
-      capabilityTitle: TITLES[req.operation],
     });
     return { status: 'pending', token: ticket.token };
-  }
-
-  /**
-   * Mark the approval behind a token as granted. Called by the DorkOS UI when
-   * the user clicks Approve. A no-op for unknown tokens.
-   *
-   * @param token - The token returned by {@link requestInstallConfirmation}.
-   */
-  approve(token: string): void {
-    this.approvals.decideByToken(token, 'granted');
-  }
-
-  /**
-   * Mark the approval behind a token as denied. Called by the DorkOS UI when
-   * the user clicks Decline. A no-op for unknown tokens.
-   *
-   * @param token - The token returned by {@link requestInstallConfirmation}.
-   * @param reason - Optional human-readable explanation.
-   */
-  decline(token: string, reason?: string): void {
-    this.approvals.decideByToken(token, 'denied', reason);
   }
 
   /**

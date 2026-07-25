@@ -10,17 +10,38 @@
  *
  * Decisions are made by approval id, never by token: the person deciding should
  * not have to hold the requester's secret, and no response here ever returns
- * token material.
+ * token material. A caller that presents an agent identity is refused (403), so
+ * an agent cannot answer its own request.
  *
  * Auth is the global `sessionGate` mounted in `app.ts` — every `/api/*` path
  * inherits it, so these routes need no gate of their own.
  *
  * @module routes/approvals
  */
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { DenyApprovalBodySchema } from '@dorkos/shared/approval-schemas';
 import type { ApprovalDecisionFailure, ApprovalService } from '../services/core/approvals/index.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+
+/**
+ * Refuse a decision that arrives with an agent identity attached.
+ *
+ * Deciding is the human's half of the gate. A person in the cockpit presents no
+ * `X-DorkOS-Agent` header, so this rejects exactly one thing: an agent granting
+ * a request — its own or another's — which is the whole point of asking.
+ *
+ * @param res - The response carrying the resolved identity, if any.
+ * @returns An error body when the caller is an agent, otherwise `undefined`.
+ */
+function agentSelfApprovalRefusal(res: Response): { error: string; code: string } | undefined {
+  const identity = getRequestAgentIdentity(res);
+  if (!identity) return undefined;
+  return {
+    error: 'Approvals are decided by a person in DorkOS, not by an agent',
+    code: 'AGENT_CANNOT_DECIDE',
+  };
+}
 
 /** Map a decision failure onto the HTTP status and code the cockpit branches on. */
 function decisionFailureResponse(failure: ApprovalDecisionFailure): {
@@ -62,6 +83,9 @@ export function createApprovalsRouter(approvals: ApprovalService): Router {
 
   // POST /:id/grant -- allow the requested action
   router.post('/:id/grant', (req, res) => {
+    const refusal = agentSelfApprovalRefusal(res);
+    if (refusal) return res.status(403).json(refusal);
+
     const failure = approvals.grant(req.params.id);
     if (failure) {
       const mapped = decisionFailureResponse(failure);
@@ -72,6 +96,9 @@ export function createApprovalsRouter(approvals: ApprovalService): Router {
 
   // POST /:id/deny -- refuse the requested action
   router.post('/:id/deny', (req, res) => {
+    const refusal = agentSelfApprovalRefusal(res);
+    if (refusal) return res.status(403).json(refusal);
+
     // Express 5 leaves `req.body` undefined on an empty POST, and a reason is
     // optional, so an absent body is a valid bare denial.
     const parsed = DenyApprovalBodySchema.safeParse(req.body ?? {});

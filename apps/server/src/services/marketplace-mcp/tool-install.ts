@@ -109,10 +109,13 @@ async function resolveConfirmation(
   args: InstallToolArgs,
   preview: PreviewResult
 ): Promise<ConfirmationResult> {
+  // `projectPath` rides along because it reaches `installer.install()` after the
+  // gate: an approval for one project must not be redirected at another.
   const req = {
     packageName: args.name,
     marketplace: args.marketplace ?? 'dorkos-community',
     operation: 'install' as const,
+    ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
     preview: preview.preview,
   };
   if (args.confirmationToken) {
