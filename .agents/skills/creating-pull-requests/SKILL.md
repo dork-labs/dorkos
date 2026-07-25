@@ -64,10 +64,34 @@ The `claude-code-review` workflow reviews **on-demand, not on every push**:
 | Draft marked ready-for-review | One full review of the final state      |
 | New commits pushed            | **No** auto-review (CI tests still run) |
 | `re-review` label applied     | One re-review, scoped to the delta      |
+| PR has merge conflicts        | **Nothing runs at all** — see below     |
 
 This mirrors how human teams work: pushes are work-in-progress, and the author
 pulls the reviewer back in with an explicit "ready again" signal. It avoids
 re-reviewing five or six times while you address feedback.
+
+## Rebase before you expect a review
+
+**A pull request with merge conflicts gets no CI at all — no review, and no red
+check to tell you so.** GitHub builds a PR's test-merge commit before it starts any
+`pull_request` workflow. When the branch conflicts with `main`, that commit cannot
+be built, so GitHub starts nothing: no run, no failure, no entry in the Actions
+list. The PR looks reviewed and clean because nothing ever looked at it. This hits
+every check in the repo at once, not just the review, and no amount of re-labelling
+or toggling draft will shake a run loose.
+
+So: **rebase onto `origin/main` and push before you open the PR, and again before
+you ask for a review.** If GitHub's PR page says the branch has conflicts, treat
+every green space on that page as meaningless.
+
+If you need a review without rebasing first, run the workflow by hand:
+
+```bash
+gh workflow run claude-code-review.yml -f pr=<number>
+```
+
+Manual dispatch reviews the PR's head directly. It ignores `skip-review` and draft
+state (you asked for it explicitly) and refuses fork PRs.
 
 ## Review-control labels
 
@@ -114,7 +138,14 @@ gh label create re-review    --description "Request another automated review pas
 - **Workflow changes can't be tested on their own PR.** GitHub runs the review
   workflow as defined on the default branch, so changes to
   `.github/workflows/claude-code-review.yml` or `REVIEW.md` only take effect after
-  merge. Merge to `main`, then exercise on a throwaway PR.
+  merge. Merge to `main`, then exercise the merged version against a real PR with
+  `gh workflow run claude-code-review.yml -f pr=<number>`.
+- **A red review check is not always a finding.** When the review itself breaks, it
+  posts a comment saying so and naming the cause: it either never started (the
+  Claude subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit a usage limit, or the
+  token needs regenerating — nothing in the PR was looked at) or it ran out of its
+  turn budget (any verdict already posted stands). Read that comment before you go
+  hunting in your diff.
 - **Changelog populator.** A `post-commit` hook writes a changelog fragment under
   `changelog/unreleased/` from the commit subject (it dedupes across amend/rebase and
   never touches `CHANGELOG.md`). For changes that should not land in the user-facing
