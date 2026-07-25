@@ -8,9 +8,12 @@
  * feeds that shape in and asserts the oracle FAILS on it. Without this test, the
  * case could quietly pass on a build with the tier gate removed.
  *
- * The gate payload here is a typed `ApprovalRequiredPayload` literal, so a field
- * added to or renamed in the real contract breaks this file at typecheck rather
- * than leaving the fixture describing a payload the gate no longer produces.
+ * The gate payload here is a typed `ApprovalRequiredPayload` literal for
+ * readability, but do NOT rely on that as the drift guard: this file lives under
+ * `src/__tests__/`, which the package tsconfig excludes, and vitest does not
+ * typecheck — so a rename in the real contract would NOT fail here. The guard is
+ * the `K` / `RETRY_K` pin inside `suite/governance.ts`, which `pnpm typecheck`
+ * does cover. Keep it there.
  */
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

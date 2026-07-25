@@ -34,7 +34,8 @@ A card shows up on your dashboard under **Waiting On You**. It holds everything 
     **Read what would run.** The sentence on the card comes from DorkOS, not from the agent.
   </Step>
   <Step>
-    **Click Allow** to let it through. The agent picks up where it left off and finishes the job.
+    **Click Allow** to let it through. Nothing runs on its own at that point: the agent has to ask
+    for the same thing again, and this time it goes ahead.
   </Step>
   <Step>
     **Or click Don't allow.** The agent is told you said no, and it should stop rather than look for
@@ -68,7 +69,7 @@ This also holds for the command line. Running an agent outside DorkOS, or droppi
 - **Used once.** After an approval is spent it stops working. A second attempt needs a second yes.
 - **Ten minutes.** If nobody answers, the request runs out and the agent has to ask again.
 
-You don't have to babysit the card. An agent that gets stopped explains what it needs and waits.
+You don't have to babysit the card. Whatever the agent does next, the action itself does not run until you answer.
 
 ## Your activity feed names who did what
 
