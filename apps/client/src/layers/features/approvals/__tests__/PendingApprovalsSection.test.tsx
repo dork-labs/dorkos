@@ -158,6 +158,21 @@ describe('PendingApprovalsSection', () => {
     expect(summary).toHaveClass('line-clamp-2');
   });
 
+  it('says how many requests the cap is holding back', async () => {
+    // Silently dropping the eighth card leaves an agent blocked with nothing on
+    // screen to suggest it exists.
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({
+        approvals: Array.from({ length: 8 }, (_, i) =>
+          buildApproval({ approvalId: `01JZ000000000000000000000${i}` })
+        ),
+      }),
+    });
+
+    expect(await screen.findByText(/2 more requests are waiting/)).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="approval-card"]')).toHaveLength(6);
+  });
+
   it('shows more than one waiting approval', async () => {
     renderSection({
       listPendingApprovals: vi.fn().mockResolvedValue({

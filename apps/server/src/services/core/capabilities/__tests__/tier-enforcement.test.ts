@@ -24,7 +24,7 @@ import {
   splitApprovalToken,
   type TierEnforcementAttempt,
 } from '../tier-enforcement.js';
-import { ApprovalService, hashApprovalInput } from '../../approvals/index.js';
+import { APPROVAL_TTL_MS, ApprovalService, hashApprovalInput } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
 
@@ -318,7 +318,9 @@ describe('enforceCapabilityTier', () => {
       if (first.outcome !== 'approval_required') throw new Error('unreachable');
       approvals.grant(first.payload.approvalId);
 
-      vi.advanceTimersByTime(11 * 60 * 1000);
+      // Derived from the decision window, not a hardcoded duration — tuning
+      // APPROVAL_TTL_MS must not turn this into a silently-passing test.
+      vi.advanceTimersByTime(APPROVAL_TTL_MS + 60_000);
       const decision = enforce('destructive', 'destructive', first.payload.approvalToken);
       expect(decision.outcome).toBe('approval_required');
       if (decision.outcome !== 'approval_required') throw new Error('unreachable');

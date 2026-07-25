@@ -113,6 +113,88 @@ describe('usePendingApprovals', () => {
     expect(result.current.approvals).toEqual([]);
   });
 
+  describe('expiry', () => {
+    // Nothing announces an expiry: the server enforces it when a token is
+    // presented, so an approval nobody answered and no agent retried produces no
+    // event at all. Without these, a dead card sits there looking answerable.
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('drops an approval whose window has already closed', async () => {
+      const { result } = renderHookWithApprovals([
+        buildApproval({ expiresAt: new Date(Date.now() - 1).toISOString() }),
+      ]);
+
+      await waitFor(() => expect(result.current.approvals).toEqual([]));
+    });
+
+    it('retires each approval as its own window closes, not all at the first one', async () => {
+      vi.useFakeTimers();
+      const soon = buildApproval({
+        approvalId: '01JZ0000000000000000000001',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      const later = buildApproval({
+        approvalId: '01JZ0000000000000000000002',
+        expiresAt: new Date(Date.now() + 180_000).toISOString(),
+      });
+      const { result } = renderHookWithApprovals([soon, later]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.approvals).toHaveLength(2);
+
+      // Past the first deadline only — the second must survive, which is what
+      // proves the timer re-aims instead of clearing the whole list.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      expect(result.current.approvals.map((a) => a.approvalId)).toEqual([
+        '01JZ0000000000000000000002',
+      ]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(121_000);
+      });
+      expect(result.current.approvals).toEqual([]);
+    });
+
+    it('re-arms when a timer fires early, instead of giving up on expiry', async () => {
+      // A clock stepped BACKWARDS (an NTP correction, a manual change) makes the
+      // timer fire while the approval is still live. The prune then removes
+      // nothing and leaves the cache reference identical — the same property that
+      // stops the effect looping also stops it re-running, so without an explicit
+      // re-arm no timer is left armed and the card becomes immortal.
+      vi.useFakeTimers();
+      const start = Date.now();
+      const { result } = renderHookWithApprovals([
+        buildApproval({ expiresAt: new Date(start + 60_000).toISOString() }),
+      ]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.approvals).toHaveLength(1);
+
+      // Fire the armed timer with the clock behind the deadline: 61s of timer
+      // time elapses while `Date.now()` only reaches 30s past the start.
+      vi.setSystemTime(start + 30_000 - 61_000);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      expect(result.current.approvals).toHaveLength(1);
+
+      // Now let the window genuinely close. Before the re-arm this stayed at 1
+      // forever, because nothing was left to fire.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+      expect(result.current.approvals).toEqual([]);
+    });
+  });
+
   it('re-reads the list when approval_resolved arrives', async () => {
     const { listPendingApprovals, result } = renderHookWithApprovals([buildApproval()]);
     await waitFor(() => expect(result.current.approvals).toHaveLength(1));

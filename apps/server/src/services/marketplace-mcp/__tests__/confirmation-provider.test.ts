@@ -7,7 +7,7 @@ import {
   type ConfirmationResult,
   type InAppConfirmationCallback,
 } from '../confirmation-provider.js';
-import { ApprovalService } from '../../core/approvals/index.js';
+import { ApprovalService, APPROVAL_TTL_MS } from '../../core/approvals/index.js';
 import type { PermissionPreview } from '../../marketplace/types.js';
 
 /** Build an empty PermissionPreview useful for plumbing tests. */
@@ -184,25 +184,29 @@ describe('TokenConfirmationProvider', () => {
       }
     });
 
-    it('expires tokens after exactly 10 minutes and retires them on resolve', async () => {
+    it('expires tokens at the decision window and retires them on resolve', async () => {
       vi.useFakeTimers();
-      vi.setSystemTime(new Date('2026-04-07T00:00:00.000Z'));
+      // Derived from APPROVAL_TTL_MS rather than hardcoded, so tuning the
+      // decision window cannot leave this asserting a stale duration.
+      const issuedAt = new Date('2026-04-07T00:00:00.000Z');
+      vi.setSystemTime(issuedAt);
+      const at = (offsetMs: number) => new Date(issuedAt.getTime() + offsetMs);
 
       const issued = await provider.requestInstallConfirmation(buildRequest());
       if (issued.status !== 'pending') throw new Error('expected pending');
 
-      // Just under the boundary (9m 59.999s) — still pending.
-      vi.setSystemTime(new Date('2026-04-07T00:09:59.999Z'));
+      // Just under the boundary — still pending.
+      vi.setSystemTime(at(APPROVAL_TTL_MS - 1));
       const stillPending = await provider.resolveToken(issued.token, buildRequest());
       expect(stillPending.status).toBe('pending');
 
       // Exactly the TTL is NOT expired (`> expiresAt` is the rule).
-      vi.setSystemTime(new Date('2026-04-07T00:10:00.000Z'));
+      vi.setSystemTime(at(APPROVAL_TTL_MS));
       const atBoundary = await provider.resolveToken(issued.token, buildRequest());
       expect(atBoundary.status).toBe('pending');
 
       // Just past the boundary — expired.
-      vi.setSystemTime(new Date('2026-04-07T00:10:00.001Z'));
+      vi.setSystemTime(at(APPROVAL_TTL_MS + 1));
       const expired = await provider.resolveToken(issued.token, buildRequest());
       expect(expired).toEqual({
         status: 'declined',

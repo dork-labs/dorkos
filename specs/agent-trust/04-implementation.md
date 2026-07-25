@@ -7,7 +7,7 @@
 
 ## What shipped
 
-Destructive capabilities stop and ask a person, at all three choke points (the invoke route and both MCP adapters), keyed on the action's declared tier rather than on whether the caller identified itself. Approvals are single-use, expire in ten minutes, and are bound to the exact parsed input the person saw described. Agents carry per-agent identity tokens (hashed at rest, keyed on the stable `agentPath` so the ADR-0043 reconciler rebuild cannot destroy them, 7-day idle / 30-day absolute expiry) which supply Activity attribution and a `tierCeiling` that can only narrow what a caller may do. The eval harness gained genuine OS-level containment and an opt-in CI cadence.
+Destructive capabilities stop and ask a person, at all three choke points (the invoke route and both MCP adapters), keyed on the action's declared tier rather than on whether the caller identified itself. Approvals are single-use, expire after a bounded decision window, and are bound to the exact parsed input the person saw described. Agents carry per-agent identity tokens (hashed at rest, keyed on the stable `agentPath` so the ADR-0043 reconciler rebuild cannot destroy them, 7-day idle / 30-day absolute expiry) which supply Activity attribution and a `tierCeiling` that can only narrow what a caller may do. The eval harness gained genuine OS-level containment and an opt-in CI cadence.
 
 ## Deltas from the spec
 
@@ -24,6 +24,8 @@ Conformance carries an identified and an anonymous destructive-gate probe per ch
 ## Correction on record
 
 During review of #452 the pre-fix consequence was initially stated as data loss ("purge runs with no card"). That was wrong for today's only destructive capability: `marketplace.uninstall` carries its own legacy confirmation flow which would have held. The real defect was that the tier gate did not run, the `approval_required` contract was not honored, and calls went unattributed, with protection resting on one handler's bespoke second gate. Recorded so nobody cites data loss for the pre-fix state.
+
+The decision window shipped in this phase at ten minutes and was raised to two hours on 2026-07-25, when the cockpit gained a global pending-approval marker (ADR 260725-133221, amended). The phase shipped the primitive with no surface outside the dashboard section, so an approval requested while its operator was on `/session` expired with nobody ever told: ten minutes was only ever defensible for a person already watching that one page.
 
 ## Open follow-ups (tracked)
 
