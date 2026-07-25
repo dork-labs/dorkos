@@ -16,11 +16,14 @@ name: claude-code-review
 # Code", which is the sanctioned use of a subscription token; see the PR that
 # introduced this file for the full Terms-of-Service rationale.
 #
-# Public-repo safety: this runs only on same-repo (non-fork) PRs. GitHub does not
-# expose repository secrets to workflows triggered by fork PRs, so the token would
-# be empty there anyway — the `if` below skips them cleanly instead of failing.
-# To review a contributor's fork PR, @claude it (handled by claude.yml) or run
-# `/code-review <pr>` locally.
+# Public-repo safety: this runs only on same-repo (non-fork) PRs, enforced in two
+# places — the job `if` below for `pull_request` events, and the "Resolve target PR"
+# step for `workflow_dispatch`, which the `if` cannot gate because a hand-typed PR
+# number is not in the event payload. GitHub does not expose repository secrets to
+# workflows triggered by fork PRs, so the token would be empty there anyway; the
+# `if` skips them cleanly instead of failing, and dispatch refuses them with a
+# message. To review a contributor's fork PR, @claude it (handled by claude.yml) or
+# run `/code-review <pr>` locally.
 #
 # KNOWN BLIND SPOT — a PR with merge conflicts gets NO review, and no red check
 # either (DOR-457). GitHub builds the test-merge ref (`refs/pull/N/merge`) before
@@ -36,11 +39,22 @@ name: claude-code-review
 #
 # SECOND BLIND SPOT — a PR that edits this workflow gets a GREEN check and no
 # review. That one lives in the action, not in GitHub; the `workflow_dispatch`
-# comment below has the mechanism and the way around it.
+# comment below has the mechanism and the way around it. It is scoped to the
+# running workflow file, so a PR editing claude.yml silences @claude on that PR
+# the same way and leaves this review working, and vice versa.
 #
 # What is deliberately made loud rather than silent: an infra failure posts a
 # comment naming its actual cause (see "Note infra failure"), and
-# `workflow_dispatch` exists so a review can always be forced by hand.
+# `workflow_dispatch` exists so a review can be forced by hand on a PR GitHub will
+# not dispatch events for.
+#
+# The dispatch path is NOT the automatic path with a different trigger. The action
+# treats workflow_dispatch as an *automation* context with no PR identity, which
+# switches off two things it does for us on `pull_request`, so this file supplies
+# both: the PR head's agent config is reverted by a step here ("Revert PR-authored
+# agent config"), and line-level findings are posted through `gh api` because the
+# inline-comment tool is not registered (see "Claude Code review"). Keep that in
+# mind before assuming a dispatch run behaves identically.
 
 on:
   # On-demand, not on every push: no `synchronize`. A full review fires on open
@@ -96,7 +110,12 @@ env:
 # leaves a `cancelled` run in the list, so this block can never be the reason a
 # PR shows no run at all — that is the conflicted-PR blind spot in the header.
 # `github.event.pull_request.number` is null on workflow_dispatch, so fall back to
-# the input to keep manual runs in the same per-PR group.
+# the input to keep manual runs in the same per-PR group. `github.event.action` is
+# also null there, so `cancel-in-progress` evaluates TRUE for a manual run: a
+# dispatch cancels an automatic review already in flight on the same PR, and the
+# next automatic trigger cancels a dispatched one. That is the behaviour we want —
+# the newer request is the one someone is waiting on — but it does mean a dispatch
+# replaces a running review rather than joining it.
 concurrency:
   group: claude-review-${{ github.event.pull_request.number || github.event.inputs.pr }}
   cancel-in-progress: ${{ github.event.action != 'labeled' || github.event.label.name == 're-review' }}
@@ -135,10 +154,12 @@ jobs:
       # under either trigger. Runs before checkout because `gh` needs no worktree.
       # The dispatch input is hand-typed, so it is validated here: a non-numeric
       # value would otherwise flow into `gh pr view` and the prompt as nonsense.
-      # Fork PRs are refused rather than reviewed, because the action only
-      # neutralizes a PR head's `.claude/` config (which can define hooks that
-      # execute) on `pull_request` events — the same-repo rule from the header
-      # therefore has to be re-asserted here for the dispatch path.
+      # Fork PRs are refused rather than reviewed: the job `if` cannot see a PR
+      # number typed into a dispatch form, so the same-repo rule from the header is
+      # re-asserted here. That rule is the trust boundary the rest of this job
+      # assumes — see "Revert PR-authored agent config", which is what actually
+      # hardens the head's config, and note that same-repo is a floor, not a
+      # substitute for it.
       - name: Resolve target PR
         id: target
         env:
@@ -180,6 +201,84 @@ jobs:
           # (main) and review the PR against the wrong files, so point it at the
           # target PR's head instead.
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', steps.target.outputs.number) || '' }}
+
+      # SECURITY (DOR-457). On `pull_request` the action neutralizes the PR head's
+      # agent config for us. On `workflow_dispatch` it does not, so do it here.
+      #
+      # `anthropics/claude-code-action` calls restoreConfigFromBase() only when the
+      # event produced a PR *entity* context (src/entrypoints/run.ts). A
+      # workflow_dispatch run is an *automation* context with no `isPR` at all
+      # (src/github/context.ts), so that restore never fires. It exists because the
+      # CLI's non-interactive mode trusts the working directory: it reads
+      # `.mcp.json`, `.claude/settings.json` and `.claude/settings.local.json` from
+      # cwd and acts on them BEFORE any tool-permission gating — running hooks
+      # (including SessionStart), setting env vars (NODE_OPTIONS, LD_PRELOAD, PATH),
+      # shelling out for apiKeyHelper/awsAuthRefresh, and auto-approving project MCP
+      # servers (the action sets enableAllProjectMcpServers itself).
+      #
+      # This repo supplies the trigger. Its own `.claude/settings.json` defines a
+      # PreToolUse hook on `Bash` that runs `node .claude/hooks/file-guard.mjs`, and
+      # both it and the hook scripts are tracked and PR-editable. The reviewer's
+      # first act is `gh pr diff` — a Bash call — so a PR-authored hook would
+      # execute as a shell command inside a job holding CLAUDE_CODE_OAUTH_TOKEN and
+      # an OIDC-minted App token with write scopes.
+      #
+      # The trust boundary, stated plainly: reaching this needs push access,
+      # because only a same-repo PR gets past "Resolve target PR". This is not a
+      # fork-PR RCE. But upstream deliberately closed it even for same-repo PRs,
+      # and an escape hatch must not be softer than the path it substitutes for.
+      #
+      # Dispatch-only on purpose: running it on `pull_request` too would pre-empt
+      # the action's own restore and make its `.claude-pr/` snapshot (kept so
+      # review agents can inspect what a PR changes) capture the base version
+      # instead of the PR's.
+      #
+      # The path list is the action's own SENSITIVE_PATHS
+      # (src/github/operations/restore-config.ts): everything PR-controllable that
+      # the CLI reads from cwd at startup. Restore from the repo's DEFAULT branch
+      # rather than the PR's base, because a stacked PR's base is another PR's head
+      # and so is not itself vouched for. Delete before checking out, because
+      # `git checkout <ref> -- <path>` cannot remove a file the PR ADDED.
+      - name: Revert PR-authored agent config
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Fail closed: without a trusted branch to restore from there is nothing
+          # to revert to, and reviewing anyway would run the PR's own hooks.
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            echo "::error::Could not resolve the default branch; refusing to review with PR-authored agent config in place."
+            exit 1
+          fi
+
+          paths=(.claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky)
+
+          git fetch origin "$DEFAULT_BRANCH" --depth=1 --no-recurse-submodules
+
+          restored=
+          deleted=
+          for p in "${paths[@]}"; do
+            existed=no
+            [ -e "$p" ] && existed=yes
+            rm -rf "$p"
+            if git checkout "origin/$DEFAULT_BRANCH" -- "$p" 2>/dev/null; then
+              restored="$restored $p"
+            elif [ "$existed" = yes ]; then
+              # Absent on the default branch: the PR added it. It stays deleted.
+              deleted="$deleted $p"
+            fi
+          done
+
+          # `git checkout <ref> -- <path>` stages what it restores; unstage so the
+          # revert cannot leak into anything committed later.
+          git reset -- "${paths[@]}" >/dev/null 2>&1 || true
+
+          # Logged (not just done) so a dispatch run is auditable and the
+          # post-merge validation in this PR's description can assert on it.
+          echo "Reverted from origin/$DEFAULT_BRANCH:${restored:- (nothing present)}"
+          if [ -n "$deleted" ]; then
+            echo "Deleted (PR-added, absent on origin/$DEFAULT_BRANCH):$deleted"
+          fi
 
       # Timestamp cutoff for the infra-failure step below, so it only looks at
       # comments this run could plausibly have posted (not leftovers from an
@@ -223,6 +322,7 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.target.outputs.number }}
+            INLINE COMMENTS: ${{ github.event_name == 'workflow_dispatch' && 'gh api' || 'inline-comment tool' }}
 
             You are reviewing this pull request as a senior DorkOS engineer.
 
@@ -248,10 +348,16 @@ jobs:
             and post only NEW or still-unaddressed 🔴 Important findings. Do not
             repeat resolved findings and do not raise fresh nits on a re-review.
 
-            The PR's head is already checked out. Use `gh pr diff <PR NUMBER>` for
-            the changes — always pass the number, because the checkout is a detached
+            The code under review is already checked out: on an automatic run that
+            is the PR's test-merge ref (the PR merged into its base), and on a manual
+            dispatch it is the PR's head. Use `gh pr diff <PR NUMBER>` for the
+            changes — always pass the number, because the checkout is a detached
             HEAD and an argument-less `gh pr diff` cannot infer the PR — and read the
-            surrounding files for context. Work outward from the diff: for every
+            surrounding files for context. One exception: `.claude/`, `.mcp.json`,
+            `CLAUDE.md` and `.husky` on disk are reverted to a trusted branch's
+            versions, not this PR's, because a PR must not be able to make its own
+            reviewer execute hooks the PR wrote. Judge changes to those paths from
+            the diff, never from disk. Work outward from the diff: for every
             symbol the PR changes, removes, or renames, grep the repo for its callers
             and references before judging the change safe. For any PR that DELETES or
             RENAMES files, paths, exports, commands, hooks, or config keys, run the
@@ -262,51 +368,90 @@ jobs:
             posting; drop anything you cannot cite with a `file:line`. A false
             Important costs the author a round trip.
 
-            Post each finding on its line with
-            `mcp__github_inline_comment__create_inline_comment` (with
-            `confirmed: true`), and post a one-line severity tally (e.g.
-            "1 important, 3 nits") as a top-level summary with `gh pr comment`.
+            Post each finding on the line it applies to. INLINE COMMENTS at the top
+            of this prompt says how, because the two triggers differ:
+
+            - `inline-comment tool`: use
+              `mcp__github_inline_comment__create_inline_comment` (with
+              `confirmed: true`).
+            - `gh api`: that tool is NOT available on this run (the action registers
+              it only for PR events, not manual dispatch). Do not try it. Read the
+              head SHA once with
+              `gh pr view <PR NUMBER> --json headRefOid --jq .headRefOid`, then post
+              each finding with exactly this command shape — the leading words must
+              match character for character or the call is refused:
+              `gh api --method POST repos/<REPO>/pulls/<PR NUMBER>/comments -f body='<finding>' -f commit_id=<sha> -f path=<file> -F line=<n> -f side=RIGHT`
+              If two such calls in a row are refused or error, stop retrying and
+              fold every remaining finding into the summary comment instead, each
+              one prefixed with `file:line`, so nothing is silently dropped.
+
+            Then post a one-line severity tally (e.g. "1 important, 3 nits") as a
+            top-level summary with `gh pr comment`.
             Only post GitHub comments; do not submit the review as a chat message.
             If there are no blocking issues, post a brief "No blocking issues
             found" summary comment.
+          # --setting-sources user (DOR-457, security): without it the SDK defaults
+          # to ["user","project","local"] (base-action/src/parse-sdk-options.ts), so
+          # the CLI loads `.claude/settings.json` and `.claude/settings.local.json`
+          # out of the checkout and acts on them — hooks, env vars, apiKeyHelper —
+          # before any tool gating. `user` is the scope the action writes its own
+          # settings into, so nothing the action needs is lost, and the reviewer's
+          # permissions come from --allowedTools rather than from repo settings.
+          # This narrows BOTH paths; the step above is what covers `.mcp.json` (not
+          # a settings source) on the dispatch path.
+          #
+          # The second --allowedTools line (dispatch only) is finding 3 of the
+          # DOR-457 review: the action registers the github_inline_comment MCP
+          # server only for PR entity events (src/mcp/install-mcp-server.ts), the
+          # same gate as the config restore, so on dispatch that tool does not
+          # exist. Without a fallback the hatch silently degrades to summary-only
+          # and drops every line-level finding — while still posting a summary, so
+          # the loss is invisible. The grant is scoped to one endpoint on one PR,
+          # which is exactly the authority the MCP server would have had. It is
+          # deliberately NOT `Bash(gh api:*)`: the token the CLI sees is the
+          # action's OIDC-minted App token with contents/issues/pull_requests
+          # WRITE (src/github/token.ts), so a broad `gh api` grant would let a
+          # reviewer reading PR-authored text push commits.
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git grep:*),Bash(git log:*),Bash(git show:*),Bash(grep:*),Bash(rg:*),Bash(ls:*),Read,Grep,Glob"
+            ${{ github.event_name == 'workflow_dispatch' && format('--allowedTools "Bash(gh api --method POST repos/{0}/pulls/{1}/comments:*)"', github.repository, steps.target.outputs.number) || '' }}
+            --setting-sources user
             --max-turns ${{ steps.pr-size.outputs.max_turns }}
 
       # Self-explaining infra failures (DOR-396): a review that dies produces a red
       # check indistinguishable from a red check backed by real findings, forcing a
       # human to read Actions logs to tell them apart. Post a plain comment naming
-      # the cause — but the cause has to be *read*, not assumed. There are two very
-      # different infra failures and this step used to assert the wrong one
-      # (DOR-457): five runs across three PRs died at turn 1 having spent nothing,
-      # and each was announced as "ran out of its turn budget", which sent the
-      # maintainer looking at max-turns instead of at credentials and quota.
+      # the cause — but the cause has to be *read*, not assumed. This step used to
+      # assert one cause for every failure (DOR-457): nine runs across three PRs
+      # died at turn 1 having spent nothing, and each was announced as "ran out of
+      # its turn budget", which sent the maintainer looking at --max-turns instead
+      # of at credentials and quota.
       #
-      # So classify from the action's execution log:
-      #   never started — num_turns <= 1 and zero spend. Claude got no usable model
-      #     response, so NOTHING on the PR was looked at. The cause is upstream of
-      #     this repo: the Claude subscription behind CLAUDE_CODE_OAUTH_TOKEN hit a
-      #     usage limit, or that token is invalid/expired (regenerate with
-      #     `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN`).
-      #     A usage limit clears on its own; re-labelling later is the fix.
-      #   ran and died — the turn budget really was exhausted. Distinguish "posted
-      #     a verdict, then died" (findings already posted stand) from "died before
-      #     posting anything" (no verdict exists yet).
+      # The classification lives in scripts/classify-review-failure.sh, pinned by
+      # scripts/test-review-classifier.sh against fixtures taken from real runs.
+      # Do not re-inline it. The first DOR-457 fix still got this wrong because it
+      # split on turns and spend and never read `subtype` — the field that says why
+      # the run ended — so a usage limit crossed at turn 20 would still have been
+      # announced as an exhausted turn budget. The fixtures exist so that exact
+      # shape (subtype "success" with is_error:true after real work, the action's
+      # own separate failure class) stays a caught regression.
+      #
       # The action hides its transcript (`show_full_output` defaults false, and this
-      # repo is public so it should stay that way), which is exactly why nobody
-      # could tell these apart from the logs. Surface only the result message's
-      # error string, capped to one short line, on the never-started path where
-      # that string is an error rather than a review.
+      # repo is public so it should stay that way), which is why nobody could tell
+      # these apart from the logs. The result message's own error string is
+      # surfaced instead — flattened to one line, with backticks and token-shaped
+      # strings stripped, inside a fenced block so it cannot break out of the
+      # comment or ping anyone.
       - name: Note infra failure if the review did not complete
         if: failure() && steps.claude-review.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+          PR_NUMBER: ${{ steps.target.outputs.number }}
+          REPO: ${{ github.repository }}
+          SINCE: ${{ steps.review-start.outputs.time }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          pr_number="${{ steps.target.outputs.number }}"
-          repo="${{ github.repository }}"
-          since="${{ steps.review-start.outputs.time }}"
-
           # Prefer the action's own output; fall back to the path it logs, since a
           # composite action's outputs are not guaranteed to survive its failure.
           exec_file="$EXECUTION_FILE"
@@ -314,54 +459,80 @@ jobs:
             exec_file="$RUNNER_TEMP/claude-execution-output.json"
           fi
 
-          started=unknown
-          reported=
-          if [ -f "$exec_file" ]; then
-            started=$(jq -r '
-              [.[]? | select(.type == "result")] | last
-              | if . == null then "unknown"
-                elif ((.num_turns // 0) <= 1 and (.total_cost_usd // 0) == 0) then "no"
-                else "yes" end
-            ' "$exec_file" 2>/dev/null || echo unknown)
-            reported=$(jq -r '[.[]? | select(.type == "result")] | last | .result // ""' \
-              "$exec_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200)
-          fi
-          echo "review started: $started (from $exec_file)"
+          why=$(bash scripts/classify-review-failure.sh class "$exec_file")
+          reported=$(bash scripts/classify-review-failure.sh reported "$exec_file")
+          echo "review failure class: $why (from $exec_file)"
 
-          case "$started" in
+          # Was a verdict already posted? Scoped to comments this run could have
+          # made, so an earlier pass's summary is not mistaken for this one's.
+          # The fetch is captured before grepping rather than piped into it: `grep
+          # -q` closes the pipe on its first match, `gh` then dies of SIGPIPE, and
+          # the runner's `-o pipefail` would turn a found verdict into "not found".
+          verdict_posted() {
+            local bodies
+            bodies=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+              --jq ".[] | select(.created_at > \"$SINCE\") | .body" 2>/dev/null) || return 1
+            printf '%s' "$bodies" \
+              | grep -qE '[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues'
+          }
+
+          case "$why" in
             no)
-              if [ -n "$reported" ]; then
-                echo "::error::Claude reported: $reported"
-              fi
               body="This check is red because the review never started — Claude got no answer from the model, so nothing in this PR was looked at. That is a problem with the reviewer, not with this PR: usually the Claude subscription behind \`CLAUDE_CODE_OAUTH_TOKEN\` has hit its usage limit (it clears on its own), or that token needs regenerating. Add the \`re-review\` label to try again."
-              if [ -n "$reported" ]; then
-                body="$body"$'\n\n'"Reported: \`$reported\`"
-              fi
               ;;
-            yes)
-              posted_verdict=$(gh api --paginate "repos/$repo/issues/$pr_number/comments" \
-                --jq ".[] | select(.created_at > \"$since\") | .body" \
-                | grep -qE '[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues' \
-                && echo yes || echo no)
-              if [ "$posted_verdict" = "yes" ]; then
+            max_turns)
+              if verdict_posted; then
                 body="This check is red because the review ran out of its turn budget wrapping up, not because it found more issues. The verdict already posted above stands. Add the \`re-review\` label for a fresh pass."
               else
                 body="This check is red because the review ran out of its turn budget before it could post a verdict, not because it found blocking issues. Add the \`re-review\` label to try again."
               fi
               ;;
+            died)
+              if verdict_posted; then
+                body="This check is red because the review hit an error partway through and stopped. It did not run out of turns, and it is not saying anything more about this PR. The verdict already posted above stands. Add the \`re-review\` label for a fresh pass."
+              else
+                body="This check is red because the review hit an error partway through and stopped before it could post a verdict. It did not run out of turns, and this is not a finding about your code — a usage limit reached mid-review looks like this. Add the \`re-review\` label to try again."
+              fi
+              ;;
             *)
-              body="This check is red because the review did not finish, not because it found blocking issues — and it stopped before recording why, so the reason is only in the [Actions log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). Add the \`re-review\` label to try again."
+              body="This check is red because the review did not finish, not because it found blocking issues — and it stopped before recording why, so the reason is only in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
               ;;
           esac
 
-          gh pr comment "$pr_number" --repo "$repo" --body "$body"
+          if [ -n "$reported" ]; then
+            echo "::error::Claude reported: $reported"
+            body="$body"$'\n\nReported:\n\n```\n'"$reported"$'\n```'
+          fi
+
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
 
       # Re-review is a reusable button: clear the label so re-applying it later
       # fires another pass. Runs even if the review failed, so the label never
-      # sticks. `re-review` is the only label that triggers this workflow. Scoped
-      # to `labeled` events, so a workflow_dispatch run leaves labels alone.
+      # sticks. `re-review` is the only label that triggers this workflow.
+      #
+      # Dispatch clears it too (DOR-457). It used to be scoped to `labeled` events,
+      # which stranded the label in exactly the case the dispatch hatch exists for:
+      # labelling a conflicted PR produces no run at all, so nothing clears the
+      # label, so the button is stuck down until someone removes it by hand. A
+      # dispatched review is the same "look at this again" request, so it is the
+      # right moment to reset the button.
       - name: Clear re-review label
-        if: always() && github.event.action == 'labeled' && github.event.label.name == 're-review'
+        if: >-
+          always() && (
+            github.event_name == 'workflow_dispatch' ||
+            (github.event.action == 'labeled' && github.event.label.name == 're-review')
+          )
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr edit "${{ steps.target.outputs.number }}" --repo "${{ github.repository }}" --remove-label re-review
+          PR_NUMBER: ${{ steps.target.outputs.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # On dispatch the label is usually absent, and `gh pr edit --remove-label`
+          # errors on a label the PR does not carry — so look first. An empty
+          # PR_NUMBER (the resolve step refused a fork) also lands here harmlessly.
+          if gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name' 2>/dev/null \
+            | grep -qx 're-review'; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label re-review
+          else
+            echo "no re-review label to clear"
+          fi

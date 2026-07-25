@@ -65,6 +65,7 @@ The `claude-code-review` workflow reviews **on-demand, not on every push**:
 | New commits pushed            | **No** auto-review (CI tests still run) |
 | `re-review` label applied     | One re-review, scoped to the delta      |
 | PR has merge conflicts        | **Nothing runs at all** — see below     |
+| PR edits a Claude workflow    | **Green check, no review** — see below  |
 
 This mirrors how human teams work: pushes are work-in-progress, and the author
 pulls the reviewer back in with an explicit "ready again" signal. It avoids
@@ -91,7 +92,19 @@ gh workflow run claude-code-review.yml -f pr=<number>
 ```
 
 Manual dispatch reviews the PR's head directly. It ignores `skip-review` and draft
-state (you asked for it explicitly) and refuses fork PRs.
+state (you asked for it explicitly), refuses fork PRs, and clears `re-review` if
+the PR is carrying it. Two differences from an automatic run, because the Claude
+action treats a manual trigger as having no PR identity:
+
+- It posts its line-level findings through the GitHub API instead of the action's
+  inline-comment tool. Same result, slightly more turns spent.
+- It reverts `.claude/`, `.mcp.json`, `CLAUDE.md` and `.husky` in the checkout to
+  the `main` versions before reviewing, so a PR can never make its own reviewer run
+  hooks the PR wrote. The reviewer still reads those changes from the diff. (An
+  automatic run gets the same protection from the action itself.)
+
+A dispatch also cancels an automatic review already running on the same PR, and
+gets cancelled by the next automatic trigger — the newest request wins.
 
 ## Review-control labels
 
@@ -135,20 +148,35 @@ gh label create re-review    --description "Request another automated review pas
 
 ## Gotchas
 
-- **A PR that edits the review workflow gets a green check and no review.** The
-  Claude action refuses to start unless `.github/workflows/claude-code-review.yml`
+- **Any PR that edits a Claude workflow file gets a green check and no review.**
+  The Claude action refuses to start unless the workflow file it is running from
   matches the copy on `main` — otherwise a PR could rewrite the workflow to steal
-  the token — and it exits _successfully_, so the check is green and nothing was
-  reviewed. The steps around the action still run, so YAML and shell mistakes do
-  surface; the review itself does not. Merge first, then exercise the merged
-  version against a real PR with
+  the token — and it exits _successfully_. So a PR touching
+  `.github/workflows/claude-code-review.yml` gets a green `claude-code-review`
+  check with nothing reviewed, and a PR touching `.github/workflows/claude.yml`
+  gets the same silence from `@claude` mentions on that PR. It is per file: editing
+  one does not disable the other. The steps around the action still run, so YAML
+  and shell mistakes do surface; the review itself does not. Merge first, then
+  exercise the merged version against a real PR with
   `gh workflow run claude-code-review.yml -f pr=<number>`.
 - **A red review check is not always a finding.** When the review itself breaks, it
-  posts a comment saying so and naming the cause: it either never started (the
-  Claude subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit a usage limit, or the
-  token needs regenerating — nothing in the PR was looked at) or it ran out of its
-  turn budget (any verdict already posted stands). Read that comment before you go
-  hunting in your diff.
+  posts a comment saying so and naming which of four things happened:
+  - **It never started.** Zero turns, zero spend, nothing in the PR looked at.
+    The Claude subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit its usage limit
+    (clears on its own) or the token needs regenerating.
+  - **It ran out of its turn budget.** It reviewed, then hit the cap.
+  - **It hit an error partway through.** It reviewed, then something failed —
+    commonly a usage limit reached mid-review. Not a turn-budget problem.
+  - **It could not tell.** The comment points you at the Actions log rather than
+    guessing.
+
+  In the middle two, any verdict already posted stands. Read the comment before you
+  go hunting in your diff. The wording comes from
+  `scripts/classify-review-failure.sh`, and the shapes it must get right are pinned
+  by `scripts/test-review-classifier.sh` (run by `pnpm verify`) — DOR-457 was that
+  comment confidently naming the wrong cause nine times, so add a fixture if you
+  touch it.
+
 - **Changelog populator.** A `post-commit` hook writes a changelog fragment under
   `changelog/unreleased/` from the commit subject (it dedupes across amend/rebase and
   never touches `CHANGELOG.md`). For changes that should not land in the user-facing

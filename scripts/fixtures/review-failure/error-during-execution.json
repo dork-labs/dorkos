@@ -1,0 +1,21 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "error_during_execution",
+    "is_error": true,
+    "duration_ms": 88104,
+    "duration_api_ms": 74210,
+    "num_turns": 12,
+    "total_cost_usd": 0.4188201,
+    "errors": ["MCP server github_inline_comment exited unexpectedly"],
+    "session_id": "a1b2c3",
+    "permission_denials": []
+  }
+]
