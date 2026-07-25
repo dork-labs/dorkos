@@ -384,6 +384,42 @@ describe('capability conformance wiring', () => {
 });
 
 /**
+ * The posture guard on `operator.config_patch` (DOR-488), asserted through the
+ * REAL composed registry rather than through its handler.
+ *
+ * The guard's own unit tests all call `createConfigPatchHandler()` directly, so
+ * they would stay green if `operator-capabilities.ts` were ever rewired to call
+ * `applyConfigPatch` itself and skip the handler. This is the assertion that
+ * notices. It runs the same path an agent runs, and the file's existing mock of
+ * `applyConfigPatch` (which happily "writes" anything it is given) means a bypass
+ * surfaces here as a SUCCESS where a refusal belongs.
+ */
+describe('operator.config_patch refuses posture changes through the registry', () => {
+  it('refuses to turn login off', async () => {
+    await expect(
+      registry.invoke('operator.config_patch', { patch: { auth: { enabled: false } } })
+    ).rejects.toMatchObject({
+      name: 'CapabilityToolError',
+      payload: { code: 'operator_only_config', paths: ['auth.enabled'] },
+    });
+  });
+
+  it('lets an ordinary preference past the guard', async () => {
+    // This file's `applyConfigPatch` mock returns a bare object rather than a
+    // `ConfigPatchResult`, so the call cannot reach a `success` payload here no
+    // matter what. What IS provable at this seam is the part that matters: an
+    // ordinary preference is not stopped by the POSTURE guard. That the write
+    // then lands is proven against a real store in the handler's own tests.
+    await registry.invoke('operator.config_patch', { patch: { ui: { theme: 'dark' } } }).then(
+      () => undefined,
+      (err: { payload?: { code?: string } }) => {
+        expect(err.payload?.code).not.toBe('operator_only_config');
+      }
+    );
+  });
+});
+
+/**
  * Both choke points parse the input, gate on the parsed value, and hand that same
  * value to `registry.invoke` — which parses it a second time. That is only safe
  * while a destructive capability's schema is parse-idempotent: if `parse(parse(x))`

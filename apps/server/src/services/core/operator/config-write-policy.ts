@@ -59,17 +59,25 @@
  *   answers at all, the bearer that gates it (writing a known `apiKey` displaces
  *   the per-instance local token, `routes/config.ts` `authSource`), and the rate
  *   limits that bound abuse of it.
- * - **Credentials and where they are sent.** `providers` and
- *   `runtimes.codex.credentialRef` are credential references (ADR-0315);
- *   `runtimes.opencode.baseURL` is the host every prompt and the injected key are
- *   sent to; `cloud.*` is the token and identity of the account link.
+ * - **Credentials, and the pairing of a key with a destination.** `providers` and
+ *   `runtimes.codex.credentialRef` are credential references (ADR-0315); `cloud.*`
+ *   is the token and identity of the account link. `runtimes.opencode.baseURL` and
+ *   `runtimes.opencode.provider` are BOTH here, and it has to be both:
+ *   `credential-env.ts` applies `baseURL` unconditionally, outside its
+ *   `if (providerId)` block, so the two fields are not independent. The connect
+ *   flow always writes them together, but a patch can decouple them. If an
+ *   operator once connected a Direct provider at a custom base URL, an agent
+ *   flipping `provider` alone makes DorkOS hand the sidecar that provider's key
+ *   AND the leftover custom `OPENAI_BASE_URL` in the same env.
  * - **Code the server loads or runs.** `extensions.*` decides which extension code
  *   is compiled into the server process, and the two `binaryPath` fields name
  *   executables the server spawns.
- * - **How far DorkOS reaches on disk.** Every path field DorkOS resolves WITHOUT a
- *   boundary check: `server.boundary` (the containment line itself, read by the
- *   CLI at next launch), `workspace.rootPath`, `relay.dataDir`,
- *   `agents.defaultDirectory`, and `mesh.scanRoots`.
+ * - **How far DorkOS reaches on disk.** `server.boundary` is the containment line
+ *   itself (the CLI reads it at next launch, `cli.ts`), and `workspace.rootPath`
+ *   and `relay.dataDir` are roots DorkOS resolves and writes under with no
+ *   boundary check of their own. `agents.defaultDirectory` and `mesh.scanRoots`
+ *   join them for weaker but deliberate reasons, stated at each entry below
+ *   rather than folded into this one: neither is an unchecked write today.
  * - **Consent about what leaves the machine.** All of `telemetry.*`, which is
  *   consent-gated by design.
  *
@@ -79,15 +87,11 @@
  * the next person to loosen it wholesale, so these stay `agent-writable` on
  * purpose:
  *
- * - `server.cwd` — a starting directory, and the one path field that IS validated
- *   against the boundary (the CLI falls back to the boundary root when it sits
- *   outside). It picks a spot on ground the agent already has.
+ * - `server.cwd` — a starting directory, and a path field the CLI DOES validate
+ *   against the boundary (it falls back to the boundary root when the configured
+ *   value sits outside). It picks a spot on ground the agent already has.
  * - `server.port`, `server.open` — moving or not-opening the cockpit is disruptive,
  *   not an escalation.
- * - `runtimes.opencode.provider` — selects among credentials the operator already
- *   configured. With `baseURL` operator-only, the key can only go to that
- *   provider's own endpoint, so "switch me to OpenRouter" stays a thing an agent
- *   can do.
  * - `version` — a `z.literal(1)`, so the only value that validates is the one
  *   already stored.
  *
@@ -177,8 +181,10 @@ export const CONFIG_WRITE_POLICY = {
   'scheduler.timezone': 'agent-writable',
   'scheduler.retentionCount': 'agent-writable',
 
-  // Directories DorkOS would scan for agents. Nothing reads this today, and
-  // classifying it now is what stops it becoming load-bearing while writable.
+  // Directories DorkOS would scan for agents. Nothing resolves this today (the
+  // unified scanner does not read it), so it grants nothing right now. It is
+  // operator-only pre-emptively: it is a directory-scope field, and classifying it
+  // while it is inert is what stops it becoming load-bearing while agent-writable.
   'mesh.scanRoots': 'operator-only',
 
   'onboarding.completedSteps': 'agent-writable',
@@ -199,7 +205,12 @@ export const CONFIG_WRITE_POLICY = {
   'uploads.maxFiles': 'agent-writable',
   'uploads.allowedTypes': 'agent-writable',
 
-  // Where agent manifests are created, resolved without a boundary check.
+  // Where agent manifests are created. `agent-creator.ts` DOES boundary-check the
+  // resolved path (403 on a violation), so this is not an unchecked write. It is
+  // operator-only for a narrower reason: it is the default home for every agent
+  // identity on this install, including where `validateBoundaryOrDorkHome` grants
+  // dork-home's wider reach, and moving it is a setup decision rather than a
+  // preference.
   'agents.defaultDirectory': 'operator-only',
   'agents.defaultAgent': 'agent-writable',
 
@@ -246,9 +257,12 @@ export const CONFIG_WRITE_POLICY = {
   // An executable the server spawns.
   'runtimes.opencode.binaryPath': 'operator-only',
   'runtimes.opencode.port': 'agent-writable',
-  // Selects among credentials the operator already configured; with `baseURL`
-  // locked down, the key can only reach that provider's own endpoint.
-  'runtimes.opencode.provider': 'agent-writable',
+  // Decides WHICH credential is injected. Not independent of `baseURL`, which
+  // `credential-env.ts` applies unconditionally outside its `if (providerId)`
+  // block: flipping `provider` alone can pair a different key with a base URL the
+  // operator set for some other provider. Changing provider is a connect action
+  // with its own route and UI, so refusing it here costs little.
+  'runtimes.opencode.provider': 'operator-only',
   // The host every prompt and the injected key are sent to.
   'runtimes.opencode.baseURL': 'operator-only',
   'runtimes.codex.enabled': 'agent-writable',
@@ -341,8 +355,10 @@ export function findOperatorOnlyPaths(patch: unknown): string[] {
 export function describeOperatorOnlyRefusal(paths: readonly string[]): string {
   return (
     `DorkOS changed nothing. These settings decide who can reach this instance, what it can ` +
-    `reach, and where its credentials go, so only a person can change them: ${paths.join(', ')}. ` +
-    `Ask the person to change it themselves in DorkOS Settings. If your patch also had ordinary ` +
-    `settings in it, send those again on their own and they will go through.`
+    `reach, where its credentials go, and what leaves the machine, so they are the person's to ` +
+    `choose, not yours: ${paths.join(', ')}. Ask the person to change it themselves in DorkOS ` +
+    `Settings. ` +
+    `If your patch also had ordinary settings in it, send those again on their own and they will ` +
+    `go through.`
   );
 }

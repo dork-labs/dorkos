@@ -227,9 +227,9 @@ export const operatorDomain: CapabilityDomain = {
         'settings — only do it when the user has asked for the change. Arrays replace (not merge); invalid values are rejected. ' +
         'Some settings only a person can change, and a patch touching any of them is refused whole: login (auth), ' +
         'public exposure (tunnel), the MCP endpoint and its key, telemetry consent, credentials (providers, ' +
-        'credentialRef, cloud), extensions, runtime binary paths and base URLs, and the directories DorkOS reads and ' +
-        'writes (server.boundary, workspace.rootPath, relay.dataDir, agents.defaultDirectory, mesh.scanRoots). ' +
-        'Ask the person to change those in Settings themselves.',
+        'credentialRef, cloud), extensions, the runtime binary paths and the OpenCode provider and baseURL, and the ' +
+        'directories DorkOS reads and writes (server.boundary, workspace.rootPath, relay.dataDir, ' +
+        'agents.defaultDirectory, mesh.scanRoots). Ask the person to change those in Settings themselves.',
       tier: 'act',
       input: z.object({
         patch: z.record(z.string(), z.unknown()).describe(

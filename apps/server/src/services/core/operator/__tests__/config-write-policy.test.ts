@@ -64,6 +64,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.codex.credentialRef',
       'runtimes.opencode.baseURL',
       'runtimes.opencode.binaryPath',
+      'runtimes.opencode.provider',
       'server.boundary',
       'telemetry.aiMetadata',
       'telemetry.errorReporting',
@@ -135,10 +136,19 @@ describe('findOperatorOnlyPaths', () => {
       findOperatorOnlyPaths({
         ui: { theme: 'dark', sidebar: { recentsCollapsed: true } },
         logging: { level: 'debug' },
-        runtimes: { default: 'codex', opencode: { provider: 'openrouter' } },
+        runtimes: { default: 'codex', opencode: { enabled: true, port: 0 } },
         server: { cwd: '/Users/me/code', port: 4300 },
       })
     ).toEqual([]);
+  });
+
+  it('refuses a provider switch, because it cannot be decoupled from baseURL', () => {
+    // `credential-env.ts` applies `baseURL` unconditionally, outside its
+    // `if (providerId)` block, so flipping `provider` on its own can pair a
+    // different key with a base URL the operator set for another provider.
+    expect(findOperatorOnlyPaths({ runtimes: { opencode: { provider: 'openai' } } })).toEqual([
+      'runtimes.opencode.provider',
+    ]);
   });
 
   it('flags a mixed patch, so nothing rides in behind a legitimate change', () => {
