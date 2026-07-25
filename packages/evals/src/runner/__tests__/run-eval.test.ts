@@ -3,8 +3,15 @@
  * end-to-end (sandbox → in-process boot → health oracle → transcript + result),
  * the `widget-round-trip` product eval runs green on `test-mode` (a seed turn
  * then a `/ui-action` turn whose injected trigger the oracle asserts), a failing
- * oracle scores `fail`, and a credentialed tier with no `ANTHROPIC_API_KEY`
- * scores a runner `error`, never a false pass.
+ * oracle scores `fail`, and a credentialed tier with NO way at all to reach a
+ * model scores a runner `error`, never a false pass.
+ *
+ * The credential gate is the fail-closed contract and it is pinned twice here.
+ * The definition of "credentialed" widened (an API key, a subscription token, or
+ * the `claude` sign-in on this machine), but "nothing resolved ⇒ runner error"
+ * did not move. The second pin is the docker tier, which cannot use the local
+ * sign-in — the container is deliberately cut off from the host's credentials, so
+ * a local-only credential there is an error rather than a quiet downgrade.
  *
  * Two more contracts are pinned here because both leaked silently before: the
  * result records the isolation the eval ACTUALLY ran inside, and a QUARANTINED
@@ -15,13 +22,24 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
 import { SANDBOX_PREFIX } from '../sandbox.js';
 import type { EvalCase } from '../../types.js';
+import type { IsolationLauncher } from '../isolation/index.js';
 import { httpGetAssert } from '../../oracles/api.js';
 import { selfTestCase } from '../../suite/selftest.js';
 import { widgetRoundTripCase } from '../../suite/ui.js';
 import { BudgetTracker } from '../budget.js';
 import { runEval } from '../run-eval.js';
+
+// The local-sign-in probe shells out to the real `claude` binary. Left real, this
+// file's credential-gate tests would pass or fail depending on whether whoever
+// ran them happens to be signed in — and on a signed-in machine the "no
+// credential" test would boot a real credentialed server and spend money.
+vi.mock('@dorkos/server/services/runtimes/claude-code/auth-probe', () => ({
+  hasLocalClaudeLogin: vi.fn(async () => false),
+}));
+const mockedLocalLogin = vi.mocked(hasLocalClaudeLogin);
 
 let runDir: string | undefined;
 /**
@@ -41,6 +59,10 @@ let sandboxRoot: string | undefined;
 beforeEach(async () => {
   sandboxRoot = await mkdtemp(path.join(tmpdir(), 'evals-sandbox-root-'));
   vi.stubEnv('TMPDIR', sandboxRoot);
+  // Neither pinned credential variable is set for this file unless a test says so.
+  vi.stubEnv('ANTHROPIC_API_KEY', '');
+  vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+  mockedLocalLogin.mockResolvedValue(false);
 });
 
 afterEach(async () => {
@@ -111,8 +133,9 @@ describe('runEval', () => {
     expect(result.status).toBe('fail');
   });
 
-  it('scores a credentialed tier with no ANTHROPIC_API_KEY as a runner `error` (never a false pass)', async () => {
-    vi.stubEnv('ANTHROPIC_API_KEY', '');
+  it('scores a credentialed tier with NO credential at all as a runner `error` (never a false pass)', async () => {
+    // No API key, no subscription token, and `claude` is not signed in — the
+    // widened definition of "credentialed" still has to fail closed here.
     const { runDir: dir, tracker } = await fixture();
     const result = await runEval(selfTestCase, {
       tier: 'claude-code-cheap',
@@ -121,7 +144,32 @@ describe('runEval', () => {
       tracker,
     });
     expect(result.status).toBe('error');
+    // The message names every way to fix it, not only the env var — a developer
+    // who is simply signed out should be told to sign in, not sent hunting for a key.
     expect(result.error).toContain('ANTHROPIC_API_KEY');
+    expect(result.error).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+    expect(result.error).toContain('claude auth login');
+  });
+
+  it('scores the docker tier with only a local `claude` sign-in as a runner `error`', async () => {
+    // The container gets a curated env and no host home, so the local sign-in
+    // cannot reach it. Mounting host credentials in would undo the containment
+    // the docker tier exists for, so this is an error with a fix, not a downgrade.
+    mockedLocalLogin.mockResolvedValue(true);
+    const dockerLauncher = { id: 'docker', launch: vi.fn() } as unknown as IsolationLauncher;
+    const { runDir: dir, tracker } = await fixture();
+    const result = await runEval(selfTestCase, {
+      tier: 'claude-code-cheap',
+      runId: 'r',
+      runDir: dir,
+      tracker,
+      launcher: dockerLauncher,
+    });
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('ANTHROPIC_API_KEY');
+    expect(result.error).toContain('--isolation child-process');
+    // It refused BEFORE launching anything — that is what makes it fail closed.
+    expect(dockerLauncher.launch).not.toHaveBeenCalled();
   });
 
   it('records the isolation the eval actually ran inside', async () => {

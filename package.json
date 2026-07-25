@@ -19,6 +19,8 @@
     "lint:fix": "turbo lint -- --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "evals": "pnpm --filter @dorkos/evals run evals --",
+    "evals:local": "pnpm --filter @dorkos/evals run evals -- --suite core --tier claude-code-cheap --isolation child-process --budget 2",
     "evals:sweep": "pnpm --filter @dorkos/evals run sweep",
     "knip": "knip",
     "knip:fix": "knip --fix",

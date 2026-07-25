@@ -48,6 +48,30 @@ export const IsolationRecordSchema = z.enum(['in-process', 'child-process', 'doc
 /** Inferred type for {@link IsolationRecordSchema}. */
 export type IsolationRecord = z.infer<typeof IsolationRecordSchema>;
 
+/**
+ * How a credentialed run reached a model, recorded so nobody has to guess which
+ * credential a run actually used.
+ *
+ * - `anthropic-api-key`: the `ANTHROPIC_API_KEY` variable (an Anthropic API
+ *   account pays).
+ * - `claude-oauth-token`: the `CLAUDE_CODE_OAUTH_TOKEN` variable, a long-lived
+ *   token from `claude setup-token` (a Claude subscription pays).
+ * - `local-claude-login`: the `claude` CLI signed in on this machine, inherited
+ *   by the child-process tier (the developer's own Claude subscription pays).
+ *
+ * The distinction is not cosmetic. The two subscription-backed sources report no
+ * per-turn cost, so `$0.0000` means something different depending on which one
+ * answered — see `report/summary.ts`.
+ */
+export const CredentialSourceSchema = z.enum([
+  'anthropic-api-key',
+  'claude-oauth-token',
+  'local-claude-login',
+]);
+
+/** Inferred type for {@link CredentialSourceSchema}. */
+export type CredentialSource = z.infer<typeof CredentialSourceSchema>;
+
 /** Rough cost envelope, used for budget planning and tier selection. */
 export const CostClassSchema = z.enum(['free', 'cheap', 'standard', 'deep']);
 
@@ -300,6 +324,12 @@ export const RunSummarySchema = z.object({
   startedAt: z.string(),
   /** The tier the run was launched on. */
   tier: RuntimeTierSchema,
+  /**
+   * How this run reached a model (see {@link CredentialSourceSchema}). Omitted
+   * on `test-mode`, which needs no credential, and on a credentialed run where
+   * none resolved (every case then errors, fail-closed).
+   */
+  credentialSource: CredentialSourceSchema.optional(),
   /** The per-run budget cap in USD. */
   budgetUsd: z.number().nonnegative(),
   /** Total USD cost accumulated across every eval in the run. */

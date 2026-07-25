@@ -58,7 +58,11 @@ pnpm verify            # Affected-only typecheck + lint + test — the pre-PR lo
 pnpm knip              # Dead-code detection (build dists first)
 pnpm smoke:docker      # CLI Docker smoke test
 pnpm smoke:integration # Full integration test in Docker
+pnpm evals:local       # Agent evals against a real model, locally — needs only `claude auth login`
+pnpm evals:sweep       # Clear eval sandboxes/containers an interrupted run left behind
 ```
+
+**Evals** (`packages/evals`, README there): `pnpm evals:local` runs the `core` suite on a real model through the `claude` sign-in on your own machine, so it spends against your own Claude subscription. Credentials resolve in a fixed order: `ANTHROPIC_API_KEY`, then `CLAUDE_CODE_OAUTH_TOKEN`, then your local sign-in; the run prints which one it used. No credential at all is a runner error, never a pass. The `docker` isolation tier is the exception: its container is sealed off from your home directory, so it needs one of the two variables and says so.
 
 **Targeted verification (prefer these — full runs waste minutes):**
 

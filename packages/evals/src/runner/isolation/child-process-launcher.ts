@@ -50,17 +50,31 @@ function delay(ms: number): Promise<void> {
 /**
  * Build the launched server's environment: inherit the parent (PATH, HOME so the
  * `claude` binary + its config resolve), pin the sandbox `DORK_HOME`/host/port,
- * layer the spec's credentialed env, and STRIP the harness's own test-mode flags
- * so a credentialed boot never inherits `TestModeRuntime`.
+ * confine the server's filesystem boundary to the sandbox, layer the spec's
+ * credentialed env, and STRIP the harness's own test-mode flags so a credentialed
+ * boot never inherits `TestModeRuntime`.
+ *
+ * `DORKOS_BOUNDARY` is not optional here. Without it the server falls back to a
+ * boundary of the operator's HOME (`lib/boundary.ts`), and every eval sandbox
+ * lives in the OS temp directory, which is outside HOME on both macOS
+ * (`/var/folders/…`) and Linux (`/tmp`). So every driven turn was refused with
+ * `403 OUTSIDE_BOUNDARY` before it started, on every platform. Pointing the
+ * boundary at the sandbox root both fixes that and matches what the docker tier
+ * already declares: this server may see its own throwaway sandbox and nothing
+ * else.
  *
  * @param spec - The launch spec (dorkHome, host, port, credentialed env).
  * @returns The child process environment.
  */
 function buildEnv(spec: ServerLaunchSpec): NodeJS.ProcessEnv {
+  // The sandbox ROOT is the parent of dorkHome (`<root>/.dork`); it also holds
+  // `<root>/project`, the cwd turns are driven in.
+  const sandboxRoot = path.dirname(spec.dorkHome);
   const env: NodeJS.ProcessEnv = {
     // eslint-disable-next-line no-restricted-syntax -- the launcher deliberately inherits the parent env so the spawned server finds PATH/HOME and the `claude` binary; this is the launcher's env carve-out (analogous to the app's env.ts).
     ...process.env,
     DORK_HOME: spec.dorkHome,
+    DORKOS_BOUNDARY: sandboxRoot,
     DORKOS_HOST: spec.host,
     DORKOS_PORT: String(spec.port),
     ...spec.env,

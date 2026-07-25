@@ -11,6 +11,11 @@ name: Evals
 #                              quarantined cases on `claude-code-cheap` and
 #                              uploads `results.json` as evidence.
 #
+# A developer does not need this workflow to run a credentialed eval. `pnpm
+# evals:local` runs the same suite on their own machine against their own Claude
+# sign-in; see `packages/evals/README.md`. CI needs a secret because a runner has
+# no sign-in of its own.
+#
 # Promotion out of quarantine stays a HUMAN decision made on that green
 # evidence: the credentialed job publishes results and never edits code.
 #
@@ -120,28 +125,36 @@ jobs:
     timeout-minutes: 45
     steps:
       # A `secrets` context cannot be read from a job-level `if`, so the skip
-      # decision is a step. Dry-running without the secret configured is a
+      # decision is a step. Dry-running without either secret configured is a
       # first-class path: it reports clearly and the job ends green rather than
       # failing confusingly.
       #
-      # The secret is PINNED to `ANTHROPIC_API_KEY` rather than named by a
-      # dispatch input. There is exactly one key, so the indirection bought
-      # nothing — and it opened a no-malice disclosure path: a stale or mistyped
-      # secret name would ship that credential to api.anthropic.com as an
-      # `x-api-key` header (auth fails, but the token has already landed in a
-      # third party's request logs), and it is a ready-made exfil lever the
-      # moment a second write-access collaborator exists.
-      - name: Resolve model key
+      # TWO secret names are accepted, and BOTH are PINNED here rather than named
+      # by a dispatch input. The pinning is the security property, not the count:
+      # an earlier version let the caller name which secret to read, which meant a
+      # stale or mistyped name would ship that credential to api.anthropic.com as
+      # an auth header (auth fails, but the token has already landed in a third
+      # party's request logs), and it was a ready-made exfil lever the moment a
+      # second write-access collaborator exists. Adding a source means adding a
+      # literal name here, never an input.
+      #
+      # `ANTHROPIC_API_KEY` wins when both are set, matching the runner's own
+      # precedence (`packages/evals/src/runner/credentials.ts`).
+      - name: Resolve model credential
         id: key
         env:
-          MODEL_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          if [ -z "${MODEL_KEY}" ]; then
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Credentialed evals skipped::No value found in the ANTHROPIC_API_KEY repository secret. Configure it to run the credentialed suite. Skipping — this is not a failure."
-          else
+          if [ -n "${API_KEY}" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
-            echo "Using the model key from the ANTHROPIC_API_KEY repository secret."
+            echo "Using the model credential from the ANTHROPIC_API_KEY repository secret."
+          elif [ -n "${OAUTH_TOKEN}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Using the model credential from the CLAUDE_CODE_OAUTH_TOKEN repository secret."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Credentialed evals skipped::Neither the ANTHROPIC_API_KEY nor the CLAUDE_CODE_OAUTH_TOKEN repository secret has a value. Configure one to run the credentialed suite. Skipping — this is not a failure."
           fi
 
       - uses: actions/checkout@v4
@@ -180,7 +193,11 @@ jobs:
       - name: Run credentialed suite
         if: steps.key.outputs.present == 'true'
         env:
+          # Both are exported; the runner picks between them in its documented
+          # order and prints which one it used. An unset secret arrives as an
+          # empty string, which the resolver treats as unset.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SUITE: ${{ github.event.inputs.suite }}
           BUDGET_USD: ${{ github.event.inputs.budget_usd }}
         run: |
