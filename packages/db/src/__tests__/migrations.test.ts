@@ -43,6 +43,10 @@ describe('Database Migrations', () => {
       'agent_identity_tokens',
       'agents',
       'apikey',
+      // Approval records for capability invocations that need a person's
+      // consent; the token lives here only as a hash (agent-trust spec §3.3,
+      // migration 0031).
+      'approvals',
       'codex_threads',
       // Derived cache binding a ConnectedAccountId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
