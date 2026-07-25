@@ -101,6 +101,26 @@ class Repo:
         path.write_text(content)
         return path
 
+    def commit_fragment(self, name: str, content: str, subject: str) -> Path:
+        """Write a fragment and commit it, so `git diff base..HEAD` can see it.
+
+        `--changed-only` compares committed state, which is what CI has.
+        """
+        path = self.fragment(name, content)
+        self.git("add", "-A")
+        self.git("commit", "-qm", subject)
+        return path
+
+    def validate(self, *extra: str) -> subprocess.CompletedProcess:
+        """Run the validity-only check, as CI's always-on step does."""
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--since", self.base, "--validate", *extra],
+            cwd=self.path,
+            env=GIT_ENV,
+            capture_output=True,
+            text=True,
+        )
+
     def check(self, *extra: str) -> subprocess.CompletedProcess:
         """Run `changelog_backfill.py --check --since <base>` as CI does."""
         return subprocess.run(
@@ -495,6 +515,107 @@ class TestMalformedFragments(GateTestCase):
         self.assertIn("malformed fragment", result.stderr)
 
 
+class TestValidityScope(GateTestCase):
+    """Validity is scoped to the PR's own diff; coverage keeps its own bypass.
+
+    The two questions have different audiences. A broken `covers:` block is the
+    defect of whoever wrote it and must be caught even on a PR that owes no
+    changelog entry, because its declaration is ignored and it therefore claims
+    nothing — contagious if it lands. But a stray broken fragment already on main
+    must never fail an author who did not touch it. Running validity and coverage
+    as one step forced one scope on both: the `skip-changelog` bypass let the
+    defect in, and the repo-wide read then charged the next innocent PR for it.
+    """
+
+    BROKEN = '---\ncovers:\n  - "feat(server): a claim with no closing delimiter"\n\n### Added\n\n- A thing\n'
+
+    def test_a_pr_that_touches_a_malformed_fragment_fails_the_validity_step(self):
+        """Edge one: the skip-changelog door is closed.
+
+        This is the step CI runs with no label guard, so this failure happens even
+        for a PR that owes no changelog entry.
+        """
+        self.repo.commit_fragment(
+            "260725-000080-broken.md", self.BROKEN, "chore: add a broken fragment"
+        )
+        result = self.repo.validate("--changed-only")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("malformed fragment", result.stderr)
+        self.assertIn("260725-000080-broken.md", result.stderr)
+
+    def test_a_pr_touching_no_fragment_passes_despite_a_stray_and_names_it(self):
+        """Edge two: an innocent PR is not charged for someone else's file.
+
+        The stray is committed BEFORE the branch point, so it is on "main" as far
+        as this PR is concerned.
+        """
+        self.repo.commit_fragment(
+            "260725-000081-stray.md", self.BROKEN, "chore: a stray from an earlier PR"
+        )
+        # Re-base the comparison: everything above is now "already on main".
+        self.repo.base = self.repo.rev_parse("HEAD")
+        self.repo.commit("docs(readme): tidy a sentence", touch="docs/readme.md")
+
+        result = self.repo.validate("--changed-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Silence would be worse than failing, so it is still named.
+        self.assertIn("NOTE:", result.stdout)
+        self.assertIn("260725-000081-stray.md", result.stdout)
+        self.assertIn("did not write", result.stdout)
+
+    def test_the_coverage_step_is_not_failed_by_a_stray_either(self):
+        """The same scoping applies to `--check`, or the shared red comes back."""
+        self.repo.commit_fragment(
+            "260725-000082-stray.md", self.BROKEN, "chore: a stray from an earlier PR"
+        )
+        self.repo.base = self.repo.rev_parse("HEAD")
+        subject = "feat(client): a well-covered change"
+        self.repo.commit(subject, touch="apps/client/src/x.ts")
+        self.repo.commit_fragment(
+            "260725-000083-good.md",
+            f'---\ncovers:\n  - "{subject}"\n---\n\n### Added\n\n- Something nice\n',
+            "chore: add the fragment",
+        )
+        result = self.repo.check("--changed-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("260725-000082-stray.md", result.stdout)
+
+    def test_a_bare_local_run_still_validates_everything_on_disk(self):
+        """The local signal stays strict: no --changed-only means no exemptions."""
+        self.repo.commit_fragment(
+            "260725-000084-stray.md", self.BROKEN, "chore: a stray from an earlier PR"
+        )
+        self.repo.base = self.repo.rev_parse("HEAD")
+        self.repo.commit("docs(readme): tidy a sentence", touch="docs/readme.md")
+
+        self.assertEqual(self.repo.validate("--changed-only").returncode, 0)
+        strict = self.repo.validate()
+        self.assertEqual(strict.returncode, 1, strict.stdout)
+        self.assertIn("260725-000084-stray.md", strict.stderr)
+
+    def test_validate_ignores_coverage_entirely(self):
+        """An uncovered commit is not this step's business."""
+        self.repo.commit("feat(client): a change with no fragment at all")
+        self.assertEqual(self.repo.check().returncode, 1)
+        result = self.repo.validate("--changed-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("validity", result.stdout)
+
+    def test_a_malformed_fragment_claims_nothing_while_broken(self):
+        """Why a stray is contagious, and why the NOTE says so.
+
+        Its declaration is ignored, so the commit it meant to claim reads as
+        uncovered. That is the failure the next author would otherwise inherit with
+        no explanation.
+        """
+        subject = "feat(server): a claim with no closing delimiter"
+        self.repo.commit(subject, touch="apps/server/src/x.ts")
+        self.repo.fragment("260725-000085-broken.md", self.BROKEN)
+        analysis = self.repo.analyze()
+        self.assertEqual(analysis["coverage"], [])
+        self.assertEqual(len(analysis["missing_entries"]), 1)
+
+
 class TestSquashMergedSubjects(GateTestCase):
     """GitHub appends " (#123)" when it squashes, so compare without it."""
 
@@ -829,8 +950,27 @@ class TestParserUnits(unittest.TestCase):
             # so a `\\w+:` pattern would flag it as a stranded claim.
             '- "Sort: nothing after it"',
             '- "Cannot be reached"',
+            # Eight of the eleven conventional types are ordinary English words
+            # that open a quoted label, so a case-INSENSITIVE match would flag
+            # these. The false red would be repo-wide and its advice wrong.
+            '- "Fix: sign in again"',
+            '- "Test: connection failed"',
+            '- "Build: 42 succeeded"',
+            '- "Style: compact"',
         ]
         self.assertEqual(self.mod.find_fragment_problems(body), [])
+
+    def test_a_real_claim_line_is_still_caught_in_the_body(self):
+        """The narrowings above must not blunt the detector itself."""
+        for line in (
+            '- "feat(server): capability registry core"',
+            '- "fix: stop dropping the last token"',
+            '- "chore(deps): bump vite"',
+            "- deadbeef1234",
+            '- "#412"',
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(len(self.mod.find_fragment_problems([line])), 1)
 
     def test_normalize_subject_strips_only_a_trailing_pr_ref(self):
         self.assertEqual(

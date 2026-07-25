@@ -127,11 +127,34 @@ subject when it mints the fragment. Things worth knowing:
   match almost any similar commit and pass this check forever. So a malformed fragment is
   refused outright, with the file name and what to correct, rather than guessed at. A
   well-formed fragment starts on line 1 with `---`, then `covers:` and its items, then a closing
-  `---`, then the `### Category` body.
+  `---`, then the `### Category` body. See "who gets blamed" below for which run refuses it.
 
 When the check fails, it prints the commit it could not account for, the exact line to paste
 into an existing fragment, and the exact file and frontmatter for a new one. Follow it
 literally. If the change genuinely is not user-facing, label the PR `skip-changelog` instead.
+
+### Who gets blamed for a broken fragment
+
+The PR job asks two separate questions, on purpose, because they have different answers and
+different owners:
+
+| Question                                        | Scope                       | `skip-changelog`? |
+| ----------------------------------------------- | --------------------------- | ----------------- |
+| **Validity**: is each `covers:` block readable? | only fragments the PR wrote | no bypass         |
+| **Coverage**: is every commit claimed?          | the PR's whole commit range | bypassed          |
+
+A broken fragment is a defect whether or not your PR owes a changelog entry, so `skip-changelog`
+does not wave it through: its declaration gets ignored, meaning it claims nothing, so leaving it
+on main would hand the next author a red they cannot explain. Equally, a broken fragment
+someone else already merged is **not your problem**. The check only fails on fragments your own
+branch touched. A stray one is named as a `NOTE:` on the passing run, so it still gets noticed
+without charging you for it.
+
+**Locally, a bare `python3 .claude/scripts/changelog_backfill.py --check` (or `--validate`)
+deliberately checks everything on disk.** That is the stricter, more useful signal when you are
+the one looking. So if a local run flags a fragment you did not write, that is expected and CI
+will not repeat it: CI narrows validity to your diff. Note also that the narrowing compares
+committed state, so a fragment you have written but not yet committed reads as untouched.
 
 ## How fragments get created
 

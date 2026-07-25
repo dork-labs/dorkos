@@ -50,6 +50,15 @@ Options:
     --check         Exit non-zero if any user-facing commit lacks a fragment.
                     Writes nothing — the PR-time gate and a local pre-flight both
                     use this to catch a missing fragment before it reaches main.
+    --validate      Only check that fragments are well formed; no coverage check.
+                    A separate question from coverage, with a separate audience:
+                    CI runs this even for a skip-changelog PR.
+    --changed-only  Enforce validity only for fragments changed since --since,
+                    reporting the rest without failing. CI passes this so a PR is
+                    never red for a stray file it did not touch. A bare local run
+                    omits it and validates everything on disk, which is the
+                    stricter and better local signal — so a local red on a file
+                    you did not write is expected, and is not what CI will say.
     --verbose       Show detailed analysis
 
 Output (JSON mode):
@@ -225,6 +234,53 @@ def get_commits_since(tag: Optional[str]) -> list[tuple[str, str]]:
             commits.append((sha, message))
 
     return commits
+
+
+def get_changed_fragment_names(since: str) -> set[str]:
+    """Fragment filenames touched between `since` and HEAD.
+
+    Used to scope *validity* enforcement to the fragments a PR actually wrote, so
+    a stray malformed fragment on main can never red-light an innocent branch.
+    Compares committed state only, which is why the bare local run does not use it
+    (an uncommitted fragment would look untouched).
+
+    Raises on a git failure rather than guessing: silently widening the scope
+    would blame the wrong author, and silently narrowing it would wave a defect
+    through.
+    """
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{since}..HEAD", "--", "changelog/unreleased/"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"could not list changed fragments for {since}..HEAD: "
+            f"{result.stderr.strip() or 'git diff failed'}"
+        )
+    return {
+        Path(line).name
+        for line in result.stdout.strip().split("\n")
+        if line.strip().endswith(".md")
+    }
+
+
+def annotate_malformed(fragments: list, changed: Optional[set]) -> list[dict]:
+    """Flatten fragment problems, marking which ones this run is responsible for.
+
+    `changed is None` means every fragment is in scope (the local run's stricter
+    default). Otherwise only the fragments in `changed` are enforced; the rest are
+    reported without failing.
+    """
+    return [
+        {
+            "fragment": fragment.name,
+            "problem": problem,
+            "in_scope": changed is None or fragment.name in changed,
+        }
+        for fragment in fragments
+        for problem in fragment.problems
+    ]
 
 
 def get_commit_stamp(sha: str) -> str:
@@ -633,6 +689,7 @@ def analyze_and_generate(
     since_tag: Optional[str] = None,
     verbose: bool = False,
     pr_number: Optional[int] = None,
+    changed_only: bool = False,
 ) -> dict:
     """
     Analyze commits and generate missing changelog entries.
@@ -661,6 +718,7 @@ def analyze_and_generate(
         "blanket_claims": [],
         "claims_on_skipped_commits": [],
         "malformed_fragments": [],
+        "changed_only": False,
         "skipped_commits": [],
     }
 
@@ -687,11 +745,9 @@ def analyze_and_generate(
     # A malformed fragment contributes nothing and is reported separately: it must
     # never be quieter than a fragment with no declaration at all.
     fragments = read_fragments(unreleased_dir)
-    result["malformed_fragments"] = [
-        {"fragment": f.name, "problem": problem}
-        for f in fragments
-        for problem in f.problems
-    ]
+    changed = get_changed_fragment_names(since_tag) if changed_only and since_tag else None
+    result["changed_only"] = changed is not None
+    result["malformed_fragments"] = annotate_malformed(fragments, changed)
     resolution = resolve_claims(fragments, commits_raw, pr_number)
     claimed = resolution.claimed
     fallback_bullets = resolution.fallback_bullets
@@ -823,9 +879,22 @@ def write_fragments(entries: list[dict], unreleased_dir: Path) -> int:
     return written
 
 
+def in_scope_malformed(result: dict) -> list[dict]:
+    """Malformed fragments this run is responsible for failing on."""
+    return [m for m in result["malformed_fragments"] if m["in_scope"]]
+
+
+def out_of_scope_malformed(result: dict) -> list[dict]:
+    """Malformed fragments on disk that this run only reports."""
+    return [m for m in result["malformed_fragments"] if not m["in_scope"]]
+
+
 def print_malformed_fragments(result: dict) -> None:
-    """Report fragments whose `covers:` block is broken, to stderr."""
-    malformed = result["malformed_fragments"]
+    """Report the malformed fragments this run enforces, to stderr."""
+    # stdout is block-buffered when piped (as in CI); flush so the summary line
+    # printed there does not surface after this report.
+    sys.stdout.flush()
+    malformed = in_scope_malformed(result)
     print(
         f"\nchangelog gate FAILED: {len(malformed)} malformed fragment(s) in "
         "changelog/unreleased/. A broken declaration is refused rather than "
@@ -846,6 +915,32 @@ def print_malformed_fragments(result: dict) -> None:
     )
 
 
+def print_stray_malformed(result: dict) -> None:
+    """Name malformed fragments this run will not fail on, on stdout.
+
+    A stray broken fragment is somebody else's defect: failing here would punish
+    an author for a file they never touched, which is the shared-blast-radius
+    problem this gate must not have. Staying silent is worse than failing though,
+    so it is named on every passing run until someone fixes it.
+    """
+    strays = out_of_scope_malformed(result)
+    if not strays:
+        return
+    print(
+        f"NOTE: {len(strays)} malformed fragment(s) already on disk, not touched by "
+        "this change:"
+    )
+    for item in strays:
+        print(f"        changelog/unreleased/{item['fragment']}")
+        print(f"            {item['problem']}")
+    print(
+        "      Not failing this run — you did not write them. Their `covers:` "
+        "declarations are\n"
+        "      ignored until fixed, so they claim nothing. Whoever added them "
+        "should repair them."
+    )
+
+
 def print_gate_failure(result: dict) -> None:
     """Print the actionable failure report for `--check`, to stderr.
 
@@ -854,6 +949,7 @@ def print_gate_failure(result: dict) -> None:
     once per commit. Diagnostics go to stderr so a `--json` consumer still gets
     clean JSON on stdout.
     """
+    sys.stdout.flush()
     missing = result["missing_entries"]
     since = result["since_tag"] or "the base commit"
     print(
@@ -951,6 +1047,50 @@ def print_blanket_claims(result: dict) -> None:
         )
 
 
+def run_validate(args) -> int:
+    """`--validate`: are the fragments well formed? Coverage is not consulted.
+
+    Split out from `--check` on purpose. Validity and coverage answer different
+    questions and belong to different people: a broken fragment is the defect of
+    whoever wrote it, and must be caught even on a PR that owes no changelog entry
+    at all (`skip-changelog`). Coverage is about this PR's commits and keeps its
+    own bypass. Running them as one step forced a single scope on both, which is
+    what let a broken fragment in through the skip door and then charged the next
+    innocent PR for it.
+    """
+    vault_root = get_vault_root()
+    fragments = read_fragments(vault_root / "changelog" / "unreleased")
+    changed = (
+        get_changed_fragment_names(args.since)
+        if args.changed_only and args.since
+        else None
+    )
+    result = {
+        "success": True,
+        "since_tag": args.since,
+        "changed_only": changed is not None,
+        "fragments_read": len(fragments),
+        "fragments_in_scope": len(fragments) if changed is None else len(changed),
+        "malformed_fragments": annotate_malformed(fragments, changed),
+    }
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        scope = (
+            f"{len(changed)} fragment(s) changed since {args.since}"
+            if changed is not None
+            else f"all {len(fragments)} fragment(s) in changelog/unreleased/"
+        )
+        print(f"changelog fragment validity: checked {scope}.")
+        print_stray_malformed(result)
+
+    if in_scope_malformed(result):
+        print_malformed_fragments(result)
+        return 1
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze commits and generate missing changelog fragments"
@@ -985,6 +1125,20 @@ def main():
         help="Exit non-zero if any user-facing commit lacks a fragment (writes nothing)"
     )
     parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Only check that fragments are well formed; skip the coverage check "
+             "entirely. CI runs this even for a skip-changelog PR, because a "
+             "broken fragment is a defect whether or not the PR owes an entry."
+    )
+    parser.add_argument(
+        "--changed-only",
+        action="store_true",
+        help="Enforce fragment validity only for fragments changed since --since, "
+             "reporting the rest without failing. CI uses this so a PR is never "
+             "red for a stray file it did not touch. Coverage is unaffected."
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Show detailed analysis"
@@ -992,11 +1146,15 @@ def main():
 
     args = parser.parse_args()
 
+    if args.validate:
+        return run_validate(args)
+
     # Run analysis
     result = analyze_and_generate(
         since_tag=args.since,
         verbose=args.verbose,
         pr_number=args.pr,
+        changed_only=args.changed_only,
     )
 
     # Output
@@ -1013,6 +1171,7 @@ def main():
             f"{len(result['missing_entries'])} uncovered."
         )
         print_blanket_claims(result)
+        print_stray_malformed(result)
     else:
         # Human-readable output
         print(f"\n{'='*60}")
@@ -1066,16 +1225,17 @@ def main():
 
     # Gate mode: fail on a malformed fragment or an uncovered user-facing commit.
     # A malformed fragment fails on its own, even when nothing is uncovered:
-    # silently ignoring it is how it becomes a permanent wildcard.
+    # silently ignoring it is how it becomes a permanent wildcard. Only fragments
+    # in scope can fail this run — see `print_stray_malformed` for the rest.
     failed = False
     if result['malformed_fragments']:
-        if args.check:
+        if args.check and in_scope_malformed(result):
             print_malformed_fragments(result)
             failed = True
-        elif not args.json:
+        elif not args.json and not args.check:
             print(
                 f"\nWarning: {len(result['malformed_fragments'])} malformed "
-                "fragment(s) ignored — run with --check for details.",
+                "fragment(s) ignored — run with --validate for details.",
                 file=sys.stderr,
             )
     if args.check and result['missing_entries']:
