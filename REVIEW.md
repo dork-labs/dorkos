@@ -9,14 +9,17 @@ Review (the managed GitHub product, if enabled) and injected into the
 
 Work the diff like a senior engineer, not a linter:
 
-1. Get the full diff (`gh pr diff`) and the changed-file list. Read the enclosing
+1. Get the full diff and the changed-file list, with whatever command your harness
+   gives you for it — the `claude-code-review` workflow pins that to a helper and
+   says so in its prompt, so do not reach for `gh` there. Read the enclosing
    function or module around each hunk: a bug in an unchanged line of a touched
    function is in scope.
-2. Trace outward. For every symbol the diff changes, removes, or renames, grep the
-   repo for its callers and references (`git grep`, Grep). A change is only safe
+2. Trace outward. For every symbol the diff changes, removes, or renames, search the
+   repo for its callers and references (the Grep tool). A change is only safe
    once you have checked who depends on it.
 3. Verify before posting. Every finding needs a `file:line` you actually read or
-   grepped, never an inference from a name. If a quick grep settles it, run it.
+   searched for, never an inference from a name. If a quick search settles it, run
+   it.
 4. Rank, then cap. Order findings by severity and post the top ones within the nit
    cap. Quality over volume.
 
@@ -88,13 +91,20 @@ hooks, commands, or scripts:
 
 - Enumerate every removed identifier: package name, file path, directory, exported
   symbol, command, hook, env key, label.
-- For each one, grep the whole post-merge tree (`git grep '<token>'`) and confirm
+- For each one, search the whole post-merge tree for that token and confirm
   zero surviving references. Check prose and config too, not just code: `*.md`,
   `*.json` manifests, `.github/`, `settings.json`, `CLAUDE.md` / `AGENTS.md`,
   `contributing/`, `docs/`.
 - Search more than one token form: the package (`@scope/x`), the directory
   (`packages/x`), and the bare name (`x-thing`). A reference often survives under a
   token you did not think to search.
+- This whole sweep is a search over the working tree, so the Grep and Glob tools are
+  enough for it — including `.github/`, `.claude/` and the other dot-directories
+  above, which Grep descends into, so one pass covers them. (A bare `rg` would not:
+  ripgrep skips hidden directories unless asked. If your harness searches that way
+  rather than through the Grep tool, name those directories explicitly.) In the
+  `claude-code-review` workflow the Grep and Glob tools are all you have: that job
+  grants no shell beyond one fixed-shape GitHub helper.
 - Every surviving reference to a removed thing is a finding: 🟡 at least, 🔴 if a
   runtime, build, or CI path resolves it.
 
