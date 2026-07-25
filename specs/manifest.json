@@ -9,6 +9,13 @@
       "status": "specified"
     },
     {
+      "id": "260724-225642",
+      "slug": "composer-status-redesign",
+      "title": "Composer + status bar redesign — quiet by default, one line, measured mobile budget",
+      "created": "2026-07-24",
+      "status": "implemented"
+    },
+    {
       "id": "260723-050355",
       "slug": "agent-trust",
       "title": "Agent trust — identity, capability tiers, approvals, isolated evals",

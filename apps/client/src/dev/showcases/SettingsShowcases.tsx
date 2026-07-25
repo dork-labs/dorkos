@@ -22,7 +22,6 @@ import {
 import { SettingsDialog } from '@/layers/features/settings';
 import { AppearanceTab } from '@/layers/features/settings/ui/tabs/AppearanceTab';
 import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
-import { StatusBarTab } from '@/layers/features/settings/ui/tabs/StatusBarTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { ChannelsTab } from '@/layers/features/settings/ui/ChannelsTab';
@@ -77,13 +76,6 @@ function IndividualTabsSection() {
       <ShowcaseDemo>
         <TabShell value="preferences">
           <PreferencesTab />
-        </TabShell>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Status Bar Tab</ShowcaseLabel>
-      <ShowcaseDemo>
-        <TabShell value="statusBar">
-          <StatusBarTab />
         </TabShell>
       </ShowcaseDemo>
 

@@ -300,6 +300,45 @@ describe('RuntimeItem', () => {
     });
   });
 
+  describe('compact (below the status line’s widest tier)', () => {
+    it('drops the model half — the line’s own model item already says it', () => {
+      // "OpenCode · qwen2.5-coder" measured ~155px in Chromium: a third of a phone
+      // status line spent saying the thing two slots over already says (DOR-452).
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'opencode'),
+      });
+      render(
+        <RuntimeItem
+          runtime="opencode"
+          model="ollama/qwen2.5-coder"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+          compact
+        />
+      );
+
+      expect(screen.getByText('OpenCode')).toBeInTheDocument();
+      expect(screen.queryByText(/qwen2\.5-coder/)).not.toBeInTheDocument();
+    });
+
+    it('drops it in the selectable trigger too', () => {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'opencode'),
+      });
+      render(
+        <RuntimeItem
+          runtime="opencode"
+          model="ollama/qwen2.5-coder"
+          onChangeRuntime={vi.fn()}
+          canSelect
+          compact
+        />
+      );
+
+      expect(screen.getByRole('button', { name: 'OpenCode' })).toBeInTheDocument();
+    });
+  });
+
   describe('pre-launch selection (canSelect=true, >1 registered runtime)', () => {
     it('renders a dropdown listing every registered runtime', () => {
       mockRuntimeCapabilities.mockReturnValue({

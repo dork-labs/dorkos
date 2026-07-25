@@ -184,11 +184,10 @@ describe('SettingsDialog', () => {
   });
 
   // Verifies sidebar navigation items render correctly
-  it('renders nine sidebar items: Appearance, Preferences, Status Bar, Server, Tools, Channels, Agents, Runtimes, Advanced', () => {
+  it('renders eight sidebar items: Appearance, Preferences, Server, Tools, Channels, Agents, Runtimes, Advanced', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /status bar/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /channels/i })).toBeDefined();
@@ -212,28 +211,11 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Font size')).toBeDefined();
   });
 
-  // Verifies Status Bar section shows registry-driven toggle switches
-  it('navigates to Status Bar and shows toggle switches', () => {
+  // The status bar has no Settings tab: what shows in the line is decided by the
+  // promotion rules and the pins in the Session panel, next to each live value.
+  it('has no Status Bar tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/status bar/i);
-    // Labels come from STATUS_BAR_REGISTRY
-    expect(screen.getByText('Directory')).toBeDefined();
-    expect(screen.getByText('Permission Mode')).toBeDefined();
-    expect(screen.getByText('Model')).toBeDefined();
-    expect(screen.getByText('Usage & cost')).toBeDefined();
-    expect(screen.getByText('Context Usage')).toBeDefined();
-  });
-
-  // Verifies all status bar toggles default to ON (one switch per registry item)
-  it('has all status bar toggles enabled by default', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/status bar/i);
-    const panel = screen.getByText('Directory').closest('[data-slot="navigation-layout-panel"]')!;
-    const switches = panel.querySelectorAll('[role="switch"]');
-    expect(switches.length).toBe(10);
-    switches.forEach((sw) => {
-      expect(sw.getAttribute('data-state')).toBe('checked');
-    });
+    expect(screen.queryByRole('tab', { name: /status bar/i })).toBeNull();
   });
 
   // Verifies server tab content is accessible
@@ -246,44 +228,6 @@ describe('SettingsDialog', () => {
     await screen.findByText(/version/i);
   });
 
-  it('displays "Show shortcut chips" toggle in Preferences', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/preferences/i);
-    expect(screen.getByText('Show shortcut chips')).toBeDefined();
-    expect(screen.getByText('Display shortcut hints below the message input')).toBeDefined();
-  });
-
-  it('shows "Git Status" toggle in Status Bar', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/status bar/i);
-    expect(screen.getByText('Git Status')).toBeDefined();
-    expect(screen.getByText('Branch name and change count')).toBeDefined();
-  });
-
-  it('has git status toggle enabled by default', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/status bar/i);
-    const label = screen.getByText('Git Status');
-    // Traverse up to the row container — works for both the private SettingRow
-    // (div.justify-between) and the Field-based shared SettingRow (data-slot="field").
-    const row = label.closest('[data-slot="field"], [class~="justify-between"]')!;
-    const toggle = row.querySelector('[role="switch"]');
-    expect(toggle).toBeDefined();
-    expect(toggle?.getAttribute('data-state')).toBe('checked');
-  });
-
-  it('has shortcut chips toggle enabled by default', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/preferences/i);
-    const label = screen.getByText('Show shortcut chips');
-    // Traverse up to the row container — works for both the private SettingRow
-    // (div.justify-between) and the Field-based shared SettingRow (data-slot="field").
-    const row = label.closest('[data-slot="field"], [class~="justify-between"]')!;
-    const toggle = row.querySelector('[role="switch"]');
-    expect(toggle).toBeDefined();
-    expect(toggle?.getAttribute('data-state')).toBe('checked');
-  });
-
   it('renders "Notification sound" toggle in Preferences', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/preferences/i);
@@ -291,41 +235,6 @@ describe('SettingsDialog', () => {
     expect(
       screen.getByText('Play a sound when AI finishes responding (3s+ responses)')
     ).toBeDefined();
-  });
-
-  it('renders "Sound" toggle in Status Bar', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/status bar/i);
-    expect(screen.getByText('Sound')).toBeDefined();
-    expect(screen.getByText('Notification sound toggle')).toBeDefined();
-  });
-
-  // Verifies the core registry items are rendered in the Status Bar tab
-  it('renders the registry items in the Status Bar tab', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/status bar/i);
-    const expectedLabels = [
-      'Directory',
-      'Git Status',
-      'Model',
-      'Usage & cost',
-      'Context Usage',
-      'Permission Mode',
-      'Sound',
-      'Refresh',
-    ];
-    for (const label of expectedLabels) {
-      expect(screen.getByText(label)).toBeDefined();
-    }
-  });
-
-  // Verifies the Status Bar tab has a "Reset to defaults" button
-  it('renders a "Reset to defaults" button in the Status Bar tab', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/status bar/i);
-    const panel = screen.getByText('Directory').closest('[data-slot="navigation-layout-panel"]')!;
-    const resetBtn = panel.querySelector('button');
-    expect(resetBtn?.textContent).toBe('Reset to defaults');
   });
 
   // Verifies the Appearance tab still has its own "Reset to defaults" button (global reset)

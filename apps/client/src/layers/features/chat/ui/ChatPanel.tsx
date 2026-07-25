@@ -277,7 +277,6 @@ export function ChatPanel({
     setInput,
     commands: allCommands,
     fileEntries: allFileEntries,
-    chatInputRef,
   });
 
   /** Re-send the last user message after an inline execution_error. */

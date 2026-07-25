@@ -23,6 +23,10 @@ interface RuntimeIdentityProps {
  * {@link formatRuntimeIdentity}, the icon from {@link getRuntimeDescriptor}.
  * Dense session-LIST rows use {@link RuntimeMark} instead (icon-only, with the
  * identity in its tooltip) so the list stays calm.
+ *
+ * The text truncates and the icon never shrinks, so a long `provider/model` in a
+ * width-constrained row loses characters to an ellipsis rather than pushing the
+ * row's other content out of view.
  */
 export function RuntimeIdentity({
   runtime,
@@ -35,9 +39,9 @@ export function RuntimeIdentity({
   const { text } = formatRuntimeIdentity({ runtime, model });
 
   return (
-    <span className={cn('inline-flex items-center gap-1', className)}>
-      <Icon {...(iconClassName ? { className: iconClassName } : { size })} />
-      <span>{text}</span>
+    <span className={cn('inline-flex min-w-0 items-center gap-1', className)}>
+      <Icon className={cn('shrink-0', iconClassName)} {...(iconClassName ? {} : { size })} />
+      <span className="truncate">{text}</span>
     </span>
   );
 }

@@ -35,8 +35,6 @@ export interface PreferencesSlice {
   setExpandToolCalls: (v: boolean) => void;
   autoHideToolCalls: boolean;
   setAutoHideToolCalls: (v: boolean) => void;
-  showShortcutChips: boolean;
-  setShowShortcutChips: (v: boolean) => void;
   showTaskCelebrations: boolean;
   setShowTaskCelebrations: (v: boolean) => void;
   enableNotificationSound: boolean;
@@ -82,11 +80,6 @@ export const createPreferencesSlice: StateCreator<
   setAutoHideToolCalls: (v) => {
     writeBool(BOOL_KEYS.autoHideToolCalls, v);
     set({ autoHideToolCalls: v });
-  },
-  showShortcutChips: readBool(BOOL_KEYS.showShortcutChips, BOOL_DEFAULTS.showShortcutChips),
-  setShowShortcutChips: (v) => {
-    writeBool(BOOL_KEYS.showShortcutChips, v);
-    set({ showShortcutChips: v });
   },
   showTaskCelebrations: readBool(
     BOOL_KEYS.showTaskCelebrations,

@@ -160,13 +160,6 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     keywords: ['queue', 'message', 'panel', 'pending', 'edit'],
   },
   {
-    id: 'shortcutchips',
-    title: 'ShortcutChips',
-    page: 'chat',
-    category: 'Input',
-    keywords: ['shortcut', 'chip', 'command', 'mention', 'file', 'slash'],
-  },
-  {
     id: 'commandpalette',
     title: 'CommandPalette',
     page: 'chat',
@@ -262,12 +255,5 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     page: 'chat',
     category: 'Misc',
     keywords: ['celebration', 'confetti', 'overlay', 'task', 'complete', 'fireworks'],
-  },
-  {
-    id: 'draghandle',
-    title: 'DragHandle',
-    page: 'chat',
-    category: 'Misc',
-    keywords: ['drag', 'handle', 'collapse', 'expand', 'toggle', 'pill'],
   },
 ];

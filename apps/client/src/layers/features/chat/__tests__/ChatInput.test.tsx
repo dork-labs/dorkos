@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ChatInput } from '../ui/input/ChatInput';
+
+/** Flipped by the mobile tests; read by the `matchMedia` mock below. */
+let isMobileViewport = false;
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
+      matches: isMobileViewport,
       media: query,
       onchange: null,
       addListener: vi.fn(),
@@ -17,6 +20,47 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   });
+});
+
+/**
+ * Stub `document.execCommand('insertText')` — jsdom has no editing pipeline.
+ * Splices the text into the focused field the way a browser would, so tests can
+ * assert both the resulting text and that the edit went through `execCommand`
+ * (the only path that keeps the field's native undo stack intact).
+ */
+function stubExecCommand() {
+  const exec = vi.fn((command: string, _showUi?: boolean, text?: string) => {
+    if (command !== 'insertText') return false;
+    const el = document.activeElement as HTMLTextAreaElement | null;
+    if (!el) return false;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const inserted = text ?? '';
+    el.value = el.value.slice(0, start) + inserted + el.value.slice(end);
+    const caret = start + inserted.length;
+    el.setSelectionRange(caret, caret);
+    return true;
+  });
+  Object.defineProperty(document, 'execCommand', {
+    writable: true,
+    configurable: true,
+    value: exec,
+  });
+  return exec;
+}
+
+/** Render the composer and place a collapsed caret at `caret` (default: end of value). */
+function renderWithCaret(props: Parameters<typeof ChatInput>[0], caret?: number) {
+  const view = render(<ChatInput {...props} />);
+  const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
+  textarea.focus();
+  const pos = caret ?? textarea.value.length;
+  textarea.setSelectionRange(pos, pos);
+  return { ...view, textarea };
+}
+
+beforeEach(() => {
+  isMobileViewport = false;
 });
 
 afterEach(() => {
@@ -91,9 +135,9 @@ describe('ChatInput', () => {
     expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
   });
 
-  it('textarea IS disabled when sessionBusy is true', () => {
+  it('textarea stays typeable when sessionBusy is true', () => {
     render(<ChatInput {...defaultProps} sessionBusy={true} />);
-    expect(screen.getByRole('combobox')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
   });
 
   it('shows stop button when streaming (no text)', () => {
@@ -428,9 +472,16 @@ describe('ChatInput', () => {
   });
 
   describe('sessionBusy state', () => {
-    it('disables textarea when sessionBusy is true', () => {
+    it('never disables the textarea — disabling drops the caret with no restore', () => {
       render(<ChatInput {...defaultProps} sessionBusy={true} />);
-      expect(screen.getByRole('combobox')).toHaveProperty('disabled', true);
+      expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
+    });
+
+    it('does not submit on Enter when sessionBusy is true', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} onSubmit={onSubmit} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
     });
 
     it('disables send button when sessionBusy is true', () => {
@@ -678,6 +729,306 @@ describe('ChatInput', () => {
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(onEscape).toHaveBeenCalled();
       expect(onCancelEdit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('IME composition guard', () => {
+    it('does not submit on the Enter that commits an IME candidate', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', isComposing: true });
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('honours the legacy keyCode 229 signal', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', keyCode: 229 });
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('does not stop generation on Escape while composing', () => {
+      const onStop = vi.fn();
+      const onEscape = vi.fn();
+      render(
+        <ChatInput {...defaultProps} isStreaming={true} onStop={onStop} onEscape={onEscape} />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape', isComposing: true });
+      expect(onStop).not.toHaveBeenCalled();
+      expect(onEscape).not.toHaveBeenCalled();
+    });
+
+    it('submits once the composition has ended', () => {
+      const onSubmit = vi.fn();
+      render(<ChatInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Enter', isComposing: true });
+      fireEvent.keyDown(combobox, { key: 'Enter' });
+      expect(onSubmit).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('backslash line continuation', () => {
+    it('turns a trailing backslash into a newline instead of submitting', () => {
+      stubExecCommand();
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\', onSubmit });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('foo\n');
+    });
+
+    it('edits through execCommand so the native undo stack survives', () => {
+      const exec = stubExecCommand();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(exec).toHaveBeenCalledWith('insertText', false, '\n');
+    });
+
+    it('submits on an escaped literal backslash (even run)', () => {
+      stubExecCommand();
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\\\', onSubmit });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onSubmit).toHaveBeenCalledOnce();
+      expect(textarea.value).toBe('foo\\\\');
+    });
+
+    it('continues on a three-backslash run (odd)', () => {
+      stubExecCommand();
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\\\\\', onSubmit });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('foo\\\\\n');
+    });
+
+    it('submits when the backslash does not touch the caret', () => {
+      stubExecCommand();
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\ ', onSubmit });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onSubmit).toHaveBeenCalledOnce();
+    });
+
+    it('requires a collapsed caret', () => {
+      stubExecCommand();
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\', onSubmit });
+      textarea.setSelectionRange(0, 4);
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onSubmit).toHaveBeenCalledOnce();
+    });
+
+    it('works mid-prompt, at the caret rather than at the end of the value', () => {
+      stubExecCommand();
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\bar', onSubmit }, 4);
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('foo\nbar');
+    });
+
+    it('never queues while streaming', () => {
+      stubExecCommand();
+      const onQueue = vi.fn();
+      const { textarea } = renderWithCaret({
+        ...defaultProps,
+        value: 'foo\\',
+        isStreaming: true,
+        onQueue,
+      });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onQueue).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('foo\n');
+    });
+
+    it('never saves a queue-item edit', () => {
+      stubExecCommand();
+      const onSaveEdit = vi.fn();
+      const { textarea } = renderWithCaret({
+        ...defaultProps,
+        value: 'foo\\',
+        editingQueueItem: true,
+        onSaveEdit,
+      });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onSaveEdit).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('foo\n');
+    });
+
+    it('eats the backslash on mobile too, so the text matches every platform', () => {
+      isMobileViewport = true;
+      const exec = stubExecCommand();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(exec).toHaveBeenCalledWith('insertText', false, '\n');
+      expect(textarea.value).toBe('foo\n');
+    });
+
+    it('leaves the backslash alone on Shift+Enter (already a newline)', () => {
+      const exec = stubExecCommand();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
+      fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+      expect(exec).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('foo\\');
+    });
+
+    it('does not fire during an IME composition', () => {
+      const exec = stubExecCommand();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
+      fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true });
+      expect(exec).not.toHaveBeenCalled();
+    });
+
+    it('lets the palette take Enter instead of continuing the line', () => {
+      const exec = stubExecCommand();
+      const onCommandSelect = vi.fn();
+      const { textarea } = renderWithCaret({
+        ...defaultProps,
+        value: '/daily\\',
+        isPaletteOpen: true,
+        onCommandSelect,
+      });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      expect(onCommandSelect).toHaveBeenCalledOnce();
+      expect(exec).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Option+Enter newline', () => {
+    it('inserts a newline instead of submitting', () => {
+      const exec = stubExecCommand();
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'hello', onSubmit });
+      fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(exec).toHaveBeenCalledWith('insertText', false, '\n');
+      expect(textarea.value).toBe('hello\n');
+    });
+
+    it('does not pick a palette entry', () => {
+      stubExecCommand();
+      const onCommandSelect = vi.fn();
+      const { textarea } = renderWithCaret({
+        ...defaultProps,
+        value: '/dai',
+        isPaletteOpen: true,
+        onCommandSelect,
+      });
+      fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
+      expect(onCommandSelect).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('/dai\n');
+    });
+  });
+
+  describe('Escape priority ladder', () => {
+    it('dismisses the palette instead of stopping the turn', () => {
+      const onEscape = vi.fn();
+      const onStop = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="hello"
+          isStreaming={true}
+          isPaletteOpen={true}
+          onEscape={onEscape}
+          onStop={onStop}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledOnce();
+      expect(onStop).not.toHaveBeenCalled();
+    });
+
+    it('cancels a queue-item edit instead of stopping the turn', () => {
+      const onCancelEdit = vi.fn();
+      const onStop = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="hello"
+          isStreaming={true}
+          editingQueueItem={true}
+          onCancelEdit={onCancelEdit}
+          onStop={onStop}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onCancelEdit).toHaveBeenCalledOnce();
+      expect(onStop).not.toHaveBeenCalled();
+    });
+
+    it('stops the turn once no palette or edit is open', () => {
+      const onStop = vi.fn();
+      const onClear = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="hello"
+          isStreaming={true}
+          onStop={onStop}
+          onClear={onClear}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onStop).toHaveBeenCalledOnce();
+      expect(onClear).not.toHaveBeenCalled();
+    });
+
+    it('does not arm the draft wipe when Escape closed a palette', () => {
+      const onClear = vi.fn();
+      const onEscape = vi.fn();
+      const { rerender } = render(
+        <ChatInput
+          {...defaultProps}
+          value="hello"
+          isPaletteOpen={true}
+          onClear={onClear}
+          onEscape={onEscape}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      rerender(
+        <ChatInput
+          {...defaultProps}
+          value="hello"
+          isPaletteOpen={false}
+          onClear={onClear}
+          onEscape={onEscape}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onClear).not.toHaveBeenCalled();
+      expect(onEscape).toHaveBeenCalledTimes(2);
+    });
+
+    it('still clears on two bare escapes after a palette dismiss', () => {
+      const onClear = vi.fn();
+      const { rerender } = render(
+        <ChatInput {...defaultProps} value="hello" isPaletteOpen={true} onClear={onClear} />
+      );
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      rerender(
+        <ChatInput {...defaultProps} value="hello" isPaletteOpen={false} onClear={onClear} />
+      );
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(onClear).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('autofocus on mount', () => {
+    it('focuses the composer on desktop', () => {
+      render(<ChatInput {...defaultProps} />);
+      expect(document.activeElement).toBe(screen.getByRole('combobox'));
+    });
+
+    it('does not focus on a touch viewport (no surprise keyboard)', () => {
+      isMobileViewport = true;
+      render(<ChatInput {...defaultProps} />);
+      expect(document.activeElement).not.toBe(screen.getByRole('combobox'));
     });
   });
 });

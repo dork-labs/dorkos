@@ -11,9 +11,9 @@ export function SubagentsItem({ subagents }: SubagentsItemProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex items-center gap-1">
-          <Users className="size-(--size-icon-xs)" />
-          <span>
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <Users className="size-(--size-icon-xs) shrink-0" />
+          <span className="truncate">
             {subagents.length} agent{subagents.length !== 1 ? 's' : ''}
           </span>
         </span>

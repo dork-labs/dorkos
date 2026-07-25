@@ -4,11 +4,8 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Info } from 'lucide-react';
 import { DEFAULT_THEME } from '../ui/status/inference-themes';
-import {
-  deriveStripState,
-  ChatStatusStrip,
-  type StripStateInput,
-} from '../ui/status/ChatStatusStrip';
+import { ChatStatusStrip } from '../ui/status/ChatStatusStrip';
+import { deriveStripState, type StripStateInput } from '../ui/status/strip-state';
 
 afterEach(() => {
   cleanup();
@@ -321,6 +318,60 @@ describe('ChatStatusStrip component', () => {
     expect(screen.getByTestId('chat-status-strip-system-message')).toHaveTextContent(
       'Running hook "format"...'
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Group 2b: the strip announces itself
+// ---------------------------------------------------------------------------
+
+describe('ChatStatusStrip announcements', () => {
+  it('is a polite live region, so a state change reaches someone who cannot see it', () => {
+    const { container } = render(
+      <ChatStatusStrip
+        status="streaming"
+        streamStartTime={Date.now()}
+        estimatedTokens={0}
+        isWaitingForUser
+        waitingType="approval"
+        systemStatus={null}
+      />
+    );
+    expect(container.firstElementChild).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText('Waiting for your approval')).toBeInTheDocument();
+  });
+
+  it('hides everything that ticks, so the churn is not announced with it', () => {
+    // A live region that re-reads the rotating verb every few seconds — or the
+    // elapsed clock every second — is worse than silence. One stable sentence
+    // announces the state instead.
+    render(
+      <ChatStatusStrip
+        status="streaming"
+        streamStartTime={Date.now()}
+        estimatedTokens={3200}
+        systemStatus={null}
+      />
+    );
+    const row = screen.getByTestId('chat-status-strip-streaming');
+    expect(row).toHaveTextContent('Working');
+    for (const churning of ["Droppin' Science", '2m 14s', '~3.2k tokens']) {
+      expect(screen.getByText(churning).closest('[aria-hidden="true"]')).not.toBeNull();
+    }
+  });
+
+  it('keeps the waiting clock out of the announcement but the message in it', () => {
+    render(
+      <ChatStatusStrip
+        status="streaming"
+        streamStartTime={Date.now()}
+        estimatedTokens={0}
+        isWaitingForUser
+        systemStatus={null}
+      />
+    );
+    expect(screen.getByText('Waiting for your approval')).not.toHaveAttribute('aria-hidden');
+    expect(screen.getByText('2m 14s')).toHaveAttribute('aria-hidden', 'true');
   });
 });
 

@@ -32,8 +32,71 @@ These shortcuts work at any time.
       description: 'Toggle the sidebar open or closed.',
       type: 'key',
     },
+    '⌘. / Ctrl+.': {
+      description: 'Toggle the right panel open or closed.',
+      type: 'key',
+    },
   }}
 />
+
+## Session
+
+While you have a session open. These need a session on screen, so they do nothing on the Agents, Tasks, or Marketplace pages.
+
+<TypeTable
+  type={{
+    '⌘⇧. / Ctrl+Shift+.': {
+      description:
+        'Open the Session panel: everything about the current session, with a pin beside each row you can keep in the status line.',
+      type: 'key',
+    },
+  }}
+/>
+
+## Message Box
+
+While you are typing a message to your agent.
+
+<TypeTable
+  type={{
+    Enter: {
+      description:
+        'Send the message. If your agent is still working, the message lines up to go next instead.',
+      type: 'key',
+    },
+    'Shift+Enter': {
+      description: 'Start a new line instead of sending.',
+      type: 'key',
+    },
+    '⌥Enter / Alt+Enter': {
+      description: 'Start a new line instead of sending.',
+      type: 'key',
+    },
+    '\\ then Enter': {
+      description:
+        'End a line with a backslash and press Enter to keep typing on the next line. The backslash disappears. Two backslashes in a row send the message.',
+      type: 'key',
+    },
+    Escape: {
+      description: 'Close the command or file list.',
+      type: 'key',
+    },
+    'Escape (editing a lined-up message)': {
+      description: 'Stop editing and leave that message the way it was.',
+      type: 'key',
+    },
+    'Escape (agent working)': {
+      description: 'Stop your agent.',
+      type: 'key',
+    },
+    'Escape twice': {
+      description: 'Clear what you have typed. Both presses have to be plain Escapes.',
+      type: 'key',
+    },
+  }}
+/>
+
+One Escape does the first thing in that list that applies, top to bottom: close a list if one is open, otherwise leave an edit, otherwise stop your agent. Clearing the box is last, and only when nothing above it applies.
 
 ## Command Palette
 

@@ -177,41 +177,37 @@ describe('activity-read', () => {
 describe('config-toggle', () => {
   const configFile = () => path.join(sandbox.dorkHome, 'config.json');
 
-  it('PASSES on a scoped flip: only git false, a sibling present at its default', async () => {
-    // git hidden, model still explicitly visible (present + default) — the
-    // scoped edit the eval measures.
-    await writeFile(
-      configFile(),
-      JSON.stringify({ ui: { statusBar: { git: false, model: true } } })
-    );
+  it('PASSES on a scoped pin: exactly git pinned', async () => {
+    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { pins: ['git'] } } }));
     const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
     expect(results.every((r) => r.passed)).toBe(true);
   });
 
-  it('PASSES when only git materializes (absent siblings resolve to their default)', async () => {
-    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { git: false } } }));
+  it('FAILS when nothing was pinned', async () => {
+    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { pins: [] } } }));
     const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
-    expect(results.every((r) => r.passed)).toBe(true);
+    expect(byLabel(results, 'ui.statusBar.pins').passed).toBe(false);
   });
 
-  it('FAILS when the git item is still visible (not flipped)', async () => {
-    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { git: true } } }));
-    const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
-    expect(byLabel(results, 'ui.statusBar.git').passed).toBe(false);
-  });
-
-  it('FAILS when the agent over-broadly flipped a sibling too (whole bar off)', async () => {
-    // git AND model both hidden — an over-broad edit that must NOT pass.
+  it('FAILS when the agent over-broadly pinned a sibling too', async () => {
+    // git AND model pinned — an over-broad edit that must NOT pass, because it
+    // rebuilds exactly the noisy status bar the quiet line replaced.
     await writeFile(
       configFile(),
-      JSON.stringify({ ui: { statusBar: { git: false, model: false } } })
+      JSON.stringify({ ui: { statusBar: { pins: ['git', 'model'] } } })
     );
     const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
-    expect(byLabel(results, 'ui.statusBar.git').passed).toBe(false);
+    expect(byLabel(results, 'ui.statusBar.pins').passed).toBe(false);
+  });
+
+  it('FAILS when the section is missing entirely', async () => {
+    await writeFile(configFile(), JSON.stringify({ ui: {} }));
+    const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
+    expect(byLabel(results, 'ui.statusBar.pins').passed).toBe(false);
   });
 
   it('FAILS the tool-use oracle when config_patch never fired', async () => {
-    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { git: false } } }));
+    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { pins: ['git'] } } }));
     const results = await runOracles(configToggleCase, ctx());
     expect(byLabel(results, 'config_patch').passed).toBe(false);
   });

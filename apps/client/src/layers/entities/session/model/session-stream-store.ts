@@ -703,6 +703,17 @@ export function useSessionStreamConnection(sessionId: string): ConnectionState {
   );
 }
 
+/**
+ * Granular selector: the highest `seq` applied from this session's durable
+ * stream. `0` before the first hydration. Diagnostics-only — it answers "how far
+ * has this client actually caught up?" when a stream is misbehaving.
+ */
+export function useSessionLastEventSeq(sessionId: string): number {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.lastAppliedSeq ?? 0, [sessionId])
+  );
+}
+
 /** Stable empty queue so unknown sessions return a referentially-stable value. */
 const EMPTY_QUEUE: QueuedMessage[] = [];
 

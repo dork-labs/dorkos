@@ -20,7 +20,7 @@ export function PromptSuggestionChips({ suggestions, onChipClick }: PromptSugges
       transition={{ duration: 0.2 }}
       role="group"
       aria-label="Suggested follow-ups"
-      className="mt-1.5 flex flex-wrap items-center justify-center gap-2 sm:justify-start"
+      className="mt-1.5 flex flex-wrap items-center gap-2"
     >
       {visible.map((suggestion) => (
         <button

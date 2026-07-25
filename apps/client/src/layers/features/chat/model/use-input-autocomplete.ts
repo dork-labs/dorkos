@@ -1,17 +1,15 @@
-import { useState, useCallback, type RefObject } from 'react';
+import { useState, useCallback } from 'react';
 import type { CommandEntry } from '@dorkos/shared/types';
 import type { FileEntry } from '@/layers/shared/lib';
 import type { PaletteCommandEntry, RankedCommandEntry } from '@/layers/entities/command';
 import { useCommandPalette } from './use-command-palette';
 import { useFileAutocomplete } from './use-file-autocomplete';
-import type { ChatInputHandle } from '../ui/input/ChatInput';
 
 interface UseInputAutocompleteOptions {
   input: string;
   setInput: (v: string) => void;
   commands: PaletteCommandEntry[];
   fileEntries: FileEntry[];
-  chatInputRef: RefObject<ChatInputHandle | null>;
 }
 
 interface UseInputAutocompleteReturn {
@@ -34,20 +32,18 @@ interface UseInputAutocompleteReturn {
   handleKeyboardSelect: () => void;
   handleCommandSelect: (cmd: CommandEntry) => void;
   handleFileSelect: (entry: FileEntry) => void;
-  handleChipClick: (trigger: string) => void;
   dismissPalettes: () => void;
 }
 
 /**
  * Coordinate command palette and file autocomplete — trigger detection,
- * keyboard navigation, selection, and chip toggling.
+ * keyboard navigation, and selection.
  */
 export function useInputAutocomplete({
   input,
   setInput,
   commands,
   fileEntries,
-  chatInputRef,
 }: UseInputAutocompleteOptions): UseInputAutocompleteReturn {
   const [cursorPos, setCursorPos] = useState(0);
 
@@ -140,39 +136,6 @@ export function useInputAutocomplete({
     }
   }, [fileComplete, cmdPalette, setInput]);
 
-  const handleChipClick = useCallback(
-    (trigger: string) => {
-      const existingTrigger = input.match(/(^|\s)([/@])([\w./:-]*)$/);
-      let newValue: string;
-
-      if (existingTrigger) {
-        const triggerChar = existingTrigger[2];
-        const queryText = existingTrigger[3];
-        const triggerStart = (existingTrigger.index ?? 0) + existingTrigger[1].length;
-
-        if (triggerChar === trigger && !queryText) {
-          const prefix = input.slice(0, triggerStart);
-          newValue = prefix.endsWith(' ') && triggerStart > 0 ? prefix.slice(0, -1) : prefix;
-          setInput(newValue);
-          fileComplete.setShowFiles(false);
-          cmdPalette.setShowCommands(false);
-          requestAnimationFrame(() => chatInputRef.current?.focusAt(newValue.length));
-          return;
-        }
-        newValue = input.slice(0, triggerStart) + trigger;
-      } else if (input.length > 0 && !input.endsWith(' ')) {
-        newValue = input + ' ' + trigger;
-      } else {
-        newValue = input + trigger;
-      }
-
-      setInput(newValue);
-      detectTrigger(newValue, newValue.length);
-      requestAnimationFrame(() => chatInputRef.current?.focusAt(newValue.length));
-    },
-    [input, setInput, detectTrigger, fileComplete, cmdPalette, chatInputRef]
-  );
-
   const dismissPalettes = useCallback(() => {
     cmdPalette.setShowCommands(false);
     fileComplete.setShowFiles(false);
@@ -207,7 +170,6 @@ export function useInputAutocomplete({
     handleKeyboardSelect,
     handleCommandSelect,
     handleFileSelect,
-    handleChipClick,
     dismissPalettes,
   };
 }

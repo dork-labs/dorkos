@@ -1,7 +1,6 @@
 [
   "Type @ to mention a file",
   "Type / to browse commands",
-  "Shift+Enter for a new line",
-  "Drop or paste files to attach",
-  "Press Esc twice to clear"
+  "End a line with \\ to keep typing",
+  "Drop or paste files to attach"
 ]

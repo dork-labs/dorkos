@@ -9,7 +9,7 @@ import {
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
-  backfillStatusBarDefaults,
+  migrateStatusBarToPins,
   backfillSidebarSettingsDefaults,
   backfillSmartGroupKindDefaults,
   CONFIG_MIGRATIONS,
@@ -950,8 +950,9 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
   });
 });
 
-describe('backfillStatusBarDefaults migration (DOR-431)', () => {
-  const STATUS_BAR_DEFAULTS = {
+describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
+  /** The retired ten-boolean visibility shape, only ever written pre-release. */
+  const RETIRED_TOGGLES = {
     cwd: true,
     git: true,
     runtime: true,
@@ -964,10 +965,10 @@ describe('backfillStatusBarDefaults migration (DOR-431)', () => {
     polling: true,
   };
 
-  it('fresh install: the schema default seeds ui.statusBar with every item visible', () => {
-    // A brand-new config comes from the schema, not a migration — assert the
-    // fresh-store shape carries the full status-bar section.
-    expect(USER_CONFIG_DEFAULTS.ui.statusBar).toEqual(STATUS_BAR_DEFAULTS);
+  it('fresh install: the schema default seeds ui.statusBar with nothing pinned', () => {
+    // A brand-new config comes from the schema, not a migration — the quiet line
+    // starts with no pins at all.
+    expect(USER_CONFIG_DEFAULTS.ui.statusBar).toEqual({ pins: [] });
   });
 
   it('upgraded install: adds ui.statusBar to an existing ui block, preserving other ui fields', () => {
@@ -979,37 +980,68 @@ describe('backfillStatusBarDefaults migration (DOR-431)', () => {
         shapes: { active: null, agentDefaults: {}, autoFollowAgent: false },
       },
     });
-    backfillStatusBarDefaults(store);
+    migrateStatusBarToPins(store);
     expect(store.data.ui).toEqual({
       theme: 'dark',
       dismissedUpgradeVersions: ['1.0.0'],
       sidebar: { pinned: [], groups: [] },
       shapes: { active: null, agentDefaults: {}, autoFollowAgent: false },
-      statusBar: STATUS_BAR_DEFAULTS,
+      statusBar: { pins: [] },
     });
   });
 
-  it('is idempotent — does not overwrite an existing ui.statusBar (a migrated device keeps its choices)', () => {
+  it('replaces the retired ten-boolean shape with an empty pin list — a deliberate one-time reset', () => {
+    // The semantics inverted: the booleans were "hide this", pins are "always
+    // show this". Mapping visible→pinned would hand anyone on the defaults ten
+    // pins and erase the quiet line, so the old choices are dropped, not
+    // translated (spec composer-status-redesign §5.1).
+    const store = createMockStore({
+      ui: { theme: 'system', statusBar: { ...RETIRED_TOGGLES, git: false, model: false } },
+    });
+    migrateStatusBarToPins(store);
+    expect(store.data.ui).toEqual({ theme: 'system', statusBar: { pins: [] } });
+  });
+
+  it('is idempotent — never clears pins someone already chose', () => {
     const existing = {
       theme: 'system',
       dismissedUpgradeVersions: [],
-      statusBar: { ...STATUS_BAR_DEFAULTS, git: false, model: false },
+      statusBar: { pins: ['git', 'usage'] },
     };
     const store = createMockStore({ ui: structuredClone(existing) });
-    backfillStatusBarDefaults(store);
+    migrateStatusBarToPins(store);
     expect(store.data.ui).toEqual(existing);
   });
 
-  it('is a no-op when the ui section is absent (schema default owns that case)', () => {
+  it('is a no-op when the ui section is absent (the defaults merge owns that case)', () => {
     const store = createMockStore({ server: { port: 4242 } });
-    backfillStatusBarDefaults(store);
+    migrateStatusBarToPins(store);
     expect(store.data.ui).toBeUndefined();
+  });
+
+  it('leaves no shape behind that the schema would reject', () => {
+    // conf validates the WHOLE store once migrations finish, and `ui.statusBar`
+    // is a closed object requiring `pins`. Parsing the post-migration `ui`
+    // through the schema is the guard that a stale boolean can never survive
+    // into that final validation and hard-fail startup.
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        dismissedUpgradeVersions: [],
+        sidebar: {},
+        shapes: {},
+        statusBar: RETIRED_TOGGLES,
+      },
+    });
+    migrateStatusBarToPins(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
+    expect(parsed.ui.statusBar).toEqual({ pins: [] });
   });
 
   it('is registered in CONFIG_MIGRATIONS at the newest key', () => {
     const keys = Object.keys(CONFIG_MIGRATIONS);
     expect(keys[keys.length - 1]).toBe('0.57.0');
-    expect(CONFIG_MIGRATIONS['0.57.0']).toBe(backfillStatusBarDefaults);
+    expect(CONFIG_MIGRATIONS['0.57.0']).toBe(migrateStatusBarToPins);
   });
 });
 

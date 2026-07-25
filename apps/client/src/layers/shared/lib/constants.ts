@@ -5,7 +5,7 @@ export const STORAGE_KEYS = {
   FONT_FAMILY: 'dorkos-font-family',
   RECENT_CWDS: 'dorkos-recent-cwds',
   PICKER_VIEW: 'dorkos-picker-view',
-  GESTURE_HINT_COUNT: 'dorkos-gesture-hint-count',
+  PLACEHOLDER_HINT_CYCLES: 'dorkos-placeholder-hint-cycles',
   CANVAS_SESSIONS: 'dorkos-canvas-sessions',
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
@@ -48,8 +48,8 @@ export const TIMING = {
   TOOL_CALL_AUTO_HIDE_MS: 5_000,
   /** Major celebration overlay display time (ms). */
   CELEBRATION_DISPLAY_MS: 2000,
-  /** Gesture hint auto-dismiss delay (ms). */
-  GESTURE_HINT_DISMISS_MS: 4000,
+  /** How long the chat status strip keeps showing a finished turn's summary before it fades (ms). */
+  TURN_COMPLETE_DISMISS_MS: 8000,
   /** Long-press detection threshold (ms). */
   LONG_PRESS_MS: 500,
   /** Minimum elapsed stream time before triggering done callback (ms). */

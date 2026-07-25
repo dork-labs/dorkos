@@ -1,175 +1,110 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useShallow } from 'zustand/shallow';
-import { motion, AnimatePresence } from 'motion/react';
-import type { PanInfo } from 'motion/react';
 import type { SessionStatusEvent, ConnectionState, PermissionMode } from '@dorkos/shared/types';
-import { SlidersHorizontal } from 'lucide-react';
-import { useIsMobile, useAppStore } from '@/layers/shared/model';
-import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import {
   useSessionStatus,
   useSessionChatStore,
   useSessionStreamStatus,
+  useSessionLastEventSeq,
+  useSessionQueue,
   useSubagents,
   useModels,
   useHasConfirmedAuto,
   resolveDisplayContextPercent,
 } from '@/layers/entities/session';
+import { useConfig } from '@/layers/entities/config';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
-import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import {
+  useCapabilitiesForRuntime,
+  useRuntimeCapabilities,
+  getRuntimeDescriptor,
+} from '@/layers/entities/runtime';
+import {
+  StatusLine,
+  SessionPopover,
+  AutoModeConfirmDialog,
+  UsageRevealPopover,
+  useGitStatus,
+  isGitStatusOk,
+  useStatusBarPins,
+  useSessionPopoverShortcut,
+  useStatusBudget,
+  gitPromotionState,
+  selectPromotedItems,
+  applyStatusBudget,
+  type SessionDiagnostics,
+  type StatusPromotionContext,
+} from '@/layers/features/status';
 import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useRuntimeChip } from '../../model/status/use-runtime-chip';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
-import { ShortcutChips } from '../input/ShortcutChips';
-import { CompactionChip } from './CompactionChip';
-import { DragHandle } from './DragHandle';
-import {
-  StatusLine,
-  CwdItem,
-  GitStatusItem,
-  PermissionModeItem,
-  RuntimeItem,
-  AutoModeConfirmDialog,
-  ModelConfigPopover,
-  CacheItem,
-  ContextItem,
-  UsageStatusItem,
-  UsageRevealPopover,
-  hasRenderableUsage,
-  NotificationSoundItem,
-  PollingItem,
-  ConnectionItem,
-  SubagentsItem,
-  useGitStatus,
-  StatusBarConfigurePopover,
-  STATUS_BAR_REGISTRY,
-  useStatusBarPrefs,
-  useUpdateStatusBarPrefs,
-} from '@/layers/features/status';
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
-} from '@/layers/shared/ui';
+import { buildStatusItemNodes } from './status-item-nodes';
 
 interface ChatStatusSectionProps {
   sessionId: string;
   sessionStatus: SessionStatusEvent | null;
   isStreaming: boolean;
-  onChipClick: (trigger: string) => void;
-  /** Live-sync connection state (from the durable `/events` stream) for the ConnectionItem indicator. */
+  /** Live-sync connection state (from the durable `/events` stream). */
   syncConnectionState: ConnectionState;
-  /** Agent display name for the shortcut chips row. */
+  /** Agent display name for the identity chip. */
   agentName?: string;
-  /** Agent color (HSL or hex) for the shortcut chips row. */
+  /** Agent color (HSL or hex) for the identity chip. */
   agentColor?: string;
-  /** Agent emoji for the shortcut chips row. */
+  /** Agent emoji for the identity chip. */
   agentEmoji?: string;
   /** Agent working directory path (used for context menu actions). */
   agentPath?: string;
 }
 
-interface ItemContextMenuProps {
-  /** The item label from the registry, e.g. "Git Status". Null for non-registry items. */
-  itemLabel: string | null;
-  /** Callback to hide this specific item. Null for non-registry items. */
-  onHide: (() => void) | null;
-  /** Callback to open the configure popover. */
-  onConfigure: () => void;
-  /** Callback to reset all status-bar items to their defaults. */
-  onReset: () => void;
-  children: React.ReactNode;
-}
-
-function ItemContextMenu({
-  itemLabel,
-  onHide,
-  onConfigure,
-  onReset,
-  children,
-}: ItemContextMenuProps) {
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger className="inline-flex items-center">{children}</ContextMenuTrigger>
-      <ContextMenuContent>
-        {itemLabel && onHide && (
-          <>
-            <ContextMenuItem onClick={onHide}>Hide &ldquo;{itemLabel}&rdquo;</ContextMenuItem>
-            <ContextMenuSeparator />
-          </>
-        )}
-        <ContextMenuItem onClick={onConfigure}>Configure status bar...</ContextMenuItem>
-        <ContextMenuItem onClick={onReset}>Reset to defaults</ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-/** Look up the human-readable label for a registry item key. */
-function getItemLabel(key: string): string | null {
-  return STATUS_BAR_REGISTRY.find((r) => r.key === key)?.label ?? null;
-}
-
-const SWIPE_THRESHOLD = 80;
-const VELOCITY_THRESHOLD = 500;
-
 /**
- * Mobile gesture UI (drag handle, swipe hint, collapsible status) and
- * desktop status bar (shortcut chips + status line).
+ * The composer's status line and the Session panel behind its `⋯`.
  *
- * Owns all data fetching for the status bar and composes the compound
- * StatusLine API. The StatusLine component itself is presentation-only.
+ * Owns every data source the line reads, folds them into one promotion context,
+ * and hands the registry an ordered set of promoted items to draw. Nothing here
+ * decides visibility inline — that lives in the registry, so the same decision
+ * can be measured, tested, and truncated.
+ *
+ * The bar's own width is measured here and cut to a budget before anything is
+ * drawn, because the line never scrolls and never wraps: what the width cannot
+ * afford becomes a `+N` on the `⋯` instead of an item nobody can reach.
+ *
+ * @param props - Session identity, streaming state, and the agent's identity.
  */
 export function ChatStatusSection({
   sessionId,
   sessionStatus,
   isStreaming,
-  onChipClick,
   syncConnectionState,
   agentName,
   agentColor,
   agentEmoji,
   agentPath,
 }: ChatStatusSectionProps) {
-  const isMobile = useIsMobile();
-
-  // Runtime chip: display runtime, selectability (read-only once the session
-  // has started), and the ?runtime= selection channel. See use-runtime-chip.
+  // The real width of the bar, not a viewport breakpoint — see `useStatusBudget`.
+  const { ref: barRef, budget } = useStatusBudget();
   // Resolved first so the client-known runtime can scope every runtime-aware
   // query below (status/model/auto-mode), even before the session has a
   // server-side row to resolve `sessionId` against.
   const runtimeChip = useRuntimeChip(sessionId);
-
-  // All status bar data hooks — moved here from StatusLine
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming, runtimeChip.runtime);
-  const {
-    showShortcutChips,
-    enableNotificationSound,
-    setEnableNotificationSound,
-    enableMessagePolling,
-    setEnableMessagePolling,
-  } = useAppStore();
-  // Status-bar item visibility lives in server config (`ui.statusBar`, DOR-431)
-  // so it syncs across devices and agents can flip it via `config_patch`.
-  const statusBar = useStatusBarPrefs();
-  const { setVisibility: setStatusBarVisibility, reset: resetStatusBarPreferences } =
-    useUpdateStatusBarPrefs();
+
+  // Per-field selectors, never a bare `useAppStore()`: the status bar and its
+  // ~11 children would otherwise re-render on every unrelated store write.
+  const enableNotificationSound = useAppStore((s) => s.enableNotificationSound);
+  const setEnableNotificationSound = useAppStore((s) => s.setEnableNotificationSound);
+  const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
+  const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
+  const { pins } = useStatusBarPins();
+
   // Snapshot-backed status (spec chat-stream-reconnection): populated immediately
   // on cold mount / refresh from the `/events` snapshot, so the server-derived
   // items (context %, cost, model, cache) no longer wait for the first live event.
-  const streamStatus = useSessionStreamStatus(sessionId);
-  const streamValues = deriveStatusBarValues(streamStatus);
+  const streamValues = deriveStatusBarValues(useSessionStreamStatus(sessionId));
   // Rich context breakdown (categories) is not carried by the snapshot — its
-  // tooltip stays sourced from the legacy store and fills in on the first live
-  // event; the percent badge below renders from the snapshot immediately.
+  // tooltip fills in on the first live event; the percent renders immediately.
   const contextUsage = useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.contextUsage ?? null, [sessionId])
   );
@@ -185,29 +120,23 @@ export function ChatStatusSection({
     })
   );
   const cacheStatus = streamValues.cacheStatus ?? legacyCacheStatus;
-  // Prefer the snapshot-backed values where they overlap with the derived status
-  // (cold-mount population); fall back to `use-session-status` otherwise.
-  const contextPercent = streamValues.contextPercent ?? status.contextPercent;
-  // Merged Usage & cost item: runtime-neutral usage descriptor from the
-  // snapshot-backed projection (subscription utilization or pay-as-you-go cost).
+  // NOTE: `model` is intentionally NOT overridden from the snapshot. The snapshot
+  // carries the SDK-resolved model id, whereas the model picker + auto-mode gating
+  // key off the user-selectable option VALUE that `use-session-status` populates.
   const usage = streamValues.usage;
-  // The `/context` intent pins the usage & cost detail open (DOR-109) so a
-  // keyboard user sees it without hovering the status-bar item.
   const usageRevealOpen = useUsageReveal((s) => s.open);
   const setUsageRevealOpen = useUsageReveal((s) => s.setOpen);
-  // NOTE: `model` is intentionally NOT overridden from the snapshot. The snapshot
-  // carries the SDK-resolved model id (e.g. "claude-opus-4-6"), whereas the model
-  // picker + auto-mode gating key off the user-selectable option VALUE (e.g.
-  // "default") that `use-session-status` already populates on cold mount from the
-  // persisted session query. Overriding here would break those lookups.
+
   const { data: gitStatus } = useGitStatus(status.cwd);
   const workspace = useWorkspaceForSession(status.cwd);
   const { data: subagents } = useSubagents(sessionId);
+  const { data: runtimeCaps } = useRuntimeCapabilities();
+  const { data: serverConfig } = useConfig();
+  const lastEventSeq = useSessionLastEventSeq(sessionId);
+  const queueDepth = useSessionQueue(sessionId).length;
 
-  // Per-model gating for the 'auto' permission mode: only the active model's
-  // `supportsAutoMode` flag decides whether 'auto' is offered in the dropdown.
-  // Scoped by the chip runtime so a pre-launch Codex session gates on Codex's
-  // models, not the default runtime's.
+  // Per-model gating for the 'auto' permission mode, scoped by the chip runtime
+  // so a pre-launch Codex session gates on Codex's models.
   const { data: models } = useModels({
     sessionId: sessionId || undefined,
     runtime: runtimeChip.runtime ?? undefined,
@@ -220,9 +149,6 @@ export function ChatStatusSection({
   const recordAutoConfirmed = useSessionChatStore((s) => s.recordAutoConfirmed);
   const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
 
-  // Intercept selection of 'auto': the first time per session we open a
-  // confirmation modal instead of applying. All other modes (and subsequent
-  // 'auto' selections in the same session) apply directly.
   const handleChangeMode = useCallback(
     (nextMode: PermissionMode) => {
       if (nextMode === 'auto' && !hasConfirmedAuto) {
@@ -240,370 +166,157 @@ export function ChatStatusSection({
     setAutoConfirmOpen(false);
   }, [recordAutoConfirmed, sessionId, status]);
 
-  // The active runtime's declared capability profile (nullish chip runtime —
-  // still resolving — falls back to the server default). Drives the honesty
-  // gates below: a runtime that declares `supportsCostTracking: false` (e.g.
-  // Codex reports tokens but no dollar cost) must never show a cost item,
-  // even if a stray value reaches the stores.
+  // The active runtime's capability profile drives the honesty gates: a runtime
+  // that declares `supportsCostTracking: false` must never show a cost item.
   const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
-  const supportsCostTracking = activeCaps?.supportsCostTracking ?? true;
-
-  // Same runtime-support gate the composer's `/compact` dispatch uses
-  // (DOR-109) — the proactive compaction chip (DOR-112) must never disagree
-  // with the palette about whether this runtime can compact.
   const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
+  // Same runtime-support gate the composer's `/compact` dispatch uses — the
+  // inline compact action must never disagree with the palette.
   const compactIntent = compactComposerGate(activeCaps?.commandIntents, runtimeLabel);
-  // The chip's "Context N% full" copy must always match the ContextItem badge
-  // it renders beside; both resolve the display percent through the one shared
-  // source (prefer the SDK breakdown once it arrives, else the coarser estimate).
-  const compactionChipPercent = resolveDisplayContextPercent(contextPercent, contextUsage);
-  const compactionChip = useCompactionChip({
+  const displayContextPercent = resolveDisplayContextPercent(
+    streamValues.contextPercent ?? status.contextPercent,
+    contextUsage
+  );
+  const compaction = useCompactionChip({
     sessionId,
-    percent: compactionChipPercent,
+    percent: displayContextPercent,
     compactSupported: compactIntent.supported,
     isStreaming,
   });
 
-  // Configure popover state — opened by icon click or from context menus
-  const [configureOpen, setConfigureOpen] = useState(false);
+  const [sessionOpen, setSessionOpen] = useState(false);
+  useSessionPopoverShortcut(() => setSessionOpen((o) => !o));
 
-  // Mobile-only gesture state
-  const [collapsed, setCollapsed] = useState(false);
-  const [showHint, setShowHint] = useState(() => {
-    if (!isMobile) return false;
-    const count = parseInt(localStorage.getItem(STORAGE_KEYS.GESTURE_HINT_COUNT) || '0', 10);
-    return count < 3;
-  });
-
-  useEffect(() => {
-    if (!showHint) return;
-    const timer = setTimeout(() => {
-      setShowHint(false);
-      const count = parseInt(localStorage.getItem(STORAGE_KEYS.GESTURE_HINT_COUNT) || '0', 10);
-      localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, String(count + 1));
-    }, TIMING.GESTURE_HINT_DISMISS_MS);
-    return () => clearTimeout(timer);
-  }, [showHint]);
-
-  const dismissHint = useCallback(() => {
-    setShowHint(false);
-    const count = parseInt(localStorage.getItem(STORAGE_KEYS.GESTURE_HINT_COUNT) || '0', 10);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, String(count + 1));
-  }, []);
-
-  const handleDragEnd = (_: unknown, info: PanInfo) => {
-    const { offset, velocity } = info;
-    if (offset.y > SWIPE_THRESHOLD || velocity.y > VELOCITY_THRESHOLD) {
-      setCollapsed(true);
-    } else if (offset.y < -SWIPE_THRESHOLD || velocity.y < -VELOCITY_THRESHOLD) {
-      setCollapsed(false);
-    }
+  const promotionContext: StatusPromotionContext = {
+    cwd: status.cwd,
+    git: isGitStatusOk(gitStatus)
+      ? gitPromotionState(gitStatus.branch, gitStatus.clean, gitStatus.detached)
+      : null,
+    contextPercent: displayContextPercent,
+    connectionState: syncConnectionState,
+    permissionMode: status.permissionMode,
+    // `runtimeCaps === undefined` is "the capability map has not arrived", not
+    // "this runtime is not the default": treating it as the latter would promote
+    // the item at RUNTIME_NON_DEFAULT for the frames before the query resolves,
+    // outranking git, model, and cwd on a narrow bar. Every other item follows
+    // the same rule — data hasn't arrived, so no slot.
+    runtime:
+      runtimeChip.runtime === null || runtimeCaps === undefined
+        ? null
+        : {
+            isDefault: runtimeChip.runtime === runtimeCaps.defaultRuntime,
+            canSelect: runtimeChip.canSelect,
+          },
+    usage,
+    subagentCount: subagents?.length ?? 0,
   };
 
-  // Extracted to avoid duplicating the full JSX tree across mobile/desktop branches
-  const configureIcon = (
-    <TooltipProvider>
-      <Tooltip>
-        <StatusBarConfigurePopover open={configureOpen} onOpenChange={setConfigureOpen}>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label="Configure status bar"
-              className="text-muted-foreground/50 hover:text-muted-foreground inline-flex shrink-0 items-center transition-colors duration-150"
-            >
-              <SlidersHorizontal className="size-3" />
-            </button>
-          </TooltipTrigger>
-        </StatusBarConfigurePopover>
-        <TooltipContent side="top">
-          <p>Configure status bar</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+  // The inline Compact action is the one thing the line gives up first: it costs a
+  // labelled button, and below the widest tier the Session panel offers it as a
+  // full-width button instead, so the fix is never lost — only relocated.
+  //
+  // Gated on `compaction.visible`, never re-derived: the hook already folds in
+  // runtime support, the 85% threshold, AND `isStreaming`. A separately-derived
+  // condition drifted from it once already, offering an enabled Compact button
+  // mid-turn that could only ever 409 `SESSION_LOCKED` (DOR-112 requirement 1).
+  const inlineCompact = compaction.visible && budget.density === 'full';
+  const promotedCompactAction = compaction.visible && !inlineCompact;
+
+  const nodes = buildStatusItemNodes({
+    sessionId,
+    agent: { name: agentName, color: agentColor, emoji: agentEmoji, path: agentPath },
+    status,
+    onUpdateSession: status.updateSession,
+    onChangeMode: handleChangeMode,
+    modelSupportsAutoMode,
+    gitStatus,
+    workspace,
+    runtimeChip,
+    contextPercent: displayContextPercent,
+    contextUsage,
+    compact: inlineCompact
+      ? { pending: compaction.pending, onCompact: compaction.onCompact }
+      : null,
+    usage,
+    supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
+    subagents,
+    connectionState: syncConnectionState,
+    density: budget.density,
+  });
+
+  const { items, overflow } = applyStatusBudget(
+    selectPromotedItems({ ctx: promotionContext, pins, nodes }),
+    budget
   );
 
-  const statusLineContent = (
-    <>
-      <div className="flex items-center gap-2 pt-2">
-        <ContextMenu>
-          <ContextMenuTrigger className="min-w-0 flex-1">
-            <StatusLine sessionId={sessionId} isStreaming={isStreaming}>
-              <StatusLine.Item itemKey="cwd" visible={statusBar.cwd && !!status.cwd}>
-                <ItemContextMenu
-                  itemLabel={getItemLabel('cwd')}
-                  onHide={() => setStatusBarVisibility('cwd', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  {status.cwd && <CwdItem cwd={status.cwd} />}
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item itemKey="git" visible={statusBar.git}>
-                <ItemContextMenu
-                  itemLabel={getItemLabel('git')}
-                  onHide={() => setStatusBarVisibility('git', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  <GitStatusItem data={gitStatus} workspace={workspace} />
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item itemKey="permission" visible={statusBar.permission}>
-                <ItemContextMenu
-                  itemLabel={getItemLabel('permission')}
-                  onHide={() => setStatusBarVisibility('permission', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  <PermissionModeItem
-                    mode={status.permissionMode}
-                    onChangeMode={handleChangeMode}
-                    disabled={!sessionId}
-                    runtime={runtimeChip.runtime}
-                    modelSupportsAutoMode={modelSupportsAutoMode}
-                  />
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item
-                itemKey="runtime"
-                visible={statusBar.runtime && runtimeChip.runtime !== null}
-              >
-                <ItemContextMenu
-                  itemLabel={getItemLabel('runtime')}
-                  onHide={() => setStatusBarVisibility('runtime', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  {runtimeChip.runtime !== null && (
-                    <RuntimeItem
-                      runtime={runtimeChip.runtime}
-                      model={runtimeChip.model}
-                      onChangeRuntime={runtimeChip.onChangeRuntime}
-                      canSelect={runtimeChip.canSelect}
-                    />
-                  )}
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item itemKey="model" visible={statusBar.model}>
-                <ItemContextMenu
-                  itemLabel={getItemLabel('model')}
-                  onHide={() => setStatusBarVisibility('model', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  <ModelConfigPopover
-                    model={status.model}
-                    onChangeModel={(model) => status.updateSession({ model })}
-                    effort={status.effort}
-                    onChangeEffort={(effort) =>
-                      status.updateSession({ effort: effort ?? undefined })
-                    }
-                    fastMode={status.fastMode}
-                    onChangeFastMode={(fastMode) => status.updateSession({ fastMode })}
-                    disabled={!sessionId}
-                    sessionId={sessionId || undefined}
-                    runtime={runtimeChip.runtime}
-                  />
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item itemKey="cache" visible={statusBar.cache && cacheStatus !== null}>
-                <ItemContextMenu
-                  itemLabel={getItemLabel('cache')}
-                  onHide={() => setStatusBarVisibility('cache', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  {cacheStatus && (
-                    <CacheItem
-                      cacheReadTokens={cacheStatus.cacheReadTokens}
-                      cacheCreationTokens={cacheStatus.cacheCreationTokens}
-                      contextTokens={cacheStatus.contextTokens}
-                    />
-                  )}
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item
-                itemKey="context"
-                visible={statusBar.context && contextPercent !== null}
-              >
-                <ItemContextMenu
-                  itemLabel={getItemLabel('context')}
-                  onHide={() => setStatusBarVisibility('context', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  {contextPercent !== null && (
-                    <ContextItem percent={contextPercent} contextUsage={contextUsage} />
-                  )}
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item
-                itemKey="usage"
-                // `supportsCostTracking` intentionally gates the whole item, even the
-                // subscription-utilization display: today the only runtime with
-                // utilization (claude-code) also reports cost, and every runtime that
-                // reports usage reports cost. If a future runtime ever exposes
-                // utilization without dollar cost, widen this to a dedicated capability.
-                visible={
-                  statusBar.usage &&
-                  usage !== null &&
-                  hasRenderableUsage(usage) &&
-                  supportsCostTracking
-                }
-              >
-                <ItemContextMenu
-                  itemLabel={getItemLabel('usage')}
-                  onHide={() => setStatusBarVisibility('usage', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  {usage && hasRenderableUsage(usage) && <UsageStatusItem usage={usage} />}
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item itemKey="sound" visible={statusBar.sound}>
-                <ItemContextMenu
-                  itemLabel={getItemLabel('sound')}
-                  onHide={() => setStatusBarVisibility('sound', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  <NotificationSoundItem
-                    enabled={enableNotificationSound}
-                    onToggle={() => setEnableNotificationSound(!enableNotificationSound)}
-                  />
-                </ItemContextMenu>
-              </StatusLine.Item>
-              <StatusLine.Item itemKey="polling" visible={statusBar.polling}>
-                <ItemContextMenu
-                  itemLabel={getItemLabel('polling')}
-                  onHide={() => setStatusBarVisibility('polling', false)}
-                  onConfigure={() => setConfigureOpen(true)}
-                  onReset={resetStatusBarPreferences}
-                >
-                  <PollingItem
-                    enabled={enableMessagePolling}
-                    onToggle={() => setEnableMessagePolling(!enableMessagePolling)}
-                  />
-                </ItemContextMenu>
-              </StatusLine.Item>
-              {/*
-               * System-managed item: connection is not user-toggleable. It is not
-               * wrapped with ItemContextMenu — it falls through to the background
-               * ContextMenu if right-clicked.
-               */}
-              <ConnectionItem connectionState={syncConnectionState} />
-              <StatusLine.Item itemKey="subagents" visible={!!subagents && subagents.length > 0}>
-                {subagents && subagents.length > 0 && <SubagentsItem subagents={subagents} />}
-              </StatusLine.Item>
-            </StatusLine>
-          </ContextMenuTrigger>
-          {/* Background context menu — fires when right-clicking the status bar but not on a specific item */}
-          <ContextMenuContent>
-            <ContextMenuItem onClick={() => setConfigureOpen(true)}>
-              Configure status bar...
-            </ContextMenuItem>
-            <ContextMenuItem onClick={resetStatusBarPreferences}>Reset to defaults</ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-        {/* Configure icon — right-aligned, stable position independent of item changes */}
-        {configureIcon}
-        {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
-        <UsageRevealPopover
-          usage={usage ?? null}
-          open={usageRevealOpen}
-          onOpenChange={setUsageRevealOpen}
-        />
-        {/* Portal-based — render once; placement is layout-independent */}
-        <AutoModeConfirmDialog
-          open={autoConfirmOpen}
-          onOpenChange={setAutoConfirmOpen}
-          onConfirm={handleConfirmAuto}
-        />
-      </div>
-      {/* Proactive compaction nudge (DOR-112) — its own row below the status
-          line so the fuller "Context N% full — Compact now" copy never
-          crowds the terse, horizontally-scrolling status items above it. */}
-      <AnimatePresence>
-        {compactionChip.visible && (
-          <div className="flex pt-1.5">
-            <CompactionChip
-              percent={compactionChip.percent}
-              pending={compactionChip.pending}
-              onClick={compactionChip.onCompact}
-            />
-          </div>
-        )}
-      </AnimatePresence>
-    </>
-  );
-
-  if (isMobile) {
-    return (
-      <>
-        <motion.div
-          animate={showHint ? { y: [0, 8, 0] } : undefined}
-          transition={showHint ? { duration: 1.2, repeat: 2 } : undefined}
-        >
-          <DragHandle collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-        </motion.div>
-        <AnimatePresence>
-          {showHint && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={dismissHint}
-              className="text-muted-foreground cursor-pointer text-center text-xs"
-            >
-              Swipe to collapse
-            </motion.p>
-          )}
-        </AnimatePresence>
-        <AnimatePresence initial={false}>
-          {!collapsed && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="overflow-hidden"
-              drag="y"
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={0.2}
-              onDragEnd={handleDragEnd}
-              style={{ touchAction: 'pan-y' }}
-            >
-              {showShortcutChips && (
-                <ShortcutChips
-                  onChipClick={onChipClick}
-                  agentName={agentName}
-                  agentColor={agentColor}
-                  agentEmoji={agentEmoji}
-                  agentPath={agentPath}
-                />
-              )}
-              {statusLineContent}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </>
-    );
-  }
+  const diagnostics: SessionDiagnostics = {
+    sessionId,
+    cwd: status.cwd,
+    gitBranch: isGitStatusOk(gitStatus) ? gitStatus.branch : null,
+    gitDirty: isGitStatusOk(gitStatus) ? !gitStatus.clean : null,
+    runtime: runtimeChip.runtime,
+    model: runtimeChip.model ?? streamValues.model ?? status.model,
+    effort: status.effort ?? null,
+    permissionMode: status.permissionMode,
+    contextPercent: displayContextPercent,
+    cache: cacheStatus
+      ? {
+          readTokens: cacheStatus.cacheReadTokens,
+          creationTokens: cacheStatus.cacheCreationTokens,
+          contextTokens: cacheStatus.contextTokens,
+        }
+      : null,
+    usage,
+    connectionState: syncConnectionState,
+    lastEventSeq,
+    queueDepth,
+    clientVersion: serverConfig?.version ?? null,
+  };
 
   return (
-    <>
-      <AnimatePresence>
-        {showShortcutChips && (
-          <ShortcutChips
-            onChipClick={onChipClick}
-            agentName={agentName}
-            agentColor={agentColor}
-            agentEmoji={agentEmoji}
-            agentPath={agentPath}
+    // `barRef` measures this block, whose width comes from the composer around it
+    // and never from the line's own content — otherwise trimming the line would
+    // shrink the box that decides how much the line may hold.
+    <div ref={barRef} className="pt-2">
+      <StatusLine
+        items={items}
+        trailing={
+          <SessionPopover
+            open={sessionOpen}
+            onOpenChange={setSessionOpen}
+            diagnostics={diagnostics}
+            controls={{
+              sound: enableNotificationSound,
+              onToggleSound: () => setEnableNotificationSound(!enableNotificationSound),
+              refresh: enableMessagePolling,
+              onToggleRefresh: () => setEnableMessagePolling(!enableMessagePolling),
+            }}
+            promotionContext={promotionContext}
+            overflowCount={overflow}
+            urgentAction={
+              promotedCompactAction
+                ? {
+                    label: `Compact conversation — ${compaction.percent}% full`,
+                    onAction: compaction.onCompact,
+                    pending: compaction.pending,
+                  }
+                : null
+            }
           />
-        )}
-      </AnimatePresence>
-      {statusLineContent}
-    </>
+        }
+      />
+      {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
+      <UsageRevealPopover
+        usage={usage ?? null}
+        open={usageRevealOpen}
+        onOpenChange={setUsageRevealOpen}
+      />
+      {/* Portal-based — render once; placement is layout-independent */}
+      <AutoModeConfirmDialog
+        open={autoConfirmOpen}
+        onOpenChange={setAutoConfirmOpen}
+        onConfirm={handleConfirmAuto}
+      />
+    </div>
   );
 }

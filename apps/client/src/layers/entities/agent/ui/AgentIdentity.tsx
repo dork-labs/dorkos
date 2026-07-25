@@ -62,6 +62,12 @@ export interface AgentIdentityProps extends VariantProps<typeof identityVariants
   detail?: React.ReactNode;
   /** Optional health status (forwarded to AgentAvatar). */
   healthStatus?: AgentHealthStatus;
+  /**
+   * Show the avatar alone. The name stays in the accessibility tree rather than
+   * moving to an `aria-label`, so the identity still announces (and still names an
+   * `onClick` button) when there is no room to draw it.
+   */
+  nameHidden?: boolean;
   className?: string;
   /**
    * When provided, wraps the identity in a button element.
@@ -84,27 +90,24 @@ export function AgentIdentity({
   detail,
   size,
   healthStatus,
+  nameHidden,
   className,
   onClick,
 }: AgentIdentityProps) {
   const resolvedSize: IdentitySize = size ?? 'sm';
   const isStacked = resolvedSize === 'md' || resolvedSize === 'lg';
 
+  const label = (
+    <span className={cn('flex min-w-0', isStacked ? 'flex-col' : 'items-center gap-1.5')}>
+      <span className={nameVariants({ size })}>{name}</span>
+      {detail && <span className={detailVariants({ size })}>{detail}</span>}
+    </span>
+  );
+
   const content = (
     <>
       <AgentAvatar color={color} emoji={emoji} size={size} healthStatus={healthStatus} />
-
-      {isStacked ? (
-        <span className="flex min-w-0 flex-col">
-          <span className={nameVariants({ size })}>{name}</span>
-          {detail && <span className={detailVariants({ size })}>{detail}</span>}
-        </span>
-      ) : (
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className={nameVariants({ size })}>{name}</span>
-          {detail && <span className={detailVariants({ size })}>{detail}</span>}
-        </span>
-      )}
+      {nameHidden ? <span className="sr-only">{name}</span> : label}
     </>
   );
 

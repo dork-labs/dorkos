@@ -47,6 +47,12 @@ interface RuntimeItemProps {
    * started — runtime is immutable for a session's lifetime (ADR-0255).
    */
   canSelect: boolean;
+  /**
+   * Say it in as few pixels as possible — set below the status line's widest
+   * tier. Drops the `· <model>` half, which the line's own model item already
+   * spells out; the runtime name is what makes this item worth a slot.
+   */
+  compact?: boolean;
 }
 
 /** Setup-dialog state: closed, scoped to one runtime, or the unscoped overview. */
@@ -71,7 +77,13 @@ type SetupDialogState = { open: boolean; runtime?: string };
  * "Connect" entry that opens the Ready/Connect setup surface (one-click
  * provisioning for OpenCode; the terminal detail lives behind Advanced).
  */
-export function RuntimeItem({ runtime, model, onChangeRuntime, canSelect }: RuntimeItemProps) {
+export function RuntimeItem({
+  runtime,
+  model,
+  onChangeRuntime,
+  canSelect,
+  compact,
+}: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
   const [setupDialog, setSetupDialog] = useState<SetupDialogState>({ open: false });
@@ -99,8 +111,12 @@ export function RuntimeItem({ runtime, model, onChangeRuntime, canSelect }: Runt
   // disabled control, "this session runs on OpenCode · qwen2.5-coder" is the
   // chip's steady state, so it renders at full strength like the other info
   // items. Identity is runtime + model via the shared RuntimeIdentity.
+  //
+  // Below the status line's widest tier the model half is redundant: the line's own
+  // model item sits two slots away saying the same thing for ~90px.
+  const shownModel = compact ? null : model;
   const chip = (
-    <RuntimeIdentity runtime={runtime} model={model} iconClassName="size-(--size-icon-xs)" />
+    <RuntimeIdentity runtime={runtime} model={shownModel} iconClassName="size-(--size-icon-xs)" />
   );
 
   if (!canSelect) {
@@ -125,10 +141,10 @@ export function RuntimeItem({ runtime, model, onChangeRuntime, canSelect }: Runt
     <>
       <ResponsiveDropdownMenu>
         <ResponsiveDropdownMenuTrigger asChild>
-          <button className="hover:text-foreground transition-colors duration-150">
+          <button className="hover:text-foreground inline-flex min-w-0 transition-colors duration-150">
             <RuntimeIdentity
               runtime={runtime}
-              model={model}
+              model={shownModel}
               iconClassName="size-(--size-icon-xs)"
             />
           </button>

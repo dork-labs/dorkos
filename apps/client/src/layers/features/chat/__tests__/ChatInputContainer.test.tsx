@@ -110,7 +110,6 @@ const baseProps = {
     handleArrowDown: vi.fn(),
     handleKeyboardSelect: vi.fn(),
     handleCursorChange: vi.fn(),
-    handleChipClick: vi.fn(),
     dismissPalettes: vi.fn(),
     isPaletteOpen: false,
     activeDescendantId: undefined,

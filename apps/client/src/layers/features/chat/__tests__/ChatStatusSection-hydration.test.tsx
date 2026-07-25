@@ -56,7 +56,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      showShortcutChips: false,
+      // A healthy cost and a 20%-full window are quiet by design; pin them so this
+      // suite still asserts what it is about — snapshot hydration on cold mount.
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -88,41 +89,28 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
   };
 });
 
+// The identity chip needs a router; it is not part of the status line under test.
+vi.mock('../ui/status/AgentIdentityChip', () => ({
+  AgentIdentityChip: () => null,
+}));
+
 vi.mock('@/layers/features/status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/features/status')>();
   return {
     ...actual,
-    // Keep the real UsageStatusItem / ContextItem / CacheItem — assert their output.
-    StatusLine: Object.assign(
-      ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-      {
-        Item: ({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
-          visible ? <div>{children}</div> : null,
-      }
+    // Keep the real UsageStatusItem / ContextItem — assert their output.
+    StatusLine: ({ items }: { items: { key: string; node: React.ReactNode }[] }) => (
+      <div>
+        {items.map((item) => (
+          <div key={item.key}>{item.node}</div>
+        ))}
+      </div>
     ),
+    SessionPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
-    StatusBarConfigurePopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    // Status-bar visibility lives in server config (DOR-431). Show only the
-    // snapshot-derived items this suite asserts on (context/cache/usage).
-    useStatusBarPrefs: () => ({
-      cwd: false,
-      git: false,
-      runtime: false,
-      model: false,
-      cache: true,
-      context: true,
-      usage: true,
-      permission: false,
-      sound: false,
-      polling: false,
-    }),
-    useUpdateStatusBarPrefs: () => ({
-      setVisibility: vi.fn(),
-      reset: vi.fn(),
-      isPending: false,
-    }),
-    // System-managed items use the real StatusLine.Item context internally; stub
-    // them so the mocked StatusLine doesn't trip their context guard. Not under test.
+    // Pins live in server config (`ui.statusBar.pins`); stub the bridge so this
+    // suite needs no query client or transport.
+    useStatusBarPins: () => ({ pins: ['usage', 'context'], toggle: vi.fn(), reset: vi.fn() }),
     ConnectionItem: () => null,
     SubagentsItem: () => null,
   };
@@ -139,7 +127,6 @@ const props = {
   sessionId: 'session-1',
   sessionStatus: null,
   isStreaming: false,
-  onChipClick: vi.fn(),
   syncConnectionState: 'connected' as const,
 };
 
